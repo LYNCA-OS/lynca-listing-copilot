@@ -36,7 +36,10 @@ import {
 import { renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mjs";
 import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
 import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs";
-import { importToppsBasketballChecklists } from "./import-topps-basketball-checklists.mjs";
+import {
+  buildProviderCatalogImport,
+  importToppsBasketballChecklists
+} from "./import-topps-basketball-checklists.mjs";
 import { validateOfficialSourceManifestReport } from "./import-official-source-manifest.mjs";
 import {
   retrievalProviderIds,
@@ -435,6 +438,87 @@ const upperDeckJsonReport = await buildOfficialChecklistImport({
 assert.equal(upperDeckJsonReport.sources[0].source_metadata.extraction_method, "json");
 assert.equal(upperDeckJsonReport.metrics.parsed_row_count, 2);
 assert.equal(upperDeckJsonReport.metrics.review_required_count, 0);
+
+const unifiedBandaiHtml = [
+  '<dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>',
+  '<dl class="modalCol" id="OP01-001_p1"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001_p1.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>'
+].join("");
+const unifiedBandaiReport = await buildProviderCatalogImport({
+  provider: "one_piece",
+  sourceType: catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST,
+  category: "tcg",
+  sourceUrls: [{
+    href: "https://en.onepiece-cardgame.com/cardlist/romance-dawn",
+    text: "Romance Dawn"
+  }],
+  fetchImpl: async () => new Response(unifiedBandaiHtml, {
+    status: 200,
+    headers: { "content-type": "text/html" }
+  })
+});
+assert.equal(unifiedBandaiReport.metrics.parsed_row_count, 2);
+assert.equal(unifiedBandaiReport.sources[0].source_status, "OFFICIAL_CHECKLIST_RAW");
+assert.equal(unifiedBandaiReport.sources[0].source_name, "Romance Dawn");
+assert.match(unifiedBandaiReport.sources[0].parser_version, /^catalog-source-adapter-v1:/);
+assert.equal(unifiedBandaiReport.sources[0].source_metadata.third_party_used, false);
+assert.equal(unifiedBandaiReport.staging[0].raw_text, null);
+assert.equal(unifiedBandaiReport.staging[0].staging.raw_text, null);
+assert.equal(unifiedBandaiReport.staging[0].staging.identity_fields.card_name, "Roronoa Zoro");
+assert.equal(unifiedBandaiReport.staging[0].staging.identity_fields.set_or_insert, "-ROMANCE DAWN- [OP01]");
+assert.equal(unifiedBandaiReport.staging[1].staging.identity_fields.card_number, "OP01-001");
+assert.equal(unifiedBandaiReport.staging[1].staging.identity_fields.parallel_exact, "Alternate Art 1");
+assert.match(unifiedBandaiReport.staging[1].staging.canonical_title, /Alternate Art 1/);
+assert.notEqual(unifiedBandaiReport.staging[0].staging.source_row_key, unifiedBandaiReport.staging[1].staging.source_row_key);
+assert.equal(unifiedBandaiReport.staging[0].staging.import_status, catalogImportStatuses.OFFICIAL_CHECKLIST_CANDIDATE);
+assert.equal(unifiedBandaiReport.staging[1].staging.import_status, catalogImportStatuses.OFFICIAL_PARSE_REVIEW_REQUIRED);
+assert.deepEqual(unifiedBandaiReport.staging[1].staging.physical_instance_fields, {});
+
+const unifiedBandaiDryRun = await importToppsBasketballChecklists({
+  argv: [
+    "--all-topps",
+    "--provider", "one_piece",
+    "--source-type", catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST,
+    "--category", "tcg",
+    "--source-url", "https://en.onepiece-cardgame.com/cardlist/romance-dawn",
+    "--source-name", "Romance Dawn",
+    "--no-env-file"
+  ],
+  env: {},
+  fetchImpl: async () => new Response(unifiedBandaiHtml, {
+    status: 200,
+    headers: { "content-type": "text/html" }
+  })
+});
+assert.equal(unifiedBandaiDryRun.inserted_staging_count, 2);
+assert.equal(unifiedBandaiDryRun.inserted_card_count, 1);
+assert.equal(unifiedBandaiDryRun.skipped_review_required_count, 1);
+const unifiedBandaiValidation = validateOfficialSourceManifestReport({
+  sources: [{
+    source_name: "Romance Dawn",
+    source_url: "https://en.onepiece-cardgame.com/cardlist/romance-dawn",
+    source_type: catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST,
+    minimum_card_count: 2,
+    minimum_promotion_candidate_count: 1,
+    maximum_review_required_count: 1,
+    required_records: [{
+      external_id: "OP01-001_p1",
+      parallel_exact: "Alternate Art 1",
+      expected_import_status: catalogImportStatuses.OFFICIAL_PARSE_REVIEW_REQUIRED
+    }]
+  }]
+}, unifiedBandaiReport);
+assert.equal(unifiedBandaiValidation.valid, true);
+assert.equal(unifiedBandaiValidation.validations[0].promotion_candidate_count, 1);
+assert.equal(unifiedBandaiValidation.validations[0].review_required_count, 1);
+assert.equal(validateOfficialSourceManifestReport({
+  sources: [{
+    source_name: "Romance Dawn",
+    source_url: "https://en.onepiece-cardgame.com/cardlist/romance-dawn",
+    source_type: catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST,
+    minimum_card_count: 2,
+    maximum_review_required_count: 0
+  }]
+}, unifiedBandaiReport).valid, false);
 
 const importReport = await buildToppsBasketballChecklistImport({
   indexUrl: "https://www.topps.com/pages/checklists",

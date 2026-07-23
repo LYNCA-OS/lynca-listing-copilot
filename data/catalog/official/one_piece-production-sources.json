@@ -1,0 +1,43 @@
+{
+  "schema_version": "official-source-manifest-v1",
+  "provider": "one_piece",
+  "sources": [
+    {
+      "source_name": "One Piece Romance Dawn OP-01",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569101",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 154,
+      "minimum_promotion_candidate_count": 121,
+      "maximum_review_required_count": 33,
+      "required_records": [
+        {
+          "card_number": "OP01-001",
+          "subject": "Roronoa Zoro",
+          "card_name": "Roronoa Zoro",
+          "product": "One Piece Romance Dawn OP-01",
+          "set_or_insert": "-ROMANCE DAWN- [OP01]",
+          "external_id": "OP01-001",
+          "rarity": "L",
+          "official_card_type": "LEADER",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "OP01-001",
+          "subject": "Roronoa Zoro",
+          "parallel_exact": "Alternate Art 1",
+          "external_id": "OP01-001_p1",
+          "expected_import_status": "OFFICIAL_PARSE_REVIEW_REQUIRED"
+        },
+        {
+          "card_number": "OP01-121",
+          "subject": "Yamato",
+          "external_id": "OP01-121",
+          "rarity": "SEC",
+          "official_card_type": "CHARACTER",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    }
+  ]
+}

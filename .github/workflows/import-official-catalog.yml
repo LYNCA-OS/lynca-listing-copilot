@@ -11,6 +11,7 @@ on:
           - leaf
           - panini
           - upper_deck
+          - one_piece
         default: topps
       apply:
         description: "Apply validated rows to production Supabase"

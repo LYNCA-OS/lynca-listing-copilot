@@ -77,7 +77,7 @@ export async function runOfficialCatalogImport({
     ...report,
     dry_run: !hasFlag(argv, "--apply"),
     apply_supported: false,
-    apply_note: "Official importer v0 writes staging reports only. Supabase apply remains limited to the reviewed Topps staging path until source-specific parsing is validated."
+    apply_note: "Use a validated official source manifest for production apply; direct URL apply remains disabled."
   };
   await writeJson(outPath, output);
   return output;

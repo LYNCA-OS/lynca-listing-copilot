@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { buildOfficialChecklistImport } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
-import { extractPdfText } from "../lib/listing/catalog/pdf-text-extractor.mjs";
-import { importToppsBasketballChecklists } from "./import-topps-basketball-checklists.mjs";
+import {
+  buildProviderCatalogImport,
+  importToppsBasketballChecklists
+} from "./import-topps-basketball-checklists.mjs";
+import { isOfficialCatalogSourceType } from "../lib/listing/catalog/catalog-contract.mjs";
 
 const defaultManifestPath = "data/catalog/official/topps-production-sources.json";
 
@@ -24,9 +26,15 @@ function valueMatches(actual, expected) {
 function rowMatchesRequiredRecord(row = {}, required = {}) {
   const fields = row.identity_fields || {};
   return valueMatches(fields.card_number || fields.collector_number, required.card_number)
+    && valueMatches(row.import_status, required.expected_import_status)
     && valueMatches(fields.checklist_code, required.checklist_code)
     && valueMatches(fields.product, required.product)
     && valueMatches(fields.set_or_insert, required.set_or_insert)
+    && valueMatches(fields.card_name, required.card_name)
+    && valueMatches(fields.parallel_exact, required.parallel_exact)
+    && valueMatches(fields.external_id, required.external_id)
+    && valueMatches(fields.rarity, required.rarity)
+    && valueMatches(fields.official_card_type, required.official_card_type)
     && (!required.subject || (fields.players || []).some((player) => valueMatches(player, required.subject)));
 }
 
@@ -37,6 +45,8 @@ export function validateOfficialSourceManifestReport(manifest = {}, report = {})
     const sourceRows = (report.staging || [])
       .filter((entry) => entry.source?.source_url === source.source_url)
       .map((entry) => entry.staging);
+    const promotionCandidateCount = sourceRows.filter((row) => !/REVIEW_REQUIRED/i.test(row.import_status || "")).length;
+    const reviewRequiredCount = sourceRows.length - promotionCandidateCount;
     const extractedSource = (report.sources || []).find((entry) => entry.source_url === source.source_url);
     const expectedSourceType = String(source.source_type || "").trim().toUpperCase();
     const actualSourceType = String(extractedSource?.source_type || "").trim().toUpperCase();
@@ -54,10 +64,16 @@ export function validateOfficialSourceManifestReport(manifest = {}, report = {})
       source_type_matches: sourceTypeMatches,
       parsed_card_count: sourceRows.length,
       minimum_card_count: Number(source.minimum_card_count || 1),
+      promotion_candidate_count: promotionCandidateCount,
+      minimum_promotion_candidate_count: Number(source.minimum_promotion_candidate_count ?? source.minimum_card_count ?? 1),
+      review_required_count: reviewRequiredCount,
+      maximum_review_required_count: Number(source.maximum_review_required_count ?? 0),
       record_checks: recordChecks,
       valid: Boolean(extractedSource)
         && sourceTypeMatches
         && sourceRows.length >= Number(source.minimum_card_count || 1)
+        && promotionCandidateCount >= Number(source.minimum_promotion_candidate_count ?? source.minimum_card_count ?? 1)
+        && reviewRequiredCount <= Number(source.maximum_review_required_count ?? 0)
         && recordChecks.every((check) => check.matched)
     };
     if (!validation.valid) errors.push(`official_source_validation_failed:${source.source_name}`);
@@ -82,6 +98,10 @@ export async function importOfficialSourceManifest({
   const outPath = argValue(argv, "--out", "");
   const apply = argv.includes("--apply");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (!manifest.provider) throw new Error("official_source_manifest_provider_required");
+  if ((manifest.sources || []).some((source) => !isOfficialCatalogSourceType(source.source_type))) {
+    throw new Error("official_source_manifest_non_official_source_type");
+  }
   const sources = (manifest.sources || []).map((source) => ({
     href: source.source_url,
     text: source.source_name,
@@ -91,11 +111,11 @@ export async function importOfficialSourceManifest({
   }));
   if (!sources.length) throw new Error("official_source_manifest_empty");
 
-  const dryRunReport = await buildOfficialChecklistImport({
+  const dryRunReport = await buildProviderCatalogImport({
     fetchImpl,
     provider: manifest.provider || "topps",
     sourceUrls: sources,
-    pdfExtractor: extractPdfText
+    category: ""
   });
   const validation = validateOfficialSourceManifestReport(manifest, dryRunReport);
   if (!validation.valid) throw new Error(validation.errors.join(","));

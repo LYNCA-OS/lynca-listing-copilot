@@ -2,12 +2,19 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
-  buildOfficialChecklistImport,
   buildToppsBasketballChecklistImport,
   defaultOfficialChecklistIndexUrls,
   sourceTypeFromOfficialChecklistProvider
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
 import { extractPdfText } from "../lib/listing/catalog/pdf-text-extractor.mjs";
+import {
+  buildOfficialCatalogImportReport,
+  officialCatalogSourceProfile
+} from "../lib/listing/catalog/official-catalog-source-adapter.mjs";
+import {
+  catalogImportStatuses,
+  isOfficialCatalogSourceType
+} from "../lib/listing/catalog/catalog-contract.mjs";
 
 const defaultEnvFilePath = ".env.local";
 const officialChecklistRawStatus = "OFFICIAL_CHECKLIST_RAW";
@@ -209,10 +216,11 @@ async function supabaseExactCount({ env, table, filters = [], fetchImpl } = {}) 
 }
 
 async function sourceCatalogState({ env, sourceId, fetchImpl } = {}) {
-  if (!sourceId) return { card_count: 0, reviewed_row_count: 0 };
+  if (!sourceId) return { card_count: 0, staging_count: 0, reviewed_row_count: 0 };
   const sourceFilter = `source_id=eq.${encodeURIComponent(sourceId)}`;
-  const [cardCount, ...reviewedCounts] = await Promise.all([
+  const [cardCount, stagingCount, ...reviewedCounts] = await Promise.all([
     supabaseExactCount({ env, table: "catalog_cards", filters: [sourceFilter], fetchImpl }),
+    supabaseExactCount({ env, table: "catalog_import_staging", filters: [sourceFilter], fetchImpl }),
     ...["catalog_products", "catalog_sets", "catalog_cards", "catalog_parallels"].map((table) => (
       supabaseExactCount({
         env,
@@ -224,8 +232,18 @@ async function sourceCatalogState({ env, sourceId, fetchImpl } = {}) {
   ]);
   return {
     card_count: cardCount,
+    staging_count: stagingCount,
     reviewed_row_count: reviewedCounts.reduce((sum, count) => sum + count, 0)
   };
+}
+
+function decisionEligibleOfficialRow(row = {}) {
+  return [
+    catalogImportStatuses.OFFICIAL_CHECKLIST_CANDIDATE,
+    catalogImportStatuses.OFFICIAL_CHECKLIST_CONFIRMED,
+    catalogImportStatuses.OFFICIAL_RELEASE_SUPPORT,
+    catalogImportStatuses.REVIEWED_INTERNAL
+  ].includes(row.import_status);
 }
 
 async function clearReplaceableSourceRows({ env, sourceId, fetchImpl } = {}) {
@@ -328,7 +346,20 @@ function cardRow(sourceId, productId, setId, fields = {}, title = "", { importSo
     review_status: "REVIEW_REQUIRED",
     metadata: {
       import_source: importSource,
-      physical_instance_fields_intentionally_empty: true
+      physical_instance_fields_intentionally_empty: true,
+      catalog_fields: compact({
+        game: fields.game,
+        language: fields.language,
+        subject: fields.subject,
+        card_name: fields.card_name,
+        collector_number: fields.collector_number,
+        rarity: fields.rarity,
+        parallel_name: fields.parallel_name,
+        parallel_exact: fields.parallel_exact,
+        image_url: fields.image_url,
+        image_urls: fields.image_urls,
+        external_id: fields.external_id
+      })
     }
   };
 }
@@ -354,7 +385,7 @@ function setKey(productId, fields = {}) {
   ].join("\u001f");
 }
 
-export function sourceUrlsFromArgs(argv = [], env = process.env, provider = "topps") {
+export function sourceUrlsFromArgs(argv = [], env = process.env, provider = "topps", sourceType = "") {
   const explicit = argValues(argv, "--source-url");
   const providerKey = normalizeText(provider).toUpperCase().replace(/[^A-Z0-9]+/g, "_");
   const providerUrls = [
@@ -369,8 +400,35 @@ export function sourceUrlsFromArgs(argv = [], env = process.env, provider = "top
   const name = argValue(argv, "--source-name", "");
   return [...explicit, ...envUrls].map((href, index) => ({
     href,
-    text: index === 0 ? name : ""
+    text: index === 0 ? name : "",
+    source_type: sourceType || undefined
   }));
+}
+
+export async function buildProviderCatalogImport({
+  provider = "topps",
+  sourceType = "",
+  category = "",
+  sourceUrls = [],
+  indexUrl = "",
+  fetchImpl = globalThis.fetch,
+  preferBasketballTopps = false
+} = {}) {
+  const resolvedIndexUrl = indexUrl || officialCatalogSourceProfile(provider).default_index_url;
+  const importOptions = {
+    fetchImpl,
+    sourceUrls,
+    indexUrl: resolvedIndexUrl,
+    provider,
+    sourceType,
+    category,
+    pdfExtractor: extractPdfText
+  };
+  if (provider === "topps" && category === "basketball" && preferBasketballTopps) {
+    return buildToppsBasketballChecklistImport(importOptions);
+  }
+  const adapterReport = await buildOfficialCatalogImportReport(importOptions);
+  return adapterReport.raw;
 }
 
 export async function importToppsBasketballChecklists({
@@ -384,24 +442,24 @@ export async function importToppsBasketballChecklists({
   const allTopps = hasFlag(argv, "--all-topps");
   const category = normalizeText(argValue(argv, "--category", runtimeEnv.OFFICIAL_CHECKLIST_CATEGORY || (allTopps ? "all" : "basketball")));
   const importSource = `${provider}_official_checklist`;
-  const sourceUrls = sourceUrlsFromArgs(argv, runtimeEnv, provider);
+  const sourceUrls = sourceUrlsFromArgs(argv, runtimeEnv, provider, sourceType);
   const defaultIndexUrl = defaultOfficialChecklistIndexUrls[provider] || defaultOfficialChecklistIndexUrls.topps;
   const indexUrl = argValue(argv, "--index-url", runtimeEnv.OFFICIAL_CHECKLIST_INDEX_URL || runtimeEnv.TOPPS_CHECKLIST_INDEX_URL || defaultIndexUrl);
   const apply = hasFlag(argv, "--apply");
   const outPath = argValue(argv, "--out", "");
 
-  const importOptions = {
+  if (sourceType && !isOfficialCatalogSourceType(sourceType)) {
+    throw new Error(`catalog_source_type_not_official:${provider}:${sourceType}`);
+  }
+  const importReport = await buildProviderCatalogImport({
     fetchImpl,
     sourceUrls,
     indexUrl,
     provider,
     sourceType,
     category: category === "all" ? "" : category,
-    pdfExtractor: extractPdfText
-  };
-  const importReport = provider === "topps" && category === "basketball" && !allTopps
-    ? await buildToppsBasketballChecklistImport(importOptions)
-    : await buildOfficialChecklistImport(importOptions);
+    preferBasketballTopps: provider === "topps" && category === "basketball" && !allTopps
+  });
 
   const summary = {
     schema_version: "official-checklist-import-report",
@@ -424,6 +482,7 @@ export async function importToppsBasketballChecklists({
     refreshed_source_count: 0,
     recovered_partial_source_count: 0,
     skipped_missing_product_count: 0,
+    skipped_review_required_count: 0,
     metrics: importReport.metrics
   };
 
@@ -473,6 +532,8 @@ export async function importToppsBasketballChecklists({
   }
 
   for (const [sourceId, rows] of rowsBySource.entries()) {
+    const decisionRows = rows.filter(decisionEligibleOfficialRow);
+    summary.skipped_review_required_count += rows.length - decisionRows.length;
     if (apply && existingSourceById.has(sourceId)) {
       const existing = existingSourceById.get(sourceId);
       const incoming = sourceById.get(sourceId);
@@ -481,9 +542,12 @@ export async function importToppsBasketballChecklists({
         && existing.raw_checksum === incoming?.raw_checksum;
       const parserMatches = Boolean(existing.parser_version)
         && existing.parser_version === incoming?.parser_version;
-      if (checksumMatches && parserMatches && state.card_count === rows.length) {
+      if (checksumMatches
+        && parserMatches
+        && state.card_count === decisionRows.length
+        && state.staging_count === rows.length) {
         summary.verified_existing_source_count += 1;
-        summary.skipped_existing_card_source_count += rows.length;
+        summary.skipped_existing_card_source_count += decisionRows.length;
         continue;
       }
       if (existing.source_status === "REVIEWED_INTERNAL" || state.reviewed_row_count > 0) {
@@ -492,7 +556,8 @@ export async function importToppsBasketballChecklists({
       await clearReplaceableSourceRows({ env: runtimeEnv, sourceId, fetchImpl });
       await refreshOfficialSource({ env: runtimeEnv, sourceId, source: incoming, fetchImpl });
       summary.refreshed_source_count += 1;
-      if (state.card_count > 0 && state.card_count !== rows.length) {
+      if ((state.card_count > 0 && state.card_count !== decisionRows.length)
+        || (state.staging_count > 0 && state.staging_count !== rows.length)) {
         summary.recovered_partial_source_count += 1;
       }
     }
@@ -500,9 +565,9 @@ export async function importToppsBasketballChecklists({
     if (!apply) {
       const dryRunProducts = new Set();
       const dryRunSets = new Set();
-      for (const row of rows) {
+      for (const row of rows) summary.inserted_staging_count += 1;
+      for (const row of decisionRows) {
         const identityFields = row.identity_fields || {};
-        summary.inserted_staging_count += 1;
         if (!identityFields.product) {
           summary.skipped_missing_product_count += 1;
           continue;
@@ -529,7 +594,9 @@ export async function importToppsBasketballChecklists({
       source_trust: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_trust || "OFFICIAL_CHECKLIST_CANDIDATE",
       raw_checksum: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.raw_checksum || null,
       source_url: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_url || null,
-      source_title: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_name || null,
+      source_title: importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_name
+        || importReport.sources.find((source) => sourceIdByUrl.get(source.source_url) === sourceId)?.source_title
+        || null,
       source_id: sourceId
     }));
     for (const batch of chunks(stagingRows)) {
@@ -546,7 +613,7 @@ export async function importToppsBasketballChecklists({
 
     const productIds = new Map();
     const productFields = new Map();
-    for (const row of rows) {
+    for (const row of decisionRows) {
       const identityFields = row.identity_fields || {};
       if (!identityFields.product) {
         summary.skipped_missing_product_count += 1;
@@ -573,7 +640,7 @@ export async function importToppsBasketballChecklists({
 
     const setIds = new Map();
     const setFields = new Map();
-    for (const row of rows) {
+    for (const row of decisionRows) {
       const identityFields = row.identity_fields || {};
       const productId = productIds.get(productKey(identityFields));
       if (!productId) continue;
@@ -597,7 +664,7 @@ export async function importToppsBasketballChecklists({
       }
     }
 
-    const cards = rows
+    const cards = decisionRows
       .map((row) => {
         const identityFields = row.identity_fields || {};
         const productId = productIds.get(productKey(identityFields));

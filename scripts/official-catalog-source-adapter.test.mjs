@@ -190,8 +190,8 @@ import {
   const onePiece = createOfficialCatalogSourceAdapter({
     provider: "one_piece",
     fetchImpl: async () => new Response(`
-      <div>OP01-001 Monkey D. Luffy Leader Super Rare Red Straw Hat Crew</div>
-      <div>OP01-002 Trafalgar Law Character Rare Green</div>
+      <dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
+      <dl class="modalCol" id="OP01-002"><dt><div class="infoCol"><span>OP01-002</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Trafalgar Law</div></dt><dd><img data-src="../images/cardlist/card/OP01-002.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
     `, {
       status: 200,
       headers: { "content-type": "text/html" }
@@ -212,6 +212,7 @@ import {
   assert.equal(report.metrics.rarity_count >= 1, true);
   assert.equal(Object.hasOwn(report.metrics, "parser_confidence_distribution"), true);
   assert.equal(Object.hasOwn(report.metrics, "image_reference_count"), true);
+  assert.equal(report.raw.staging[0].staging.identity_fields.card_name, "Roronoa Zoro");
   assert.equal(report.raw.staging[0].staging.physical_instance_fields.card_grade, undefined);
   assert.equal(report.raw.staging[0].staging.source_trust, "OFFICIAL_CHECKLIST_CANDIDATE");
 }
