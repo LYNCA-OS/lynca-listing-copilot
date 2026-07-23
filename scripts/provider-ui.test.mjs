@@ -66,6 +66,8 @@ assert.doesNotMatch(js, /GPT-4\.1 mini 生产主路径/, "provider role text mus
 assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs with bounded transient recovery");
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-verify-upload"/, "uploaded objects should retry transient verification in place");
+assert.match(js, /uploadOriginalAssetImagesBatch/, "paired originals should share one signing and one verification request");
+assert.match(js, /images:\s*pending\.map/, "paired original signing and verification should use bounded batch payloads");
 assert.match(js, /const STORAGE_VERIFY_TIMEOUT_MS = 20000/, "verification should have a stage-specific tail cap");
 assert.match(js, /const STORAGE_VERIFY_RETRY_DELAYS_MS = Object\.freeze\(\[250, 1000\]\)/, "verification redundancy must stay bounded and avoid retry storms");
 assert.match(js, /pendingStorageVerification/, "an uploaded object must retain its verification descriptor until persistence succeeds");
