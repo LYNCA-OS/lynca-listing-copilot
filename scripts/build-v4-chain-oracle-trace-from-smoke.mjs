@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { v4ChainOracleTraceSchemaVersion } from "../lib/listing/evaluation/v4-chain-oracle-audit.mjs";
+import { stageTraceContractVersion } from "../lib/listing/evaluation/stage-trace-coverage.mjs";
 
 function cleanText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -140,6 +141,62 @@ function applicationDecisions(debug = {}) {
   })).filter((row) => row.field);
 }
 
+function reasonCode(value, fallback) {
+  const normalized = cleanText(value).toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || fallback;
+}
+
+function buildStageTrace(result = {}, { applications, outputPresence }) {
+  const contract = result.v4_pipeline_contract || {};
+  const sourceStages = new Map((contract.stages || []).map((stage) => [stage.stage_id, stage]));
+  const contractVersion = cleanText(contract.schema_version);
+  const policyVersion = cleanText(contract.strategy_profile?.policy_version);
+  const inputVersion = contractVersion ? `${contractVersion}${policyVersion ? `:${policyVersion}` : ""}` : null;
+  const mappings = [
+    ["observation", "observation", outputPresence.observation],
+    ["evidence", "preingestion_evidence", outputPresence.evidence],
+    ["retrieval", "retrieval", outputPresence.retrieval],
+    ["selection", "candidate_decision", outputPresence.selection],
+    ["application", "candidate_decision", outputPresence.application],
+    ["resolver", "field_resolution", outputPresence.resolver],
+    ["renderer", "renderer", outputPresence.renderer]
+  ];
+  return mappings.map(([stage, sourceStageId, outputProduced]) => {
+    const source = sourceStages.get(sourceStageId) || {};
+    const stageImplementationVersion = cleanText(
+      source.metrics?.heuristic_version || source.metrics?.model || source.execution_mode
+    );
+    const status = cleanText(source.status).toUpperCase() || "FAILED";
+    const fallback = status === "COMPLETED"
+      ? (outputProduced ? null : `${stage.toUpperCase()}_OUTPUT_EMPTY`)
+      : `${stage.toUpperCase()}_${status || "NOT_RECORDED"}`;
+    const droppedFields = stage === "application"
+      ? applications.filter((decision) => decision.applied !== true).map((decision) => ({
+        field: decision.field,
+        reason_code: reasonCode(
+          decision.reason || decision.application_plan_reason || decision.outcome,
+          "APPLICATION_POLICY_BLOCKED"
+        )
+      }))
+      : [];
+    return {
+      contract_version: stageTraceContractVersion,
+      stage,
+      owner: source.owner || contract.owners?.[sourceStageId] || null,
+      status,
+      input_version: inputVersion
+        ? `${inputVersion}${stageImplementationVersion ? `:${stageImplementationVersion}` : ""}`
+        : null,
+      output_produced: outputProduced,
+      output_persisted: outputProduced,
+      persistence_scope: "ORACLE_TRACE_ARTIFACT",
+      reason_code: reasonCode(source.reason, fallback),
+      dropped_fields: droppedFields,
+      final_decision_owner: stage === "renderer" ? (source.owner || contract.owners?.renderer || null) : null
+    };
+  });
+}
+
 export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations = {}) {
   const ocrById = new Map(rows(ocrObservations).map((row) => [cleanText(row.query_card_id).toLowerCase(), row]));
   const resultByCardId = new Map();
@@ -164,18 +221,37 @@ export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations =
     const debug = result.l2_candidate_debug || {};
     const nativeSensorEvidence = Array.isArray(ledger.sensor_evidence) ? ledger.sensor_evidence : [];
     const fieldFlowEvidence = nativeSensorEvidence.length ? [] : providerFieldFlowEvidence(ledger);
+    const evidence = [
+      ...nativeSensorEvidence,
+      ...fieldFlowEvidence,
+      ...embeddedOcrEvidence(result),
+      ...(ocrById.get(cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id).toLowerCase())?.observations || [])
+    ];
+    const candidates = retrievalCandidates(debug);
+    const selectedCandidateId = cleanText(debug.selected_candidate_id || debug.selected_candidate_decision?.selected_candidate_id);
+    const applications = applicationDecisions(debug);
+    const resolver = result.resolved_fields || {};
+    const renderer = renderedFields(ledger);
+    const outputPresence = {
+      observation: Boolean(nativeSensorEvidence.length
+        || (ledger.field_flow?.fields || []).some((field) => field.raw_provider_present === true)),
+      evidence: Boolean(nativeSensorEvidence.length
+        || fieldFlowEvidence.length
+        || embeddedOcrEvidence(result).length
+        || ocrById.has(cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id).toLowerCase())),
+      retrieval: Array.isArray(debug.candidate_application_trace),
+      selection: Boolean(selectedCandidateId || debug.selected_candidate_decision),
+      application: Array.isArray(debug.retrieval_application?.decisions),
+      resolver: Object.hasOwn(result, "resolved_fields"),
+      renderer: Array.isArray(ledger.field_flow?.fields)
+    };
     return {
       query_card_id: cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id),
       recognition_ok: result.ok === true,
       recognition_error: result.ok === true ? null : cleanText(result.error).slice(0, 240),
-      evidence_observations: [
-        ...nativeSensorEvidence,
-        ...fieldFlowEvidence,
-        ...embeddedOcrEvidence(result),
-        ...(ocrById.get(cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id).toLowerCase())?.observations || [])
-      ],
-      retrieval_candidates: retrievalCandidates(debug),
-      selected_candidate_id: cleanText(debug.selected_candidate_id || debug.selected_candidate_decision?.selected_candidate_id),
+      evidence_observations: evidence,
+      retrieval_candidates: candidates,
+      selected_candidate_id: selectedCandidateId,
       selected_candidate_group_ids: [
         ...new Set([
           debug.selected_candidate_id,
@@ -185,11 +261,21 @@ export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations =
             : [])
         ].map(cleanText).filter(Boolean))
       ],
-      application_decisions: applicationDecisions(debug),
-      resolver_fields: result.resolved_fields || {},
-      renderer_fields: renderedFields(ledger),
+      application_decisions: applications,
+      resolver_fields: resolver,
+      renderer_fields: renderer,
+      stage_trace: buildStageTrace(result, {
+        applications,
+        outputPresence
+      }),
       instrumentation: {
         recognition_profile: result.recognition_profile || null,
+        pipeline_contract_status: result.v4_pipeline_contract?.contract_status || null,
+        pipeline_contract_violations: (result.v4_pipeline_contract?.violations || []).map((violation) => ({
+          code: violation.code || "UNKNOWN",
+          severity: violation.severity || "UNKNOWN",
+          owner: violation.owner || null
+        })),
         pipeline_missing_required_node_count: ledger.coverage?.missing_required_node_count ?? null,
         sensor_evidence_instrumented: nativeSensorEvidence.length > 0 || fieldFlowEvidence.length > 0,
         sensor_evidence_mode: nativeSensorEvidence.length
@@ -197,7 +283,7 @@ export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations =
           : fieldFlowEvidence.length
             ? "provider_field_flow_fallback"
             : "missing",
-        retrieval_candidate_count: retrievalCandidates(debug).length,
+        retrieval_candidate_count: candidates.length,
         application_decision_count: debug.retrieval_application?.decisions?.length || 0
       }
     };

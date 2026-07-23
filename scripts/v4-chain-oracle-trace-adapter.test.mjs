@@ -4,6 +4,19 @@ import { buildV4ChainOracleTraceFromSmoke } from "./build-v4-chain-oracle-trace-
 const trace = buildV4ChainOracleTraceFromSmoke([{ results: [{
   source_feedback_id: "card-1",
   ok: true,
+  v4_pipeline_contract: {
+    schema_version: "v4-native-pipeline-contract-v2",
+    strategy_profile: { policy_version: "test-v1" },
+    owners: { renderer: "DETERMINISTIC_RENDERER" },
+    stages: [
+      { stage_id: "preingestion_evidence", owner: "PREINGESTION_EVIDENCE", status: "COMPLETED" },
+      { stage_id: "observation", owner: "PROVIDER_OBSERVATION", status: "COMPLETED" },
+      { stage_id: "retrieval", owner: "RETRIEVAL_ORCHESTRATOR", status: "COMPLETED" },
+      { stage_id: "candidate_decision", owner: "CANDIDATE_CONTROL_PLANE", status: "COMPLETED" },
+      { stage_id: "field_resolution", owner: "IDENTITY_RESOLUTION", status: "COMPLETED" },
+      { stage_id: "renderer", owner: "DETERMINISTIC_RENDERER", status: "COMPLETED" }
+    ]
+  },
   resolved_fields: { year: "2024" },
   l2_status: {
     preingestion_ocr_rendezvous: {
@@ -62,6 +75,10 @@ assert.equal(trace.cards[0].application_decisions[0].application_plan_reason, "t
 assert.deepEqual(trace.cards[0].selected_candidate_group_ids, ["candidate-a", "candidate-a-sibling"]);
 assert.equal(trace.cards[0].renderer_fields.year, "2024");
 assert.equal(trace.cards[0].instrumentation.sensor_evidence_instrumented, true);
+assert.equal(trace.cards[0].stage_trace.length, 7);
+assert.equal(trace.cards[0].stage_trace[0].input_version, "v4-native-pipeline-contract-v2:test-v1");
+assert.equal(trace.cards[0].stage_trace[6].final_decision_owner, "DETERMINISTIC_RENDERER");
+assert.deepEqual(trace.cards[0].instrumentation.pipeline_contract_violations, []);
 
 const fieldFlowFallback = buildV4ChainOracleTraceFromSmoke([{ results: [{
   source_feedback_id: "card-2",
