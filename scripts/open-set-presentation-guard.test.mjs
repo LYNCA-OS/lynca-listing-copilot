@@ -354,6 +354,34 @@ assert.equal(oracleVisualHypothesisGuarded.writer_review_suggestions.parallel_ex
 assert.doesNotMatch(oracleVisualHypothesisGuarded.final_title, /Geometric/i, "Oracle title must not consume writer review suggestions");
 assert.equal(oracleVisualHypothesisGuarded.rendered_fields.parallel_exact, null);
 
+const finalizerDoesNotResurrectRejectedFacsimileAuto = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  title: "2025 Topps Chrome Shohei Ohtani",
+  confidence: "HIGH",
+  raw_provider_fields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    auto: true,
+    observable_components: ["auto"]
+  },
+  resolved_fields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    auto: false,
+    observable_components: []
+  },
+  provider_field_rejections: [{
+    field: "auto",
+    value: true,
+    reason: "auto_not_directly_supported_by_current_image"
+  }]
+}, { maxTitleLength: 80 });
+assert.equal(finalizerDoesNotResurrectRejectedFacsimileAuto.resolved_fields.auto, false);
+assert.doesNotMatch(finalizerDoesNotResurrectRejectedFacsimileAuto.title, /\bAuto\b/i);
+
 const weakVisualHypothesisGuarded = applyOpenSetAssistShadowPresentationGuard({
   ...shadowResult({
     title: "2025-26 Topps Finest Cooper Flagg Yellow Geometric",
