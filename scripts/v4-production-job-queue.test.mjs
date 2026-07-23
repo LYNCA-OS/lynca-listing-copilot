@@ -49,6 +49,15 @@ assert.equal(
 assert.equal(v4QueueDeploymentAffinity({ VERCEL_ENV: "production", VERCEL_DEPLOYMENT_ID: "dpl_prod" }), null);
 assert.equal(v4QueueDeploymentAffinity({ VERCEL_ENV: "preview", VERCEL_DEPLOYMENT_ID: "missing-prefix" }), null);
 assert.equal(v4QueueDeploymentAffinity({ VERCEL_ENV: "preview", VERCEL_DEPLOYMENT_ID: "dpl_Preview123" }), "dpl_Preview123");
+assert.equal(v4QueueDeploymentAffinity({
+  VERCEL_ENV: "preview",
+  VERCEL_DEPLOYMENT_ID: "dpl_Preview123",
+  V4_QUEUE_PREVIEW_AFFINITY: "preview:writer-assisted-v1:chain-v4"
+}), "preview:writer-assisted-v1:chain-v4");
+assert.equal(v4QueueDeploymentAffinity({
+  VERCEL_ENV: "production",
+  V4_QUEUE_PREVIEW_AFFINITY: "preview:writer-assisted-v1:chain-v4"
+}), null, "a Preview compatibility affinity must never admit production jobs");
 assert.equal(
   v4QueueSubmissionConcurrency({ V4_QUEUE_SUBMISSION_CONCURRENCY: "6" }),
   2,

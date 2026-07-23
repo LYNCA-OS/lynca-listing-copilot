@@ -345,6 +345,7 @@ and delete the flag.
 | `V4_QUEUE_GLOBAL_DRAIN_ENABLED` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_QUEUE_KICK_DEDUP_MS` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_QUEUE_MAX_JOBS_PER_REQUEST` | api/v4/listing-job-enqueue.js |
+| `V4_QUEUE_PREVIEW_AFFINITY` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_QUEUE_SUBMISSION_CONCURRENCY` | lib/listing/v4/jobs/production-job-queue.mjs |
 | `V4_SUPABASE_PATCH_TIMEOUT_MS` | lib/listing/v4/session/supabase-rest.mjs |
 | `V4_SUPABASE_READ_ATTEMPTS` | lib/listing/v4/session/supabase-rest.mjs |
