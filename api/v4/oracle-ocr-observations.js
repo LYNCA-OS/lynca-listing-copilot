@@ -67,7 +67,32 @@ async function persistedAuditPatchesForAsset(assetId, tenantId, env = process.en
   if (!response.ok) throw new Error(`oracle_ocr_bundle_read_${response.status}`);
   const rows = await response.json();
   const patches = Array.isArray(rows?.[0]?.evidence_patches) ? rows[0].evidence_patches : [];
-  return patches.filter((patch) => patch?.field === "ocr_raw_observation");
+  return patches;
+}
+
+function persistedStructuredPatch(patch = {}) {
+  return {
+    field: cleanText(patch.field || patch.evidence_field) || null,
+    value: cleanText(patch.value || patch.normalized_value) || null,
+    confidence: patch.confidence ?? null,
+    source_type: cleanText(patch.source_type) || null,
+    source_image_id: cleanText(patch.source_image_id) || null,
+    provenance: {
+      crop_type: cleanText(patch.provenance?.crop_type) || null,
+      source_region: cleanText(patch.provenance?.source_region) || null,
+      source_side: cleanText(patch.provenance?.source_side) || null,
+      direct_extraction_method: cleanText(patch.provenance?.direct_extraction_method) || null,
+      model_id: cleanText(patch.provenance?.model_id) || null,
+      model_revision: cleanText(patch.provenance?.model_revision) || null
+    },
+    text_candidates: (Array.isArray(patch.text_candidates) ? patch.text_candidates : [])
+      .slice(0, 40)
+      .map((candidate) => ({
+        value: cleanText(candidate?.value || candidate?.text).slice(0, 160),
+        confidence: candidate?.confidence ?? null,
+        ocr_pass: cleanText(candidate?.ocr_pass || candidate?.ocrPass) || null
+      }))
+  };
 }
 
 function persistedObservation(patch = {}) {
@@ -143,11 +168,15 @@ export default async function handler(req, res) {
     if (!client.configured || !client.config?.enabled) throw new Error("oracle_ocr_worker_unconfigured");
     const output = await mapWithConcurrency(cards, 2, async (card) => {
       const jobs = await jobsForAsset(cleanText(card.asset_id), context.tenantId);
-      const persisted = await persistedAuditPatchesForAsset(cleanText(card.asset_id), context.tenantId);
-      if (persisted.length) {
+      const persistedPatches = await persistedAuditPatchesForAsset(cleanText(card.asset_id), context.tenantId);
+      const persisted = persistedPatches.filter((patch) => patch?.field === "ocr_raw_observation");
+      if (persistedPatches.length) {
         return {
           query_card_id: cleanText(card.query_card_id),
-          observations: persisted.map(persistedObservation)
+          observations: persisted.map(persistedObservation),
+          structured_patches: persistedPatches
+            .filter((patch) => patch?.field !== "ocr_raw_observation")
+            .map(persistedStructuredPatch)
         };
       }
       const observations = await mapWithConcurrency(jobs, 2, async (job) => {
