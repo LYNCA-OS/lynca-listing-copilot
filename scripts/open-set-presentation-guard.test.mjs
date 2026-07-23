@@ -342,6 +342,18 @@ assert.match(visualHypothesisGuarded.final_title, /\bYellow Geometric\b/i);
 assert.equal(visualHypothesisGuarded.modules.print_finish.status, "REVIEW");
 assert.equal(visualHypothesisGuarded.modules.print_finish.requires_review, true);
 
+const oracleVisualHypothesisGuarded = applyOpenSetAssistShadowPresentationGuard({
+  ...visualHypothesisGuarded,
+  evaluation_profile: "v4_accuracy_ceiling_oracle_v1",
+  title: "2025-26 Topps Finest Cooper Flagg Yellow Geometric",
+  final_title: "2025-26 Topps Finest Cooper Flagg Yellow Geometric",
+  rendered_title: "2025-26 Topps Finest Cooper Flagg Yellow Geometric"
+}, { maxTitleLength: 80, evaluation_profile: "v4_accuracy_ceiling_oracle_v1" });
+assert.equal(oracleVisualHypothesisGuarded.open_set_presentation_guard.action, "kept_visual_parallel_as_review_metadata_only");
+assert.equal(oracleVisualHypothesisGuarded.writer_review_suggestions.parallel_exact.value, "Yellow Geometric");
+assert.doesNotMatch(oracleVisualHypothesisGuarded.final_title, /Geometric/i, "Oracle title must not consume writer review suggestions");
+assert.equal(oracleVisualHypothesisGuarded.rendered_fields.parallel_exact, null);
+
 const weakVisualHypothesisGuarded = applyOpenSetAssistShadowPresentationGuard({
   ...shadowResult({
     title: "2025-26 Topps Finest Cooper Flagg Yellow Geometric",

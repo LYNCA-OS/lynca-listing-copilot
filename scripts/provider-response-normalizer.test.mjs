@@ -13,6 +13,7 @@ import {
 } from "../lib/listing/providers/openai-emergency-provider.mjs";
 import { resolvedFieldNames } from "../lib/listing/evidence/evidence-schema.mjs";
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
+import { sanitizeIdentityCardNameValue } from "../lib/listing/pipeline/text.mjs";
 
 const schema = JSON.parse(await readFile("lib/listing/schemas/provider-evidence-response.schema.json", "utf8"));
 assert.equal(schema.title, "Listing ProviderEvidenceResponse");
@@ -477,6 +478,9 @@ const parenthesizedFacsimileSignedImage = validateProviderEvidencePayload("opena
   unresolved: []
 });
 assert.equal(parenthesizedFacsimileSignedImage.fields.card_name, null);
+assert.equal(sanitizeIdentityCardNameValue("(not provided)"), null);
+assert.equal(sanitizeIdentityCardNameValue("Unknown"), null);
+assert.equal(sanitizeIdentityCardNameValue("N/A"), null);
 
 const unsupportedVisualParallel = validateProviderEvidencePayload("openai_legacy", {
   fields: { surface_color: "Red", parallel_family: "Refractor" },

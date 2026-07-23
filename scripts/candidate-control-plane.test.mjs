@@ -1381,9 +1381,13 @@ function testCardDomainRerankerOwnsOracleSelectionOnly() {
   );
   assert.equal(trustedCatalogWriter.selected_candidate_decision.selected_candidate_id, "catalog-domain-a");
 
+  const ambiguousCandidate = {
+    ...candidates[0],
+    fields: { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"] }
+  };
   const ambiguousPacket = packet([
-    candidates[0],
-    { ...candidates[0], candidate_id: "catalog-domain-a-tie", candidate_identity_id: "identity-domain-a-tie" }
+    ambiguousCandidate,
+    { ...ambiguousCandidate, candidate_id: "catalog-domain-a-tie", candidate_identity_id: "identity-domain-a-tie" }
   ], {
     raw_candidate_count: 2,
     approved_candidate_count: 2,
@@ -1398,6 +1402,19 @@ function testCardDomainRerankerOwnsOracleSelectionOnly() {
     ambiguousWriter.selected_candidate_decision.selection_owner,
     "card_domain_reranker_trusted_catalog_v1",
     "equal domain candidates must remain fail-closed"
+  );
+  const ambiguousOracle = buildCandidateSelectionPass({
+    result: {
+      evaluation_profile: "v4_accuracy_ceiling_oracle_v1",
+      resolved_fields: { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"] },
+      catalog_candidate_packet: ambiguousPacket
+    },
+    diagnosticCandidateLimit: 20
+  });
+  assert.notEqual(
+    ambiguousOracle.selected_candidate_decision.selection_owner,
+    "card_domain_reranker_oracle_v1",
+    "Oracle must report a zero-margin selection failure instead of choosing an arbitrary label"
   );
 }
 
