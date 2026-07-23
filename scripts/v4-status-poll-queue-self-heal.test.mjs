@@ -61,7 +61,7 @@ const backendRecovery = triggerStatusBackendRecovery({
   tenantId: "tenant-a",
   nowMs,
   env: { V4_JOB_WORKER_SECRET: "secret", V4_INTERNAL_BASE_URL: "https://listing.example.test" },
-  acquireKick: async () => ({ ok: false, error: "v4_supabase_timeout" }),
+  acquireKick: async () => ({ ok: true, acquired: true }),
   fetchImpl: async (url, init) => {
     request = { url, body: JSON.parse(init.body) };
     return { ok: true, status: 202, json: async () => ({ ok: true, accepted: true }) };
@@ -75,4 +75,21 @@ assert.equal(request.body.self_heal_source_tenant_id, "tenant-a");
 assert.equal(request.body.parallel_lanes, false);
 assert.equal(request.body.cycles, 30);
 assert.equal(request.body.max_continuation_depth, 0);
+
+scheduled = null;
+request = null;
+triggerStatusBackendRecovery({
+  tenantId: "tenant-a",
+  nowMs,
+  env: { V4_JOB_WORKER_SECRET: "secret", V4_INTERNAL_BASE_URL: "https://listing.example.test" },
+  acquireKick: async () => ({ ok: false, error: "v4_supabase_timeout" }),
+  fetchImpl: async () => {
+    request = { unexpected: true };
+    return { ok: true, status: 202, json: async () => ({ ok: true }) };
+  },
+  defer: (promise) => { scheduled = promise; }
+});
+const suppressedRecovery = await scheduled;
+assert.equal(request, null, "a status outage must not amplify a failed database lock into another pump");
+assert.equal(suppressedRecovery.reason, "wake_dedup_backend_unavailable");
 console.log("v4 status poll queue self-heal tests passed");
