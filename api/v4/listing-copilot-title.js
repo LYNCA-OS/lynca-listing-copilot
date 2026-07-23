@@ -444,6 +444,22 @@ export function backgroundPayloadWithL1ResolvedHint(payload = {}, l1Result = nul
   };
 }
 
+export function payloadWithReusableSignedScoutImages(payload = {}, signedImages = []) {
+  const reusable = new Map((Array.isArray(signedImages) ? signedImages : [])
+    .map((image) => [String(image.object_path || image.objectPath || "").trim(), image.signed_url || image.signedUrl || ""])
+    .filter(([objectPath, signedUrl]) => objectPath && signedUrl));
+  if (!reusable.size || !Array.isArray(payload.images)) return payload;
+  let reusedCount = 0;
+  const images = payload.images.map((image) => {
+    const objectPath = String(image.objectPath || image.object_path || image.storagePath || image.storage_path || "").trim();
+    const signedUrl = reusable.get(objectPath);
+    if (!signedUrl || image.signedUrl || image.signed_url) return image;
+    reusedCount += 1;
+    return { ...image, signedUrl };
+  });
+  return reusedCount > 0 ? { ...payload, images } : payload;
+}
+
 function catalogPromptCountFromTrace(trace = {}) {
   return Number(trace.catalog_activation_funnel?.prompt_candidate_count || 0);
 }
@@ -1975,6 +1991,7 @@ export default async function handler(req, res) {
   // the 30-40s full observation entirely - the scout runs from cache/prewarm,
   // the finalize race is bounded, and anything short of a unique exact-code
   // agreement falls through to the normal L2 call unchanged.
+  let l2ScoutSignedImages = [];
   if (forceL2Direct && Array.isArray(payload.images) && payload.images.length > 0
     && payload.disable_exact_anchor_finalize !== true) {
     const allowBlockingScout = l2ExactAnchorBlockingScoutAllowed(payload, process.env);
@@ -1989,6 +2006,9 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch,
         signal: req.signal || null,
         allowProviderCall: allowBlockingScout,
+        onSignedImages: (signedImages) => {
+          l2ScoutSignedImages = Array.isArray(signedImages) ? signedImages : [];
+        },
         requestContext: openAiRequestContextFromV4Payload(payload, {
           providerCallPurpose: "l2_direct_exact_anchor_scout",
           titleStage: v4TitleStages.L1_INTERNAL_SCOUT
@@ -2079,7 +2099,10 @@ export default async function handler(req, res) {
   // that observation into full L2 so the primary model confirms and completes
   // known fields instead of starting from zero. It remains a non-authoritative
   // hint: the L2 prompt requires current-image evidence for every copied value.
-  const l2Payload = backgroundPayloadWithL1ResolvedHint(payload, l2ScoutResult);
+  const l2Payload = payloadWithReusableSignedScoutImages(
+    backgroundPayloadWithL1ResolvedHint(payload, l2ScoutResult),
+    l2ScoutSignedImages
+  );
   const modelRequiresFullL2Options = shouldSkipFastScoutForRequestedModel(l2Payload, process.env);
   const progressiveProviderOptions = forceL2Direct || modelRequiresFullL2Options
     ? providerOptionsForV4BackgroundL2({ payload: l2Payload, routePlan })

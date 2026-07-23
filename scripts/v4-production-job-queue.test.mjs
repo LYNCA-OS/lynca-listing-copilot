@@ -29,6 +29,7 @@ import {
   runWithV4JobLeaseHeartbeat,
   v4JobFailureCode
 } from "../api/v4/listing-job-worker.js";
+import { payloadWithReusableSignedScoutImages } from "../api/v4/listing-copilot-title.js";
 import {
   authorizeFreshManualRetryJobs,
   canonicalizeQueueJobs,
@@ -40,6 +41,15 @@ import { isV4CronRequest, isV4WorkerRequest, workerSecretHeader } from "../lib/l
 import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/session/session-store.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
+
+const reusableSignedPayload = payloadWithReusableSignedScoutImages({
+  images: [
+    { object_path: "tenant/asset/front.jpg", storage_verified: true },
+    { object_path: "tenant/asset/back.jpg", storage_verified: true }
+  ]
+}, [{ object_path: "tenant/asset/front.jpg", signed_url: "https://signed.example/front" }]);
+assert.equal(reusableSignedPayload.images[0].signedUrl, "https://signed.example/front");
+assert.equal(reusableSignedPayload.images[1].signedUrl, undefined);
 
 assert.equal(
   v4QueueSubmissionConcurrency({}),
