@@ -46,6 +46,7 @@ export function renderV4ChainOracleReport(report) {
     "",
     "- Writer-approved title is commercial title truth; parser output remains a prefill/proxy until field review or trusted-source promotion.",
     "- Retrieval scoring requires a sealed identity id. Missing identity labels are excluded, never guessed from the evaluation title.",
+    "- Selecting a sealed same-feedback catalog record marks the trace contaminated and excludes its downstream application metrics.",
     "- Renderer Fidelity consumes emitted SEM trace fields, not a second parse of the final title; this prevents same-parser correlated error.",
     "- This audit is offline-only and does not change production strategy or chain routing.",
     ""

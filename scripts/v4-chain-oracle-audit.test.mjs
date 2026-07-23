@@ -133,6 +133,38 @@ const trustedPromotion = evaluateV4ChainOracleAudit({
 assert.equal(trustedPromotion.status, "COMPLETED");
 assert.equal(trustedPromotion.truth_policy.formal_oracle_eligible, true);
 
+const sealedSelfContamination = evaluateV4ChainOracleAudit({
+  dataset: {
+    ...dataset,
+    items: [{
+      ...dataset.items[0],
+      card_identity_id: null,
+      retrieval_ground_truth: {
+        accepted_candidate_ids: ["independent-identity"],
+        sealed_source_candidate_ids: ["self-identity"]
+      }
+    }]
+  },
+  trace: {
+    cards: [{
+      ...trace.cards[0],
+      retrieval_candidates: [
+        { candidate_id: "self", identity_id: "self-identity", rank: 1, fields: { year: "2024" } },
+        { candidate_id: "independent", identity_id: "independent-identity", rank: 2, fields: { year: "2024" } }
+      ],
+      selected_candidate_id: "self"
+    }]
+  }
+});
+assert.equal(sealedSelfContamination.status, "CONTAMINATED");
+assert.equal(sealedSelfContamination.truth_policy.trace_formal_oracle_eligible, false);
+assert.equal(sealedSelfContamination.data_quality.sealed_source_candidate_retrieved_card_count, 1);
+assert.equal(sealedSelfContamination.data_quality.sealed_source_candidate_selected_card_count, 1);
+assert.equal(sealedSelfContamination.metrics.selection_accuracy_given_retrieved_at_20.denominator, 1);
+assert.equal(sealedSelfContamination.metrics.selection_accuracy_given_retrieved_at_20.numerator, 0);
+assert.equal(sealedSelfContamination.metrics.safe_application_precision.denominator, 0);
+assert.equal(sealedSelfContamination.cards[0].sealed_source_candidate_selected, true);
+
 const missingTrace = evaluateV4ChainOracleAudit({ dataset, trace: { cards: [] } });
 assert.equal(missingTrace.metrics.evidence_oracle_recall.rate, null);
 assert.equal(missingTrace.metrics.retrieval_recall_at_20.rate, null);
