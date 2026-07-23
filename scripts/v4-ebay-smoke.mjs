@@ -463,6 +463,144 @@ async function uploadDurableSmokeImage({
   };
 }
 
+async function uploadDurableSmokeImagesBatch({ baseUrl, cookie, asset, images, requestTimeoutMs, fetchImpl = globalThis.fetch }) {
+  const prepared = await Promise.all(images.map(async (image) => {
+    const bytes = await readFile(resolve(image.local_path));
+    const contentType = inferredImageContentType(image, bytes);
+    return {
+      image,
+      bytes,
+      contentType,
+      contentSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+      signatureHex: bytes.subarray(0, 32).toString("hex"),
+      fileName: basename(image.local_path) || `${image.image_id}.jpg`
+    };
+  }));
+  const signedStartedAt = Date.now();
+  const signed = await postJson({
+    baseUrl,
+    path: "/api/listing-image-upload-url",
+    cookie,
+    payload: {
+      assetId: asset.asset_id,
+      clientAssetRef: asset.client_asset_ref,
+      images: prepared.map((row) => ({
+        imageId: row.image.image_id,
+        role: row.image.storage_role,
+        fileName: row.fileName,
+        contentType: row.contentType,
+        size: row.bytes.byteLength,
+        width: Number(row.image.width),
+        height: Number(row.image.height),
+        signatureHex: row.signatureHex,
+        contentSha256: row.contentSha256
+      }))
+    },
+    requestTimeoutMs,
+    fetchImpl,
+    maxAttempts: 5
+  });
+  if (!signed.ok || signed.data?.ok !== true || !Array.isArray(signed.data?.uploads)) {
+    throw new Error(`smoke_batch_upload_sign_failed:${signed.http_status}:${cleanText(signed.data?.message).slice(0, 180)}`);
+  }
+  const signLatencyMs = Date.now() - signedStartedAt;
+  const uploads = new Map(signed.data.uploads.map((upload) => [upload.image_id, upload]));
+  const uploaded = await mapWithConcurrency(prepared, Math.min(2, prepared.length), async (row) => {
+    const upload = uploads.get(row.image.image_id);
+    if (!upload) throw new Error(`smoke_batch_upload_identity_missing:${row.image.image_id}`);
+    const put = await fetchWithBoundedRetry(upload.signed_upload_url, {
+      method: "PUT",
+      headers: { "content-type": upload.content_type || row.contentType },
+      body: row.bytes
+    }, {
+      fetchImpl,
+      timeoutMs: requestTimeoutMs,
+      maxAttempts: 3,
+      retryNetworkErrors: true,
+      retryStatuses: [408, 425, 429, 500, 502, 503, 504],
+      maxDelayMs: 1_500
+    });
+    if (!put.response.ok) throw new Error(`smoke_batch_storage_put_failed:${put.response.status}`);
+    return { ...row, upload, put };
+  });
+  const verifyStartedAt = Date.now();
+  const verification = await postJson({
+    baseUrl,
+    path: "/api/listing-image-verify-upload",
+    cookie,
+    payload: {
+      assetId: asset.asset_id,
+      images: uploaded.map((row) => ({
+        imageId: row.image.image_id,
+        role: row.image.storage_role,
+        fileName: row.fileName,
+        objectPath: row.upload.object_path,
+        contentType: row.upload.content_type,
+        size: row.bytes.byteLength,
+        width: Number(row.image.width),
+        height: Number(row.image.height),
+        signatureHex: row.signatureHex,
+        contentSha256: row.contentSha256
+      }))
+    },
+    requestTimeoutMs: Math.min(requestTimeoutMs, durableUploadResilienceContract.verification_timeout_ms),
+    fetchImpl,
+    maxAttempts: durableUploadResilienceContract.verification_max_attempts
+  });
+  if (!verification.ok || verification.data?.ok !== true || !Array.isArray(verification.data?.verifications)) {
+    throw new Error(`smoke_batch_upload_verify_failed:${verification.http_status}:${cleanText(verification.data?.message).slice(0, 180)}`);
+  }
+  const verifyLatencyMs = Date.now() - verifyStartedAt;
+  const verifiedByImage = new Map(verification.data.verifications.map((row) => [row.image_id, row]));
+  return uploaded.map((row) => {
+    const verified = verifiedByImage.get(row.image.image_id)?.verification;
+    if (!verified?.verification_token) throw new Error(`smoke_batch_verification_identity_missing:${row.image.image_id}`);
+    return {
+      id: row.image.image_id,
+      image_id: row.image.image_id,
+      name: row.fileName,
+      role: row.image.storage_role,
+      storageRole: row.image.storage_role,
+      storage_role: row.image.storage_role,
+      capture_angle: row.image.capture_angle,
+      objectPath: verified.object_path,
+      object_path: verified.object_path,
+      bucket: verified.bucket,
+      storageVerified: true,
+      storage_verified: true,
+      storageVerificationToken: verified.verification_token,
+      storage_verification_token: verified.verification_token,
+      contentType: verified.content_type,
+      content_type: verified.content_type,
+      originalType: verified.content_type,
+      original_type: verified.content_type,
+      size: verified.size,
+      originalSize: verified.size,
+      original_size: verified.size,
+      width: verified.width,
+      originalWidth: verified.width,
+      original_width: verified.width,
+      height: verified.height,
+      originalHeight: verified.height,
+      original_height: verified.height,
+      contentSha256: verified.content_sha256 || row.contentSha256,
+      content_sha256: verified.content_sha256 || row.contentSha256,
+      storageAssetId: asset.asset_id,
+      storage_asset_id: asset.asset_id,
+      storageTenantId: asset.tenant_id,
+      storage_tenant_id: asset.tenant_id,
+      smoke_upload_sign_attempts: signed.attempts,
+      smoke_upload_sign_latency_ms: signLatencyMs,
+      smoke_storage_put_attempts: row.put.attempts,
+      smoke_storage_put_latency_ms: row.put.elapsed_ms,
+      smoke_upload_verify_attempts: verification.attempts,
+      smoke_upload_verify_latency_ms: verifyLatencyMs,
+      smoke_upload_verify_server_timing: verification.data.verification_timing || null,
+      smoke_upload_recovered_by_retry: signed.retried === true || verification.retried === true
+    };
+  });
+}
+
 export async function prepareDurableSmokeItem({
   item = {},
   index = 0,
@@ -520,16 +658,20 @@ export async function prepareDurableSmokeItem({
     requestTimeoutMs,
     fetchImpl
   });
-  const verified = await mapWithConcurrency(asset.sources, Math.min(2, asset.sources.length), (image) => (
-    uploadDurableSmokeImage({
-      baseUrl,
-      cookie,
-      image,
-      asset,
-      requestTimeoutMs,
-      fetchImpl
-    })
-  ));
+  let verified;
+  if (asset.sources.length > 1) {
+    try {
+      verified = await uploadDurableSmokeImagesBatch({ baseUrl, cookie, images: asset.sources, asset, requestTimeoutMs, fetchImpl });
+    } catch {
+      verified = await mapWithConcurrency(asset.sources, Math.min(2, asset.sources.length), (image) => (
+        uploadDurableSmokeImage({ baseUrl, cookie, image, asset, requestTimeoutMs, fetchImpl })
+      ));
+    }
+  } else {
+    verified = await mapWithConcurrency(asset.sources, 1, (image) => (
+      uploadDurableSmokeImage({ baseUrl, cookie, image, asset, requestTimeoutMs, fetchImpl })
+    ));
+  }
   return {
     source_asset_id: sourceAssetId,
     asset,
