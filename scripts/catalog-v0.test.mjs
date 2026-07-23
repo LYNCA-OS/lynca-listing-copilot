@@ -22,12 +22,17 @@ import {
   extractToppsBasketballChecklistLinks,
   extractXlsxText,
   isAllowedToppsBasketballChecklistLink,
+  legacyXlsChecklistParserVersion,
   officialChecklistParserVersion,
   parseOfficialChecklistText,
   parseUpperDeckEpackChecklistJson,
   parseToppsBasketballChecklistText
 } from "../lib/listing/catalog/topps-basketball-checklist-importer.mjs";
 import { pdfTextLinesFromItems } from "../lib/listing/catalog/pdf-text-extractor.mjs";
+import {
+  extractLegacyXlsText,
+  isLegacyXlsBuffer
+} from "../lib/listing/catalog/legacy-xls-text-extractor.mjs";
 import {
   createOfficialCatalogSourceAdapter,
   discoverOfficialCatalogSource,
@@ -352,6 +357,58 @@ function makeMiniXlsx() {
 const xlsxText = extractXlsxText(makeMiniXlsx());
 assert.match(xlsxText, /1 Jayson Tatum, Boston Celtics/);
 assert.match(xlsxText, /TFRA-SC Stephen Curry, Golden State Warriors/);
+
+const XLSX = (await import("node:module")).createRequire(import.meta.url)("xlsx");
+const legacyWorkbook = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(legacyWorkbook, XLSX.utils.aoa_to_sheet([
+  ["BASE CARDS"],
+  ["1", "Ilia Topuria"],
+  ["DPA-AG", "Andreas Gustafsson", "", "Rookie"]
+]), "Checklist");
+const legacyXlsFixture = XLSX.write(legacyWorkbook, { type: "buffer", bookType: "biff8" });
+assert.equal(isLegacyXlsBuffer(legacyXlsFixture), true);
+assert.match(extractLegacyXlsText(legacyXlsFixture), /1\tIlia Topuria/);
+assert.match(extractLegacyXlsText(legacyXlsFixture), /DPA-AG\tAndreas Gustafsson\t\tRookie/);
+const legacyExtraction = await extractOfficialChecklistPayload(legacyXlsFixture, {
+  sourceUrl: "https://official.example/2026-topps-chrome-ufc.xls",
+  contentType: "application/vnd.ms-excel"
+});
+assert.equal(legacyExtraction.extraction_method, "legacy_xls");
+assert.match(legacyExtraction.text, /Ilia Topuria/);
+const legacyUfcRows = parseOfficialChecklistText([
+  "BASE",
+  "BASE CARDS I",
+  "1\tIlia Topuria\t\t",
+  "4\tGabriel Santos\t\tRookie",
+  ...Array.from({ length: 48 }, (_, index) => `${index + 5}\tFighter ${index + 5}\t\t`),
+  "1986 TOPPS",
+  "86-1\tKayla Harrison\t\t",
+  "SPLIT DECISION",
+  "SP-1\tAmanda Nunes\t\t",
+  "SP-1\tKayla Harrison\t\t",
+  "AUTOGRAPH",
+  "VANQUISHER INK",
+  "VI-JS\tJean Silva\t\t"
+].join("\n"), {
+  sourceName: "2026 Topps Chrome UFC Checklist",
+  sourceUrl: "https://official.example/2026-topps-chrome-ufc.xls",
+  provider: "topps",
+  category: "mma"
+});
+assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "86-1")?.identity_fields.set_or_insert, "1986 TOPPS");
+assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "86-1")?.identity_fields.set_type, "insert");
+assert.deepEqual(legacyUfcRows.find((row) => row.identity_fields.card_number === "SP-1")?.identity_fields.players, ["Amanda Nunes", "Kayla Harrison"]);
+assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "4")?.identity_fields.team, null);
+assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "4")?.identity_fields.observable_components.includes("rc"), true);
+assert.equal(legacyUfcRows.find((row) => row.identity_fields.card_number === "VI-JS")?.identity_fields.observable_components.includes("auto"), true);
+assert.equal(legacyXlsChecklistParserVersion.endsWith(":legacy-xls-v1"), true);
+await assert.rejects(
+  () => extractOfficialChecklistPayload(Buffer.from("not-an-xls"), {
+    sourceUrl: "https://official.example/invalid.xls",
+    contentType: "application/vnd.ms-excel"
+  }),
+  /official_legacy_xls_magic_invalid/
+);
 
 const leafRows = parseOfficialChecklistText([
   "Set\tSubset\tName\tChecklist\tFoil\tSilver\tRed\tBlue\tPink\tPurple\tGreen\tZebra\tTiger\tOil Spill\tGold\tClown Fish\tCity",
