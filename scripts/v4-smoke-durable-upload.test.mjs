@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import crypto from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   canonicalBatchIdForPoll,
   durableSourceFingerprint,
   durableUploadResilienceContract,
+  materializeSmokeSourceImages,
   prepareDurableSmokeItem
 } from "./v4-ebay-smoke.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
@@ -15,6 +17,30 @@ const firstPath = join(tempDirectory, "image-1.jpg");
 const secondPath = join(tempDirectory, "image-2.jpg");
 const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
 await Promise.all([writeFile(firstPath, jpegBytes), writeFile(secondPath, jpegBytes)]);
+
+const sourceSha256 = crypto.createHash("sha256").update(jpegBytes).digest("hex");
+const materialized = await materializeSmokeSourceImages([{
+  asset_id: "stored-source",
+  images: [{
+    image_id: "stored-front",
+    bucket: "listing-feedback-images",
+    object_path: "feedback/stored/front.jpg",
+    content_type: "image/jpeg",
+    content_sha256: sourceSha256
+  }]
+}], {
+  supabaseUrl: "https://supabase.test",
+  serviceRoleKey: "service-role-test",
+  outputDirectory: join(tempDirectory, "materialized"),
+  fetchImpl: async (input, init = {}) => {
+    assert.equal(String(input), "https://supabase.test/storage/v1/object/authenticated/listing-feedback-images/feedback/stored/front.jpg");
+    assert.equal(init.headers.apikey, "service-role-test");
+    assert.equal(init.headers.authorization, "Bearer service-role-test");
+    return new Response(jpegBytes, { status: 200, headers: { "content-type": "image/jpeg" } });
+  }
+});
+assert.equal(materialized[0].images[0].source_materialized_from_storage, true);
+assert.deepEqual(await readFile(materialized[0].images[0].local_path), jpegBytes);
 
 const storedSource = {
   asset_id: "stable-source",
