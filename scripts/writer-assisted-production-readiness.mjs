@@ -49,7 +49,8 @@ function staticChecks() {
     check("retained_workbook_export", /createWriterBatchExport/.test(exportApi)
       && /writerExportRowsBelongToOperator/.test(exportApi)
       && !/new pg\.Client|client\.query\(sql\)/.test(exportApi), "Final titles and image references are retained without runtime schema mutation."),
-    check("release_gate", /npm audit --omit=dev --audit-level=moderate/.test(release)
+    check("release_gate", /npm ls --omit=dev --all/.test(release)
+      && /node scripts\/npm-audit-gate\.mjs/.test(release)
       && /npm run test:v4-spine/.test(release)
       && /npm run check:production-engineering/.test(release)
       && /npm run test:production-engineering/.test(release)
