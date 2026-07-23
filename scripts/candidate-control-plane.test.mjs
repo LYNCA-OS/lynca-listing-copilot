@@ -151,7 +151,19 @@ function testExactCodeCatalogCandidateBeatsVectorSimilarity() {
   assert.equal(control.selected_candidate_safe_field_application.status, "ready_fill_missing");
   assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("manufacturer"));
   assert.ok(control.selected_candidate_safe_field_application.eligible_fields.includes("card_name"));
-  assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("parallel_exact"), false);
+  assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("parallel_exact"), true);
+  const decision = applyCandidateDecisionStage({
+    result: control,
+    resolvedBefore: {
+      year: "2024",
+      manufacturer: "Bowman",
+      product: "Bowman Chrome",
+      players: ["Jesus Made"],
+      collector_number: "BS-4"
+    }
+  });
+  assert.equal(decision.resolved_after.parallel_exact, "Red Refractor");
+  assert.ok(decision.field_application.applied_fields.includes("parallel_exact"));
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("serial_number"), false);
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("grade_company"), false);
   assert.equal(control.selected_candidate_safe_field_application.eligible_fields.includes("cert_number"), false);
