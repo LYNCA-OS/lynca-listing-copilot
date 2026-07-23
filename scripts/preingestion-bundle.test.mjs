@@ -229,6 +229,8 @@ assert.equal(slabJobs.filter((job) => job.payload.crop.role === "grade_label_cro
 const detailJobs = buildPreingestionWorkerJobs({ bundle, enableOcrDetail: true });
 assert.ok(detailJobs.some((job) => job.payload.crop.role === "year_product_crop" && job.priority === 30));
 assert.ok(detailJobs.some((job) => job.payload.crop.role === "subject_crop" && job.priority === 35));
+assert.ok(detailJobs.every((job) => job.payload.persist_raw_ocr_observation === true));
+assert.ok(jobs.every((job) => job.payload.persist_raw_ocr_observation === false));
 assert.ok(detailJobs.length > jobs.length);
 const optInJobs = buildPreingestionWorkerJobs({ bundle, enableEmbeddings: true, enableQuality: true });
 assert.ok(optInJobs.some((job) => job.job_type === "visual_embedding"));
@@ -440,6 +442,15 @@ const hardEvidencePayload = {
       crop_id: "slab-label",
       confidence: 0.95,
       provenance: { region: "slab_label" }
+    },
+    {
+      field: "ocr_raw_observation",
+      value: "METAVERSE CARDS SHOHEI OHTANI LOS ANGELES DODGERS 17",
+      raw_text: "METAVERSE CARDS SHOHEI OHTANI LOS ANGELES DODGERS 17",
+      source_type: "OCR_AUDIT",
+      source_image_id: "back",
+      confidence: 0.98,
+      provenance: { audit_only: true, crop_type: "card_code_crop" }
     }
   ]
 };
@@ -447,6 +458,7 @@ const hardEvidenceDocument = __listingCopilotTitleTestHooks.preingestionEvidence
 assert.equal(hardEvidenceDocument.evidence.print_run_number.value, "09/50");
 assert.equal(hardEvidenceDocument.evidence.card_grade.value, "9.5");
 assert.equal(hardEvidenceDocument.evidence.auto_grade.value, "10");
+assert.equal(hardEvidenceDocument.evidence.ocr_raw_observation, undefined, "audit text must never become Resolver evidence");
 
 const atomicGradeDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
   preingestion_evidence_patches: [

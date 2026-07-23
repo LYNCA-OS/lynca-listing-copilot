@@ -289,6 +289,17 @@ const lineWeightedPatches = bundlePatchesFromOcrResult({
 }, sampleJob);
 assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number")?.confidence, 0.96);
 
+const oracleAuditPatches = bundlePatchesFromOcrResult(ocrResult, {
+  ...sampleJob,
+  payload: {
+    ...sampleJob.payload,
+    persist_raw_ocr_observation: true
+  }
+});
+assert.equal(oracleAuditPatches.filter((patch) => patch.field === "ocr_raw_observation").length, 1);
+assert.equal(oracleAuditPatches.find((patch) => patch.field === "ocr_raw_observation")?.value, "09/50");
+assert.equal(oracleAuditPatches.find((patch) => patch.field === "ocr_raw_observation")?.provenance.audit_only, true);
+
 // --- claim is conditional on status=queued (atomic per row) ---
 {
   const calls = [];
