@@ -1603,6 +1603,32 @@ function testReviewedCompositeIdentityCannotCorrectVariantWithoutExactCode() {
   assert.equal(decision.resolved_after.cert_number ?? null, null);
 }
 
+function testCandidateStagePreservesConfirmedCurrentImageSerialWithoutOcrVerdict() {
+  const resolved = {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Graphite",
+    players: ["Anna Kalinskaya"],
+    serial_number: "20/25",
+    print_run_number: "20/25"
+  };
+  const decision = applyCandidateDecisionStage({
+    resolvedBefore: resolved,
+    result: {
+      normalized_evidence: {
+        print_run_number: {
+          value: "20/25",
+          status: "CONFIRMED",
+          sources: [{ source_type: "VISION_ONLY" }]
+        }
+      }
+    }
+  });
+
+  assert.match(decision.title_after, /20\/25/);
+  assert.doesNotMatch(decision.title_after, /#\/25/);
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -1634,5 +1660,6 @@ testDifferentProductFamiliesCannotShareAChromeAnchor();
 testObservedSubjectBlocksSubjectlessSameProductCandidate();
 testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate();
 testReviewedCompositeIdentityCannotCorrectVariantWithoutExactCode();
+testCandidateStagePreservesConfirmedCurrentImageSerialWithoutOcrVerdict();
 
 console.log("candidate-control-plane tests passed");
