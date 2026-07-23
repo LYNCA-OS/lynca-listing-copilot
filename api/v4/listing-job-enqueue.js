@@ -17,6 +17,7 @@ import {
   CanonicalImageReferenceError,
   readCanonicalListingImageReferences
 } from "../../lib/listing/storage/canonical-image-references.mjs";
+import { createListingImageVerificationToken } from "../../lib/listing/storage/supabase-image-storage.mjs";
 import {
   bindProductionRequestContext,
   instrumentProductionRequest
@@ -282,7 +283,8 @@ export async function canonicalizeQueueJobs({
   tenantId,
   env = process.env,
   fetchImpl = globalThis.fetch,
-  readCanonical = readCanonicalListingImageReferences
+  readCanonical = readCanonicalListingImageReferences,
+  createVerificationToken = createListingImageVerificationToken
 } = {}) {
   const canonicalByAsset = new Map();
   const canonicalForAsset = (assetId) => {
@@ -321,7 +323,23 @@ export async function canonicalizeQueueJobs({
         env
       })
       : scopedPayload;
-    const images = canonical.images.map((image) => ({ ...image }));
+    const images = canonical.images.map((image) => {
+      const storageVerificationToken = createVerificationToken({
+        tenantId,
+        objectPath: image.objectPath || image.object_path,
+        bucket: image.bucket,
+        contentType: image.originalType || image.content_type || image.type,
+        size: image.originalSize || image.size,
+        width: image.originalWidth || image.width,
+        height: image.originalHeight || image.height,
+        env
+      });
+      return {
+        ...image,
+        storageVerificationToken,
+        storage_verification_token: storageVerificationToken
+      };
+    });
     const imageReferences = canonical.image_references.map((reference) => ({ ...reference }));
     const imagePaths = canonical.image_paths || {};
     return {

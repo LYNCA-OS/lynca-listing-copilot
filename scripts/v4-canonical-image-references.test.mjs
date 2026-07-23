@@ -5,6 +5,7 @@ import {
   readCanonicalListingImageReferences
 } from "../lib/listing/storage/canonical-image-references.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
+import { verifyListingImageVerificationToken } from "../lib/listing/storage/supabase-image-storage.mjs";
 
 const tenantId = "tenant_demo";
 const assetId = "asset_11111111-2222-4123-8abc-abcdef123456";
@@ -219,6 +220,7 @@ await assert.rejects(
 const maliciousPath = "listing-assets/2026-07-17/asset-1/legacy.jpg";
 const [canonicalJob] = await canonicalizeQueueJobs({
   tenantId,
+  env,
   jobs: [{
     tenant_id: "tenant_attacker",
     asset_id: assetId,
@@ -261,6 +263,22 @@ assert.equal("manualRetryOriginalOperatorId" in canonicalJob, false);
 assert.equal("queue_tags" in canonicalJob, false);
 assert.equal("tags" in canonicalJob, false);
 assert.deepEqual(canonicalJob.payload.images.map((image) => image.objectPath), [originalPath, cropPath]);
+for (const image of canonicalJob.payload.images) {
+  assert.equal(typeof image.storageVerificationToken, "string");
+  assert.equal(image.storage_verification_token, image.storageVerificationToken);
+  const verified = verifyListingImageVerificationToken({
+    token: image.storageVerificationToken,
+    tenantId,
+    objectPath: image.objectPath,
+    bucket: image.bucket,
+    contentType: image.originalType,
+    size: image.originalSize,
+    width: image.originalWidth,
+    height: image.originalHeight,
+    env
+  });
+  assert.equal(verified.object_path, image.objectPath);
+}
 assert.deepEqual(canonicalJob.payload.image_references, canonical.image_references);
 assert.deepEqual(canonicalJob.payload.imageReferences, canonical.image_references);
 for (const key of [

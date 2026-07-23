@@ -119,6 +119,7 @@ const [canonicalJob] = await canonicalizeQueueJobs({
   }],
   tenantId: "tenant_a",
   env,
+  createVerificationToken: () => "server-refreshed-verification-token",
   readCanonical: async () => ({
     image_generation_id: assetId,
     image_set_sha256: "a".repeat(64),

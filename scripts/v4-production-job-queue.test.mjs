@@ -126,6 +126,7 @@ const selfExclusionAssetId = "asset_33333333-3333-4333-8333-333333333333";
 const selfExclusionGenerationId = "asset_44444444-4444-4444-8444-444444444444";
 const canonicalizedSelfExclusionJob = await canonicalizeQueueJobs({
   tenantId: "tenant-stage",
+  createVerificationToken: () => "server-refreshed-verification-token",
   jobs: [{
     asset_id: selfExclusionAssetId,
     image_generation_id: selfExclusionGenerationId,

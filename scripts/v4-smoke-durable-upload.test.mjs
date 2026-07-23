@@ -283,6 +283,7 @@ try {
   }));
   const [canonicalJob] = await canonicalizeQueueJobs({
     tenantId: "tenant_legacy",
+    createVerificationToken: () => "server-refreshed-verification-token",
     jobs: [{
       asset_id: prepared.item.asset_id,
       image_generation_id: prepared.item.image_generation_id,
