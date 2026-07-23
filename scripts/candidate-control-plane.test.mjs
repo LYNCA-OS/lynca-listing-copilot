@@ -1629,6 +1629,53 @@ function testCandidateStagePreservesConfirmedCurrentImageSerialWithoutOcrVerdict
   assert.doesNotMatch(decision.title_after, /#\/25/);
 }
 
+function testCatalogConsensusSafelyRefinesProductWithoutSelectingSiblingVariant() {
+  const observed = {
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Topps Graphite",
+    players: ["Anna Kalinskaya"],
+    surface_color: "Green"
+  };
+  const sources = ["gold-sibling", "red-sibling"].map((suffix, index) => ({
+    candidate_id: `catalog-graphite-tennis-${suffix}`,
+    candidate_identity_id: `identity-graphite-tennis-${suffix}`,
+    provider_id: "catalog",
+    source_type: "STRUCTURED_DATABASE",
+    source_trust: "APPROVED_REFERENCE",
+    normalized_score: 0.7 - index * 0.01,
+    fields: {
+      year: "2024",
+      manufacturer: "Topps",
+      product: "Topps Graphite Tennis",
+      players: ["Anna Kalinskaya"],
+      surface_color: index === 0 ? "Gold" : "Red",
+      parallel_exact: index === 0 ? "Gold Refractor" : "Red Refractor",
+      ssp: index === 0
+    }
+  }));
+  const catalogPacket = buildVectorCandidatePacket({ sources }, {
+    limit: 5,
+    queryFields: observed
+  });
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: observed,
+      catalog_candidate_packet: catalogPacket,
+      catalog_assist_eligibility: vectorCandidatePacketAssistEligibility(catalogPacket)
+    }
+  });
+  const decision = applyCandidateDecisionStage({ result: selection, resolvedBefore: observed });
+
+  assert.equal(selection.selected_candidate_decision.selected_candidate_id, "", "sibling card identity must remain unresolved");
+  assert.equal(selection.consensus_product_hierarchy_application.status, "ready_safe_refinement");
+  assert.equal(selection.consensus_product_hierarchy_application.supporting_identity_ids.length, 2);
+  assert.equal(decision.resolved_after.product, "Topps Graphite Tennis");
+  assert.equal(decision.resolved_after.surface_color, "Green", "sibling color must not be copied");
+  assert.equal(decision.resolved_after.parallel_exact ?? null, null, "sibling finish must not be copied");
+  assert.equal(decision.resolved_after.ssp ?? false, false, "sibling rarity must not be copied");
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -1661,5 +1708,6 @@ testObservedSubjectBlocksSubjectlessSameProductCandidate();
 testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate();
 testReviewedCompositeIdentityCannotCorrectVariantWithoutExactCode();
 testCandidateStagePreservesConfirmedCurrentImageSerialWithoutOcrVerdict();
+testCatalogConsensusSafelyRefinesProductWithoutSelectingSiblingVariant();
 
 console.log("candidate-control-plane tests passed");
