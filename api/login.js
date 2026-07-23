@@ -117,6 +117,11 @@ export default async function handler(req, res) {
         ? await resolveTenantIdentityForPrincipal({
             tenantId: authenticated.tenantId,
             userId: authenticated.userId
+          }, {
+            allowLegacyBreakGlass: true,
+            fallbackEmail: authenticated.email,
+            env: process.env,
+            fetchImpl: globalThis.fetch
           })
         : await resolveTenantIdentityForAuthUser({
           authUserId: authenticated.authUserId,

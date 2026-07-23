@@ -75,6 +75,7 @@ assert.equal(calls[0].input.tenantId, tenantId);
 assert.equal(calls[0].input.assetId, assetId);
 assert.equal(calls[1].input.tenantId, tenantId);
 assert.equal(calls[1].input.bundleId, bundleId);
+assert.equal(calls[1].input.reuseExisting, true);
 assert.equal(calls[2].input.sessionId, sessionId);
 assert.equal(calls[2].input.patch.preingestion_bundle_id, bundleId);
 assert.deepEqual(calls[2].input.patch.request_summary, {
@@ -111,7 +112,8 @@ const persistence = await persistV4PreingestionBundle({
     assert.equal(url.pathname, "/rest/v1/v4_preingestion_bundles");
     assert.equal(init.method, "POST");
     persistedRow = JSON.parse(init.body);
-    return new Response(JSON.stringify([persistedRow]), {
+    assert.match(String(init.headers.prefer), /return=minimal/);
+    return new Response("", {
       status: 201,
       headers: { "content-type": "application/json" }
     });
@@ -121,6 +123,33 @@ assert.equal(persistence.saved, true);
 assert.equal(persistedRow.tenant_id, tenantId);
 assert.equal(persistedRow.asset_id, assetId);
 assert.equal(persistedRow.id, bundleId);
+
+let existingReadCount = 0;
+const reusedPersistence = await persistV4PreingestionBundle({
+  bundleId,
+  tenantId,
+  assetId,
+  bundle,
+  summary: { image_count: 2 },
+  reuseExisting: true,
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role-test"
+  },
+  fetchImpl: async (input, init = {}) => {
+    const url = new URL(String(input));
+    assert.equal(init.method, undefined);
+    assert.equal(url.searchParams.get("id"), `eq.${bundleId}`);
+    existingReadCount += 1;
+    return new Response(JSON.stringify([{ id: bundleId, tenant_id: tenantId, asset_id: assetId, status: "READY" }]), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }
+});
+assert.equal(existingReadCount, 1);
+assert.equal(reusedPersistence.saved, true);
+assert.equal(reusedPersistence.reused, true);
 
 const rejectedPersistence = await persistV4PreingestionBundle({
   bundleId,

@@ -286,7 +286,7 @@ function smokeClientAssetRef(item = {}, index = 0) {
     .update(candidateId(item, index))
     .digest("hex")
     .slice(0, 16);
-  return `v4-smoke:${sourceHash}:${crypto.randomUUID()}`;
+  return `v4-smoke:${sourceHash}`;
 }
 
 function inferredImageContentType(image = {}, bytes = Buffer.alloc(0)) {
@@ -2804,8 +2804,8 @@ async function pollBatchJobs({
       last = await getJson({
         baseUrl,
         path: batchId
-          ? `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`
-          : `/api/v4/listing-job-status?job_ids=${encodeURIComponent([...expected].join(","))}&limit=200`,
+          ? `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200&view=writer_compact`
+          : `/api/v4/listing-job-status?job_ids=${encodeURIComponent([...expected].join(","))}&limit=200&view=writer_compact`,
         cookie,
         requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
       });
@@ -2885,7 +2885,7 @@ async function loadExistingBatchJobs({
     try {
       response = await getJson({
         baseUrl,
-        path: `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`,
+        path: `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200&view=writer_compact`,
         cookie,
         requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
       });

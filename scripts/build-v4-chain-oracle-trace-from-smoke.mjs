@@ -37,6 +37,34 @@ function renderedFields(ledger = {}) {
   }));
 }
 
+function providerFieldFlowEvidence(ledger = {}) {
+  const aliases = {
+    subject: "players",
+    parallel_exact: "parallel_exact",
+    surface_color: "surface_color",
+    collector_number: "collector_number",
+    numerical_rarity: "numerical_rarity",
+    grade: "grading_info"
+  };
+  return (ledger.field_flow?.fields || []).flatMap((row, index) => {
+    if (row?.raw_provider_present !== true) return [];
+    const values = Array.isArray(row.raw_values)
+      ? row.raw_values.map(cleanText).filter(Boolean)
+      : [];
+    if (!values.length) return [];
+    const field = aliases[row.field_group] || cleanText(row.field_group || row.field);
+    if (!field) return [];
+    return [{
+      evidence_id: `provider-field-flow-${index + 1}`,
+      source: "GPT_5_MINI_PROVIDER_FIELD_FLOW",
+      fields: {
+        [field]: field === "players" || values.length > 1 ? values : values[0]
+      },
+      raw_text: values.join(" ")
+    }];
+  });
+}
+
 function candidateFields(decisions = []) {
   const output = new Map();
   for (const row of decisions) {
@@ -100,12 +128,15 @@ export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations =
   const cards = reports.flatMap(rows).map((result) => {
     const ledger = result.pipeline_node_ledger || {};
     const debug = result.l2_candidate_debug || {};
+    const nativeSensorEvidence = Array.isArray(ledger.sensor_evidence) ? ledger.sensor_evidence : [];
+    const fieldFlowEvidence = nativeSensorEvidence.length ? [] : providerFieldFlowEvidence(ledger);
     return {
       query_card_id: cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id),
       recognition_ok: result.ok === true,
       recognition_error: result.ok === true ? null : cleanText(result.error).slice(0, 240),
       evidence_observations: [
-        ...(Array.isArray(ledger.sensor_evidence) ? ledger.sensor_evidence : []),
+        ...nativeSensorEvidence,
+        ...fieldFlowEvidence,
         ...(ocrById.get(cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id).toLowerCase())?.observations || [])
       ],
       retrieval_candidates: retrievalCandidates(debug),
@@ -125,7 +156,12 @@ export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations =
       instrumentation: {
         recognition_profile: result.recognition_profile || null,
         pipeline_missing_required_node_count: ledger.coverage?.missing_required_node_count ?? null,
-        sensor_evidence_instrumented: Object.hasOwn(ledger, "sensor_evidence"),
+        sensor_evidence_instrumented: nativeSensorEvidence.length > 0 || fieldFlowEvidence.length > 0,
+        sensor_evidence_mode: nativeSensorEvidence.length
+          ? "native_sensor_evidence"
+          : fieldFlowEvidence.length
+            ? "provider_field_flow_fallback"
+            : "missing",
         retrieval_candidate_count: retrievalCandidates(debug).length,
         application_decision_count: debug.retrieval_application?.decisions?.length || 0
       }

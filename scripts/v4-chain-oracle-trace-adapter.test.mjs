@@ -56,4 +56,22 @@ assert.deepEqual(trace.cards[0].selected_candidate_group_ids, ["candidate-a", "c
 assert.equal(trace.cards[0].renderer_fields.year, "2024");
 assert.equal(trace.cards[0].instrumentation.sensor_evidence_instrumented, true);
 
+const fieldFlowFallback = buildV4ChainOracleTraceFromSmoke([{ results: [{
+  source_feedback_id: "card-2",
+  ok: true,
+  pipeline_node_ledger: {
+    field_flow: {
+      fields: [{
+        field_group: "subject",
+        raw_provider_present: true,
+        raw_values: ["Test Player"],
+        rendered_values: ["Test Player"]
+      }]
+    }
+  }
+}] }]);
+assert.equal(fieldFlowFallback.cards[0].evidence_observations[0].source, "GPT_5_MINI_PROVIDER_FIELD_FLOW");
+assert.deepEqual(fieldFlowFallback.cards[0].evidence_observations[0].fields.players, ["Test Player"]);
+assert.equal(fieldFlowFallback.cards[0].instrumentation.sensor_evidence_mode, "provider_field_flow_fallback");
+
 console.log("v4 chain oracle trace adapter tests passed");

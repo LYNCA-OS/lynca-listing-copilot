@@ -72,7 +72,9 @@ assert.equal(oracleProfile.provider_options.evaluation_profile, "v4_accuracy_cei
 assert.equal(oracleProfile.provider_options.enable_vector_lazy_mode, false);
 assert.equal(oracleProfile.provider_options.force_vector_assist, true);
 assert.equal(oracleProfile.provider_options.vector_index_ready, true);
+assert.equal(oracleProfile.provider_options.vector_retrieval_top_k, 20);
 assert.equal(oracleProfile.provider_options.vector_retrieval_internal_top_n, 20);
+assert.equal(oracleProfile.provider_options.enable_post_observation_retrieval_deadline, false);
 assert.equal(oracleProfile.provider_options.disable_identity_result_cache, true);
 assert.equal(oracleProfile.provider_options.disable_approved_identity_memory, true);
 assert.equal(oracleProfile.provider_options.force_retrieval_application_resolution, undefined);

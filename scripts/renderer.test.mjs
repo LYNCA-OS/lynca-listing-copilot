@@ -72,6 +72,32 @@ const graderCannotConsumePublisherBudget = renderListingPresentation({
 assert.doesNotMatch(graderCannotConsumePublisherBudget.final_title, /Beckett Grading Services/);
 assert.match(graderCannotConsumePublisherBudget.final_title, /Kit Harington/);
 
+const genericLongHierarchyPreservesHigherWeightSem = renderListingPresentation({
+  resolved: {
+    year: "2022",
+    manufacturer: "Rittenhouse Archives",
+    brand: "Rittenhouse Archives",
+    product: "Game of Thrones",
+    set: "The Complete Series Volume 2",
+    players: ["Kit Harington"],
+    card_name: "Autographed Costume",
+    auto: true,
+    relic: true,
+    print_run_number: "12/50",
+    grade_company: "BGS",
+    card_grade: "9.5",
+    auto_grade: "10",
+    grade_type: "CARD_AND_AUTO"
+  },
+  maxLength: 80
+});
+assert.ok(genericLongHierarchyPreservesHigherWeightSem.final_title.length <= 80);
+assert.match(genericLongHierarchyPreservesHigherWeightSem.final_title, /Game of Thrones/);
+assert.match(genericLongHierarchyPreservesHigherWeightSem.final_title, /Kit Harington/);
+assert.match(genericLongHierarchyPreservesHigherWeightSem.final_title, /Autographed Costume/);
+assert.match(genericLongHierarchyPreservesHigherWeightSem.final_title, /12\/50/);
+assert.match(genericLongHierarchyPreservesHigherWeightSem.final_title, /BGS 9\.5\/10/);
+
 const productDefeatsTeamPublisherInPresentation = renderListingPresentation({
   resolved: {
     year: "2026",

@@ -119,6 +119,7 @@ export async function resolveCanonicalWorkerPreingestion({
       assetId,
       bundle,
       summary,
+      reuseExisting: true,
       env,
       fetchImpl
     });

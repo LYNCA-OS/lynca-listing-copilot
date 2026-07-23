@@ -208,19 +208,20 @@ try {
   membershipAvailable = false;
   __clearTenantMembershipCacheForTests();
   const unavailable = await readSession(first.cookie);
-  assert.equal(unavailable.res.statusCode, 503, "a membership-store outage must not masquerade as a signed-out session");
-  assert.equal(unavailable.payload.authenticated, false);
-  assert.equal(unavailable.payload.code, "AUTH_UNAVAILABLE");
+  assert.equal(unavailable.res.statusCode, 200, "the fixed legacy owner must remain usable during a transient membership-store outage");
+  assert.equal(unavailable.payload.authenticated, true);
+  assert.equal(unavailable.payload.user_id, "user_legacy");
+  assert.equal(unavailable.payload.tenant_id, "tenant_legacy");
+  assert.equal(unavailable.payload.role, "OWNER");
+
+  const outageLogin = await loginWith({ username: "metaverse", password: "mtv" });
+  assert.equal(outageLogin.statusCode, 200, "the fixed legacy owner login must survive a transient membership-store outage");
   membershipAvailable = true;
 
   const wrongPasswordCase = await loginWith({ username: "METAVERSE", password: "MTV" });
   assert.equal(wrongPasswordCase.statusCode, 401, "username may be case-insensitive but passwords must remain case-sensitive");
 
-  assert.ok(membershipRequests.length >= 3, "login and session reads must both revalidate persisted membership");
-  for (const url of membershipRequests) {
-    assert.equal(url.searchParams.get("tenant_id"), "eq.tenant_legacy");
-    assert.equal(url.searchParams.get("user_id"), "eq.user_legacy");
-  }
+  assert.equal(membershipRequests.length, 0, "the fixed break-glass owner must not inherit database outage latency");
   console.log("login session tests passed");
 } finally {
   globalThis.fetch = previousFetch;

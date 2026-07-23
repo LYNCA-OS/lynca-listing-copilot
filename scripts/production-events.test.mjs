@@ -5,6 +5,8 @@ import {
   buildRequestLogRow,
   createRequestTelemetry,
   operationalErrorFingerprint,
+  persistErrorLog,
+  persistRequestLog,
   requestIdFromRequest,
   sanitizeOperationalText,
   sanitizeOperationalStack,
@@ -97,6 +99,67 @@ assert.equal(headers["x-request-id"], "req-safe-123");
 assert.equal(writes.length, 1);
 assert.equal(writes[0].body.tenant_id, "tenant_001");
 assert.equal((await telemetry.finish()).skipped, true);
+
+let sampledWriteCount = 0;
+const sampledOut = await persistRequestLog({
+  requestId: "req-sampled-out",
+  context: { tenantId: "tenant_001" },
+  req,
+  statusCode: 200,
+  durationMs: 5
+}, {
+  env: {
+    VERCEL_ENV: "preview",
+    PRODUCTION_REQUEST_LOG_SUCCESS_SAMPLE_RATE: "0",
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role"
+  },
+  fetchImpl: async () => {
+    sampledWriteCount += 1;
+    throw new Error("sampled successful requests must not touch PostgREST");
+  }
+});
+assert.equal(sampledOut.reason, "request_log_success_sampled_out");
+assert.equal(sampledWriteCount, 0);
+
+const duplicateSafeWrites = [];
+await persistRequestLog({
+  requestId: "req-error-duplicate-safe",
+  context: { tenantId: "tenant_001" },
+  req,
+  statusCode: 500,
+  durationMs: 7
+}, {
+  env: {
+    VERCEL_ENV: "preview",
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role"
+  },
+  fetchImpl: async (url, init) => {
+    duplicateSafeWrites.push({ url: new URL(url), init });
+    return { ok: true, status: 201, text: async () => "" };
+  }
+});
+assert.equal(duplicateSafeWrites[0].url.searchParams.get("on_conflict"), "tenant_id,request_id");
+assert.match(new Headers(duplicateSafeWrites[0].init.headers).get("prefer"), /resolution=ignore-duplicates/);
+
+const deployedFailureWrites = [];
+const deployedTelemetry = createRequestTelemetry(req, { statusCode: 500, setHeader() {} });
+deployedTelemetry.bindContext({ tenantId: "tenant_001" });
+const deployedFailure = await deployedTelemetry.fail(new Error("provider failed"), {
+  env: {
+    VERCEL_ENV: "preview",
+    SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role"
+  },
+  fetchImpl: async (url) => {
+    deployedFailureWrites.push(new URL(url).pathname);
+    return { ok: true, status: 201, text: async () => "" };
+  }
+});
+assert.deepEqual(deployedFailureWrites, ["/rest/v1/error_logs"]);
+assert.equal(deployedFailure.request_log.reason, "error_log_is_authoritative");
+assert.equal(deployedFailure.error_log.saved, true);
 
 const pricedV4 = adaptRecognitionResultToV4({
   sessionId: "session-priced",
@@ -202,5 +265,38 @@ const configuredZeroCost = v4ResponseUsage({
 });
 assert.equal(configuredZeroCost.estimatedCostUsd, 0, "a configured measured zero remains a real zero");
 assert.equal(configuredZeroCost.pricingCoverage, "PRICED");
+
+let circuitWriteCount = 0;
+const circuitEnv = {
+  VERCEL_ENV: "preview",
+  PRODUCTION_OBSERVABILITY_CIRCUIT_MS: "30000",
+  SUPABASE_URL: "https://example.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role"
+};
+const circuitFailure = await persistErrorLog({
+  error: new Error("database unavailable"),
+  context: { tenantId: "tenant_001" }
+}, {
+  env: circuitEnv,
+  now: () => 1_000,
+  fetchImpl: async () => {
+    circuitWriteCount += 1;
+    return { ok: false, status: 503, text: async () => "temporarily unavailable" };
+  }
+});
+assert.equal(circuitFailure.saved, false);
+const circuitSkipped = await persistErrorLog({
+  error: new Error("another database failure"),
+  context: { tenantId: "tenant_001" }
+}, {
+  env: circuitEnv,
+  now: () => 2_000,
+  fetchImpl: async () => {
+    circuitWriteCount += 1;
+    throw new Error("the open circuit must not issue a second write");
+  }
+});
+assert.equal(circuitSkipped.reason, "operational_write_circuit_open");
+assert.equal(circuitWriteCount, 1);
 
 console.log("production event tests passed");

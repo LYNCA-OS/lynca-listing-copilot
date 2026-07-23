@@ -1034,9 +1034,10 @@ const conflictedYearStillFailsClosedWithObservationSnapshot = buildV4ResolvedFie
 });
 assert.equal(
   conflictedYearStillFailsClosedWithObservationSnapshot.year,
-  "2013",
-  "a current-image year remains visible in the writer draft while its conflict stays review-gated"
+  null,
+  "a raw observed year must not bypass a resolver conflict at the final serialization boundary"
 );
+
 assert.equal(
   buildV4FieldStates({
     resolved_fields: conflictedYearStillFailsClosedWithObservationSnapshot,
@@ -1270,6 +1271,8 @@ const nativeExactAnchorContract = buildV4PipelineContract({
   persistence: { recognition_session: { saved: true } }
 });
 assert.equal(nativeExactAnchorContract.contract_status, "PASSED");
+assert.equal(nativeExactAnchorContract.retrieval_source_contract.sources.catalog.status, "AVAILABLE");
+assert.equal(nativeExactAnchorContract.retrieval_source_contract.catalog_selected, true);
 assert.deepEqual(nativeExactAnchorContract.strategy_profile, v4ProductionStrategyProfile);
 assert.equal(nativeExactAnchorContract.migration_complete, true);
 assert.deepEqual(nativeExactAnchorContract.bridged_stages, []);
@@ -1306,6 +1309,7 @@ const nativeL2Contract = buildV4PipelineContract({
   }
 });
 assert.equal(nativeL2Contract.contract_status, "PASSED");
+assert.equal(nativeL2Contract.retrieval_source_contract.sources.catalog.status, "AVAILABLE");
 assert.equal(nativeL2Contract.core_implementation, "NATIVE_V4");
 assert.equal(nativeL2Contract.legacy_core_dependency, false);
 assert.equal(nativeL2Contract.migration_complete, true);
@@ -1335,6 +1339,49 @@ const scatteredCandidateApplicationContract = buildV4PipelineContract({
 assert.equal(scatteredCandidateApplicationContract.contract_status, "FAILED");
 assert.ok(scatteredCandidateApplicationContract.violations.some(
   (violation) => violation.code === "CANDIDATE_FIELDS_APPLIED_OUTSIDE_ATOMIC_STAGE"
+));
+
+const catalogSurvivesVectorFailureContract = buildV4PipelineContract({
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    provider: "replacement-observation-provider",
+    model: "future-model",
+    catalog_activation_funnel: { query_attempted: true, raw_candidate_count: 1 },
+    vector_activation_funnel: { query_attempted: true, raw_candidate_count: 0 },
+    vector_candidate_packet: {
+      vector_retrieval: {
+        status: "UNAVAILABLE",
+        unavailable: [{ reason: "replacement_embedding_unavailable" }],
+        candidates: []
+      }
+    },
+    resolved_fields: { year: "2024", product: "Topps Chrome" },
+    final_title: "2024 Topps Chrome"
+  }
+});
+assert.equal(catalogSurvivesVectorFailureContract.contract_status, "PASSED");
+assert.equal(catalogSurvivesVectorFailureContract.retrieval_source_contract.contract_status, "DEGRADED");
+assert.equal(catalogSurvivesVectorFailureContract.retrieval_source_contract.catalog_available, true);
+assert.equal(catalogSurvivesVectorFailureContract.retrieval_source_contract.surviving_source_available, true);
+assert.ok(catalogSurvivesVectorFailureContract.violations.some(
+  (violation) => violation.code === "RETRIEVAL_SOURCE_DEGRADED" && violation.source === "vector"
+));
+
+const catalogFunnelBypassContract = buildV4PipelineContract({
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    provider: "openai",
+    catalog_candidate_packet: {
+      vector_retrieval: { status: "AVAILABLE", candidates: [{ candidate_id: "catalog-hidden-1" }] }
+    },
+    catalog_activation_funnel: { query_attempted: true, raw_candidate_count: 0 },
+    resolved_fields: { product: "Topps Chrome" },
+    final_title: "Topps Chrome"
+  }
+});
+assert.equal(catalogFunnelBypassContract.contract_status, "FAILED");
+assert.ok(catalogFunnelBypassContract.violations.some(
+  (violation) => violation.code === "RETRIEVAL_SOURCE_PACKET_BYPASSED_FUNNEL" && violation.source === "catalog"
 ));
 
 const missingQualityMetrics = buildV4QualityLedger({

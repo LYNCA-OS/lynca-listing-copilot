@@ -186,6 +186,13 @@ try {
   assert.equal(prepared.preparation_diagnostics.upload_verify_attempts, 2);
   assert.ok(Number.isFinite(prepared.preparation_diagnostics.upload_verify_max_latency_ms));
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-asset-create").length, 1);
+  const [assetCreateCall] = calls.filter((call) => call.pathname === "/api/listing-asset-create");
+  assert.match(assetCreateCall.body.client_asset_ref, /^v4-smoke:[0-9a-f]{16}$/);
+  assert.equal(
+    assetCreateCall.body.client_asset_ref.split(":").length,
+    2,
+    "smoke retries must reuse a stable client asset reference instead of appending a random UUID"
+  );
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-upload-url").length, 2);
   assert.equal(calls.filter((call) => call.pathname.startsWith("/upload/") && call.method === "PUT").length, 2);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-upload").length, 2);
