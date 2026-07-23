@@ -403,15 +403,16 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
 }
 
 {
-  const detailHtml = ({ number, rarity, name, type, color = "Red", traits = "Star Dragon" }) => `
+  const detailHtml = ({ number, rarity, name, type, color = "Red", traits = "Star Dragon", product = "[BSS01] DAWN OF HISTORY" }) => `
     <dl class="modalInfoCol" id="card_${number}">
       <dt><div class="infoCol"><span>${number}</span> | <span>${rarity}</span></div><div class="cardName">${name}</div></dt>
       <dd><div class="cardImage"><img src="../images/cards/card/${number}.png" alt="CARD"></div>
       <div class="cardData"><div><h3>Color</h3><p>${color}</p></div><div><h3>Card Type</h3><p>${type}</p></div>
       <div><h3>Type</h3><p>${traits}</p></div></div></dd>
-      <dd class="dataProducts"><div class="dataProductsInner"><p>[BSS01] DAWN OF HISTORY</p></div></dd>
+      ${product ? `<dd class="dataProducts"><div class="dataProductsInner"><p>${product}</p></div></dd>` : ""}
     </dl>`;
   const listingHtml = `
+    <select><option value="575001" selected>[BSS01] DAWN OF HISTORY</option></select>
     <a data-src="detail.php?card_no=BSS01-001"><img src="../images/cards/card/BSS01-001.png"></a>
     <a data-src="detail.php?card_no=BSS01-136"><img src="../images/cards/card/BSS01-136.png"></a>
     <a data-src="https://catalog.example/cards/detail.php?card_no=BSS01-999">untrusted</a>`;
@@ -449,7 +450,7 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
   assert.equal(report.metrics.card_count, 2);
   assert.equal(report.metrics.promotion_candidate_count, 2);
   assert.equal(report.metrics.review_required_count, 0);
-  assert.match(report.raw.sources[0].parser_version, /battle-spirits-detail-v1$/);
+  assert.match(report.raw.sources[0].parser_version, /battle-spirits-detail-v2$/);
   const first = report.raw.staging[0].staging;
   assert.equal(first.identity_fields.product, "[BSS01] DAWN OF HISTORY");
   assert.equal(first.identity_fields.card_name, "Supernova Dragon Siegwurm Nova");
@@ -466,6 +467,23 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
       html: detailHtml({ number: "BSS01-001", rarity: "", name: "Incomplete", type: "Spirit" })
     }]
   })), /battle_spirits_detail_contract_incomplete:BSS01-001/);
+  const listingFallback = parseBattleSpiritsDetailBundle(JSON.stringify({
+    schema_version: "battle-spirits-detail-bundle-v1",
+    listing_html: '<option value="575006" selected>[BSS06] GENERATIONAL LINK</option>',
+    detail_pages: [{
+      href: "https://www.battlespirits-saga.com/cards/detail.php?card_no=BSS06-001",
+      html: detailHtml({ number: "BSS06-001", rarity: "X", name: "Absolute Divinity Amaterasu Dragon", type: "Spirit", product: "" })
+    }]
+  }), { sourceUrl: "https://www.battlespirits-saga.com/cards/?category=575006&search=true" });
+  assert.equal(listingFallback[0].product, "[BSS06] GENERATIONAL LINK");
+  assert.throws(() => parseBattleSpiritsDetailBundle(JSON.stringify({
+    schema_version: "battle-spirits-detail-bundle-v1",
+    listing_html: '<option value="575002" selected>[BSS02] FALSE GODS</option>',
+    detail_pages: [{
+      href: "https://www.battlespirits-saga.com/cards/detail.php?card_no=BSS01-001",
+      html: detailHtml({ number: "BSS01-001", rarity: "X", name: "Mismatch", type: "Spirit" })
+    }]
+  }), { sourceUrl: "https://www.battlespirits-saga.com/cards/?category=575002&search=true" }), /battle_spirits_product_mapping_mismatch:BSS01-001/);
   await assert.rejects(() => battleSpirits.downloadSource({
     href: "https://www.battlespirits-saga.com/cards/?search=true"
   }), /battle_spirits_bounded_category_url_required/);
