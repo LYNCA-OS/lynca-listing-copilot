@@ -74,6 +74,33 @@ const inferredLandscapeCardCode = normalizePaddleOcrResponse({
 });
 assert.equal(inferredLandscapeCardCode.normalized_fields.collector_number, "17");
 
+const backOnlyUniqueCardCode = normalizePaddleOcrResponse({
+  raw_text: "SHOHEI OHTANI\n17\n© 2024",
+  confidence: 0.99,
+  text_candidates: [
+    { text: "17", confidence: 0.99, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 600, y: 600 }, { x: 700, y: 600 }, { x: 700, y: 680 }, { x: 600, y: 680 }] } },
+    { text: "2024", confidence: 0.99, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 1000, y: 900 }, { x: 1200, y: 900 }, { x: 1200, y: 950 }, { x: 1000, y: 950 }] } }
+  ]
+}, {
+  request_id: "ocr-card-code-back-unique",
+  image_url: "https://storage.test/back.jpg?token=secret",
+  crop_type: "collector_number",
+  metadata: { source_side: "back" }
+});
+assert.equal(backOnlyUniqueCardCode.normalized_fields.collector_number, "17");
+
+const frontJerseyNumber = normalizePaddleOcrResponse({
+  raw_text: "SHOHEI OHTANI\n17",
+  confidence: 0.99,
+  text_candidates: [{ text: "17", confidence: 0.99, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 600, y: 600 }, { x: 700, y: 600 }, { x: 700, y: 680 }, { x: 600, y: 680 }] } }]
+}, {
+  request_id: "ocr-card-code-front-jersey",
+  image_url: "https://storage.test/front.jpg?token=secret",
+  crop_type: "collector_number",
+  metadata: { source_side: "front" }
+});
+assert.equal(frontJerseyNumber.normalized_fields.collector_number, undefined);
+
 const ocrResult = normalizePaddleOcrResponse({
   raw_text: "Serial 31 / 50",
   confidence: 0.93,
