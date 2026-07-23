@@ -165,8 +165,16 @@ function curlFetchForConnectToIp(connectToIp = "") {
 export function vercelCurlFetchForDeployment(deploymentUrl = "") {
   const deployment = normalizeText(deploymentUrl).replace(/\/+$/, "");
   if (!deployment) return null;
+  const deploymentHostname = new URL(deployment).hostname;
+  const externalFetch = globalThis.fetch.bind(globalThis);
   return async function vercelCurlFetch(url, init = {}) {
     const parsedUrl = new URL(url);
+    // `vercel curl` addresses a path on one protected deployment. Signed
+    // Supabase storage URLs and other provider endpoints must retain their
+    // own origin; rewriting them onto the Preview host produces false 404s.
+    if (parsedUrl.hostname !== deploymentHostname) {
+      return externalFetch(url, init);
+    }
     const path = `${parsedUrl.pathname}${parsedUrl.search}`;
     const tempDir = await mkdtemp(join(tmpdir(), "lynca-vercel-curl-eval-"));
     const headerPath = join(tempDir, "headers.txt");
