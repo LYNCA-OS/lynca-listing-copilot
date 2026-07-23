@@ -69,6 +69,8 @@ assert.equal(evaluationProfile.provider_options.card_domain_selection_mode, "tru
 assert.deepEqual(evaluationProfile.execution, profile.execution);
 
 const oracleProfile = resolveRecognitionProfile(recognitionProfileIds.ACCURACY_CEILING_ORACLE, env);
+assert.equal(oracleProfile.provider_options.require_terminal_preingestion_ocr, true);
+assert.equal(oracleProfile.provider_options.preingestion_ocr_post_provider_wait_ms, 90_000);
 assert.equal(oracleProfile.provider_options.evaluation_profile, "v4_accuracy_ceiling_oracle_v1");
 assert.equal(oracleProfile.provider_options.enable_vector_lazy_mode, false);
 assert.equal(oracleProfile.provider_options.force_vector_assist, true);
