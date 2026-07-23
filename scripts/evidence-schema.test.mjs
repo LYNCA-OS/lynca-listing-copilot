@@ -717,6 +717,20 @@ const autographGradeCannotBecomeCardGrade = normalizeResolvedFields({
 assert.equal(autographGradeCannotBecomeCardGrade.card_grade, null);
 assert.equal(autographGradeCannotBecomeCardGrade.auto_grade, "10");
 assert.equal(autographGradeCannotBecomeCardGrade.grade_type, "AUTO_ONLY");
+assert.equal(autographGradeCannotBecomeCardGrade.auto, true);
+
+const cardAndAutographGradeImpliesAutograph = normalizeResolvedFields({
+  grade_company: "BGS",
+  card_grade: "9.5",
+  auto_grade: "9",
+  auto: false
+});
+assert.equal(cardAndAutographGradeImpliesAutograph.grade_type, "CARD_AND_AUTO");
+assert.equal(cardAndAutographGradeImpliesAutograph.auto, true);
+
+assert.equal(normalizeResolvedFields({ card_name: "Rookie", rc: false }).rc, true);
+assert.equal(normalizeResolvedFields({ card_name: "Rookie Card", rc: false }).rc, true);
+assert.equal(normalizeResolvedFields({ card_name: "Rookie Ticket", rc: false }).rc, false);
 
 assert.throws(
   () => assertValidEvidenceDocument({
