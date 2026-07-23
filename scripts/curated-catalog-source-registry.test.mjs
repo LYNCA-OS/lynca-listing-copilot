@@ -6,6 +6,7 @@ import {
 } from "../lib/listing/catalog/catalog-contract.mjs";
 import {
   catalogSourceCanAutoPromote,
+  catalogSourceCanEnterRetrieval,
   catalogSourceCanEnterPrompt,
   catalogSourceImportPlan,
   catalogSourceImportPolicy,
@@ -122,6 +123,13 @@ import {
   assert.equal(marketplace.quality_tier, catalogSourceQualityTiers.REJECTED);
   assert.equal(marketplace.import_mode, catalogSourceImportModes.REJECTED);
   assert.equal(catalogSourceCanEnterPrompt("marketplace_reference", { evalTrustOverride: true, noDirectConflict: true }), false);
+  assert.equal(catalogSourceCanEnterRetrieval("marketplace_reference"), false);
+  assert.deepEqual(marketplace.allowed_usage, ["blind_eval_diagnostics", "catalog_gap_discovery"]);
+  assert.ok(marketplace.forbidden_usage.includes("candidate_generation"));
 }
+
+assert.equal(catalogSourceCanEnterRetrieval("topps"), true);
+assert.equal(catalogSourceCanEnterRetrieval("pokemon"), true);
+assert.equal(catalogSourceCanEnterRetrieval("unknown_source"), false);
 
 console.log("curated catalog source registry tests passed");

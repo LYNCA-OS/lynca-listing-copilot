@@ -1,26 +1,24 @@
-// Dual-agreement gap-queue promotion pump.
+// Legacy-named gap-queue review packet builder.
 //
 // The gap queue is a CANDIDATE pool, not a data source: rows are single-model
-// output with zero human confirmation. A row may enter the catalog only when
-// two independent sources agree on identity:
+// output with zero human confirmation. Recognition consensus plus an eBay
+// seller title is not independent ground truth and must not write catalog
+// products, sets, cards, or parallels. This command therefore emits a review
+// packet only:
 //   machine half — the printed code read consistently across >= minRuns
 //                  recognition runs (pre-aggregated in the input export)
-//   human half   — a human-written title (sealed seller label or writer
-//                  feedback) that contains the same player, and a compatible
-//                  year when both sides carry one
-// Everything else stays in the queue for human review. Promoted rows carry
-// identity fields only, review_status REVIEW_REQUIRED (revocable), and full
-// provenance in metadata.
+//   market hint  — an eBay seller title that contains the same player, and a
+//                  compatible year when both sides carry one
+// Every row stays outside the catalog until a real reviewed-internal workflow
+// confirms it. The old direct SQL promotion behavior is intentionally retired.
 //
 // Usage:
 //   node scripts/catalog-promote-gap-queue.mjs \
 //     --gap data/eval/catalog-promotion/gap-stable-20260709.json \
 //     --labels data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl \
-//     --out data/eval/catalog-promotion/promotion-20260709.sql
+//     --out data/eval/catalog-promotion/review-packet-20260709.json
 //
-// Emits idempotent SQL (products find-or-create + cards insert-if-absent);
-// apply it with service-role credentials. Rejected rows are listed with
-// reasons on stderr so the human queue keeps full visibility.
+// Emits JSON only. It never emits executable SQL.
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -56,11 +54,6 @@ function titleYear(title) {
   return (cleanText(title).match(/(19|20)\d{2}(?:-\d{2})?/) || [""])[0];
 }
 
-function sqlQuote(value) {
-  if (value === null || value === undefined || cleanText(String(value)) === "") return "null";
-  return `'${String(value).replace(/'/g, "''")}'`;
-}
-
 function sportFor(row, sellerTitle) {
   const haystack = foldDiacritics(`${row.product || ""} ${row.set_name || ""} ${sellerTitle}`);
   if (/wwe|wrestl/.test(haystack)) return "wrestling";
@@ -75,25 +68,25 @@ export function evaluateGapRow(row, sellerTitle, { minRuns = 2 } = {}) {
   const players = playersFrom(row);
   const code = cleanText(row.code);
   const title = cleanText(sellerTitle);
-  if (!code) return { promote: false, reason: "no_printed_code" };
-  if (Number(row.runs || 0) < minRuns) return { promote: false, reason: "insufficient_run_consensus" };
-  if (!players.length) return { promote: false, reason: "no_players" };
-  if (!title) return { promote: false, reason: "no_human_title" };
+  if (!code) return { review_candidate: false, reason: "no_printed_code" };
+  if (Number(row.runs || 0) < minRuns) return { review_candidate: false, reason: "insufficient_run_consensus" };
+  if (!players.length) return { review_candidate: false, reason: "no_players" };
+  if (!title) return { review_candidate: false, reason: "no_marketplace_title" };
 
   const foldedTitle = foldDiacritics(title);
   const playerAgreed = players.some((player) => {
     const parts = foldDiacritics(player).split(" ").filter((part) => part.length > 1);
     return parts.length > 0 && parts.every((part) => foldedTitle.includes(part));
   });
-  if (!playerAgreed) return { promote: false, reason: "player_not_in_human_title" };
+  if (!playerAgreed) return { review_candidate: false, reason: "player_not_in_marketplace_title" };
 
   const modelYear = startYear(row.year);
   const humanYear = startYear(titleYear(title));
   if (modelYear && humanYear && modelYear !== humanYear) {
-    return { promote: false, reason: `year_conflict_model_${modelYear}_title_${humanYear}` };
+    return { review_candidate: false, reason: `year_conflict_model_${modelYear}_title_${humanYear}` };
   }
   const year = cleanText(row.year) || titleYear(title);
-  if (!year) return { promote: false, reason: "no_year_from_either_source" };
+  if (!year) return { review_candidate: false, reason: "no_year_from_either_source" };
 
   // The product line is part of identity: a row without a recognizable
   // product (or whose only "product" is really an insert/subset name) stays
@@ -103,13 +96,13 @@ export function evaluateGapRow(row, sellerTitle, { minRuns = 2 } = {}) {
   const productText = cleanText(row.product) || "";
   const setText = cleanText(row.set_name) || "";
   if (!productText && !productLinePattern.test(setText)) {
-    return { promote: false, reason: "no_recognizable_product_line" };
+    return { review_candidate: false, reason: "no_recognizable_product_line" };
   }
 
   return {
-    promote: true,
+    review_candidate: true,
     year,
-    year_source: cleanText(row.year) ? "recognition_consensus" : "seller_title",
+    year_source: cleanText(row.year) ? "recognition_consensus" : "marketplace_title",
     product_source: productText ? "recognition_consensus" : "set_name_fallback",
     players
   };
@@ -118,7 +111,7 @@ export function evaluateGapRow(row, sellerTitle, { minRuns = 2 } = {}) {
 export async function main(argv = process.argv) {
   const gapPath = argValue(argv, "--gap");
   const labelsPath = argValue(argv, "--labels");
-  const outPath = argValue(argv, "--out", "data/eval/catalog-promotion/promotion.sql");
+  const outPath = argValue(argv, "--out", "data/eval/catalog-promotion/review-packet.json");
   const minRuns = Number(argValue(argv, "--min-runs", "2"));
   if (!gapPath || !labelsPath) throw new Error("--gap and --labels are required");
 
@@ -130,19 +123,19 @@ export async function main(argv = process.argv) {
     labels.set(row.case_id || row.key, cleanText(row.title));
   }
 
-  const promoted = [];
+  const reviewCandidates = [];
   const rejected = [];
   for (const row of gapRows) {
     const caseId = String(row.asset_id || "").replace(/^ebay_image_only_/, "");
     const sellerTitle = labels.get(caseId) || "";
     const verdict = evaluateGapRow(row, sellerTitle, { minRuns });
-    if (!verdict.promote) {
+    if (!verdict.review_candidate) {
       rejected.push({ asset_id: row.asset_id, code: row.code, reason: verdict.reason });
       continue;
     }
     const players = verdict.players;
     const product = cleanText(row.product || row.set_name || "").replace(/^(19|20)\d{2}(-\d{2})?\s+/, "") || "Unknown Product";
-    promoted.push({
+    reviewCandidates.push({
       sport: sportFor(row, sellerTitle),
       year: verdict.year,
       year_source: verdict.year_source,
@@ -160,78 +153,36 @@ export async function main(argv = process.argv) {
     });
   }
 
-  const productValues = [...new Map(promoted.map((card) => [
-    `${card.product}::${card.year}`,
-    `  (${sqlQuote(card.sport)}, ${sqlQuote(card.year)}, ${sqlQuote(card.manufacturer)}, ${sqlQuote(card.product)})`
-  ])).values()].join(",\n");
-
-  const cardValues = promoted.map((card) => [
-    sqlQuote(card.sport), sqlQuote(card.year), sqlQuote(card.manufacturer), sqlQuote(card.product),
-    sqlQuote(card.set_or_insert),
-    `array[${card.players.map(sqlQuote).join(",")}]`,
-    sqlQuote(card.team), sqlQuote(card.card_number), sqlQuote(card.checklist_code),
-    sqlQuote(card.canonical_title), sqlQuote(card.asset_id), String(card.runs), sqlQuote(card.year_source)
-  ].join(", ")).map((row) => `  (${row})`).join(",\n");
-
-  const sql = `-- dual_agreement_auto_v1 gap-queue promotion (generated ${new Date().toISOString()})
-insert into catalog_products (sport, season_year, manufacturer, product, source_status, review_status, metadata)
-select v.sport, v.season_year, v.manufacturer, v.product, 'AUTO_PARSED_FROM_VERIFIED_TITLE', 'REVIEW_REQUIRED',
-       jsonb_build_object('promotion','dual_agreement_auto_v1','promoted_at', now())
-from (values
-${productValues}
-) v(sport, season_year, manufacturer, product)
-where not exists (
-  select 1 from catalog_products p
-  where p.product = v.product and coalesce(p.season_year,'') = v.season_year
-);
-
-with card_rows as (
-  select * from (values
-${cardValues}
-  ) v(sport, season_year, manufacturer, product, set_or_insert, players, team, card_number, checklist_code, canonical_title, asset_id, consensus_runs, year_source)
-)
-insert into catalog_cards (
-  product_id, sport, season_year, manufacturer, brand, product, set_or_insert,
-  players, team, card_number, checklist_code, observable_components,
-  canonical_title, source_status, review_status, metadata
-)
-select distinct on (c.canonical_title)
-  p.id, c.sport, c.season_year, c.manufacturer, c.manufacturer, c.product, c.set_or_insert,
-  c.players, c.team, c.card_number, c.checklist_code, '{}'::text[],
-  c.canonical_title, 'AUTO_PARSED_FROM_VERIFIED_TITLE', 'REVIEW_REQUIRED',
-  jsonb_build_object(
-    'promotion', 'dual_agreement_auto_v1',
-    'agreement_sources', jsonb_build_array('multi_run_recognition_consensus', 'seller_title_player_year'),
-    'source_asset_id', c.asset_id,
-    'consensus_runs', c.consensus_runs,
-    'year_source', c.year_source,
-    'promoted_at', now(),
-    'identity_fields_only', true
-  )
-from card_rows c
-join catalog_products p
-  on p.product = c.product and coalesce(p.season_year,'') = c.season_year
-where not exists (
-  select 1 from catalog_cards cc
-  where cc.players && c.players
-    and catalog_years_compatible(c.season_year, cc.season_year)
-    and (
-      upper(coalesce(cc.checklist_code,'')) = upper(coalesce(c.checklist_code, c.card_number))
-      or upper(coalesce(cc.card_number,'')) = upper(coalesce(c.card_number, c.checklist_code))
-    )
-)
-order by c.canonical_title, p.created_at desc
-returning id, canonical_title;
-`;
+  const packet = {
+    schema_version: "catalog-gap-review-packet-v1",
+    generated_at: new Date().toISOString(),
+    source_type: "MARKETPLACE_REFERENCE",
+    catalog_write_allowed: false,
+    independent_ground_truth: false,
+    required_next_action: "REVIEWED_INTERNAL_CONFIRMATION",
+    candidate_count: reviewCandidates.length,
+    rejected_count: rejected.length,
+    candidates: reviewCandidates.map((candidate) => ({
+      ...candidate,
+      candidate_status: "REVIEW_REQUIRED",
+      catalog_write_allowed: false,
+      provenance: {
+        recognition_consensus: true,
+        marketplace_title: true,
+        reviewed_internal: false
+      }
+    })),
+    rejected
+  };
 
   await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, sql, "utf8");
-  process.stderr.write(`promoted=${promoted.length} rejected=${rejected.length}\n`);
+  await writeFile(outPath, `${JSON.stringify(packet, null, 2)}\n`, "utf8");
+  process.stderr.write(`review_candidates=${reviewCandidates.length} rejected=${rejected.length}\n`);
   for (const reject of rejected) {
     process.stderr.write(`  REJECT ${reject.asset_id} code=${reject.code} reason=${reject.reason}\n`);
   }
-  process.stderr.write(`sql written to ${outPath}\n`);
-  return { promoted, rejected, outPath };
+  process.stderr.write(`review packet written to ${outPath}\n`);
+  return { packet, reviewCandidates, rejected, outPath };
 }
 
 if (process.argv[1] && process.argv[1].endsWith("catalog-promote-gap-queue.mjs")) {

@@ -53,7 +53,10 @@ export function decisionActiveCatalogCard({ source = {}, card = {} } = {}) {
 export function buildCatalogOperationalCoverage({
   registry = curatedCatalogSources,
   sources = [],
+  products = [],
+  sets = [],
   cards = [],
+  parallels = [],
   generatedAt = new Date().toISOString()
 } = {}) {
   const sourcesById = new Map();
@@ -83,6 +86,32 @@ export function buildCatalogOperationalCoverage({
     const sourceType = normalizedStatus(source.source_type);
     if (!cardsByType.has(sourceType)) cardsByType.set(sourceType, []);
     cardsByType.get(sourceType).push({ source, card });
+  }
+
+  const catalogEntityRows = Object.freeze({
+    catalog_products: products,
+    catalog_sets: sets,
+    catalog_cards: cards,
+    catalog_parallels: parallels
+  });
+  const provenanceBreakdown = {};
+  let unattributedCatalogEntityCount = 0;
+  let brokenSourceReferenceCount = 0;
+  for (const [table, entityRows] of Object.entries(catalogEntityRows)) {
+    let unattributed = 0;
+    let broken = 0;
+    for (const row of entityRows) {
+      const sourceId = cleanText(row.source_id);
+      if (!sourceId) unattributed += 1;
+      else if (!sourcesById.has(sourceId)) broken += 1;
+    }
+    provenanceBreakdown[table] = {
+      row_count: entityRows.length,
+      unattributed_count: unattributed,
+      broken_source_reference_count: broken
+    };
+    unattributedCatalogEntityCount += unattributed;
+    brokenSourceReferenceCount += broken;
   }
 
   const rows = registry.map((entry) => {
@@ -125,7 +154,7 @@ export function buildCatalogOperationalCoverage({
   for (const row of rows) increment(stageBreakdown, row.operational_stage);
 
   return {
-    schema_version: "catalog-operational-coverage-v1",
+    schema_version: "catalog-operational-coverage-v2",
     generated_at: generatedAt,
     summary: {
       registered_source_type_count: rows.length,
@@ -133,12 +162,15 @@ export function buildCatalogOperationalCoverage({
       ingested_source_type_count: rows.filter((row) => row.card_count > 0).length,
       decision_active_source_type_count: rows.filter((row) => row.decision_active_card_count > 0).length,
       catalog_source_row_count: sources.length,
+      catalog_entity_row_count: products.length + sets.length + cards.length + parallels.length,
       catalog_card_row_count: cards.length,
       unattributed_catalog_card_count: unattributedCards.length,
-      broken_source_reference_count: brokenSourceReferenceCards.length,
+      unattributed_catalog_entity_count: unattributedCatalogEntityCount,
+      broken_source_reference_count: brokenSourceReferenceCount,
       orphan_catalog_card_count: unattributedCards.length + brokenSourceReferenceCards.length,
       unregistered_source_type_count: unregisteredSourceTypes.length,
-      stage_breakdown: stageBreakdown
+      stage_breakdown: stageBreakdown,
+      provenance_breakdown: provenanceBreakdown
     },
     sources: rows,
     unregistered_source_types: unregisteredSourceTypes
@@ -170,7 +202,7 @@ export async function auditCatalogOperationalCoverage({ env = process.env, fetch
   const baseUrl = cleanText(env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL);
   const serviceRoleKey = cleanText(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY);
   if (!baseUrl || !serviceRoleKey) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
-  const [sources, cards] = await Promise.all([
+  const [sources, products, sets, cards, parallels] = await Promise.all([
     fetchAllRows({
       baseUrl,
       serviceRoleKey,
@@ -180,11 +212,29 @@ export async function auditCatalogOperationalCoverage({ env = process.env, fetch
     fetchAllRows({
       baseUrl,
       serviceRoleKey,
+      table: "catalog_products",
+      select: "id,source_id"
+    }),
+    fetchAllRows({
+      baseUrl,
+      serviceRoleKey,
+      table: "catalog_sets",
+      select: "id,source_id"
+    }),
+    fetchAllRows({
+      baseUrl,
+      serviceRoleKey,
       table: "catalog_cards",
       select: "id,source_id,source_status,review_status"
+    }),
+    fetchAllRows({
+      baseUrl,
+      serviceRoleKey,
+      table: "catalog_parallels",
+      select: "id,source_id"
     })
   ]);
-  return buildCatalogOperationalCoverage({ sources, cards });
+  return buildCatalogOperationalCoverage({ sources, products, sets, cards, parallels });
 }
 
 function argValue(argv, name, fallback = "") {
