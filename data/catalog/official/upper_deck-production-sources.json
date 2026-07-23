@@ -1,0 +1,27 @@
+{
+  "schema_version": "official-source-manifest-v1",
+  "provider": "upper_deck",
+  "sources": [
+    {
+      "source_name": "2024-25 Allure Hockey",
+      "source_url": "https://www.upperdeckepack.com/api/Checklist/GetChecklist?productId=10bb91171c",
+      "source_type": "UPPER_DECK_OFFICIAL_CHECKLIST",
+      "category": "hockey",
+      "minimum_card_count": 4000,
+      "required_records": [
+        {
+          "card_number": "1",
+          "subject": "Aleksander Barkov",
+          "product": "Upper Deck Allure Hockey",
+          "set_or_insert": "Base Set"
+        },
+        {
+          "card_number": "101",
+          "subject": "Logan Stankoven",
+          "product": "Upper Deck Allure Hockey",
+          "set_or_insert": "Red Rainbow Auto Parallel - Rookies"
+        }
+      ]
+    }
+  ]
+}
