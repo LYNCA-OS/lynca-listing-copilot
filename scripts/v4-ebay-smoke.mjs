@@ -200,6 +200,61 @@ function smokeUploadSources(item = {}, index = 0) {
     }));
 }
 
+export async function materializeSmokeSourceImages(items = [], {
+  supabaseUrl = "",
+  serviceRoleKey = "",
+  outputDirectory = "/tmp/lynca-v4-smoke-source",
+  fetchImpl = globalThis.fetch
+} = {}) {
+  const baseUrl = cleanText(supabaseUrl).replace(/\/+$/, "");
+  const storageKey = cleanText(serviceRoleKey);
+  return Promise.all(items.map(async (item, itemIndex) => ({
+    ...item,
+    images: await Promise.all((Array.isArray(item.images) ? item.images : []).map(async (image, imageIndex) => {
+      const localPath = cleanText(image.local_path || image.localPath);
+      if (localPath && existsSync(resolve(localPath))) return { ...image, local_path: localPath };
+      const bucket = cleanText(image.bucket);
+      const objectPath = cleanText(image.object_path || image.objectPath);
+      if (!baseUrl || !storageKey || !bucket || !objectPath) {
+        throw new Error(`smoke_source_image_unavailable:${candidateId(item, itemIndex)}:${cleanText(image.image_id) || imageIndex + 1}`);
+      }
+      const encodedObjectPath = objectPath.split("/").map(encodeURIComponent).join("/");
+      const download = await fetchWithBoundedRetry(
+        `${baseUrl}/storage/v1/object/authenticated/${encodeURIComponent(bucket)}/${encodedObjectPath}`,
+        { headers: { apikey: storageKey, authorization: `Bearer ${storageKey}` } },
+        {
+          fetchImpl,
+          timeoutMs: 30_000,
+          maxAttempts: 3,
+          retryNetworkErrors: true,
+          retryStatuses: [408, 425, 429, 500, 502, 503, 504],
+          maxDelayMs: 1_500
+        }
+      );
+      if (!download.response.ok) {
+        throw new Error(`smoke_source_download_failed:${download.response.status}:${candidateId(item, itemIndex)}`);
+      }
+      const bytes = Buffer.from(await download.response.arrayBuffer());
+      const actualSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+      const declaredSha256 = cleanText(image.content_sha256 || image.contentSha256).toLowerCase();
+      if (/^[a-f0-9]{64}$/.test(declaredSha256) && actualSha256 !== declaredSha256) {
+        throw new Error(`smoke_source_sha256_mismatch:${candidateId(item, itemIndex)}:${cleanText(image.image_id) || imageIndex + 1}`);
+      }
+      const extension = cleanText(image.content_type || image.contentType).toLowerCase() === "image/png" ? ".png" : ".jpg";
+      const fileId = crypto.createHash("sha256").update(`${bucket}:${objectPath}`).digest("hex");
+      const targetPath = resolve(outputDirectory, `${fileId}${extension}`);
+      await mkdir(dirname(targetPath), { recursive: true });
+      await writeFile(targetPath, bytes);
+      return {
+        ...image,
+        local_path: targetPath,
+        source_materialized_from_storage: true,
+        source_download_attempts: download.attempts
+      };
+    }))
+  })));
+}
+
 export async function durableSourceFingerprint(item = {}, index = 0) {
   const sources = (Array.isArray(item.images) ? item.images : []).slice(0, 2);
   if (!sources.length) {
@@ -4417,6 +4472,9 @@ export async function runV4EbaySmoke({
   coldStartBlind = false,
   verifiedAssetCachePath = "",
   verifiedAssetCacheMode = "disabled",
+  sourceStorageUrl = "",
+  sourceStorageServiceRoleKey = "",
+  sourceMaterializationDir = "/tmp/lynca-v4-smoke-source",
   outPath = "",
   progress = true
 } = {}) {
@@ -4443,8 +4501,13 @@ export async function runV4EbaySmoke({
     requestedMode: normalizedSampleMode,
     datasetPolicy: datasetSamplePolicy
   });
-  const items = loadDatasetItems(dataset).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
-  if (!items.length) throw new Error("dataset slice has no items");
+  const selectedItems = loadDatasetItems(dataset).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
+  if (!selectedItems.length) throw new Error("dataset slice has no items");
+  const items = await materializeSmokeSourceImages(selectedItems, {
+    supabaseUrl: sourceStorageUrl,
+    serviceRoleKey: sourceStorageServiceRoleKey,
+    outputDirectory: sourceMaterializationDir
+  });
   const assetCacheEntries = normalizedVerifiedAssetCacheMode === "disabled"
     ? new Map()
     : await readVerifiedAssetCache(verifiedAssetCachePath);
@@ -4893,6 +4956,9 @@ export async function main(argv = process.argv, env = process.env) {
       "--verified-asset-cache-mode",
       env.V4_EBAY_SMOKE_VERIFIED_ASSET_CACHE_MODE || "reuse"
     )),
+    sourceStorageUrl: cleanText(env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL),
+    sourceStorageServiceRoleKey: cleanText(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY),
+    sourceMaterializationDir: cleanText(argValue(argv, "--source-materialization-dir", "/tmp/lynca-v4-smoke-source")),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });
