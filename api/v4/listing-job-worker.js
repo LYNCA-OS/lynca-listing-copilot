@@ -910,7 +910,13 @@ export default async function handler(req, res) {
       tenantId
     });
     if (!claim.ok) {
-      sendJson(res, 500, withV4Version({ ok: false, message: "Unable to claim V4 jobs.", error: claim.error }));
+      sendJson(res, 503, withV4Version({
+        ok: false,
+        retryable: true,
+        error_code: "V4_QUEUE_BACKEND_UNAVAILABLE",
+        message: "Unable to claim V4 jobs.",
+        error: claim.error
+      }));
       return;
     }
     const concurrency = laneProcessConcurrency(lane, payload);

@@ -5,6 +5,7 @@ import {
   buildRequestLogRow,
   createRequestTelemetry,
   operationalErrorFingerprint,
+  operationalBackendFailureShouldSkipDb,
   persistErrorLog,
   persistRequestLog,
   requestIdFromRequest,
@@ -160,6 +161,14 @@ const deployedFailure = await deployedTelemetry.fail(new Error("provider failed"
 assert.deepEqual(deployedFailureWrites, ["/rest/v1/error_logs"]);
 assert.equal(deployedFailure.request_log.reason, "error_log_is_authoritative");
 assert.equal(deployedFailure.error_log.saved, true);
+assert.equal(operationalBackendFailureShouldSkipDb({
+  retryable: true,
+  error_code: "V4_JOB_STATUS_BACKEND_UNAVAILABLE"
+}), true);
+assert.equal(operationalBackendFailureShouldSkipDb({
+  retryable: false,
+  error_code: "V4_JOB_STATUS_BACKEND_UNAVAILABLE"
+}), false);
 
 const pricedV4 = adaptRecognitionResultToV4({
   sessionId: "session-priced",
@@ -273,12 +282,32 @@ const circuitEnv = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role"
 };
+let slowClockIndex = 0;
+const slowClock = [100, 110, 120];
+const slowWrite = await persistErrorLog({
+  error: new Error("slow observability write"),
+  context: { tenantId: "tenant_001" }
+}, {
+  env: { ...circuitEnv, PRODUCTION_OBSERVABILITY_SLOW_WRITE_MS: "5" },
+  now: () => slowClock[slowClockIndex++] ?? 120,
+  fetchImpl: async () => ({ ok: true, status: 201, text: async () => "" })
+});
+assert.equal(slowWrite.saved, true);
+const slowCircuitSkipped = await persistErrorLog({
+  error: new Error("must be shed after a slow observability write"),
+  context: { tenantId: "tenant_001" }
+}, {
+  env: circuitEnv,
+  now: () => slowClock[slowClockIndex++] ?? 120,
+  fetchImpl: async () => { throw new Error("slow-write circuit must shed this write"); }
+});
+assert.equal(slowCircuitSkipped.reason, "operational_write_circuit_open");
 const circuitFailure = await persistErrorLog({
   error: new Error("database unavailable"),
   context: { tenantId: "tenant_001" }
 }, {
   env: circuitEnv,
-  now: () => 1_000,
+  now: (() => { let value = 100_000; return () => (value += 1); })(),
   fetchImpl: async () => {
     circuitWriteCount += 1;
     return { ok: false, status: 503, text: async () => "temporarily unavailable" };
@@ -290,7 +319,7 @@ const circuitSkipped = await persistErrorLog({
   context: { tenantId: "tenant_001" }
 }, {
   env: circuitEnv,
-  now: () => 2_000,
+  now: () => 101_000,
   fetchImpl: async () => {
     circuitWriteCount += 1;
     throw new Error("the open circuit must not issue a second write");

@@ -252,6 +252,8 @@ and delete the flag.
 | `POST_OBSERVATION_EXACT_ANCHOR_CATALOG_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
 | `POST_OBSERVATION_RETRIEVAL_CRITICAL_PATH_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
 | `POST_OBSERVATION_STRUCTURED_ANCHOR_CATALOG_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
+| `PRODUCTION_OBSERVABILITY_CIRCUIT_MS` | lib/observability/production-events.mjs |
+| `PRODUCTION_OBSERVABILITY_SLOW_WRITE_MS` | lib/observability/production-events.mjs |
 | `PREINGESTION_OCR_ANCHOR_CONCURRENCY` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_CAPACITY_LEASE_SECONDS` | lib/listing/v4/orchestration/stage-capacity.mjs |
 | `PREINGESTION_OCR_CAPACITY_POLL_MS` | lib/listing/v4/orchestration/stage-capacity.mjs |
