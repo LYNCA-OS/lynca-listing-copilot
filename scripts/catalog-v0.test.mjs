@@ -739,6 +739,29 @@ assert.equal(providerResult.candidates[0].reference_metadata.source_feedback_id,
 assert.equal(providerResult.candidates[0].fields.serial_number, "#/50");
 assert.equal(providerResult.candidates[0].reference_metadata.expected_serial_denominator, "50");
 
+const unattributedProvider = catalogProvider({
+  env: {
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role",
+    ENABLE_CATALOG_RETRIEVAL: "true"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([{
+    identity_id: "55555555-5555-5555-5555-555555555555",
+    canonical_title: "unattributed legacy row",
+    fields: { year: "2025", players: ["Cooper Flagg"] },
+    raw_score: 1,
+    normalized_score: 1
+  }]), { status: 200 })
+});
+const unattributedResult = await unattributedProvider.search({
+  query: { exact_subject: "Cooper Flagg", exact_year: "2025" }
+});
+assert.equal(
+  unattributedResult.candidates.length,
+  0,
+  "catalog rows without source provenance must never enter candidate selection"
+);
+
 const subjectPreservationProvider = catalogProvider({
   env: {
     SUPABASE_URL: "https://supabase.test/",

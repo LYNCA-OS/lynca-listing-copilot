@@ -67,11 +67,17 @@ export function buildCatalogOperationalCoverage({
   }
 
   const cardsByType = new Map();
-  const orphanCards = [];
+  const unattributedCards = [];
+  const brokenSourceReferenceCards = [];
   for (const card of cards) {
-    const source = sourcesById.get(cleanText(card.source_id));
+    const sourceId = cleanText(card.source_id);
+    if (!sourceId) {
+      unattributedCards.push(card);
+      continue;
+    }
+    const source = sourcesById.get(sourceId);
     if (!source) {
-      orphanCards.push(card);
+      brokenSourceReferenceCards.push(card);
       continue;
     }
     const sourceType = normalizedStatus(source.source_type);
@@ -128,7 +134,9 @@ export function buildCatalogOperationalCoverage({
       decision_active_source_type_count: rows.filter((row) => row.decision_active_card_count > 0).length,
       catalog_source_row_count: sources.length,
       catalog_card_row_count: cards.length,
-      orphan_catalog_card_count: orphanCards.length,
+      unattributed_catalog_card_count: unattributedCards.length,
+      broken_source_reference_count: brokenSourceReferenceCards.length,
+      orphan_catalog_card_count: unattributedCards.length + brokenSourceReferenceCards.length,
       unregistered_source_type_count: unregisteredSourceTypes.length,
       stage_breakdown: stageBreakdown
     },
