@@ -283,6 +283,7 @@ import {
     <div class="productName">${product}</div>`;
   let dragonBallFetchCount = 0;
   let dragonBallTransientFailureInjected = false;
+  let dragonBallBaseProduct = "STARTER DECK -SON GOKU- [FS01]";
   const dragonBall = createOfficialCatalogSourceAdapter({
     provider: "dragon_ball_fusion_world",
     fetchImpl: async (url) => {
@@ -294,13 +295,13 @@ import {
       }
       if (href.includes("card_no=FS01-01")) return new Response(dragonBallDetail({
         number: "FS01-01", name: "Son Goku", rarity: "L", type: "LEADER",
-        product: "STARTER DECK -SON GOKU- [FS01]", image: "FS01-01_f.webp", token: `detail-${dragonBallFetchCount}`
+        product: dragonBallBaseProduct, image: "FS01-01_f.webp", token: `detail-${dragonBallFetchCount}`
       }), { status: 200, headers: { "content-type": "text/html" } });
       if (href.includes("card_no=FS01-16")) return new Response(dragonBallDetail({
         number: "FS01-16", name: "God Kamehameha", rarity: "PR", type: "EXTRA",
         product: "STARTER DECK -SON GOKU- Bonus pack", image: "FS01-16_p1.webp", token: `detail-${dragonBallFetchCount}`
       }), { status: 200, headers: { "content-type": "text/html" } });
-      return new Response(`<meta name="token" content="list-${dragonBallFetchCount}">${dragonBallListHtml}`, { status: 200, headers: { "content-type": "text/html" } });
+      return new Response(`<meta name="token" content="list-${dragonBallFetchCount}"><div data-request-id="${dragonBallFetchCount}"></div>${dragonBallListHtml}`, { status: 200, headers: { "content-type": "text/html" } });
     }
   });
   const report = await dragonBall.buildImportReport({
@@ -330,6 +331,14 @@ import {
   });
   assert.equal(dragonBallFetchCount, 7);
   assert.equal(repeatedReport.raw.sources[0].raw_checksum, report.raw.sources[0].raw_checksum);
+  dragonBallBaseProduct = "STARTER DECK -SON GOKU- [FS01] UPDATED";
+  const changedFactReport = await dragonBall.buildImportReport({
+    sourceUrls: [{
+      href: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B%5D=583101",
+      text: "Dragon Ball Fusion World Starter Deck Son Goku FS01"
+    }]
+  });
+  assert.notEqual(changedFactReport.raw.sources[0].raw_checksum, report.raw.sources[0].raw_checksum);
 }
 
 {
