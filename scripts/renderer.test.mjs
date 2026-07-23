@@ -30,6 +30,29 @@ assert.equal(wemby.modules.numerical_rarity.text, "31/50");
 assert.equal(wemby.modules.search_optimization.text, "RC");
 assert.equal(wemby.modules.grading.text, "PSA 10");
 
+const rookieAutographSemanticConsistency = renderListingPresentation({
+  resolved: {
+    year: "2018-19",
+    manufacturer: "Panini",
+    product: "Encased Basketball",
+    players: ["Jaren Jackson Jr"],
+    card_name: "Rookie",
+    surface_color: "Blue",
+    serial_number: "20/99",
+    grade_company: "BGS",
+    card_grade: "9.5",
+    auto_grade: "9",
+    grade_type: "CARD_AND_AUTO",
+    rc: false,
+    auto: false
+  },
+  maxLength: 80
+});
+assert.match(rookieAutographSemanticConsistency.final_title, /\b(?:Rookie|RC)\b/i);
+assert.match(rookieAutographSemanticConsistency.final_title, /\bAuto\b/i);
+assert.match(rookieAutographSemanticConsistency.final_title, /BGS 9\.5\/9$/);
+assert.ok(rookieAutographSemanticConsistency.final_title.length <= 80);
+
 const unsignedObservationIsNotACommercialCardName = renderListingPresentation({
   resolved: {
     year: "2025",
