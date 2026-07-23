@@ -18,7 +18,9 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=moderate
+        run: |
+          npm ls --omit=dev --all
+          node scripts/npm-audit-gate.mjs
       - name: Run offline test suites
         # Every scripts/**/*.test.mjs runs with no credentials; suites that
         # need runtime credentials are excluded explicitly below.
