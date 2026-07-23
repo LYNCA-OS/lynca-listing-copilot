@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  __listingResolutionGateTestHooks,
   applyIdentityResolutionGate,
   applyIdentityResolutionGateWithConvergence
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
@@ -115,6 +116,42 @@ function testVectorReferenceCanSupportButCannotFillMissingIdentity() {
   assert.equal(product.decision, "BLOCK");
   assert.equal(application.identity_evidence_items.some((item) => item.field === "product"), false);
   assert.equal(application.identity_evidence_items.find((item) => item.field === "year")?.source, "VECTOR_APPROVED_REFERENCE");
+}
+
+function testAgreeingDirectTextDoesNotSuppressCurrentImageDraft() {
+  const currentImage = {
+    value: "2025",
+    score: 0.55,
+    confidence: 0.55,
+    evidence_items: [{ source: "PRIMARY_FAST_VISION", confidence: 0.55 }]
+  };
+  const agreeingOcr = {
+    value: "2025",
+    evidence_items: [{ source: "CARD_BACK_PRINTED_TEXT", confidence: 0.9 }]
+  };
+  const conflictingOcr = {
+    value: "2025-26",
+    evidence_items: [{ source: "CARD_BACK_PRINTED_TEXT", confidence: 0.9 }]
+  };
+
+  assert.equal(
+    __listingResolutionGateTestHooks.primaryFastVisionDraftOverride({
+      field: "year",
+      resolved_value: null,
+      decision_route: "ABSTAIN",
+      candidates: [currentImage, agreeingOcr]
+    })?.value,
+    "2025"
+  );
+  assert.equal(
+    __listingResolutionGateTestHooks.primaryFastVisionDraftOverride({
+      field: "year",
+      resolved_value: null,
+      decision_route: "ABSTAIN",
+      candidates: [currentImage, conflictingOcr]
+    }),
+    null
+  );
 }
 
 function testCandidateResolvedShapeStillProducesFieldEvidence() {
@@ -789,6 +826,7 @@ async function testConvergenceCannotReinjectRawCandidates() {
 
 testSelectedCandidateBecomesFieldEvidenceWithoutCopyingInstanceFields();
 testVectorReferenceCanSupportButCannotFillMissingIdentity();
+testAgreeingDirectTextDoesNotSuppressCurrentImageDraft();
 testCandidateResolvedShapeStillProducesFieldEvidence();
 testCandidateFieldShapesMergeWithoutDroppingEvidence();
 testEveryCandidateProducesAuditableDecisionRows();
