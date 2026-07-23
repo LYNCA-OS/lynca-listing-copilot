@@ -38,7 +38,8 @@ import { catalogProvider } from "../lib/listing/retrieval/catalog-provider.mjs";
 import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs";
 import {
   buildProviderCatalogImport,
-  importToppsBasketballChecklists
+  importToppsBasketballChecklists,
+  officialCatalogSupabaseConfig
 } from "./import-topps-basketball-checklists.mjs";
 import {
   officialManifestImporterArgv,
@@ -58,6 +59,19 @@ assert.deepEqual(componentBooleansFromObservableComponents(["Auto", "Jersey", "R
   sketch: false,
   redemption: false
 });
+
+assert.deepEqual(officialCatalogSupabaseConfig({
+  NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co/",
+  SUPABASE_SECRET_KEY: "test-secret"
+}), {
+  url: "https://example.supabase.co",
+  serviceRoleKey: "test-secret"
+});
+assert.equal(officialCatalogSupabaseConfig({
+  SUPABASE_URL: "https://server-only.supabase.co",
+  NEXT_PUBLIC_SUPABASE_URL: "https://public.supabase.co",
+  SUPABASE_SERVICE_ROLE_KEY: "service-role"
+}).url, "https://server-only.supabase.co");
 
 assert.deepEqual(officialManifestImporterArgv({
   manifest: { provider: "wotc_gatherer" },

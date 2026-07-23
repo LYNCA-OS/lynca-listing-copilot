@@ -70,9 +70,9 @@ async function runtimeEnvFromFiles(argv = process.argv, env = process.env) {
   return { ...fileEnv, ...env };
 }
 
-function supabaseConfig(env = process.env) {
+export function officialCatalogSupabaseConfig(env = process.env) {
   return {
-    url: normalizeText(env.SUPABASE_URL).replace(/\/+$/, ""),
+    url: normalizeText(env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL).replace(/\/+$/, ""),
     serviceRoleKey: normalizeText(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY)
   };
 }
@@ -94,9 +94,9 @@ async function supabaseRequest({
   prefer = "",
   fetchImpl = globalThis.fetch
 } = {}) {
-  const config = supabaseConfig(env);
+  const config = officialCatalogSupabaseConfig(env);
   if (!config.url || !config.serviceRoleKey) {
-    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for --apply.");
+    throw new Error("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY are required for --apply.");
   }
   const response = await fetchImpl(`${config.url}${path}`, {
     method,
@@ -194,9 +194,9 @@ async function existingOfficialSource({ env, sourceUrl, sourceType = "TOPPS_OFFI
 }
 
 async function supabaseExactCount({ env, table, filters = [], fetchImpl } = {}) {
-  const config = supabaseConfig(env);
+  const config = officialCatalogSupabaseConfig(env);
   if (!config.url || !config.serviceRoleKey) {
-    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for --apply.");
+    throw new Error("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY are required for --apply.");
   }
   const query = [`select=id`, ...filters].join("&");
   const response = await fetchImpl(`${config.url}/rest/v1/${table}?${query}`, {
