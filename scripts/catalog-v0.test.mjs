@@ -40,7 +40,10 @@ import {
   buildProviderCatalogImport,
   importToppsBasketballChecklists
 } from "./import-topps-basketball-checklists.mjs";
-import { validateOfficialSourceManifestReport } from "./import-official-source-manifest.mjs";
+import {
+  officialManifestImporterArgv,
+  validateOfficialSourceManifestReport
+} from "./import-official-source-manifest.mjs";
 import {
   retrievalProviderIds,
   retrievalQueryFamilies
@@ -55,6 +58,27 @@ assert.deepEqual(componentBooleansFromObservableComponents(["Auto", "Jersey", "R
   sketch: false,
   redemption: false
 });
+
+assert.deepEqual(officialManifestImporterArgv({
+  manifest: { provider: "wotc_gatherer" },
+  source: {
+    source_type: "WOTC_GATHERER_OFFICIAL_DATABASE",
+    category: "tcg",
+    source_url: "https://gatherer.wizards.com/sets/FIN",
+    source_name: "FIN"
+  },
+  envFilePath: "/secure/catalog.env"
+}).slice(-3), ["--apply", "--env-file", "/secure/catalog.env"]);
+assert.deepEqual(officialManifestImporterArgv({
+  manifest: { provider: "wotc_gatherer" },
+  source: {
+    source_type: "WOTC_GATHERER_OFFICIAL_DATABASE",
+    category: "tcg",
+    source_url: "https://gatherer.wizards.com/sets/FIN",
+    source_name: "FIN"
+  },
+  noEnvFile: true
+}).slice(-2), ["--apply", "--no-env-file"]);
 
 const parsedCatalog = correctedTitleRecordToCatalogStaging({
   id: "feedback-1",

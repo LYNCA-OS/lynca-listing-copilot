@@ -82,6 +82,24 @@ export function validateOfficialSourceManifestReport(manifest = {}, report = {})
   return { valid: errors.length === 0, errors, validations };
 }
 
+export function officialManifestImporterArgv({
+  manifest = {},
+  source = {},
+  envFilePath = "",
+  noEnvFile = false
+} = {}) {
+  return [
+    "--all-topps",
+    "--provider", manifest.provider || source.provider || "topps",
+    "--source-type", source.source_type,
+    "--category", source.category || "all",
+    "--source-url", source.source_url,
+    "--source-name", source.source_name,
+    "--apply",
+    ...(envFilePath ? ["--env-file", envFilePath] : noEnvFile ? ["--no-env-file"] : [])
+  ];
+}
+
 async function writeJson(path, value) {
   if (!path) return;
   const resolved = resolve(path);
@@ -97,6 +115,8 @@ export async function importOfficialSourceManifest({
   const manifestPath = resolve(argValue(argv, "--manifest", defaultManifestPath));
   const outPath = argValue(argv, "--out", "");
   const apply = argv.includes("--apply");
+  const envFilePath = argValue(argv, "--env-file", "");
+  const noEnvFile = argv.includes("--no-env-file");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   if (!manifest.provider) throw new Error("official_source_manifest_provider_required");
   if ((manifest.sources || []).some((source) => !isOfficialCatalogSourceType(source.source_type))) {
@@ -124,15 +144,7 @@ export async function importOfficialSourceManifest({
   if (apply) {
     for (const source of manifest.sources) {
       applyReports.push(await importToppsBasketballChecklists({
-        argv: [
-          "--all-topps",
-          "--provider", manifest.provider || source.provider || "topps",
-          "--source-type", source.source_type,
-          "--category", source.category || "all",
-          "--source-url", source.source_url,
-          "--source-name", source.source_name,
-          "--apply"
-        ],
+        argv: officialManifestImporterArgv({ manifest, source, envFilePath, noEnvFile }),
         env,
         fetchImpl
       }));
