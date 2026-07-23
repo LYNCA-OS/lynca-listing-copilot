@@ -272,7 +272,8 @@ import {
       <li class="cardItem"><a data-src="detail.php?card_no=FS01-01"><img data-src="../../images/cards/card/en/FS01-01_f.webp" alt="FS01-01 Son Goku"></a></li>
       <li class="cardItem"><a data-src="detail.php?card_no=FS01-16&p=_p1"><img data-src="../../images/cards/card/en/FS01-16_p1.webp" alt="FS01-16 God Kamehameha"></a></li>
     </ul>`;
-  const dragonBallDetail = ({ number, name, rarity, type, product, image, traits = "Saiyan" }) => `
+  const dragonBallDetail = ({ number, name, rarity, type, product, image, traits = "Saiyan", token = "detail-token" }) => `
+    <meta name="token" content="${token}">
     <div class="cardNo">${number}</div><div class="rarity">${rarity}</div>
     <h1 class="cardName">${name}</h1>
     <div class="cardImage"><img src="../../images/cards/card/en/${image}" alt="${number} ${name}"></div>
@@ -293,13 +294,13 @@ import {
       }
       if (href.includes("card_no=FS01-01")) return new Response(dragonBallDetail({
         number: "FS01-01", name: "Son Goku", rarity: "L", type: "LEADER",
-        product: "STARTER DECK -SON GOKU- [FS01]", image: "FS01-01_f.webp"
+        product: "STARTER DECK -SON GOKU- [FS01]", image: "FS01-01_f.webp", token: `detail-${dragonBallFetchCount}`
       }), { status: 200, headers: { "content-type": "text/html" } });
       if (href.includes("card_no=FS01-16")) return new Response(dragonBallDetail({
         number: "FS01-16", name: "God Kamehameha", rarity: "PR", type: "EXTRA",
-        product: "STARTER DECK -SON GOKU- Bonus pack", image: "FS01-16_p1.webp"
+        product: "STARTER DECK -SON GOKU- Bonus pack", image: "FS01-16_p1.webp", token: `detail-${dragonBallFetchCount}`
       }), { status: 200, headers: { "content-type": "text/html" } });
-      return new Response(dragonBallListHtml, { status: 200, headers: { "content-type": "text/html" } });
+      return new Response(`<meta name="token" content="list-${dragonBallFetchCount}">${dragonBallListHtml}`, { status: 200, headers: { "content-type": "text/html" } });
     }
   });
   const report = await dragonBall.buildImportReport({
@@ -321,6 +322,14 @@ import {
   assert.equal(report.raw.staging[1].staging.identity_fields.external_id, "FS01-16_p1");
   assert.equal(report.raw.staging[1].staging.identity_fields.product, "STARTER DECK -SON GOKU- Bonus pack");
   assert.equal(report.raw.staging[1].staging.identity_fields.parallel_exact, undefined);
+  const repeatedReport = await dragonBall.buildImportReport({
+    sourceUrls: [{
+      href: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B%5D=583101",
+      text: "Dragon Ball Fusion World Starter Deck Son Goku FS01"
+    }]
+  });
+  assert.equal(dragonBallFetchCount, 7);
+  assert.equal(repeatedReport.raw.sources[0].raw_checksum, report.raw.sources[0].raw_checksum);
 }
 
 {
