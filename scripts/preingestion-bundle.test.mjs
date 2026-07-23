@@ -737,6 +737,38 @@ const falsePrintedCodeRetrievalFields = __listingCopilotTitleTestHooks.confirmed
 });
 assert.deepEqual(falsePrintedCodeRetrievalFields, {}, "OCR boilerplate and stat-table numbers must stay out of retrieval anchors");
 
+const uniqueBackFullImageRetrievalFields = __listingCopilotTitleTestHooks.confirmedPreingestionRetrievalFields({
+  preingestion_evidence_patches: [{
+    field: "collector_number",
+    value: "17",
+    raw_text: "SHOHEI OHTANI 17 MAJOR LEAGUE BATTING RECORD GAMES AT BATS RUNS HITS ©2025",
+    source_type: "OCR",
+    source_image_id: "back",
+    confidence: 0.99,
+    provenance: {
+      source_side: "back",
+      direct_extraction_method: "unique_back_numeric"
+    }
+  }]
+});
+assert.equal(uniqueBackFullImageRetrievalFields.collector_number, "17");
+
+const frontFullImageRetrievalFields = __listingCopilotTitleTestHooks.confirmedPreingestionRetrievalFields({
+  preingestion_evidence_patches: [{
+    field: "collector_number",
+    value: "17",
+    raw_text: "SHOHEI OHTANI 17",
+    source_type: "OCR",
+    source_image_id: "front",
+    confidence: 0.99,
+    provenance: {
+      source_side: "front",
+      direct_extraction_method: "unique_back_numeric"
+    }
+  }]
+});
+assert.deepEqual(frontFullImageRetrievalFields, {}, "a front jersey number must never inherit the unique-back card-code exception");
+
 const staleGpt5Result = {
   title: "2018 Bowman Chrome Yordan Alvarez Auto Gold #CPA BGS 10/9.5",
   confidence: "HIGH",

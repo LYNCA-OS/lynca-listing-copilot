@@ -88,6 +88,7 @@ const backOnlyUniqueCardCode = normalizePaddleOcrResponse({
   metadata: { source_side: "back" }
 });
 assert.equal(backOnlyUniqueCardCode.normalized_fields.collector_number, "17");
+assert.equal(backOnlyUniqueCardCode.normalized_field_sources.collector_number, "unique_back_numeric");
 
 const frontJerseyNumber = normalizePaddleOcrResponse({
   raw_text: "SHOHEI OHTANI\n17",
@@ -100,6 +101,7 @@ const frontJerseyNumber = normalizePaddleOcrResponse({
   metadata: { source_side: "front" }
 });
 assert.equal(frontJerseyNumber.normalized_fields.collector_number, undefined);
+assert.equal(frontJerseyNumber.normalized_field_sources.collector_number, undefined);
 
 const ocrResult = normalizePaddleOcrResponse({
   raw_text: "Serial 31 / 50",
