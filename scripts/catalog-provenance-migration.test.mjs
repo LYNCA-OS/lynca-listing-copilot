@@ -9,6 +9,10 @@ const isolationMigration = await readFile(new URL(
   "../supabase/migrations/20260724033000_isolate_marketplace_catalog_products.sql",
   import.meta.url
 ), "utf8");
+const graphGuardMigration = await readFile(new URL(
+  "../supabase/migrations/20260724050000_enforce_catalog_source_graph_consistency.sql",
+  import.meta.url
+), "utf8");
 
 assert.match(migration, /source_type\s*=\s*'MARKETPLACE_REFERENCE'/);
 assert.match(migration, /provenance_policy'\s*,\s*'legacy_ebay_diagnostic_only_v1'/);
@@ -30,5 +34,14 @@ assert.match(isolationMigration, /decision_eligible', false/);
 assert.match(isolationMigration, /update public\.catalog_cards/);
 assert.match(isolationMigration, /marketplace_catalog_product_isolation_incomplete/);
 assert.doesNotMatch(isolationMigration, /delete\s+from\s+public\.catalog_/i);
+
+assert.match(graphGuardMigration, /catalog_product_source_mismatch/);
+assert.match(graphGuardMigration, /catalog_set_source_mismatch/);
+assert.match(graphGuardMigration, /catalog_product_source_graph_conflict/);
+assert.match(graphGuardMigration, /catalog_set_source_graph_conflict/);
+assert.match(graphGuardMigration, /before update of source_id on public\.catalog_products/);
+assert.match(graphGuardMigration, /before insert or update on public\.catalog_sets/);
+assert.match(graphGuardMigration, /before insert or update on public\.catalog_cards/);
+assert.doesNotMatch(graphGuardMigration, /delete\s+from\s+public\.catalog_/i);
 
 console.log("catalog provenance migration tests passed");
