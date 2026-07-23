@@ -6,6 +6,7 @@ import {
   assertVerifiedAssetCacheExecutionMode,
   cachedAssetEntryForPreparation,
   canonicalBatchIdForPoll,
+  diagnosticJobIdChunks,
   durableSourceFingerprint,
   durableUploadResilienceContract,
   payloadForItem,
@@ -22,6 +23,11 @@ const durableAssetId = "asset_11111111-2222-4333-8444-555555555555";
 await Promise.all([writeFile(firstPath, jpegBytes), writeFile(secondPath, jpegBytes)]);
 
 const smokeIntent = payloadForItem({}, 0, [], { recognitionProfile: "accuracy-ceiling-oracle-v1" });
+assert.deepEqual(
+  diagnosticJobIdChunks(["job-1", "job-2", "job-2", "job-3"], 2),
+  [["job-1", "job-2"], ["job-3"]],
+  "diagnostic hydration must deduplicate and bound protected status requests"
+);
 assert.equal(smokeIntent.recognition_profile, "accuracy-ceiling-oracle-v1");
 assert.equal(assertVerifiedAssetCacheExecutionMode({
   mode: "reuse",

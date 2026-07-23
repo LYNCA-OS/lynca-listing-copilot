@@ -1895,6 +1895,71 @@ async function readSettledJobDiagnostics({
   };
 }
 
+export function diagnosticJobIdChunks(jobIds = [], size = 10) {
+  const normalizedSize = Math.max(1, Math.trunc(Number(size) || 10));
+  const unique = [...new Set(jobIds.map(cleanText).filter(Boolean))];
+  const chunks = [];
+  for (let index = 0; index < unique.length; index += normalizedSize) {
+    chunks.push(unique.slice(index, index + normalizedSize));
+  }
+  return chunks;
+}
+
+function settledDiagnosticJob(job = {}) {
+  const summary = jobL2Summary({ jobs: [job] });
+  return Boolean(summary.pipeline_node_ledger
+    && persistenceStatusIsTerminal(summary.noncritical_persistence_status)
+    && !activeJobStatus(summary.job_status));
+}
+
+async function readSettledJobDiagnosticsBatch({
+  baseUrl,
+  cookie,
+  jobIds = [],
+  requestTimeoutMs,
+  attempts = 8
+}) {
+  const expected = new Set(jobIds.map(cleanText).filter(Boolean));
+  const jobsById = new Map();
+  let lastError = null;
+  let last = null;
+  let completedAttempts = 0;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    completedAttempts = attempt;
+    try {
+      last = await getJson({
+        baseUrl,
+        path: `/api/v4/listing-job-status?job_ids=${encodeURIComponent([...expected].join(","))}&limit=${expected.size}`,
+        cookie,
+        requestTimeoutMs: Math.min(requestTimeoutMs, 45_000)
+      });
+    } catch (error) {
+      lastError = serializableError(error, "job_diagnostics_batch_request_failed");
+      if (attempt < attempts) await delay(1_000);
+      continue;
+    }
+    if (!last.ok) {
+      lastError = serializableError(last.data, `job_diagnostics_batch_http_${last.http_status || "unknown"}`);
+      if (batchStatusResponseDisposition(last) === "fatal") break;
+      if (attempt < attempts) await delay(1_000);
+      continue;
+    }
+    for (const job of last.data?.jobs || []) {
+      const jobId = cleanText(job?.job_id || job?.id);
+      if (expected.has(jobId)) jobsById.set(jobId, job);
+    }
+    if ([...expected].every((jobId) => settledDiagnosticJob(jobsById.get(jobId)))) break;
+    if (attempt < attempts) await delay(1_000);
+  }
+  return {
+    jobsById,
+    attempts: completedAttempts,
+    error: lastError || ([...expected].every((jobId) => jobsById.has(jobId))
+      ? null
+      : "job_diagnostics_batch_incomplete")
+  };
+}
+
 export async function hydrateV4JobDiagnostics({
   results = [],
   baseUrl,
@@ -1903,10 +1968,7 @@ export async function hydrateV4JobDiagnostics({
   concurrency = 4
 } = {}) {
   const startedAt = Date.now();
-  let requestedCount = 0;
-  let hydratedCount = 0;
-  let failedCount = 0;
-  const hydrated = await mapWithConcurrency(results, Math.max(1, concurrency), async (row) => {
+  const needsHydration = (row = {}) => {
     const retryHistoryMissing = Number(row.attempt_count || 0) > 1
       && (!Array.isArray(row.retry_attempt_history) || row.retry_attempt_history.length === 0);
     const queueControlDiagnosticsMissing = !row.provider_capacity_slot
@@ -1915,29 +1977,42 @@ export async function hydrateV4JobDiagnostics({
       || !row.writer_ready_capacity_release_mode;
     const candidateDiagnosticsMissing = row.l2_candidate_debug?.decision_eligible_candidate_count === undefined
       || !Array.isArray(row.l2_candidate_debug?.candidate_application_trace);
-    if (!row.job_id || (row.pipeline_node_ledger
-      && persistenceStatusIsTerminal(row.noncritical_persistence_status)
-      && !retryHistoryMissing
-      && !queueControlDiagnosticsMissing
-      && !candidateDiagnosticsMissing)) return row;
-    requestedCount += 1;
-    const diagnostics = await readSettledJobDiagnostics({
-      baseUrl,
-      cookie,
-      jobId: row.job_id,
-      requestTimeoutMs
-    });
-    if (!diagnostics.response?.data) {
+    return Boolean(row.job_id && (!row.pipeline_node_ledger
+      || !persistenceStatusIsTerminal(row.noncritical_persistence_status)
+      || retryHistoryMissing
+      || queueControlDiagnosticsMissing
+      || candidateDiagnosticsMissing));
+  };
+  const requestedRows = results.filter(needsHydration);
+  const chunks = diagnosticJobIdChunks(requestedRows.map((row) => row.job_id), 10);
+  const outcomes = await mapWithConcurrency(chunks, Math.max(1, concurrency), async (jobIds) => (
+    readSettledJobDiagnosticsBatch({ baseUrl, cookie, jobIds, requestTimeoutMs })
+  ));
+  const diagnosticsByJobId = new Map();
+  const attemptsByJobId = new Map();
+  const errorByJobId = new Map();
+  for (const outcome of outcomes) for (const jobId of outcome.jobsById.keys()) {
+    diagnosticsByJobId.set(jobId, outcome.jobsById.get(jobId));
+    attemptsByJobId.set(jobId, outcome.attempts);
+    errorByJobId.set(jobId, outcome.error);
+  }
+  const requestedCount = requestedRows.length;
+  let hydratedCount = 0;
+  let failedCount = 0;
+  const hydrated = results.map((row) => {
+    if (!needsHydration(row)) return row;
+    const job = diagnosticsByJobId.get(row.job_id);
+    if (!job) {
       failedCount += 1;
-      return { ...row, diagnostic_hydration_error: diagnostics.error };
+      return { ...row, diagnostic_hydration_error: "job_diagnostics_batch_incomplete" };
     }
-    const next = mergeJobDiagnosticsIntoResult(row, diagnostics.response.data);
+    const next = mergeJobDiagnosticsIntoResult(row, { jobs: [job] });
     if (next.pipeline_node_ledger) hydratedCount += 1;
     else failedCount += 1;
     return {
       ...next,
-      diagnostic_hydration_attempts: diagnostics.attempts,
-      diagnostic_hydration_error: diagnostics.error
+      diagnostic_hydration_attempts: attemptsByJobId.get(row.job_id) || null,
+      diagnostic_hydration_error: errorByJobId.get(row.job_id) || null
     };
   });
   return {
@@ -1946,6 +2021,9 @@ export async function hydrateV4JobDiagnostics({
       requested_count: requestedCount,
       hydrated_count: hydratedCount,
       failed_count: failedCount,
+      request_mode: "chunked_job_ids",
+      request_chunk_count: chunks.length,
+      request_chunk_size: 10,
       duration_ms: Date.now() - startedAt,
       excluded_from_recognition_wall_time: true
     }
