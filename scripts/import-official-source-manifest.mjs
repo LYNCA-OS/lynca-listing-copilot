@@ -18,6 +18,25 @@ function normalize(value) {
   return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+export function selectOfficialManifestSources(manifest = {}, {
+  onlySourceName = "",
+  onlySourceUrl = ""
+} = {}) {
+  const sources = Array.isArray(manifest.sources) ? manifest.sources : [];
+  const normalizedName = normalize(onlySourceName);
+  const normalizedUrl = String(onlySourceUrl || "").trim();
+  if (normalizedName && normalizedUrl) throw new Error("official_source_manifest_selector_conflict");
+  if (!normalizedName && !normalizedUrl) return sources;
+  const selected = sources.filter((source) => (
+    normalizedName
+      ? normalize(source.source_name) === normalizedName
+      : String(source.source_url || "").trim() === normalizedUrl
+  ));
+  if (!selected.length) throw new Error("official_source_manifest_selector_not_found");
+  if (selected.length !== 1) throw new Error("official_source_manifest_selector_not_unique");
+  return selected;
+}
+
 function valueMatches(actual, expected) {
   if (expected === undefined || expected === null || expected === "") return true;
   return normalize(actual) === normalize(expected);
@@ -122,7 +141,11 @@ export async function importOfficialSourceManifest({
   if ((manifest.sources || []).some((source) => !isOfficialCatalogSourceType(source.source_type))) {
     throw new Error("official_source_manifest_non_official_source_type");
   }
-  const sources = (manifest.sources || []).map((source) => ({
+  const onlySourceName = argValue(argv, "--only-source-name", "");
+  const onlySourceUrl = argValue(argv, "--only-source-url", "");
+  const selectedSources = selectOfficialManifestSources(manifest, { onlySourceName, onlySourceUrl });
+  const selectedManifest = { ...manifest, sources: selectedSources };
+  const sources = selectedSources.map((source) => ({
     href: source.source_url,
     text: source.source_name,
     category: source.category,
@@ -137,12 +160,12 @@ export async function importOfficialSourceManifest({
     sourceUrls: sources,
     category: ""
   });
-  const validation = validateOfficialSourceManifestReport(manifest, dryRunReport);
+  const validation = validateOfficialSourceManifestReport(selectedManifest, dryRunReport);
   if (!validation.valid) throw new Error(validation.errors.join(","));
 
   const applyReports = [];
   if (apply) {
-    for (const source of manifest.sources) {
+    for (const source of selectedSources) {
       applyReports.push(await importToppsBasketballChecklists({
         argv: officialManifestImporterArgv({ manifest, source, envFilePath, noEnvFile }),
         env,
@@ -156,6 +179,12 @@ export async function importOfficialSourceManifest({
     generated_at: new Date().toISOString(),
     manifest_path: manifestPath,
     apply,
+    selection: {
+      mode: onlySourceName ? "SOURCE_NAME" : onlySourceUrl ? "SOURCE_URL" : "ALL",
+      requested_source_name: onlySourceName || null,
+      requested_source_url: onlySourceUrl || null,
+      selected_source_count: selectedSources.length
+    },
     validation,
     dry_run_metrics: dryRunReport.metrics,
     apply_reports: applyReports

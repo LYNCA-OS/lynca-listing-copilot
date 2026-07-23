@@ -44,6 +44,7 @@ import {
 } from "./import-topps-basketball-checklists.mjs";
 import {
   officialManifestImporterArgv,
+  selectOfficialManifestSources,
   validateOfficialSourceManifestReport
 } from "./import-official-source-manifest.mjs";
 import {
@@ -108,6 +109,32 @@ assert.deepEqual(officialManifestImporterArgv({
   },
   noEnvFile: true
 }).slice(-2), ["--apply", "--no-env-file"]);
+
+const selectableManifest = {
+  sources: [
+    { source_name: "Source A", source_url: "https://official.example/a" },
+    { source_name: "Source B", source_url: "https://official.example/b" }
+  ]
+};
+assert.deepEqual(
+  selectOfficialManifestSources(selectableManifest, { onlySourceName: " source b " }),
+  [selectableManifest.sources[1]]
+);
+assert.deepEqual(
+  selectOfficialManifestSources(selectableManifest, { onlySourceUrl: "https://official.example/a" }),
+  [selectableManifest.sources[0]]
+);
+assert.throws(
+  () => selectOfficialManifestSources(selectableManifest, { onlySourceName: "missing" }),
+  /official_source_manifest_selector_not_found/
+);
+assert.throws(
+  () => selectOfficialManifestSources(selectableManifest, {
+    onlySourceName: "Source A",
+    onlySourceUrl: "https:\/\/official.example\/a"
+  }),
+  /official_source_manifest_selector_conflict/
+);
 
 const parsedCatalog = correctedTitleRecordToCatalogStaging({
   id: "feedback-1",

@@ -20,6 +20,11 @@ on:
         description: "Apply validated rows to production Supabase"
         type: boolean
         default: false
+      source_name:
+        description: "Exact manifest source_name; blank validates all sources"
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: official-catalog-production-${{ inputs.provider }}
@@ -43,10 +48,14 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           OFFICIAL_CATALOG_PROVIDER: ${{ inputs.provider }}
           APPLY_OFFICIAL_CATALOG: ${{ inputs.apply }}
+          OFFICIAL_CATALOG_SOURCE_NAME: ${{ inputs.source_name }}
         run: |
           manifest="data/catalog/official/${OFFICIAL_CATALOG_PROVIDER}-production-sources.json"
           test -f "$manifest"
           args=(--manifest "$manifest" --out /tmp/official-catalog-import.json)
+          if [[ -n "$OFFICIAL_CATALOG_SOURCE_NAME" ]]; then
+            args+=(--only-source-name "$OFFICIAL_CATALOG_SOURCE_NAME")
+          fi
           if [[ "$APPLY_OFFICIAL_CATALOG" == "true" ]]; then
             test -n "$SUPABASE_URL"
             test -n "$SUPABASE_SERVICE_ROLE_KEY"
@@ -60,6 +69,7 @@ jobs:
           console.log(JSON.stringify({
             manifest_path: report.manifest_path,
             apply: report.apply,
+            selection: report.selection,
             valid: report.validation.valid,
             sources: report.validation.validations.map(row => ({
               source_name: row.source_name,
