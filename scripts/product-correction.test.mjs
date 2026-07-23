@@ -122,8 +122,8 @@ assert.equal(
 const clean = { year: "2025", manufacturer: "Topps", product: "Star Wars Smugglers Outpost", players: ["Paul Kasey"], serial_number: "12/25" };
 assert.equal(correctionFor(clean, [smugglers]).status, "not_applicable", "a matching observed product needs no correction");
 
-// 7. A directly observed checklist code is an even stronger cross-product
-// anchor than a serial denominator and must enable the same bounded correction.
+// 7. Exact code remains retrieval/support evidence but cannot independently
+// authorise replacement of a conflicting non-empty current-image Product.
 const observedExactCode = {
   year: "2025",
   manufacturer: "Topps",
@@ -140,8 +140,8 @@ const exactCodeSmugglers = officialCandidate("smugglers-code", {
 });
 assert.equal(
   correctionFor(observedExactCode, [exactCodeSmugglers]).status,
-  "ready_product_correction",
-  "subject + year + exact checklist code should authorise a trusted product correction"
+  "not_applicable",
+  "subject + year + exact checklist code must not independently authorise Product replacement"
 );
 
 console.log("product correction tests passed");
