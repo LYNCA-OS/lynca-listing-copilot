@@ -60,6 +60,20 @@ const lowerStatNumber = normalizePaddleOcrResponse({
 });
 assert.equal(lowerStatNumber.normalized_fields.collector_number, undefined);
 
+const inferredLandscapeCardCode = normalizePaddleOcrResponse({
+  raw_text: "17\nSHOHEI OHTANI\n© 2025",
+  confidence: 0.97,
+  text_candidates: [
+    { text: "17", confidence: 0.97, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 20, y: 20 }, { x: 120, y: 20 }, { x: 120, y: 120 }, { x: 20, y: 120 }] } },
+    { text: "2025", confidence: 0.98, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 1200, y: 900 }, { x: 1400, y: 900 }, { x: 1400, y: 950 }, { x: 1200, y: 950 }] } }
+  ]
+}, {
+  request_id: "ocr-card-code-inferred-dimensions",
+  image_url: "https://storage.test/back.jpg?token=secret",
+  crop_type: "collector_number"
+});
+assert.equal(inferredLandscapeCardCode.normalized_fields.collector_number, "17");
+
 const ocrResult = normalizePaddleOcrResponse({
   raw_text: "Serial 31 / 50",
   confidence: 0.93,
@@ -554,7 +568,10 @@ const batchClient = createPaddleOcrClient({
             raw_text: "381",
             confidence: 0.95,
             vision_unit_count: 1,
-            vision_cost_estimate: 0.0015
+            vision_cost_estimate: 0.0015,
+            inline_full_image_fallback_evaluated: true,
+            inline_full_image_fallback_used: true,
+            inline_full_image_fallback_target_found: true
           }
         ]
       })
@@ -579,6 +596,9 @@ assert.equal(batchResults[0].vision_unit_count, 2);
 assert.equal(batchResults[0].ocr_backend, "google_vision");
 assert.equal(batchResults[0].serial_consensus.verified, true);
 assert.equal(batchResults[1].normalized_fields.collector_number, "381");
+assert.equal(batchResults[1].inline_full_image_fallback_evaluated, true);
+assert.equal(batchResults[1].inline_full_image_fallback_used, true);
+assert.equal(batchResults[1].inline_full_image_fallback_target_found, true);
 
 let compatibilityCalls = 0;
 const compatibilityClient = createPaddleOcrClient({
