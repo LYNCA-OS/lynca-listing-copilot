@@ -1324,6 +1324,68 @@ assert.equal(oracleAuditPatches.find((patch) => patch.field === "ocr_raw_observa
   assert.equal(state.status, "EVIDENCE_READY");
 }
 
+// --- transient state transport failures are retried inside the rendezvous ---
+{
+  let fetchCalls = 0;
+  const observedStatuses = [];
+  const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
+    bundleId: "bundle-1",
+    timeoutMs: 1_500,
+    pollMs: 100,
+    triggerSweep: false,
+    onState: (snapshot) => observedStatuses.push(snapshot.status),
+    env: {
+      ...env,
+      V4_SUPABASE_READ_TIMEOUT_MS: "100"
+    },
+    fetchImpl: async (url) => {
+      fetchCalls += 1;
+      if (fetchCalls <= 4) throw new Error("client_fetch_timeout");
+      if (String(url).includes("preingestion_jobs")) {
+        return jsonResponse([{
+          job_id: "serial",
+          status: "succeeded",
+          attempts: 1,
+          job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+          payload: { crop: { role: "serial_crop" } }
+        }]);
+      }
+      return jsonResponse([{
+        bundle_id: "bundle-1",
+        evidence_patches: [currentOcrPatch("serial_number", "30/99")]
+      }]);
+    }
+  });
+  assert.equal(state.status, "EVIDENCE_READY");
+  assert.equal(state.verified_serial_ready, true);
+  assert.ok(observedStatuses.includes("STATE_READ_RETRY"));
+  assert.equal(state.state_read_error_count, 1);
+  assert.equal(state.last_state_read_error, "client_fetch_timeout");
+}
+
+// --- persistent state transport failure becomes a bounded timeout diagnostic ---
+{
+  const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
+    bundleId: "bundle-1",
+    timeoutMs: 500,
+    pollMs: 100,
+    triggerSweep: false,
+    env: {
+      ...env,
+      V4_SUPABASE_READ_TIMEOUT_MS: "100"
+    },
+    fetchImpl: async () => {
+      throw new Error("client_fetch_timeout");
+    }
+  });
+  assert.equal(state.status, "TIMEOUT");
+  assert.equal(state.state_reads, 0);
+  assert.ok(state.state_read_error_count >= 1);
+  assert.equal(state.last_state_read_error, "client_fetch_timeout");
+}
+
 // --- a verified serial must not end rendezvous while authoritative slab text is still running ---
 {
   let jobReads = 0;
