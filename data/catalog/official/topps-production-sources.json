@@ -18,6 +18,33 @@
       ]
     },
     {
+      "source_name": "2026 Topps Chrome UFC Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/FINAL_CheckList_2026_TOPPS_CHROME_UFC_V2.xls?v=1779204573",
+      "official_page_url": "https://www.topps.com/pages/topps-chrome-ufc",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "mma",
+      "minimum_card_count": 850,
+      "required_records": [
+        {
+          "card_number": "1",
+          "subject": "Ilia Topuria",
+          "product": "Topps Chrome UFC"
+        },
+        {
+          "checklist_code": "SP-1",
+          "subject": "Kayla Harrison",
+          "product": "Topps Chrome UFC",
+          "set_or_insert": "SPLIT DECISION"
+        },
+        {
+          "checklist_code": "DPA-AG",
+          "subject": "Andreas Gustafsson",
+          "product": "Topps Chrome UFC",
+          "set_or_insert": "UFC DEBUT PATCH AUTOGRAPHS"
+        }
+      ]
+    },
+    {
       "source_name": "2026 Bowman Baseball Checklist",
       "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2026_Bowman_Baseball_Checklist.pdf?v=1775743176",
       "official_page_url": "https://www.topps.com/pages/bowman-baseball",
