@@ -150,6 +150,13 @@ assert.equal(vectorReadiness.details.preload_status, "READY");
 assert.equal(vectorReadiness.details.prompt_influence_by_default, true);
 assert.equal(vectorReadiness.details.assist_ready, true);
 assert.equal(vectorReadiness.details.participation_state, "ASSIST_ACTIVE");
+const ocrReadiness = response.body.workflow_readiness.components.find((item) => item.id === "paddle_ocr");
+assert.equal(ocrReadiness.status, "READY");
+assert.equal(ocrReadiness.details.runtime_ready, true);
+assert.equal(ocrReadiness.details.runtime_profile, "legacy-or-unknown-ocr-worker");
+assert.equal(ocrReadiness.details.backend, "unknown");
+assert.equal(ocrReadiness.details.auth_mode, "unknown");
+assert.equal(ocrReadiness.details.paddle_loaded, null);
 assert.equal(response.body.execution_control.distributed_provider_capacity_enabled, true);
 assert.equal(response.body.execution_control.provider_done_capacity_handoff_enabled, true);
 assert.equal(response.body.execution_control.global_fair_drain_enabled, true);
@@ -174,6 +181,7 @@ assert.equal(response.body.execution_control.stage_capacity.vector.index_concurr
 assert.doesNotMatch(JSON.stringify(response.body.execution_control), /test-openai-key/);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-openai-key|test-service-role|example\.supabase/);
 assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /test-vector-token|vector\.worker\.test/);
+assert.doesNotMatch(JSON.stringify(response.body.workflow_readiness), /recognition\.worker\.test|test-recognition-token/);
 
 membershipRole = "WRITER";
 __clearTenantMembershipCacheForTests();
