@@ -11,6 +11,25 @@ measured GPT-5-mini provider limit, not a global limit for every module.
 | Query vector embedding | 4 | global stage leases | bounded wait, then skip vector for this pass |
 | Offline vector indexing | 2 | batch-local | resume from persisted index state |
 
+## Cloud Run regional envelope
+
+The production recognition and lean Google Vision services share the
+`us-central1` 20-vCPU allocation quota. Their service-level caps are a single
+capacity contract:
+
+```text
+recognition: 8 replicas * 2 vCPU = 16 vCPU
+lean Vision: 3 replicas * 1 vCPU = 3 vCPU
+rollout reserve:                    1 vCPU
+total:                             20 vCPU
+```
+
+The reserve belongs to deployments and failure replacement; batch evaluation
+must not borrow it. Vision keeps `min=0` because its container has no local OCR
+model to preload. The measured GPT provider concurrency remains two, so raising
+the recognition replica cap above eight does not increase title throughput and
+can only remove rollout headroom or increase downstream pressure.
+
 The OCR value is supported by a Cloud Run capacity sweep: concurrency 8 was the
 highest zero-failure throughput point; concurrency 10 produced timeouts. Catalog
 and vector values are candidates until their own stage sweeps pass the production
