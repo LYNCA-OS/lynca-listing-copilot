@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assertVerifiedAssetCacheExecutionMode,
+  cachedAssetEntryForPreparation,
   canonicalBatchIdForPoll,
   durableSourceFingerprint,
   durableUploadResilienceContract,
@@ -17,6 +18,7 @@ const tempDirectory = await mkdtemp(join(tmpdir(), "lynca-v4-smoke-upload-"));
 const firstPath = join(tempDirectory, "image-1.jpg");
 const secondPath = join(tempDirectory, "image-2.jpg");
 const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
+const durableAssetId = "asset_11111111-2222-4333-8444-555555555555";
 await Promise.all([writeFile(firstPath, jpegBytes), writeFile(secondPath, jpegBytes)]);
 
 const smokeIntent = payloadForItem({}, 0, [], { recognitionProfile: "accuracy-ceiling-oracle-v1" });
@@ -36,6 +38,16 @@ assert.deepEqual(
   await sourceFingerprintsForCacheMode([{ images: [{ local_path: "/definitely/not/read.jpg" }] }], "refresh"),
   [""],
   "refresh mode must not put the entire cold batch behind a fingerprint barrier"
+);
+const recoveryCacheEntries = new Map([["fingerprint-a", { asset_id: durableAssetId }]]);
+assert.equal(
+  cachedAssetEntryForPreparation({
+    mode: "reuse",
+    entries: recoveryCacheEntries,
+    fingerprint: "fingerprint-a"
+  })?.asset_id,
+  durableAssetId,
+  "bounded enqueue recovery must retain a valid verified asset instead of re-uploading it"
 );
 
 const storedSource = {
@@ -66,7 +78,6 @@ assert.equal(
   "verified asset identity must not drift when a random manifest derives a new asset id"
 );
 
-const durableAssetId = "asset_11111111-2222-4333-8444-555555555555";
 const calls = [];
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
   status,

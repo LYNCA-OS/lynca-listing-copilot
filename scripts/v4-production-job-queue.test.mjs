@@ -21,6 +21,7 @@ import {
   v4JobLanes,
   v4JobTypes,
   v4JobStatuses,
+  v4CanonicalJobIdentitySha256,
   v4QueueDeploymentAffinity,
   v4QueueSubmissionConcurrency
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
@@ -118,6 +119,43 @@ const repeatedRow = normalizeV4JobInput({
 });
 assert.equal(repeatedRow.id, row.id, "same batch, asset and stage must reuse one paid job id");
 assert.equal(repeatedRow.recognition_session_id, row.recognition_session_id);
+
+const rotatedVerificationTokenRow = {
+  ...row,
+  payload: {
+    ...row.payload,
+    images: [{
+      object_path: "tenant/asset/front.jpg",
+      storage_verification_token: "fresh-token-b"
+    }]
+  }
+};
+const originalVerificationTokenRow = {
+  ...rotatedVerificationTokenRow,
+  payload: {
+    ...rotatedVerificationTokenRow.payload,
+    images: [{
+      object_path: "tenant/asset/front.jpg",
+      storage_verification_token: "fresh-token-a"
+    }]
+  }
+};
+assert.equal(
+  v4CanonicalJobIdentitySha256(originalVerificationTokenRow),
+  v4CanonicalJobIdentitySha256(rotatedVerificationTokenRow),
+  "rotating an authorization proof must not change durable queue identity"
+);
+assert.notEqual(
+  v4CanonicalJobIdentitySha256(originalVerificationTokenRow),
+  v4CanonicalJobIdentitySha256({
+    ...rotatedVerificationTokenRow,
+    payload: {
+      ...rotatedVerificationTokenRow.payload,
+      images: [{ object_path: "tenant/asset/different.jpg", storage_verification_token: "fresh-token-b" }]
+    }
+  }),
+  "changing canonical image identity must still change durable queue identity"
+);
 assert.notEqual(createV4DeterministicJobId({ batchId: "other-batch", assetId: "asset-1" }), row.id);
 assert.notEqual(createV4DeterministicSessionId({ batchId: "other-batch", assetId: "asset-1" }), row.recognition_session_id);
 

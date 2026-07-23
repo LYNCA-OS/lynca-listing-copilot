@@ -127,6 +127,14 @@ export async function sourceFingerprintsForCacheMode(items = [], mode = "disable
     : new Array(items.length).fill("");
 }
 
+export function cachedAssetEntryForPreparation({
+  mode = "disabled",
+  entries = new Map(),
+  fingerprint = ""
+} = {}) {
+  return mode === "reuse" ? entries.get(fingerprint) || null : null;
+}
+
 export async function readVerifiedAssetCache(path = "") {
   if (!cleanText(path)) return new Map();
   try {
@@ -4470,9 +4478,11 @@ export async function runV4EbaySmoke({
       const prepareOne = async (item, localIndex, { recovery = false } = {}) => {
         const index = offset + localIndex;
         const sourceFingerprint = sourceFingerprints[localIndex];
-        const cachedAssetEntry = !recovery && normalizedVerifiedAssetCacheMode === "reuse"
-          ? assetCacheEntries.get(sourceFingerprint) || null
-          : null;
+        const cachedAssetEntry = cachedAssetEntryForPreparation({
+          mode: normalizedVerifiedAssetCacheMode,
+          entries: assetCacheEntries,
+          fingerprint: sourceFingerprint
+        });
         if (progress) process.stderr.write(`v4 ebay smoke ${recovery ? "recover" : "enqueue"} ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
         const row = await enqueueSpeculativeItem({
           item,
@@ -4519,11 +4529,6 @@ export async function runV4EbaySmoke({
         .map((row, localIndex) => row?.job?.job_id ? null : localIndex)
         .filter((localIndex) => localIndex !== null);
       if (failedIndexes.length && durableUploadResilienceContract.preparation_recovery_rounds > 0) {
-        for (const localIndex of failedIndexes) {
-          if (prepared[localIndex]?.preparation_diagnostics?.asset_cache_hit === true) {
-            assetCacheEntries.delete(sourceFingerprints[localIndex]);
-          }
-        }
         if (progress) process.stderr.write(`v4 ebay smoke bounded recovery missing=${failedIndexes.length}/${items.length}\n`);
         const recoveredRows = await mapWithConcurrency(
           failedIndexes,
