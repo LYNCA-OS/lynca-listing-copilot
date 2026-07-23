@@ -341,6 +341,11 @@ assert.match(assetLeasePruningMigration, /create or replace function public\.rel
 assert.match(assetLeasePruningMigration, /stage:paddle_ocr:asset:/);
 assert.match(assetLeasePruningMigration, /and leases\.job_id is null[\s\S]*and leases\.lease_owner is null[\s\S]*and leases\.lease_expires_at is null/);
 
+const staleAssetLeasePruningMigration = readFileSync(new URL("../supabase/migrations/20260723023500_prune_stale_asset_capacity_leases.sql", import.meta.url), "utf8");
+assert.match(staleAssetLeasePruningMigration, /v4_provider_capacity_expired_asset_idx/);
+assert.match(staleAssetLeasePruningMigration, /stage:paddle_ocr:asset:/);
+assert.match(staleAssetLeasePruningMigration, /lease_expires_at < pg_catalog\.clock_timestamp\(\) - interval '10 minutes'/);
+
 const heartbeatSecurityMigration = readFileSync(new URL("../supabase/migrations/20260711194540_harden_public_function_security_and_queue_heartbeat.sql", import.meta.url), "utf8");
 assert.match(heartbeatSecurityMigration, /create or replace function public\.heartbeat_v4_recognition_job/);
 assert.match(heartbeatSecurityMigration, /jobs\.status = 'RUNNING'/);
