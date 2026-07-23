@@ -37,15 +37,17 @@ const landscapeCardCode = normalizePaddleOcrResponse({
   text_candidates: [
     { text: "SHOHEI", confidence: 0.98, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 700, y: 120 }, { x: 1050, y: 120 }, { x: 1050, y: 190 }, { x: 700, y: 190 }] } },
     { text: "17", confidence: 0.97, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 45, y: 80 }, { x: 145, y: 80 }, { x: 145, y: 180 }, { x: 45, y: 180 }] } },
+    { text: "159", confidence: 0.99, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 500, y: 650 }, { x: 570, y: 650 }, { x: 570, y: 700 }, { x: 500, y: 700 }] } },
     { text: "2025", confidence: 0.99, ocr_pass: "full_image_fallback", box: { vertices: [{ x: 1200, y: 900 }, { x: 1400, y: 900 }, { x: 1400, y: 950 }, { x: 1200, y: 950 }] } }
   ]
 }, {
   request_id: "ocr-card-code-landscape",
   image_url: "https://storage.test/back.jpg?token=secret",
   crop_type: "card_code_crop",
-  metadata: { image_id: "back", crop_id: "card-code", source_width: 1600, source_height: 1000 }
+  metadata: { image_id: "back", crop_id: "card-code", source_side: "back", source_width: 1600, source_height: 1000 }
 });
 assert.equal(landscapeCardCode.normalized_fields.collector_number, "17");
+assert.equal(landscapeCardCode.normalized_field_sources.collector_number, "positioned_full_image_numeric");
 assert.equal(landscapeCardCode.text_candidates.find((candidate) => candidate.text === "17").ocr_pass, "full_image_fallback");
 
 const lowerStatNumber = normalizePaddleOcrResponse({

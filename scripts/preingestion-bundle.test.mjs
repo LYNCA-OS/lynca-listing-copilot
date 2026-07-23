@@ -753,6 +753,26 @@ const uniqueBackFullImageRetrievalFields = __listingCopilotTitleTestHooks.confir
 });
 assert.equal(uniqueBackFullImageRetrievalFields.collector_number, "17");
 
+const positionedBackFullImageRetrievalFields = __listingCopilotTitleTestHooks.confirmedPreingestionRetrievalFields({
+  preingestion_evidence_patches: [{
+    field: "collector_number",
+    value: "17",
+    raw_text: "SHOHEI OHTANI 17 MAJOR LEAGUE BATTING RECORD 159 636 134 197 38 7 54 130",
+    source_type: "OCR",
+    source_image_id: "back",
+    confidence: 0.99,
+    provenance: {
+      source_side: "back",
+      direct_extraction_method: "positioned_full_image_numeric"
+    }
+  }]
+});
+assert.equal(
+  positionedBackFullImageRetrievalFields.collector_number,
+  "17",
+  "a high-confidence numeric code geometrically isolated above the back stats table is a retrieval anchor"
+);
+
 const frontFullImageRetrievalFields = __listingCopilotTitleTestHooks.confirmedPreingestionRetrievalFields({
   preingestion_evidence_patches: [{
     field: "collector_number",
@@ -768,6 +788,22 @@ const frontFullImageRetrievalFields = __listingCopilotTitleTestHooks.confirmedPr
   }]
 });
 assert.deepEqual(frontFullImageRetrievalFields, {}, "a front jersey number must never inherit the unique-back card-code exception");
+
+const positionedFrontFullImageRetrievalFields = __listingCopilotTitleTestHooks.confirmedPreingestionRetrievalFields({
+  preingestion_evidence_patches: [{
+    field: "collector_number",
+    value: "17",
+    raw_text: "SHOHEI OHTANI 17",
+    source_type: "OCR",
+    source_image_id: "front",
+    confidence: 0.99,
+    provenance: {
+      source_side: "front",
+      direct_extraction_method: "positioned_full_image_numeric"
+    }
+  }]
+});
+assert.deepEqual(positionedFrontFullImageRetrievalFields, {}, "a front jersey number must never inherit the positioned-back exception");
 
 const staleGpt5Result = {
   title: "2018 Bowman Chrome Yordan Alvarez Auto Gold #CPA BGS 10/9.5",
