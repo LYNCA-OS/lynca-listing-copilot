@@ -90,6 +90,13 @@ function parseHeaderBlock(headerText = "") {
   };
 }
 
+export function extractVercelProtectionBypassToken(debugOutput = "") {
+  const match = String(debugOutput || "").match(
+    /(?:x-vercel-protection-bypass:|Using existing protection bypass token from project settings:)\s*([^\s'"`]+)/i
+  );
+  return normalizeText(match?.[1] || "");
+}
+
 function curlFetchForConnectToIp(connectToIp = "") {
   const ip = normalizeText(connectToIp);
   if (!ip) return null;
@@ -167,6 +174,43 @@ export function vercelCurlFetchForDeployment(deploymentUrl = "") {
   if (!deployment) return null;
   const deploymentHostname = new URL(deployment).hostname;
   const externalFetch = globalThis.fetch.bind(globalThis);
+  let protectionBypassTokenPromise = null;
+
+  async function protectionBypassToken() {
+    if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
+      return normalizeText(process.env.VERCEL_AUTOMATION_BYPASS_SECRET);
+    }
+    if (!protectionBypassTokenPromise) {
+      // `vercel curl` resolves the linked project and its automation bypass
+      // token on every invocation. Bootstrap that token once, keep it only in
+      // this process, then use native fetch for the rest of the batch.
+      protectionBypassTokenPromise = execFileAsync("vercel", [
+        "--debug",
+        "curl",
+        "/",
+        "--deployment",
+        deployment,
+        "--",
+        "--silent",
+        "--show-error",
+        "--output",
+        "/dev/null",
+        "--max-time",
+        "30"
+      ], {
+        maxBuffer: 1024 * 1024,
+        env: process.env
+      }).then(({ stderr = "" }) => {
+        return extractVercelProtectionBypassToken(stderr);
+      }).catch((error) => {
+        // The CLI currently forwards its global --debug flag to curl as well,
+        // so curl may exit after Vercel has already resolved the token.
+        return extractVercelProtectionBypassToken(error?.stderr || "");
+      });
+    }
+    return protectionBypassTokenPromise;
+  }
+
   return async function vercelCurlFetch(url, init = {}) {
     const parsedUrl = new URL(url);
     // `vercel curl` addresses a path on one protected deployment. Signed
@@ -174,6 +218,15 @@ export function vercelCurlFetchForDeployment(deploymentUrl = "") {
     // own origin; rewriting them onto the Preview host produces false 404s.
     if (parsedUrl.hostname !== deploymentHostname) {
       return externalFetch(url, init);
+    }
+    const bypassToken = await protectionBypassToken();
+    if (bypassToken) {
+      const headers = new Headers(init.headers || {});
+      headers.set("x-vercel-protection-bypass", bypassToken);
+      return externalFetch(url, {
+        ...init,
+        headers
+      });
     }
     const path = `${parsedUrl.pathname}${parsedUrl.search}`;
     const tempDir = await mkdtemp(join(tmpdir(), "lynca-vercel-curl-eval-"));

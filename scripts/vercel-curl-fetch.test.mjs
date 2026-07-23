@@ -8,7 +8,19 @@ globalThis.fetch = async (url, init) => {
 };
 
 try {
-  const { vercelCurlFetchForDeployment } = await import(`./evaluate-cloud-listing-api.mjs?external-fetch-test=${Date.now()}`);
+  const {
+    extractVercelProtectionBypassToken,
+    vercelCurlFetchForDeployment
+  } = await import(`./evaluate-cloud-listing-api.mjs?external-fetch-test=${Date.now()}`);
+  assert.equal(
+    extractVercelProtectionBypassToken("> [debug] Using existing protection bypass token from project settings: test-token"),
+    "test-token"
+  );
+  assert.equal(
+    extractVercelProtectionBypassToken("> [debug] Executing: curl --header 'x-vercel-protection-bypass: second-token'"),
+    "second-token"
+  );
+  assert.equal(extractVercelProtectionBypassToken("no token"), "");
   const fetchImpl = vercelCurlFetchForDeployment("https://preview.example.vercel.app");
   const response = await fetchImpl("https://storage.supabase.test/object/sign/path?token=secret", {
     method: "PUT",
