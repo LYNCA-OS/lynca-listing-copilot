@@ -39,6 +39,7 @@ import { planRetrievalQueries } from "../lib/listing/retrieval/query-planner.mjs
 import {
   buildProviderCatalogImport,
   importToppsBasketballChecklists,
+  officialCatalogSetKey,
   officialCatalogSupabaseConfig
 } from "./import-topps-basketball-checklists.mjs";
 import {
@@ -72,6 +73,20 @@ assert.equal(officialCatalogSupabaseConfig({
   NEXT_PUBLIC_SUPABASE_URL: "https://public.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role"
 }).url, "https://server-only.supabase.co");
+assert.equal(
+  officialCatalogSetKey("product-1", {
+    set_or_insert: "Magic: The Gathering—FINAL FANTASY",
+    official_card_type: "Creature"
+  }),
+  officialCatalogSetKey("product-1", {
+    set_or_insert: "Magic: The Gathering—FINAL FANTASY",
+    official_card_type: "Sorcery"
+  })
+);
+assert.notEqual(
+  officialCatalogSetKey("product-1", { official_card_type: "Creature" }),
+  officialCatalogSetKey("product-1", { official_card_type: "Sorcery" })
+);
 
 assert.deepEqual(officialManifestImporterArgv({
   manifest: { provider: "wotc_gatherer" },
@@ -749,7 +764,14 @@ assert.equal(officialImportDryRun.source_count, 1);
 assert.equal(officialImportDryRun.inserted_card_count, 2);
 assert.equal(officialImportDryRun.inserted_staging_count, 2);
 
-function officialApplyFetch({ payload, existingCardCount, reviewedCounts = {}, checksum = "" } = {}) {
+function officialApplyFetch({
+  payload,
+  existingCardCount,
+  existingProductCount = 1,
+  existingSetCount = 1,
+  reviewedCounts = {},
+  checksum = ""
+} = {}) {
   const calls = [];
   let productSequence = 0;
   let setSequence = 0;
@@ -773,7 +795,13 @@ function officialApplyFetch({ payload, existingCardCount, reviewedCounts = {}, c
     if (method === "HEAD") {
       const table = href.match(/\/rest\/v1\/([^?]+)/)?.[1] || "";
       const reviewed = href.includes("review_status=eq.REVIEWED_INTERNAL");
-      const count = reviewed ? Number(reviewedCounts[table] || 0) : Number(existingCardCount || 0);
+      const count = reviewed
+        ? Number(reviewedCounts[table] || 0)
+        : table === "catalog_products"
+          ? Number(existingProductCount || 0)
+          : table === "catalog_sets"
+            ? Number(existingSetCount || 0)
+            : Number(existingCardCount || 0);
       return new Response(null, { status: 200, headers: { "content-range": `0-0/${count}` } });
     }
     if (method === "DELETE" || method === "PATCH") return new Response(null, { status: 204 });
@@ -812,6 +840,27 @@ const completeOfficialApplyReport = await importToppsBasketballChecklists({
 assert.equal(completeOfficialApplyReport.verified_existing_source_count, 1);
 assert.equal(completeOfficialApplyReport.inserted_card_count, 0);
 assert.equal(completeOfficialApply.calls.some((call) => call.method === "DELETE"), false);
+
+const malformedSetShapeApply = officialApplyFetch({
+  payload: resumablePayload,
+  existingCardCount: 2,
+  existingSetCount: 156,
+  checksum: resumableChecksum
+});
+const malformedSetShapeReport = await importToppsBasketballChecklists({
+  argv: [
+    "--all-topps",
+    "--source-url", "https://official.test/checklist.txt",
+    "--source-name", "2025 Topps Basketball Checklist",
+    "--apply",
+    "--no-env-file"
+  ],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "test-key" },
+  fetchImpl: malformedSetShapeApply.fetchImpl
+});
+assert.equal(malformedSetShapeReport.refreshed_source_count, 1);
+assert.equal(malformedSetShapeReport.recovered_partial_source_count, 1);
+assert.equal(malformedSetShapeApply.calls.some((call) => call.method === "DELETE"), true);
 
 const partialOfficialApply = officialApplyFetch({
   payload: resumablePayload,
