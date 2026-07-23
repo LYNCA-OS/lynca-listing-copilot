@@ -15,6 +15,7 @@ const referencePromotionMigration = await readFile("supabase/migrations/20260626
 const referencePromotionRollback = await readFile("supabase/migrations/20260626051832_promote_card_reference_to_approved_rollback.sql", "utf8");
 const catalogFirstMigration = await readFile("supabase/migrations/20260626115429_catalog_first_corrected_title_v0.sql", "utf8");
 const catalogSelfExclusionMigration = await readFile("supabase/migrations/20260714174210_expose_catalog_source_feedback_for_self_exclusion.sql", "utf8");
+const catalogSearchNormalizationMigration = await readFile("supabase/migrations/20260724215000_catalog_search_blob_normalization_v1.sql", "utf8");
 const writerExportMigration = await readFile("supabase/migrations/20260707130906_v4_writer_export_batches.sql", "utf8");
 const phase2 = await readFile("docs/architecture/phase-2-storage-image-quality-2026-06-22.md", "utf8");
 
@@ -143,6 +144,10 @@ assert.match(catalogSelfExclusionMigration, /create or replace function public\.
 assert.match(catalogSelfExclusionMigration, /source_metadata ->> 'source_feedback_id'/i, "catalog self-exclusion RPC should return the originating feedback id");
 assert.match(catalogSelfExclusionMigration, /revoke all on function public\.search_catalog_candidates_with_source[\s\S]*from public, anon, authenticated/i, "catalog self-exclusion RPC must revoke browser execution");
 assert.match(catalogSelfExclusionMigration, /grant execute on function public\.search_catalog_candidates_with_source[\s\S]*to service_role/i, "catalog self-exclusion RPC should be service-role only");
+assert.match(catalogSearchNormalizationMigration, /create or replace function public\.catalog_search_blob_text/i, "catalog search normalization should keep one generated-column owner");
+assert.match(catalogSearchNormalizationMigration, /regexp_replace\(lower\([\s\S]*'\[\^\[:alnum:\]\]\+'/i, "catalog search storage should match punctuation-insensitive query normalization");
+assert.match(catalogSearchNormalizationMigration, /where search_blob is distinct from/i, "catalog search normalization should only backfill noncanonical rows");
+assert.doesNotMatch(catalogSearchNormalizationMigration, /drop\s+(?:table|column|index)|truncate/i, "catalog search normalization must preserve existing rows and indexes");
 
 assert.match(phase2, /20260622_listing_image_storage\.sql/, "Phase 2 doc should mention the storage migration");
 assert.match(phase2, /20260622_listing_image_verifications\.sql/, "Phase 2 doc should mention the verification migration");
