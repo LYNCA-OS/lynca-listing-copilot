@@ -5,6 +5,11 @@ const trace = buildV4ChainOracleTraceFromSmoke([{ results: [{
   source_feedback_id: "card-1",
   ok: true,
   resolved_fields: { year: "2024" },
+  l2_status: {
+    preingestion_ocr_rendezvous: {
+      raw_ocr_observations: [{ model_id: "google-cloud-vision", raw_text: "TEST PLAYER CARD 17" }]
+    }
+  },
   pipeline_node_ledger: {
     sensor_evidence: [{ source: "GPT_5_MINI_OBSERVATION", fields: { year: "2024" } }],
     field_flow: { fields: [{ field_group: "year", rendered_values: ["2024"] }] },
@@ -45,6 +50,8 @@ const trace = buildV4ChainOracleTraceFromSmoke([{ results: [{
 assert.equal(trace.cards.length, 1);
 assert.equal(trace.cards[0].evidence_observations[0].fields.year, "2024");
 assert.equal(trace.cards[0].evidence_observations[1].source, "GOOGLE_VISION_OCR");
+assert.equal(trace.cards[0].evidence_observations[1].raw_text, "TEST PLAYER CARD 17");
+assert.equal(trace.cards[0].evidence_observations[2].source, "GOOGLE_VISION_OCR");
 assert.equal(trace.cards[0].retrieval_candidates.length, 2);
 assert.equal(trace.cards[0].retrieval_candidates[0].rank, 1);
 assert.equal(trace.cards[0].application_decisions[0].applied, true);

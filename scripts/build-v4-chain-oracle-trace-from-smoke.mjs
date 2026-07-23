@@ -65,6 +65,23 @@ function providerFieldFlowEvidence(ledger = {}) {
   });
 }
 
+function embeddedOcrEvidence(result = {}) {
+  const rendezvous = result.l2_status?.preingestion_ocr_rendezvous
+    || result.preingestion_ocr_rendezvous
+    || {};
+  const observations = Array.isArray(rendezvous.raw_ocr_observations)
+    ? rendezvous.raw_ocr_observations
+    : [];
+  return observations.map((observation, index) => ({
+    evidence_id: `preingestion-ocr-${index + 1}`,
+    source: cleanText(observation.model_id).toLowerCase().includes("google")
+      ? "GOOGLE_VISION_OCR"
+      : "PREINGESTION_OCR",
+    fields: observation.fields || {},
+    raw_text: cleanText(observation.raw_text)
+  })).filter((observation) => observation.raw_text || Object.keys(observation.fields).length > 0);
+}
+
 function candidateFields(decisions = []) {
   const output = new Map();
   for (const row of decisions) {
@@ -137,6 +154,7 @@ export function buildV4ChainOracleTraceFromSmoke(reports = [], ocrObservations =
       evidence_observations: [
         ...nativeSensorEvidence,
         ...fieldFlowEvidence,
+        ...embeddedOcrEvidence(result),
         ...(ocrById.get(cleanText(result.source_feedback_id || result.source_asset_id || result.asset_id).toLowerCase())?.observations || [])
       ],
       retrieval_candidates: retrievalCandidates(debug),
