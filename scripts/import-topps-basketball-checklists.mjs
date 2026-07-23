@@ -216,11 +216,13 @@ async function supabaseExactCount({ env, table, filters = [], fetchImpl } = {}) 
 }
 
 async function sourceCatalogState({ env, sourceId, fetchImpl } = {}) {
-  if (!sourceId) return { card_count: 0, staging_count: 0, reviewed_row_count: 0 };
+  if (!sourceId) return { product_count: 0, set_count: 0, card_count: 0, staging_count: 0, reviewed_row_count: 0 };
   const sourceFilter = `source_id=eq.${encodeURIComponent(sourceId)}`;
-  const [cardCount, stagingCount, ...reviewedCounts] = await Promise.all([
+  const [cardCount, stagingCount, productCount, setCount, ...reviewedCounts] = await Promise.all([
     supabaseExactCount({ env, table: "catalog_cards", filters: [sourceFilter], fetchImpl }),
     supabaseExactCount({ env, table: "catalog_import_staging", filters: [sourceFilter], fetchImpl }),
+    supabaseExactCount({ env, table: "catalog_products", filters: [sourceFilter], fetchImpl }),
+    supabaseExactCount({ env, table: "catalog_sets", filters: [sourceFilter], fetchImpl }),
     ...["catalog_products", "catalog_sets", "catalog_cards", "catalog_parallels"].map((table) => (
       supabaseExactCount({
         env,
@@ -231,6 +233,8 @@ async function sourceCatalogState({ env, sourceId, fetchImpl } = {}) {
     ))
   ]);
   return {
+    product_count: productCount,
+    set_count: setCount,
     card_count: cardCount,
     staging_count: stagingCount,
     reviewed_row_count: reviewedCounts.reduce((sum, count) => sum + count, 0)
@@ -306,11 +310,12 @@ function productRow(sourceId, fields = {}, { importSource = "official_checklist"
 
 function setRow(sourceId, productId, fields = {}, { importSource = "official_checklist" } = {}) {
   if (!fields.set_or_insert && !fields.subset && !fields.official_card_type) return null;
+  const useCardTypeAsFallbackSet = !fields.set_or_insert && !fields.subset;
   return compact({
     product_id: productId,
     set_or_insert: fields.set_or_insert,
     subset: fields.subset,
-    official_card_type: fields.official_card_type,
+    official_card_type: useCardTypeAsFallbackSet ? fields.official_card_type : undefined,
     source_id: sourceId,
     source_status: officialChecklistRawStatus,
     review_status: "REVIEW_REQUIRED",
@@ -375,13 +380,14 @@ function productKey(fields = {}) {
   ].join("\u001f");
 }
 
-function setKey(productId, fields = {}) {
+export function officialCatalogSetKey(productId, fields = {}) {
   if (!fields.set_or_insert && !fields.subset && !fields.official_card_type) return "";
+  const useCardTypeAsFallbackSet = !fields.set_or_insert && !fields.subset;
   return [
     productId,
     fields.set_or_insert || "",
     fields.subset || "",
-    fields.official_card_type || ""
+    useCardTypeAsFallbackSet ? fields.official_card_type || "" : ""
   ].join("\u001f");
 }
 
@@ -533,6 +539,12 @@ export async function importToppsBasketballChecklists({
 
   for (const [sourceId, rows] of rowsBySource.entries()) {
     const decisionRows = rows.filter(decisionEligibleOfficialRow);
+    const expectedProductCount = new Set(decisionRows
+      .filter((row) => row.identity_fields?.product)
+      .map((row) => productKey(row.identity_fields))).size;
+    const expectedSetCount = new Set(decisionRows
+      .map((row) => officialCatalogSetKey(productKey(row.identity_fields || {}), row.identity_fields || {}))
+      .filter(Boolean)).size;
     summary.skipped_review_required_count += rows.length - decisionRows.length;
     if (apply && existingSourceById.has(sourceId)) {
       const existing = existingSourceById.get(sourceId);
@@ -544,6 +556,8 @@ export async function importToppsBasketballChecklists({
         && existing.parser_version === incoming?.parser_version;
       if (checksumMatches
         && parserMatches
+        && state.product_count === expectedProductCount
+        && state.set_count === expectedSetCount
         && state.card_count === decisionRows.length
         && state.staging_count === rows.length) {
         summary.verified_existing_source_count += 1;
@@ -556,7 +570,9 @@ export async function importToppsBasketballChecklists({
       await clearReplaceableSourceRows({ env: runtimeEnv, sourceId, fetchImpl });
       await refreshOfficialSource({ env: runtimeEnv, sourceId, source: incoming, fetchImpl });
       summary.refreshed_source_count += 1;
-      if ((state.card_count > 0 && state.card_count !== decisionRows.length)
+      if ((state.product_count > 0 && state.product_count !== expectedProductCount)
+        || (state.set_count > 0 && state.set_count !== expectedSetCount)
+        || (state.card_count > 0 && state.card_count !== decisionRows.length)
         || (state.staging_count > 0 && state.staging_count !== rows.length)) {
         summary.recovered_partial_source_count += 1;
       }
@@ -573,7 +589,7 @@ export async function importToppsBasketballChecklists({
           continue;
         }
         dryRunProducts.add(productKey(identityFields));
-        const dryRunSetKey = setKey(productKey(identityFields), identityFields);
+        const dryRunSetKey = officialCatalogSetKey(productKey(identityFields), identityFields);
         if (dryRunSetKey) dryRunSets.add(dryRunSetKey);
         summary.inserted_card_count += 1;
       }
@@ -644,7 +660,7 @@ export async function importToppsBasketballChecklists({
       const identityFields = row.identity_fields || {};
       const productId = productIds.get(productKey(identityFields));
       if (!productId) continue;
-      const key = setKey(productId, identityFields);
+      const key = officialCatalogSetKey(productId, identityFields);
       if (key && !setFields.has(key)) setFields.set(key, { productId, identityFields });
     }
 
@@ -669,7 +685,7 @@ export async function importToppsBasketballChecklists({
         const identityFields = row.identity_fields || {};
         const productId = productIds.get(productKey(identityFields));
         if (!productId) return null;
-        const key = setKey(productId, identityFields);
+        const key = officialCatalogSetKey(productId, identityFields);
         return cardRow(sourceId, productId, key ? setIds.get(key) || null : null, identityFields, row.canonical_title, { importSource });
       })
       .filter(Boolean);
