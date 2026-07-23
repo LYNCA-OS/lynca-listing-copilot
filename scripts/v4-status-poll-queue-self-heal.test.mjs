@@ -30,6 +30,17 @@ const expiredPlan = statusPollQueueSelfHealPlan([expiredRunning], { nowMs, proce
 assert.equal(expiredPlan.trigger, true, "an expired RUNNING lease must be reclaimed instead of faking full capacity");
 assert.equal(expiredPlan.running_count, 0);
 assert.equal(expiredPlan.stale_running_count, 1);
+const readyRetry = {
+  ...staleQueued,
+  id: "job-retrying",
+  status: "RETRYING",
+  not_before: "2026-07-20T00:00:20Z"
+};
+assert.equal(statusPollQueueSelfHealPlan([readyRetry], { nowMs, processConcurrency: 2 }).trigger, true);
+assert.equal(statusPollQueueSelfHealPlan([{ ...readyRetry, not_before: "2026-07-20T00:01:00Z" }], {
+  nowMs,
+  processConcurrency: 2
+}).trigger, false);
 assert.equal(statusPollQueueSelfHealPlan([{ ...staleQueued, created_at: "2026-07-20T00:00:25Z" }], {
   nowMs,
   processConcurrency: 2
