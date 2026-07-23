@@ -534,10 +534,12 @@ const client = createPaddleOcrClient({
       status: 200,
       text: async () => JSON.stringify({
         raw_text: "31/50",
+        status: "OK",
         confidence: 0.94,
         ocr_backend: "google_vision",
         model_id: "paddleocr",
         model_revision: "ppocr-v5",
+        backend_telemetry: { vision_status: "OK" },
         inline_full_image_fallback_evaluated: true,
         inline_full_image_fallback_used: true,
         inline_full_image_fallback_target_found: true,
@@ -558,6 +560,9 @@ assert.equal(captured.body.image_url.includes("token=secret"), true);
 assert.equal(captured.body.ocr_backend, "paddle", "paired A/B requests must preserve the explicit shadow backend");
 assert.equal(clientResult.evidence_patch.evidence.serial_number.value, "31/50");
 assert.equal(clientResult.ocr_backend, "google_vision");
+assert.equal(clientResult.worker_status, "OK");
+assert.equal(clientResult.worker_reason, null);
+assert.deepEqual(clientResult.backend_telemetry, { vision_status: "OK" });
 assert.equal(clientResult.worker_attempt_count, 1);
 assert.equal(clientResult.inline_full_image_fallback_evaluated, true);
 assert.equal(clientResult.inline_full_image_fallback_used, true);

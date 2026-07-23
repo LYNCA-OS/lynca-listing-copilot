@@ -52,7 +52,7 @@ export async function captureV4OracleOcrObservations({ report, baseUrl, username
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.ok !== true) {
-      throw new Error(`oracle OCR capture failed: ${response.status}:${cleanText(payload.error)}`);
+      throw new Error(`oracle OCR capture failed: ${response.status}:${cleanText(payload.error)}:${cleanText(payload.message)}`);
     }
     capturedCards.push(...(payload.cards || []));
   }

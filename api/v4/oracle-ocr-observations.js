@@ -130,6 +130,9 @@ function observation(result = {}, job = {}, requestedBackend = "") {
     raw_text: rawText,
     fields: result.normalized_fields || {},
     confidence: result.confidence ?? null,
+    worker_status: cleanText(result.worker_status) || null,
+    worker_reason: cleanText(result.worker_reason) || null,
+    backend_telemetry: result.backend_telemetry || null,
     text_candidate_count: Array.isArray(result.text_candidates) ? result.text_candidates.length : 0,
     // Oracle diagnostics must inspect what the chain actually consumed. Keep
     // the sample bounded and strip URLs/metadata; text, confidence, pass and
