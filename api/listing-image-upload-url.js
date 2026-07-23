@@ -74,39 +74,41 @@ export default async function handler(req, res) {
       env: process.env,
       fetchImpl: globalThis.fetch
     });
-    const upload = await createListingImageSignedUpload({
+    const imagePayloads = Array.isArray(payload.images) ? payload.images : [payload];
+    if (!imagePayloads.length || imagePayloads.length > 10) throw new Error("Image upload batch must contain 1-10 images.");
+    const uploads = await Promise.all(imagePayloads.map((image) => createListingImageSignedUpload({
       tenantId: context.tenantId,
       assetId,
-      imageId: payload.imageId || payload.image_id,
-      role: payload.role,
-      fileName: payload.fileName,
-      contentType: payload.contentType,
-      size: payload.size,
-      width: payload.width || payload.imageWidth,
-      height: payload.height || payload.imageHeight,
-      signatureHex: payload.signatureHex || payload.signature_hex || payload.fileSignature,
-      signatureBytes: payload.signatureBytes,
-      contentSha256: payload.contentSha256 || payload.content_sha256 || payload.sha256
-    });
-    await persistProductionEvent({
+      imageId: image.imageId || image.image_id,
+      role: image.role,
+      fileName: image.fileName,
+      contentType: image.contentType,
+      size: image.size,
+      width: image.width || image.imageWidth,
+      height: image.height || image.imageHeight,
+      signatureHex: image.signatureHex || image.signature_hex || image.fileSignature,
+      signatureBytes: image.signatureBytes,
+      contentSha256: image.contentSha256 || image.content_sha256 || image.sha256
+    })));
+    await Promise.all(uploads.map((upload) => persistProductionEvent({
       eventType: "upload_started",
       requestId: context.requestId,
       context,
       metadata: {
         asset_id: assetId,
         client_asset_ref: clientAssetRef || null,
-        storage_role: payload.role || null,
+        storage_role: upload.storage_role || null,
         content_type: upload.content_type,
         size: upload.size
       }
-    });
+    })));
 
     sendJson(res, 200, {
       ok: true,
       request_id: context.requestId,
       asset_id: assetId,
       client_asset_ref: clientAssetRef || null,
-      upload
+      ...(Array.isArray(payload.images) ? { uploads } : { upload: uploads[0] })
     });
   } catch (error) {
     sendJson(res, error.retryable === true ? 503 : 400, {

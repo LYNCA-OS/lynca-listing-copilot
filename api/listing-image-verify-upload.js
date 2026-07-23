@@ -61,39 +61,7 @@ async function cleanupFailedUpload(payload, tenantId) {
   }
 }
 
-export default async function handler(req, res) {
-  const requestStartedAt = Date.now();
-  instrumentProductionRequest(req, res, { api: "/api/listing-image-verify-upload" });
-  if (req.method !== "POST") {
-    sendJson(res, 405, { ok: false, message: "Method not allowed" });
-    return;
-  }
-
-  let context;
-  try {
-    context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
-    bindProductionRequestContext(res, context);
-  } catch (error) {
-    const status = isTenantAuthError(error) ? error.statusCode : 503;
-    sendJson(res, status, publicTenantAuthError(error));
-    return;
-  }
-
-  if (!enforceApiRateLimit(req, res, {
-    scope: "listing_image_verify",
-    limit: 1200,
-    windowMs: 60_000,
-    message: "Too many image verification requests. Please try again shortly."
-  })) return;
-
-  let payload;
-  try {
-    payload = JSON.parse(await readBody(req));
-  } catch {
-    sendJson(res, 400, { ok: false, message: "Invalid request." });
-    return;
-  }
-
+export async function verifyListingImagePayload(payload, context, requestStartedAt = Date.now()) {
   const objectPath = payload.objectPath || payload.object_path;
   const assetId = payload.assetId || payload.asset_id;
   const expectedContentSha256 = String(
@@ -102,11 +70,7 @@ export default async function handler(req, res) {
   let uploadIdentity;
   try {
     normalizeDurableListingAssetId(assetId);
-    assertTenantListingAssetObjectPath({
-      tenantId: context.tenantId,
-      assetId,
-      objectPath
-    });
+    assertTenantListingAssetObjectPath({ tenantId: context.tenantId, assetId, objectPath });
     uploadIdentity = assertListingImageUploadObjectIdentity({
       tenantId: context.tenantId,
       assetId,
@@ -117,17 +81,9 @@ export default async function handler(req, res) {
       contentType: payload.contentType || payload.content_type
     });
   } catch (error) {
-    sendJson(res, 400, {
-      ok: false,
-      message: String(error.message || "Invalid listing image object path.").slice(0, 240)
-    });
-    return;
+    return { statusCode: 400, body: { ok: false, message: String(error.message || "Invalid listing image object path.").slice(0, 240) } };
   }
 
-  // An aborted client retry can arrive after the first Vercel invocation has
-  // already persisted the exact verified bytes. Reuse only a fully matching,
-  // hash-verified canonical record; any mismatch falls through to a fresh
-  // full-byte verification.
   const storageConfig = listingImageStorageReadiness(process.env);
   const fastReadStartedAt = Date.now();
   let existingVerification = null;
@@ -181,7 +137,7 @@ export default async function handler(req, res) {
       dimension_source: "object_bytes",
       verified_at: record.verified_at
     };
-    sendJson(res, 200, {
+    return { statusCode: 200, body: {
       ok: true,
       verification,
       verification_record: { saved: true, durable: true, reason: "exact_record_reused" },
@@ -190,8 +146,7 @@ export default async function handler(req, res) {
         exact_record_read_ms: Date.now() - fastReadStartedAt,
         total_ms: Date.now() - requestStartedAt
       }
-    });
-    return;
+    } };
   }
 
   try {
@@ -208,12 +163,8 @@ export default async function handler(req, res) {
       contentSha256: expectedContentSha256
     });
     const objectVerificationMs = Date.now() - objectVerificationStartedAt;
-    let verificationRecord = {
-      saved: false,
-      durable: false
-    };
-
     const recordWriteStartedAt = Date.now();
+    let verificationRecord;
     try {
       verificationRecord = await saveListingImageVerificationRecord({
         verification,
@@ -224,22 +175,18 @@ export default async function handler(req, res) {
         role: uploadIdentity.storage_role,
         cropMetadata: payload.cropMetadata || payload.crop_metadata || null
       });
-      if (!verificationRecord.saved || !verificationRecord.durable) {
-        throw new Error(verificationRecord.reason || "verification_record_write_failed");
-      }
+      if (!verificationRecord.saved || !verificationRecord.durable) throw new Error(verificationRecord.reason || "verification_record_write_failed");
     } catch {
       const cleanup = await cleanupFailedUpload(payload, context.tenantId);
-      sendJson(res, 503, {
+      return { statusCode: 503, body: {
         ok: false,
         retryable: true,
         code: "verification_record_write_failed",
         message: "Image verification could not be persisted.",
         cleanup
-      });
-      return;
+      } };
     }
-
-    sendJson(res, 200, {
+    return { statusCode: 200, body: {
       ok: true,
       verification,
       verification_record: {
@@ -254,21 +201,77 @@ export default async function handler(req, res) {
         record_write_ms: Date.now() - recordWriteStartedAt,
         total_ms: Date.now() - requestStartedAt
       }
-    });
+    } };
   } catch (error) {
-    // A storage timeout/429/5xx says nothing about object correctness. Preserve
-    // the upload so the client can verify it again instead of paying to upload
-    // the same original and crops twice.
     const retryable = error.retryable === true;
     const cleanup = retryable
       ? { attempted: false, preserved_for_retry: true }
       : await cleanupFailedUpload(payload, context.tenantId);
-    sendJson(res, retryable ? 503 : 400, {
+    return { statusCode: retryable ? 503 : 400, body: {
       ok: false,
       code: error.code || (retryable ? "storage_verification_temporarily_unavailable" : "storage_verification_failed"),
       retryable,
       message: String(error.message || "Unable to verify uploaded image.").slice(0, 240),
       cleanup
-    });
+    } };
   }
+}
+
+export default async function handler(req, res) {
+  const requestStartedAt = Date.now();
+  instrumentProductionRequest(req, res, { api: "/api/listing-image-verify-upload" });
+  if (req.method !== "POST") {
+    sendJson(res, 405, { ok: false, message: "Method not allowed" });
+    return;
+  }
+
+  let context;
+  try {
+    context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
+    bindProductionRequestContext(res, context);
+  } catch (error) {
+    const status = isTenantAuthError(error) ? error.statusCode : 503;
+    sendJson(res, status, publicTenantAuthError(error));
+    return;
+  }
+
+  if (!enforceApiRateLimit(req, res, {
+    scope: "listing_image_verify",
+    limit: 1200,
+    windowMs: 60_000,
+    message: "Too many image verification requests. Please try again shortly."
+  })) return;
+
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch {
+    sendJson(res, 400, { ok: false, message: "Invalid request." });
+    return;
+  }
+
+  const imagePayloads = Array.isArray(payload.images)
+    ? payload.images.map((image) => ({ ...image, assetId: payload.assetId || payload.asset_id }))
+    : [payload];
+  if (!imagePayloads.length || imagePayloads.length > 10) {
+    sendJson(res, 400, { ok: false, message: "Image verification batch must contain 1-10 images." });
+    return;
+  }
+  const results = await Promise.all(imagePayloads.map((image) => verifyListingImagePayload(image, context, requestStartedAt)));
+  if (!Array.isArray(payload.images)) {
+    sendJson(res, results[0].statusCode, results[0].body);
+    return;
+  }
+  const ok = results.every((result) => result.statusCode === 200 && result.body.ok === true);
+  const retryable = results.some((result) => result.body.retryable === true);
+  sendJson(res, ok ? 200 : retryable ? 503 : 400, {
+    ok,
+    retryable,
+    verifications: results.map((result, index) => ({
+      image_id: imagePayloads[index].imageId || imagePayloads[index].image_id,
+      status_code: result.statusCode,
+      ...result.body
+    })),
+    verification_timing: { image_count: results.length, total_ms: Date.now() - requestStartedAt }
+  });
 }

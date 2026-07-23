@@ -66,6 +66,26 @@ const fetchImpl = async (input, init = {}) => {
     }, 201);
   }
   if (url.pathname === "/api/listing-image-upload-url") {
+    if (Array.isArray(body.images)) {
+      return jsonResponse({
+        ok: true,
+        asset_id: durableAssetId,
+        client_asset_ref: body.clientAssetRef,
+        uploads: body.images.map((image) => ({
+          tenant_id: "tenant_legacy",
+          image_id: image.imageId,
+          storage_role: image.role,
+          object_path: `tenants/tenant_legacy/listing-assets/2026-07-18/${durableAssetId}/${image.role}-${image.imageId}.jpg`,
+          bucket: "listing-images",
+          content_type: image.contentType,
+          size: image.size,
+          width: image.width,
+          height: image.height,
+          content_sha256: image.contentSha256,
+          signed_upload_url: `https://storage.example/upload/${image.role}`
+        }))
+      });
+    }
     const fileName = `${body.role}-${body.imageId}.jpg`;
     return jsonResponse({
       ok: true,
@@ -90,6 +110,29 @@ const fetchImpl = async (input, init = {}) => {
     return new Response("", { status: 200 });
   }
   if (url.pathname === "/api/listing-image-verify-upload") {
+    if (Array.isArray(body.images)) {
+      return jsonResponse({
+        ok: true,
+        verifications: body.images.map((image) => ({
+          image_id: image.imageId,
+          ok: true,
+          verification: {
+            tenant_id: "tenant_legacy",
+            object_path: image.objectPath,
+            bucket: "listing-images",
+            content_type: image.contentType,
+            size: image.size,
+            width: image.width,
+            height: image.height,
+            content_sha256: image.contentSha256,
+            verification_token: `verified-${image.imageId}`,
+            object_verified: true
+          },
+          verification_record: { saved: true, durable: true }
+        })),
+        verification_timing: { image_count: body.images.length, total_ms: 1 }
+      });
+    }
     return jsonResponse({
       ok: true,
       verification: {
@@ -164,9 +207,9 @@ try {
   assert.equal(prepared.preparation_diagnostics.upload_verify_attempts, 2);
   assert.ok(Number.isFinite(prepared.preparation_diagnostics.upload_verify_max_latency_ms));
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-asset-create").length, 1);
-  assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-upload-url").length, 2);
+  assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-upload-url").length, 1);
   assert.equal(calls.filter((call) => call.pathname.startsWith("/upload/") && call.method === "PUT").length, 2);
-  assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-upload").length, 2);
+  assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-upload").length, 1);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-existing").length, 0);
   const reuseCalls = [];
   const reused = await prepareDurableSmokeItem({
