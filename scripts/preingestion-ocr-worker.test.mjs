@@ -1386,6 +1386,46 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(state.terminal, false);
 }
 
+// --- Oracle rendezvous ignores critical-field shortcuts and waits for every crop ---
+{
+  let jobReads = 0;
+  const state = await waitForPreingestionOcrEvidence({
+    tenantId: "tenant_a",
+    bundleId: "bundle-1",
+    timeoutMs: 1_000,
+    pollMs: 100,
+    triggerSweep: false,
+    requireTerminal: true,
+    env,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("preingestion_jobs")) {
+        jobReads += 1;
+        return jsonResponse([
+          {
+            job_id: "serial",
+            status: "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+            payload: { crop: { role: "serial_crop" } }
+          },
+          {
+            job_id: "detail",
+            status: jobReads === 1 ? "running" : "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:detail`,
+            payload: { crop: { role: "year_product_crop" } }
+          }
+        ]);
+      }
+      return jsonResponse([{ bundle_id: "bundle-1", evidence_patches: [] }]);
+    }
+  });
+  assert.equal(state.status, "TERMINAL");
+  assert.equal(state.terminal, true);
+  assert.ok(state.state_reads >= 2);
+}
+
 // --- field-aware rendezvous stops when only the requested hard field settles ---
 {
   let jobReads = 0;

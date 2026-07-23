@@ -339,6 +339,13 @@ assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({
 assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {
   preingestion_ocr_post_provider_wait_ms: 400
 }), 400);
+assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {
+  evaluation_profile: "v4_accuracy_ceiling_oracle_v1",
+  preingestion_ocr_post_provider_wait_ms: 90_000
+}), 90_000, "Oracle may wait for all detail crops without widening the writer budget");
+assert.equal(__listingCopilotTitleTestHooks.preingestionOcrPostProviderWaitMs({}, {
+  preingestion_ocr_post_provider_wait_ms: 90_000
+}), 10_000, "writer profiles retain the bounded OCR wait cap");
 assert.deepEqual(__listingCopilotTitleTestHooks.deferredPreingestionOcrSnapshot({
   preingestion_evidence_patches: [
     { field: "serial_number", value: "2/3" },
