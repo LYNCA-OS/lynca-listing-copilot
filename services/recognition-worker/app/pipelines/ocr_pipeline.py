@@ -698,6 +698,8 @@ def ocr_field_from_loaded_image(
     paddle_hard_error: str | None = None
     vision_unit_count = 0
     vision_cost_estimate = 0.0
+    vision_status = ""
+    vision_reason = ""
 
     # PaddleOCR lane (skipped for a pure deepseek run, or when Paddle is
     # disabled in a hybrid run so the deepseek lane still answers).
@@ -736,6 +738,8 @@ def ocr_field_from_loaded_image(
         from .google_vision_ocr import run_google_vision_ocr
 
         vision_result = run_google_vision_ocr(crop_array, crop_type=crop_type, config=config)
+        vision_status = str(vision_result.get("status") or "").strip().upper()
+        vision_reason = str(vision_result.get("reason") or "").strip()
         vision_candidates = vision_result.get("candidates", []) or []
         candidates.extend(vision_candidates)
         backend_telemetry["vision_status"] = vision_result.get("status")
@@ -751,6 +755,8 @@ def ocr_field_from_loaded_image(
     # UNAVAILABLE, matching prior behavior; otherwise OK/NO_TEXT by candidates.
     if candidates:
         status = "OK"
+    elif backend == "google_vision" and vision_status == "UNAVAILABLE":
+        status = "UNAVAILABLE"
     elif paddle_hard_error and backend not in {"deepseek", "google_vision"}:
         status = "UNAVAILABLE"
     else:
@@ -799,6 +805,8 @@ def ocr_field_from_loaded_image(
     }
     if status == "UNAVAILABLE" and paddle_hard_error:
         result["reason"] = paddle_hard_error
+    elif status == "UNAVAILABLE" and vision_reason:
+        result["reason"] = vision_reason
     return result
 
 

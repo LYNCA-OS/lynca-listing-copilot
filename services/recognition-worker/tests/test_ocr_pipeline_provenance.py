@@ -35,6 +35,29 @@ class OcrPipelineProvenanceTests(unittest.TestCase):
         self.assertEqual(result["vision_unit_count"], 1)
         self.assertEqual(result["vision_cost_estimate"], 0.0015)
 
+    def test_google_unavailable_does_not_masquerade_as_no_text(self):
+        loaded = SimpleNamespace(image_id="front", role="front_original", array="IMAGE")
+        config = SimpleNamespace(vision_feature_type="DOCUMENT_TEXT_DETECTION")
+        with (
+            patch("app.pipelines.ocr_pipeline._crop_array_by_box", return_value=("CROP", (0, 0))),
+            patch("app.pipelines.google_vision_ocr.run_google_vision_ocr", return_value={
+                "status": "UNAVAILABLE",
+                "reason": "request_failed:http_429",
+                "candidates": [],
+                "vision_unit_count": 0,
+                "cost_estimate": 0,
+            }),
+        ):
+            result = ocr_field_from_loaded_image(
+                loaded,
+                crop_type="subject_crop",
+                ocr_backend="google_vision",
+                config=config,
+            )
+
+        self.assertEqual(result["status"], "UNAVAILABLE")
+        self.assertEqual(result["reason"], "request_failed:http_429")
+
 
 if __name__ == "__main__":
     unittest.main()
