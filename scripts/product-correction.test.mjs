@@ -4,8 +4,8 @@ import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate
 import { applyCandidateDecisionStage } from "../lib/listing/candidates/candidate-decision-stage.mjs";
 
 // Layer B: a high-trust OFFICIAL_CHECKLIST catalog candidate may CORRECT a
-// mis-identified product ("Chrome Black" for a Cardsmiths Smugglers card), but
-// only under collision-proof conditions that anchor agreement alone cannot
+// mis-identified product ("Chrome Black" for Star Wars Smugglers Outpost), but
+// only under bounded conditions that anchor agreement alone cannot
 // provide (two genuinely different products can share subject + year + serial):
 //   (1) the observed product has no catalog support, and
 //   (2) the anchored high-trust candidates map to a single product family.
@@ -44,25 +44,29 @@ function correctionFor(observed, candidates) {
 
 // 1. Positive: provider mis-reads the product but reads player + serial + year
 //    correctly; the official Smugglers row is anchored and unique → correct it.
-const observedMisread = { year: "2023", product: "Chrome Black", players: ["Paul Kasey"], serial_number: "12/25" };
+const observedMisread = { year: "2025", manufacturer: "Topps", product: "Topps Chrome Black Star Wars", players: ["Paul Kasey"], serial_number: "12/25" };
 const smugglers = officialCandidate("smugglers", {
-  year: "2023",
-  manufacturer: "Cardsmiths",
-  product: "Cardsmiths Smugglers",
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Star Wars Smugglers Outpost",
+  set: "Arbitrary First Candidate Set",
+  insert: "Arbitrary First Candidate Insert",
   players: ["Paul Kasey"],
   expected_serial_denominator: "25"
 });
 const positive = correctionFor(observedMisread, [smugglers]);
 assert.equal(positive.status, "ready_product_correction", "an unsupported observed product with a single anchored family must be corrected");
 assert.equal(positive.candidate_id, "smugglers");
-assert.equal(positive.product_fields.product, "Cardsmiths Smugglers");
+assert.equal(positive.product_fields.product, "Topps Star Wars Smugglers Outpost");
 
 const decided = applyCandidateDecisionStage({
   result: { resolved_fields: observedMisread, catalog_candidate_packet: packet([smugglers]), ...buildCandidateSelectionPass({ result: { resolved_fields: observedMisread, catalog_candidate_packet: packet([smugglers]) } }) },
   resolvedBefore: observedMisread
 });
-assert.equal(decided.resolved_after.product, "Cardsmiths Smugglers", "the mis-identified product must be overwritten in the resolved fields");
-assert.equal(decided.resolved_after.manufacturer, "Cardsmiths");
+assert.equal(decided.resolved_after.product, "Topps Star Wars Smugglers Outpost", "the mis-identified product must be overwritten in the resolved fields");
+assert.equal(decided.resolved_after.manufacturer, "Topps");
+assert.equal(decided.resolved_after.set, null, "product correction must not copy an arbitrary set from the first same-product row");
+assert.equal(decided.resolved_after.insert, null, "product correction must not copy an arbitrary insert from the first same-product row");
 assert.ok(decided.field_application.product_correction_fields.includes("product"));
 assert.equal(decided.field_application.reason_per_field.product, "trusted_official_checklist_product_correction_replace");
 
@@ -79,23 +83,23 @@ assert.equal(
   "a supported observed product with multiple anchored families must not be corrected"
 );
 
-// 3. Safety — no serial agreement (exact code alone is collision-prone). The
-//    candidate is not anchored, so the observed product stays untouched.
-const paniniLike = { year: "2024", product: "Panini Prizm", players: ["Test Player"], collector_number: "CPA-TP" };
+// 3. Safety — an exact code without subject agreement is not a complete
+//    identity lock, so the observed product stays untouched.
+const paniniLike = { year: "2024", product: "Panini Prizm", collector_number: "CPA-TP" };
 assert.equal(
   correctionFor(paniniLike, [
     officialCandidate("tc", { year: "2024", manufacturer: "Topps", product: "Topps Chrome", players: ["Test Player"], collector_number: "CPA-TP" })
   ]).status,
   "not_applicable",
-  "an exact-code match without serial agreement must not authorise a product correction"
+  "an exact-code match without subject agreement must not authorise a product correction"
 );
 
 // 4. Safety — the anchored candidates disagree on the product family (ambiguous).
-const ambiguous = { year: "2023", product: "Fake Product", players: ["Paul Kasey"], serial_number: "12/25" };
+const ambiguous = { year: "2025", product: "Fake Product", players: ["Paul Kasey"], serial_number: "12/25" };
 assert.equal(
   correctionFor(ambiguous, [
-    officialCandidate("a", { year: "2023", manufacturer: "Cardsmiths", product: "Cardsmiths Smugglers", players: ["Paul Kasey"], expected_serial_denominator: "25" }),
-    officialCandidate("b", { year: "2023", manufacturer: "Topps", product: "Topps Chrome", players: ["Paul Kasey"], expected_serial_denominator: "25" })
+    officialCandidate("a", { year: "2025", manufacturer: "Topps", product: "Topps Star Wars Smugglers Outpost", players: ["Paul Kasey"], expected_serial_denominator: "25" }),
+    officialCandidate("b", { year: "2025", manufacturer: "Topps", product: "Topps Chrome", players: ["Paul Kasey"], expected_serial_denominator: "25" })
   ]).status,
   "not_applicable",
   "ambiguous anchored product families must not be corrected"
@@ -108,14 +112,36 @@ assert.equal(
     source_type: "MARKETPLACE",
     source_trust: "MARKETPLACE",
     match_score: 0.9,
-    fields: { year: "2023", product: "Cardsmiths Smugglers", players: ["Paul Kasey"], expected_serial_denominator: "25" }
+    fields: { year: "2025", product: "Topps Star Wars Smugglers Outpost", players: ["Paul Kasey"], expected_serial_denominator: "25" }
   }]).status,
   "not_applicable",
   "a low-trust source must not authorise a product correction"
 );
 
 // 6. Safety — no correction object leaks into a normal fill-missing decision.
-const clean = { year: "2023", product: "Cardsmiths Smugglers", players: ["Paul Kasey"], serial_number: "12/25" };
+const clean = { year: "2025", manufacturer: "Topps", product: "Star Wars Smugglers Outpost", players: ["Paul Kasey"], serial_number: "12/25" };
 assert.equal(correctionFor(clean, [smugglers]).status, "not_applicable", "a matching observed product needs no correction");
+
+// 7. A directly observed checklist code is an even stronger cross-product
+// anchor than a serial denominator and must enable the same bounded correction.
+const observedExactCode = {
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Chrome Black Star Wars",
+  players: ["Paul Kasey"],
+  checklist_code: "CB-PK"
+};
+const exactCodeSmugglers = officialCandidate("smugglers-code", {
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Star Wars Smugglers Outpost",
+  players: ["Paul Kasey"],
+  checklist_code: "CB-PK"
+});
+assert.equal(
+  correctionFor(observedExactCode, [exactCodeSmugglers]).status,
+  "ready_product_correction",
+  "subject + year + exact checklist code should authorise a trusted product correction"
+);
 
 console.log("product correction tests passed");

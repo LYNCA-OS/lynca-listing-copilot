@@ -32,10 +32,12 @@ assert.equal(wrongProductSerial.exact_product, undefined, "subject anchor must n
 assert.equal(wrongProductSerial.exact_subject, "Paul Kasey");
 assert.equal(wrongProductSerial.exact_serial_denominator, "25");
 
-// 2. Subject + year (no serial) still plans the anchor.
-assert.ok(
+// 2. Subject + year without a serial denominator is too collision-prone and
+//    must stay on the normal product-scoped lanes.
+assert.equal(
   anchorQuery({ year: "2024", product: "Chrome", players: ["Shohei Ohtani"] }),
-  "subject anchor lane should be planned for a mis-identified product anchored on year"
+  undefined,
+  "subject + year alone must not open a cross-product catalog lane"
 );
 
 // 3. Subject with no secondary anchor (no serial/year/set) does NOT plan the
@@ -46,24 +48,24 @@ assert.equal(
   "subject anchor lane must not fire on subject alone without a secondary anchor"
 );
 
-// 4. Post-provider family selection includes the anchor exactly when a subject
-//    plus a secondary anchor is present and there is no exact printed code.
+// 4. Post-provider family selection includes the anchor exactly when subject,
+//    year, and serial denominator are present and there is no exact printed code.
 function postFamilies(fields) {
   return catalogRetrievalFamiliesForFields(fields, { stagePhase: "post_provider" });
 }
 
 assert.ok(
-  postFamilies({ product: "Chrome Black", players: ["Paul Kasey"], serial_number: "12/25" }).includes(ANCHOR),
-  "post-provider selection should include the anchor for a mis-identified product with a serial denominator"
+  postFamilies({ year: "2023", product: "Chrome Black", players: ["Paul Kasey"], serial_number: "12/25" }).includes(ANCHOR),
+  "post-provider selection should include the anchor for a mis-identified product with year and serial denominator"
 );
 assert.ok(
-  postFamilies({ product: "Chrome", players: ["Shohei Ohtani"], year: "2024" }).includes(ANCHOR),
-  "post-provider selection should include the anchor for a mis-identified product anchored on year"
+  !postFamilies({ product: "Chrome", players: ["Shohei Ohtani"], year: "2024" }).includes(ANCHOR),
+  "post-provider selection must reject the anchor without a serial denominator"
 );
 // An exact printed code is already a product-independent identity anchor, so the
 // subject anchor lane is redundant and must be skipped.
 assert.ok(
-  !postFamilies({ product: "Chrome Black", players: ["Paul Kasey"], collector_number: "12", serial_number: "12/25" }).includes(ANCHOR),
+  !postFamilies({ year: "2023", product: "Chrome Black", players: ["Paul Kasey"], collector_number: "12", serial_number: "12/25" }).includes(ANCHOR),
   "post-provider selection must not add the anchor when an exact printed code exists"
 );
 // The anchor is additive for correct-product cards: existing product lanes stay.
@@ -75,7 +77,7 @@ assert.ok(correctProduct.includes(retrievalQueryFamilies.CATALOG_PRODUCT_SERIAL_
 // the planned lane is not filtered out before the provider observation.
 assert.ok(
   catalogRetrievalFamiliesForFields(
-    { product: "Chrome", players: ["Shohei Ohtani"], year: "2024" },
+    { product: "Chrome", players: ["Shohei Ohtani"], year: "2024", serial_number: "12/25" },
     { stagePhase: "catalog_lookup" }
   ).includes(ANCHOR),
   "pre-provider selection should permit the subject anchor family"
