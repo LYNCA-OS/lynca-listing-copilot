@@ -445,8 +445,54 @@ const directlySupportedInkAuto = validateProviderEvidencePayload("openai_legacy"
   }],
   unresolved: []
 });
-assert.equal(directlySupportedInkAuto.fields.auto, true, "directly visible handwritten ink may support Auto");
-assert.deepEqual(directlySupportedInkAuto.unresolved, []);
+assert.equal(directlySupportedInkAuto.fields.auto, false, "unlabeled ink must remain review-only because facsimiles are visually ambiguous");
+assert.ok(directlySupportedInkAuto.unresolved.includes("auto"));
+
+const facsimileSignedImage = validateProviderEvidencePayload("openai_legacy", {
+  fields: { auto: true, card_name: "Signed Image", observable_components: ["auto"] },
+  field_evidence: [{
+    field: "auto",
+    value: true,
+    source_type: "CARD_FRONT_PRINTED_TEXT",
+    evidence_kind: "HANDWRITTEN_INK_SIGNATURE",
+    visible_text: "",
+    signature_visible: true,
+    directly_observed: true
+  }],
+  unresolved: []
+});
+assert.equal(facsimileSignedImage.fields.auto, false);
+assert.equal(facsimileSignedImage.fields.card_name, null);
+
+const unsupportedVisualParallel = validateProviderEvidencePayload("openai_legacy", {
+  fields: { surface_color: "Red", parallel_family: "Refractor" },
+  field_evidence: [{
+    field: "parallel_family",
+    value: "Refractor",
+    source_type: "VISION_ONLY",
+    visible_text: "red reflective surface",
+    review_required: true,
+    directly_observed: true
+  }],
+  unresolved: []
+});
+assert.equal(unsupportedVisualParallel.fields.surface_color, "Red");
+assert.equal(unsupportedVisualParallel.fields.parallel_family, null);
+assert.ok(unsupportedVisualParallel.unresolved.includes("parallel_family"));
+
+const printedParallel = validateProviderEvidencePayload("openai_legacy", {
+  fields: { parallel_family: "Refractor" },
+  field_evidence: [{
+    field: "parallel_family",
+    value: "Refractor",
+    source_type: "SLAB_LABEL",
+    visible_text: "RED REFRACTOR",
+    review_required: false,
+    directly_observed: true
+  }],
+  unresolved: []
+});
+assert.equal(printedParallel.fields.parallel_family, "Refractor");
 
 const directlySupportedPrintedAuto = validateProviderEvidencePayload("openai_legacy", {
   fields: { auto: true, observable_components: ["auto"] },
