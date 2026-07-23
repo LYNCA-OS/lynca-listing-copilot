@@ -101,6 +101,7 @@ async function cloudChecks({ baseUrl, username, password }) {
   const provider = providerResponse ? await providerResponse.json().catch(() => ({})) : {};
   const components = new Map((provider.workflow_readiness?.components || []).map((item) => [item.id, item]));
   const vector = components.get("vector_retrieval") || {};
+  const ocr = components.get("paddle_ocr") || {};
   const tables = health.supabase?.tables || {};
   const tableFailures = Object.entries(tables).filter(([, value]) => value?.ok !== true).map(([name]) => name);
   return [
@@ -127,6 +128,16 @@ async function cloudChecks({ baseUrl, username, password }) {
       && vector.details?.request_override_supported === true, "Vector index is ready and remains an explicit request-level assist.", {
       default_request_enabled: vector.details?.default_request_enabled ?? null,
       model_revision: vector.details?.model_revision || null
+    }),
+    check("cloud_ocr_runtime_contract", ocr.details?.runtime_ready === true
+      && ocr.details?.runtime_profile === "lean-google-vision-v1"
+      && ocr.details?.backend === "google_vision"
+      && ocr.details?.auth_mode === "adc"
+      && ocr.details?.paddle_loaded === false, "Production OCR uses the lean Google Vision runtime; PP-OCR remains outside the writer-critical path.", {
+      runtime_profile: ocr.details?.runtime_profile || null,
+      backend: ocr.details?.backend || null,
+      auth_mode: ocr.details?.auth_mode || null,
+      paddle_loaded: ocr.details?.paddle_loaded ?? null
     })
   ];
 }

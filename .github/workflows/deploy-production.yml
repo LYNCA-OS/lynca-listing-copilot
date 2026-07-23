@@ -159,6 +159,7 @@ jobs:
           const components = new Map((status.workflow_readiness?.components || []).map((item) => [item.id, item]));
           const vector = components.get('vector_retrieval') || {};
           const vision = components.get('vision_provider') || {};
+          const ocr = components.get('paddle_ocr') || {};
           const ocrCapacity = status.execution_control?.stage_capacity?.paddle_ocr || {};
           const catalogCapacity = status.execution_control?.stage_capacity?.catalog || {};
           const vectorCapacity = status.execution_control?.stage_capacity?.vector || {};
@@ -170,6 +171,11 @@ jobs:
             storage_bucket_ready: status.storage?.configured === true && status.storage?.bucket === 'listing-card-images',
             cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
             model_ready: vision.details?.model_id === 'gpt-5-mini',
+            ocr_runtime_profile_frozen: ocr.details?.runtime_ready === true
+              && ocr.details?.runtime_profile === 'lean-google-vision-v1'
+              && ocr.details?.backend === 'google_vision'
+              && ocr.details?.auth_mode === 'adc'
+              && ocr.details?.paddle_loaded === false,
             vector_index_ready: vector.details?.index_ready === true,
             vector_runtime_ready: vector.details?.runtime_ready === true && vector.details?.preload_status === 'READY',
             provider_per_key_concurrency_frozen: status.execution_control?.per_key_stable_concurrency === concurrency.gpt_provider.concurrency,

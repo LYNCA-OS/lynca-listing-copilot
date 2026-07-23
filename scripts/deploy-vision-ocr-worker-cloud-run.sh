@@ -42,27 +42,33 @@ if [ "$REQUIRED_CPU" -gt "$REGIONAL_CPU_QUOTA" ]; then
   exit 1
 fi
 
-if gcloud run services describe "$SHARED_RECOGNITION_SERVICE_NAME" \
+if ! SHARED_RECOGNITION_SERVICE_JSON="$(gcloud run services describe "$SHARED_RECOGNITION_SERVICE_NAME" \
   --project "$GCP_PROJECT_ID" \
-  --region "$GCP_REGION" >/dev/null 2>&1; then
-  # --max is service-level and does not create a revision. It immediately
-  # prevents sustained load from consuming the rollout reserve.
-  gcloud run services update "$SHARED_RECOGNITION_SERVICE_NAME" \
-    --project "$GCP_PROJECT_ID" \
-    --region "$GCP_REGION" \
-    --max "$SHARED_RECOGNITION_MAX" \
-    --format='none'
+  --region "$GCP_REGION" \
+  --format=json)"; then
+  echo "Shared recognition service ${SHARED_RECOGNITION_SERVICE_NAME} is required for the regional capacity contract." >&2
+  exit 1
 fi
 
-if gcloud run services describe "$SERVICE_NAME" \
-  --project "$GCP_PROJECT_ID" \
-  --region "$GCP_REGION" >/dev/null 2>&1; then
-  gcloud run services update "$SERVICE_NAME" \
-    --project "$GCP_PROJECT_ID" \
-    --region "$GCP_REGION" \
-    --min "$VISION_MIN" \
-    --max "$VISION_MAX" \
-    --format='none'
+read -r ACTUAL_RECOGNITION_CPU ACTUAL_RECOGNITION_MAX <<EOF
+$(printf '%s' "$SHARED_RECOGNITION_SERVICE_JSON" | node --input-type=module -e '
+  let source = "";
+  for await (const chunk of process.stdin) source += chunk;
+  const service = JSON.parse(source);
+  const cpu = service.spec?.template?.spec?.containers?.[0]?.resources?.limits?.cpu || "";
+  const max = service.metadata?.annotations?.["run.googleapis.com/maxScale"] || "";
+  process.stdout.write(`${cpu} ${max}`);
+')
+EOF
+
+if ! [[ "$ACTUAL_RECOGNITION_CPU" =~ ^[0-9]+$ && "$ACTUAL_RECOGNITION_MAX" =~ ^[0-9]+$ ]]; then
+  echo "Shared recognition service has no numeric CPU/max capacity contract." >&2
+  exit 1
+fi
+if [ "$ACTUAL_RECOGNITION_CPU" -gt "$SHARED_RECOGNITION_CPU" ] \
+  || [ "$ACTUAL_RECOGNITION_MAX" -gt "$SHARED_RECOGNITION_MAX" ]; then
+  echo "Shared recognition service exceeds the release envelope: cpu=${ACTUAL_RECOGNITION_CPU}, max=${ACTUAL_RECOGNITION_MAX}." >&2
+  exit 1
 fi
 
 gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
