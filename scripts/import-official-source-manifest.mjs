@@ -6,6 +6,7 @@ import {
   importToppsBasketballChecklists
 } from "./import-topps-basketball-checklists.mjs";
 import { isOfficialCatalogSourceType } from "../lib/listing/catalog/catalog-contract.mjs";
+import { validateOfficialCatalogRows } from "../lib/listing/catalog/catalog-admission-gate.mjs";
 
 const defaultManifestPath = "data/catalog/official/topps-production-sources.json";
 
@@ -74,6 +75,7 @@ export function validateOfficialSourceManifestReport(manifest = {}, report = {})
       required,
       matched: sourceRows.some((row) => rowMatchesRequiredRecord(row, required))
     }));
+    const admission = validateOfficialCatalogRows(sourceRows);
     const validation = {
       source_name: source.source_name,
       source_url: source.source_url,
@@ -88,11 +90,14 @@ export function validateOfficialSourceManifestReport(manifest = {}, report = {})
       review_required_count: reviewRequiredCount,
       maximum_review_required_count: Number(source.maximum_review_required_count ?? 0),
       record_checks: recordChecks,
+      admission_normalization: extractedSource?.source_metadata?.catalog_admission?.normalization || null,
+      admission,
       valid: Boolean(extractedSource)
         && sourceTypeMatches
         && sourceRows.length >= Number(source.minimum_card_count || 1)
         && promotionCandidateCount >= Number(source.minimum_promotion_candidate_count ?? source.minimum_card_count ?? 1)
         && reviewRequiredCount <= Number(source.maximum_review_required_count ?? 0)
+        && admission.valid
         && recordChecks.every((check) => check.matched)
     };
     if (!validation.valid) errors.push(`official_source_validation_failed:${source.source_name}`);
