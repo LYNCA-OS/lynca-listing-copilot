@@ -760,7 +760,8 @@ async function ensureDurableAssetIdentity(asset) {
   }
   if (asset.durableAssetPromise) return asset.durableAssetPromise;
   asset.durableAssetPromise = (async () => {
-    const clientAssetRef = String(asset.clientAssetRef || asset.id || "").trim();
+    const clientAssetRef = await contentAddressedClientAssetRef(asset);
+    assertCurrentAssetLifecycle(asset);
     const request = await fetchJsonWithRetry(ASSET_CREATE_API_ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1093,6 +1094,44 @@ async function contentSha256Hex(source) {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function contentAddressedClientAssetRef(asset = {}) {
+  if (asset.contentAddressedClientRef) return asset.contentAddressedClientRef;
+  if (asset.contentAddressedClientRefPromise) return asset.contentAddressedClientRefPromise;
+  const requestedRef = String(asset.clientAssetRef || "").trim();
+  // INPUT_REBIND is an explicit successor generation for the same bytes. It is
+  // the only case where the recovery nonce, rather than content alone, owns the
+  // new immutable asset identity.
+  if (/:rebind:[^:]+$/i.test(requestedRef)) {
+    asset.contentAddressedClientRef = requestedRef;
+    return requestedRef;
+  }
+  asset.contentAddressedClientRefPromise = (async () => {
+    const originals = Array.isArray(asset.images) ? asset.images : [];
+    if (!originals.length) throw new Error("listing_asset_content_identity_missing");
+    const hashes = await Promise.all(originals.map(async (image) => {
+      const source = storageSourceForImage(image);
+      const hash = image.contentSha256 || await contentSha256Hex(source);
+      if (!/^[0-9a-f]{64}$/.test(hash)) throw new Error("listing_asset_content_hash_unavailable");
+      image.contentSha256 = hash;
+      return hash;
+    }));
+    const manifest = `lynca-card-content-v1\0${hashes.length}\0${hashes.join("\0")}`;
+    const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(manifest));
+    const hex = Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    asset.contentAddressedClientRef = `card-content-v1:${hex}`;
+    asset.clientAssetRef = asset.contentAddressedClientRef;
+    return asset.contentAddressedClientRef;
+  })();
+  try {
+    return await asset.contentAddressedClientRefPromise;
+  } catch (error) {
+    asset.contentAddressedClientRefPromise = null;
+    throw error;
+  }
 }
 
 function clearImageStorageBinding(image = {}) {
@@ -2519,6 +2558,7 @@ export const __listingCopilotAppTestHooks = {
   boundedProviderImagesForRequest,
   clearImageStorageBinding,
   clientBatchIdForAsset,
+  contentAddressedClientAssetRef,
   generationTimingView,
   generationSubmissionAllowed,
   imageHasVerifiedStorageReference,
@@ -4367,6 +4407,8 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
     const previousAssetId = String(asset.durableAssetId || "").trim();
     asset.rebindOfAssetId = previousAssetId;
     asset.clientAssetRef = successorClientAssetRef(asset);
+    asset.contentAddressedClientRef = "";
+    asset.contentAddressedClientRefPromise = null;
     asset.durableAssetId = "";
     asset.durableTenantId = "";
     asset.imageGenerationId = "";

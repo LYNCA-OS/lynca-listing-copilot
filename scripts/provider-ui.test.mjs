@@ -769,6 +769,29 @@ assert.match(
   /async function processAssetViaQueue\(asset, options = \{\}\) \{[\s\S]*?asset\.foregroundQueueOwnershipRunId = state\.backgroundPreparationRunId;[\s\S]*?settleBackgroundPreparation\(asset/,
   "foreground enqueue ownership must be claimed before waiting on background preparation"
 );
+const contentRefAsset = {
+  clientAssetRef: "asset-1",
+  images: [
+    { sourceFile: new Blob(["front"], { type: "image/jpeg" }), contentSha256: "" },
+    { sourceFile: new Blob(["back"], { type: "image/jpeg" }), contentSha256: "" }
+  ]
+};
+const contentRef = await __listingCopilotAppTestHooks.contentAddressedClientAssetRef(contentRefAsset);
+assert.match(contentRef, /^card-content-v1:[0-9a-f]{64}$/);
+assert.equal(contentRefAsset.clientAssetRef, contentRef, "durable asset identity must not reuse a positional asset-N reference");
+assert.equal(
+  await __listingCopilotAppTestHooks.contentAddressedClientAssetRef(contentRefAsset),
+  contentRef,
+  "the same ordered original bytes must keep one stable content identity"
+);
+const differentContentRef = await __listingCopilotAppTestHooks.contentAddressedClientAssetRef({
+  clientAssetRef: "asset-1",
+  images: [
+    { sourceFile: new Blob(["different-front"], { type: "image/jpeg" }), contentSha256: "" },
+    { sourceFile: new Blob(["back"], { type: "image/jpeg" }), contentSha256: "" }
+  ]
+});
+assert.notEqual(differentContentRef, contentRef, "different cards at the same queue position must never share a durable asset");
 const oversizedOriginal = new Blob([new Uint8Array(30)], { type: "image/png" });
 const compressedFallback = new Blob([new Uint8Array(10)], { type: "image/jpeg" });
 const uploadSourceImage = {
