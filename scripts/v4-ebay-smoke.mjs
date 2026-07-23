@@ -4659,6 +4659,8 @@ export async function runV4EbaySmoke({
   if (!datasetPath) throw new Error("--dataset is required");
   if (!baseUrl) throw new Error("--base-url is required");
   if (!username || !password) throw new Error("--username and --password are required");
+  const effectiveUsePreingestion = usePreingestion
+    || recognitionProfile === "accuracy-ceiling-oracle-v1";
   const normalizedSampleMode = normalizeEvaluationSampleMode(evaluationSampleMode);
   const normalizedTenantCount = Math.max(1, Math.min(50, Math.trunc(Number(tenantCount) || 1)));
   const normalizedSubmissionConcurrency = Math.max(
@@ -4814,7 +4816,7 @@ export async function runV4EbaySmoke({
           disableIdentityCache,
           coldStartBlind,
           recognitionProfile,
-          usePreingestion,
+          usePreingestion: effectiveUsePreingestion,
           preingestionSource,
           requestTimeoutMs,
           verificationCache,
@@ -4872,7 +4874,7 @@ export async function runV4EbaySmoke({
   } else {
     recognitionResults = await mapWithConcurrency(items, normalizedSubmissionConcurrency, async (item, localIndex) => {
       const index = offset + localIndex;
-      if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} preingestion=${usePreingestion} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
+      if (progress) process.stderr.write(`v4 ebay smoke ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} prewarm=${prewarm} preingestion=${effectiveUsePreingestion} queue=${queueMode} force_l2_direct=${forceL2Direct}\n`);
       try {
         const row = await runOne({
           item,
@@ -4895,7 +4897,7 @@ export async function runV4EbaySmoke({
           disableIdentityCache,
           coldStartBlind,
           recognitionProfile,
-          usePreingestion,
+          usePreingestion: effectiveUsePreingestion,
           preingestionSource,
           speculative,
           thinkMs,
@@ -5012,8 +5014,8 @@ export async function runV4EbaySmoke({
     think_ms: speculative ? thinkMs : null,
     force_l2_direct: forceL2Direct,
     l1_explicitly_enabled: enableL1,
-    preingestion_enabled: usePreingestion,
-    preingestion_source: usePreingestion ? preingestionSource : null,
+    preingestion_enabled: effectiveUsePreingestion,
+    preingestion_source: effectiveUsePreingestion ? preingestionSource : null,
     model_override: modelOverride || null,
     cold_start_blind: coldStartBlind === true,
     recognition_profile: recognitionProfile,

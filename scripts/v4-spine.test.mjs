@@ -1785,6 +1785,11 @@ assert.match(v4SmokeSource, /resume_batch_job_missing/, "batch recovery must fai
 assert.match(v4SmokeSource, /excluded_from_recognition_wall_time:\s*true/, "post-title diagnostics hydration must never inflate writer latency or throughput timing.");
 assert.match(v4SmokeSource, /hydrateV4JobDiagnostics/, "per-card polling must hydrate final node, OCR, and persistence evidence after timing stops.");
 assert.match(v4SmokeSource, /diagnosticJobIdChunks/, "diagnostic hydration must batch job reads instead of spawning one protected request per card.");
+assert.match(
+  v4SmokeSource,
+  /recognitionProfile === "accuracy-ceiling-oracle-v1"/,
+  "the full-information Oracle profile must fail closed into pre-ingestion instead of relying on a second CLI flag"
+);
 assert.match(queueWorkerApiSource, /retryable: error\?\.retryable/, "queue workers must preserve provider retryability instead of retrying deterministic contract failures.");
 assert.match(queueWorkerApiSource, /Promise\.all\(\[capacityReleasePromise, completionPromise\]\)/, "capacity release and queue completion must not serialize the worker tail.");
 assert.match(queueWorkerApiSource, /provider_capacity_released_at_writer_ready/, "worker telemetry must expose whether the scarce slot was already released at writer readiness.");
