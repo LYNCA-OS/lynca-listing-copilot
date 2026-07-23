@@ -187,12 +187,14 @@ import {
 }
 
 {
+  let onePieceRequestId = 0;
+  const onePieceHtml = `
+    <dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
+    <dl class="modalCol" id="OP01-002"><dt><div class="infoCol"><span>OP01-002</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Trafalgar Law</div></dt><dd><img data-src="../images/cardlist/card/OP01-002.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
+  `;
   const onePiece = createOfficialCatalogSourceAdapter({
     provider: "one_piece",
-    fetchImpl: async () => new Response(`
-      <dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
-      <dl class="modalCol" id="OP01-002"><dt><div class="infoCol"><span>OP01-002</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Trafalgar Law</div></dt><dd><img data-src="../images/cardlist/card/OP01-002.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
-    `, {
+    fetchImpl: async () => new Response(`<meta data-request-id="${onePieceRequestId += 1}">${onePieceHtml}`, {
       status: 200,
       headers: { "content-type": "text/html" }
     })
@@ -215,6 +217,21 @@ import {
   assert.equal(report.raw.staging[0].staging.identity_fields.card_name, "Roronoa Zoro");
   assert.equal(report.raw.staging[0].staging.physical_instance_fields.card_grade, undefined);
   assert.equal(report.raw.staging[0].staging.source_trust, "OFFICIAL_CHECKLIST_CANDIDATE");
+  assert.equal(report.raw.sources[0].source_metadata.fingerprint_kind, "DECISION_FACTS");
+  assert.equal(report.raw.sources[0].source_metadata.fingerprint_schema_version, "catalog-source-fingerprint-v1");
+  assert.match(report.raw.sources[0].source_metadata.raw_payload_checksum, /^[a-f0-9]{64}$/);
+  assert.match(report.raw.sources[0].raw_text, /data-request-id="1"/);
+  const repeatedReport = await onePiece.buildImportReport({
+    sourceUrls: [{
+      href: "https://en.onepiece-cardgame.com/cardlist/?series=556101",
+      text: "One Piece Romance Dawn"
+    }]
+  });
+  assert.equal(repeatedReport.raw.sources[0].raw_checksum, report.raw.sources[0].raw_checksum);
+  assert.notEqual(
+    repeatedReport.raw.sources[0].source_metadata.raw_payload_checksum,
+    report.raw.sources[0].source_metadata.raw_payload_checksum
+  );
 }
 
 {
@@ -331,6 +348,10 @@ import {
   });
   assert.equal(dragonBallFetchCount, 7);
   assert.equal(repeatedReport.raw.sources[0].raw_checksum, report.raw.sources[0].raw_checksum);
+  assert.notEqual(
+    repeatedReport.raw.sources[0].source_metadata.raw_payload_checksum,
+    report.raw.sources[0].source_metadata.raw_payload_checksum
+  );
   dragonBallBaseProduct = "STARTER DECK -SON GOKU- [FS01] UPDATED";
   const changedFactReport = await dragonBall.buildImportReport({
     sourceUrls: [{
