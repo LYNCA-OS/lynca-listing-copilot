@@ -41,6 +41,17 @@ const unsignedObservationIsNotACommercialCardName = renderListingPresentation({
 });
 assert.equal(unsignedObservationIsNotACommercialCardName.final_title.includes("unsigned"), false);
 
+const absentInsertNarrationIsNotACommercialCardName = renderListingPresentation({
+  resolved: {
+    category: "sports",
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    card_name: "(no printed insert name)"
+  }
+});
+assert.equal(absentInsertNarrationIsNotACommercialCardName.final_title.includes("printed insert"), false);
+
 const sportsCollectorsDigestGrade = renderListingPresentation({
   resolved: {
     year: "1986",

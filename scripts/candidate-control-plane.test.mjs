@@ -1314,6 +1314,35 @@ function testCardDomainRerankerOwnsOracleSelectionOnly() {
     result: { resolved_fields: observed, catalog_candidate_packet: packetValue }
   });
   assert.notEqual(writer.selected_candidate_decision.selection_owner, "card_domain_reranker_oracle_v1");
+
+  const trustedCatalogWriter = buildCandidateSelectionPass({
+    result: { resolved_fields: observed, catalog_candidate_packet: packetValue },
+    cardDomainSelectionMode: "trusted_catalog_margin_v1"
+  });
+  assert.equal(
+    trustedCatalogWriter.selected_candidate_decision.selection_owner,
+    "card_domain_reranker_trusted_catalog_v1"
+  );
+  assert.equal(trustedCatalogWriter.selected_candidate_decision.selected_candidate_id, "catalog-domain-a");
+
+  const ambiguousPacket = packet([
+    candidates[0],
+    { ...candidates[0], candidate_id: "catalog-domain-a-tie", candidate_identity_id: "identity-domain-a-tie" }
+  ], {
+    raw_candidate_count: 2,
+    approved_candidate_count: 2,
+    prompt_candidate_count: 2,
+    prompt_candidate_ids: ["catalog-domain-a", "catalog-domain-a-tie"]
+  });
+  const ambiguousWriter = buildCandidateSelectionPass({
+    result: { resolved_fields: observed, catalog_candidate_packet: ambiguousPacket },
+    cardDomainSelectionMode: "trusted_catalog_margin_v1"
+  });
+  assert.notEqual(
+    ambiguousWriter.selected_candidate_decision.selection_owner,
+    "card_domain_reranker_trusted_catalog_v1",
+    "equal domain candidates must remain fail-closed"
+  );
 }
 
 function testNumericYearMayBeOmittedButCannotHideDifferentProductBranch() {

@@ -256,6 +256,25 @@ assert.equal(v4Trace.card_domain_reranker.selected_candidate_id, "baseline-catal
 assert.equal(v4Trace.card_domain_reranker.production_decision_affected, false);
 assert.equal(selection.candidate_application_trace[0].retrieval_rank, 1);
 
+const activeTrace = buildV4CandidateControlPlaneTrace({
+  selected_candidate_decision: {
+    selected_candidate_id: "domain-correct",
+    selection_owner: "card_domain_reranker_trusted_catalog_v1"
+  },
+  card_domain_reranker_shadow: {
+    mode: "shadow_only",
+    embedding: "sparse-card-domain-identity-v1",
+    schema_version: "card-identity-fusion-v1",
+    baseline_selected_candidate_id: "heuristic-wrong",
+    top_decision_eligible_candidate_id: "domain-correct",
+    would_change_decision: true,
+    ranked_candidates: [{ candidate_id: "domain-correct", score: 0.8 }]
+  }
+});
+assert.equal(activeTrace.card_domain_reranker.shadow_only, false);
+assert.equal(activeTrace.card_domain_reranker.production_decision_affected, true);
+assert.equal(activeTrace.card_domain_reranker.reason, "trusted_catalog_margin_selected");
+
 const oracleControlPlaneTrace = buildV4CandidateControlPlaneTrace({
   selected_candidate_decision: {
     selected_candidate_id: "domain-correct",

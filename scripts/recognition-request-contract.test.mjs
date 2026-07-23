@@ -64,7 +64,8 @@ assert.equal(evaluationProfile.provider_options.disable_identity_result_cache, t
 assert.equal(evaluationProfile.provider_options.disable_approved_identity_memory, true);
 assert.equal(evaluationProfile.provider_options.enable_vector_lazy_mode, profile.provider_options.enable_vector_lazy_mode);
 assert.equal(evaluationProfile.provider_options.force_vector_assist, profile.provider_options.force_vector_assist);
-assert.equal(evaluationProfile.provider_options.exclude_current_source_feedback, false);
+assert.equal(evaluationProfile.provider_options.exclude_current_source_feedback, true);
+assert.equal(evaluationProfile.provider_options.card_domain_selection_mode, "trusted_catalog_margin_v1");
 assert.deepEqual(evaluationProfile.execution, profile.execution);
 
 const oracleProfile = resolveRecognitionProfile(recognitionProfileIds.ACCURACY_CEILING_ORACLE, env);
