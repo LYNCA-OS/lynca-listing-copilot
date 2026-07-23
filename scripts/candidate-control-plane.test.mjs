@@ -1645,7 +1645,7 @@ function testCatalogConsensusSafelyRefinesProductWithoutSelectingSiblingVariant(
     source_trust: "APPROVED_REFERENCE",
     normalized_score: 0.7 - index * 0.01,
     fields: {
-      year: "2024",
+      year: index === 0 ? "2025" : "2026",
       manufacturer: "Topps",
       product: "Topps Graphite Tennis",
       players: ["Anna Kalinskaya"],
