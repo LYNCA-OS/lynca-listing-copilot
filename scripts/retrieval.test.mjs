@@ -94,7 +94,11 @@ const visualPlanned = planRetrievalQueries({
   excludeSourceFeedbackIds: ["feedback-current-card"]
 });
 const visualQuery = visualPlanned.find((query) => query.family === retrievalQueryFamilies.VISUAL_VECTOR);
+const catalogQueries = visualPlanned.filter((query) => query.provider_id === retrievalProviderIds.CATALOG);
 assert.ok(visualQuery, "visual embedding should plan a visual vector retrieval query");
+assert.ok(catalogQueries.length > 0, "catalog queries should be planned before vector retrieval");
+assert.ok(catalogQueries.every((query) => query.cacheable === false));
+assert.ok(catalogQueries.every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card"));
 assert.equal(visualQuery.provider_id, retrievalProviderIds.VISUAL_VECTOR);
 assert.equal(visualQuery.cacheable, false);
 assert.equal(visualQuery.embedding.length, 768);

@@ -903,12 +903,12 @@ assert.ok(visualIndex > firstCatalogIndex);
 assert.equal(planned.some((query) => /paniniamerica\.net/i.test(query.query)), false);
 assert.ok(
   planned.filter((query) => query.provider_id === retrievalProviderIds.CATALOG)
-    .every((query) => !query.exclude_source_feedback_ids?.length),
-  "official and writer-reviewed catalog memory must remain reusable for previously seen cards"
+    .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card" && query.cacheable === false),
+  "formal evaluation must exclude only the current answer from catalog retrieval and bypass the shared cache"
 );
 assert.ok(
   planned.filter((query) => query.provider_id === retrievalProviderIds.VISUAL_VECTOR)
-    .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card"),
+    .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card" && query.cacheable === false),
   "visual-vector retrieval must still exclude the current source image"
 );
 
