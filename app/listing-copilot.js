@@ -1713,6 +1713,10 @@ async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
 async function ensureSpeculativeRecognition(asset, runId) {
   if (!ENABLE_SPECULATIVE_RECOGNITION || !asset) return null;
   if (asset.speculativeRunId === runId && asset.speculativePromise) return asset.speculativePromise;
+  // A foreground submission owns this asset once the writer starts the batch.
+  // An already-created speculative promise is still reusable (handled above),
+  // but background preparation must not race a new enqueue against foreground.
+  if (asset.foregroundQueueOwnershipRunId === runId) return null;
   asset.speculativeRunId = runId;
   asset.speculativePromise = (async () => {
     const startedAt = performance.now();
@@ -4046,6 +4050,10 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
 
 async function processAssetViaQueue(asset, options = {}) {
   assertCurrentAssetLifecycle(asset);
+  // Claim enqueue ownership before waiting for uploads/pre-ingestion. Background
+  // preparation may finish during that wait; without this claim it can submit a
+  // second payload for the same immutable batch and produce a misleading 409.
+  asset.foregroundQueueOwnershipRunId = state.backgroundPreparationRunId;
   const processStartedAt = performance.now();
   setAssetProgress(asset.index, "检查云端准备", 0.05);
   const backgroundPrepareResult = await settleBackgroundPreparation(asset, QUEUED_BACKGROUND_PREP_WAIT_MS);

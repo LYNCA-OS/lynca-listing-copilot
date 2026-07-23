@@ -759,6 +759,16 @@ assert.equal(
   __listingCopilotAppTestHooks.clientBatchIdForAsset(stableStreamAsset, 77),
   "the same asset retry within one intake run must preserve its idempotent batch identity"
 );
+assert.match(
+  js,
+  /if \(asset\.foregroundQueueOwnershipRunId === runId\) return null;/,
+  "background speculation must yield when foreground owns the asset enqueue"
+);
+assert.match(
+  js,
+  /async function processAssetViaQueue\(asset, options = \{\}\) \{[\s\S]*?asset\.foregroundQueueOwnershipRunId = state\.backgroundPreparationRunId;[\s\S]*?settleBackgroundPreparation\(asset/,
+  "foreground enqueue ownership must be claimed before waiting on background preparation"
+);
 const oversizedOriginal = new Blob([new Uint8Array(30)], { type: "image/png" });
 const compressedFallback = new Blob([new Uint8Array(10)], { type: "image/jpeg" });
 const uploadSourceImage = {
