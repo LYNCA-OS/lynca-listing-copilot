@@ -34,6 +34,7 @@ import {
   normalizeFields,
   normalizePrintedCardCodeForFields
 } from "../lib/listing/pipeline/field-normalization.mjs";
+import { serialNumeratorDirectProvenance } from "../lib/listing/evidence/evidence-schema.mjs";
 import { renderSportsTitle } from "../lib/listing/renderer/sports-title-renderer.mjs";
 import { renderListingPresentation, renderResolvedTitle } from "../lib/listing/renderer/listing-renderer.mjs";
 import {
@@ -85,6 +86,14 @@ assert.equal(smokeNumberOrNull(null), null, "missing optional timings must not b
 assert.equal(smokeNumberOrNull(undefined), null, "missing optional token counts must stay missing");
 assert.equal(smokeNumberOrNull(""), null, "empty optional diagnostics must stay missing");
 assert.equal(smokeNumberOrNull(0), 0, "a real observed zero must remain zero");
+assert.equal(serialNumeratorDirectProvenance({
+  status: "CONFIRMED",
+  sources: [{ source_type: "VISION_ONLY" }]
+}), true, "confirmed current-image provider reads must preserve the physical numerator");
+assert.equal(serialNumeratorDirectProvenance({
+  status: "CONFIRMED",
+  sources: [{ source_type: "VECTOR_APPROVED_REFERENCE" }]
+}), false, "reference candidates must never prove a physical numerator");
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 10, providerConcurrency: 2 }), 255_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 300_000, itemCount: 10, providerConcurrency: 2 }), 300_000);
 assert.equal(batchPollWaitBudgetMs({ requestedWaitMs: 18_000, itemCount: 0, providerConcurrency: 2 }), 18_000);
