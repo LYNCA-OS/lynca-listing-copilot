@@ -23,7 +23,10 @@ import {
   v4DecisionOwners,
   v4PipelineStages
 } from "../lib/listing/v4/pipeline/pipeline-contract.mjs";
-import { candidateSelectionHeuristicVersion } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import {
+  candidateSelectionHeuristicVersion,
+  trustedCatalogCandidateSelectionHeuristicVersion
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { catalogRetrievalFamiliesForFields } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { retrievalQueryFamilies } from "../lib/listing/retrieval/retrieval-contract.mjs";
 import {
@@ -1318,6 +1321,30 @@ assert.equal(
   nativeL2Contract.stages.find((stage) => stage.stage_id === v4PipelineStages.CANDIDATE_DECISION)?.execution_mode,
   "EXTRACTED_SHARED_MODULE"
 );
+
+const trustedCatalogRerankerContract = buildV4PipelineContract({
+  payload: { images: [{ id: "image-1" }, { id: "image-2" }] },
+  routePlan: { route: "ASSISTED_FULL" },
+  result: {
+    provider: "openai",
+    model: "gpt-5-mini",
+    selected_candidate_decision: {
+      selected_candidate_id: "catalog-card-1",
+      heuristic_version: trustedCatalogCandidateSelectionHeuristicVersion
+    },
+    candidate_decision_stage: {
+      schema_version: "candidate-decision-stage-v1",
+      heuristic_version: trustedCatalogCandidateSelectionHeuristicVersion,
+      selected_candidate_id: "catalog-card-1",
+      field_application: { applied_fields: ["product"], blocked_fields: [] }
+    },
+    catalog_activation_funnel: { raw_candidate_count: 1 },
+    resolved_fields: { year: "2024", product: "Topps Chrome", players: ["Test Player"] },
+    final_title: "2024 Topps Chrome Test Player",
+    title_render_source: "v4_csm_deterministic_renderer"
+  }
+});
+assert.equal(trustedCatalogRerankerContract.contract_status, "PASSED");
 
 const untypedExactRouteContract = buildV4PipelineContract({
   payload: { images: [{ id: "image-1" }] },

@@ -28,7 +28,7 @@ const catalogCacheKeyWithNormalizedSubject = __listingCopilotTitleTestHooks.cata
 });
 assert.match(catalogCacheKeyWithSingleSubject, /^[a-f0-9]{64}$/);
 assert.equal(catalogCacheKeyWithSingleSubject, catalogCacheKeyWithNormalizedSubject);
-assert.equal(
+assert.notEqual(
   catalogCacheKeyWithSingleSubject,
   __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
     resolvedForRetrieval: {
@@ -38,7 +38,18 @@ assert.equal(
     },
     excludeSourceFeedbackIds: ["another-seen-card"]
   }),
-  "catalog cache identity must not fragment by source exclusion because reviewed directory memory is reusable"
+  "formal evaluation must not reuse a catalog cache entry created under another current-source exclusion scope"
+);
+assert.notEqual(
+  catalogCacheKeyWithSingleSubject,
+  __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
+    resolvedForRetrieval: {
+      year: "2025-26",
+      product: "Topps Finest",
+      subject: "Josh Hart"
+    }
+  }),
+  "formal evaluation must not reuse an unexcluded catalog cache entry"
 );
 
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");
