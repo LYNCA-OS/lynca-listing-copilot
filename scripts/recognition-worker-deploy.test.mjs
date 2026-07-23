@@ -8,6 +8,7 @@ const visionDeploy = await readFile("scripts/deploy-vision-ocr-worker-cloud-run.
 const visionBootstrap = await readFile("scripts/bootstrap-vision-ocr-gcp.sh", "utf8");
 const visionDockerfile = await readFile("services/recognition-worker/Dockerfile.vision", "utf8");
 const visionRequirements = await readFile("services/recognition-worker/requirements-vision.txt", "utf8");
+const visionBuild = await readFile("services/recognition-worker/cloudbuild-vision.yaml", "utf8");
 
 assert.doesNotMatch(deploy, /gcloud run deploy[\s\S]{0,200}--source/, "OCR deploys must not hide model builds inside Cloud Run source deploys");
 assert.match(deploy, /gcloud builds submit/);
@@ -49,6 +50,8 @@ assert.match(visionDeploy, /docker build/);
 assert.match(visionDeploy, /docker push "\$IMAGE_URI"/);
 assert.doesNotMatch(visionDeploy, /gcloud builds submit|cloudbuild-vision/);
 assert.match(visionDockerfile, /app\.vision_main:app/);
+assert.match(visionBuild, /Dockerfile\.vision/);
+assert.match(visionBuild, /\$\{_IMAGE_URI\}/);
 assert.match(visionDockerfile, /requirements-vision\.txt/);
 assert.doesNotMatch(visionDockerfile, /paddle|tesseract|opencv/i);
 assert.match(visionRequirements, /google-cloud-vision==3\.15\.0/);
