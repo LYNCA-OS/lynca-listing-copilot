@@ -75,6 +75,39 @@ const setSubjectProductRecoveryQuery = planRetrievalQueries({
 }).find((query) => query.family === retrievalQueryFamilies.CATALOG_SET_SUBJECT);
 assert.equal(setSubjectProductRecoveryQuery.ignore_observed_product, true);
 
+const oracleOcrContextQuery = planRetrievalQueries({
+  resolved: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    retrieval_context_text: "Shohei Ohtani Topps 17 Los Angeles Dodgers"
+  },
+  includeExternal: false,
+  includeHybrid: true
+});
+const oracleCatalogQuery = oracleOcrContextQuery.find((query) => query.family === retrievalQueryFamilies.CATALOG_YEAR_PRODUCT_SUBJECT);
+const oracleHybridQuery = oracleOcrContextQuery.find((query) => query.family === retrievalQueryFamilies.POSTGRES_HYBRID);
+assert.match(oracleCatalogQuery.search_text, /17 Los Angeles Dodgers/);
+assert.match(oracleHybridQuery.search_text, /17 Los Angeles Dodgers/);
+
+const oracleContextCandidate = {
+  title: "2025 Topps Chrome Platinum Shohei Ohtani #17 Los Angeles Dodgers",
+  fields: { year: "2025", product: "Topps Chrome Platinum", players: ["Shohei Ohtani"], collector_number: "17" }
+};
+const oracleContextResolved = {
+  year: "2025",
+  product: "Topps Chrome",
+  players: ["Shohei Ohtani"],
+  retrieval_context_text: "Shohei Ohtani Topps 17 Los Angeles Dodgers"
+};
+const contextMatchedCandidate = scoreRetrievalCandidate(oracleContextCandidate, oracleContextResolved);
+const contextBlindCandidate = scoreRetrievalCandidate(oracleContextCandidate, {
+  ...oracleContextResolved,
+  retrieval_context_text: ""
+});
+assert.ok(contextMatchedCandidate.matched_fields.includes("retrieval_context"));
+assert.ok(contextMatchedCandidate.match_score - contextBlindCandidate.match_score >= 0.05);
+
 const testEmbedding = Array.from({ length: 768 }, (_, index) => Number((index / 1000).toFixed(3)));
 const visualPlanned = planRetrievalQueries({
   resolved,

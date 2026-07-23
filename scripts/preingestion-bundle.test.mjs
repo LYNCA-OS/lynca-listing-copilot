@@ -14,7 +14,10 @@ import {
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
-import { applyPreIngestionEvidencePatchesToPayload } from "../lib/listing/pipeline/preingestion-evidence.mjs";
+import {
+  applyPreIngestionEvidencePatchesToPayload,
+  retrievalOnlyOcrContextFromPayload
+} from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
@@ -832,6 +835,33 @@ console.log("preingestion bundle tests passed");
     }]
   });
   assert.equal(copyrightOnly, null, "a bare copyright year alone yields no evidence document");
+}
+
+{
+  const retrievalContext = retrievalOnlyOcrContextFromPayload({
+    preingestion_evidence_patches: [
+      {
+        field: "ocr_raw_observation",
+        value: "Metaverse Cards SHOHEI OHTANI TOPPS 17 Los Angeles Dodgers Metaverse Cards SHOHEI OHTANI TOPPS 17 Los Angeles Dodgers",
+        confidence: 0.95,
+        provenance: { audit_only: true }
+      },
+      {
+        field: "ocr_raw_observation",
+        value: "UNTRUSTED LOW CONFIDENCE TEXT 999",
+        confidence: 0.5,
+        provenance: { audit_only: true }
+      },
+      {
+        field: "ocr_raw_observation",
+        value: "NON AUDIT TEXT 888",
+        confidence: 0.99,
+        provenance: { audit_only: false }
+      }
+    ]
+  });
+  assert.equal(retrievalContext, "SHOHEI OHTANI TOPPS 17 Los Angeles Dodgers");
+  assert.doesNotMatch(retrievalContext, /999|888|Metaverse Cards/);
 }
 
 console.log("pre-ingestion bundle tests passed");

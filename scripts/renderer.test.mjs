@@ -65,6 +65,17 @@ const absentInsertNarrationIsNotACommercialCardName = renderListingPresentation(
 });
 assert.equal(absentInsertNarrationIsNotACommercialCardName.final_title.includes("printed insert"), false);
 
+const absentHyphenatedCardNameNarrationIsNotCommercial = renderListingPresentation({
+  resolved: {
+    category: "sports",
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    card_name: "(no separate card-name printed)"
+  }
+});
+assert.equal(absentHyphenatedCardNameNarrationIsNotCommercial.final_title, "2025 Topps Chrome Shohei Ohtani");
+
 const sportsCollectorsDigestGrade = renderListingPresentation({
   resolved: {
     year: "1986",

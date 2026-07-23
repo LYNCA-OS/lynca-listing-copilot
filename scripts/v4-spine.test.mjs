@@ -668,7 +668,8 @@ for (const narration of [
   "(no separate printed card title)",
   "no printed card title",
   "without a distinct card name",
-  "card title is not visible"
+  "card title is not visible",
+  "(no separate card-name printed)"
 ]) {
   assert.equal(normalizeFields({ card_name: narration }).card_name, null, `${narration} is not a card identity`);
 }
