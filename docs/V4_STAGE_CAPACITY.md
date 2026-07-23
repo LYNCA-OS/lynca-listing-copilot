@@ -26,7 +26,8 @@ total:                             20 vCPU
 
 The reserve belongs to deployments and failure replacement; batch evaluation
 must not borrow it. Vision keeps `min=0` because its container has no local OCR
-model to preload. The measured GPT provider concurrency remains two, so raising
+model to preload. The combined Recognition/PP-OCR service keeps one warm standby
+replica and is not the writer-critical OCR route. The measured GPT provider concurrency remains two, so raising
 the recognition replica cap above eight does not increase title throughput and
 can only remove rollout headroom or increase downstream pressure.
 
