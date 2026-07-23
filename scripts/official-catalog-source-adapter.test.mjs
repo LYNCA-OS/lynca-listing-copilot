@@ -218,9 +218,31 @@ import {
 }
 
 {
+  const digimonHtml = `
+    <ul class="image_lists">
+      <li class="image_lists_item data page-1">
+        <a class="card_img" data-src="#ST10-01"><img src="../images/cardlist/card/ST10-01.png" alt="ST10-01Nyaromon"></a>
+        <div class="popupCol" id="ST10-01">
+          <div class="cardTitleCol"><ul class="cardTitleList">
+            <li class="cardNo">ST10-01</li><li class="cardRarity">U</li><li class="cardType">Digi-Egg</li><li class="cardLv">Lv.2</li>
+          </ul><div class="cardTitle">Nyaromon</div></div>
+          <dl class="cardInfoBox col2"><dt class="cardInfoTit">Color</dt><dd class="cardInfoData cardColor"><span>Purple</span></dd></dl>
+          <dl class="cardInfoBox col2"><dt class="cardInfoTit">Form</dt><dd class="cardInfoData">In-Training</dd></dl>
+        </div>
+      </li>
+      <li class="image_lists_item data page-1">
+        <a class="card_img" data-src="#BT2-108_P1"><img src="../images/cardlist/card/BT2-108_P1.png" alt="BT2-108WarGreymon"></a>
+        <div class="popupCol" id="BT2-108_P1">
+          <div class="cardTitleCol"><ul class="cardTitleList">
+            <li class="cardNo">BT2-108</li><li class="cardRarity">SR</li><li class="cardType">Digimon</li><li class="cardLv">Lv.6</li>
+          </ul><div class="cardTitle">WarGreymon</div></div>
+          <div class="cardParallel">Alternative Art</div>
+        </div>
+      </li>
+    </ul>`;
   const digimon = createOfficialCatalogSourceAdapter({
     provider: "digimon",
-    fetchImpl: async () => new Response("BT1-010 Agumon Rookie Common Red Digimon", {
+    fetchImpl: async () => new Response(digimonHtml, {
       status: 200,
       headers: { "content-type": "text/html" }
     })
@@ -232,7 +254,16 @@ import {
     }]
   });
   assert.equal(report.source_type, catalogSourceTypes.BANDAI_DIGIMON_OFFICIAL_CARDLIST);
+  assert.equal(report.metrics.card_count, 2);
   assert.equal(report.raw.staging[0].staging.identity_fields.game, "Digimon");
+  assert.equal(report.raw.staging[0].staging.identity_fields.card_name, "Nyaromon");
+  assert.equal(report.raw.staging[0].staging.identity_fields.card_number, "ST10-01");
+  assert.equal(report.raw.staging[0].staging.identity_fields.rarity, "U");
+  assert.equal(report.raw.staging[0].staging.identity_fields.official_card_type, "Digi-Egg");
+  assert.equal(report.raw.staging[0].staging.identity_fields.image_url, "https://world.digimoncard.com/images/cardlist/card/ST10-01.png");
+  assert.deepEqual(report.raw.staging[0].staging.identity_fields.observable_components, ["Color:Purple", "Form:In-Training"]);
+  assert.equal(report.raw.staging[1].staging.identity_fields.parallel_exact, "Alternative Art");
+  assert.equal(report.raw.staging[1].staging.identity_fields.external_id, "BT2-108_P1");
 }
 
 {
