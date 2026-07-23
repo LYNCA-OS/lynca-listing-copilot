@@ -1674,6 +1674,12 @@ function testCatalogConsensusSafelyRefinesProductWithoutSelectingSiblingVariant(
   assert.equal(decision.resolved_after.surface_color, "Green", "sibling color must not be copied");
   assert.equal(decision.resolved_after.parallel_exact ?? null, null, "sibling finish must not be copied");
   assert.equal(decision.resolved_after.ssp ?? false, false, "sibling rarity must not be copied");
+  assert.equal(
+    buildV4CandidateControlPlaneTrace({ ...selection, ...decision.result_patch })
+      .consensus_product_hierarchy_application?.status,
+    "ready_safe_refinement",
+    "the V4 control-plane trace must preserve the consensus application contract"
+  );
 }
 
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
