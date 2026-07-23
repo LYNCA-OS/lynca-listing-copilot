@@ -57,7 +57,18 @@ assert.match(visionDeploy, /SHARED_RECOGNITION_MAX="\$\{RECOGNITION_WORKER_SHARE
 assert.match(visionDeploy, /VISION_MAX="\$\{VISION_OCR_MAX_INSTANCES:-3\}"/);
 assert.match(visionDeploy, /ROLLOUT_CPU_RESERVE="\$\{CLOUD_RUN_ROLLOUT_CPU_RESERVE:-1\}"/);
 assert.match(visionDeploy, /REQUIRED_CPU="\$\(\(SHARED_RECOGNITION_CPU \* SHARED_RECOGNITION_MAX \+ VISION_CPU \* VISION_MAX \+ ROLLOUT_CPU_RESERVE\)\)"/);
-assert.match(visionDeploy, /gcloud run services update "\$SHARED_RECOGNITION_SERVICE_NAME"[\s\S]*--max "\$SHARED_RECOGNITION_MAX"/);
+assert.match(visionDeploy, /service\.metadata\?\.annotations\?\.\["run\.googleapis\.com\/maxScale"\]/);
+assert.match(visionDeploy, /Shared recognition service exceeds the release envelope/);
+assert.doesNotMatch(
+  visionDeploy,
+  /gcloud run services update "\$SHARED_RECOGNITION_SERVICE_NAME"/,
+  "the least-privilege Vision release account must not mutate the recognition service"
+);
+assert.doesNotMatch(
+  visionDeploy,
+  /gcloud run services update "\$SERVICE_NAME"/,
+  "a failed latest revision must not block the replacement deploy during a pre-deploy scaling update"
+);
 assert.match(visionDeploy, /--min-instances default/);
 assert.match(visionDeploy, /--max-instances "\$VISION_MAX"/);
 assert.match(visionDeploy, /for attempt in \$\(seq 1 "\$DEPLOY_ATTEMPTS"\)/);

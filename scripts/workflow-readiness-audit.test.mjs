@@ -20,6 +20,17 @@ function response({ ok = true, status = 200, body = "[]" } = {}) {
 
 async function readyFetch(url) {
   if (String(url).endsWith("/readyz")) {
+    if (String(url).startsWith("https://ocr.worker.test")) {
+      return response({
+        body: JSON.stringify({
+          status: "ready",
+          service: "vision-ocr",
+          backend: "google_vision",
+          auth_mode: "adc",
+          paddle_loaded: false
+        })
+      });
+    }
     return response({
       body: JSON.stringify({
         status: "ready",
@@ -108,6 +119,8 @@ assert.equal(component(readyReport, "feedback_workflow_schema").status, "READY")
 assert.equal(component(readyReport, "vector_retrieval").status, "READY");
 assert.equal(component(readyReport, "vector_retrieval").details.runtime_ready, true);
 assert.equal(component(readyReport, "paddle_ocr").status, "READY");
+assert.equal(component(readyReport, "paddle_ocr").details.runtime_profile, "lean-google-vision-v1");
+assert.equal(component(readyReport, "paddle_ocr").details.paddle_loaded, false);
 assert.equal(component(readyReport, "catalog_store").status, "READY");
 assert.equal(component(readyReport, "marketplace_reference").status, "READY");
 assert.doesNotMatch(JSON.stringify(readyReport), /test-openai-key|test-supabase-key|test-vector-token|test-ocr-token|test-ebay-secret|worker\.test|supabase\.test/);
