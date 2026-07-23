@@ -11,10 +11,12 @@ import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
 import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
-import { applyPreIngestionBundleToPayload } from "../../lib/listing/pipeline/preingestion-evidence.mjs";
 import {
-  readLatestPreIngestionBundleByAsset,
-  summarizePreIngestionBundle
+  applyPreIngestionBundleSnapshotToPayload,
+  applyPreIngestionBundleToPayload
+} from "../../lib/listing/pipeline/preingestion-evidence.mjs";
+import {
+  readLatestPreIngestionBundleByAsset
 } from "../../lib/listing/preingestion/preingestion-bundle.mjs";
 import { adaptRecognitionResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
 import { classifyV4ResultOutcome } from "../../lib/listing/v4/result-outcome.mjs";
@@ -31,7 +33,6 @@ import {
   persistV4CatalogGap,
   persistV4FieldEvidence,
   persistV4NonCriticalArtifactsAtomic,
-  persistV4PreingestionBundle,
   persistV4QualityLedger,
   persistV4WriterReadyAndReleaseCapacity,
   readV4SessionStatus,
@@ -80,9 +81,7 @@ export async function resolveCanonicalWorkerPreingestion({
   sessionRequestSummary = {},
   env = process.env,
   fetchImpl = globalThis.fetch,
-  readLatest = readLatestPreIngestionBundleByAsset,
-  persistMirror = persistV4PreingestionBundle,
-  updateSession = updateV4RecognitionSessionWithRetry
+  readLatest = readLatestPreIngestionBundleByAsset
 } = {}) {
   const scopedPayload = withoutPreingestionIdentity(payload);
   let bundle = null;
@@ -110,55 +109,18 @@ export async function resolveCanonicalWorkerPreingestion({
     };
   }
 
-  const summary = summarizePreIngestionBundle(bundle);
-  let mirror;
-  try {
-    mirror = await persistMirror({
-      bundleId,
-      tenantId,
-      assetId,
-      bundle,
-      summary,
-      reuseExisting: true,
-      env,
-      fetchImpl
-    });
-  } catch (error) {
-    mirror = { saved: false, error: String(error?.message || error || "bundle_mirror_failed").slice(0, 180) };
-  }
-
-  let session = { saved: false, skipped: true, reason: "bundle_mirror_not_saved" };
-  if (mirror?.saved === true && sessionId) {
-    try {
-      session = await updateSession({
-        sessionId,
-        patch: {
-          preingestion_bundle_id: bundleId,
-          request_summary: {
-            ...(sessionRequestSummary && typeof sessionRequestSummary === "object" ? sessionRequestSummary : {}),
-            has_preingestion_bundle: true
-          }
-        },
-        env,
-        fetchImpl
-      });
-    } catch (error) {
-      session = { saved: false, error: String(error?.message || error || "bundle_session_bind_failed").slice(0, 180) };
-    }
-  }
+  const appliedPayload = { ...scopedPayload };
+  applyPreIngestionBundleSnapshotToPayload(appliedPayload, bundle, {
+    preserveExistingImages: true
+  });
 
   return {
-    payload: {
-      ...scopedPayload,
-      preingestion_bundle_id: bundleId,
-      preingestionBundleId: bundleId,
-      preingestion_bundle_status: String(bundle.status || "READY").trim() || "READY",
-      preingestion_summary: summary
-    },
+    payload: appliedPayload,
     found: true,
+    execution_ready: true,
     bundle_id: bundleId,
-    mirror,
-    session
+    mirror: { saved: false, skipped: true, reason: "canonical_source_already_durable" },
+    session: { saved: false, skipped: true, reason: "bound_with_writer_ready_result" }
   };
 }
 
@@ -1010,6 +972,7 @@ async function persistPipelineResult({
   const deferNonCriticalPersistence = nonCriticalPersistenceDeferred(payload, process.env);
   const sessionPatch = {
     status,
+    preingestion_bundle_id: payload.preingestion_bundle_id || payload.preingestionBundleId || null,
     failure_reason: failed
       ? String(result.reason || result.provider_error_type || result.provider_error_code || "recognition_result_empty").slice(0, 500)
       : null,
@@ -1568,8 +1531,7 @@ export default async function handler(req, res) {
     fetchImpl: globalThis.fetch
   });
   if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
-  if (canonicalPreingestion.found === true
-      && (canonicalPreingestion.mirror?.saved !== true || canonicalPreingestion.session?.saved !== true)) {
+  if (canonicalPreingestion.found === true && canonicalPreingestion.execution_ready !== true) {
     sendJson(res, 503, withV4Version({
       ok: false,
       retryable: true,
@@ -1588,7 +1550,8 @@ export default async function handler(req, res) {
       source: "SERVER_TENANT_ASSET",
       found: canonicalPreingestion.found === true,
       mirror_saved: canonicalPreingestion.mirror?.saved === true,
-      session_bound: canonicalPreingestion.session?.saved === true
+      session_bound: canonicalPreingestion.session?.saved === true,
+      inline_snapshot_used: canonicalPreingestion.execution_ready === true
     }
   };
   const handlerStartedAt = Date.now();
@@ -1632,7 +1595,7 @@ export default async function handler(req, res) {
   let preL2AnchorProbe = null;
   const preL2AnchorRouterEnabled = String(process.env.ENABLE_V4_PRE_L2_ANCHOR_ROUTER || "true").toLowerCase() !== "false";
   const preingestionBundleId = payload.preingestion_bundle_id || payload.preingestionBundleId || "";
-  if (forceL2Direct && preL2AnchorRouterEnabled && preingestionBundleId) {
+  if (forceL2Direct && preL2AnchorRouterEnabled && preingestionBundleId && payload.preingestion_bundle_used !== true) {
     const bundleStartedAt = Date.now();
     const controller = new AbortController();
     const timeoutMs = Math.max(100, Math.min(5000, Number(process.env.V4_PRE_L2_ANCHOR_BUNDLE_TIMEOUT_MS || 1200)));

@@ -47,14 +47,6 @@ const resolved = await resolveCanonicalWorkerPreingestion({
   readLatest: async (input) => {
     calls.push({ type: "read", input });
     return bundle;
-  },
-  persistMirror: async (input) => {
-    calls.push({ type: "mirror", input });
-    return { saved: true };
-  },
-  updateSession: async (input) => {
-    calls.push({ type: "session", input });
-    return { saved: true };
   }
 });
 
@@ -64,7 +56,8 @@ assert.equal(resolved.payload.preingestionBundleId, bundleId);
 assert.equal(resolved.payload.preingestion_bundle_status, "READY");
 assert.equal(resolved.payload.tenant_id, tenantId);
 assert.equal(resolved.payload.preingestion_summary.bundle_id, bundleId);
-assert.equal("preingestion_bundle" in resolved.payload, false);
+assert.deepEqual(resolved.payload.preingestion_bundle, bundle);
+assert.equal(resolved.payload.preingestion_bundle_used, true);
 assert.equal("preingestionBundle" in resolved.payload, false);
 assert.equal("preingestionBundleUsed" in resolved.payload, false);
 assert.equal("preingestionSummary" in resolved.payload, false);
@@ -73,24 +66,17 @@ assert.equal("preingestionEvidencePatches" in resolved.payload, false);
 assert.deepEqual(resolved.payload.images, [{ id: "canonical-image" }]);
 assert.equal(calls[0].input.tenantId, tenantId);
 assert.equal(calls[0].input.assetId, assetId);
-assert.equal(calls[1].input.tenantId, tenantId);
-assert.equal(calls[1].input.bundleId, bundleId);
-assert.equal(calls[1].input.reuseExisting, true);
-assert.equal(calls[2].input.sessionId, sessionId);
-assert.equal(calls[2].input.patch.preingestion_bundle_id, bundleId);
-assert.deepEqual(calls[2].input.patch.request_summary, {
-  image_count: 2,
-  has_preingestion_bundle: true
-});
+assert.equal(calls.length, 1);
+assert.equal(resolved.execution_ready, true);
+assert.equal(resolved.mirror.reason, "canonical_source_already_durable");
+assert.equal(resolved.session.reason, "bound_with_writer_ready_result");
 
 const mismatched = await resolveCanonicalWorkerPreingestion({
   payload: { preingestion_bundle_id: "bundle_browser_attacker" },
   tenantId,
   assetId,
   sessionId,
-  readLatest: async () => ({ ...bundle, tenant_id: "tenant_other" }),
-  persistMirror: async () => assert.fail("cross-tenant bundle must not be mirrored"),
-  updateSession: async () => assert.fail("cross-tenant bundle must not bind a session")
+  readLatest: async () => ({ ...bundle, tenant_id: "tenant_other" })
 });
 assert.equal(mismatched.found, false);
 assert.equal(mismatched.mirror.reason, "bundle_scope_mismatch");
