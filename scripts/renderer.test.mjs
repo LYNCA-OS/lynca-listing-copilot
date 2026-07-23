@@ -41,6 +41,19 @@ const unsignedObservationIsNotACommercialCardName = renderListingPresentation({
 });
 assert.equal(unsignedObservationIsNotACommercialCardName.final_title.includes("unsigned"), false);
 
+const facsimileSignedImageIsNotAnAutograph = renderListingPresentation({
+  resolved: {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Shohei Ohtani"],
+    card_name: "(signed image)",
+    auto: true,
+    observable_components: ["auto"]
+  },
+  maxLength: 80
+});
+assert.equal(facsimileSignedImageIsNotAnAutograph.final_title, "2025 Topps Chrome Shohei Ohtani");
+
 const absentInsertNarrationIsNotACommercialCardName = renderListingPresentation({
   resolved: {
     category: "sports",
