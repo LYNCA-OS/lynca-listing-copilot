@@ -267,21 +267,80 @@ import {
 }
 
 {
+  const dragonBallListHtml = `
+    <ul>
+      <li class="cardItem"><a data-src="detail.php?card_no=FS01-01"><img data-src="../../images/cards/card/en/FS01-01_f.webp" alt="FS01-01 Son Goku"></a></li>
+      <li class="cardItem"><a data-src="detail.php?card_no=FS01-16&p=_p1"><img data-src="../../images/cards/card/en/FS01-16_p1.webp" alt="FS01-16 God Kamehameha"></a></li>
+    </ul>`;
+  const dragonBallDetail = ({ number, name, rarity, type, product, image, traits = "Saiyan" }) => `
+    <div class="cardNo">${number}</div><div class="rarity">${rarity}</div>
+    <h1 class="cardName">${name}</h1>
+    <div class="cardImage"><img src="../../images/cards/card/en/${image}" alt="${number} ${name}"></div>
+    <div class="cardDataCell"><h6>Card type</h6><div class="data">${type}</div></div>
+    <div class="cardDataCell"><h6>Color</h6><div class="data"><div class="colValue">Red</div></div></div>
+    <div class="cardDataCell"><h6>Special Traits</h6><div class="data">${traits}</div></div>
+    <div class="productName">${product}</div>`;
+  let dragonBallFetchCount = 0;
+  let dragonBallTransientFailureInjected = false;
   const dragonBall = createOfficialCatalogSourceAdapter({
     provider: "dragon_ball_fusion_world",
-    fetchImpl: async () => new Response("FB01-001 Son Goku Leader L Super Rare", {
-      status: 200,
-      headers: { "content-type": "text/html" }
-    })
+    fetchImpl: async (url) => {
+      dragonBallFetchCount += 1;
+      const href = String(url);
+      if (href.includes("card_no=FS01-01") && !dragonBallTransientFailureInjected) {
+        dragonBallTransientFailureInjected = true;
+        return new Response("temporary", { status: 503, headers: { "content-type": "text/html" } });
+      }
+      if (href.includes("card_no=FS01-01")) return new Response(dragonBallDetail({
+        number: "FS01-01", name: "Son Goku", rarity: "L", type: "LEADER",
+        product: "STARTER DECK -SON GOKU- [FS01]", image: "FS01-01_f.webp"
+      }), { status: 200, headers: { "content-type": "text/html" } });
+      if (href.includes("card_no=FS01-16")) return new Response(dragonBallDetail({
+        number: "FS01-16", name: "God Kamehameha", rarity: "PR", type: "EXTRA",
+        product: "STARTER DECK -SON GOKU- Bonus pack", image: "FS01-16_p1.webp"
+      }), { status: 200, headers: { "content-type": "text/html" } });
+      return new Response(dragonBallListHtml, { status: 200, headers: { "content-type": "text/html" } });
+    }
   });
   const report = await dragonBall.buildImportReport({
     sourceUrls: [{
-      href: "https://www.dbs-cardgame.com/fw/en/cardlist/",
-      text: "Dragon Ball Fusion World Awakened Pulse"
+      href: "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B%5D=583101",
+      text: "Dragon Ball Fusion World Starter Deck Son Goku FS01"
     }]
   });
   assert.equal(report.source_type, catalogSourceTypes.BANDAI_DBS_FUSION_WORLD_OFFICIAL_CARD_DATABASE);
+  assert.equal(dragonBallFetchCount, 4);
+  assert.equal(dragonBallTransientFailureInjected, true);
+  assert.equal(report.metrics.card_count, 2);
+  assert.equal(report.metrics.review_required_count, 0);
   assert.equal(report.raw.staging[0].staging.identity_fields.game, "Dragon Ball Super Fusion World");
+  assert.equal(report.raw.staging[0].staging.identity_fields.card_name, "Son Goku");
+  assert.equal(report.raw.staging[0].staging.identity_fields.rarity, "L");
+  assert.equal(report.raw.staging[0].staging.identity_fields.official_card_type, "LEADER");
+  assert.deepEqual(report.raw.staging[0].staging.identity_fields.observable_components, ["Color:Red", "Special Traits:Saiyan"]);
+  assert.equal(report.raw.staging[1].staging.identity_fields.external_id, "FS01-16_p1");
+  assert.equal(report.raw.staging[1].staging.identity_fields.product, "STARTER DECK -SON GOKU- Bonus pack");
+  assert.equal(report.raw.staging[1].staging.identity_fields.parallel_exact, undefined);
+}
+
+{
+  let unboundedFetchCount = 0;
+  const dragonBallUnbounded = createOfficialCatalogSourceAdapter({
+    provider: "dragon_ball_fusion_world",
+    fetchImpl: async () => {
+      unboundedFetchCount += 1;
+      return new Response('<li class="cardItem"><a data-src="detail.php?card_no=FS01-01">card</a></li>', {
+        status: 200,
+        headers: { "content-type": "text/html" }
+      });
+    }
+  });
+  const report = await dragonBallUnbounded.buildImportReport({
+    sourceUrls: [{ href: "https://www.dbs-cardgame.com/fw/en/cardlist/", text: "Unbounded source" }]
+  });
+  assert.equal(unboundedFetchCount, 1);
+  assert.equal(report.metrics.card_count, 0);
+  assert.equal(report.metrics.parse_error_count, 1);
 }
 
 {

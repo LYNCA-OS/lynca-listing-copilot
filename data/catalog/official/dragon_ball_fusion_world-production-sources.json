@@ -1,0 +1,45 @@
+{
+  "schema_version": "official-source-manifest-v1",
+  "provider": "dragon_ball_fusion_world",
+  "sources": [
+    {
+      "source_name": "Dragon Ball Fusion World Starter Deck Son Goku FS01",
+      "source_url": "https://www.dbs-cardgame.com/fw/en/cardlist/?search=true&category%5B%5D=583101",
+      "source_type": "BANDAI_DBS_FUSION_WORLD_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 23,
+      "minimum_promotion_candidate_count": 23,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        {
+          "card_number": "FS01-01",
+          "card_name": "Son Goku",
+          "product": "STARTER DECK -SON GOKU- [FS01]",
+          "set_or_insert": "STARTER DECK -SON GOKU- [FS01]",
+          "external_id": "FS01-01",
+          "rarity": "L",
+          "official_card_type": "LEADER",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "FS01-16",
+          "card_name": "God Kamehameha",
+          "product": "STARTER DECK -SON GOKU- [FS01]",
+          "external_id": "FS01-16",
+          "rarity": "C",
+          "official_card_type": "EXTRA",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        },
+        {
+          "card_number": "FS01-16",
+          "card_name": "God Kamehameha",
+          "product": "STARTER DECK -SON GOKU- Bonus pack",
+          "external_id": "FS01-16_p1",
+          "rarity": "PR",
+          "official_card_type": "EXTRA",
+          "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
+        }
+      ]
+    }
+  ]
+}
