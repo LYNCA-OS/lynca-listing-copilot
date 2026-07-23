@@ -38,7 +38,7 @@ function supabaseConfig(env = process.env) {
 async function jobsForAsset(assetId, tenantId, env = process.env) {
   const { url, key } = supabaseConfig(env);
   const endpoint = new URL(`${url}/rest/v1/preingestion_jobs`);
-  endpoint.searchParams.set("select", "job_id,job_key,asset_id,bundle_id,tenant_id,status,payload,result,updated_at");
+  endpoint.searchParams.set("select", "job_id,job_key,asset_id,bundle_id,tenant_id,status,payload,updated_at");
   endpoint.searchParams.set("asset_id", `eq.${assetId}`);
   endpoint.searchParams.set("tenant_id", `eq.${tenantId}`);
   endpoint.searchParams.set("job_type", "eq.ocr_crop_verification");
@@ -53,6 +53,38 @@ async function jobsForAsset(assetId, tenantId, env = process.env) {
     if (role && !latestByRole.has(role)) latestByRole.set(role, job);
   }
   return [...latestByRole.values()];
+}
+
+async function persistedAuditPatchesForAsset(assetId, tenantId, env = process.env) {
+  const { url, key } = supabaseConfig(env);
+  const endpoint = new URL(`${url}/rest/v1/preingestion_bundles`);
+  endpoint.searchParams.set("select", "evidence_patches,updated_at");
+  endpoint.searchParams.set("asset_id", `eq.${assetId}`);
+  endpoint.searchParams.set("tenant_id", `eq.${tenantId}`);
+  endpoint.searchParams.set("order", "updated_at.desc");
+  endpoint.searchParams.set("limit", "1");
+  const response = await fetch(endpoint, { headers: supabaseServiceHeaders(key) });
+  if (!response.ok) throw new Error(`oracle_ocr_bundle_read_${response.status}`);
+  const rows = await response.json();
+  const patches = Array.isArray(rows?.[0]?.evidence_patches) ? rows[0].evidence_patches : [];
+  return patches.filter((patch) => patch?.field === "ocr_raw_observation");
+}
+
+function persistedObservation(patch = {}) {
+  return {
+    source: "PERSISTED_OCR_AUDIT",
+    ocr_backend: null,
+    model_id: cleanText(patch.provenance?.model_id) || null,
+    crop_role: cleanText(patch.provenance?.crop_type || patch.provenance?.source_region),
+    raw_text: cleanText(patch.raw_text || patch.value),
+    fields: {},
+    confidence: patch.confidence ?? null,
+    text_candidate_count: Array.isArray(patch.text_candidates) ? patch.text_candidates.length : 0,
+    text_candidates: Array.isArray(patch.text_candidates) ? patch.text_candidates.slice(0, 40) : [],
+    vision_unit_count: Number(patch.provenance?.vision_unit_count || 0),
+    vision_cost_estimate: 0,
+    job_key: cleanText(patch.provenance?.job_key) || null
+  };
 }
 
 function observation(result = {}, job = {}, requestedBackend = "") {
@@ -111,11 +143,15 @@ export default async function handler(req, res) {
     if (!client.configured || !client.config?.enabled) throw new Error("oracle_ocr_worker_unconfigured");
     const output = await mapWithConcurrency(cards, 2, async (card) => {
       const jobs = await jobsForAsset(cleanText(card.asset_id), context.tenantId);
+      const persisted = await persistedAuditPatchesForAsset(cleanText(card.asset_id), context.tenantId);
+      if (persisted.length) {
+        return {
+          query_card_id: cleanText(card.query_card_id),
+          observations: persisted.map(persistedObservation)
+        };
+      }
       const observations = await mapWithConcurrency(jobs, 2, async (job) => {
         const requestedBackend = "google_vision";
-        if (job.result && typeof job.result === "object") {
-          return observation(job.result, job, requestedBackend);
-        }
         const objectPath = cleanText(job.payload?.crop?.crop_metadata?.source_object_path);
         const signedUrl = await createListingImageSignedReadUrl({ objectPath, tenantId: context.tenantId });
         return observation(await client.verifyCrop({
