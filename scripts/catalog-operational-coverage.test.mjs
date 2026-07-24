@@ -38,7 +38,7 @@ const report = buildCatalogOperationalCoverage({
   ]
 });
 
-assert.equal(report.schema_version, "catalog-operational-coverage-v2");
+assert.equal(report.schema_version, "catalog-operational-coverage-v3");
 assert.deepEqual(report.summary.stage_breakdown, { DECISION_ACTIVE: 2, REGISTERED_ONLY: 1 });
 assert.equal(report.summary.orphan_catalog_card_count, 2);
 assert.equal(report.summary.unattributed_catalog_card_count, 1);
@@ -57,5 +57,7 @@ assert.deepEqual(report.summary.provenance_breakdown.catalog_cards, {
 assert.deepEqual(report.unregistered_source_types, ["UNREGISTERED_TEST_SOURCE"]);
 assert.equal(report.sources.find((row) => row.provider === "panini").decision_active_card_count, 1);
 assert.equal(report.sources.find((row) => row.provider === "upper_deck").operational_stage, "REGISTERED_ONLY");
+assert.equal(report.tcg_demand_coverage.schema_version, "tcg-demand-coverage-v1");
+assert.equal(report.tcg_demand_coverage.invariants.changes_catalog_decisions, false);
 
 console.log("catalog operational coverage tests passed");

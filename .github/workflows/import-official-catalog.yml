@@ -134,7 +134,11 @@ jobs:
             parity_valid: parity.valid,
             parity_summary: parity.summary,
             source_graph_valid: sourceGraphValid,
-            source_graph: coverage.summary
+            source_graph: coverage.summary,
+            tcg_demand_summary: coverage.tcg_demand_coverage.summary,
+            tcg_demand_gaps: coverage.tcg_demand_coverage.families
+              .filter(row => row.reviewed_demand_count > 0 && row.coverage_state !== 'CARD_CODE_ANCHORS_COVERED')
+              .sort((left, right) => right.reviewed_demand_count - left.reviewed_demand_count)
           }, null, 2));
           if (!parity.valid || !sourceGraphValid) process.exit(1);
           NODE
