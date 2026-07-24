@@ -13,6 +13,7 @@ on:
           - upper_deck
           - one_piece
           - digimon
+          - bandai_demand
           - dragon_ball_fusion_world
           - dragon_ball_masters
           - battle_spirits
@@ -70,18 +71,26 @@ jobs:
           APPLY_OFFICIAL_CATALOG: ${{ inputs.apply }}
           OFFICIAL_CATALOG_SOURCE_NAME: ${{ inputs.source_name }}
         run: |
-          manifest="data/catalog/official/${OFFICIAL_CATALOG_PROVIDER}-production-sources.json"
-          test -f "$manifest"
-          args=(--manifest "$manifest" --out /tmp/official-catalog-import.json)
-          if [[ -n "$OFFICIAL_CATALOG_SOURCE_NAME" ]]; then
-            args+=(--only-source-name "$OFFICIAL_CATALOG_SOURCE_NAME")
+          providers=("$OFFICIAL_CATALOG_PROVIDER")
+          if [[ "$OFFICIAL_CATALOG_PROVIDER" == "bandai_demand" ]]; then
+            test -z "$OFFICIAL_CATALOG_SOURCE_NAME"
+            providers=(one_piece digimon)
           fi
-          if [[ "$APPLY_OFFICIAL_CATALOG" == "true" ]]; then
-            test -n "$SUPABASE_URL"
-            test -n "$SUPABASE_SERVICE_ROLE_KEY"
-            args+=(--apply)
-          fi
-          node scripts/import-official-source-manifest.mjs "${args[@]}"
+          for provider in "${providers[@]}"; do
+            manifest="data/catalog/official/${provider}-production-sources.json"
+            test -f "$manifest"
+            out="/tmp/official-catalog-import-${provider}.json"
+            args=(--manifest "$manifest" --out "$out")
+            if [[ -n "$OFFICIAL_CATALOG_SOURCE_NAME" ]]; then
+              args+=(--only-source-name "$OFFICIAL_CATALOG_SOURCE_NAME")
+            fi
+            if [[ "$APPLY_OFFICIAL_CATALOG" == "true" ]]; then
+              test -n "$SUPABASE_URL"
+              test -n "$SUPABASE_SERVICE_ROLE_KEY"
+              args+=(--apply)
+            fi
+            node scripts/import-official-source-manifest.mjs "${args[@]}"
+          done
       - name: Prove post-apply idempotence
         if: inputs.apply
         env:
@@ -90,30 +99,34 @@ jobs:
           OFFICIAL_CATALOG_PROVIDER: ${{ inputs.provider }}
           OFFICIAL_CATALOG_SOURCE_NAME: ${{ inputs.source_name }}
         run: |
-          manifest="data/catalog/official/${OFFICIAL_CATALOG_PROVIDER}-production-sources.json"
-          args=(--manifest "$manifest" --out /tmp/official-catalog-idempotence.json --apply)
-          if [[ -n "$OFFICIAL_CATALOG_SOURCE_NAME" ]]; then
-            args+=(--only-source-name "$OFFICIAL_CATALOG_SOURCE_NAME")
+          providers=("$OFFICIAL_CATALOG_PROVIDER")
+          if [[ "$OFFICIAL_CATALOG_PROVIDER" == "bandai_demand" ]]; then
+            providers=(one_piece digimon)
           fi
-          node scripts/import-official-source-manifest.mjs "${args[@]}"
-          node - <<'NODE'
-          const report = require('/tmp/official-catalog-idempotence.json');
-          const failures = report.apply_reports.filter(row => (
-            row.verified_existing_source_count !== 1
-            || row.inserted_source_count !== 0
-            || row.refreshed_source_count !== 0
-            || row.recovered_partial_source_count !== 0
-            || row.inserted_staging_count !== 0
-            || row.inserted_product_count !== 0
-            || row.inserted_set_count !== 0
-            || row.inserted_card_count !== 0
-          ));
-          console.log(JSON.stringify({
-            valid: report.validation.valid && failures.length === 0,
-            source_count: report.apply_reports.length,
-            failures
-          }, null, 2));
-          if (!report.validation.valid || failures.length) process.exit(1);
+          for provider in "${providers[@]}"; do
+            manifest="data/catalog/official/${provider}-production-sources.json"
+            args=(--manifest "$manifest" --out "/tmp/official-catalog-idempotence-${provider}.json" --apply)
+            if [[ -n "$OFFICIAL_CATALOG_SOURCE_NAME" ]]; then
+              args+=(--only-source-name "$OFFICIAL_CATALOG_SOURCE_NAME")
+            fi
+            node scripts/import-official-source-manifest.mjs "${args[@]}"
+          done
+          node - /tmp/official-catalog-idempotence-*.json <<'NODE'
+          const reports = process.argv.slice(2).map(path => require(path));
+          const failures = reports.flatMap(report => report.apply_reports.filter(row => (
+              row.verified_existing_source_count !== 1
+              || row.inserted_source_count !== 0
+              || row.refreshed_source_count !== 0
+              || row.recovered_partial_source_count !== 0
+              || row.inserted_staging_count !== 0
+              || row.inserted_product_count !== 0
+              || row.inserted_set_count !== 0
+              || row.inserted_card_count !== 0
+            )));
+          const valid = reports.every(report => report.validation.valid) && failures.length === 0;
+          console.log(JSON.stringify({ valid, provider_count: reports.length,
+            source_count: reports.reduce((count, report) => count + report.apply_reports.length, 0), failures }, null, 2));
+          if (!valid) process.exit(1);
           NODE
       - name: Prove repository and production catalog parity
         if: inputs.apply
@@ -151,30 +164,33 @@ jobs:
         run: node scripts/audit-official-catalog-retrieval-sentinels.mjs --out /tmp/official-catalog-retrieval-sentinels.json
       - name: Summarize
         run: |
-          node - <<'NODE'
-          const report = require('/tmp/official-catalog-import.json');
+          node - /tmp/official-catalog-import-*.json <<'NODE'
+          const reports = process.argv.slice(2).map(path => require(path));
           console.log(JSON.stringify({
-            manifest_path: report.manifest_path,
-            apply: report.apply,
-            selection: report.selection,
-            valid: report.validation.valid,
-            sources: report.validation.validations.map(row => ({
+            valid: reports.every(report => report.validation.valid),
+            reports: reports.map(report => ({
+              manifest_path: report.manifest_path,
+              apply: report.apply,
+              selection: report.selection,
+              valid: report.validation.valid,
+              sources: report.validation.validations.map(row => ({
               source_name: row.source_name,
               source_type: row.actual_source_type,
               extraction_method: row.extraction_method,
               parsed_card_count: row.parsed_card_count,
               record_checks: row.record_checks
-            })),
-            applied_source_count: report.apply_reports.length,
-            applied: report.apply_reports.map(row => ({
-              source_type: row.source_type,
-              inserted_card_count: row.inserted_card_count,
-              verified_existing_source_count: row.verified_existing_source_count,
-              refreshed_source_count: row.refreshed_source_count,
-              recovered_partial_source_count: row.recovered_partial_source_count
+              })),
+              applied_source_count: report.apply_reports.length,
+              applied: report.apply_reports.map(row => ({
+                source_type: row.source_type,
+                inserted_card_count: row.inserted_card_count,
+                verified_existing_source_count: row.verified_existing_source_count,
+                refreshed_source_count: row.refreshed_source_count,
+                recovered_partial_source_count: row.recovered_partial_source_count
+              }))
             }))
           }, null, 2));
-          if (!report.validation.valid) process.exit(1);
+          if (reports.some(report => !report.validation.valid)) process.exit(1);
           NODE
       - name: Upload report
         if: always()
@@ -182,8 +198,8 @@ jobs:
         with:
           name: official-catalog-import-report-${{ inputs.provider }}
           path: |
-            /tmp/official-catalog-import.json
-            /tmp/official-catalog-idempotence.json
+            /tmp/official-catalog-import-*.json
+            /tmp/official-catalog-idempotence-*.json
             /tmp/official-catalog-manifest-repository.json
             /tmp/official-catalog-manifest-parity.json
             /tmp/catalog-operational-coverage.json
