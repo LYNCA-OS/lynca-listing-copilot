@@ -35,6 +35,7 @@ The cache may store only:
 
 - `CONFIRMED` identity results by default.
 - `RESOLVED` identity results only when `LISTING_IDENTITY_CACHE_WRITE_RESOLVED=true`.
+- Non-ambiguous, field-complete `ABSTAIN` results that already reached writer-ready L2. Replay preserves the original status and cannot promote identity confidence.
 - Original `field_states`, `conflict_map`, `confidence_report`, and `resolution_trace`.
 - Object paths and content hashes, not signed URLs.
 

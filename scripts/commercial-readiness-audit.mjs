@@ -567,6 +567,7 @@ async function auditIdentityResultCache(env = process.env) {
     read_enabled: identityResultCacheReadEnabled(env),
     write_enabled: identityResultCacheWriteEnabled(env),
     write_resolved_enabled: identityResultCacheWriteResolvedEnabled(env),
+    terminal_l2_abstain_replay_enabled: true,
     cache_ttl_days: Number(env.LISTING_IDENTITY_CACHE_TTL_DAYS || 30),
     data_api_service_role_required: true,
     training_table: false,
@@ -584,8 +585,13 @@ async function auditIdentityResultCache(env = process.env) {
     if (!/buildIdentityResultCacheKey/.test(cacheModule.text) || !/content_sha256/.test(cacheModule.text)) {
       details.failures.push("cache key does not require content SHA-256 fingerprints");
     }
-    if (!/storage_verified/.test(cacheModule.text) || !/identity_resolution_abstain/.test(cacheModule.text)) {
-      details.failures.push("cacheability guard does not require verified storage and abstain rejection");
+    if (!/storage_verified/.test(cacheModule.text)
+      || !/final_title_required/.test(cacheModule.text)
+      || !/year_required/.test(cacheModule.text)
+      || !/product_required/.test(cacheModule.text)
+      || !/subject_required/.test(cacheModule.text)
+      || !/ambiguity_status_ambiguous/.test(cacheModule.text)) {
+      details.failures.push("cacheability guard does not require verified storage and complete non-ambiguous writer-ready L2");
     }
     if (!/resolution_trace/.test(cacheModule.text)) {
       details.failures.push("cache module does not preserve resolution_trace");
