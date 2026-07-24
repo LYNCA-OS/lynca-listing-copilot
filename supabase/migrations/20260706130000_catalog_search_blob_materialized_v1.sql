@@ -5,10 +5,48 @@
 -- the blob as a stored generated column, index it, and let pure-text
 -- queries pre-filter through the index.
 
+-- pg_catalog.concat_ws is marked STABLE because it accepts polymorphic input,
+-- even though this call site is text-only. Wrap the exact text contract in an
+-- immutable function so a clean PostgreSQL bootstrap can legally use it in a
+-- stored generated column.
+create or replace function public.build_catalog_search_blob(
+  canonical_title text,
+  sport text,
+  season_year text,
+  brand text,
+  manufacturer text,
+  product text,
+  set_or_insert text,
+  players text[],
+  card_number text,
+  checklist_code text,
+  surface_color text
+)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $function$
+  select pg_catalog.lower(pg_catalog.concat_ws(' ',
+    canonical_title,
+    sport,
+    season_year,
+    brand,
+    manufacturer,
+    product,
+    set_or_insert,
+    pg_catalog.array_to_string(players, ' '),
+    card_number,
+    checklist_code,
+    surface_color
+  ));
+$function$;
+
 alter table public.catalog_cards
   add column if not exists search_blob text
   generated always as (
-    lower(concat_ws(' ',
+    public.build_catalog_search_blob(
       canonical_title,
       sport,
       season_year,
@@ -16,11 +54,11 @@ alter table public.catalog_cards
       manufacturer,
       product,
       set_or_insert,
-      array_to_string(players, ' '),
+      players,
       card_number,
       checklist_code,
       surface_color
-    ))
+    )
   ) stored;
 
 create index if not exists catalog_cards_search_blob_trgm

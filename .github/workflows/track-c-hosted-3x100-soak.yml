@@ -1,0 +1,61 @@
+name: track-c-hosted-3x100-soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        description: "Vercel Preview URL; production is rejected"
+        required: true
+        type: string
+      expected_soak_project_ref:
+        description: "Dedicated Free Supabase soak project ref"
+        required: true
+        type: string
+      confirm_dedicated_soak:
+        description: "I confirm this is a dedicated non-production Supabase project"
+        required: true
+        type: boolean
+
+concurrency:
+  group: track-c-hosted-3x100-soak
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-soak:
+    if: inputs.confirm_dedicated_soak == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: listing-soak
+    env:
+      SOAK_PREVIEW_URL: ${{ inputs.preview_url }}
+      SOAK_EXPECTED_PROJECT_REF: ${{ inputs.expected_soak_project_ref }}
+      SOAK_SUPABASE_URL: ${{ secrets.SOAK_SUPABASE_URL }}
+      SOAK_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SOAK_SUPABASE_SERVICE_ROLE_KEY }}
+      SOAK_V4_WORKER_SECRET: ${{ secrets.SOAK_V4_WORKER_SECRET }}
+      SOAK_VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.SOAK_VERCEL_AUTOMATION_BYPASS_SECRET }}
+      SOAK_REPORT_PATH: /tmp/track-c-hosted-3x100-soak.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Fail closed on missing dedicated-soak secrets
+        run: |
+          set -euo pipefail
+          test -n "$SOAK_SUPABASE_URL"
+          test -n "$SOAK_SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SOAK_V4_WORKER_SECRET"
+      - name: Run three sequential hosted waves
+        run: node scripts/track-c-hosted-3x100-soak.mjs
+      - name: Upload hosted soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: track-c-hosted-3x100-soak-${{ github.run_id }}
+          path: /tmp/track-c-hosted-3x100-soak.json
+          if-no-files-found: warn
+          retention-days: 14

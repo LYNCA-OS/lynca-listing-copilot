@@ -220,7 +220,48 @@ function workerIdFrom(req, payload = {}) {
 
 function normalizedJobType(job = {}) {
   const raw = String(job.job_type || job.payload?.job_type || "").trim().toUpperCase();
+  if (raw === "CONTROL_PLANE_SOAK") return raw;
   return raw === v4JobTypes.FAST_SCOUT_DRAFT ? v4JobTypes.FAST_SCOUT_DRAFT : v4JobTypes.FINAL_ASSISTED_TITLE;
+}
+
+export async function runV4ControlPlaneSoakJob(job = {}, {
+  env = process.env,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+} = {}) {
+  const previewOnly = String(env.VERCEL_ENV || "").trim().toLowerCase() === "preview";
+  const explicitlyEnabled = /^(?:1|true|yes)$/i.test(String(env.V4_CONTROL_PLANE_SOAK_ENABLED || ""));
+  if (!previewOnly || !explicitlyEnabled) {
+    throw Object.assign(new Error("control_plane_soak_disabled"), {
+      code: "CONTROL_PLANE_SOAK_DISABLED",
+      retryable: false
+    });
+  }
+  const payload = objectOrEmpty(job.payload);
+  const attempt = Math.max(1, Number(job.attempt_count || 1));
+  const failuresBeforeSuccess = Math.max(0, Math.min(3, Number(payload.soak_failures_before_success || 0)));
+  if (attempt <= failuresBeforeSuccess) {
+    throw Object.assign(new Error(`control_plane_soak_retry_${attempt}`), {
+      code: "PROVIDER_TIMEOUT",
+      retryable: true
+    });
+  }
+  const delayMs = Math.max(0, Math.min(2_000, Number(payload.soak_delay_ms || 0)));
+  if (delayMs) await sleep(delayMs);
+  return {
+    latency_ms: delayMs,
+    response: {
+      ok: true,
+      recognition_session_id: job.recognition_session_id || null,
+      route: "CONTROL_PLANE_SOAK",
+      title_stage: "CONTROL_PLANE_ONLY",
+      assisted_draft_status: "NOT_APPLICABLE",
+      provider_result: {
+        provider_calls: 0,
+        provider_call_skipped: true,
+        route: "CONTROL_PLANE_SOAK"
+      }
+    }
+  };
 }
 
 function laneLeaseSeconds(lane, payload = {}) {
@@ -558,6 +599,9 @@ export async function runWithV4JobLeaseHeartbeat({
 
 async function runJob(job, req, signal = null) {
   const started = Date.now();
+  if (normalizedJobType(job) === "CONTROL_PLANE_SOAK") {
+    return runV4ControlPlaneSoakJob(job);
+  }
   const payload = payloadForV4ProductionJob(job);
   const execution = jobExecutionAbortSignal(signal, v4JobExecutionTimeoutMs(process.env));
   let response;

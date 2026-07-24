@@ -4,8 +4,20 @@ alter table if exists public.card_image_embeddings
 alter table if exists public.card_identity_prototypes
   alter column model_revision set default 'f775b65a79762255128c981547af89addcfe0f88';
 
-alter table if exists public.vector_fingerprints
-  alter column model_revision set default 'f775b65a79762255128c981547af89addcfe0f88';
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'vector_fingerprints'
+      and column_name = 'model_revision'
+  ) then
+    alter table public.vector_fingerprints
+      alter column model_revision set default 'f775b65a79762255128c981547af89addcfe0f88';
+  end if;
+end;
+$$;
 
 create or replace function public.promote_card_reference_to_approved(
   p_identity_id uuid,
