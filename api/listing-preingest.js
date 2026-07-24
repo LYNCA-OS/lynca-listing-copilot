@@ -26,18 +26,6 @@ import {
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 import { scheduleTrustedPreingestionOcrWake } from "../lib/listing/preingestion/internal-ocr-wake.mjs";
 
-export function shouldWakePreingestionOcr({
-  enqueueOcr = false,
-  enqueueOcrDetail = false,
-  enqueued = 0,
-  attempted = 0
-} = {}) {
-  return enqueueOcr === true && (
-    Number(enqueued || 0) > 0
-    || (enqueueOcrDetail === true && Number(attempted || 0) > 0)
-  );
-}
-
 const allowedBrowserSources = new Set([
   "listing_preingest_api",
   "listing_copilot_background_prepare"
@@ -304,13 +292,12 @@ export default async function handler(req, res) {
       && paddleOcr.enabled === true
       && paddleOcr.configured === true
       && Boolean(paddleOcr.token);
-    const enqueueOcrDetail = payload.enqueue_ocr_detail === true
-      || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true";
     const jobs = enqueueWorkers
       ? buildPreingestionWorkerJobs({
         bundle: durableBundle,
         enableOcr: enqueueOcr,
-        enableOcrDetail: enqueueOcrDetail,
+        enableOcrDetail: payload.enqueue_ocr_detail === true
+          || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true",
         enableEmbeddings: payload.enqueue_embeddings === true,
         enableSurface: payload.enqueue_surface === true,
         enableQuality: payload.enqueue_quality === true
@@ -327,20 +314,13 @@ export default async function handler(req, res) {
     // Wake the independent OCR consumer as soon as durable enqueue finishes.
     // This endpoint still only persists/schedules work: leases, retries and OCR
     // execution remain behind the authenticated worker boundary.
-    const ocrDispatchStarted = shouldWakePreingestionOcr({
-      enqueueOcr,
-      enqueueOcrDetail,
-      enqueued: enqueueResult.enqueued,
-      attempted: enqueueResult.attempted || jobs.length
-    });
+    const ocrDispatchStarted = enqueueOcr && Number(enqueueResult.enqueued || 0) > 0;
     if (ocrDispatchStarted) {
       scheduleTrustedPreingestionOcrWake({
         tenantId: context.tenantId,
         assetId,
         bundleId: durableBundle.bundle_id,
-        limit: enqueueOcrDetail ? 8 : 3,
-        includeDetail: enqueueOcrDetail,
-        timeoutMs: enqueueOcrDetail ? 60_000 : 12_000,
+        limit: 3,
         env: process.env,
         fetchImpl: globalThis.fetch
       });

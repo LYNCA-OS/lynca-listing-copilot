@@ -105,4 +105,6 @@ The first production run failed the joint gate:
 - field Oracle: 55/97 (56.70%), with print finish 3/12, numerical rarity 7/15, and grade 0/6;
 - preingestion detail: 16/20 cards ended as `DEFERRED_AFTER_PROVIDER`; 190 OCR jobs produced zero final evidence patches.
 
-Two evaluation-runner defects were repaired without changing title strategy: multi-card resume now polls durable job IDs instead of a client batch token, and resume manifests are atomic and identity/order validated. Explicit detail OCR requests now wake a tenant-wide fair detail sweep; ordinary production requests remain anchor-only. The same 20 cards must be replayed after an isolated candidate deployment. No larger sample is permitted before the three gates pass.
+Two evaluation-runner defects were repaired without changing title strategy: multi-card resume now polls durable job IDs instead of a client batch token, and resume manifests are atomic and identity/order validated.
+
+Automatic all-card detail OCR was then tested and rejected. A scoped candidate produced 32 evidence patches, but completed only 19/20 cards, reduced service throughput to 3.024 cards/minute, and scored 0.7353 on the 19 technically successful cards. The automatic detail wake was removed before production; ordinary anchor-only behavior remains unchanged. Any future OCR recovery must be a bounded, risk-triggered field wave and must beat this frozen 20-card baseline without consuming the writer-ready lane. No larger sample is permitted before speed, accuracy, and stability all pass.
