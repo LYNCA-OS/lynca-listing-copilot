@@ -1,0 +1,256 @@
+{
+  "schema_version": "official-source-manifest-v1",
+  "provider": "dragon_ball_masters",
+  "sources": [
+    {
+      "source_name": "Dragon Ball Super Masters BT7 Assault of the Saiyans",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428007",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 263,
+      "minimum_promotion_candidate_count": 263,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT7-079", "checklist_code": "BT7-079_SPR", "card_name": "Hit, Pride of Universe 6", "product": "Series 7 - ASSAULT OF THE SAIYANS", "external_id": "BT7-079_SPR", "rarity": "SPR", "official_card_type": "BATTLE", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT8 Malicious Machinations",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428008",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 157,
+      "minimum_promotion_candidate_count": 157,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT8-001", "checklist_code": "BT8-001", "card_name": "Bulma", "product": "Series 8 -MALICIOUS MACHINATIONS", "external_id": "BT8-001", "rarity": "C", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT9 Universal Onslaught",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428009",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 161,
+      "minimum_promotion_candidate_count": 161,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT9-001", "checklist_code": "BT9-001", "card_name": "Frieza", "product": "Series 9 -UNIVERSAL ONSLAUGHT", "external_id": "BT9-001", "rarity": "C", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT10 Rise of the Unison Warrior",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428010",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 210,
+      "minimum_promotion_candidate_count": 210,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT10-001", "checklist_code": "BT10-001", "card_name": "Yamcha", "product": "Unison Warrior Series Rise of the Unison Warrior", "external_id": "BT10-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT11 Vermilion Bloodline",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428011",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 212,
+      "minimum_promotion_candidate_count": 212,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT11-001", "checklist_code": "BT11-001", "card_name": "Gogeta", "product": "Unison Warrior Series Vermilion Bloodline", "external_id": "BT11-001", "rarity": "C", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT12 Vicious Rejuvenation",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428012",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 178,
+      "minimum_promotion_candidate_count": 178,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT12-001", "checklist_code": "BT12-001", "card_name": "Launch", "product": "Unison Warrior Series Vicious Rejuvenation", "external_id": "BT12-001", "rarity": "C", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT13 Supreme Rivalry",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428013",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 186,
+      "minimum_promotion_candidate_count": 186,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT13-001", "checklist_code": "BT13-001", "card_name": "Bardock", "product": "Unison Warrior Series Supreme Rivalry", "external_id": "BT13-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT14 Cross Spirits",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428014",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 182,
+      "minimum_promotion_candidate_count": 182,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT14-001", "checklist_code": "BT14-001", "card_name": "Son Gohan", "product": "Unison Warrior Series -BOOST- Cross Spirits", "external_id": "BT14-001", "rarity": "C", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT15 Saiyan Showdown",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428015",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 183,
+      "minimum_promotion_candidate_count": 183,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT15-001", "checklist_code": "BT15-001", "card_name": "Son Goten", "product": "Unison Warrior Series -BOOST- Saiyan Showdown", "external_id": "BT15-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT16 Realm of the Gods",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428016",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 187,
+      "minimum_promotion_candidate_count": 187,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT16-001", "checklist_code": "BT16-001", "card_name": "Son Goku", "product": "Unison Warrior Series -BOOST- Realm of the Gods", "external_id": "BT16-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT17 Ultimate Squad",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428017",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 178,
+      "minimum_promotion_candidate_count": 178,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT17-001", "checklist_code": "BT17-001", "card_name": "Son Goku", "product": "Unison Warrior Series -BOOST- ULTIMATE SQUAD", "external_id": "BT17-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT18 Dawn of the Z-Legends",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428018",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 198,
+      "minimum_promotion_candidate_count": 198,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT18-001", "checklist_code": "BT18-001", "card_name": "Son Goku & Vegeta", "product": "ZENKAI Series DAWN OF THE Z-LEGENDS", "external_id": "BT18-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT19 Fighter’s Ambition",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428019",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 185,
+      "minimum_promotion_candidate_count": 185,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT19-001", "checklist_code": "BT19-001", "card_name": "Son Goku & Vegeta & Trunks", "product": "ZENKAI Series FIGHTER’S AMBITION", "external_id": "BT19-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT20 Power Absorbed",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428020",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 245,
+      "minimum_promotion_candidate_count": 245,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT20-001", "checklist_code": "BT20-001", "card_name": "Android 17", "product": "ZENKAI Series POWER ABSORBED", "external_id": "BT20-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT21 Wild Resurgence",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428021",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 183,
+      "minimum_promotion_candidate_count": 183,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT21-001", "checklist_code": "BT21-001", "card_name": "Son Goku", "product": "ZENKAI Series WILD RESURGENCE", "external_id": "BT21-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT22 Critical Blow",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428022",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 178,
+      "minimum_promotion_candidate_count": 178,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT22-001", "checklist_code": "BT22-001", "card_name": "Son Gohan", "product": "ZENKAI Series CRITICAL BLOW", "external_id": "BT22-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT23 Perfect Combination",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428023",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 165,
+      "minimum_promotion_candidate_count": 165,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT23-001", "checklist_code": "BT23-001", "card_name": "Son Gohan & Trunks", "product": "ZENKAI Series PERFECT COMBINATION", "external_id": "BT23-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT24 Beyond Generations",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428024",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 260,
+      "minimum_promotion_candidate_count": 260,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT24-001", "checklist_code": "BT24-001", "card_name": "Vegeta", "product": "ZENKAI Series BEYOND GENERATIONS", "external_id": "BT24-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT25 Legend of the Dragon Balls",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428025",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 198,
+      "minimum_promotion_candidate_count": 198,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT25-001", "checklist_code": "BT25-001", "card_name": "Son Goku", "product": "ZENKAI Series LEGEND OF THE DRAGON BALLS", "external_id": "BT25-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT26 Ultimate Advent",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428026",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 171,
+      "minimum_promotion_candidate_count": 171,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT26-001", "checklist_code": "BT26-001", "card_name": "Son Goku", "product": "ZENKAI Series ULTIMATE ADVENT", "external_id": "BT26-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT27 History of Z",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428027",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 199,
+      "minimum_promotion_candidate_count": 199,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT27-001", "checklist_code": "BT27-001", "card_name": "Vegeta", "product": "ZENKAI Series HISTORY OF Z", "external_id": "BT27-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT28 Prismatic Clash",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428028",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 188,
+      "minimum_promotion_candidate_count": 188,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT28-001", "checklist_code": "BT28-001", "card_name": "Son Gohan", "product": "ULTRA BOUT Series 01 PRISMATIC CLASH", "external_id": "BT28-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT29 Fearsome Rivals",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428029",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 177,
+      "minimum_promotion_candidate_count": 177,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT29-001", "checklist_code": "BT29-001", "card_name": "Krillin", "product": "ULTRA BOUT Series 02 FEARSOME RIVALS", "external_id": "BT29-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT30 Three Glorious Fighters",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428030",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 179,
+      "minimum_promotion_candidate_count": 179,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT30-001", "checklist_code": "BT30-001", "card_name": "Son Goku, Vegeta, & Trunks", "product": "ULTRA BOUT Series 03 THREE GLORIOUS FIGHTERS", "external_id": "BT30-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Dragon Ball Super Masters BT31 Impact Beyond Dimensions",
+      "source_url": "https://www.dbs-cardgame.com/us-en/cardlist/?search=true&category_exp=428031",
+      "source_type": "BANDAI_DBS_MASTERS_OFFICIAL_CARD_DATABASE",
+      "category": "tcg",
+      "minimum_card_count": 177,
+      "minimum_promotion_candidate_count": 177,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT31-001", "checklist_code": "BT31-001", "card_name": "Son Goku & Vegeta", "product": "ULTRA BOUT Series 04 IMPACT BEYOND DIMENSIONS", "external_id": "BT31-001", "rarity": "UC", "official_card_type": "LEADER", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    }
+  ]
+}
