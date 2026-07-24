@@ -22,8 +22,36 @@ const FIELD_ALIASES = Object.freeze({
 });
 
 function finite(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function elapsed(start, end) {
+  const startMs = Date.parse(String(start || ""));
+  const endMs = Date.parse(String(end || ""));
+  return Number.isFinite(startMs) && Number.isFinite(endMs) ? Math.max(0, endMs - startMs) : null;
+}
+
+function reconstructedTimeline(result = {}) {
+  const persisted = result.provider_capacity_timeline || {};
+  const provider = result.provider_slot_timing || {};
+  const providerStartedAt = persisted.provider_started_at || provider.started_at || null;
+  const providerCompletedAt = persisted.provider_completed_at || provider.completed_at || null;
+  const waitingProviderAt = persisted.waiting_provider_at || provider.queued_at || null;
+  const capacityAcquiredAt = persisted.provider_capacity_acquired_at || null;
+  const capacityReleasedAt = persisted.provider_capacity_released_at || null;
+  return {
+    provider_slot_held_before_provider_ms: finite(persisted.provider_slot_held_before_provider_ms)
+      ?? elapsed(capacityAcquiredAt, providerStartedAt),
+    prepared_waiting_for_provider_ms: finite(persisted.prepared_waiting_for_provider_ms)
+      ?? elapsed(waitingProviderAt, providerStartedAt),
+    provider_execution_ms: finite(persisted.provider_execution_ms)
+      ?? finite(provider.execution_ms)
+      ?? elapsed(providerStartedAt, providerCompletedAt),
+    provider_slot_release_ms: finite(persisted.provider_slot_release_ms)
+      ?? elapsed(providerCompletedAt, capacityReleasedAt)
+  };
 }
 
 function percentile(values, ratio) {
@@ -54,7 +82,7 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
     || Number(row.provider_calls) !== 1
     || row.recognition_benchmark_profile !== recognitionBenchmarkProfileIds.COLD_ALGORITHM);
   const traceRows = results.filter((row) => row.evaluation_decision_trace_packet?.trace_level === "evaluation");
-  const timelineRows = results.map((row) => row.provider_capacity_timeline).filter(Boolean);
+  const timelineRows = results.map(reconstructedTimeline);
   const sem = analyzeSemStageLoss(report);
   const resultByJob = new Map(results.map((row) => [row.job_id, row]));
   const missingBreakdown = {};
