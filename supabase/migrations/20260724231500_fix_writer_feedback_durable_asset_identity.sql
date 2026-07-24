@@ -34,7 +34,7 @@ declare
   current_feedback_revision bigint;
   feedback_id text := nullif(p_feedback_event ->> 'id', '');
   learning_id text := nullif(p_learning_event ->> 'id', '');
-  submission_id text := nullif(p_feedback_event ->> 'submission_id', '');
+  incoming_submission_id text := nullif(p_feedback_event ->> 'submission_id', '');
   incoming_payload_sha256 text := nullif(p_feedback_event ->> 'payload_sha256', '');
   existing_feedback_id text;
   existing_payload_sha256 text;
@@ -48,7 +48,7 @@ begin
      or nullif(btrim(p_operator_id), '') is null
      or feedback_id is null
      or learning_id is null
-     or submission_id is null
+     or incoming_submission_id is null
      or incoming_payload_sha256 is null
      or incoming_payload_sha256 !~ '^[0-9a-f]{64}$'
      or p_session_status not in ('ACCEPTED', 'EDITED', 'REJECTED')
@@ -73,7 +73,7 @@ begin
        when 'EDIT' then 'EDITED'
        when 'REJECT' then 'REJECTED'
      end)
-     or nullif(p_feedback_event -> 'writer_feedback' ->> 'submission_id', '') is distinct from submission_id
+     or nullif(p_feedback_event -> 'writer_feedback' ->> 'submission_id', '') is distinct from incoming_submission_id
      or nullif(p_feedback_event -> 'writer_feedback' ->> 'action', '') is distinct from p_feedback_event ->> 'action'
      or nullif(p_feedback_event -> 'writer_feedback' ->> 'final_title', '') is distinct from writer_title
      or nullif(p_learning_event ->> 'event_type', '') is distinct from 'WRITER_' || (p_feedback_event ->> 'action') then
@@ -200,7 +200,7 @@ begin
   left join public.v4_learning_events learning
     on learning.feedback_event_id = events.id
   where events.recognition_session_id = p_session_id
-    and events.submission_id = submission_id
+    and events.submission_id = incoming_submission_id
   for share of events;
 
   if found then
@@ -295,7 +295,7 @@ begin
     feedback_id,
     p_session_id,
     coalesce(nullif(p_feedback_event ->> 'schema_version', ''), 'v4-recognition-session-v1'),
-    submission_id,
+    incoming_submission_id,
     incoming_payload_sha256,
     session_tenant_id,
     session_user_id,
