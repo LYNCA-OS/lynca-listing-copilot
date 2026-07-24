@@ -189,8 +189,8 @@ globalThis.fetch = async (url, init = {}) => {
     assert.equal(JSON.parse(init.body).anchor_only, false);
     assert.equal(JSON.parse(init.body).include_detail, true);
     assert.equal(JSON.parse(init.body).limit, 8);
-    assert.equal(JSON.parse(init.body).asset_id, "");
-    assert.equal(JSON.parse(init.body).bundle_id, "");
+    assert.equal(JSON.parse(init.body).asset_id, assetId);
+    assert.ok(JSON.parse(init.body).bundle_id);
     return jsonResponse({ ok: true, claimed: 1, succeeded: 1 });
   }
 
