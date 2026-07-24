@@ -118,7 +118,7 @@ function validCatalogSnapshot() {
     generation_expression: generatedColumns.has(expected.column) ? "payload -> 'retry'" : null
   }));
   const serviceFunctions = new Set(TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFunctions);
-  const procedures = TRACK_C_REST_SCHEMA_CONTRACT.requiredFunctions.map((signature) => ({
+  const procedures = TRACK_C_REST_SCHEMA_CONTRACT.catalogRequiredFunctions.map((signature) => ({
     signature,
     anon_execute: false,
     authenticated_execute: false,
@@ -145,6 +145,7 @@ function validCatalogSnapshot() {
     service_update: !TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFactTables.includes(table)
       || TRACK_C_REST_SCHEMA_CONTRACT.serviceUpdatableFactTables.includes(table),
     service_delete: !TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFactTables.includes(table)
+      || TRACK_C_REST_SCHEMA_CONTRACT.serviceDeletableFactTables.includes(table)
   }));
   return {
     meta: {
@@ -307,6 +308,26 @@ assert.ok(
     "track_c_storage_boundary_snapshot()"
   ),
   "the Storage RLS boundary helper must remain service-role-only"
+);
+assert.ok(
+  !TRACK_C_REST_SCHEMA_CONTRACT.requiredFunctions.includes(
+    "bump_active_catalog_snapshot_revision()"
+  ),
+  "trigger-returning catalog revision function must not be required as a PostgREST RPC"
+);
+assert.ok(
+  !TRACK_C_REST_SCHEMA_CONTRACT.requiredFunctions.includes(
+    "sync_writer_final_replay_from_session()"
+  ),
+  "trigger-returning writer replay function must not be required as a PostgREST RPC"
+);
+assert.ok(
+  TRACK_C_REST_SCHEMA_CONTRACT.catalogRequiredFunctions.includes(
+    "bump_active_catalog_snapshot_revision()"
+  ) && TRACK_C_REST_SCHEMA_CONTRACT.catalogRequiredFunctions.includes(
+    "sync_writer_final_replay_from_session()"
+  ),
+  "both trigger functions must remain required in the direct PostgreSQL catalog contract"
 );
 
 const requests = [];

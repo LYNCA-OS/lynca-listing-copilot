@@ -58,7 +58,16 @@ const serviceOnlyFactTables = Object.freeze([
 ]);
 
 const serviceUpdatableFactTables = Object.freeze([
-  "v4_learning_events"
+  "v4_learning_events",
+  "listing_identity_resolution_cache",
+  "listing_active_catalog_snapshot",
+  "listing_writer_final_replay"
+]);
+
+const serviceDeletableFactTables = Object.freeze([
+  "listing_identity_resolution_cache",
+  "listing_active_catalog_snapshot",
+  "listing_writer_final_replay"
 ]);
 
 const expectedStoragePolicyContracts = Object.freeze([
@@ -118,6 +127,15 @@ const requiredFunctions = Object.freeze([
   "bump_active_catalog_snapshot_revision()",
   "sync_writer_final_replay_from_session()"
 ]);
+
+// Trigger functions are part of the PostgreSQL catalog contract but PostgREST
+// intentionally does not expose functions returning `trigger` as RPC routes.
+// Keeping the two contracts distinct prevents a healthy schema from blocking
+// every production release.
+const requiredRestFunctions = Object.freeze(requiredFunctions.filter((signature) => ![
+  "bump_active_catalog_snapshot_revision()",
+  "sync_writer_final_replay_from_session()"
+].includes(signature)));
 
 const forbiddenFunctions = Object.freeze([
   "persist_v4_writer_feedback_transaction(text,text,text,jsonb,jsonb)",
@@ -530,10 +548,12 @@ export const TRACK_C_REST_SCHEMA_CONTRACT = Object.freeze({
     ])
   ]),
   tenantScopedTables,
-  requiredFunctions,
+  catalogRequiredFunctions: requiredFunctions,
+  requiredFunctions: requiredRestFunctions,
   forbiddenFunctions,
   serviceOnlyFactTables,
   serviceUpdatableFactTables,
+  serviceDeletableFactTables,
   serviceOnlyFunctions,
   requiredIndexes,
   criticalColumns: Object.freeze([
@@ -1726,9 +1746,12 @@ export function evaluateTrackCProductionSchemaSnapshot(snapshot) {
 
   const factAclChecks = snapshot.factAcls.map((row) => {
     const serviceUpdateExpected = serviceUpdatableFactTables.includes(row.table_name);
+    const serviceDeleteExpected = serviceDeletableFactTables.includes(row.table_name);
     return {
       table: row.table_name,
-      requirement: serviceUpdateExpected
+      requirement: serviceDeleteExpected
+        ? "browser_denied_service_full_lifecycle"
+        : serviceUpdateExpected
         ? "browser_denied_service_upsert_without_delete"
         : "browser_denied_service_insert_only",
       ok: Boolean(
@@ -1743,7 +1766,7 @@ export function evaluateTrackCProductionSchemaSnapshot(snapshot) {
         && row.service_select === true
         && row.service_insert === true
         && row.service_update === serviceUpdateExpected
-        && row.service_delete === false
+        && row.service_delete === serviceDeleteExpected
       ),
       actual: {
         anon: {
