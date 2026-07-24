@@ -16,6 +16,8 @@ assert.doesNotMatch(
   /coalesce\(sessions\.stable_asset_id, sessions\.asset_id\)/,
   "stable content identity must not replace feedback asset_id"
 );
+assert.match(migration, /events\.submission_id = incoming_submission_id/);
+assert.doesNotMatch(migration, /events\.submission_id = submission_id/);
 assert.match(migration, /from public, anon, authenticated;[\s\S]*to service_role;/);
 
 console.log("writer feedback durable asset identity migration tests passed");
