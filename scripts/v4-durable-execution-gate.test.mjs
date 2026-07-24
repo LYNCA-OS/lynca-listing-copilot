@@ -146,7 +146,7 @@ try {
       expectedSessionReads: 1
     },
     {
-      name: "preingestion_bundle_bind_failed",
+      name: "preingestion_bundle_bind_falls_back_before_required_session_gate",
       fenceBody: [persistedJob],
       preingestionBundle: {
         tenant_id: persistedJob.tenant_id,
@@ -163,10 +163,11 @@ try {
         bundle_version: "preingestion-bundle-v1"
       },
       expectedStatus: 503,
-      expectedCode: "V4_PREINGESTION_SESSION_BIND_FAILED",
+      expectedCode: "V4_SESSION_STATE_PERSISTENCE_FAILED",
       expectedRetryable: true,
       expectedSessionReads: 1,
-      expectedMirrorWrites: 1
+      expectedSessionWrites: 5,
+      expectedMirrorWrites: 3
     },
     {
       name: "observing_update_unavailable",
@@ -175,7 +176,7 @@ try {
       expectedCode: "V4_SESSION_STATE_PERSISTENCE_FAILED",
       expectedRetryable: true,
       expectedSessionReads: 1,
-      expectedSessionWrites: 3
+      expectedSessionWrites: 5
     }
   ];
 
