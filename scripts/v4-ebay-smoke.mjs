@@ -132,6 +132,94 @@ async function writeText(path, value) {
   await writeFile(resolved, String(value || ""));
 }
 
+function defaultResumeManifestPath(outPath = "") {
+  const output = cleanText(outPath);
+  return output ? output.replace(/\.json$/i, "-resume.json") : "";
+}
+
+async function readResumeManifest(path = "") {
+  if (!cleanText(path)) return null;
+  const payload = JSON.parse(await readFile(resolve(path), "utf8"));
+  if (payload.schema_version !== "v4-smoke-resume-manifest-v1") {
+    throw new Error("unsupported smoke resume manifest schema");
+  }
+  return payload;
+}
+
+export function assertResumeManifestMatchesItems(resumeState = null, items = []) {
+  if (!resumeState) return;
+  if (Number(resumeState.item_count) !== items.length) {
+    throw new Error(`resume manifest item count mismatch: ${resumeState.item_count} != ${items.length}`);
+  }
+  const expectedIds = items.map((item, index) => (
+    cleanText(item.source_feedback_id || item.source_record_id) || candidateId(item, index)
+  ));
+  const actualIds = (resumeState.items || []).map((item) => (
+    cleanText(item.source_feedback_id) || cleanText(item.source_asset_id)
+  ));
+  if (actualIds.length !== expectedIds.length || actualIds.some((value, index) => value !== expectedIds[index])) {
+    throw new Error("resume manifest item identity/order mismatch");
+  }
+}
+
+export function verifiedAssetIdsBySource(manifest = null) {
+  return new Map((manifest?.items || [])
+    .map((item) => [cleanText(item.source_feedback_id), cleanText(item.verified_asset_id)])
+    .filter(([sourceId, assetId]) => sourceId && assetId));
+}
+
+export function verifiedAssetEntriesBySource(manifest = null) {
+  return new Map((manifest?.items || [])
+    .map((item) => [cleanText(item.source_feedback_id), {
+      asset_id: cleanText(item.verified_asset_id),
+      tenant_id: cleanText(item.tenant_id),
+      image_generation_id: cleanText(item.image_generation_id)
+    }])
+    .filter(([sourceId, entry]) => (
+      sourceId && entry.asset_id && entry.tenant_id && entry.image_generation_id
+    )));
+}
+
+async function writeResumeManifest({
+  outPath = "",
+  pathOverride = "",
+  batchId = "",
+  datasetPath = "",
+  items = [],
+  prepared = [],
+  assetIds = [],
+  status = "PREPARING"
+} = {}) {
+  const path = cleanText(pathOverride) || defaultResumeManifestPath(outPath);
+  if (!path) return null;
+  const output = resolve(path);
+  await mkdir(dirname(output), { recursive: true });
+  const temporary = `${output}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  await writeFile(temporary, `${JSON.stringify({
+    schema_version: "v4-smoke-resume-manifest-v1",
+    updated_at: new Date().toISOString(),
+    status,
+    client_batch_token: cleanText(batchId),
+    dataset_path: cleanText(datasetPath),
+    item_count: items.length,
+    items: items.map((item, index) => ({
+      source_feedback_id: cleanText(item.source_feedback_id || item.source_record_id) || null,
+      source_asset_id: candidateId(item, index),
+      verified_asset_id: cleanText(prepared[index]?.asset_id || assetIds[index]) || null,
+      image_generation_id: cleanText(
+        prepared[index]?.asset_cache_entry?.image_generation_id
+        || prepared[index]?.image_generation_id
+        || prepared[index]?.item?.image_generation_id
+      ) || null,
+      job_id: cleanText(prepared[index]?.job?.job_id) || null,
+      canonical_batch_id: cleanText(prepared[index]?.batch_id) || null,
+      tenant_id: cleanText(prepared[index]?.tenant_id) || null
+    }))
+  }, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, output);
+  return output;
+}
+
 function loadDatasetItems(dataset) {
   if (Array.isArray(dataset)) return dataset;
   return dataset.items || dataset.records || dataset.results || dataset.cards || [];
@@ -939,16 +1027,13 @@ async function getJson({ baseUrl, path, cookie, requestTimeoutMs, fetchImpl = gl
   }
 }
 
-async function preingestItem({
-  baseUrl,
-  cookie,
+export function preingestionPayload({
   assetId,
   images,
   source = "v4_ebay_smoke_preingestion",
-  requestTimeoutMs,
-  fetchImpl = globalThis.fetch
-}) {
-  const payload = {
+  ocrDetail = false
+} = {}) {
+  return {
     asset_id: assetId,
     assetId,
     images,
@@ -964,11 +1049,25 @@ async function preingestItem({
     ],
     enqueue_workers: true,
     enqueue_ocr: true,
+    enqueue_ocr_detail: ocrDetail === true,
     enqueue_embeddings: false,
     enqueue_surface: false,
     enqueue_quality: false,
     verify_signed_read_urls: false
   };
+}
+
+async function preingestItem({
+  baseUrl,
+  cookie,
+  assetId,
+  images,
+  source = "v4_ebay_smoke_preingestion",
+  ocrDetail = false,
+  requestTimeoutMs,
+  fetchImpl = globalThis.fetch
+}) {
+  const payload = preingestionPayload({ assetId, images, source, ocrDetail });
   const response = await postJson({
     baseUrl,
     path: "/api/v4/listing-preingest",
@@ -2018,6 +2117,7 @@ async function runOne({
   coldStartBlind = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
+  preingestionOcrDetail = false,
   speculative = false,
   thinkMs = 6000,
   l2WaitMs,
@@ -2083,6 +2183,7 @@ async function runOne({
         assetId: id,
         images,
         source: preingestionSource,
+        ocrDetail: preingestionOcrDetail,
         requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
       });
       if (preingestionResult.ok && preingestionResult.bundle_id) {
@@ -2745,6 +2846,7 @@ async function enqueueSpeculativeItem({
   coldStartBlind,
   usePreingestion,
   preingestionSource,
+  preingestionOcrDetail,
   requestTimeoutMs,
   verificationCache,
   sourceFingerprint = "",
@@ -2805,6 +2907,7 @@ async function enqueueSpeculativeItem({
           assetId: id,
           images,
           source: preingestionSource,
+          ocrDetail: preingestionOcrDetail,
           requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
         });
         if (preingestionResult.ok && preingestionResult.bundle_id) {
@@ -2920,6 +3023,53 @@ export function canonicalBatchIdForPoll(prepared = [], fallbackBatchId = "") {
   return canonicalIds[0] || cleanText(fallbackBatchId);
 }
 
+export function durableBatchStatusAddress(prepared = []) {
+  if (!Array.isArray(prepared) || prepared.length !== 1) return null;
+  return cleanText(prepared[0]?.job?.batch_id) || null;
+}
+
+export function buildResumedPreparedRows({
+  items = [],
+  existingJobs = [],
+  cachedAssetIds = [],
+  batchId = "",
+  offset = 0,
+  tenantPrefix = "",
+  tenantCount = 1
+} = {}) {
+  const finalJobsByAsset = new Map(existingJobs
+    .filter((job) => job.job_type === "FINAL_ASSISTED_TITLE")
+    .map((job) => [cleanText(job.asset_id), job]));
+  return items.map((item, localIndex) => {
+    const index = offset + localIndex;
+    const sourceAssetId = candidateId(item, index);
+    const assetId = cleanText(cachedAssetIds[localIndex]) || sourceAssetId;
+    const job = finalJobsByAsset.get(assetId) || null;
+    return {
+      asset_id: assetId,
+      source_asset_id: sourceAssetId,
+      source_feedback_id: item.source_feedback_id || item.source_record_id || null,
+      index,
+      item,
+      batch_id: cleanText(job?.batch_id) || batchId,
+      tenant_id: job?.tenant_id || smokeTenantId({
+        batchId,
+        tenantPrefix,
+        tenantCount,
+        index: localIndex
+      }),
+      job,
+      l1_job: null,
+      enqueue: null,
+      enqueue_latency_ms: null,
+      preparation_latency_ms: null,
+      preingestion: null,
+      prewarm: null,
+      error: job ? null : "resume_batch_job_missing"
+    };
+  });
+}
+
 async function pollBatchJobs({
   baseUrl,
   cookie,
@@ -2941,17 +3091,37 @@ async function pollBatchJobs({
   let maxConsecutiveErrors = 0;
   const httpStatusBreakdown = {};
   let writerReadyAt = null;
+  const statusPaths = batchId
+    ? [`/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`]
+    : jobStatusPaths([...expected]);
   while (Date.now() - startedAt <= waitMs) {
     polls += 1;
     try {
-      last = await getJson({
-        baseUrl,
-        path: batchId
-          ? `/api/v4/listing-job-status?batch_id=${encodeURIComponent(batchId)}&limit=200`
-          : `/api/v4/listing-job-status?job_ids=${encodeURIComponent([...expected].join(","))}&limit=200`,
-        cookie,
-        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
-      });
+      if (progress && polls === 1) {
+        process.stderr.write(`v4 ebay smoke status query chunks=${statusPaths.length} jobs=${expected.size}\n`);
+      }
+      const responses = await Promise.all(statusPaths.map(async (path, chunkIndex) => {
+        const chunkStartedAt = Date.now();
+        try {
+          return await getJson({
+            baseUrl,
+            path,
+            cookie,
+            requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+          });
+        } finally {
+          const elapsed = Date.now() - chunkStartedAt;
+          if (progress && polls === 1 && elapsed >= 5_000) {
+            process.stderr.write(`v4 ebay smoke status chunk=${chunkIndex + 1}/${statusPaths.length} elapsed=${elapsed}ms\n`);
+          }
+        }
+      }));
+      const failed = responses.find((response) => !response.ok);
+      last = failed || {
+        ok: true,
+        http_status: 200,
+        data: { jobs: responses.flatMap((response) => response.data?.jobs || []) }
+      };
     } catch (error) {
       lastError = serializableError(error, "batch_status_request_failed");
       transientErrorCount += 1;
@@ -2986,7 +3156,7 @@ async function pollBatchJobs({
       return job && (job.status === "L2_READY" || terminalJobStatus(job.status) || job.display_status === "FINAL_READY");
     }).length;
     const writerReadyComplete = completedCount === expected.size;
-    if (progress && (polls === 1 || polls % 20 === 0 || writerReadyComplete)) {
+    if (progress && (polls === 1 || polls % 10 === 0 || writerReadyComplete)) {
       process.stderr.write(
         `v4 ebay smoke batch poll ready=${completedCount}/${expected.size} polls=${polls} elapsed=${Date.now() - startedAt}ms\n`
       );
@@ -3015,6 +3185,16 @@ async function pollBatchJobs({
   };
 }
 
+export function jobStatusPaths(jobIds = [], chunkSize = 10) {
+  const ids = [...new Set((Array.isArray(jobIds) ? jobIds : []).map(cleanText).filter(Boolean))];
+  const size = Math.max(1, Math.min(25, Math.trunc(Number(chunkSize) || 10)));
+  const paths = [];
+  for (let index = 0; index < ids.length; index += size) {
+    paths.push(`/api/v4/listing-job-status?job_ids=${encodeURIComponent(ids.slice(index, index + size).join(","))}&limit=200`);
+  }
+  return paths;
+}
+
 async function loadExistingBatchJobs({
   baseUrl,
   cookie,
@@ -3039,10 +3219,44 @@ async function loadExistingBatchJobs({
     }
     if (response.ok) return response.data?.jobs || [];
     lastError = serializableError(response.data, `resume_batch_status_http_${response.http_status || "unknown"}`);
-    if (batchStatusResponseDisposition(response) === "fatal") break;
+    if (batchStatusResponseDisposition(failed) === "fatal") break;
     await delay(Math.min(3000, 500 * attempt));
   }
   throw new Error(`resume_batch_unavailable:${lastError || batchId}`);
+}
+
+async function loadExistingJobsByIds({
+  baseUrl,
+  cookie,
+  jobIds = [],
+  requestTimeoutMs,
+  attempts = 6
+}) {
+  const expected = [...new Set(jobIds.map(cleanText).filter(Boolean))];
+  if (!expected.length) return [];
+  const paths = jobStatusPaths(expected);
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let responses;
+    try {
+      responses = await Promise.all(paths.map((path) => getJson({
+        baseUrl,
+        path,
+        cookie,
+        requestTimeoutMs: Math.min(requestTimeoutMs, 45000)
+      })));
+    } catch (error) {
+      lastError = serializableError(error, "resume_job_status_request_failed");
+      await delay(Math.min(3000, 500 * attempt));
+      continue;
+    }
+    const failed = responses.find((response) => !response.ok);
+    if (!failed) return responses.flatMap((response) => response.data?.jobs || []);
+    lastError = serializableError(failed.data, `resume_job_status_http_${failed.http_status || "unknown"}`);
+    if (batchStatusResponseDisposition(response) === "fatal") break;
+    await delay(Math.min(3000, 500 * attempt));
+  }
+  throw new Error(`resume_jobs_unavailable:${lastError || expected.length}`);
 }
 
 export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
@@ -3105,6 +3319,10 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     seller_title_used_for_local_eval_only: false,
     seller_title: "",
     image_count: itemImages(prepared.item).length,
+    image_generation_id: cleanText(
+      prepared.asset_cache_entry?.image_generation_id
+      || prepared.item?.image_generation_id
+    ) || null,
     preingestion_used: Boolean(prepared.preingestion),
     preingestion_ok: preingestion.ok ?? null,
     preingestion_http_status: preingestion.http_status ?? null,
@@ -3308,7 +3526,13 @@ function sealedLabelForItem(item = {}, index = 0, sealedLabels = new Map()) {
 export function attachPostRecognitionScoring(results = [], items = [], sealedLabels = new Map(), offset = 0) {
   return results.map((row, localIndex) => {
     const item = items[localIndex] || {};
-    const label = sealedLabelForItem(item, offset + localIndex, sealedLabels) || {};
+    const inlineReviewedLabel = cleanText(item.reviewed_title || item.corrected_title)
+      ? {
+        reviewed_title: cleanText(item.reviewed_title || item.corrected_title),
+        policy: item.policy || {}
+      }
+      : null;
+    const label = sealedLabelForItem(item, offset + localIndex, sealedLabels) || inlineReviewedLabel || {};
     const sellerTitle = cleanText(label.title || "");
     const reviewedTitle = cleanText(label.reviewed_title || label.corrected_title || "");
     const reviewedTitleGroundTruth = Boolean(
@@ -3739,6 +3963,19 @@ export function summarize(results = [], { runWallMs = null } = {}) {
   const writerVisibleRecognitionMeasuredCount = results.filter((item) => (
     numberOrNull(item.writer_visible_recognition_ms) !== null
   )).length;
+  const timestampMs = (value) => {
+    const parsed = Date.parse(String(value || ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const createdAtValues = results.map((item) => timestampMs(item.job_created_at)).filter((value) => value !== null);
+  const startedAtValues = results.map((item) => timestampMs(item.job_started_at)).filter((value) => value !== null);
+  const completedAtValues = results.map((item) => timestampMs(item.job_completed_at)).filter((value) => value !== null);
+  const serviceWindowMs = createdAtValues.length && completedAtValues.length
+    ? Math.max(...completedAtValues) - Math.min(...createdAtValues)
+    : null;
+  const executionWindowMs = startedAtValues.length && completedAtValues.length
+    ? Math.max(...completedAtValues) - Math.min(...startedAtValues)
+    : null;
   const batchPositionFairness = summarizeBatchPositionFairness(results);
   const allPositionMetrics = positionCohortMetrics(results);
   const tenantIsolationMeasured = results.filter((item) => item.tenant_isolation_measured === true);
@@ -3779,6 +4016,14 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     title_ready_count: results.filter((item) => item.ok === true && cleanText(item.final_title)).length,
     writer_review_required_count: results.filter((item) => item.ok === true && item.writer_review_required === true).length,
     technical_failure_count: results.filter((item) => item.ok !== true).length,
+    service_window_ms: serviceWindowMs,
+    completed_cards_per_minute_service_window: serviceWindowMs > 0
+      ? Number(((results.filter((item) => item.ok).length * 60_000) / serviceWindowMs).toFixed(3))
+      : null,
+    execution_window_ms: executionWindowMs,
+    completed_cards_per_minute_execution_window: executionWindowMs > 0
+      ? Number(((results.filter((item) => item.ok).length * 60_000) / executionWindowMs).toFixed(3))
+      : null,
     policy_below_0_72_count: results.filter((item) => Number(item.final_scoring?.policy_fair_token_recall || 0) < 0.72).length,
     // Kept for existing report consumers; this is a technical completion
     // failure count, not an accuracy-policy failure count.
@@ -4456,6 +4701,7 @@ export async function runV4EbaySmoke({
   disableIdentityCache = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
+  preingestionOcrDetail = false,
   speculative = false,
   thinkMs = 6000,
   l2WaitMs = 18000,
@@ -4468,6 +4714,8 @@ export async function runV4EbaySmoke({
   batchPoll = true,
   batchId = "",
   resumeBatchId = "",
+  resumeManifest = "",
+  verifiedAssetManifest = "",
   evaluationSampleMode = "UNSPECIFIED",
   coldStartBlind = false,
   verifiedAssetCachePath = "",
@@ -4511,6 +4759,10 @@ export async function runV4EbaySmoke({
   const assetCacheEntries = normalizedVerifiedAssetCacheMode === "disabled"
     ? new Map()
     : await readVerifiedAssetCache(verifiedAssetCachePath);
+  const resumeState = await readResumeManifest(resumeManifest);
+  assertResumeManifestMatchesItems(resumeState, items);
+  const reusableAssetIds = verifiedAssetIdsBySource(await readResumeManifest(verifiedAssetManifest));
+  const reusableAssetEntries = verifiedAssetEntriesBySource(await readResumeManifest(verifiedAssetManifest));
   const cookie = await login({ baseUrl, username, password });
   let executionControlSnapshot = null;
   let executionControlError = null;
@@ -4550,129 +4802,193 @@ export async function runV4EbaySmoke({
     providerConcurrency: batchPollProviderConcurrency
   });
   if (queueMode && speculative && batchPoll) {
-    sharedBatchId = cleanText(resumeBatchId) || cleanText(batchId) || `smoke-v4-batch-${Date.now()}`;
-    let prepared;
-    if (resumeBatchId) {
-      const existingJobs = await loadExistingBatchJobs({
+    const clientBatchToken = cleanText(resumeState?.client_batch_token)
+      || cleanText(resumeBatchId)
+      || cleanText(batchId)
+      || `smoke-v4-batch-${Date.now()}`;
+    sharedBatchId = clientBatchToken;
+    const sourceFingerprints = await Promise.all(items.map((item, localIndex) => (
+      durableSourceFingerprint(item, offset + localIndex)
+    )));
+    const cachedAssetIds = sourceFingerprints.map((fingerprint, index) => (
+      cleanText(resumeState?.items?.[index]?.verified_asset_id)
+      || reusableAssetIds.get(cleanText(items[index]?.source_feedback_id || items[index]?.source_record_id))
+      || cleanText(assetCacheEntries.get(fingerprint)?.asset_id)
+    ));
+    const resumePath = cleanText(resumeManifest) || defaultResumeManifestPath(outPath);
+    const checkpointRows = Array(items.length).fill(null);
+    let checkpointWrite = Promise.resolve();
+    const persistCheckpoint = (status) => {
+      checkpointWrite = checkpointWrite.then(() => writeResumeManifest({
+        outPath,
+        pathOverride: resumePath,
+        batchId: sharedBatchId,
+        datasetPath,
+        items,
+        prepared: checkpointRows,
+        assetIds: cachedAssetIds,
+        status
+      }));
+      return checkpointWrite;
+    };
+    await writeResumeManifest({
+      outPath,
+      pathOverride: resumePath,
+      batchId: sharedBatchId,
+      datasetPath,
+      items,
+      assetIds: cachedAssetIds,
+      prepared: checkpointRows,
+      status: resumeState || resumeBatchId ? "RESUMING" : "PREPARING"
+    });
+    const verificationCache = new Map();
+    const enqueueGate = createConcurrencyGate(normalizedSubmissionConcurrency);
+    const prepareOne = async (item, localIndex, { recovery = false } = {}) => {
+      const index = offset + localIndex;
+      const sourceFingerprint = sourceFingerprints[localIndex];
+      const sourceFeedbackId = cleanText(item.source_feedback_id || item.source_record_id);
+      const manifestAssetEntry = reusableAssetEntries.get(sourceFeedbackId);
+      const cachedAssetEntry = !recovery && normalizedVerifiedAssetCacheMode === "reuse"
+        ? assetCacheEntries.get(sourceFingerprint)
+          || (manifestAssetEntry ? {
+            ...manifestAssetEntry,
+            fingerprint: sourceFingerprint,
+            source_asset_id: candidateId(item, index),
+            source_feedback_id: sourceFeedbackId || null
+          } : null)
+        : null;
+      if (progress) process.stderr.write(`v4 ebay smoke ${recovery ? "recover" : "enqueue"} ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
+      const row = await enqueueSpeculativeItem({
+        item,
+        index,
+        batchId: sharedBatchId,
+        tenantId: smokeTenantId({
+          batchId: sharedBatchId,
+          tenantPrefix,
+          tenantCount: normalizedTenantCount,
+          index: localIndex
+        }),
         baseUrl,
         cookie,
-        batchId: sharedBatchId,
-        requestTimeoutMs
+        prewarm,
+        prewarmCacheOnly,
+        modelOverride,
+        enableL1,
+        compactL2,
+        ultraFastL2,
+        fastInitialPrompt,
+        ultraSparseTransport,
+        providerDoneHandoff,
+        ultraFastImageDetail,
+        ultraFastServiceTier,
+        disableIdentityCache,
+        coldStartBlind,
+        usePreingestion,
+        preingestionSource,
+        preingestionOcrDetail,
+        requestTimeoutMs,
+        verificationCache,
+        sourceFingerprint,
+        cachedAssetEntry,
+        enqueueGate
       });
-      const finalJobsByAsset = new Map(existingJobs
-        .filter((job) => job.job_type === "FINAL_ASSISTED_TITLE")
-        .map((job) => [job.asset_id, job]));
-      prepared = items.map((item, localIndex) => {
-        const index = offset + localIndex;
-        const assetId = candidateId(item, index);
-        const job = finalJobsByAsset.get(assetId) || null;
-        return {
-          asset_id: assetId,
-          index,
-          item,
-          batch_id: sharedBatchId,
-          tenant_id: job?.tenant_id || smokeTenantId({
-            batchId: sharedBatchId,
-            tenantPrefix,
-            tenantCount: normalizedTenantCount,
-            index: localIndex
-          }),
-          job,
-          l1_job: null,
-          enqueue: null,
-          enqueue_latency_ms: null,
-          preparation_latency_ms: null,
-          preingestion: null,
-          prewarm: null,
-          error: job ? null : "resume_batch_job_missing"
-        };
-      });
-      if (progress) process.stderr.write(`v4 ebay smoke resume batch=${sharedBatchId} matched=${prepared.filter((row) => row.job).length}/${items.length}\n`);
-    } else {
-      const verificationCache = new Map();
-      const enqueueGate = createConcurrencyGate(normalizedSubmissionConcurrency);
-      const sourceFingerprints = await Promise.all(items.map((item, localIndex) => (
-        durableSourceFingerprint(item, offset + localIndex)
-      )));
-      const prepareOne = async (item, localIndex, { recovery = false } = {}) => {
-        const index = offset + localIndex;
-        const sourceFingerprint = sourceFingerprints[localIndex];
-        const cachedAssetEntry = !recovery && normalizedVerifiedAssetCacheMode === "reuse"
-          ? assetCacheEntries.get(sourceFingerprint) || null
-          : null;
-        if (progress) process.stderr.write(`v4 ebay smoke ${recovery ? "recover" : "enqueue"} ${localIndex + 1}/${items.length} asset=${candidateId(item, index)} batch=${sharedBatchId}\n`);
-        const row = await enqueueSpeculativeItem({
-          item,
-          index,
-          batchId: sharedBatchId,
-          tenantId: smokeTenantId({
-            batchId: sharedBatchId,
-            tenantPrefix,
-            tenantCount: normalizedTenantCount,
-            index: localIndex
-          }),
+      row.preparation_recovery_attempted = recovery;
+      checkpointRows[localIndex] = row;
+      await persistCheckpoint("PREPARING");
+      if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
+      return row;
+    };
+    let prepared;
+    if (resumeState || resumeBatchId) {
+      const existingJobs = resumeState
+        ? await loadExistingJobsByIds({
           baseUrl,
           cookie,
-          prewarm,
-          prewarmCacheOnly,
-          modelOverride,
-          enableL1,
-          compactL2,
-          ultraFastL2,
-          fastInitialPrompt,
-          ultraSparseTransport,
-          providerDoneHandoff,
-          ultraFastImageDetail,
-          ultraFastServiceTier,
-          disableIdentityCache,
-          coldStartBlind,
-          usePreingestion,
-          preingestionSource,
-          requestTimeoutMs,
-          verificationCache,
-          sourceFingerprint,
-          cachedAssetEntry,
-          enqueueGate
+          jobIds: (resumeState.items || []).map((item) => item.job_id),
+          requestTimeoutMs
+        })
+        : await loadExistingBatchJobs({
+          baseUrl,
+          cookie,
+          batchId: sharedBatchId,
+          requestTimeoutMs
         });
-        row.preparation_recovery_attempted = recovery;
-        if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
-        return row;
-      };
+      prepared = buildResumedPreparedRows({
+        items,
+        existingJobs,
+        cachedAssetIds,
+        batchId: sharedBatchId,
+        offset,
+        tenantPrefix,
+        tenantCount: normalizedTenantCount
+      });
+      prepared.forEach((row, index) => {
+        if (row.job) checkpointRows[index] = row;
+      });
+      if (progress) process.stderr.write(`v4 ebay smoke resume batch=${sharedBatchId} matched=${prepared.filter((row) => row.job).length}/${items.length}\n`);
+      const missingIndexes = prepared
+        .map((row, localIndex) => row?.job?.job_id ? null : localIndex)
+        .filter((localIndex) => localIndex !== null);
+      if (missingIndexes.length) {
+        if (progress) process.stderr.write(`v4 ebay smoke resume enqueue missing=${missingIndexes.length}/${items.length}\n`);
+        const missingRows = await mapWithConcurrency(
+          missingIndexes,
+          normalizedPreparationConcurrency,
+          (localIndex) => prepareOne(items[localIndex], localIndex)
+        );
+        missingIndexes.forEach((localIndex, missingIndex) => {
+          prepared[localIndex] = missingRows[missingIndex];
+        });
+      }
+    } else {
       prepared = await mapWithConcurrency(items, normalizedPreparationConcurrency, (item, localIndex) => (
         prepareOne(item, localIndex)
       ));
-      const failedIndexes = prepared
-        .map((row, localIndex) => row?.job?.job_id ? null : localIndex)
-        .filter((localIndex) => localIndex !== null);
-      if (failedIndexes.length && durableUploadResilienceContract.preparation_recovery_rounds > 0) {
-        for (const localIndex of failedIndexes) {
-          if (prepared[localIndex]?.preparation_diagnostics?.asset_cache_hit === true) {
-            assetCacheEntries.delete(sourceFingerprints[localIndex]);
-          }
+    }
+    const failedIndexes = prepared
+      .map((row, localIndex) => row?.job?.job_id ? null : localIndex)
+      .filter((localIndex) => localIndex !== null);
+    if (failedIndexes.length && durableUploadResilienceContract.preparation_recovery_rounds > 0) {
+      for (const localIndex of failedIndexes) {
+        if (prepared[localIndex]?.preparation_diagnostics?.asset_cache_hit === true) {
+          assetCacheEntries.delete(sourceFingerprints[localIndex]);
         }
-        if (progress) process.stderr.write(`v4 ebay smoke bounded recovery missing=${failedIndexes.length}/${items.length}\n`);
-        const recoveredRows = await mapWithConcurrency(
-          failedIndexes,
-          durableUploadResilienceContract.preparation_recovery_concurrency,
-          (localIndex) => prepareOne(items[localIndex], localIndex, { recovery: true })
-        );
-        failedIndexes.forEach((localIndex, recoveryIndex) => {
-          prepared[localIndex] = recoveredRows[recoveryIndex];
-        });
       }
-      if (normalizedVerifiedAssetCacheMode !== "disabled") {
-        for (const row of prepared) {
-          const entry = row?.asset_cache_entry;
-          if (entry?.fingerprint && entry?.asset_id) assetCacheEntries.set(entry.fingerprint, entry);
-        }
-        await writeVerifiedAssetCache(verifiedAssetCachePath, assetCacheEntries);
+      if (progress) process.stderr.write(`v4 ebay smoke bounded recovery missing=${failedIndexes.length}/${items.length}\n`);
+      const recoveredRows = await mapWithConcurrency(
+        failedIndexes,
+        durableUploadResilienceContract.preparation_recovery_concurrency,
+        (localIndex) => prepareOne(items[localIndex], localIndex, { recovery: true })
+      );
+      failedIndexes.forEach((localIndex, recoveryIndex) => {
+        prepared[localIndex] = recoveredRows[recoveryIndex];
+      });
+    }
+    if (normalizedVerifiedAssetCacheMode !== "disabled") {
+      for (const row of prepared) {
+        const entry = row?.asset_cache_entry;
+        if (entry?.fingerprint && entry?.asset_id) assetCacheEntries.set(entry.fingerprint, entry);
       }
+      await writeVerifiedAssetCache(verifiedAssetCachePath, assetCacheEntries);
     }
     sharedBatchId = canonicalBatchIdForPoll(prepared, sharedBatchId);
+    await writeResumeManifest({
+      outPath,
+      pathOverride: resumePath,
+      batchId: clientBatchToken,
+      datasetPath,
+      items,
+      prepared,
+      assetIds: prepared.map((row) => row.asset_id),
+      status: "POLLING"
+    });
     batchPollMetrics = await pollBatchJobs({
       baseUrl,
       cookie,
-      batchId: sharedBatchId,
+      // A client batch token is trace metadata, not a durable status address.
+      // Multi-card streaming enqueue may persist distinct server batches or no
+      // canonical batch at all, so job ids are the only lossless resume key.
+      batchId: durableBatchStatusAddress(prepared),
       expectedJobIds: prepared.map((row) => row.job?.job_id).filter(Boolean),
       waitMs: effectiveBatchPollWaitMs,
       requestTimeoutMs,
@@ -4706,6 +5022,7 @@ export async function runV4EbaySmoke({
           coldStartBlind,
           usePreingestion,
           preingestionSource,
+          preingestionOcrDetail,
           speculative,
           thinkMs,
           l2WaitMs,
@@ -4823,6 +5140,7 @@ export async function runV4EbaySmoke({
     l1_explicitly_enabled: enableL1,
     preingestion_enabled: usePreingestion,
     preingestion_source: usePreingestion ? preingestionSource : null,
+    preingestion_ocr_detail_enabled: usePreingestion ? preingestionOcrDetail === true : null,
     model_override: modelOverride || null,
     cold_start_blind: coldStartBlind === true,
     predictions_sha256: predictionsSha256,
@@ -4868,6 +5186,27 @@ export async function runV4EbaySmoke({
   if (outPath) {
     await writeJson(outPath, report);
     await writeText(outPath.replace(/\.json$/i, ".tsv"), perCardTsv(results));
+    if (queueMode && speculative && batchPoll) {
+      await writeResumeManifest({
+        outPath,
+        pathOverride: cleanText(resumeManifest) || defaultResumeManifestPath(outPath),
+        batchId: resumeState?.client_batch_token || sharedBatchId || batchId || resumeBatchId,
+        datasetPath,
+        items,
+        prepared: results.map((row) => ({
+          asset_id: row.asset_id,
+          batch_id: row.batch_id,
+          tenant_id: row.expected_tenant_id,
+          image_generation_id: row.image_generation_id,
+          asset_cache_entry: row.image_generation_id ? {
+            image_generation_id: row.image_generation_id
+          } : null,
+          job: { job_id: row.job_id }
+        })),
+        assetIds: results.map((row) => row.asset_id),
+        status: "COMPLETED"
+      });
+    }
   }
   return report;
 }
@@ -4925,6 +5264,7 @@ export async function main(argv = process.argv, env = process.env) {
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     preingestionSource: cleanText(argValue(argv, "--preingestion-source", "v4_ebay_smoke_preingestion")),
+    preingestionOcrDetail: hasFlag(argv, "--preingestion-ocr-detail"),
     speculative: hasFlag(argv, "--speculative"),
     thinkMs: Math.max(0, Math.trunc(numberArg(argv, "--think-ms", 6000))),
     modelOverride: cleanText(argValue(argv, "--model", env.V4_EBAY_SMOKE_MODEL_OVERRIDE || "")),
@@ -4940,6 +5280,8 @@ export async function main(argv = process.argv, env = process.env) {
     batchPoll: !hasFlag(argv, "--per-card-poll"),
     batchId: cleanText(argValue(argv, "--batch-id", "")),
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
+    resumeManifest: cleanText(argValue(argv, "--resume-manifest", "")),
+    verifiedAssetManifest: cleanText(argValue(argv, "--verified-asset-manifest", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     coldStartBlind: hasFlag(argv, "--cold-start-blind"),
     // CLI smoke runs are iterative by design. Persist verified generations by

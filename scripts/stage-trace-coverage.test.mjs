@@ -39,6 +39,7 @@ const violated = auditStageTraceCoverage({
 });
 assert.equal(violated.gate.passed, true);
 assert.equal(violated.gate.experiment_eligible, false);
+assert.equal(violated.source_contract_violations[0].query_card_id, "a");
 const scoped = auditStageTraceCoverage({
   dataset: { items: [
     { item_id: "a", retrieval_ground_truth: { retrieval_evaluable: true } },

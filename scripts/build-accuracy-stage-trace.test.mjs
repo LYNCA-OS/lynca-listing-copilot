@@ -18,4 +18,10 @@ assert.equal(trace.cards[0].stage_trace.every((stage) => stage.status === "COMPL
 assert.equal(trace.cards[0].stage_trace[0].input_version, "pipeline-v1:strategy-v1:test-v1");
 assert.equal(trace.cards[0].stage_trace.at(-1).final_decision_owner, "renderer_owner");
 
+const replaced = buildAccuracyStageTrace([
+  { results: [{ ...trace.cards[0], source_feedback_id: "same", ok: true, v4_pipeline_contract: { violations: [{ code: "OLD" }] } }] },
+  { results: [{ ...trace.cards[0], source_feedback_id: "same", ok: true, v4_pipeline_contract: { violations: [] } }] }
+]);
+assert.deepEqual(replaced.cards[0].instrumentation.pipeline_contract_violations, []);
+
 console.log("build accuracy stage trace tests passed");

@@ -183,7 +183,11 @@ globalThis.fetch = async (url, init = {}) => {
 
   if (parsed.pathname.endsWith("/api/v4/listing-preingest-worker")) {
     assert.equal(init.headers["x-lynca-worker-secret"], "test-worker-secret");
-    assert.equal(JSON.parse(init.body).anchor_only, true);
+    assert.equal(JSON.parse(init.body).anchor_only, false);
+    assert.equal(JSON.parse(init.body).include_detail, true);
+    assert.equal(JSON.parse(init.body).limit, 8);
+    assert.equal(JSON.parse(init.body).asset_id, "");
+    assert.equal(JSON.parse(init.body).bundle_id, "");
     return jsonResponse({ ok: true, claimed: 1, succeeded: 1 });
   }
 
@@ -192,6 +196,7 @@ globalThis.fetch = async (url, init = {}) => {
 
 const result = await callApi({
   asset_id: assetId,
+  enqueue_ocr_detail: true,
   source: "client_defined_untrusted_source",
   requested_fields: ["serial_number", "grade_label"],
   images: [

@@ -2,9 +2,7 @@
 
 ## Decision
 
-The independent identity gate now passes with 122 Development and 30 Validation identities. Retrieval, Reranker, Selection, and Evidence tuning remain blocked until a fresh run also passes the Trace/source-contract gate.
-
-Identity labeling and Trace hardening should proceed in parallel after their contracts are frozen. Accuracy experiments may start only when both gates pass.
+The independent identity gate passes with 122 Development and 30 Validation identities. The normalized seven-stage Trace/source-contract gate now also passes on all 152 independently evaluable cards. Accuracy diagnosis may proceed, but the full-information Evidence gate remains open because historical replays did not explicitly request detail OCR crops.
 
 This change affects evaluation contracts and offline trace adaptation only. It does not change production title behavior, frontend, assets, queue, OCR, GPT prompt, SEM, Resolver, Renderer, database, or deployment.
 
@@ -77,6 +75,34 @@ The evaluation contracts were replayed from a clean branch based on the current 
 
 Existing result artifacts cover 124 of the 152 independently evaluable cards. Strict stage coverage is 868/1,064 slots (81.5789%), with 28 cards entirely missing a persisted seven-stage trace and zero UNKNOWN reasons. Fifteen traced cards contain recorded source-contract warnings. This is a failed experiment gate, not an accuracy result.
 
-The next replay is therefore limited to the 28 missing identities. Completed identities are not repeated. Retrieval, Selection, and Application changes remain prohibited until the strict trace gate passes.
+The 28 missing identities were replayed from verified asset generations. Fifteen source-contract warnings were then repaired by deterministic same-card replay selection; three stale ties required one final bounded replay. The resulting packet has:
 
-Afterward, Evidence Recovery may begin on Development/Validation only. Application remains field-family-by-field-family with 100% precision, positive recall, and zero critical entity regressions. Holdout stays sealed until the final Oracle run.
+- 152/152 complete cards;
+- 1,064/1,064 valid stage slots;
+- zero UNKNOWN reasons;
+- zero source-contract violations;
+- no repeated image upload for cached cards.
+
+The first corrected Oracle adapter recovered 743 confirmed fields and measured Evidence Oracle Recall at 451/743 (60.70%). It also exposed two evaluation-boundary defects that invalidate a final whole-chain claim until repaired:
+
+- 18 cards selected a catalog row originating from the same feedback record. These rows are now sealed out of Retrieval metrics and excluded from downstream Selection/Application denominators rather than being counted as successes.
+- 83 cards lack field-level OCR crop observability. The older smoke runner requested preingestion but did not explicitly set `enqueue_ocr_detail`, so “full information” depended on a mutable environment default.
+
+The smoke runner now has an explicit `--preingestion-ocr-detail` contract and records `preingestion_ocr_detail_enabled` in every report. A deterministic Evidence trace-gap builder selects only cards whose taxonomy is `TRACE_MISSING`; cached verified generations are reused. Until that bounded recovery completes, current no-leakage Retrieval Recall@5 (6/152) and downstream rates remain diagnostic lower bounds, not the final accuracy ceiling.
+
+Application remains field-family-by-field-family with 100% precision, positive recall, and zero critical entity regressions. Holdout stays sealed until the final Oracle run.
+
+## Frozen 20-card recovery gate (2026-07-24)
+
+The first expansion gate is a deterministic 15 Development / 5 Validation sample. Its item-set SHA-256 is `63a09857328be4fd9cadaa2e08e32d4c72dc9bdba7b699a96bc9e808e7f91818`. Replayed cards are allowed; holdout remains sealed. Expansion is prohibited unless speed, accuracy, and stability all pass.
+
+The first production run failed the joint gate:
+
+- stability: 20/20 reached `L2_READY`, with zero technical failures;
+- reviewed-title policy token recall: 0.762669, below the frozen 0.85 threshold;
+- provider execution: p50 42,155 ms and p95 53,946 ms;
+- scheduler queue wait: p50 889,364 ms and p95 1,146,184 ms;
+- field Oracle: 55/97 (56.70%), with print finish 3/12, numerical rarity 7/15, and grade 0/6;
+- preingestion detail: 16/20 cards ended as `DEFERRED_AFTER_PROVIDER`; 190 OCR jobs produced zero final evidence patches.
+
+Two evaluation-runner defects were repaired without changing title strategy: multi-card resume now polls durable job IDs instead of a client batch token, and resume manifests are atomic and identity/order validated. Explicit detail OCR requests now wake a tenant-wide fair detail sweep; ordinary production requests remain anchor-only. The same 20 cards must be replayed after an isolated candidate deployment. No larger sample is permitted before the three gates pass.

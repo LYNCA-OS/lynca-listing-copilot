@@ -292,12 +292,13 @@ export default async function handler(req, res) {
       && paddleOcr.enabled === true
       && paddleOcr.configured === true
       && Boolean(paddleOcr.token);
+    const enqueueOcrDetail = payload.enqueue_ocr_detail === true
+      || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true";
     const jobs = enqueueWorkers
       ? buildPreingestionWorkerJobs({
         bundle: durableBundle,
         enableOcr: enqueueOcr,
-        enableOcrDetail: payload.enqueue_ocr_detail === true
-          || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true",
+        enableOcrDetail: enqueueOcrDetail,
         enableEmbeddings: payload.enqueue_embeddings === true,
         enableSurface: payload.enqueue_surface === true,
         enableQuality: payload.enqueue_quality === true
@@ -320,7 +321,9 @@ export default async function handler(req, res) {
         tenantId: context.tenantId,
         assetId,
         bundleId: durableBundle.bundle_id,
-        limit: 3,
+        limit: enqueueOcrDetail ? 8 : 3,
+        includeDetail: enqueueOcrDetail,
+        timeoutMs: enqueueOcrDetail ? 60_000 : 12_000,
         env: process.env,
         fetchImpl: globalThis.fetch
       });

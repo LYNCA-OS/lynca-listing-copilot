@@ -101,7 +101,10 @@ export function buildAccuracyStageTrace(reports = []) {
     const resultId = id(result);
     if (!resultId) continue;
     const current = bestById.get(resultId);
-    if (!current || resultScore(result) > resultScore(current)) bestById.set(resultId, result);
+    // A later fixed-regression report supersedes an equally complete earlier
+    // artifact. This lets a source-contract repair replace stale warnings
+    // without preferring a structurally richer but older result.
+    if (!current || resultScore(result) >= resultScore(current)) bestById.set(resultId, result);
   }
   return {
     schema_version: "accuracy-stage-trace-v1",
