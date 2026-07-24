@@ -132,7 +132,7 @@ test("production writer journey reaches persisted L2 through the real UI", async
 
     // Login is a real browser journey, but is intentionally isolated from HAR
     // and trace so administrator credentials can never enter uploaded artifacts.
-    loginContext = await browser.newContext({ baseURL, viewport: { width: 1440, height: 1000 } });
+    loginContext = await browser.newContext({ baseURL: baseUrl, viewport: { width: 1440, height: 1000 } });
     loginPage = await loginContext.newPage();
     await loginPage.goto("/app/login.html?next=%2Fapp%2F", { waitUntil: "domcontentloaded" });
     await loginPage.getByTestId("login-username").fill(username);
@@ -147,7 +147,7 @@ test("production writer journey reaches persisted L2 through the real UI", async
     loginPage = null;
 
     journeyContext = await browser.newContext({
-      baseURL,
+      baseURL: baseUrl,
       viewport: { width: 1440, height: 1000 },
       storageState,
       recordHar: { path: harPath, mode: "full", content: "attach" }
