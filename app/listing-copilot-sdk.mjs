@@ -798,6 +798,15 @@ function summarizeDerivedUploadOutcomes(outcomes = []) {
   };
 }
 
+// lib/listing/client/upload-recovery-policy.mjs
+var SIGNED_UPLOAD_URL_GENERATION_LIMIT = 2;
+var retryableSignedUploadStatuses = /* @__PURE__ */ new Set([401, 403, 408, 425, 429, 500, 502, 503, 504]);
+function shouldRefreshSignedUpload({ generation = 1, status = 0, networkError = false } = {}) {
+  if (Number(generation) >= SIGNED_UPLOAD_URL_GENERATION_LIMIT) return false;
+  if (networkError) return true;
+  return retryableSignedUploadStatuses.has(Number(status));
+}
+
 // lib/listing/v4/assets/asset-lifecycle-contract.mjs
 var assetLifecycleStates = Object.freeze({
   LOCAL: "LOCAL",
@@ -926,6 +935,7 @@ function withRecognitionRequestIntent(value = {}, {
   };
 }
 export {
+  SIGNED_UPLOAD_URL_GENERATION_LIMIT,
   analyzeImageQualityFromImageData,
   defaultCaptureProfileId,
   defaultRecognitionProfileId,
@@ -937,6 +947,7 @@ export {
   planTargetedCrops,
   queuedStatusPollDelay,
   shouldDeclareClientStatusOrphan,
+  shouldRefreshSignedUpload,
   startNonBlockingDerivedUpload,
   stripClientImageTransport,
   summarizeAssetImageQuality,

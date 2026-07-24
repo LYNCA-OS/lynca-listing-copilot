@@ -9,7 +9,9 @@ import {
   observeClientJobPoll,
   planTargetedCrops,
   queuedStatusPollDelay,
+  SIGNED_UPLOAD_URL_GENERATION_LIMIT,
   shouldDeclareClientStatusOrphan,
+  shouldRefreshSignedUpload,
   startNonBlockingDerivedUpload,
   stripClientImageTransport,
   summarizeAssetImageQuality,
@@ -1247,102 +1249,150 @@ async function uploadAssetImage(asset, image, imageIndex) {
   }
   delete image.pendingStorageVerification;
 
-  const { response: uploadResponse, payload: uploadPayload } = await fetchStorageApiJson("/api/listing-image-upload-url", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      assetId,
-      clientAssetRef: asset.clientAssetRef || asset.id,
-      imageId: image.id,
-      role: storageRole,
-      fileName: image.name,
-      contentType: uploadContentType,
-      size: source.size,
-      width: dimensions.width,
-      height: dimensions.height,
-      signatureHex,
-      contentSha256
-    })
-  });
-
-  assertCurrentAssetLifecycle(asset);
-  if (!uploadResponse.ok || !uploadPayload.ok) {
-    throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
-  }
-  if (
-    uploadPayload.asset_id !== assetId
-    || uploadPayload.client_asset_ref !== (asset.clientAssetRef || asset.id)
-    || uploadPayload.upload?.tenant_id !== tenantId
-    || uploadPayload.upload?.image_id !== image.id
-    || uploadPayload.upload?.storage_role !== storageRole
-  ) {
-    throw new Error("Storage upload identity mismatch.");
-  }
-  const uploadObjectPath = assertCanonicalImageObjectPath({
-    objectPath: uploadPayload.upload.object_path,
-    tenantId,
-    assetId
-  });
-
-  let storageRequest;
-  try {
-    storageRequest = await fetchWithBoundedRetry(uploadPayload.upload.signed_upload_url, {
-      method: "PUT",
+  let lastStorageError = null;
+  for (let signedUrlGeneration = 1; signedUrlGeneration <= SIGNED_UPLOAD_URL_GENERATION_LIMIT; signedUrlGeneration += 1) {
+    const { response: uploadResponse, payload: uploadPayload } = await fetchStorageApiJson("/api/listing-image-upload-url", {
+      method: "POST",
       headers: {
-        "content-type": uploadPayload.upload.content_type || uploadContentType
+        "content-type": "application/json"
       },
-      body: source
-    }, {
-      timeoutMs: STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
-      maxAttempts: 3,
-      // PUT targets one signed object path, so replaying a transport failure is
-      // idempotent. Authentication failures still fail immediately.
-      retryNetworkErrors: true,
-      maxDelayMs: 1500
+      credentials: "same-origin",
+      body: JSON.stringify({
+        assetId,
+        clientAssetRef: asset.clientAssetRef || asset.id,
+        imageId: image.id,
+        role: storageRole,
+        fileName: image.name,
+        contentType: uploadContentType,
+        size: source.size,
+        width: dimensions.width,
+        height: dimensions.height,
+        signatureHex,
+        contentSha256
+      })
     });
-  } catch (error) {
+
+    assertCurrentAssetLifecycle(asset);
+    if (!uploadResponse.ok || !uploadPayload.ok) {
+      throw new Error(uploadPayload.message || `Storage upload URL failed: ${uploadResponse.status}`);
+    }
+    if (
+      uploadPayload.asset_id !== assetId
+      || uploadPayload.client_asset_ref !== (asset.clientAssetRef || asset.id)
+      || uploadPayload.upload?.tenant_id !== tenantId
+      || uploadPayload.upload?.image_id !== image.id
+      || uploadPayload.upload?.storage_role !== storageRole
+    ) {
+      throw new Error("Storage upload identity mismatch.");
+    }
+    const uploadObjectPath = assertCanonicalImageObjectPath({
+      objectPath: uploadPayload.upload.object_path,
+      tenantId,
+      assetId
+    });
+    const contentType = uploadPayload.upload.content_type || uploadContentType;
+    const pendingVerification = {
+      ...expectedPending,
+      objectPath: uploadObjectPath,
+      contentType
+    };
+
+    let storageRequest;
+    try {
+      storageRequest = await fetchWithBoundedRetry(uploadPayload.upload.signed_upload_url, {
+        method: "PUT",
+        headers: {
+          "content-type": contentType
+        },
+        body: source
+      }, {
+        timeoutMs: STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
+        maxAttempts: 3,
+        // A signed PUT is idempotent for one canonical object path. Retry the
+        // same URL first; if it expires or its response is lost, verify the
+        // object and then obtain one fresh signed URL generation.
+        retryNetworkErrors: true,
+        retryStatuses: [408, 425, 429, 500, 502, 503, 504],
+        maxDelayMs: 1500
+      });
+    } catch (error) {
+      recordClientNetworkStage(asset, "storage_object_upload", {
+        elapsed_ms: error.elapsed_ms,
+        attempts: error.attempts,
+        signed_url_generation: signedUrlGeneration,
+        error
+      });
+      lastStorageError = error;
+      image.pendingStorageVerification = pendingVerification;
+      try {
+        return await verifyUploadedAssetImage({
+          asset,
+          image,
+          source,
+          storageRole,
+          dimensions,
+          signatureHex,
+          contentSha256,
+          uploadObjectPath,
+          contentType
+        });
+      } catch {
+        delete image.pendingStorageVerification;
+      }
+      if (shouldRefreshSignedUpload({ generation: signedUrlGeneration, networkError: true })) continue;
+      throw error;
+    }
+
+    const storageResponse = storageRequest.response;
+    const storageError = storageResponse.ok
+      ? null
+      : Object.assign(new Error(`Storage upload failed: ${storageResponse.status}`), {
+        http_status: storageResponse.status
+      });
     recordClientNetworkStage(asset, "storage_object_upload", {
-      elapsed_ms: error.elapsed_ms,
-      attempts: error.attempts,
-      error
+      ...storageRequest,
+      signed_url_generation: signedUrlGeneration,
+      error: storageError
     });
-    throw error;
-  }
 
-  const storageResponse = storageRequest.response;
-  const storageError = storageResponse.ok
-    ? null
-    : Object.assign(new Error(`Storage upload failed: ${storageResponse.status}`), {
-      http_status: storageResponse.status
+    if (!storageResponse.ok) {
+      lastStorageError = storageError;
+      if (shouldRefreshSignedUpload({ generation: signedUrlGeneration, status: storageResponse.status })) {
+        image.pendingStorageVerification = pendingVerification;
+        try {
+          return await verifyUploadedAssetImage({
+            asset,
+            image,
+            source,
+            storageRole,
+            dimensions,
+            signatureHex,
+            contentSha256,
+            uploadObjectPath,
+            contentType
+          });
+        } catch {
+          delete image.pendingStorageVerification;
+          continue;
+        }
+      }
+      throw storageError;
+    }
+    assertCurrentAssetLifecycle(asset);
+    image.pendingStorageVerification = pendingVerification;
+    return verifyUploadedAssetImage({
+      asset,
+      image,
+      source,
+      storageRole,
+      dimensions,
+      signatureHex,
+      contentSha256,
+      uploadObjectPath,
+      contentType
     });
-  recordClientNetworkStage(asset, "storage_object_upload", {
-    ...storageRequest,
-    error: storageError
-  });
-
-  if (!storageResponse.ok) {
-    throw storageError;
   }
-  assertCurrentAssetLifecycle(asset);
-  image.pendingStorageVerification = {
-    ...expectedPending,
-    objectPath: uploadObjectPath,
-    contentType: uploadPayload.upload.content_type
-  };
-  return verifyUploadedAssetImage({
-    asset,
-    image,
-    source,
-    storageRole,
-    dimensions,
-    signatureHex,
-    contentSha256,
-    uploadObjectPath,
-    contentType: uploadPayload.upload.content_type
-  });
+  throw lastStorageError || new Error("Storage upload failed after signed URL refresh.");
 }
 
 async function uploadOriginalAssetImagesBatch(asset, entries = []) {
