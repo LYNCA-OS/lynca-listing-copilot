@@ -39,6 +39,106 @@
           "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
         }
       ]
+    },
+    {
+      "source_name": "Digimon Booster Battle of Omni BT05",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522004",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 130,
+      "minimum_promotion_candidate_count": 130,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT5-001", "card_name": "Koromon", "external_id": "BT5-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Booster New Awakening BT08",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522008",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 136,
+      "minimum_promotion_candidate_count": 136,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT8-001", "card_name": "Gurimon", "external_id": "BT8-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Booster Dimensional Phase BT11",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522013",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 144,
+      "minimum_promotion_candidate_count": 144,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT11-001", "card_name": "Yokomon", "external_id": "BT11-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Booster Versus Royal Knights BT13",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522016",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 142,
+      "minimum_promotion_candidate_count": 142,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "BT13-001", "card_name": "Pinamon", "external_id": "BT13-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Theme Booster Draconic Roar EX03",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522012",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 99,
+      "minimum_promotion_candidate_count": 99,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "EX3-001", "card_name": "Bebydomon", "external_id": "EX3-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Theme Booster Animal Colosseum EX05",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522019",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 102,
+      "minimum_promotion_candidate_count": 102,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "EX5-001", "card_name": "Sunmon", "external_id": "EX5-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Theme Booster Infernal Ascension EX06",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522022",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 106,
+      "minimum_promotion_candidate_count": 106,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "EX6-001", "card_name": "Sakuttomon", "external_id": "EX6-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Advanced Deck Beelzemon ST14",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522114",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 26,
+      "minimum_promotion_candidate_count": 26,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "ST14-01", "card_name": "Yaamon", "external_id": "ST14-01", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Special Limited Set",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522201",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 37,
+      "minimum_promotion_candidate_count": 37,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "LM-021", "card_name": "Agumon - Bond of Bravery ACE", "external_id": "LM-021", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Promo Cards P",
+      "source_url": "https://world.digimoncard.com/cards/index.php?search=true&category=522901",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 243,
+      "minimum_promotion_candidate_count": 243,
+      "maximum_review_required_count": 0,
+      "required_records": [{ "card_number": "P-001", "card_name": "Agumon", "external_id": "P-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
     }
   ]
 }

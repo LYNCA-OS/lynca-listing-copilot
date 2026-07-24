@@ -38,6 +38,96 @@
           "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE"
         }
       ]
+    },
+    {
+      "source_name": "One Piece Pillars of Strength OP-03",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569103",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 154,
+      "minimum_promotion_candidate_count": 123,
+      "maximum_review_required_count": 31,
+      "required_records": [{ "card_number": "OP03-001", "card_name": "Portgas.D.Ace", "external_id": "OP03-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece 500 Years in the Future OP-07",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569107",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 151,
+      "minimum_promotion_candidate_count": 119,
+      "maximum_review_required_count": 32,
+      "required_records": [{ "card_number": "OP07-001", "card_name": "Monkey.D.Dragon", "external_id": "OP07-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece Emperors in the New World OP-09",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569109",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 159,
+      "minimum_promotion_candidate_count": 119,
+      "maximum_review_required_count": 40,
+      "required_records": [{ "card_number": "OP09-001", "card_name": "Shanks", "external_id": "OP09-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece Legacy of the Master OP-12",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569112",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 155,
+      "minimum_promotion_candidate_count": 119,
+      "maximum_review_required_count": 36,
+      "required_records": [{ "card_number": "OP12-001", "external_id": "OP12-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece Carrying on His Will OP-13",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569113",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 175,
+      "minimum_promotion_candidate_count": 120,
+      "maximum_review_required_count": 55,
+      "required_records": [{ "card_number": "OP13-001", "external_id": "OP13-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece The Azure Sea’s Seven OP14-EB04",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569114",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 199,
+      "minimum_promotion_candidate_count": 151,
+      "maximum_review_required_count": 48,
+      "required_records": [{ "card_number": "OP14-001", "card_name": "Trafalgar Law", "external_id": "OP14-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece The Time of Battle OP-16",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569116",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 155,
+      "minimum_promotion_candidate_count": 119,
+      "maximum_review_required_count": 36,
+      "required_records": [{ "card_number": "OP16-001", "card_name": "Portgas.D.Ace", "external_id": "OP16-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece Anime 25th Collection EB-02",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569202",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 105,
+      "minimum_promotion_candidate_count": 61,
+      "maximum_review_required_count": 44,
+      "required_records": [{ "card_number": "EB02-001", "card_name": "Karoo", "external_id": "EB02-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "One Piece Promotion Cards",
+      "source_url": "https://en.onepiece-cardgame.com/cardlist/?series=569901",
+      "source_type": "BANDAI_ONE_PIECE_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 372,
+      "minimum_promotion_candidate_count": 97,
+      "maximum_review_required_count": 275,
+      "required_records": [{ "card_number": "P-001", "card_name": "Monkey.D.Luffy", "external_id": "P-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
     }
   ]
 }

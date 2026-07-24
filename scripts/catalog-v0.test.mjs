@@ -595,6 +595,7 @@ assert.equal(upperDeckJsonReport.metrics.parsed_row_count, 2);
 assert.equal(upperDeckJsonReport.metrics.review_required_count, 0);
 
 const unifiedBandaiHtml = [
+  '<select><option value="569101" selected>Romance Dawn</option></select>',
   '<dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>',
   '<dl class="modalCol" id="OP01-001_p1"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001_p1.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>'
 ].join("");
@@ -603,7 +604,7 @@ const unifiedBandaiReport = await buildProviderCatalogImport({
   sourceType: catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST,
   category: "tcg",
   sourceUrls: [{
-    href: "https://en.onepiece-cardgame.com/cardlist/romance-dawn",
+    href: "https://en.onepiece-cardgame.com/cardlist/?series=569101",
     text: "Romance Dawn"
   }],
   fetchImpl: async () => new Response(unifiedBandaiHtml, {
@@ -634,7 +635,7 @@ const unifiedBandaiDryRun = await importToppsBasketballChecklists({
     "--provider", "one_piece",
     "--source-type", catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST,
     "--category", "tcg",
-    "--source-url", "https://en.onepiece-cardgame.com/cardlist/romance-dawn",
+    "--source-url", "https://en.onepiece-cardgame.com/cardlist/?series=569101",
     "--source-name", "Romance Dawn",
     "--no-env-file"
   ],
@@ -650,7 +651,7 @@ assert.equal(unifiedBandaiDryRun.skipped_review_required_count, 1);
 const unifiedBandaiValidation = validateOfficialSourceManifestReport({
   sources: [{
     source_name: "Romance Dawn",
-    source_url: "https://en.onepiece-cardgame.com/cardlist/romance-dawn",
+    source_url: "https://en.onepiece-cardgame.com/cardlist/?series=569101",
     source_type: catalogSourceTypes.BANDAI_ONE_PIECE_OFFICIAL_CARDLIST,
     minimum_card_count: 2,
     minimum_promotion_candidate_count: 1,

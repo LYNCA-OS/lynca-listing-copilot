@@ -7,7 +7,7 @@ import {
 } from "./audit-official-catalog-retrieval-sentinels.mjs";
 
 const repositoryPlan = buildOfficialCatalogRetrievalSentinelPlan(await loadOfficialCatalogManifestEntries());
-assert.equal(repositoryPlan.length, 49);
+assert.equal(repositoryPlan.length, 68);
 assert.equal(repositoryPlan.filter((sentinel) => sentinel.plan_error).length, 0);
 assert.equal(repositoryPlan.filter((sentinel) => sentinel.provider === "dragon_ball_masters").length, 25);
 
