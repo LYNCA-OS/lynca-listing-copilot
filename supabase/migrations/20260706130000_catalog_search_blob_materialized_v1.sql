@@ -54,7 +54,7 @@ alter table public.catalog_cards
       manufacturer,
       product,
       set_or_insert,
-      array_to_string(players, ' '),
+      players,
       card_number,
       checklist_code,
       surface_color
