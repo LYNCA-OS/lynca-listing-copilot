@@ -67,11 +67,14 @@ assert.equal(report.summary.card_code_match_count, 1);
 assert.equal(report.summary.title_diagnostic_card_code_anchor_count, 2);
 assert.equal(report.summary.ambiguous_card_code_anchor_count, 1);
 const dragonBall = report.families.find((row) => row.family === "dragon_ball_masters");
-assert.equal(dragonBall.coverage_state, "CARD_CODE_ANCHORS_COVERED");
+assert.equal(dragonBall.directory_redundancy_state, "WRITER_AND_OFFICIAL");
+assert.equal(dragonBall.coverage_state, "OFFICIAL_CARD_CODE_ANCHORS_COVERED");
 assert.equal(dragonBall.card_code_match_rate, 1);
 const onePiece = report.families.find((row) => row.family === "one_piece");
 assert.equal(onePiece.source_operational_stage, "DISCOVERED");
-assert.equal(onePiece.coverage_state, "SOURCE_NOT_DECISION_ACTIVE");
+assert.equal(onePiece.directory_redundancy_state, "WRITER_ONLY");
+assert.equal(onePiece.coverage_state, "OFFICIAL_SOURCE_NOT_DECISION_ACTIVE");
+assert.deepEqual(onePiece.unmatched_card_code_prefix_breakdown, [{ prefix: "OP01", count: 1 }]);
 assert.equal(JSON.stringify(report).includes("Skillful Majin Buu"), false);
 assert.equal(report.invariants.raw_writer_titles_emitted, false);
 

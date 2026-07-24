@@ -37,7 +37,7 @@ jobs:
             summary: report.summary,
             tcg_demand_summary: report.tcg_demand_coverage.summary,
             tcg_demand_gaps: report.tcg_demand_coverage.families
-              .filter(row => row.reviewed_demand_count > 0 && row.coverage_state !== 'CARD_CODE_ANCHORS_COVERED')
+              .filter(row => row.reviewed_demand_count > 0 && row.coverage_state !== 'OFFICIAL_CARD_CODE_ANCHORS_COVERED')
               .sort((left, right) => right.reviewed_demand_count - left.reviewed_demand_count),
             inactive_sources: inactive.map(row => ({
               provider: row.provider,
@@ -54,6 +54,7 @@ jobs:
           if (report.summary.unregistered_source_type_count > 0) process.exit(1);
           if (report.tcg_demand_coverage.invariants.read_only !== true) process.exit(1);
           if (report.tcg_demand_coverage.invariants.raw_writer_titles_emitted !== false) process.exit(1);
+          if (report.tcg_demand_coverage.invariants.writer_directory_rows_modified !== false) process.exit(1);
           if (report.tcg_demand_coverage.invariants.changes_catalog_decisions !== false) process.exit(1);
           NODE
       - name: Upload report
