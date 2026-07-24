@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
+import { imageDimensions } from "./materialize-launch-gate-images.mjs";
 import { fairTokenRecall, policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 import {
   assertEvaluationSampleProvenance,
@@ -413,13 +414,13 @@ async function uploadDurableSmokeImage({
 }) {
   const bytes = await readFile(resolve(image.local_path));
   const contentType = inferredImageContentType(image, bytes);
+  const dimensions = Number.isInteger(Number(image.width)) && Number(image.width) > 0
+    && Number.isInteger(Number(image.height)) && Number(image.height) > 0
+    ? { width: Number(image.width), height: Number(image.height) }
+    : imageDimensions(bytes, contentType);
   const contentSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
   const signatureHex = bytes.subarray(0, 32).toString("hex");
-  const width = Number(image.width);
-  const height = Number(image.height);
-  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
-    throw new Error(`smoke_image_dimensions_missing:${image.image_id}`);
-  }
+  const { width, height } = dimensions;
   const fileName = basename(image.local_path) || `${image.image_id}.jpg`;
   const signed = await postJson({
     baseUrl,
@@ -550,9 +551,14 @@ async function uploadDurableSmokeImagesBatch({ baseUrl, cookie, asset, images, r
   const prepared = await Promise.all(images.map(async (image) => {
     const bytes = await readFile(resolve(image.local_path));
     const contentType = inferredImageContentType(image, bytes);
+    const dimensions = Number.isInteger(Number(image.width)) && Number(image.width) > 0
+      && Number.isInteger(Number(image.height)) && Number(image.height) > 0
+      ? { width: Number(image.width), height: Number(image.height) }
+      : imageDimensions(bytes, contentType);
     return {
       image,
       bytes,
+      dimensions,
       contentType,
       contentSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
       signatureHex: bytes.subarray(0, 32).toString("hex"),
@@ -573,8 +579,8 @@ async function uploadDurableSmokeImagesBatch({ baseUrl, cookie, asset, images, r
         fileName: row.fileName,
         contentType: row.contentType,
         size: row.bytes.byteLength,
-        width: Number(row.image.width),
-        height: Number(row.image.height),
+        width: row.dimensions.width,
+        height: row.dimensions.height,
         signatureHex: row.signatureHex,
         contentSha256: row.contentSha256
       }))
@@ -620,8 +626,8 @@ async function uploadDurableSmokeImagesBatch({ baseUrl, cookie, asset, images, r
         objectPath: row.upload.object_path,
         contentType: row.upload.content_type,
         size: row.bytes.byteLength,
-        width: Number(row.image.width),
-        height: Number(row.image.height),
+        width: row.dimensions.width,
+        height: row.dimensions.height,
         signatureHex: row.signatureHex,
         contentSha256: row.contentSha256
       }))
@@ -3012,6 +3018,17 @@ export function canonicalBatchIdForPoll(prepared = [], fallbackBatchId = "") {
   return canonicalIds[0] || cleanText(fallbackBatchId);
 }
 
+export function isRecoverablePreparationFailure(row = {}) {
+  if (row?.job?.job_id) return false;
+  const error = cleanText(row?.error);
+  return [
+    "smoke_upload_verify_failed:",
+    "smoke_storage_put_failed:",
+    "smoke_batch_storage_put_failed:",
+    "smoke_batch_upload_verify_failed:"
+  ].some((prefix) => error.startsWith(prefix));
+}
+
 async function pollBatchJobs({
   baseUrl,
   cookie,
@@ -4836,7 +4853,7 @@ export async function runV4EbaySmoke({
         prepareOne(item, localIndex)
       ));
       const failedIndexes = prepared
-        .map((row, localIndex) => row?.job?.job_id ? null : localIndex)
+        .map((row, localIndex) => isRecoverablePreparationFailure(row) ? localIndex : null)
         .filter((localIndex) => localIndex !== null);
       if (failedIndexes.length && durableUploadResilienceContract.preparation_recovery_rounds > 0) {
         for (const localIndex of failedIndexes) {
@@ -4863,15 +4880,18 @@ export async function runV4EbaySmoke({
       }
     }
     sharedBatchId = canonicalBatchIdForPoll(prepared, sharedBatchId);
-    batchPollMetrics = await pollBatchJobs({
-      baseUrl,
-      cookie,
-      batchId: sharedBatchId,
-      expectedJobIds: prepared.map((row) => row.job?.job_id).filter(Boolean),
-      waitMs: effectiveBatchPollWaitMs,
-      requestTimeoutMs,
-      progress
-    });
+    const expectedJobIds = prepared.map((row) => row.job?.job_id).filter(Boolean);
+    batchPollMetrics = expectedJobIds.length
+      ? await pollBatchJobs({
+        baseUrl,
+        cookie,
+        batchId: sharedBatchId,
+        expectedJobIds,
+        waitMs: effectiveBatchPollWaitMs,
+        requestTimeoutMs,
+        progress
+      })
+      : { jobs: [], polls: 0, elapsed_ms: 0, fail_fast_reason: "NO_JOBS_ENQUEUED" };
     recognitionResults = prepared.map((row) => resultFromBatchJob(row, batchPollMetrics, thinkMs));
   } else {
     recognitionResults = await mapWithConcurrency(items, normalizedSubmissionConcurrency, async (item, localIndex) => {

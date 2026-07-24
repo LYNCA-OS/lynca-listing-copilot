@@ -231,7 +231,7 @@ jobs:
           const diagnostic = {
             deployment_id: process.env.EXPECTED_DEPLOYMENT_ID,
             sample_fingerprint: report.evaluation_sample_policy?.evaluated_item_ids_sha256,
-            token_recall,
+            token_recall: tokenRecall,
             sem_min: semMin,
             completed_cards_per_minute: cardsPerMinute,
             writer_ready_p50_ms: report.summary?.writer_ready_p50_ms,

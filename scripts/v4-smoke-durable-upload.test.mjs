@@ -7,6 +7,7 @@ import {
   canonicalBatchIdForPoll,
   durableSourceFingerprint,
   durableUploadResilienceContract,
+  isRecoverablePreparationFailure,
   materializeSmokeSourceImages,
   prepareDurableSmokeItem
 } from "./v4-ebay-smoke.mjs";
@@ -15,8 +16,17 @@ import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
 const tempDirectory = await mkdtemp(join(tmpdir(), "lynca-v4-smoke-upload-"));
 const firstPath = join(tempDirectory, "image-1.jpg");
 const secondPath = join(tempDirectory, "image-2.jpg");
+const metadataOnlyPngPath = join(tempDirectory, "image-no-manifest-dimensions.png");
 const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
-await Promise.all([writeFile(firstPath, jpegBytes), writeFile(secondPath, jpegBytes)]);
+const metadataOnlyPngBytes = Buffer.alloc(24);
+Buffer.from("89504e470d0a1a0a", "hex").copy(metadataOnlyPngBytes, 0);
+metadataOnlyPngBytes.writeUInt32BE(640, 16);
+metadataOnlyPngBytes.writeUInt32BE(960, 20);
+await Promise.all([
+  writeFile(firstPath, jpegBytes),
+  writeFile(secondPath, jpegBytes),
+  writeFile(metadataOnlyPngPath, metadataOnlyPngBytes)
+]);
 
 const sourceSha256 = crypto.createHash("sha256").update(jpegBytes).digest("hex");
 const materialized = await materializeSmokeSourceImages([{
@@ -203,6 +213,9 @@ assert.equal(
   null,
   "split streaming batches must switch the smoke harness to job-id polling"
 );
+assert.equal(isRecoverablePreparationFailure({ error: "smoke_image_dimensions_missing:x" }), false);
+assert.equal(isRecoverablePreparationFailure({ error: "smoke_batch_upload_verify_failed:503:retry" }), true);
+assert.equal(isRecoverablePreparationFailure({ job: { job_id: "job-ok" }, error: "smoke_upload_verify_failed:put_200:verify_503" }), false);
 
 try {
   const prepared = await prepareDurableSmokeItem({
@@ -237,6 +250,27 @@ try {
   assert.equal(calls.filter((call) => call.pathname.startsWith("/upload/") && call.method === "PUT").length, 2);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-upload").length, 1);
   assert.equal(calls.filter((call) => call.pathname === "/api/listing-image-verify-existing").length, 0);
+  const inferredDimensions = await prepareDurableSmokeItem({
+    item: {
+      asset_id: "source-without-manifest-dimensions",
+      category: "collectible_card",
+      images: [{
+        image_id: "source-no-dimensions",
+        local_path: metadataOnlyPngPath,
+        content_type: "image/png"
+      }]
+    },
+    index: 2,
+    baseUrl: "https://listing.example",
+    cookie: "session=test",
+    requestTimeoutMs: 5000,
+    fetchImpl
+  });
+  assert.equal(inferredDimensions.images[0].width, 640);
+  assert.equal(inferredDimensions.images[0].height, 960);
+  const inferredSignCall = calls.filter((call) => call.pathname === "/api/listing-image-upload-url").at(-1);
+  assert.equal(inferredSignCall.body.width, 640);
+  assert.equal(inferredSignCall.body.height, 960);
   const reuseCalls = [];
   const reused = await prepareDurableSmokeItem({
     item: {
