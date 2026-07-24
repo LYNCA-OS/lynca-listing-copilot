@@ -14,6 +14,7 @@ on:
           - one_piece
           - digimon
           - dragon_ball_fusion_world
+          - battle_spirits
           - wotc_gatherer
         default: topps
       apply:
@@ -33,15 +34,33 @@ concurrency:
 jobs:
   import:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
+      - name: Fail closed for production writes outside current main
+        env:
+          APPLY_OFFICIAL_CATALOG: ${{ inputs.apply }}
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$APPLY_OFFICIAL_CATALOG" != "true" ]]; then
+            exit 0
+          fi
+          test "$DISPATCH_REF" = "refs/heads/main"
+          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
+          test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           package-manager-cache: false
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Validate the complete production manifest set
+        run: node scripts/audit-official-catalog-manifest-parity.mjs --repository-only --out /tmp/official-catalog-manifest-repository.json
       - name: Validate and import official sources
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
@@ -62,6 +81,62 @@ jobs:
             args+=(--apply)
           fi
           node scripts/import-official-source-manifest.mjs "${args[@]}"
+      - name: Prove post-apply idempotence
+        if: inputs.apply
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OFFICIAL_CATALOG_PROVIDER: ${{ inputs.provider }}
+          OFFICIAL_CATALOG_SOURCE_NAME: ${{ inputs.source_name }}
+        run: |
+          manifest="data/catalog/official/${OFFICIAL_CATALOG_PROVIDER}-production-sources.json"
+          args=(--manifest "$manifest" --out /tmp/official-catalog-idempotence.json --apply)
+          if [[ -n "$OFFICIAL_CATALOG_SOURCE_NAME" ]]; then
+            args+=(--only-source-name "$OFFICIAL_CATALOG_SOURCE_NAME")
+          fi
+          node scripts/import-official-source-manifest.mjs "${args[@]}"
+          node - <<'NODE'
+          const report = require('/tmp/official-catalog-idempotence.json');
+          const failures = report.apply_reports.filter(row => (
+            row.verified_existing_source_count !== 1
+            || row.inserted_source_count !== 0
+            || row.refreshed_source_count !== 0
+            || row.recovered_partial_source_count !== 0
+            || row.inserted_staging_count !== 0
+            || row.inserted_product_count !== 0
+            || row.inserted_set_count !== 0
+            || row.inserted_card_count !== 0
+          ));
+          console.log(JSON.stringify({
+            valid: report.validation.valid && failures.length === 0,
+            source_count: report.apply_reports.length,
+            failures
+          }, null, 2));
+          if (!report.validation.valid || failures.length) process.exit(1);
+          NODE
+      - name: Prove repository and production catalog parity
+        if: inputs.apply
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node scripts/audit-official-catalog-manifest-parity.mjs --out /tmp/official-catalog-manifest-parity.json
+          node scripts/catalog-operational-coverage.mjs --out /tmp/catalog-operational-coverage.json
+          node - <<'NODE'
+          const parity = require('/tmp/official-catalog-manifest-parity.json');
+          const coverage = require('/tmp/catalog-operational-coverage.json');
+          const sourceGraphValid = coverage.summary.unattributed_catalog_entity_count === 0
+            && coverage.summary.broken_source_reference_count === 0
+            && coverage.summary.orphan_catalog_card_count === 0
+            && coverage.summary.unregistered_source_type_count === 0;
+          console.log(JSON.stringify({
+            parity_valid: parity.valid,
+            parity_summary: parity.summary,
+            source_graph_valid: sourceGraphValid,
+            source_graph: coverage.summary
+          }, null, 2));
+          if (!parity.valid || !sourceGraphValid) process.exit(1);
+          NODE
       - name: Summarize
         run: |
           node - <<'NODE'
@@ -94,4 +169,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: official-catalog-import-report-${{ inputs.provider }}
-          path: /tmp/official-catalog-import.json
+          path: |
+            /tmp/official-catalog-import.json
+            /tmp/official-catalog-idempotence.json
+            /tmp/official-catalog-manifest-repository.json
+            /tmp/official-catalog-manifest-parity.json
+            /tmp/catalog-operational-coverage.json

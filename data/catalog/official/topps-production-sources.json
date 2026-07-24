@@ -186,7 +186,20 @@
       "source_type": "TOPPS_OFFICIAL_CHECKLIST",
       "category": "soccer",
       "minimum_card_count": 200,
-      "required_records": []
+      "required_records": [
+        {
+          "card_number": "106",
+          "subject": "Ricardo",
+          "product": "Topps Chrome UEFA Club Competitions",
+          "set_or_insert": "VETERANS AND ROOKIES"
+        },
+        {
+          "checklist_code": "BLA-P",
+          "subject": "Pedri",
+          "product": "Topps Chrome UEFA Club Competitions",
+          "set_or_insert": "BLACK LAZER AUTOGRAPHS"
+        }
+      ]
     }
   ]
 }
