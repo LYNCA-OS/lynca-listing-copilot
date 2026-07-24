@@ -59,7 +59,30 @@ function valuesMatch(field, expected, actual) {
   return leftParts.every((part) => rightParts.includes(part));
 }
 
+function anyValueMatches(field, expected, values = []) {
+  return (Array.isArray(values) ? values : [values]).some((value) => valuesMatch(field, expected, value));
+}
+
+function fieldLineage(result, field) {
+  return (Array.isArray(result?.evaluation_decision_trace_packet?.field_lineage)
+    ? result.evaluation_decision_trace_packet.field_lineage
+    : []).find((entry) => entry?.field === field) || null;
+}
+
 function retrievalMatches(result, field, expected) {
+  const lineage = fieldLineage(result, field);
+  if (lineage) {
+    return (Array.isArray(lineage.retrieval?.decisions) ? lineage.retrieval.decisions : []).flatMap((decision) => (
+      valuesMatch(field, expected, decision.value) ? [{
+        candidate_id: clean(decision.candidate_id),
+        selected: decision.selected === true,
+        decision: clean(decision.action).toUpperCase(),
+        reason: clean(decision.reason),
+        applied_to_final: decision.action === "APPLY",
+        supported_final: decision.action === "SUPPORT"
+      }] : []
+    ));
+  }
   const trace = result?.l2_candidate_debug || {};
   const selectedId = clean(trace.selected_candidate_id);
   const decisions = Array.isArray(trace?.retrieval_application?.decisions)
@@ -107,11 +130,15 @@ export function analyzeSemStageLoss(report = {}) {
       const value = expectedProjection.sem?.[field];
       if (!normalizeGoldenSemValue(field, value)) continue;
       const retrieval = retrievalMatches(result, field, value);
+      const lineage = fieldLineage(result, field);
+      const lineageObservation = lineage?.normalization?.values || [];
+      const lineageResolved = lineage?.resolver?.values || [];
+      const lineageFinal = lineage?.final_title_span?.matched_values || [];
       const classification = classifyField({
         expected: { field, value },
-        observation: observationSem[field],
-        resolved: resolvedSem[field],
-        final: finalProjection.sem?.[field],
+        observation: anyValueMatches(field, value, lineageObservation) ? value : observationSem[field],
+        resolved: anyValueMatches(field, value, lineageResolved) ? value : resolvedSem[field],
+        final: anyValueMatches(field, value, lineageFinal) ? value : finalProjection.sem?.[field],
         retrieval
       });
       rows.push({

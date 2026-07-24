@@ -89,6 +89,13 @@ function classifyMissing(row, packet) {
   // are not raw Provider contract fields, so absence of a same-named Provider
   // key must never be reported as a Provider observation miss.
   if (DERIVED_SEM_FIELDS.has(row.field)) return "DERIVED_SEM_NOT_EMITTED";
+  const lineage = (Array.isArray(packet.field_lineage) ? packet.field_lineage : [])
+    .find((entry) => entry?.field === row.field);
+  if (lineage) {
+    if (!Array.isArray(lineage.provider?.values) || lineage.provider.values.length === 0) return "PROVIDER_NOT_OBSERVED";
+    if (!Array.isArray(lineage.normalization?.values) || lineage.normalization.values.length === 0) return "NORMALIZATION_DROPPED";
+    return "CATALOG_NOT_RETRIEVED";
+  }
   if (!hasAlias(packetFields(packet, "provider_observation_fields"), row.field)) return "PROVIDER_NOT_OBSERVED";
   if (!hasAlias(packetFields(packet, "normalization.output"), row.field)) return "NORMALIZATION_DROPPED";
   return "CATALOG_NOT_RETRIEVED";
