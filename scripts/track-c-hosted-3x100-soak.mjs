@@ -53,10 +53,6 @@ async function select(table, query) {
   return (await rest(`${table}?${query}`, { prefer: "count=exact" })).value || [];
 }
 
-async function remove(table, query) {
-  return rest(`${table}?${query}`, { method: "DELETE", prefer: "return=minimal" });
-}
-
 async function createHostedVerifiedAsset(tenantId) {
   const assetId = `asset_${crypto.randomUUID()}`;
   const objectPath = `tenants/${tenantId}/listing-assets/2026-07-24/${assetId}/front.jpg`;
@@ -182,23 +178,30 @@ async function drainTenant(tenantId, { simulateResponseLoss = false } = {}) {
 
 async function cleanup(tenantIds) {
   if (!tenantIds.length) return;
-  const encoded = tenantIds.map((id) => `"${id}"`).join(",");
-  const filter = `tenant_id=in.(${encodeURIComponent(encoded)})`;
-  await remove("request_logs", filter);
-  await remove("error_logs", filter);
-  await remove("production_events", filter);
-  await remove("job_attempt_events", filter);
-  await remove("v4_recognition_jobs", filter);
-  await remove("v4_recognition_batches", filter);
-  await remove("v4_recognition_sessions", filter);
-  await rest(`listing_image_verifications?${filter}&canonical_eligible=eq.true`, {
-    method: "PATCH",
-    body: { canonical_eligible: false, object_verified: false },
-    prefer: "return=minimal"
+  const result = await rest("rpc/cleanup_track_c_control_plane_soak", {
+    method: "POST",
+    body: { p_run_id: runId }
   });
-  await remove("listing_image_verifications", filter);
-  await remove("listing_assets", filter);
-  await remove("tenants", `id=in.(${encodeURIComponent(encoded)})`);
+  assert.equal(result.value?.ok, true, "scoped soak cleanup RPC must succeed");
+}
+
+async function residualRowCount(tenantIds) {
+  const encoded = tenantIds.map((id) => `"${id}"`).join(",");
+  const tenantFilter = `tenant_id=in.(${encodeURIComponent(encoded)})`;
+  const idFilter = `id=in.(${encodeURIComponent(encoded)})`;
+  const checks = await Promise.all([
+    select("request_logs", `select=request_id&${tenantFilter}&limit=1`),
+    select("error_logs", `select=id&${tenantFilter}&limit=1`),
+    select("production_events", `select=id&${tenantFilter}&limit=1`),
+    select("job_attempt_events", `select=id&${tenantFilter}&limit=1`),
+    select("v4_recognition_jobs", `select=id&${tenantFilter}&limit=1`),
+    select("v4_recognition_batches", `select=id&${tenantFilter}&limit=1`),
+    select("v4_recognition_sessions", `select=id&${tenantFilter}&limit=1`),
+    select("listing_image_verifications", `select=object_path&${tenantFilter}&limit=1`),
+    select("listing_assets", `select=id&${tenantFilter}&limit=1`),
+    select("tenants", `select=id&${idFilter}&limit=1`)
+  ]);
+  return checks.reduce((sum, rows) => sum + rows.length, 0);
 }
 
 required(supabaseUrl, "SOAK_SUPABASE_URL");
@@ -214,6 +217,7 @@ assert.equal(supabase.hostname.split(".")[0], expectedProjectRef, "dedicated soa
 
 const allTenantIds = [];
 const waveReports = [];
+let capacitySlotBaseline = null;
 try {
   for (let wave = 1; wave <= waveCount; wave += 1) {
     const tenantA = `${runId}_w${wave}_a`;
@@ -280,23 +284,30 @@ try {
     assert.equal(completed.filter((row) => row.canonical_state === "SUCCESS").length, jobsPerWave);
     assert.equal(completed.filter((row) => row.lease_owner || row.lease_expires_at).length, 0);
     assert.ok(completed.every((row) => row.result?.route === "CONTROL_PLANE_SOAK"));
-    assert.ok(completed.some((row) => Number(row.attempt_count) === 2), "retry path must converge");
+    assert.equal(completed.filter((row) => Number(row.attempt_count) === 2).length, 1, "exactly one planned retry must converge");
+    assert.equal(completed.filter((row) => Number(row.attempt_count) === 1).length, jobsPerWave - 1, "unplanned duplicate claims are forbidden");
     const liveSlots = await select("v4_provider_capacity_leases", `select=job_id,lease_owner&job_id=not.is.null&limit=200`);
     assert.equal(liveSlots.filter((row) => String(row.job_id || "").startsWith(runId)).length, 0);
+    const capacitySlots = await select("v4_provider_capacity_leases", "select=provider_id,slot_no,job_id&provider_id=eq.openai_legacy&order=slot_no.asc&limit=200");
+    if (capacitySlotBaseline === null) capacitySlotBaseline = capacitySlots.length;
+    assert.equal(capacitySlots.length, capacitySlotBaseline, "capacity slot rows must not grow between waves");
+    assert.equal(a.duplicateWake.every((item) => item.ok), true, "duplicate wakes must both converge safely");
+    if (wave === 1) assert.equal(a.responseLossObserved, true, "the first wave must exercise response-loss recovery");
     waveReports.push({
       wave,
       jobs: jobsPerWave,
       terminal: completed.length,
       successful: completed.filter((row) => row.status === "L2_READY").length,
-      retry_converged: completed.some((row) => Number(row.attempt_count) === 2),
+      retry_converged: completed.filter((row) => Number(row.attempt_count) === 2).length === 1,
       cross_tenant_claims: 0,
       duplicate_results: 0,
       response_loss_observed: a.responseLossObserved,
-      duplicate_wakes_completed: a.duplicateWake.every((item) => item.ok)
+      duplicate_wakes_completed: a.duplicateWake.every((item) => item.ok),
+      capacity_slot_rows: capacitySlots.length
     });
     await cleanup(tenantIds);
-    const residual = await select("v4_recognition_jobs", `select=id&tenant_id=in.(${encodeURIComponent(tenantIds.map((id) => `"${id}"`).join(","))})&limit=1`);
-    assert.equal(residual.length, 0, "wave cleanup must leave no queued state");
+    const residual = await residualRowCount(tenantIds);
+    assert.equal(residual, 0, "wave cleanup must leave no scoped database state");
   }
 
   const report = {

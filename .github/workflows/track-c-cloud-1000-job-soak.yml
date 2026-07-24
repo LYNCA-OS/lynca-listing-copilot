@@ -8,6 +8,10 @@ on:
       - "lib/listing/v4/jobs/**"
       - "scripts/track-c-1000-job-reliability.test.mjs"
       - "scripts/track-c-postgres-queue-reliability.test.mjs"
+      - "scripts/track-c-control-plane-soak-job.test.mjs"
+      - "scripts/track-c-hosted-3x100-soak.mjs"
+      - "api/v4/listing-job-worker.js"
+      - ".github/workflows/track-c-hosted-3x100-soak.yml"
       - "supabase/config.toml"
       - "supabase/migrations/**"
   pull_request:
@@ -16,6 +20,10 @@ on:
       - "lib/listing/v4/jobs/**"
       - "scripts/track-c-1000-job-reliability.test.mjs"
       - "scripts/track-c-postgres-queue-reliability.test.mjs"
+      - "scripts/track-c-control-plane-soak-job.test.mjs"
+      - "scripts/track-c-hosted-3x100-soak.mjs"
+      - "api/v4/listing-job-worker.js"
+      - ".github/workflows/track-c-hosted-3x100-soak.yml"
       - "supabase/config.toml"
       - "supabase/migrations/**"
   workflow_dispatch:

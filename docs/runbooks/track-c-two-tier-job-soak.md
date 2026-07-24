@@ -37,6 +37,10 @@ Workflow: `track-c-hosted-3x100-soak.yml`
 - Rejects the production Listing hostname and a mismatched Supabase project ref.
 - Runs three sequential waves of 100 `CONTROL_PLANE_SOAK` jobs and cleans each
   wave before starting the next one.
+- Uses the narrowly scoped `cleanup_track_c_control_plane_soak` RPC between
+  waves. It accepts only generated `tc_hosted_*` run ids and refuses any tenant
+  containing a non-soak job or asset; ordinary service-role table permissions
+  remain unchanged.
 - Uses real PostgREST, internal wake, Preview worker, claim/lease, heartbeat,
   retry, completion, event persistence, and network boundaries.
 - `CONTROL_PLANE_SOAK` is not accepted by the public queue normalizer. The
@@ -54,5 +58,6 @@ Required `listing-soak` secrets:
 - `SOAK_VERCEL_AUTOMATION_BYPASS_SECRET` when Preview protection is enabled
 
 The Preview deployment must point at the same dedicated Supabase project and
-use the same worker secret. Never reuse production Supabase or the production
-domain as a fallback.
+use the same worker secret. Apply the branch migrations to that dedicated
+project before dispatching the workflow. Never reuse production Supabase or the
+production domain as a fallback.
