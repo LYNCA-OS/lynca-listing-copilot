@@ -21,6 +21,7 @@ for (const testId of ["writer-title-result", "writer-title-input", "accept-write
 
 assert.match(spec, /\/api\/v4\/listing-feedback/);
 assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
+assert.doesNotMatch(spec, /getByTestId\("writer-persistence-status"\).*toBeVisible/);
 assert.match(spec, /deployment_id/);
 assert.equal([...spec.matchAll(/baseURL: baseUrl/g)].length, 2, "both browser contexts must use the normalized production base URL");
 assert.doesNotMatch(spec, /\{\s*baseURL\s*[,}]/, "undefined baseURL shorthand must never reach production E2E");
