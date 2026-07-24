@@ -10,6 +10,11 @@ import {
   evaluationItemSetSha256,
   normalizeEvaluationSampleMode
 } from "../lib/listing/evaluation/sample-policy.mjs";
+import {
+  applyRecognitionBenchmarkProfile,
+  exactReplayPhases,
+  recognitionBenchmarkProfileIds
+} from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -46,6 +51,29 @@ export function numberArg(argv, name, fallback) {
 
 function hasFlag(argv, name) {
   return argv.includes(name);
+}
+
+export function recognitionBenchmarkCliOptions(argv = []) {
+  const rawProfile = cleanText(argValue(argv, "--benchmark-profile", "")).toLowerCase();
+  const aliases = new Map([
+    ["cold", recognitionBenchmarkProfileIds.COLD_ALGORITHM],
+    ["cold-algorithm", recognitionBenchmarkProfileIds.COLD_ALGORITHM],
+    ["exact-replay", recognitionBenchmarkProfileIds.EXACT_REPLAY],
+    ["production", recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD]
+  ]);
+  const profile = aliases.get(rawProfile) || rawProfile;
+  if (profile && !Object.values(recognitionBenchmarkProfileIds).includes(profile)) {
+    throw new Error(`Unsupported recognition benchmark profile: ${rawProfile}`);
+  }
+  const phase = cleanText(argValue(argv, "--benchmark-phase", "")).toLowerCase() || null;
+  if (profile === recognitionBenchmarkProfileIds.EXACT_REPLAY
+    && !Object.values(exactReplayPhases).includes(phase)) {
+    throw new Error("Exact Replay Benchmark requires --benchmark-phase cold|replay.");
+  }
+  if (profile !== recognitionBenchmarkProfileIds.EXACT_REPLAY && phase) {
+    throw new Error("--benchmark-phase is only valid for Exact Replay Benchmark.");
+  }
+  return { profile, phase };
 }
 
 export function providerDoneHandoffOverride(argv = []) {
@@ -777,9 +805,11 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
+  benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  benchmarkPhase = null,
   coldStartBlind = false
 } = {}) {
-  const providerOptions = {
+  let providerOptions = {
     enable_catalog_assist: true,
     enable_vector_retrieval: true,
     vector_retrieval_mode: "assist",
@@ -809,7 +839,16 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   if (typeof providerDoneHandoff === "boolean") {
     providerOptions.v4_provider_done_capacity_handoff = providerDoneHandoff;
   }
-  if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
+  if (disableIdentityCache) {
+    providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
+      profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
+    });
+  } else if (benchmarkProfile) {
+    providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
+      profile: benchmarkProfile,
+      phase: benchmarkPhase
+    });
+  }
   if (coldStartBlind) {
     providerOptions.cold_start_blind = true;
     providerOptions.enable_cold_start_blind = true;
@@ -1283,6 +1322,8 @@ function sessionL2Summary(statusPayload = {}) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: summary.identity_cache_miss_reason || null,
     provider_call_skipped: summary.provider_call_skipped === true,
+    provider_calls: numberOrNull(summary.provider_calls),
+    recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -1411,6 +1452,8 @@ function jobL2Summary(statusPayload = {}) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: summary.identity_cache_miss_reason || null,
     provider_call_skipped: summary.provider_call_skipped === true,
+    provider_calls: numberOrNull(summary.provider_calls),
+    recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -2027,6 +2070,8 @@ async function runOne({
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
+  benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  benchmarkPhase = null,
   coldStartBlind = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
@@ -2063,6 +2108,8 @@ async function runOne({
     ultraFastImageDetail,
     ultraFastServiceTier,
     disableIdentityCache,
+    benchmarkProfile,
+    benchmarkPhase,
     coldStartBlind
   });
   const prewarmPromise = prewarm
@@ -2477,6 +2524,8 @@ async function runOne({
       identity_cache_read_bypassed: l2.summary?.identity_cache_read_bypassed === true,
       identity_cache_miss_reason: l2.summary?.identity_cache_miss_reason || null,
       provider_call_skipped: l2.summary?.provider_call_skipped === true,
+      provider_calls: numberOrNull(l2.summary?.provider_calls),
+      recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
       cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
       identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
       identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
@@ -2721,6 +2770,8 @@ async function runOne({
     identity_cache_read_bypassed: l2.summary?.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: l2.summary?.identity_cache_miss_reason || null,
     provider_call_skipped: l2.summary?.provider_call_skipped === true,
+    provider_calls: numberOrNull(l2.summary?.provider_calls),
+    recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
     cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
@@ -2769,6 +2820,8 @@ async function enqueueSpeculativeItem({
   ultraFastImageDetail,
   ultraFastServiceTier,
   disableIdentityCache,
+  benchmarkProfile,
+  benchmarkPhase,
   coldStartBlind,
   usePreingestion,
   preingestionSource,
@@ -2806,6 +2859,8 @@ async function enqueueSpeculativeItem({
       ultraFastImageDetail,
       ultraFastServiceTier,
       disableIdentityCache,
+      benchmarkProfile,
+      benchmarkPhase,
       coldStartBlind
     });
     const prewarmPromise = prewarm
@@ -3286,6 +3341,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: summary.identity_cache_miss_reason || null,
     provider_call_skipped: summary.provider_call_skipped === true,
+    provider_calls: numberOrNull(summary.provider_calls),
+    recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -4491,6 +4548,8 @@ export async function runV4EbaySmoke({
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
+  benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  benchmarkPhase = null,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
@@ -4662,6 +4721,8 @@ export async function runV4EbaySmoke({
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
+          benchmarkProfile,
+          benchmarkPhase,
           coldStartBlind,
           usePreingestion,
           preingestionSource,
@@ -4740,6 +4801,8 @@ export async function runV4EbaySmoke({
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
+          benchmarkProfile,
+          benchmarkPhase,
           coldStartBlind,
           usePreingestion,
           preingestionSource,
@@ -4851,7 +4914,10 @@ export async function runV4EbaySmoke({
     provider_done_capacity_handoff_override: providerDoneHandoff,
     ultra_fast_image_detail: ultraFastL2 === true ? ultraFastImageDetail : null,
     ultra_fast_service_tier: ultraFastL2 === true ? ultraFastServiceTier || null : null,
-    identity_cache_disabled: disableIdentityCache,
+    identity_cache_disabled: disableIdentityCache || benchmarkProfile === recognitionBenchmarkProfileIds.COLD_ALGORITHM,
+    recognition_benchmark_profile: benchmarkProfile
+      || (disableIdentityCache ? recognitionBenchmarkProfileIds.COLD_ALGORITHM : recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD),
+    recognition_benchmark_phase: benchmarkPhase,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
     speculative_mode: speculative,
@@ -4938,6 +5004,10 @@ export async function hydrateV4SmokeReport({
 
 export async function main(argv = process.argv, env = process.env) {
   const stamp = nowStamp();
+  const benchmark = recognitionBenchmarkCliOptions(argv);
+  if (hasFlag(argv, "--disable-identity-cache") && benchmark.profile) {
+    throw new Error("Use either --disable-identity-cache or --benchmark-profile, not both.");
+  }
   const outPath = argValue(argv, "--out", `data/eval/workflow-sidecar-smoke/v4-ebay-smoke-${stamp}.json`);
   const report = await runV4EbaySmoke({
     datasetPath: argValue(argv, "--dataset", env.V4_EBAY_SMOKE_DATASET || "data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json"),
@@ -4960,6 +5030,8 @@ export async function main(argv = process.argv, env = process.env) {
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
     ultraFastServiceTier: cleanText(argValue(argv, "--ultra-service-tier", "")).toLowerCase(),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
+    benchmarkProfile: benchmark.profile || recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+    benchmarkPhase: benchmark.phase,
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     preingestionSource: cleanText(argValue(argv, "--preingestion-source", "v4_ebay_smoke_preingestion")),
     speculative: hasFlag(argv, "--speculative"),

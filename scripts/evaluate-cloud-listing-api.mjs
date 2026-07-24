@@ -12,6 +12,10 @@ import {
   externalRetrievalTraceFromResult,
   focusedCropMetricsFromResult
 } from "../lib/listing/cold-start/cold-start-policy.mjs";
+import {
+  applyRecognitionBenchmarkProfile,
+  recognitionBenchmarkProfileIds
+} from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 
 const defaultDatasetPath = "data/recognition/manifests/supabase-feedback-candidates.json";
 const defaultOutPath = "data/eval/provider-regression-30/cloud-listing-api-latest.json";
@@ -401,7 +405,7 @@ function providerOptionsForMode(providerMode, {
     env.CLOUD_LISTING_API_VECTOR_QUERY_TIMEOUT_MS || env.VECTOR_QUERY_TIMEOUT_MS,
     20000
   );
-  return {
+  return applyRecognitionBenchmarkProfile({
     provider_mode: providerMode,
     provider_eval_mode: providerMode,
     evaluation_profile: retrievalAblation ? "retrieval_application_ablation_v1" : "legacy_cloud_eval",
@@ -458,7 +462,7 @@ function providerOptionsForMode(providerMode, {
     enable_gpt_failure_fallback: false,
     enable_gpt_provider_failure_fallback: false,
     enable_gpt_critical_verifier: false
-  };
+  }, { profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM });
 }
 
 function titleReferencePolicyForItem(item = {}, referenceTitle = "", providerOptions = {}) {

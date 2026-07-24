@@ -72,9 +72,10 @@ On an exact verified image-content match:
 - source/provider: `internal_identity_result_cache`
 
 The v3 key is global for identical verified image content and requires an exact
-version-vector match. The vector contains the verified image-generation hash, model revision, prompt
-revision, SEM version, candidate policy version, catalog snapshot version, and
-renderer version. A stale row is reported as `cached_result_version_mismatch`
+pipeline-fingerprint match. Each decision owner publishes its version into the single
+`recognition_pipeline_fingerprint`, including provider/OCR, Evidence and normalization,
+Resolver, Route Planner, exact-anchor, crop, vector, worker, SEM, candidate policy,
+catalog, Renderer, and title profile. A stale row is reported as `cached_result_version_mismatch`
 and falls through to recognition; it is never returned as current L2. Each
 request still owns its tenant-local asset, queue, session, and audit records;
 only the anonymous card result is shared. In-flight request coalescing remains
@@ -88,9 +89,22 @@ Runtime telemetry is explicit on both hit and miss paths:
 - `provider_call_skipped`
 - `cached_result_version_match`
 
-`LISTING_CATALOG_SNAPSHOT_VERSION` is the preferred catalog invalidation knob.
-When absent, the existing lookup-cache revision plus deployment commit SHA is
-used so checked-in catalog changes invalidate old entries automatically.
+Evaluation uses three non-interchangeable profiles:
+
+- `cold_algorithm_benchmark`: disables cache read/write, approved memory, writer-final replay,
+  and in-flight replay; every completed card must report exactly one provider call.
+- `exact_replay_benchmark`: cold phase writes once, replay phase reads once; the replay must use
+  zero provider calls and preserve the exact title and canonical Resolver state.
+- `production_workload_benchmark`: leaves production reuse enabled and reports the observed hit rate.
+
+Exact-result authority is fixed as `WRITER_FINAL_REPLAY`, then
+`APPROVED_IDENTITY_MEMORY`, then `AI_TERMINAL_L2_REPLAY`, then full recognition.
+AI terminal replay is idempotence only: it is never identity truth, training eligible, or
+catalog-promotion eligible.
+
+Catalog invalidation is automatic. Committed decision changes on active catalog tables
+advance `listing_active_catalog_snapshot.content_revision`; no environment knob or manual
+cache bump is accepted. No-op update statements do not advance the revision.
 
 This helps the low-cost target for duplicate or repeated upload workflows, while preserving the original identity-resolution trace for audit and replay.
 
@@ -103,7 +117,6 @@ Environment toggles:
 - `LISTING_IDENTITY_CACHE_WRITE_ENABLED`
 - `LISTING_IDENTITY_CACHE_WRITE_RESOLVED`
 - `LISTING_IDENTITY_CACHE_TTL_DAYS`
-- `LISTING_CATALOG_SNAPSHOT_VERSION`
 
 Recommended rollout:
 

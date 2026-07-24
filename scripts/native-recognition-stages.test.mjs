@@ -28,11 +28,20 @@ const cacheHit = await tryExactIdentityFastFinal({
 });
 assert.equal(cacheHit.trace.stage_id, nativeRecognitionStageIds.TRY_EXACT_IDENTITY_FAST_FINAL);
 assert.equal(cacheHit.trace.status, "COMPLETED");
-assert.deepEqual(cacheHit.trace.reason_codes, ["IDENTITY_RESULT_CACHE"]);
+assert.deepEqual(cacheHit.trace.reason_codes, ["AI_TERMINAL_L2_REPLAY"]);
 assert.equal(cacheHit.output.result.final_title, "Cached L2");
 assert.equal(cacheHit.output.provider_call_skipped, true);
 assert.equal(Object.isFrozen(cacheHit.output), true);
 assert.equal(Object.isFrozen(cacheHit.output.result), true);
+
+const writerFinal = await tryExactIdentityFastFinal({
+  payload,
+  lookupWriterFinalReplay: async () => ({ final_title: "Writer Final" }),
+  lookupApprovedMemory: async () => ({ final_title: "Approved Memory" }),
+  lookupIdentityCache: async () => ({ result: { final_title: "Cached L2" } })
+});
+assert.deepEqual(writerFinal.trace.reason_codes, ["WRITER_FINAL_REPLAY"]);
+assert.equal(writerFinal.output.result.final_title, "Writer Final");
 
 const original = { nested: { value: 1 } };
 const prepared = await prepareEvidenceSnapshot({

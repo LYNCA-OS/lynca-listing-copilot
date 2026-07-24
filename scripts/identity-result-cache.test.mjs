@@ -10,6 +10,14 @@ import {
   readIdentityResultCacheRecord,
   saveIdentityResultCacheRecord
 } from "../lib/listing/cache/identity-result-cache.mjs";
+import { writerFinalReplayRecordToListingResult } from "../lib/listing/cache/writer-final-replay.mjs";
+import {
+  applyRecognitionBenchmarkProfile,
+  assertExactReplayBenchmarkPair,
+  exactReplayPhases,
+  recognitionBenchmarkProfileIds,
+  summarizeProductionWorkloadBenchmark
+} from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.SUPABASE_URL = "https://supabase.test";
@@ -82,7 +90,8 @@ const payload = {
   mode: "single",
   images,
   resolutionMap: {},
-  maxTitleLength: 80
+  maxTitleLength: 80,
+  active_catalog_snapshot_revision: "catalog-revision-test-1"
 };
 const secondImages = images.map((image) => ({
   ...image,
@@ -106,11 +115,13 @@ assert.match(key.cache_key, /^[0-9a-f]{64}$/);
 assert.match(key.image_generation_hash, /^[0-9a-f]{64}$/);
 assert.match(key.version_fingerprint, /^[0-9a-f]{64}$/);
 assert.equal(key.tenant_id, tenantId);
-assert.equal(key.result_version.model_revision, "gpt-4.1-mini-2025-04-14");
-assert.equal(key.result_version.sem_version, "linear-cos-10-23-v25");
-assert.equal(key.result_version.renderer_version, "renderer-v3-scg");
+assert.equal(key.result_version.owner_versions.provider.model_revision, "gpt-4.1-mini-2025-04-14");
+assert.equal(key.result_version.owner_versions.sem, "linear-cos-10-23-v25");
+assert.equal(key.result_version.owner_versions.renderer, "renderer-v3-scg");
+assert.equal(key.result_version.owner_versions.catalog, "catalog-revision-test-1");
+assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
 
-const noTenantKey = buildIdentityResultCacheKey({ images });
+const noTenantKey = buildIdentityResultCacheKey({ ...payload, tenant_id: "" });
 assert.equal(noTenantKey.ok, true);
 assert.equal(noTenantKey.cache_key, key.cache_key);
 assert.notEqual(
@@ -119,9 +130,9 @@ assert.notEqual(
   "unfinished in-flight results remain tenant scoped"
 );
 
-const catalogRevisionKey = buildIdentityResultCacheKey(payload, {
-  ...process.env,
-  LISTING_CATALOG_SNAPSHOT_VERSION: "catalog-snapshot-test-v2"
+const catalogRevisionKey = buildIdentityResultCacheKey({
+  ...payload,
+  active_catalog_snapshot_revision: "catalog-revision-test-2"
 });
 assert.notEqual(catalogRevisionKey.cache_key, key.cache_key);
 assert.notEqual(catalogRevisionKey.version_fingerprint, key.version_fingerprint);
@@ -228,6 +239,7 @@ assert.equal(built.row.cache_key, key.cache_key);
 assert.equal(Object.hasOwn(built.row, "tenant_id"), false);
 assert.equal(built.row.image_generation_hash, key.image_generation_hash);
 assert.equal(built.row.version_fingerprint, key.version_fingerprint);
+assert.equal(built.row.recognition_pipeline_fingerprint, key.recognition_pipeline_fingerprint);
 assert.deepEqual(built.row.result_version, key.result_version);
 assert.equal(built.row.identity_status, "CONFIRMED");
 assert.equal(built.row.image_fingerprints.length, 2);
@@ -235,7 +247,7 @@ assert.equal(built.row.image_fingerprints.every((item) => !Object.hasOwn(item, "
 assert.equal(built.row.final_title, confirmedResult.final_title);
 assert.equal(built.row.resolution_trace.length, 0);
 assert.deepEqual(built.row.evidence_snapshot, {});
-assert.equal(built.row.identity_resolution, null);
+assert.deepEqual(built.row.field_states, confirmedResult.field_states);
 assert.doesNotMatch(JSON.stringify(built.row), /tenant-cache|listing-assets|signedUrl|signed_url|asset_222/);
 
 const cachedResult = identityResultCacheRecordToListingResult({
@@ -249,6 +261,8 @@ assert.equal(cachedResult.identity_cache.cache_hit, true);
 assert.equal(cachedResult.identity_cache.provider_call_skipped, true);
 assert.equal(cachedResult.identity_cache.cached_result_version_match, true);
 assert.equal(cachedResult.identity_cache.cache_scope, "global_verified_content");
+assert.equal(cachedResult.replay.replay_class, "TERMINAL_L2_IDEMPOTENT");
+assert.equal(cachedResult.replay.identity_truth, false);
 assert.equal(Object.hasOwn(cachedResult.identity_cache, "tenant_id"), false);
 assert.equal(cachedResult.usage.provider_calls, 0);
 assert.equal(cachedResult.usage.recognition_worker_calls, 0);
@@ -302,6 +316,8 @@ globalThis.fetch = async (url, options = {}) => {
     return jsonResponse([built.row]);
   }
 
+  if (table === "listing_writer_final_replay") return jsonResponse([]);
+
   throw new Error(`Unexpected remote call: ${requestUrl.href}`);
 };
 
@@ -354,6 +370,10 @@ assert.equal(response.body.identity_cache.cache_hit, true);
 assert.equal(response.body.identity_cache.provider_call_skipped, true);
 assert.equal(response.body.identity_cache.cached_result_version_match, true);
 assert.equal(response.body.identity_cache.cache_scope, "global_verified_content");
+assert.equal(response.body.replay_class, "TERMINAL_L2_IDEMPOTENT");
+assert.equal(response.body.training_eligible, false);
+assert.equal(response.body.catalog_promotion_eligible, false);
+assert.equal(response.body.identity_truth, false);
 assert.equal(Object.hasOwn(response.body.identity_cache, "tenant_id"), false);
 assert.equal(response.body.identity_cache.cache_key, key.cache_key);
 assert.equal(response.body.asset_id, secondAssetId);
@@ -363,8 +383,69 @@ assert.match(response.body.final_title, /2025 Topps Chrome Cooper Flagg/);
 assert.deepEqual(fetchCalls.map((call) => call.table), [
   "listing_image_verifications",
   "listing_image_verifications",
+  "listing_writer_final_replay",
   "listing_identity_resolution_cache"
 ]);
+
+const coldOptions = applyRecognitionBenchmarkProfile({}, {
+  profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
+});
+assert.equal(coldOptions.disable_identity_result_cache_read, true);
+assert.equal(coldOptions.disable_identity_result_cache_write, true);
+assert.equal(coldOptions.disable_approved_identity_memory, true);
+assert.equal(coldOptions.disable_writer_final_replay, true);
+assert.equal(coldOptions.disable_identity_inflight_replay, true);
+
+const exactColdOptions = applyRecognitionBenchmarkProfile({}, {
+  profile: recognitionBenchmarkProfileIds.EXACT_REPLAY,
+  phase: exactReplayPhases.COLD
+});
+assert.equal(exactColdOptions.disable_identity_result_cache_read, true);
+assert.equal(exactColdOptions.disable_identity_result_cache_write, false);
+assert.equal(applyRecognitionBenchmarkProfile({}, {
+  profile: recognitionBenchmarkProfileIds.EXACT_REPLAY,
+  phase: exactReplayPhases.REPLAY
+}).disable_identity_result_cache_write, true);
+
+const exactCold = {
+  final_title: confirmedResult.final_title,
+  resolved: confirmedResult.resolved,
+  field_states: confirmedResult.field_states,
+  identity_resolution_status: "CONFIRMED",
+  ambiguity_status: "CONFIRMED",
+  identity_cache: { cache_hit: false, provider_call_skipped: false },
+  usage: { provider_calls: 1 }
+};
+const exactReplay = {
+  ...exactCold,
+  identity_cache: { cache_hit: true, provider_call_skipped: true },
+  usage: { provider_calls: 0 }
+};
+assert.equal(assertExactReplayBenchmarkPair(exactCold, exactReplay), true);
+assert.deepEqual(summarizeProductionWorkloadBenchmark([exactCold, exactReplay]), {
+  profile: recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  sample_count: 2,
+  identity_cache_hit_count: 1,
+  identity_cache_hit_rate: 0.5,
+  provider_calls: 1
+});
+
+const writerReplay = writerFinalReplayRecordToListingResult({
+  record: {
+    image_generation_hash: "a".repeat(64),
+    writer_final_title: "2025 Topps Chrome Cooper Flagg Gold /50",
+    resolved_fields: { year: "2025", players: ["Cooper Flagg"] },
+    field_states: [{ field: "year", status: "RESOLVED" }],
+    identity_status: "RESOLVED",
+    ambiguity_status: "RESOLVED"
+  },
+  payload
+});
+assert.equal(writerReplay.replay_class, "WRITER_FINAL_REPLAY");
+assert.equal(writerReplay.usage.provider_calls, 0);
+assert.equal(writerReplay.training_eligible, false);
+assert.equal(writerReplay.catalog_promotion_eligible, false);
+assert.equal(writerReplay.identity_truth, false);
 
 const migration = await readFile("supabase/migrations/20260623_listing_identity_result_cache.sql", "utf8");
 assert.match(migration, /create table if not exists public\.listing_identity_resolution_cache/i);
@@ -390,5 +471,14 @@ const globalScopeMigration = await readFile("supabase/migrations/20260724224500_
 assert.match(globalScopeMigration, /drop column if exists tenant_id cascade/i);
 assert.match(globalScopeMigration, /listing_identity_resolution_cache_global_generation_version_idx/i);
 assert.match(globalScopeMigration, /Tenant ids, object paths, signed URLs, asset ids, and user data are forbidden/i);
+
+const guardMigration = await readFile("supabase/migrations/20260724235000_recognition_pipeline_cache_guards_v1.sql", "utf8");
+assert.match(guardMigration, /listing_active_catalog_snapshot/i);
+assert.match(guardMigration, /bump_active_catalog_snapshot_revision/i);
+assert.match(guardMigration, /referencing old table as old_rows new table as new_rows/i);
+assert.match(guardMigration, /except all/i);
+assert.match(guardMigration, /listing_writer_final_replay/i);
+assert.match(guardMigration, /training_eligible boolean not null default false/i);
+assert.match(guardMigration, /sync_writer_final_replay_from_session/i);
 
 console.log("identity result cache tests passed");

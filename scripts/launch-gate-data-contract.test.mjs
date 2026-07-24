@@ -318,6 +318,9 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
     provider_prompt_mode: "v4_compact_l2",
     identity_cache_hit: false,
     identity_cache_read_bypassed: true,
+    provider_call_skipped: false,
+    provider_calls: 1,
+    recognition_benchmark_profile: "cold_algorithm_benchmark",
     vector_self_exclusion_query_attempted: true,
     vector_self_exclusion_filter_active: true,
     vector_self_exclusion_requested_source_count: 1,
@@ -524,6 +527,7 @@ try {
     preparation_concurrency: 3,
     submission_concurrency: 2,
     identity_cache_disabled: true,
+    recognition_benchmark_profile: "cold_algorithm_benchmark",
     ultra_fast_l2: false
   });
   assert.deepEqual(launchGateAccuracyContract, {

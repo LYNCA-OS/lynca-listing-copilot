@@ -476,6 +476,10 @@ function providerRuntimeSummary(result = {}) {
     provider_calls: Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
       ? Math.trunc(reportedProviderCalls)
       : null,
+    recognition_benchmark_profile: result.recognition_benchmark_profile || null,
+    recognition_benchmark_phase: result.recognition_benchmark_phase || null,
+    identity_resolution_status: result.identity_resolution_status || null,
+    ambiguity_status: result.ambiguity_status || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
     identity_cache_read_bypassed: result.identity_cache?.read_bypassed === true,
     identity_cache_miss_reason: result.identity_cache?.miss_reason || null,
@@ -483,6 +487,9 @@ function providerRuntimeSummary(result = {}) {
     cached_result_version_match: result.identity_cache?.cached_result_version_match ?? null,
     identity_cache_scope: result.identity_cache?.cache_scope || null,
     identity_cache_version_fingerprint: result.identity_cache?.version_fingerprint || null,
+    recognition_pipeline_fingerprint: result.identity_cache?.recognition_pipeline_fingerprint
+      || result.identity_cache?.version_fingerprint
+      || null,
     identity_cache_image_generation_hash: result.identity_cache?.image_generation_hash || null,
     identity_cache_write_reason: result.identity_cache?.write_reason || null,
     native_core_stage_trace: Array.isArray(result.native_core_stage_trace) ? result.native_core_stage_trace : [],

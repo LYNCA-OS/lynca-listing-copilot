@@ -24,6 +24,7 @@ import {
   attachReviewedTitleSemProjection,
   reviewedTitleSemAcceptanceThreshold
 } from "../lib/listing/evaluation/reviewed-title-sem-projection.mjs";
+import { recognitionBenchmarkProfileIds } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 
 export const launchGateExecutionContract = Object.freeze({
   model: "gpt-5-mini",
@@ -36,6 +37,7 @@ export const launchGateExecutionContract = Object.freeze({
   preparation_concurrency: 3,
   submission_concurrency: 2,
   identity_cache_disabled: true,
+  recognition_benchmark_profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM,
   ultra_fast_l2: false
 });
 
@@ -855,7 +857,12 @@ export function observedExecutionContractChecks(runReports = []) {
     submission_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.submission_concurrency) === 2),
     provider_concurrency_locked: reports.length > 0 && reports.every((report) => Number(report.provider_concurrency) === 2),
     identity_cache_disabled: reports.length > 0 && reports.every((report) => report.identity_cache_disabled === true),
+    benchmark_profile_locked: results.length > 0 && results.every((result) => (
+      result.recognition_benchmark_profile === recognitionBenchmarkProfileIds.COLD_ALGORITHM
+    )),
     identity_cache_never_hit: results.length > 0 && results.every((result) => result.identity_cache_hit !== true),
+    provider_call_never_skipped: results.length > 0 && results.every((result) => result.provider_call_skipped !== true),
+    provider_calls_exactly_one: results.length > 0 && results.every((result) => Number(result.provider_calls) === 1),
     // Preparation failures and exact-anchor finalizations never enter the
     // provider stage, so they cannot truthfully emit provider-only fields.
     identity_cache_read_bypassed: cacheBypassObservations.every((result) => result.identity_cache_read_bypassed === true),
