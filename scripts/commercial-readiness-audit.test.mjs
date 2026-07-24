@@ -228,6 +228,7 @@ assert.equal(byId.identity_result_cache.status, "passed");
 assert.equal(byId.identity_result_cache.details.table, "listing_identity_resolution_cache");
 assert.equal(byId.identity_result_cache.details.read_enabled, true);
 assert.equal(byId.identity_result_cache.details.write_enabled, false);
+assert.equal(byId.identity_result_cache.details.terminal_l2_abstain_replay_enabled, true);
 assert.equal(byId.identity_result_cache.details.training_table, false);
 assert.equal(byId.identity_result_cache.details.stores_signed_urls, false);
 assert.deepEqual(byId.identity_result_cache.details.failures, []);

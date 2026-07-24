@@ -163,7 +163,12 @@ const confirmedResult = {
   }
 };
 assert.equal(isCacheableIdentityResult(confirmedResult).ok, true);
-assert.equal(isCacheableIdentityResult({ ...confirmedResult, identity_resolution_status: "ABSTAIN" }).ok, false);
+assert.equal(isCacheableIdentityResult({ ...confirmedResult, identity_resolution_status: "ABSTAIN" }).ok, true);
+assert.equal(isCacheableIdentityResult({
+  ...confirmedResult,
+  identity_resolution_status: "ABSTAIN",
+  ambiguity_status: "AMBIGUOUS"
+}).reason, "ambiguity_status_ambiguous");
 assert.equal(isCacheableIdentityResult({ ...confirmedResult, identity_resolution_status: "RESOLVED" }).reason, "resolved_cache_write_disabled");
 
 const built = identityResultToCacheRow({
@@ -320,5 +325,9 @@ assert.match(versionMigration, /add column if not exists image_generation_hash t
 assert.match(versionMigration, /add column if not exists version_fingerprint text/i);
 assert.match(versionMigration, /add column if not exists result_version jsonb/i);
 assert.match(versionMigration, /listing_identity_resolution_cache_generation_version_idx/i);
+
+const terminalL2Migration = await readFile("supabase/migrations/20260724_listing_identity_cache_terminal_l2.sql", "utf8");
+assert.match(terminalL2Migration, /drop constraint if exists listing_identity_resolution_cache_identity_status_check/i);
+assert.match(terminalL2Migration, /identity_status in \('CONFIRMED', 'RESOLVED', 'ABSTAIN'\)/i);
 
 console.log("identity result cache tests passed");
