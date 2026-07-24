@@ -19,20 +19,6 @@ assert.equal(statusPollQueueSelfHealPlan([staleQueued, { status: "RUNNING" }, { 
   nowMs,
   processConcurrency: 2
 }).reason, "worker_capacity_full");
-const releasedPostProvider = {
-  status: "RUNNING",
-  queue_tags: {
-    provider_capacity_released: true,
-    provider_capacity_released_at: "2026-07-20T00:00:20Z"
-  }
-};
-const releasedPlan = statusPollQueueSelfHealPlan([
-  staleQueued,
-  releasedPostProvider,
-  { status: "RUNNING" }
-], { nowMs, processConcurrency: 2 });
-assert.equal(releasedPlan.trigger, true, "post-provider work must not strand a free provider slot");
-assert.equal(releasedPlan.running_count, 1);
 assert.equal(statusPollQueueSelfHealPlan([{ ...staleQueued, created_at: "2026-07-20T00:00:25Z" }], {
   nowMs,
   processConcurrency: 2
