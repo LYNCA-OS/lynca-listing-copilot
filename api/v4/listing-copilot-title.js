@@ -1112,6 +1112,12 @@ async function persistPipelineResult({
         reason: payload.v4_queue_job_id ? "atomic_writer_ready_capacity_release_disabled" : "not_queue_job",
         release_boundary: "worker_tail"
       };
+    if (writerReadyCapacityRelease.released === true && !writerReadyCapacityRelease.released_at) {
+      writerReadyCapacityRelease = {
+        ...writerReadyCapacityRelease,
+        released_at: new Date().toISOString()
+      };
+    }
     if (writerReadyCapacityRelease.saved === true) {
       sessionUpdate = {
         saved: true,

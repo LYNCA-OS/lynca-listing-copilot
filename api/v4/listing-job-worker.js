@@ -24,6 +24,7 @@ import {
 import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { v4EventRefillContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
+import { buildProviderCapacityTimeline } from "../../lib/listing/v4/jobs/provider-capacity-timeline.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -611,7 +612,10 @@ async function releaseProviderCapacity(job = {}) {
       error: release.error
     }));
   }
-  return release;
+  return {
+    ...release,
+    released_at: release.released === true ? new Date().toISOString() : null
+  };
 }
 
 export default async function handler(req, res) {
@@ -655,6 +659,7 @@ export default async function handler(req, res) {
       job,
       leaseSeconds,
       task: async (leaseHeartbeat, signal) => {
+        const preparationStartedAt = new Date().toISOString();
         let capacityRelease = null;
         let completion = null;
         let attemptUsage = v4ResponseUsage();
@@ -713,6 +718,14 @@ export default async function handler(req, res) {
               timing: {
                 worker_total_ms: result.latency_ms,
                 response_timing: result.response.provider_result?.timing || result.response.module_speed_metrics || null,
+                provider_capacity_timeline: buildProviderCapacityTimeline({
+                  job,
+                  preparationStartedAt,
+                  providerSlotTiming: result.response.provider_result?.provider_slot_timing
+                    || result.response.provider_result_summary?.provider_slot_timing
+                    || null,
+                  providerCapacityReleasedAt: writerReadyCapacityRelease?.released_at || null
+                }),
                 writer_ready_capacity_release: writerReadyCapacityRelease,
                 writer_ready_capacity_refill: writerReadyCapacityRefill,
                 lease_heartbeat: { ...leaseHeartbeat }
@@ -723,6 +736,16 @@ export default async function handler(req, res) {
             return completed;
           })();
           [capacityRelease, completion] = await Promise.all([capacityReleasePromise, completionPromise]);
+          const providerCapacityTimeline = buildProviderCapacityTimeline({
+            job,
+            preparationStartedAt,
+            providerSlotTiming: result.response.provider_result?.provider_slot_timing
+              || result.response.provider_result_summary?.provider_slot_timing
+              || null,
+            providerCapacityReleasedAt: capacityRelease?.released_at
+              || writerReadyCapacityRelease?.released_at
+              || null
+          });
           const postHandlerTailMs = Date.now() - tailStartedAt;
           console.log("[v4_worker_post_handler_tail]", JSON.stringify({
             job_id: job.id || null,
@@ -731,7 +754,8 @@ export default async function handler(req, res) {
             writer_ready_capacity_refill_triggered: writerReadyCapacityRefill?.triggered === true,
             capacity_release_ms: capacityReleaseMs,
             completion_write_ms: completionWriteMs,
-            post_handler_tail_ms: postHandlerTailMs
+            post_handler_tail_ms: postHandlerTailMs,
+            provider_capacity_timeline: providerCapacityTimeline
           }));
           if (completion.saved !== true) {
             const leaseLost = completion.error === "row_not_matched";
@@ -766,6 +790,7 @@ export default async function handler(req, res) {
             completion_write_ms: completionWriteMs,
             post_handler_tail_ms: postHandlerTailMs,
             provider_capacity_released_at_writer_ready: writerReadyCapacityRelease?.released === true,
+            provider_capacity_timeline: providerCapacityTimeline,
             provider_capacity_slot: Number(job.queue_tags?.provider_capacity_slot || 0) || null,
             provider_key_slot: Number(job.queue_tags?.provider_key_slot || 0) || null,
             provider_capacity_released: capacityRelease.released === true,
