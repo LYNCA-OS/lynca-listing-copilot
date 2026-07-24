@@ -36,8 +36,11 @@ The cache may store only:
 - `CONFIRMED` identity results by default.
 - `RESOLVED` identity results only when `LISTING_IDENTITY_CACHE_WRITE_RESOLVED=true`.
 - Completed, non-technical `ABSTAIN` results with a final writer-ready L2 title. Replay preserves the original status and cannot promote identity confidence; structured identity completeness remains a requirement for `CONFIRMED` / `RESOLVED` writes, not for idempotent safe-draft replay.
-- Original `field_states`, `conflict_map`, `confidence_report`, and `resolution_trace`.
-- Object paths and content hashes, not signed URLs.
+- Final title, normalized public card fields, identity status, source provider,
+  and the complete version vector. Original evidence and execution traces stay
+  with their tenant-local request and are not shared.
+- Verified image roles and content hashes, without tenant ids, object paths,
+  asset ids, user data, or signed URLs.
 
 The cache rejects:
 
@@ -68,11 +71,16 @@ On an exact verified image-content match:
 - route: `IDENTITY_RESULT_CACHE`
 - source/provider: `internal_identity_result_cache`
 
-The v2 key is tenant-scoped and requires an exact version-vector match. The
-vector contains the verified image-generation hash, model revision, prompt
-revision, SEM version, candidate policy version, catalog snapshot version, and
-renderer version. A stale row is reported as `cached_result_version_mismatch`
-and falls through to recognition; it is never returned as current L2.
+The v3 key is global for identical verified image content and requires an exact
+pipeline-fingerprint match. Each decision owner publishes its version into the single
+`recognition_pipeline_fingerprint`, including provider/OCR, Evidence and normalization,
+Resolver, Route Planner, exact-anchor, crop, vector, worker, SEM, candidate policy,
+catalog, Renderer, and title profile. A stale row is reported as `cached_result_version_mismatch`
+and falls through to recognition; it is never returned as current L2. Each
+request still owns its tenant-local asset, queue, session, and audit records;
+only the anonymous card result is shared. In-flight request coalescing remains
+tenant-scoped because a running pipeline result has not yet crossed the
+anonymous cache-write boundary.
 
 Runtime telemetry is explicit on both hit and miss paths:
 
@@ -81,9 +89,22 @@ Runtime telemetry is explicit on both hit and miss paths:
 - `provider_call_skipped`
 - `cached_result_version_match`
 
-`LISTING_CATALOG_SNAPSHOT_VERSION` is the preferred catalog invalidation knob.
-When absent, the existing lookup-cache revision plus deployment commit SHA is
-used so checked-in catalog changes invalidate old entries automatically.
+Evaluation uses three non-interchangeable profiles:
+
+- `cold_algorithm_benchmark`: disables cache read/write, approved memory, writer-final replay,
+  and in-flight replay; every completed card must report exactly one provider call.
+- `exact_replay_benchmark`: cold phase writes once, replay phase reads once; the replay must use
+  zero provider calls and preserve the exact title and canonical Resolver state.
+- `production_workload_benchmark`: leaves production reuse enabled and reports the observed hit rate.
+
+Exact-result authority is fixed as `WRITER_FINAL_REPLAY`, then
+`APPROVED_IDENTITY_MEMORY`, then `AI_TERMINAL_L2_REPLAY`, then full recognition.
+AI terminal replay is idempotence only: it is never identity truth, training eligible, or
+catalog-promotion eligible.
+
+Catalog invalidation is automatic. Committed decision changes on active catalog tables
+advance `listing_active_catalog_snapshot.content_revision`; no environment knob or manual
+cache bump is accepted. No-op update statements do not advance the revision.
 
 This helps the low-cost target for duplicate or repeated upload workflows, while preserving the original identity-resolution trace for audit and replay.
 
@@ -96,7 +117,6 @@ Environment toggles:
 - `LISTING_IDENTITY_CACHE_WRITE_ENABLED`
 - `LISTING_IDENTITY_CACHE_WRITE_RESOLVED`
 - `LISTING_IDENTITY_CACHE_TTL_DAYS`
-- `LISTING_CATALOG_SNAPSHOT_VERSION`
 
 Recommended rollout:
 

@@ -502,7 +502,8 @@ const response = await callTitleApi({
   mode: "single",
   images,
   resolutionMap: {},
-  maxTitleLength: 80
+  maxTitleLength: 80,
+  provider_options: { disable_writer_final_replay: true }
 });
 
 assert.equal(response.statusCode, 200);

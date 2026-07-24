@@ -4,12 +4,18 @@ import { basename, dirname, resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { fetchWithBoundedRetry } from "../lib/listing/client/bounded-fetch.mjs";
+import { imageDimensions } from "./materialize-launch-gate-images.mjs";
 import { fairTokenRecall, policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 import {
   assertEvaluationSampleProvenance,
   evaluationItemSetSha256,
   normalizeEvaluationSampleMode
 } from "../lib/listing/evaluation/sample-policy.mjs";
+import {
+  applyRecognitionBenchmarkProfile,
+  exactReplayPhases,
+  recognitionBenchmarkProfileIds
+} from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -46,6 +52,29 @@ export function numberArg(argv, name, fallback) {
 
 function hasFlag(argv, name) {
   return argv.includes(name);
+}
+
+export function recognitionBenchmarkCliOptions(argv = []) {
+  const rawProfile = cleanText(argValue(argv, "--benchmark-profile", "")).toLowerCase();
+  const aliases = new Map([
+    ["cold", recognitionBenchmarkProfileIds.COLD_ALGORITHM],
+    ["cold-algorithm", recognitionBenchmarkProfileIds.COLD_ALGORITHM],
+    ["exact-replay", recognitionBenchmarkProfileIds.EXACT_REPLAY],
+    ["production", recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD]
+  ]);
+  const profile = aliases.get(rawProfile) || rawProfile;
+  if (profile && !Object.values(recognitionBenchmarkProfileIds).includes(profile)) {
+    throw new Error(`Unsupported recognition benchmark profile: ${rawProfile}`);
+  }
+  const phase = cleanText(argValue(argv, "--benchmark-phase", "")).toLowerCase() || null;
+  if (profile === recognitionBenchmarkProfileIds.EXACT_REPLAY
+    && !Object.values(exactReplayPhases).includes(phase)) {
+    throw new Error("Exact Replay Benchmark requires --benchmark-phase cold|replay.");
+  }
+  if (profile !== recognitionBenchmarkProfileIds.EXACT_REPLAY && phase) {
+    throw new Error("--benchmark-phase is only valid for Exact Replay Benchmark.");
+  }
+  return { profile, phase };
 }
 
 export function providerDoneHandoffOverride(argv = []) {
@@ -385,13 +414,13 @@ async function uploadDurableSmokeImage({
 }) {
   const bytes = await readFile(resolve(image.local_path));
   const contentType = inferredImageContentType(image, bytes);
+  const dimensions = Number.isInteger(Number(image.width)) && Number(image.width) > 0
+    && Number.isInteger(Number(image.height)) && Number(image.height) > 0
+    ? { width: Number(image.width), height: Number(image.height) }
+    : imageDimensions(bytes, contentType);
   const contentSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
   const signatureHex = bytes.subarray(0, 32).toString("hex");
-  const width = Number(image.width);
-  const height = Number(image.height);
-  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
-    throw new Error(`smoke_image_dimensions_missing:${image.image_id}`);
-  }
+  const { width, height } = dimensions;
   const fileName = basename(image.local_path) || `${image.image_id}.jpg`;
   const signed = await postJson({
     baseUrl,
@@ -522,9 +551,14 @@ async function uploadDurableSmokeImagesBatch({ baseUrl, cookie, asset, images, r
   const prepared = await Promise.all(images.map(async (image) => {
     const bytes = await readFile(resolve(image.local_path));
     const contentType = inferredImageContentType(image, bytes);
+    const dimensions = Number.isInteger(Number(image.width)) && Number(image.width) > 0
+      && Number.isInteger(Number(image.height)) && Number(image.height) > 0
+      ? { width: Number(image.width), height: Number(image.height) }
+      : imageDimensions(bytes, contentType);
     return {
       image,
       bytes,
+      dimensions,
       contentType,
       contentSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
       signatureHex: bytes.subarray(0, 32).toString("hex"),
@@ -545,8 +579,8 @@ async function uploadDurableSmokeImagesBatch({ baseUrl, cookie, asset, images, r
         fileName: row.fileName,
         contentType: row.contentType,
         size: row.bytes.byteLength,
-        width: Number(row.image.width),
-        height: Number(row.image.height),
+        width: row.dimensions.width,
+        height: row.dimensions.height,
         signatureHex: row.signatureHex,
         contentSha256: row.contentSha256
       }))
@@ -592,8 +626,8 @@ async function uploadDurableSmokeImagesBatch({ baseUrl, cookie, asset, images, r
         objectPath: row.upload.object_path,
         contentType: row.upload.content_type,
         size: row.bytes.byteLength,
-        width: Number(row.image.width),
-        height: Number(row.image.height),
+        width: row.dimensions.width,
+        height: row.dimensions.height,
         signatureHex: row.signatureHex,
         contentSha256: row.contentSha256
       }))
@@ -777,9 +811,11 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
+  benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  benchmarkPhase = null,
   coldStartBlind = false
 } = {}) {
-  const providerOptions = {
+  let providerOptions = {
     enable_catalog_assist: true,
     enable_vector_retrieval: true,
     vector_retrieval_mode: "assist",
@@ -809,7 +845,16 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   if (typeof providerDoneHandoff === "boolean") {
     providerOptions.v4_provider_done_capacity_handoff = providerDoneHandoff;
   }
-  if (disableIdentityCache) providerOptions.disable_identity_result_cache = true;
+  if (disableIdentityCache) {
+    providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
+      profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
+    });
+  } else if (benchmarkProfile) {
+    providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
+      profile: benchmarkProfile,
+      phase: benchmarkPhase
+    });
+  }
   if (coldStartBlind) {
     providerOptions.cold_start_blind = true;
     providerOptions.enable_cold_start_blind = true;
@@ -1283,6 +1328,10 @@ function sessionL2Summary(statusPayload = {}) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: summary.identity_cache_miss_reason || null,
     provider_call_skipped: summary.provider_call_skipped === true,
+    provider_calls: numberOrNull(summary.provider_calls),
+    recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: summary.provider_slot_timing || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -1411,6 +1460,10 @@ function jobL2Summary(statusPayload = {}) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: summary.identity_cache_miss_reason || null,
     provider_call_skipped: summary.provider_call_skipped === true,
+    provider_calls: numberOrNull(summary.provider_calls),
+    recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: summary.provider_slot_timing || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -1718,6 +1771,8 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || row.provider_capacity_stage_handoff || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? row.provider_capacity_slot ?? null,
     provider_key_slot: summary.provider_key_slot ?? row.provider_key_slot ?? null,
+    provider_slot_timing: summary.provider_slot_timing || row.provider_slot_timing || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || row.exact_anchor_fast_final_shadow || null,
     provider_capacity: summary.provider_capacity ?? row.provider_capacity ?? null,
     provider_key_count: summary.provider_key_count ?? row.provider_key_count ?? null,
     provider_key_assignment: summary.provider_key_assignment || row.provider_key_assignment || null,
@@ -2027,6 +2082,8 @@ async function runOne({
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
+  benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  benchmarkPhase = null,
   coldStartBlind = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
@@ -2063,6 +2120,8 @@ async function runOne({
     ultraFastImageDetail,
     ultraFastServiceTier,
     disableIdentityCache,
+    benchmarkProfile,
+    benchmarkPhase,
     coldStartBlind
   });
   const prewarmPromise = prewarm
@@ -2477,6 +2536,10 @@ async function runOne({
       identity_cache_read_bypassed: l2.summary?.identity_cache_read_bypassed === true,
       identity_cache_miss_reason: l2.summary?.identity_cache_miss_reason || null,
       provider_call_skipped: l2.summary?.provider_call_skipped === true,
+      provider_calls: numberOrNull(l2.summary?.provider_calls),
+      recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+      exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
+      provider_slot_timing: l2.summary?.provider_slot_timing || null,
       cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
       identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
       identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
@@ -2721,6 +2784,10 @@ async function runOne({
     identity_cache_read_bypassed: l2.summary?.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: l2.summary?.identity_cache_miss_reason || null,
     provider_call_skipped: l2.summary?.provider_call_skipped === true,
+    provider_calls: numberOrNull(l2.summary?.provider_calls),
+    recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: l2.summary?.provider_slot_timing || null,
     cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
@@ -2769,6 +2836,8 @@ async function enqueueSpeculativeItem({
   ultraFastImageDetail,
   ultraFastServiceTier,
   disableIdentityCache,
+  benchmarkProfile,
+  benchmarkPhase,
   coldStartBlind,
   usePreingestion,
   preingestionSource,
@@ -2806,6 +2875,8 @@ async function enqueueSpeculativeItem({
       ultraFastImageDetail,
       ultraFastServiceTier,
       disableIdentityCache,
+      benchmarkProfile,
+      benchmarkPhase,
       coldStartBlind
     });
     const prewarmPromise = prewarm
@@ -2945,6 +3016,17 @@ export function canonicalBatchIdForPoll(prepared = [], fallbackBatchId = "") {
   // cards atomically; otherwise the status endpoint is queried by job ids.
   if (canonicalIds.length > 1) return null;
   return canonicalIds[0] || cleanText(fallbackBatchId);
+}
+
+export function isRecoverablePreparationFailure(row = {}) {
+  if (row?.job?.job_id) return false;
+  const error = cleanText(row?.error);
+  return [
+    "smoke_upload_verify_failed:",
+    "smoke_storage_put_failed:",
+    "smoke_batch_storage_put_failed:",
+    "smoke_batch_upload_verify_failed:"
+  ].some((prefix) => error.startsWith(prefix));
 }
 
 async function pollBatchJobs({
@@ -3286,6 +3368,10 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
     identity_cache_miss_reason: summary.identity_cache_miss_reason || null,
     provider_call_skipped: summary.provider_call_skipped === true,
+    provider_calls: numberOrNull(summary.provider_calls),
+    recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: summary.provider_slot_timing || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -3367,6 +3453,10 @@ export function attachPostRecognitionScoring(results = [], items = [], sealedLab
       reference_title_is_reviewed_ground_truth: reviewedTitleGroundTruth,
       l1_scoring: scoreTitles(referenceTitle, row.l1_title || ""),
       final_scoring: scoreTitles(referenceTitle, row.final_title || ""),
+      exact_anchor_shadow_scoring: scoreTitles(
+        referenceTitle,
+        row.exact_anchor_fast_final_shadow?.shadow_title || ""
+      ),
       item_web_url: label.item_web_url || null
     };
   });
@@ -3750,6 +3840,60 @@ export function summarizeBatchPositionFairness(results = []) {
   };
 }
 
+export function summarizeProviderSlotIdleGaps(results = []) {
+  const intervals = results.map((item) => {
+    const timing = item.provider_slot_timing || {};
+    const startedAt = Date.parse(timing.started_at || "");
+    const completedAt = Date.parse(timing.completed_at || "");
+    const slot = numberOrNull(item.provider_capacity_slot ?? item.provider_key_slot);
+    return Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt && slot !== null
+      ? { slot: String(slot), started_at_ms: startedAt, completed_at_ms: completedAt }
+      : null;
+  }).filter(Boolean);
+  const grouped = new Map();
+  for (const interval of intervals) {
+    const rows = grouped.get(interval.slot) || [];
+    rows.push(interval);
+    grouped.set(interval.slot, rows);
+  }
+  const allGaps = [];
+  let overlapCount = 0;
+  const slots = Object.fromEntries([...grouped.entries()]
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([slot, rows]) => {
+      rows.sort((left, right) => left.started_at_ms - right.started_at_ms);
+      const gaps = [];
+      let previousEnd = rows[0]?.completed_at_ms ?? null;
+      for (const row of rows.slice(1)) {
+        if (row.started_at_ms < previousEnd) overlapCount += 1;
+        const gap = Math.max(0, row.started_at_ms - previousEnd);
+        gaps.push(gap);
+        allGaps.push(gap);
+        previousEnd = Math.max(previousEnd, row.completed_at_ms);
+      }
+      return [slot, {
+        interval_count: rows.length,
+        idle_gap_count: gaps.length,
+        idle_gap_total_ms: gaps.reduce((sum, value) => sum + value, 0),
+        idle_gap_p50_ms: quantile(gaps, 0.5),
+        idle_gap_p95_ms: quantile(gaps, 0.95),
+        idle_gap_max_ms: quantile(gaps, 1)
+      }];
+    }));
+  return {
+    schema_version: "provider-slot-idle-gap-v1",
+    measured_interval_count: intervals.length,
+    missing_interval_count: Math.max(0, results.length - intervals.length),
+    measured_slot_count: grouped.size,
+    overlap_violation_count: overlapCount,
+    idle_gap_total_ms: allGaps.reduce((sum, value) => sum + value, 0),
+    idle_gap_p50_ms: quantile(allGaps, 0.5),
+    idle_gap_p95_ms: quantile(allGaps, 0.95),
+    idle_gap_max_ms: quantile(allGaps, 1),
+    slots
+  };
+}
+
 export function summarize(results = [], { runWallMs = null } = {}) {
   const l1Raw = results.map((item) => item.l1_scoring?.raw_token_recall);
   const l1Fair = results.map((item) => item.l1_scoring?.fair_token_recall);
@@ -3773,6 +3917,11 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     numberOrNull(item.writer_visible_recognition_ms) !== null
   )).length;
   const batchPositionFairness = summarizeBatchPositionFairness(results);
+  const providerSlotIdleGaps = summarizeProviderSlotIdleGaps(results);
+  const reviewedExactAnchorShadowRows = results.filter((item) => (
+    item.reference_title_is_reviewed_ground_truth === true
+    && item.exact_anchor_fast_final_shadow?.eligible === true
+  ));
   const allPositionMetrics = positionCohortMetrics(results);
   const tenantIsolationMeasured = results.filter((item) => item.tenant_isolation_measured === true);
   const tenantIsolationViolationCount = tenantIsolationMeasured.filter((item) => item.tenant_isolation_valid !== true).length;
@@ -3845,6 +3994,27 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       tenant_service: tenantService
     },
     batch_position_fairness: batchPositionFairness,
+    provider_slot_idle_gaps: providerSlotIdleGaps,
+    exact_anchor_fast_final_shadow: {
+      evaluated_count: results.filter((item) => item.exact_anchor_fast_final_shadow?.evaluated === true).length,
+      eligible_count: results.filter((item) => item.exact_anchor_fast_final_shadow?.eligible === true).length,
+      applied_count: results.filter((item) => item.exact_anchor_fast_final_shadow?.applied === true).length,
+      provider_still_called_for_eligible_count: results.filter((item) => (
+        item.exact_anchor_fast_final_shadow?.eligible === true && Number(item.provider_calls) === 1
+      )).length,
+      reviewed_ground_truth_eligible_count: reviewedExactAnchorShadowRows.length,
+      policy_fair_token_recall_avg: average(reviewedExactAnchorShadowRows.map((item) => (
+        item.exact_anchor_shadow_scoring?.policy_fair_token_recall
+      ))),
+      full_provider_policy_fair_token_recall_avg: average(reviewedExactAnchorShadowRows.map((item) => (
+        item.final_scoring?.policy_fair_token_recall
+      ))),
+      reason_breakdown: results.reduce((counts, item) => {
+        const reason = cleanText(item.exact_anchor_fast_final_shadow?.reason || "missing") || "missing";
+        counts[reason] = (counts[reason] || 0) + 1;
+        return counts;
+      }, {})
+    },
     retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
     retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),
     retry_error_code_breakdown: results.reduce((counts, item) => {
@@ -4491,6 +4661,8 @@ export async function runV4EbaySmoke({
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
   disableIdentityCache = false,
+  benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  benchmarkPhase = null,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
@@ -4662,6 +4834,8 @@ export async function runV4EbaySmoke({
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
+          benchmarkProfile,
+          benchmarkPhase,
           coldStartBlind,
           usePreingestion,
           preingestionSource,
@@ -4679,7 +4853,7 @@ export async function runV4EbaySmoke({
         prepareOne(item, localIndex)
       ));
       const failedIndexes = prepared
-        .map((row, localIndex) => row?.job?.job_id ? null : localIndex)
+        .map((row, localIndex) => isRecoverablePreparationFailure(row) ? localIndex : null)
         .filter((localIndex) => localIndex !== null);
       if (failedIndexes.length && durableUploadResilienceContract.preparation_recovery_rounds > 0) {
         for (const localIndex of failedIndexes) {
@@ -4706,15 +4880,18 @@ export async function runV4EbaySmoke({
       }
     }
     sharedBatchId = canonicalBatchIdForPoll(prepared, sharedBatchId);
-    batchPollMetrics = await pollBatchJobs({
-      baseUrl,
-      cookie,
-      batchId: sharedBatchId,
-      expectedJobIds: prepared.map((row) => row.job?.job_id).filter(Boolean),
-      waitMs: effectiveBatchPollWaitMs,
-      requestTimeoutMs,
-      progress
-    });
+    const expectedJobIds = prepared.map((row) => row.job?.job_id).filter(Boolean);
+    batchPollMetrics = expectedJobIds.length
+      ? await pollBatchJobs({
+        baseUrl,
+        cookie,
+        batchId: sharedBatchId,
+        expectedJobIds,
+        waitMs: effectiveBatchPollWaitMs,
+        requestTimeoutMs,
+        progress
+      })
+      : { jobs: [], polls: 0, elapsed_ms: 0, fail_fast_reason: "NO_JOBS_ENQUEUED" };
     recognitionResults = prepared.map((row) => resultFromBatchJob(row, batchPollMetrics, thinkMs));
   } else {
     recognitionResults = await mapWithConcurrency(items, normalizedSubmissionConcurrency, async (item, localIndex) => {
@@ -4740,6 +4917,8 @@ export async function runV4EbaySmoke({
           ultraFastImageDetail,
           ultraFastServiceTier,
           disableIdentityCache,
+          benchmarkProfile,
+          benchmarkPhase,
           coldStartBlind,
           usePreingestion,
           preingestionSource,
@@ -4851,7 +5030,10 @@ export async function runV4EbaySmoke({
     provider_done_capacity_handoff_override: providerDoneHandoff,
     ultra_fast_image_detail: ultraFastL2 === true ? ultraFastImageDetail : null,
     ultra_fast_service_tier: ultraFastL2 === true ? ultraFastServiceTier || null : null,
-    identity_cache_disabled: disableIdentityCache,
+    identity_cache_disabled: disableIdentityCache || benchmarkProfile === recognitionBenchmarkProfileIds.COLD_ALGORITHM,
+    recognition_benchmark_profile: benchmarkProfile
+      || (disableIdentityCache ? recognitionBenchmarkProfileIds.COLD_ALGORITHM : recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD),
+    recognition_benchmark_phase: benchmarkPhase,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
     speculative_mode: speculative,
@@ -4938,6 +5120,10 @@ export async function hydrateV4SmokeReport({
 
 export async function main(argv = process.argv, env = process.env) {
   const stamp = nowStamp();
+  const benchmark = recognitionBenchmarkCliOptions(argv);
+  if (hasFlag(argv, "--disable-identity-cache") && benchmark.profile) {
+    throw new Error("Use either --disable-identity-cache or --benchmark-profile, not both.");
+  }
   const outPath = argValue(argv, "--out", `data/eval/workflow-sidecar-smoke/v4-ebay-smoke-${stamp}.json`);
   const report = await runV4EbaySmoke({
     datasetPath: argValue(argv, "--dataset", env.V4_EBAY_SMOKE_DATASET || "data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json"),
@@ -4960,6 +5146,8 @@ export async function main(argv = process.argv, env = process.env) {
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
     ultraFastServiceTier: cleanText(argValue(argv, "--ultra-service-tier", "")).toLowerCase(),
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
+    benchmarkProfile: benchmark.profile || recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+    benchmarkPhase: benchmark.phase,
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     preingestionSource: cleanText(argValue(argv, "--preingestion-source", "v4_ebay_smoke_preingestion")),
     speculative: hasFlag(argv, "--speculative"),

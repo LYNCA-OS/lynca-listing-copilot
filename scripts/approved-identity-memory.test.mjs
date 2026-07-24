@@ -149,6 +149,10 @@ globalThis.fetch = async (url, options = {}) => {
     ]);
   }
 
+  if (table === "listing_active_catalog_snapshot" || table === "listing_writer_final_replay") {
+    return jsonResponse([]);
+  }
+
   if (table === "listing_reviews") {
     assert.equal(requestUrl.searchParams.get("asset_fingerprint"), `eq.${assetFingerprint}`);
     assert.equal(requestUrl.searchParams.get("limit"), "3");
@@ -194,6 +198,7 @@ assert.equal(response.body.field_states.find((field) => field.field === "players
 assert.deepEqual(fetchCalls.map((call) => call.table), [
   "listing_image_verifications",
   "listing_image_verifications",
+  "listing_writer_final_replay",
   "listing_reviews"
 ]);
 

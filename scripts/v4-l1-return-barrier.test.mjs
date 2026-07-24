@@ -6,8 +6,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   alternateOpenAiKeySlot,
-  backgroundPayloadWithL1ResolvedHint
+  backgroundPayloadWithL1ResolvedHint,
+  exactAnchorFastFinalShadowOnly
 } from "../api/v4/listing-copilot-title.js";
+
+assert.equal(exactAnchorFastFinalShadowOnly({
+  provider_options: {
+    recognition_benchmark_profile: "cold_algorithm_benchmark",
+    exact_anchor_fast_final_shadow_only: true
+  }
+}), true);
+assert.equal(exactAnchorFastFinalShadowOnly({ provider_options: {} }), false);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const apiSource = await fs.readFile(path.join(root, "api/v4/listing-copilot-title.js"), "utf8");

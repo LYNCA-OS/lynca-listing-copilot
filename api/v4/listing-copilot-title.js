@@ -356,8 +356,15 @@ function writerPendingL1Response(response = {}, result = {}) {
 // sees the title in the L1 window (~2-3s) while the background L2 run stays
 // on as verification and overwrites on completion. Every other L1 result
 // stays behind the barrier as internal evidence.
-function exactAnchorWriterFastLaneEnabled(env = process.env) {
-  return String(env.ENABLE_V4_EXACT_ANCHOR_WRITER_FAST_LANE ?? "true").toLowerCase() !== "false";
+export function exactAnchorFastFinalShadowOnly(payload = {}) {
+  const options = payload.provider_options || payload.providerOptions || {};
+  return payload.exact_anchor_fast_final_shadow_only === true
+    || options.exact_anchor_fast_final_shadow_only === true;
+}
+
+function exactAnchorWriterFastLaneEnabled(payload = {}, env = process.env) {
+  return !exactAnchorFastFinalShadowOnly(payload)
+    && String(env.ENABLE_V4_EXACT_ANCHOR_WRITER_FAST_LANE ?? "true").toLowerCase() !== "false";
 }
 
 function writerFinalizedL1Response(response = {}, result = {}) {
@@ -459,14 +466,23 @@ function catalogGapTypeFromTrace(trace = {}) {
   return "NO_PROMPT_SAFE_CANDIDATE_GAP";
 }
 
-function providerRuntimeSummary(result = {}) {
+function providerRuntimeSummary(result = {}, payload = {}) {
   const vectorContext = result.candidate_context?.vector || {};
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
   const reportedProviderCalls = Number(result.usage?.provider_calls);
+  const providerCallSkipped = result.identity_cache?.provider_call_skipped === true;
+  const inferredProviderCalls = providerCallSkipped
+    ? 0
+    : (Number(result.provider_latency_ms || 0) > 0
+      || (result.provider_slot_timing?.started_at && result.provider_slot_timing?.completed_at))
+      ? 1
+      : null;
+  const providerOptions = payload.provider_options || payload.providerOptions || {};
   return {
     model: result.model || result.model_id || null,
     prompt_version: result.prompt_version || null,
     provider_latency_ms: result.provider_latency_ms ?? null,
+    provider_slot_timing: result.provider_slot_timing || null,
     provider_response_profile: result.provider_response_profile || "standard",
     provider_prompt_mode: result.provider_prompt_mode || null,
     provider_prompt_chars: Number.isFinite(Number(result.provider_prompt_chars)) ? Number(result.provider_prompt_chars) : null,
@@ -475,16 +491,29 @@ function providerRuntimeSummary(result = {}) {
     provider_service_tier: result.provider_service_tier || null,
     provider_calls: Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
       ? Math.trunc(reportedProviderCalls)
-      : null,
+      : inferredProviderCalls,
+    recognition_benchmark_profile: result.recognition_benchmark_profile
+      || providerOptions.recognition_benchmark_profile
+      || null,
+    recognition_benchmark_phase: result.recognition_benchmark_phase
+      || providerOptions.recognition_benchmark_phase
+      || null,
+    identity_resolution_status: result.identity_resolution_status || null,
+    ambiguity_status: result.ambiguity_status || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
     identity_cache_read_bypassed: result.identity_cache?.read_bypassed === true,
     identity_cache_miss_reason: result.identity_cache?.miss_reason || null,
     provider_call_skipped: result.identity_cache?.provider_call_skipped === true,
     cached_result_version_match: result.identity_cache?.cached_result_version_match ?? null,
+    identity_cache_scope: result.identity_cache?.cache_scope || null,
     identity_cache_version_fingerprint: result.identity_cache?.version_fingerprint || null,
+    recognition_pipeline_fingerprint: result.identity_cache?.recognition_pipeline_fingerprint
+      || result.identity_cache?.version_fingerprint
+      || null,
     identity_cache_image_generation_hash: result.identity_cache?.image_generation_hash || null,
     identity_cache_write_reason: result.identity_cache?.write_reason || null,
     native_core_stage_trace: Array.isArray(result.native_core_stage_trace) ? result.native_core_stage_trace : [],
+    exact_anchor_fast_final_shadow: result.exact_anchor_fast_final_shadow || null,
     provider_input_image_count: Number.isFinite(Number(result.provider_input_image_count)) ? Number(result.provider_input_image_count) : null,
     provider_image_detail: result.provider_image_detail || null,
     provider_finish_reason: result.provider_finish_reason || null,
@@ -963,7 +992,7 @@ async function persistPipelineResult({
           l1_already_returned: true,
           l1_visible_to_writer: false,
           l1_return_barrier_version: l1ReturnBarrierVersion,
-          ...providerRuntimeSummary(result),
+          ...providerRuntimeSummary(result, payload),
           ...extraProviderSummary
         },
         resolved_fields: resolvedFromResult(result)
@@ -1026,7 +1055,7 @@ async function persistPipelineResult({
       provider_error_type: result.provider_error_type || result.provider_error_code || null,
       noncritical_persistence_status: deferNonCriticalPersistence ? "DEFERRED" : "SYNC",
       writer_ready_persistence_mode: deferNonCriticalPersistence ? "minimal_session_first" : "synchronous_full_persistence",
-      ...providerRuntimeSummary(result),
+      ...providerRuntimeSummary(result, payload),
       ...extraProviderSummary
     }
   };
@@ -1676,7 +1705,18 @@ export default async function handler(req, res) {
       timing: preL2AnchorProbe?.timing || null,
       metrics: preL2AnchorProbe?.metrics || null,
       finalized: preL2AnchorProbe?.finalized === true,
-      reason: preL2AnchorProbe?.reason || null
+      reason: preL2AnchorProbe?.reason || null,
+      shadow_finalize: preL2AnchorProbe?.finalize ? {
+        finalized: preL2AnchorProbe.finalize.finalized === true,
+        reason: preL2AnchorProbe.finalize.reason || null,
+        title: preL2AnchorProbe.finalize.title || "",
+        resolved_fields: preL2AnchorProbe.finalize.resolved_fields || {},
+        candidate: preL2AnchorProbe.finalize.candidate || null,
+        query_fields: preL2AnchorProbe.finalize.query_fields || null,
+        catalog_candidate_count: Number(preL2AnchorProbe.finalize.catalog_candidate_count || 0),
+        trusted_candidate_count: Number(preL2AnchorProbe.finalize.trusted_candidate_count || 0),
+        eligible_candidate_count: Number(preL2AnchorProbe.finalize.eligible_candidate_count || 0)
+      } : null
     };
     if (preL2AnchorProbe?.resolved_hint && Object.keys(preL2AnchorProbe.resolved_hint).length) {
       payload = backgroundPayloadWithL1ResolvedHint(payload, {
@@ -1810,7 +1850,7 @@ export default async function handler(req, res) {
           l1_persistence: { saved: false, deferred: true }
         }
       }), l1Result.fast_scout || {});
-      let writerResponse = finalized && exactAnchorWriterFastLaneEnabled()
+      let writerResponse = finalized && exactAnchorWriterFastLaneEnabled(payload)
         ? writerFinalizedL1Response(v4Response, l1Result)
         : writerPendingL1Response(v4Response, l1Result);
       const l1PersistencePromise = createResultPromise.then((createResult) => persistPipelineResult({
@@ -1921,7 +1961,8 @@ export default async function handler(req, res) {
 
   let l2ScoutResult = null;
 
-  if (forceL2Direct && preL2AnchorProbe?.finalized === true) {
+  if (forceL2Direct && preL2AnchorProbe?.finalized === true
+    && !exactAnchorFastFinalShadowOnly(payload)) {
     const finalize = preL2AnchorProbe.finalize;
     startRecognitionClock("deterministic_anchor_finalize");
     l2Timing.pre_l2_full_l2_skipped = true;
@@ -1984,7 +2025,8 @@ export default async function handler(req, res) {
   // the finalize race is bounded, and anything short of a unique exact-code
   // agreement falls through to the normal L2 call unchanged.
   if (forceL2Direct && Array.isArray(payload.images) && payload.images.length > 0
-    && payload.disable_exact_anchor_finalize !== true) {
+    && payload.disable_exact_anchor_finalize !== true
+    && !exactAnchorFastFinalShadowOnly(payload)) {
     const allowBlockingScout = l2ExactAnchorBlockingScoutAllowed(payload, process.env);
     l2Timing.exact_anchor_scout_attempted = true;
     l2Timing.exact_anchor_blocking_scout_allowed = allowBlockingScout;

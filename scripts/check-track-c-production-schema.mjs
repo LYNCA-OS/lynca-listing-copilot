@@ -25,6 +25,9 @@ const requiredTables = Object.freeze([
   "v4_sem_validation_events",
   "v4_writer_export_batches",
   "v4_writer_export_items",
+  "listing_identity_resolution_cache",
+  "listing_active_catalog_snapshot",
+  "listing_writer_final_replay",
   "request_logs",
   "job_attempt_events",
   "error_logs",
@@ -48,7 +51,10 @@ const tenantScopedTables = Object.freeze([
 const serviceOnlyFactTables = Object.freeze([
   "v4_writer_feedback_events",
   "v4_learning_events",
-  "v4_sem_validation_events"
+  "v4_sem_validation_events",
+  "listing_identity_resolution_cache",
+  "listing_active_catalog_snapshot",
+  "listing_writer_final_replay"
 ]);
 
 const serviceUpdatableFactTables = Object.freeze([
@@ -108,7 +114,9 @@ const requiredFunctions = Object.freeze([
   "track_c_ops_snapshot(text,timestamp with time zone)",
   "track_c_production_schema_catalog_snapshot()",
   "track_c_storage_boundary_snapshot()",
-  "fail_v4_recognition_job(text,text,jsonb,boolean,boolean)"
+  "fail_v4_recognition_job(text,text,jsonb,boolean,boolean)",
+  "bump_active_catalog_snapshot_revision()",
+  "sync_writer_final_replay_from_session()"
 ]);
 
 const forbiddenFunctions = Object.freeze([
@@ -122,7 +130,9 @@ const serviceOnlyFunctions = Object.freeze([
   "enqueue_v4_recognition_batch_atomic(jsonb,jsonb,text,jsonb,text)",
   "fence_v4_recognition_job_execution(text,text,integer)",
   "track_c_production_schema_catalog_snapshot()",
-  "track_c_storage_boundary_snapshot()"
+  "track_c_storage_boundary_snapshot()",
+  "bump_active_catalog_snapshot_revision()",
+  "sync_writer_final_replay_from_session()"
 ]);
 
 const browserDeniedTables = requiredTables;
