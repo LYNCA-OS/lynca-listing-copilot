@@ -314,6 +314,7 @@ function operationalSessionStatus(session = null, job = null) {
       provider_calls: Number.isFinite(Number(summary.provider_calls)) ? Number(summary.provider_calls) : null,
       recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
       recognition_benchmark_phase: summary.recognition_benchmark_phase || null,
+      evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
       provider_call_skipped: summary.provider_call_skipped === true,
       identity_cache_hit: summary.identity_cache_hit === true,
       identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
