@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { runNativeV4Recognition } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
+import {
+  __listingCopilotTitleTestHooks,
+  runNativeV4Recognition
+} from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import {
   buildIdentityResultCacheKey,
   buildTenantScopedIdentityInFlightKey,
@@ -395,6 +398,44 @@ assert.equal(coldOptions.disable_identity_result_cache_write, true);
 assert.equal(coldOptions.disable_approved_identity_memory, true);
 assert.equal(coldOptions.disable_writer_final_replay, true);
 assert.equal(coldOptions.disable_identity_inflight_replay, true);
+assert.equal(coldOptions.exact_anchor_fast_final_shadow_only, true);
+assert.equal(coldOptions.disable_recognition_worker_fast_final, true);
+
+assert.deepEqual(__listingCopilotTitleTestHooks.exactAnchorFastFinalShadowFromPayload({
+  v4_anchor_probe: {
+    finalized: true,
+    reason: "exact_anchor_catalog_finalized",
+    plan: { route: "TCG_EXACT_LOOKUP" },
+    metrics: { catalog_candidate_count: 1, trusted_candidate_count: 1, eligible_candidate_count: 1 },
+    shadow_finalize: {
+      finalized: true,
+      reason: "exact_anchor_catalog_finalized",
+      title: "2025 Pokemon Pikachu #001",
+      resolved_fields: { year: "2025", players: ["Pikachu"] },
+      candidate: { candidate_id: "catalog-1", anchor_agreement: { contradicted: [] } },
+      query_fields: { tcg_card_number: "001" },
+      catalog_candidate_count: 1,
+      trusted_candidate_count: 1,
+      eligible_candidate_count: 1
+    }
+  }
+}), {
+  evaluated: true,
+  eligible: true,
+  applied: false,
+  would_skip_full_provider: true,
+  reason: "exact_anchor_catalog_finalized",
+  route: "TCG_EXACT_LOOKUP",
+  candidate: { candidate_id: "catalog-1", anchor_agreement: { contradicted: [] } },
+  query_fields: { tcg_card_number: "001" },
+  shadow_title: "2025 Pokemon Pikachu #001",
+  shadow_resolved_fields: { year: "2025", players: ["Pikachu"] },
+  catalog_candidate_count: 1,
+  trusted_candidate_count: 1,
+  eligible_candidate_count: 1,
+  direct_conflict_count: 0,
+  policy: "shadow_only_full_provider_still_required"
+});
 
 const exactColdOptions = applyRecognitionBenchmarkProfile({}, {
   profile: recognitionBenchmarkProfileIds.EXACT_REPLAY,

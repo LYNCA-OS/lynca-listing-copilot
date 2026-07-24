@@ -12,6 +12,7 @@ import {
   assertObservedExecutionContract,
   assertProviderControlPlane,
   assertRuntimeSnapshot,
+  assertSupabaseGlobalQueueEmpty,
   assertWriterPerceivedSpeed,
   buildLaunchGateFormalAccuracyGate,
   buildLaunchGateReport,
@@ -28,13 +29,91 @@ import {
   runLaunchGateEvaluation,
   runtimeSnapshot
 } from "./run-launch-gate-eval.mjs";
+
+assert.deepEqual(await assertSupabaseGlobalQueueEmpty({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-key"
+  },
+  fetchImpl: async () => new Response("[]", {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
+}), {
+  checked: true,
+  empty: true,
+  checked_statuses: ["QUEUED", "RETRYING", "RUNNING"]
+});
+await assert.rejects(() => assertSupabaseGlobalQueueEmpty({
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-key"
+  },
+  fetchImpl: async () => new Response(JSON.stringify([{ id: "job-1", status: "RUNNING" }]), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
+}), /Global queue is not empty/);
 import {
   attachPostRecognitionScoring,
   compactCandidateTrace,
   createConcurrencyGate,
   mapWithConcurrency,
-  resultFromBatchJob
+  resultFromBatchJob,
+  summarizeProviderSlotIdleGaps
 } from "./v4-ebay-smoke.mjs";
+
+assert.deepEqual(summarizeProviderSlotIdleGaps([
+  {
+    provider_capacity_slot: 1,
+    provider_slot_timing: {
+      started_at: "2026-07-24T00:00:00.000Z",
+      completed_at: "2026-07-24T00:00:10.000Z"
+    }
+  },
+  {
+    provider_capacity_slot: 1,
+    provider_slot_timing: {
+      started_at: "2026-07-24T00:00:12.000Z",
+      completed_at: "2026-07-24T00:00:20.000Z"
+    }
+  },
+  {
+    provider_capacity_slot: 2,
+    provider_slot_timing: {
+      started_at: "2026-07-24T00:00:01.000Z",
+      completed_at: "2026-07-24T00:00:11.000Z"
+    }
+  }
+]), {
+  schema_version: "provider-slot-idle-gap-v1",
+  measured_interval_count: 3,
+  missing_interval_count: 0,
+  measured_slot_count: 2,
+  overlap_violation_count: 0,
+  idle_gap_total_ms: 2000,
+  idle_gap_p50_ms: 2000,
+  idle_gap_p95_ms: 2000,
+  idle_gap_max_ms: 2000,
+  slots: {
+    1: {
+      interval_count: 2,
+      idle_gap_count: 1,
+      idle_gap_total_ms: 2000,
+      idle_gap_p50_ms: 2000,
+      idle_gap_p95_ms: 2000,
+      idle_gap_max_ms: 2000
+    },
+    2: {
+      interval_count: 1,
+      idle_gap_count: 0,
+      idle_gap_total_ms: 0,
+      idle_gap_p50_ms: null,
+      idle_gap_p95_ms: null,
+      idle_gap_max_ms: null
+    }
+  }
+});
 
 assert.equal(launchGateNumberArg([], "--request-timeout-ms", 120_000), 120_000);
 assert.equal(launchGateNumberArg(["--request-timeout-ms", ""], "--request-timeout-ms", 120_000), 120_000);
@@ -308,6 +387,9 @@ function providerStatus() {
 }
 
 function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" }) {
+  const ordinal = Number((assetId.match(/(\d+)$/) || [0, 1])[1]);
+  const providerSlot = ordinal % 2 === 0 ? 2 : 1;
+  const intervalStartedAt = Date.parse("2026-07-24T00:00:00.000Z") + Math.floor((ordinal - 1) / 2) * 11_000;
   return {
     asset_id: assetId,
     ok: true,
@@ -320,6 +402,11 @@ function scoredResult({ assetId, reviewed = false, score = 1, finalTitle = "" })
     identity_cache_read_bypassed: true,
     provider_call_skipped: false,
     provider_calls: 1,
+    provider_capacity_slot: providerSlot,
+    provider_slot_timing: {
+      started_at: new Date(intervalStartedAt).toISOString(),
+      completed_at: new Date(intervalStartedAt + 10_000).toISOString()
+    },
     recognition_benchmark_profile: "cold_algorithm_benchmark",
     vector_self_exclusion_query_attempted: true,
     vector_self_exclusion_filter_active: true,
@@ -350,6 +437,7 @@ function rawRunReport(results, { coldStartBlind = false } = {}) {
     predictions_sha256: "offline-predictions-sha256",
     run_wall_ms: 1000,
     evaluation_sample_policy: { provenance_verified: true },
+    summary: { provider_slot_idle_gaps: summarizeProviderSlotIdleGaps(results) },
     results
   };
 }
@@ -737,6 +825,9 @@ try {
     }
   ];
   const observedChecks = assertObservedExecutionContract(mixedRunReports);
+  assert.equal(observedChecks.provider_slot_timing_complete, true);
+  assert.equal(observedChecks.provider_two_slots_observed, true);
+  assert.equal(observedChecks.provider_slot_overlap_free, true);
   const vacuousVectorExclusionChecks = observedExecutionContractChecks([{
     cohort: "INTERNAL_REVIEWED_GT",
     cold_start_blind: false,
@@ -1307,6 +1398,8 @@ try {
   assert.match(workflow, /if: \$\{\{ inputs\.sample_run_id != '' \}\}/);
   assert.match(workflow, /--expected-deployment-sha "\$\{\{ github\.sha \}\}"/);
   assert.match(workflow, /LAUNCH_GATE_EVAL_SECRET: \$\{\{ secrets\.LAUNCH_GATE_EVAL_SECRET \}\}/);
+  assert.match(workflow, /SUPABASE_URL: \$\{\{ vars\.SUPABASE_URL \}\}/);
+  assert.match(workflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
   assert.match(workflow, /test -n "\$LAUNCH_GATE_EVAL_SECRET"/);
   assert.match(workflow, /measured_count_matches_cohort/);
   assert.match(workflow, /reviewed_accuracy_gate/);

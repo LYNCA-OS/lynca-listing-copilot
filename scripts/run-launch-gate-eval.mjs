@@ -846,6 +846,9 @@ export function observedExecutionContractChecks(runReports = []) {
     result.vector_self_exclusion_query_attempted === true
   ));
   const cohortPlans = runReports.filter((entry) => Object.hasOwn(entry, "cold_start_blind"));
+  const measuredProviderSlots = new Set(results.map((result) => (
+    Number(result.provider_capacity_slot ?? result.provider_key_slot)
+  )).filter((slot) => Number.isFinite(slot) && slot > 0));
   const checks = {
     model_override_locked: reports.length > 0 && reports.every((report) => report.model_override === launchGateExecutionContract.model),
     fast_prompt_override_locked: reports.length > 0 && reports.every((report) => report.fast_initial_prompt_override === false),
@@ -863,8 +866,16 @@ export function observedExecutionContractChecks(runReports = []) {
     identity_cache_never_hit: results.length > 0 && results.every((result) => result.identity_cache_hit !== true),
     provider_call_never_skipped: results.length > 0 && results.every((result) => result.provider_call_skipped !== true),
     provider_calls_exactly_one: results.length > 0 && results.every((result) => Number(result.provider_calls) === 1),
-    // Preparation failures and exact-anchor finalizations never enter the
-    // provider stage, so they cannot truthfully emit provider-only fields.
+    provider_slot_timing_complete: results.length > 0 && results.every((result) => (
+      Number(result.provider_calls) === 1
+      && Boolean(cleanText(result.provider_slot_timing?.started_at))
+      && Boolean(cleanText(result.provider_slot_timing?.completed_at))
+    )),
+    provider_two_slots_observed: results.length < 2 || measuredProviderSlots.size >= 2,
+    provider_slot_overlap_free: reports.every((report) => (
+      report.summary?.provider_slot_idle_gaps?.schema_version === "provider-slot-idle-gap-v1"
+      && Number(report.summary.provider_slot_idle_gaps.overlap_violation_count) === 0
+    )),
     identity_cache_read_bypassed: cacheBypassObservations.every((result) => result.identity_cache_read_bypassed === true),
     image_detail_high: providerExecutionObservations.every((result) => (
       cleanText(result.provider_image_detail).toLowerCase() === "high"
@@ -905,6 +916,7 @@ export function buildLaunchGateReport({
   startRuntimeChecks = {},
   endRuntimeChecks = {},
   providerPreflight = {},
+  queueStartPreflight = {},
   observedChecks = {},
   runReports = [],
   now = new Date()
@@ -946,6 +958,7 @@ export function buildLaunchGateReport({
       required: launchGateExecutionContract,
       observed_checks: observedChecks,
       provider_preflight: providerPreflight,
+      queue_start_preflight: queueStartPreflight,
       deployment: {
         expected: {
           deployment_id: cleanText(expectedDeployment.deployment_id) || null,
@@ -992,6 +1005,7 @@ export function buildLaunchGateReport({
     },
     integrity_checks: {
       deployment_stable: drift.unchanged,
+      queue_empty_at_start: queueStartPreflight.empty === true,
       all_results_classified: unknownRows.length === 0,
       combined_formal_accuracy_absent: true,
       internal_reviewed_gt_measurement_complete: profile === "ebay-50"
@@ -1104,6 +1118,35 @@ export function datasetForLaunchGateProfile(dataset = {}, profile = "reviewed-10
   };
 }
 
+export async function assertSupabaseGlobalQueueEmpty({
+  env = process.env,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  const baseUrl = cleanText(env.SUPABASE_URL).replace(/\/+$/, "");
+  const serviceKey = cleanText(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY);
+  if (!baseUrl || !serviceKey) throw new Error("Global queue preflight requires fixed Supabase service credentials.");
+  const endpoint = new URL(`${baseUrl}/rest/v1/v4_recognition_jobs`);
+  endpoint.searchParams.set("select", "id,status");
+  endpoint.searchParams.set("status", "in.(QUEUED,RETRYING,RUNNING)");
+  endpoint.searchParams.set("limit", "1");
+  const response = await fetchImpl(endpoint, {
+    headers: {
+      apikey: serviceKey,
+      authorization: `Bearer ${serviceKey}`
+    }
+  });
+  if (!response.ok) throw new Error(`Global queue preflight failed with HTTP ${response.status}.`);
+  const rows = await response.json().catch(() => []);
+  if (Array.isArray(rows) && rows.length > 0) {
+    throw new Error(`Global queue is not empty before benchmark (${cleanText(rows[0]?.status) || "active job"}).`);
+  }
+  return {
+    checked: true,
+    empty: true,
+    checked_statuses: ["QUEUED", "RETRYING", "RUNNING"]
+  };
+}
+
 export async function runLaunchGateEvaluation({
   profile = "reviewed-10",
   evaluationMode = launchGateIterationContract.formal_mode,
@@ -1126,6 +1169,7 @@ export async function runLaunchGateEvaluation({
   imageMaterializer = materializeLaunchGateImages,
   assetCacheReader = readVerifiedAssetCache,
   sourceFingerprint = durableSourceFingerprint,
+  queuePreflight = null,
   progress = true,
   now = () => new Date()
 } = {}) {
@@ -1162,6 +1206,10 @@ export async function runLaunchGateEvaluation({
     active_batches: {},
     completed_cohorts: {}
   };
+
+  const queueStartPreflight = typeof queuePreflight === "function"
+    ? await queuePreflight()
+    : { checked: false, empty: null, reason: "programmatic_preflight_not_injected" };
 
   const startHealth = await fetchJson({ baseUrl: normalizedBaseUrl, path: "/api/v4/health", fetchImpl });
   const startSnapshot = runtimeSnapshot(startHealth);
@@ -1316,6 +1364,7 @@ export async function runLaunchGateEvaluation({
     startRuntimeChecks,
     endRuntimeChecks,
     providerPreflight,
+    queueStartPreflight,
     observedChecks,
     runReports,
     now: now()
@@ -1384,6 +1433,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     thinkMs: numberArg(argv, "--think-ms", 0),
     l2WaitMs: numberArg(argv, "--l2-wait-ms", 240000),
     requestTimeoutMs: numberArg(argv, "--request-timeout-ms", 120000),
+      queuePreflight: () => assertSupabaseGlobalQueueEmpty({ env, fetchImpl }),
       progress: !argv.includes("--no-progress"),
       fetchImpl
     });

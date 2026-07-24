@@ -1324,6 +1324,8 @@ function sessionL2Summary(statusPayload = {}) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: summary.provider_slot_timing || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -1454,6 +1456,8 @@ function jobL2Summary(statusPayload = {}) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: summary.provider_slot_timing || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -1761,6 +1765,8 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     provider_capacity_stage_handoff: summary.provider_capacity_stage_handoff || row.provider_capacity_stage_handoff || null,
     provider_capacity_slot: summary.provider_capacity_slot ?? row.provider_capacity_slot ?? null,
     provider_key_slot: summary.provider_key_slot ?? row.provider_key_slot ?? null,
+    provider_slot_timing: summary.provider_slot_timing || row.provider_slot_timing || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || row.exact_anchor_fast_final_shadow || null,
     provider_capacity: summary.provider_capacity ?? row.provider_capacity ?? null,
     provider_key_count: summary.provider_key_count ?? row.provider_key_count ?? null,
     provider_key_assignment: summary.provider_key_assignment || row.provider_key_assignment || null,
@@ -2526,6 +2532,8 @@ async function runOne({
       provider_call_skipped: l2.summary?.provider_call_skipped === true,
       provider_calls: numberOrNull(l2.summary?.provider_calls),
       recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+      exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
+      provider_slot_timing: l2.summary?.provider_slot_timing || null,
       cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
       identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
       identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
@@ -2772,6 +2780,8 @@ async function runOne({
     provider_call_skipped: l2.summary?.provider_call_skipped === true,
     provider_calls: numberOrNull(l2.summary?.provider_calls),
     recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: l2.summary?.provider_slot_timing || null,
     cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
@@ -3343,6 +3353,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
+    provider_slot_timing: summary.provider_slot_timing || null,
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
@@ -3424,6 +3436,10 @@ export function attachPostRecognitionScoring(results = [], items = [], sealedLab
       reference_title_is_reviewed_ground_truth: reviewedTitleGroundTruth,
       l1_scoring: scoreTitles(referenceTitle, row.l1_title || ""),
       final_scoring: scoreTitles(referenceTitle, row.final_title || ""),
+      exact_anchor_shadow_scoring: scoreTitles(
+        referenceTitle,
+        row.exact_anchor_fast_final_shadow?.shadow_title || ""
+      ),
       item_web_url: label.item_web_url || null
     };
   });
@@ -3807,6 +3823,60 @@ export function summarizeBatchPositionFairness(results = []) {
   };
 }
 
+export function summarizeProviderSlotIdleGaps(results = []) {
+  const intervals = results.map((item) => {
+    const timing = item.provider_slot_timing || {};
+    const startedAt = Date.parse(timing.started_at || "");
+    const completedAt = Date.parse(timing.completed_at || "");
+    const slot = numberOrNull(item.provider_capacity_slot ?? item.provider_key_slot);
+    return Number.isFinite(startedAt) && Number.isFinite(completedAt) && completedAt >= startedAt && slot !== null
+      ? { slot: String(slot), started_at_ms: startedAt, completed_at_ms: completedAt }
+      : null;
+  }).filter(Boolean);
+  const grouped = new Map();
+  for (const interval of intervals) {
+    const rows = grouped.get(interval.slot) || [];
+    rows.push(interval);
+    grouped.set(interval.slot, rows);
+  }
+  const allGaps = [];
+  let overlapCount = 0;
+  const slots = Object.fromEntries([...grouped.entries()]
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([slot, rows]) => {
+      rows.sort((left, right) => left.started_at_ms - right.started_at_ms);
+      const gaps = [];
+      let previousEnd = rows[0]?.completed_at_ms ?? null;
+      for (const row of rows.slice(1)) {
+        if (row.started_at_ms < previousEnd) overlapCount += 1;
+        const gap = Math.max(0, row.started_at_ms - previousEnd);
+        gaps.push(gap);
+        allGaps.push(gap);
+        previousEnd = Math.max(previousEnd, row.completed_at_ms);
+      }
+      return [slot, {
+        interval_count: rows.length,
+        idle_gap_count: gaps.length,
+        idle_gap_total_ms: gaps.reduce((sum, value) => sum + value, 0),
+        idle_gap_p50_ms: quantile(gaps, 0.5),
+        idle_gap_p95_ms: quantile(gaps, 0.95),
+        idle_gap_max_ms: quantile(gaps, 1)
+      }];
+    }));
+  return {
+    schema_version: "provider-slot-idle-gap-v1",
+    measured_interval_count: intervals.length,
+    missing_interval_count: Math.max(0, results.length - intervals.length),
+    measured_slot_count: grouped.size,
+    overlap_violation_count: overlapCount,
+    idle_gap_total_ms: allGaps.reduce((sum, value) => sum + value, 0),
+    idle_gap_p50_ms: quantile(allGaps, 0.5),
+    idle_gap_p95_ms: quantile(allGaps, 0.95),
+    idle_gap_max_ms: quantile(allGaps, 1),
+    slots
+  };
+}
+
 export function summarize(results = [], { runWallMs = null } = {}) {
   const l1Raw = results.map((item) => item.l1_scoring?.raw_token_recall);
   const l1Fair = results.map((item) => item.l1_scoring?.fair_token_recall);
@@ -3830,6 +3900,11 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     numberOrNull(item.writer_visible_recognition_ms) !== null
   )).length;
   const batchPositionFairness = summarizeBatchPositionFairness(results);
+  const providerSlotIdleGaps = summarizeProviderSlotIdleGaps(results);
+  const reviewedExactAnchorShadowRows = results.filter((item) => (
+    item.reference_title_is_reviewed_ground_truth === true
+    && item.exact_anchor_fast_final_shadow?.eligible === true
+  ));
   const allPositionMetrics = positionCohortMetrics(results);
   const tenantIsolationMeasured = results.filter((item) => item.tenant_isolation_measured === true);
   const tenantIsolationViolationCount = tenantIsolationMeasured.filter((item) => item.tenant_isolation_valid !== true).length;
@@ -3902,6 +3977,27 @@ export function summarize(results = [], { runWallMs = null } = {}) {
       tenant_service: tenantService
     },
     batch_position_fairness: batchPositionFairness,
+    provider_slot_idle_gaps: providerSlotIdleGaps,
+    exact_anchor_fast_final_shadow: {
+      evaluated_count: results.filter((item) => item.exact_anchor_fast_final_shadow?.evaluated === true).length,
+      eligible_count: results.filter((item) => item.exact_anchor_fast_final_shadow?.eligible === true).length,
+      applied_count: results.filter((item) => item.exact_anchor_fast_final_shadow?.applied === true).length,
+      provider_still_called_for_eligible_count: results.filter((item) => (
+        item.exact_anchor_fast_final_shadow?.eligible === true && Number(item.provider_calls) === 1
+      )).length,
+      reviewed_ground_truth_eligible_count: reviewedExactAnchorShadowRows.length,
+      policy_fair_token_recall_avg: average(reviewedExactAnchorShadowRows.map((item) => (
+        item.exact_anchor_shadow_scoring?.policy_fair_token_recall
+      ))),
+      full_provider_policy_fair_token_recall_avg: average(reviewedExactAnchorShadowRows.map((item) => (
+        item.final_scoring?.policy_fair_token_recall
+      ))),
+      reason_breakdown: results.reduce((counts, item) => {
+        const reason = cleanText(item.exact_anchor_fast_final_shadow?.reason || "missing") || "missing";
+        counts[reason] = (counts[reason] || 0) + 1;
+        return counts;
+      }, {})
+    },
     retry_card_count: results.filter((item) => Number(item.attempt_count || 0) > 1).length,
     retry_attempt_count: results.reduce((sum, item) => sum + Math.max(0, Number(item.attempt_count || 0) - 1), 0),
     retry_error_code_breakdown: results.reduce((counts, item) => {

@@ -5,7 +5,7 @@ import {
   nativeRecognitionStageIds,
   prepareEvidenceSnapshot,
   runFullProviderObservation,
-  tryExactIdentityFastFinal
+  tryExactIdentityReuseAndAnchorShadow
 } from "../lib/listing/v4/pipeline/native-recognition-stages.mjs";
 
 const image = {
@@ -18,7 +18,7 @@ const payload = {
   images: [image]
 };
 
-const cacheHit = await tryExactIdentityFastFinal({
+const cacheHit = await tryExactIdentityReuseAndAnchorShadow({
   payload,
   lookupApprovedMemory: async () => null,
   lookupIdentityCache: async () => ({
@@ -26,22 +26,39 @@ const cacheHit = await tryExactIdentityFastFinal({
     telemetry: { cache_hit: true, provider_call_skipped: true }
   })
 });
-assert.equal(cacheHit.trace.stage_id, nativeRecognitionStageIds.TRY_EXACT_IDENTITY_FAST_FINAL);
+assert.equal(cacheHit.trace.stage_id, nativeRecognitionStageIds.TRY_EXACT_IDENTITY_REUSE_AND_ANCHOR_SHADOW);
 assert.equal(cacheHit.trace.status, "COMPLETED");
-assert.deepEqual(cacheHit.trace.reason_codes, ["AI_TERMINAL_L2_REPLAY"]);
+assert.deepEqual(cacheHit.trace.reason_codes, ["AI_TERMINAL_L2_REPLAY", "EXACT_ANCHOR_SHADOW_NOT_ELIGIBLE"]);
 assert.equal(cacheHit.output.result.final_title, "Cached L2");
 assert.equal(cacheHit.output.provider_call_skipped, true);
 assert.equal(Object.isFrozen(cacheHit.output), true);
 assert.equal(Object.isFrozen(cacheHit.output.result), true);
 
-const writerFinal = await tryExactIdentityFastFinal({
+const writerFinal = await tryExactIdentityReuseAndAnchorShadow({
   payload,
   lookupWriterFinalReplay: async () => ({ final_title: "Writer Final" }),
   lookupApprovedMemory: async () => ({ final_title: "Approved Memory" }),
   lookupIdentityCache: async () => ({ result: { final_title: "Cached L2" } })
 });
-assert.deepEqual(writerFinal.trace.reason_codes, ["WRITER_FINAL_REPLAY"]);
+assert.deepEqual(writerFinal.trace.reason_codes, ["WRITER_FINAL_REPLAY", "EXACT_ANCHOR_SHADOW_NOT_ELIGIBLE"]);
 assert.equal(writerFinal.output.result.final_title, "Writer Final");
+
+const shadowEligible = await tryExactIdentityReuseAndAnchorShadow({
+  payload,
+  lookupApprovedMemory: async () => null,
+  lookupIdentityCache: async () => ({ result: null, telemetry: {} }),
+  lookupExactAnchorShadow: async () => ({
+    evaluated: true,
+    eligible: true,
+    applied: false,
+    would_skip_full_provider: true,
+    shadow_title: "Catalog deterministic title"
+  })
+});
+assert.equal(shadowEligible.output.result, null);
+assert.equal(shadowEligible.output.provider_call_skipped, false);
+assert.equal(shadowEligible.output.exact_anchor_fast_final_shadow.eligible, true);
+assert.deepEqual(shadowEligible.trace.reason_codes, ["FULL_RECOGNITION", "EXACT_ANCHOR_SHADOW_ELIGIBLE"]);
 
 const original = { nested: { value: 1 } };
 const prepared = await prepareEvidenceSnapshot({
