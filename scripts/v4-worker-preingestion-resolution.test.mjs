@@ -95,6 +95,50 @@ assert.equal(mismatched.found, false);
 assert.equal(mismatched.mirror.reason, "bundle_scope_mismatch");
 assert.equal("preingestion_bundle_id" in mismatched.payload, false);
 
+let failedMirrorCalls = 0;
+const mirrorFallback = await resolveCanonicalWorkerPreingestion({
+  payload: {
+    images: [{ id: "canonical-image" }],
+    preingestion_bundle_id: "bundle_browser_attacker"
+  },
+  tenantId,
+  assetId,
+  sessionId,
+  readLatest: async () => bundle,
+  persistMirror: async () => {
+    failedMirrorCalls += 1;
+    return { saved: false, error: "transient_mirror_failure" };
+  },
+  updateSession: async () => assert.fail("an unmirrored bundle must not bind to the session")
+});
+assert.equal(failedMirrorCalls, 3);
+assert.equal(mirrorFallback.found, true);
+assert.equal(mirrorFallback.usable, false);
+assert.equal(mirrorFallback.fallback_reason, "bundle_mirror_not_saved");
+assert.deepEqual(mirrorFallback.payload.images, [{ id: "canonical-image" }]);
+assert.equal("preingestion_bundle_id" in mirrorFallback.payload, false);
+assert.equal("preingestion_summary" in mirrorFallback.payload, false);
+
+let failedSessionCalls = 0;
+const sessionFallback = await resolveCanonicalWorkerPreingestion({
+  payload: { images: [{ id: "canonical-image" }] },
+  tenantId,
+  assetId,
+  sessionId,
+  readLatest: async () => bundle,
+  persistMirror: async () => ({ saved: true }),
+  updateSession: async (input) => {
+    failedSessionCalls += 1;
+    assert.equal(input.attempts, 5);
+    assert.equal(input.retryBaseMs, 150);
+    return { saved: false, error: "transient_session_failure" };
+  }
+});
+assert.equal(failedSessionCalls, 1);
+assert.equal(sessionFallback.usable, false);
+assert.equal(sessionFallback.fallback_reason, "bundle_session_not_saved");
+assert.equal("preingestion_bundle_id" in sessionFallback.payload, false);
+
 let persistedRow = null;
 const persistence = await persistV4PreingestionBundle({
   bundleId,

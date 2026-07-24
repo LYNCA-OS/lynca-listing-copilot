@@ -18,8 +18,23 @@ const FIELD_ALIASES = Object.freeze({
   descriptive_rarity: ["descriptive_rarity", "rarity"],
   numerical_rarity: ["numerical_rarity", "print_run_number", "serial_number"],
   release_variant: ["release_variant", "variation"],
-  print_finish: ["print_finish", "parallel", "parallel_exact", "parallel_family", "surface_color"]
+  print_finish: ["print_finish", "product_finish", "parallel", "parallel_exact", "parallel_family", "surface_color"],
+  special_stamp: ["special_stamp", "first_bowman"],
+  search_optimization: [
+    "search_optimization",
+    "observable_components",
+    "rc",
+    "auto",
+    "patch",
+    "relic",
+    "jersey",
+    "sketch",
+    "redemption",
+    "team"
+  ]
 });
+
+const DERIVED_SEM_FIELDS = new Set(["search_optimization", "special_stamp"]);
 
 function finite(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -70,6 +85,10 @@ function hasAlias(fields, field) {
 }
 
 function classifyMissing(row, packet) {
+  // These SEM fields are assembled from several normalized observations. They
+  // are not raw Provider contract fields, so absence of a same-named Provider
+  // key must never be reported as a Provider observation miss.
+  if (DERIVED_SEM_FIELDS.has(row.field)) return "DERIVED_SEM_NOT_EMITTED";
   if (!hasAlias(packetFields(packet, "provider_observation_fields"), row.field)) return "PROVIDER_NOT_OBSERVED";
   if (!hasAlias(packetFields(packet, "normalization.output"), row.field)) return "NORMALIZATION_DROPPED";
   return "CATALOG_NOT_RETRIEVED";

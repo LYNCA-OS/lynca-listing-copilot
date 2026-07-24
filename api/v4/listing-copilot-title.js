@@ -68,6 +68,24 @@ function withoutPreingestionIdentity(payload = {}) {
   return scoped;
 }
 
+async function retryBoundedIdempotentWrite(operation, { attempts = 3, retryBaseMs = 100 } = {}) {
+  const maxAttempts = Math.max(1, Math.min(5, Number(attempts) || 3));
+  const baseMs = Math.max(10, Math.min(2_000, Number(retryBaseMs) || 100));
+  let result = { saved: false, error: "write_not_attempted" };
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      result = await operation();
+    } catch (error) {
+      result = { saved: false, error: String(error?.message || error || "write_failed").slice(0, 180) };
+    }
+    if (result?.saved === true) return { ...result, write_attempts: attempt };
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, baseMs * (2 ** (attempt - 1))));
+    }
+  }
+  return { ...result, write_attempts: maxAttempts };
+}
+
 // Bundle identity is resolved only after the queue lease and persisted session
 // have both been verified. The queue RPC therefore remains strict (no bundle
 // fields are accepted), while execution can still reuse server-owned OCR
@@ -111,9 +129,7 @@ export async function resolveCanonicalWorkerPreingestion({
   }
 
   const summary = summarizePreIngestionBundle(bundle);
-  let mirror;
-  try {
-    mirror = await persistMirror({
+  const mirror = await retryBoundedIdempotentWrite(() => persistMirror({
       bundleId,
       tenantId,
       assetId,
@@ -121,10 +137,7 @@ export async function resolveCanonicalWorkerPreingestion({
       summary,
       env,
       fetchImpl
-    });
-  } catch (error) {
-    mirror = { saved: false, error: String(error?.message || error || "bundle_mirror_failed").slice(0, 180) };
-  }
+    }), { attempts: 3, retryBaseMs: 100 });
 
   let session = { saved: false, skipped: true, reason: "bundle_mirror_not_saved" };
   if (mirror?.saved === true && sessionId) {
@@ -138,6 +151,8 @@ export async function resolveCanonicalWorkerPreingestion({
             has_preingestion_bundle: true
           }
         },
+        attempts: 5,
+        retryBaseMs: 150,
         env,
         fetchImpl
       });
@@ -146,15 +161,20 @@ export async function resolveCanonicalWorkerPreingestion({
     }
   }
 
+  const usable = mirror?.saved === true && session?.saved === true;
   return {
-    payload: {
+    payload: usable ? {
       ...scopedPayload,
       preingestion_bundle_id: bundleId,
       preingestionBundleId: bundleId,
       preingestion_bundle_status: String(bundle.status || "READY").trim() || "READY",
       preingestion_summary: summary
-    },
+    } : scopedPayload,
     found: true,
+    usable,
+    fallback_reason: usable
+      ? null
+      : mirror?.saved !== true ? "bundle_mirror_not_saved" : "bundle_session_not_saved",
     bundle_id: bundleId,
     mirror,
     session
@@ -1596,16 +1616,6 @@ export default async function handler(req, res) {
     fetchImpl: globalThis.fetch
   });
   if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
-  if (canonicalPreingestion.found === true
-      && (canonicalPreingestion.mirror?.saved !== true || canonicalPreingestion.session?.saved !== true)) {
-    sendJson(res, 503, withV4Version({
-      ok: false,
-      retryable: true,
-      message: "Canonical pre-ingestion evidence could not be durably bound to the recognition session.",
-      error_code: "V4_PREINGESTION_SESSION_BIND_FAILED"
-    }));
-    return;
-  }
   payload = {
     ...canonicalPreingestion.payload,
     ...(workerAuthorized ? {
@@ -1615,8 +1625,10 @@ export default async function handler(req, res) {
     v4_canonical_preingestion_resolution: {
       source: "SERVER_TENANT_ASSET",
       found: canonicalPreingestion.found === true,
+      usable: canonicalPreingestion.usable === true,
       mirror_saved: canonicalPreingestion.mirror?.saved === true,
-      session_bound: canonicalPreingestion.session?.saved === true
+      session_bound: canonicalPreingestion.session?.saved === true,
+      fallback_reason: canonicalPreingestion.fallback_reason || null
     }
   };
   const handlerStartedAt = Date.now();
@@ -1773,7 +1785,9 @@ export default async function handler(req, res) {
   if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
   const observingUpdate = await updateV4RecognitionSessionWithRetry({
     sessionId,
-    patch: { status: v4SessionStatuses.OBSERVING }
+    patch: { status: v4SessionStatuses.OBSERVING },
+    attempts: 5,
+    retryBaseMs: 150
   });
   if (observingUpdate.saved !== true) {
     sendJson(res, 503, withV4Version({
