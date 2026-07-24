@@ -315,6 +315,7 @@ function operationalSessionStatus(session = null, job = null) {
       identity_cache_miss_reason: summary.identity_cache_miss_reason || null,
       provider_call_skipped: summary.provider_call_skipped === true,
       cached_result_version_match: summary.cached_result_version_match ?? null,
+      identity_cache_scope: summary.identity_cache_scope || null,
       identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
       identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
       identity_cache_write_reason: summary.identity_cache_write_reason || null,

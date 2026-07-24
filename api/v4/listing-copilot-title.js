@@ -481,6 +481,7 @@ function providerRuntimeSummary(result = {}) {
     identity_cache_miss_reason: result.identity_cache?.miss_reason || null,
     provider_call_skipped: result.identity_cache?.provider_call_skipped === true,
     cached_result_version_match: result.identity_cache?.cached_result_version_match ?? null,
+    identity_cache_scope: result.identity_cache?.cache_scope || null,
     identity_cache_version_fingerprint: result.identity_cache?.version_fingerprint || null,
     identity_cache_image_generation_hash: result.identity_cache?.image_generation_hash || null,
     identity_cache_write_reason: result.identity_cache?.write_reason || null,

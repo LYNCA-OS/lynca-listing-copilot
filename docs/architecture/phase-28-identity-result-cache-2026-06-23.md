@@ -36,8 +36,11 @@ The cache may store only:
 - `CONFIRMED` identity results by default.
 - `RESOLVED` identity results only when `LISTING_IDENTITY_CACHE_WRITE_RESOLVED=true`.
 - Completed, non-technical `ABSTAIN` results with a final writer-ready L2 title. Replay preserves the original status and cannot promote identity confidence; structured identity completeness remains a requirement for `CONFIRMED` / `RESOLVED` writes, not for idempotent safe-draft replay.
-- Original `field_states`, `conflict_map`, `confidence_report`, and `resolution_trace`.
-- Object paths and content hashes, not signed URLs.
+- Final title, normalized public card fields, identity status, source provider,
+  and the complete version vector. Original evidence and execution traces stay
+  with their tenant-local request and are not shared.
+- Verified image roles and content hashes, without tenant ids, object paths,
+  asset ids, user data, or signed URLs.
 
 The cache rejects:
 
@@ -68,11 +71,15 @@ On an exact verified image-content match:
 - route: `IDENTITY_RESULT_CACHE`
 - source/provider: `internal_identity_result_cache`
 
-The v2 key is tenant-scoped and requires an exact version-vector match. The
-vector contains the verified image-generation hash, model revision, prompt
+The v3 key is global for identical verified image content and requires an exact
+version-vector match. The vector contains the verified image-generation hash, model revision, prompt
 revision, SEM version, candidate policy version, catalog snapshot version, and
 renderer version. A stale row is reported as `cached_result_version_mismatch`
-and falls through to recognition; it is never returned as current L2.
+and falls through to recognition; it is never returned as current L2. Each
+request still owns its tenant-local asset, queue, session, and audit records;
+only the anonymous card result is shared. In-flight request coalescing remains
+tenant-scoped because a running pipeline result has not yet crossed the
+anonymous cache-write boundary.
 
 Runtime telemetry is explicit on both hit and miss paths:
 

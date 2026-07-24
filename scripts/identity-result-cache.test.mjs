@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { runNativeV4Recognition } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import {
   buildIdentityResultCacheKey,
+  buildTenantScopedIdentityInFlightKey,
   identityResultCacheRecordToListingResult,
   identityResultToCacheRow,
   isCacheableIdentityResult,
@@ -21,8 +22,10 @@ process.env.OPENAI_API_KEY = "test-openai-key";
 process.env.OPENAI_LISTING_MODEL = "gpt-4.1-mini-2025-04-14";
 
 const tenantId = "tenant-cache";
+const secondTenantId = "tenant-cache-second";
 const userId = "user-cache";
 const assetId = "asset_22222222-2222-4222-8222-222222222222";
+const secondAssetId = "asset_44444444-4444-4444-8444-444444444444";
 
 function makeImage({
   id,
@@ -55,7 +58,7 @@ function jsonResponse(payload, status = 200) {
 
 async function callTitleApi(payload) {
   return runNativeV4Recognition({
-    payload: { ...payload, tenant_id: tenantId }
+    payload
   });
 }
 
@@ -81,8 +84,24 @@ const payload = {
   resolutionMap: {},
   maxTitleLength: 80
 };
+const secondImages = images.map((image) => ({
+  ...image,
+  assetId: secondAssetId,
+  objectPath: image.objectPath
+    .replace(`tenants/${tenantId}/`, `tenants/${secondTenantId}/`)
+    .replace(assetId, secondAssetId)
+}));
+const secondPayload = {
+  ...payload,
+  assetId: secondAssetId,
+  tenant_id: secondTenantId,
+  images: secondImages
+};
 const key = buildIdentityResultCacheKey(payload);
+const secondTenantKey = buildIdentityResultCacheKey(secondPayload);
 assert.equal(key.ok, true);
+assert.equal(secondTenantKey.ok, true);
+assert.equal(secondTenantKey.cache_key, key.cache_key, "identical verified content must reuse one global result across tenants");
 assert.match(key.cache_key, /^[0-9a-f]{64}$/);
 assert.match(key.image_generation_hash, /^[0-9a-f]{64}$/);
 assert.match(key.version_fingerprint, /^[0-9a-f]{64}$/);
@@ -92,8 +111,13 @@ assert.equal(key.result_version.sem_version, "linear-cos-10-23-v25");
 assert.equal(key.result_version.renderer_version, "renderer-v3-scg");
 
 const noTenantKey = buildIdentityResultCacheKey({ images });
-assert.equal(noTenantKey.ok, false);
-assert.equal(noTenantKey.reason, "tenant_id_missing");
+assert.equal(noTenantKey.ok, true);
+assert.equal(noTenantKey.cache_key, key.cache_key);
+assert.notEqual(
+  buildTenantScopedIdentityInFlightKey(payload),
+  buildTenantScopedIdentityInFlightKey(secondPayload),
+  "unfinished in-flight results remain tenant scoped"
+);
 
 const catalogRevisionKey = buildIdentityResultCacheKey(payload, {
   ...process.env,
@@ -144,7 +168,14 @@ const confirmedResult = {
     players: {
       value: ["Cooper Flagg"],
       confidence: 0.92,
-      sources: [{ source_type: "CARD_FRONT_PRINTED_TEXT", observed_text: "Cooper Flagg" }]
+      sources: [{
+        source_type: "CARD_FRONT_PRINTED_TEXT",
+        observed_text: "Cooper Flagg",
+        tenant_id: tenantId,
+        asset_id: assetId,
+        object_path: images[0].objectPath,
+        signed_url: `https://supabase.test/storage/v1/object/sign/${images[0].objectPath}?token=private`
+      }]
     }
   },
   field_states: [
@@ -194,15 +225,18 @@ const built = identityResultToCacheRow({
 });
 assert.equal(built.ok, true);
 assert.equal(built.row.cache_key, key.cache_key);
-assert.equal(built.row.tenant_id, tenantId);
+assert.equal(Object.hasOwn(built.row, "tenant_id"), false);
 assert.equal(built.row.image_generation_hash, key.image_generation_hash);
 assert.equal(built.row.version_fingerprint, key.version_fingerprint);
 assert.deepEqual(built.row.result_version, key.result_version);
 assert.equal(built.row.identity_status, "CONFIRMED");
 assert.equal(built.row.image_fingerprints.length, 2);
+assert.equal(built.row.image_fingerprints.every((item) => !Object.hasOwn(item, "object_path")), true);
 assert.equal(built.row.final_title, confirmedResult.final_title);
-assert.equal(built.row.resolution_trace.length, 1);
-assert.doesNotMatch(JSON.stringify(built.row), /signedUrl|signed_url/);
+assert.equal(built.row.resolution_trace.length, 0);
+assert.deepEqual(built.row.evidence_snapshot, {});
+assert.equal(built.row.identity_resolution, null);
+assert.doesNotMatch(JSON.stringify(built.row), /tenant-cache|listing-assets|signedUrl|signed_url|asset_222/);
 
 const cachedResult = identityResultCacheRecordToListingResult({
   record: built.row,
@@ -214,10 +248,12 @@ assert.equal(cachedResult.provider, "internal_identity_result_cache");
 assert.equal(cachedResult.identity_cache.cache_hit, true);
 assert.equal(cachedResult.identity_cache.provider_call_skipped, true);
 assert.equal(cachedResult.identity_cache.cached_result_version_match, true);
+assert.equal(cachedResult.identity_cache.cache_scope, "global_verified_content");
+assert.equal(Object.hasOwn(cachedResult.identity_cache, "tenant_id"), false);
 assert.equal(cachedResult.usage.provider_calls, 0);
 assert.equal(cachedResult.usage.recognition_worker_calls, 0);
 assert.equal(cachedResult.resolution_trace[0].phase, "identity_result_cache");
-assert.equal(cachedResult.resolution_trace[1].phase, "solver");
+assert.equal(cachedResult.resolution_trace.length, 1);
 assert.match(cachedResult.final_title, /2025 Topps Chrome Cooper Flagg/);
 
 const fetchCalls = [];
@@ -233,14 +269,16 @@ globalThis.fetch = async (url, options = {}) => {
 
   if (table === "listing_image_verifications") {
     const objectPath = requestUrl.searchParams.get("object_path")?.replace(/^eq\./, "");
-    const image = images.find((item) => item.objectPath === objectPath);
+    const image = [...images, ...secondImages].find((item) => item.objectPath === objectPath);
     assert.ok(image, `unexpected verification object path ${objectPath}`);
+    const requestTenantId = objectPath.startsWith(`tenants/${secondTenantId}/`) ? secondTenantId : tenantId;
+    const requestAssetId = requestTenantId === secondTenantId ? secondAssetId : assetId;
     return jsonResponse([
       {
-        tenant_id: tenantId,
+        tenant_id: requestTenantId,
         object_path: image.objectPath,
         bucket: image.bucket,
-        asset_id: assetId,
+        asset_id: requestAssetId,
         content_type: image.originalType,
         size: image.originalSize,
         width: image.originalWidth,
@@ -274,14 +312,13 @@ assert.equal(read.record.cache_key, key.cache_key);
 let mismatchProbeCount = 0;
 const mismatch = await readIdentityResultCacheRecord({
   cacheKey: "e".repeat(64),
-  tenantId: key.tenant_id,
   imageGenerationHash: key.image_generation_hash,
   expectedVersion: { fingerprint: "f".repeat(64) },
   fetchImpl: async (url) => {
     const requestUrl = new URL(String(url));
     mismatchProbeCount += 1;
     if (requestUrl.searchParams.has("cache_key")) return jsonResponse([]);
-    assert.equal(requestUrl.searchParams.get("tenant_id"), `eq.${key.tenant_id}`);
+    assert.equal(requestUrl.searchParams.has("tenant_id"), false);
     assert.equal(requestUrl.searchParams.get("image_generation_hash"), `eq.${key.image_generation_hash}`);
     return jsonResponse([{
       cache_key: key.cache_key,
@@ -309,14 +346,17 @@ assert.equal(saved.cache_key, key.cache_key);
 
 process.env.LISTING_IDENTITY_CACHE_WRITE_ENABLED = "false";
 fetchCalls.length = 0;
-const response = await callTitleApi(payload);
+const response = await callTitleApi(secondPayload);
 assert.equal(response.statusCode, 200);
 assert.equal(response.body.source, "internal_identity_result_cache");
 assert.equal(response.body.provider, "internal_identity_result_cache");
 assert.equal(response.body.identity_cache.cache_hit, true);
 assert.equal(response.body.identity_cache.provider_call_skipped, true);
 assert.equal(response.body.identity_cache.cached_result_version_match, true);
+assert.equal(response.body.identity_cache.cache_scope, "global_verified_content");
+assert.equal(Object.hasOwn(response.body.identity_cache, "tenant_id"), false);
 assert.equal(response.body.identity_cache.cache_key, key.cache_key);
+assert.equal(response.body.asset_id, secondAssetId);
 assert.equal(response.body.usage.provider_calls, 0);
 assert.equal(response.body.usage.recognition_worker_calls, 0);
 assert.match(response.body.final_title, /2025 Topps Chrome Cooper Flagg/);
@@ -345,5 +385,10 @@ assert.match(versionMigration, /listing_identity_resolution_cache_generation_ver
 const terminalL2Migration = await readFile("supabase/migrations/20260724_listing_identity_cache_terminal_l2.sql", "utf8");
 assert.match(terminalL2Migration, /drop constraint if exists listing_identity_resolution_cache_identity_status_check/i);
 assert.match(terminalL2Migration, /identity_status in \('CONFIRMED', 'RESOLVED', 'ABSTAIN'\)/i);
+
+const globalScopeMigration = await readFile("supabase/migrations/20260724224500_listing_identity_cache_global_scope_v1.sql", "utf8");
+assert.match(globalScopeMigration, /drop column if exists tenant_id cascade/i);
+assert.match(globalScopeMigration, /listing_identity_resolution_cache_global_generation_version_idx/i);
+assert.match(globalScopeMigration, /Tenant ids, object paths, signed URLs, asset ids, and user data are forbidden/i);
 
 console.log("identity result cache tests passed");
