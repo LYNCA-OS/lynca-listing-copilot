@@ -190,6 +190,7 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
 {
   let onePieceRequestId = 0;
   const onePieceHtml = `
+    <select><option value="556101" selected>Romance Dawn</option></select>
     <dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Roronoa Zoro</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
     <dl class="modalCol" id="OP01-002"><dt><div class="infoCol"><span>OP01-002</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Trafalgar Law</div></dt><dd><img data-src="../images/cardlist/card/OP01-002.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>
   `;
@@ -237,6 +238,7 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
 
 {
   const digimonHtml = `
+    <select><option value="522110" selected>Parallel World Tactician</option></select>
     <ul class="image_lists">
       <li class="image_lists_item data page-1">
         <a class="card_img" data-src="#ST10-01"><img src="../images/cardlist/card/ST10-01.png" alt="ST10-01Nyaromon"></a>
@@ -267,7 +269,7 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
   });
   const report = await digimon.report({
     sourceUrls: [{
-      href: "https://world.digimoncard.com/cardlist/?search=true",
+      href: "https://world.digimoncard.com/cards/index.php?search=true&category=522110",
       text: "Digimon Card List"
     }]
   });
@@ -282,6 +284,33 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
   assert.deepEqual(report.raw.staging[0].staging.identity_fields.observable_components, ["Color:Purple", "Form:In-Training"]);
   assert.equal(report.raw.staging[1].staging.identity_fields.parallel_exact, "Alternative Art");
   assert.equal(report.raw.staging[1].staging.identity_fields.external_id, "BT2-108_P1");
+
+  let unsafeFetchCount = 0;
+  const guarded = createOfficialCatalogSourceAdapter({
+    provider: "digimon",
+    fetchImpl: async () => {
+      unsafeFetchCount += 1;
+      return new Response(digimonHtml, { status: 200, headers: { "content-type": "text/html" } });
+    }
+  });
+  await assert.rejects(() => guarded.downloadSource({
+    href: "https://catalog.example/cards/index.php?search=true&category=522110"
+  }), /digimon_bounded_official_series_url_required/);
+  await assert.rejects(() => guarded.downloadSource({
+    href: "https://world.digimoncard.com/cards/index.php?search=true"
+  }), /digimon_bounded_official_series_url_required/);
+  assert.equal(unsafeFetchCount, 0);
+
+  const mismatched = createOfficialCatalogSourceAdapter({
+    provider: "one_piece",
+    fetchImpl: async () => new Response('<option value="569102" selected>Wrong series</option>', {
+      status: 200,
+      headers: { "content-type": "text/html" }
+    })
+  });
+  await assert.rejects(() => mismatched.downloadSource({
+    href: "https://en.onepiece-cardgame.com/cardlist/?series=569101"
+  }), /one_piece_selected_series_contract_mismatch:569101/);
 }
 
 {

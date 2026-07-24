@@ -71,7 +71,7 @@ async function catalogSearchFromRows(rows = []) {
 {
   const adapter = createOfficialCatalogSourceAdapter({
     provider: "one_piece",
-    fetchImpl: async () => new Response('<dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Monkey D. Luffy</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>', {
+    fetchImpl: async () => new Response('<select><option value="556101" selected>Romance Dawn</option></select><dl class="modalCol" id="OP01-001"><dt><div class="infoCol"><span>OP01-001</span> | <span>L</span> | <span>LEADER</span></div><div class="cardName">Monkey D. Luffy</div></dt><dd><img data-src="../images/cardlist/card/OP01-001.png"><div class="getInfo"><h3>Card Set(s)</h3>-ROMANCE DAWN- [OP01]</div></dd></dl>', {
       status: 200,
       headers: { "content-type": "text/html" }
     })
