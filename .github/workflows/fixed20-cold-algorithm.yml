@@ -1,0 +1,114 @@
+name: fixed20-cold-algorithm
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: fixed20-cold-algorithm
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      DATASET_PATH: /tmp/reviewed-cold-20.json
+      SEALED_LABELS_PATH: /tmp/reviewed-cold-20-sealed-labels.jsonl
+      REPORT_PATH: /tmp/reviewed-cold-20-report.json
+      AUDIT_PATH: /tmp/reviewed-cold-20-audit.json
+      IDLE_GAP_PATH: /tmp/reviewed-cold-20-idle-gap.json
+      SEM_STAGE_PATH: /tmp/reviewed-cold-20-sem-stage-loss.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify benchmark credentials
+        run: |
+          test -n "$METAVERSE_USERNAME"
+          test -n "$METAVERSE_PASSWORD"
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+      - name: Build the frozen reviewed 20
+        run: |
+          node scripts/build-reviewed-title-blind-eval.mjs \
+            --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
+            --out "$DATASET_PATH" \
+            --sealed-labels-out "$SEALED_LABELS_PATH" \
+            --limit 20 \
+            --selection-seed google-vision-smoke-20-20260722 \
+            --sample-mode fixed_regression \
+            --reuse-reason "Fixed 20-card cold-chain speed and accuracy diagnostic." \
+            --reuse-scope-id google-vision-smoke-20-20260722
+      - name: Prove frozen sample identity
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const dataset = JSON.parse(fs.readFileSync(process.env.DATASET_PATH, 'utf8'));
+          const expected = '0e2552eeb9f40debe1a40d543382e4f3038ddb881c5aebaa8b4e4f0988e2f75d';
+          const actual = dataset.evaluation_sample_policy?.selected_item_ids_sha256;
+          const checks = {
+            exact_count: dataset.item_count === 20,
+            fixed_regression: dataset.evaluation_sample_policy?.mode === 'FIXED_REGRESSION',
+            exact_fingerprint: actual === expected,
+            image_only: dataset.intake_policy?.image_only === true
+          };
+          console.log(JSON.stringify({ checks, expected, actual }, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+      - name: Run the one allowed cold 20
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
+            --dataset "$DATASET_PATH" \
+            --sealed-labels "$SEALED_LABELS_PATH" \
+            --base-url "$API_BASE_URL" \
+            --limit 20 \
+            --benchmark-profile cold \
+            --concurrency 2 \
+            --submission-concurrency 2 \
+            --preparation-concurrency 3 \
+            --queue \
+            --speculative \
+            --use-preingestion \
+            --prewarm \
+            --force-l2-direct \
+            --model gpt-5-mini \
+            --sample-mode fixed_regression \
+            --think-ms 0 \
+            --l2-wait-ms 360000 \
+            --request-timeout-ms 120000 \
+            --verified-asset-cache-mode disabled \
+            --out "$REPORT_PATH"
+      - name: Build offline audits
+        if: always()
+        run: |
+          if test -f "$REPORT_PATH"; then
+            node scripts/analyze-provider-idle-gap-causes.mjs "$REPORT_PATH" "$IDLE_GAP_PATH"
+            node scripts/analyze-sem-stage-loss.mjs "$REPORT_PATH" "$SEM_STAGE_PATH"
+            node scripts/analyze-fixed20-cold-benchmark.mjs "$REPORT_PATH" "$AUDIT_PATH"
+          fi
+      - name: Upload sealed evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: fixed20-cold-algorithm-evidence
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/reviewed-cold-20.json
+            /tmp/reviewed-cold-20-sealed-labels.jsonl
+            /tmp/reviewed-cold-20-report.json
+            /tmp/reviewed-cold-20-report.tsv
+            /tmp/reviewed-cold-20-audit.json
+            /tmp/reviewed-cold-20-idle-gap.json
+            /tmp/reviewed-cold-20-sem-stage-loss.json

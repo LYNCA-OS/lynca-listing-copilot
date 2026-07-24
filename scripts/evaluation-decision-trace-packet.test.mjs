@@ -6,6 +6,10 @@ import {
   classifyEvaluationMissingField,
   evaluationTraceEnabled
 } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
+import {
+  applyRecognitionBenchmarkProfile,
+  recognitionBenchmarkProfileIds
+} from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 
 const payload = {
   provider_options: {
@@ -14,6 +18,9 @@ const payload = {
   }
 };
 assert.equal(evaluationTraceEnabled(payload), true);
+assert.equal(applyRecognitionBenchmarkProfile({}, {
+  profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
+}).trace_level, "evaluation");
 assert.equal(evaluationTraceEnabled({ provider_options: { recognition_benchmark_profile: "production_workload_benchmark", trace_level: "evaluation" } }), false);
 
 const packet = buildEvaluationDecisionTracePacket({

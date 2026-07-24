@@ -1,0 +1,137 @@
+#!/usr/bin/env node
+
+import fs from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { recognitionBenchmarkProfileIds } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import { analyzeSemStageLoss } from "./analyze-sem-stage-loss.mjs";
+
+const EXPECTED_COUNT = 20;
+const FIELD_ALIASES = Object.freeze({
+  year: ["year", "printed_year", "release_year", "season", "product_year", "title_year"],
+  manufacturer: ["manufacturer", "brand"],
+  product: ["product", "product_line"],
+  set: ["set", "subset", "insert"],
+  subject: ["subject", "player", "players", "character"],
+  card_name: ["card_name", "official_card_type", "card_type", "insert"],
+  card_number: ["card_number", "checklist_code", "collector_number"],
+  descriptive_rarity: ["descriptive_rarity", "rarity"],
+  numerical_rarity: ["numerical_rarity", "print_run_number", "serial_number"],
+  release_variant: ["release_variant", "variation"],
+  print_finish: ["print_finish", "parallel", "parallel_exact", "parallel_family", "surface_color"]
+});
+
+function finite(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function percentile(values, ratio) {
+  const rows = values.map(finite).filter((value) => value !== null).sort((a, b) => a - b);
+  if (!rows.length) return null;
+  return rows[Math.min(rows.length - 1, Math.max(0, Math.ceil(rows.length * ratio) - 1))];
+}
+
+function packetFields(packet, pathName) {
+  const value = pathName.split(".").reduce((current, key) => current?.[key], packet);
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function hasAlias(fields, field) {
+  return (FIELD_ALIASES[field] || [field]).some((alias) => Object.hasOwn(fields, alias));
+}
+
+function classifyMissing(row, packet) {
+  if (!hasAlias(packetFields(packet, "provider_observation_fields"), row.field)) return "PROVIDER_NOT_OBSERVED";
+  if (!hasAlias(packetFields(packet, "normalization.output"), row.field)) return "NORMALIZATION_DROPPED";
+  return "CATALOG_NOT_RETRIEVED";
+}
+
+export function analyzeFixed20ColdBenchmark(report = {}) {
+  const results = Array.isArray(report.results) ? report.results : [];
+  const cacheViolations = results.filter((row) => row.identity_cache_hit === true
+    || row.provider_call_skipped === true
+    || Number(row.provider_calls) !== 1
+    || row.recognition_benchmark_profile !== recognitionBenchmarkProfileIds.COLD_ALGORITHM);
+  const traceRows = results.filter((row) => row.evaluation_decision_trace_packet?.trace_level === "evaluation");
+  const timelineRows = results.map((row) => row.provider_capacity_timeline).filter(Boolean);
+  const sem = analyzeSemStageLoss(report);
+  const resultByJob = new Map(results.map((row) => [row.job_id, row]));
+  const missingBreakdown = {};
+  for (const row of sem.rows.filter((entry) => entry.classification === "EVIDENCE_OR_RETRIEVAL_MISSING")) {
+    const category = classifyMissing(row, resultByJob.get(row.job_id)?.evaluation_decision_trace_packet || {});
+    missingBreakdown[category] = (missingBreakdown[category] || 0) + 1;
+  }
+  const metric = (name) => timelineRows.map((row) => row[name]).map(finite).filter((value) => value !== null);
+  const timing = Object.fromEntries([
+    "provider_slot_held_before_provider_ms",
+    "prepared_waiting_for_provider_ms",
+    "provider_execution_ms",
+    "provider_slot_release_ms"
+  ].map((name) => {
+    const values = metric(name);
+    return [name, {
+      measured_count: values.length,
+      total_ms: values.reduce((sum, value) => sum + value, 0),
+      p50_ms: percentile(values, 0.5),
+      p95_ms: percentile(values, 0.95)
+    }];
+  }));
+  const integrity = {
+    exact_count: results.length === EXPECTED_COUNT,
+    all_l2_ready: Number(report.summary?.l2_ready_count || 0) === EXPECTED_COUNT,
+    zero_technical_failures: Number(report.summary?.technical_failure_count || 0) === 0
+      && Number(report.summary?.ok_count || 0) === EXPECTED_COUNT,
+    cold_cache_contract: cacheViolations.length === 0,
+    evaluation_trace_coverage: traceRows.length === EXPECTED_COUNT
+  };
+  return {
+    schema_version: "fixed20-cold-algorithm-audit-v1",
+    generated_at: new Date().toISOString(),
+    integrity,
+    passed: Object.values(integrity).every(Boolean),
+    cache_violation_count: cacheViolations.length,
+    evaluation_trace_count: traceRows.length,
+    provider_capacity_timeline_count: timelineRows.length,
+    provider_capacity_timing: timing,
+    sem_stage_loss: {
+      confirmed_field_count: sem.confirmed_field_count,
+      preserved_field_count: sem.preserved_field_count,
+      missing_field_count: sem.missing_field_count,
+      preservation_rate: sem.preservation_rate,
+      classification_counts: sem.classification_counts,
+      evidence_or_retrieval_missing_breakdown: missingBreakdown
+    },
+    performance: {
+      run_wall_ms: report.summary?.run_wall_ms ?? report.run_wall_ms ?? null,
+      cards_per_minute: report.summary?.completed_cards_per_minute ?? report.summary?.cards_per_minute ?? null,
+      writer_ready_p50_ms: report.summary?.writer_ready_p50_ms ?? null,
+      writer_ready_p95_ms: report.summary?.writer_ready_p95_ms ?? null,
+      writer_visible_recognition_p50_ms: report.summary?.writer_visible_recognition_p50_ms ?? null,
+      writer_visible_recognition_p95_ms: report.summary?.writer_visible_recognition_p95_ms ?? null,
+      provider_latency_p50_ms: report.summary?.provider_diagnostics?.provider_latency_p50_ms ?? null,
+      provider_latency_p95_ms: report.summary?.provider_diagnostics?.provider_latency_p95_ms ?? null
+    },
+    accuracy: report.summary?.final_accuracy_proxy || null
+  };
+}
+
+async function main(argv = process.argv.slice(2)) {
+  const [inputPath, outputPath] = argv;
+  if (!inputPath) throw new Error("Usage: analyze-fixed20-cold-benchmark.mjs <report.json> [output.json]");
+  const report = JSON.parse(await fs.readFile(inputPath, "utf8"));
+  const analysis = analyzeFixed20ColdBenchmark(report);
+  const serialized = `${JSON.stringify(analysis, null, 2)}\n`;
+  if (outputPath) {
+    await fs.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.writeFile(outputPath, serialized);
+  } else process.stdout.write(serialized);
+  if (!analysis.passed) process.exitCode = 1;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+  main().catch((error) => {
+    console.error(error?.stack || error?.message || String(error));
+    process.exitCode = 1;
+  });
+}
