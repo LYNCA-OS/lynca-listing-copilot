@@ -13,7 +13,7 @@ const repository = validateOfficialCatalogManifestSet(repositoryEntries, {
 });
 assert.equal(repository.valid, true, JSON.stringify(repository.errors));
 assert.equal(repository.manifest_count, 10);
-assert.equal(repository.source_count, 68);
+assert.equal(repository.source_count, 69);
 assert.ok(repositoryEntries.some(({ manifest }) => manifest.provider === "battle_spirits"));
 assert.ok(repositoryEntries.some(({ manifest }) => manifest.provider === "dragon_ball_masters"));
 

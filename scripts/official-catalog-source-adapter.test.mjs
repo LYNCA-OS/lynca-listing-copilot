@@ -301,6 +301,30 @@ import { parseBattleSpiritsDetailBundle } from "../lib/listing/catalog/battle-sp
   }), /digimon_bounded_official_series_url_required/);
   assert.equal(unsafeFetchCount, 0);
 
+  const exactCardHtml = `
+    <li class="image_lists_item data page-1"><a class="card_img"><img src="../images/cardlist/card/LM-042.png"></a>
+      <div class="popupCol" id="LM-042"><li class="cardNo">LM-042</li><li class="cardRarity">P</li>
+      <li class="cardType">Digimon</li><div class="cardTitle">Rasielmon</div></div></li>`;
+  const exactCard = createOfficialCatalogSourceAdapter({
+    provider: "digimon",
+    fetchImpl: async () => new Response(exactCardHtml, {
+      status: 200,
+      headers: { "content-type": "text/html" }
+    })
+  });
+  const exactCardReport = await exactCard.buildImportReport({
+    sourceUrls: [{
+      href: "https://world.digimoncard.com/cards/?card_no=LM-042&search=true",
+      text: "Rasielmon LM-042"
+    }]
+  });
+  assert.equal(exactCardReport.metrics.card_count, 1);
+  assert.equal(exactCardReport.raw.staging[0].staging.identity_fields.card_number, "LM-042");
+
+  await assert.rejects(() => exactCard.downloadSource({
+    href: "https://world.digimoncard.com/cards/?card_no=LM-041&search=true"
+  }), /digimon_card_number_contract_mismatch:LM-041/);
+
   const mismatched = createOfficialCatalogSourceAdapter({
     provider: "one_piece",
     fetchImpl: async () => new Response('<option value="569102" selected>Wrong series</option>', {
