@@ -162,6 +162,7 @@ and delete the flag.
 | `LISTING_IDENTITY_CACHE_TTL_DAYS` | lib/listing/cache/identity-result-cache.mjs |
 | `LISTING_IDENTITY_CACHE_WRITE_ENABLED` | lib/listing/cache/identity-result-cache.mjs |
 | `LISTING_IDENTITY_CACHE_WRITE_RESOLVED` | lib/listing/cache/identity-result-cache.mjs |
+| `LISTING_CATALOG_SNAPSHOT_VERSION` | lib/listing/cache/identity-cache-version-contract.mjs |
 | `LISTING_IDENTITY_INFLIGHT_COALESCING_ENABLED` | lib/listing/cache/inflight-identity-request.mjs |
 | `LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED` | lib/listing/cache/inflight-identity-request.mjs |
 | `LISTING_IDENTITY_INFLIGHT_DEDUP_MAX_ENTRIES` | lib/listing/cache/inflight-identity-request.mjs |

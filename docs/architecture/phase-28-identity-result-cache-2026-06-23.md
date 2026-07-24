@@ -67,6 +67,23 @@ On an exact verified image-content match:
 - route: `IDENTITY_RESULT_CACHE`
 - source/provider: `internal_identity_result_cache`
 
+The v2 key is tenant-scoped and requires an exact version-vector match. The
+vector contains the verified image-generation hash, model revision, prompt
+revision, SEM version, candidate policy version, catalog snapshot version, and
+renderer version. A stale row is reported as `cached_result_version_mismatch`
+and falls through to recognition; it is never returned as current L2.
+
+Runtime telemetry is explicit on both hit and miss paths:
+
+- `identity_cache_hit`
+- `identity_cache_miss_reason`
+- `provider_call_skipped`
+- `cached_result_version_match`
+
+`LISTING_CATALOG_SNAPSHOT_VERSION` is the preferred catalog invalidation knob.
+When absent, the existing lookup-cache revision plus deployment commit SHA is
+used so checked-in catalog changes invalidate old entries automatically.
+
 This helps the low-cost target for duplicate or repeated upload workflows, while preserving the original identity-resolution trace for audit and replay.
 
 ## Rollout Controls
@@ -78,6 +95,7 @@ Environment toggles:
 - `LISTING_IDENTITY_CACHE_WRITE_ENABLED`
 - `LISTING_IDENTITY_CACHE_WRITE_RESOLVED`
 - `LISTING_IDENTITY_CACHE_TTL_DAYS`
+- `LISTING_CATALOG_SNAPSHOT_VERSION`
 
 Recommended rollout:
 
@@ -86,4 +104,3 @@ Recommended rollout:
 3. Enable write for `CONFIRMED` only.
 4. Review cache-hit traces.
 5. Consider `RESOLVED` writes only after enough manual QA.
-

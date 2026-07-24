@@ -75,6 +75,7 @@ const images = [
 ];
 const payload = {
   assetId,
+  tenant_id: tenantId,
   mode: "single",
   images,
   resolutionMap: {},
@@ -83,6 +84,30 @@ const payload = {
 const key = buildIdentityResultCacheKey(payload);
 assert.equal(key.ok, true);
 assert.match(key.cache_key, /^[0-9a-f]{64}$/);
+assert.match(key.image_generation_hash, /^[0-9a-f]{64}$/);
+assert.match(key.version_fingerprint, /^[0-9a-f]{64}$/);
+assert.equal(key.tenant_id, tenantId);
+assert.equal(key.result_version.model_revision, "gpt-4.1-mini-2025-04-14");
+assert.equal(key.result_version.sem_version, "linear-cos-10-23-v25");
+assert.equal(key.result_version.renderer_version, "renderer-v3-scg");
+
+const noTenantKey = buildIdentityResultCacheKey({ images });
+assert.equal(noTenantKey.ok, false);
+assert.equal(noTenantKey.reason, "tenant_id_missing");
+
+const catalogRevisionKey = buildIdentityResultCacheKey(payload, {
+  ...process.env,
+  LISTING_CATALOG_SNAPSHOT_VERSION: "catalog-snapshot-test-v2"
+});
+assert.notEqual(catalogRevisionKey.cache_key, key.cache_key);
+assert.notEqual(catalogRevisionKey.version_fingerprint, key.version_fingerprint);
+
+const modelRevisionKey = buildIdentityResultCacheKey(payload, {
+  ...process.env,
+  OPENAI_LISTING_MODEL: "gpt-5-mini"
+});
+assert.notEqual(modelRevisionKey.cache_key, key.cache_key);
+assert.notEqual(modelRevisionKey.version_fingerprint, key.version_fingerprint);
 
 const noHashKey = buildIdentityResultCacheKey({
   images: [{ ...images[0], contentSha256: "" }]
@@ -148,6 +173,10 @@ const built = identityResultToCacheRow({
 });
 assert.equal(built.ok, true);
 assert.equal(built.row.cache_key, key.cache_key);
+assert.equal(built.row.tenant_id, tenantId);
+assert.equal(built.row.image_generation_hash, key.image_generation_hash);
+assert.equal(built.row.version_fingerprint, key.version_fingerprint);
+assert.deepEqual(built.row.result_version, key.result_version);
 assert.equal(built.row.identity_status, "CONFIRMED");
 assert.equal(built.row.image_fingerprints.length, 2);
 assert.equal(built.row.final_title, confirmedResult.final_title);
@@ -162,6 +191,8 @@ const cachedResult = identityResultCacheRecordToListingResult({
 assert.equal(cachedResult.source, "internal_identity_result_cache");
 assert.equal(cachedResult.provider, "internal_identity_result_cache");
 assert.equal(cachedResult.identity_cache.cache_hit, true);
+assert.equal(cachedResult.identity_cache.provider_call_skipped, true);
+assert.equal(cachedResult.identity_cache.cached_result_version_match, true);
 assert.equal(cachedResult.usage.provider_calls, 0);
 assert.equal(cachedResult.usage.recognition_worker_calls, 0);
 assert.equal(cachedResult.resolution_trace[0].phase, "identity_result_cache");
@@ -219,6 +250,31 @@ const read = await readIdentityResultCacheRecord({ cacheKey: key.cache_key });
 assert.equal(read.hit, true);
 assert.equal(read.record.cache_key, key.cache_key);
 
+let mismatchProbeCount = 0;
+const mismatch = await readIdentityResultCacheRecord({
+  cacheKey: "e".repeat(64),
+  tenantId: key.tenant_id,
+  imageGenerationHash: key.image_generation_hash,
+  expectedVersion: { fingerprint: "f".repeat(64) },
+  fetchImpl: async (url) => {
+    const requestUrl = new URL(String(url));
+    mismatchProbeCount += 1;
+    if (requestUrl.searchParams.has("cache_key")) return jsonResponse([]);
+    assert.equal(requestUrl.searchParams.get("tenant_id"), `eq.${key.tenant_id}`);
+    assert.equal(requestUrl.searchParams.get("image_generation_hash"), `eq.${key.image_generation_hash}`);
+    return jsonResponse([{
+      cache_key: key.cache_key,
+      version_fingerprint: key.version_fingerprint,
+      result_version: key.result_version,
+      updated_at: "2026-06-23T10:00:00.000Z"
+    }]);
+  }
+});
+assert.equal(mismatchProbeCount, 2);
+assert.equal(mismatch.hit, false);
+assert.equal(mismatch.reason, "cached_result_version_mismatch");
+assert.equal(mismatch.cached_result_version_match, false);
+
 process.env.LISTING_IDENTITY_CACHE_WRITE_ENABLED = "true";
 const saved = await saveIdentityResultCacheRecord({
   result: confirmedResult,
@@ -237,6 +293,8 @@ assert.equal(response.statusCode, 200);
 assert.equal(response.body.source, "internal_identity_result_cache");
 assert.equal(response.body.provider, "internal_identity_result_cache");
 assert.equal(response.body.identity_cache.cache_hit, true);
+assert.equal(response.body.identity_cache.provider_call_skipped, true);
+assert.equal(response.body.identity_cache.cached_result_version_match, true);
 assert.equal(response.body.identity_cache.cache_key, key.cache_key);
 assert.equal(response.body.usage.provider_calls, 0);
 assert.equal(response.body.usage.recognition_worker_calls, 0);
@@ -255,5 +313,12 @@ assert.match(migration, /grant select, insert, update, delete on table public\.l
 assert.match(migration, /revoke all on table public\.listing_identity_resolution_cache from anon, authenticated/i);
 assert.doesNotMatch(migration, /grant\s+[^;]*\s+to\s+(anon|authenticated)/i);
 assert.match(migration, /Not a training table/i);
+
+const versionMigration = await readFile("supabase/migrations/20260724_listing_identity_cache_version_contract.sql", "utf8");
+assert.doesNotMatch(versionMigration, /add column if not exists tenant_scope text/i);
+assert.match(versionMigration, /add column if not exists image_generation_hash text/i);
+assert.match(versionMigration, /add column if not exists version_fingerprint text/i);
+assert.match(versionMigration, /add column if not exists result_version jsonb/i);
+assert.match(versionMigration, /listing_identity_resolution_cache_generation_version_idx/i);
 
 console.log("identity result cache tests passed");
