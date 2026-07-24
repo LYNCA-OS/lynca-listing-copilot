@@ -10,6 +10,10 @@ Workflow: `track-c-cloud-1000-job-soak.yml`
 - Runs automatically for queue, migration, or soak-test changes.
 - Starts a temporary Supabase PostgreSQL database on a standard GitHub-hosted
   runner and applies the repository's real migrations from zero.
+- Builds a CI-only deterministic replay bundle because historical rollback
+  files and coarse duplicate version prefixes cannot be fed directly to the
+  Supabase migration-history table. It preserves forward SQL content and order,
+  excludes rollback files, and does not rename deployed migration sources.
 - Calls no GPT, OCR, Storage, image, Vercel, or hosted Supabase service.
 - Requires all 1,000 deterministic jobs to reach one terminal result with zero
   lost jobs, duplicate claims, cross-tenant claims, or leaked capacity slots.

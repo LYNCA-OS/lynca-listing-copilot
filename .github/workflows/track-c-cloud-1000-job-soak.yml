@@ -46,11 +46,30 @@ jobs:
           version: 2.108.0
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      - name: Build deterministic migration replay bundle
+        run: |
+          set -euo pipefail
+          SOAK_WORKDIR="$RUNNER_TEMP/lynca-track-c-soak"
+          mkdir -p "$SOAK_WORKDIR/supabase/migrations"
+          cp supabase/config.toml "$SOAK_WORKDIR/supabase/config.toml"
+          index=0
+          while IFS= read -r migration; do
+            case "$migration" in
+              *_rollback.sql) continue ;;
+            esac
+            index=$((index + 1))
+            version=$(printf '20000101%06d' "$index")
+            cp "$migration" "$SOAK_WORKDIR/supabase/migrations/${version}_$(basename "$migration")"
+          done < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' | sort)
+          test "$index" -ge 80
+          test "$(find "$SOAK_WORKDIR/supabase/migrations" -type f -name '*_rollback.sql' | wc -l)" -eq 0
+          echo "SOAK_SUPABASE_WORKDIR=$SOAK_WORKDIR" >> "$GITHUB_ENV"
+          echo "SOAK_MIGRATION_COUNT=$index" >> "$GITHUB_ENV"
       - name: Start disposable database and apply real migrations
         run: |
           set -euo pipefail
-          supabase db start
-          supabase db reset --local --no-seed
+          supabase db start --workdir "$SOAK_SUPABASE_WORKDIR"
+          test "$SOAK_MIGRATION_COUNT" -ge 80
       - name: Run deterministic state model
         run: node scripts/track-c-1000-job-reliability.test.mjs
       - name: Run 1000-job PostgreSQL control-plane soak
@@ -67,4 +86,4 @@ jobs:
           retention-days: 14
       - name: Destroy disposable Supabase stack
         if: always()
-        run: supabase stop --no-backup
+        run: supabase stop --no-backup --workdir "${SOAK_SUPABASE_WORKDIR:-.}"
