@@ -87,4 +87,31 @@ assert.equal(productionCandidateTrace.retrieval.top_k[0].selected, true);
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.retrieval.decisions[0].value, "2025");
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, true);
 
+const nativeCoreCandidateTrace = buildEvaluationDecisionTracePacket({
+  raw_provider_fields: { year: "2025" },
+  raw_observed_fields: { year: "2025" },
+  resolved_fields: { year: "2025" },
+  rendered_fields: { fields: { year: "2025" } },
+  final_title: "2025 Topps Test Player",
+  selected_candidate_decision: { selected_candidate_id: "catalog-native-1" },
+  candidate_application_trace: [{
+    candidate_id: "catalog-native-1",
+    candidate_lane: "catalog",
+    source_type: "INTERNAL_APPROVED_HISTORY",
+    source_trust: "APPROVED_REFERENCE"
+  }],
+  retrieval_application: {
+    decisions: [{
+      candidate_id: "catalog-native-1",
+      field: "year",
+      candidate_value: "2025",
+      decision: "SUPPORT",
+      reason: "selected_identity_matches_current_field"
+    }]
+  }
+}, payload);
+assert.equal(nativeCoreCandidateTrace.retrieval.candidate_count, 1);
+assert.equal(nativeCoreCandidateTrace.retrieval.top_k[0].selected, true);
+assert.equal(nativeCoreCandidateTrace.field_lineage.find((row) => row.field === "year")?.retrieval.decisions[0].value, "2025");
+
 console.log("evaluation decision trace packet tests passed");
