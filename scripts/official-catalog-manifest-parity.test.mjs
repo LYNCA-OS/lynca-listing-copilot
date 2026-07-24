@@ -81,6 +81,8 @@ assert.equal(driftedParity.summary.underfilled_source_count, 1);
 const importWorkflow = await readFile(".github/workflows/import-official-catalog.yml", "utf8");
 assert.match(importWorkflow, /- battle_spirits/);
 assert.match(importWorkflow, /- dragon_ball_masters/);
+assert.match(importWorkflow, /- bandai_demand/);
+assert.match(importWorkflow, /providers=\(one_piece digimon\)/);
 assert.match(importWorkflow, /environment: production/);
 assert.match(importWorkflow, /Fail closed for production writes outside current main/);
 assert.match(importWorkflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
