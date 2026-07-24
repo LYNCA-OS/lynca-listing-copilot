@@ -1,21 +1,9 @@
 import { writeFile } from "node:fs/promises";
 import { curatedCatalogSources } from "../lib/listing/catalog/curated-catalog-source-registry.mjs";
-import { isOfficialCatalogSourceType } from "../lib/listing/catalog/catalog-contract.mjs";
+import { decisionActiveCatalogCard } from "../lib/listing/catalog/catalog-decision-eligibility.mjs";
+import { buildTcgDemandCoverage } from "../lib/listing/catalog/tcg-demand-coverage-contract.mjs";
 
-const OFFICIAL_DECISION_STATUSES = new Set([
-  "AUTO_PARSED_FROM_OFFICIAL_CHECKLIST",
-  "OFFICIAL_CHECKLIST_CANDIDATE",
-  "OFFICIAL_CHECKLIST_CONFIRMED",
-  "OFFICIAL_RELEASE_SUPPORT",
-  "OFFICIAL_RELEASE_METADATA",
-  "TOPPS_OFFICIAL_RAW",
-  "OFFICIAL_CHECKLIST_RAW"
-]);
-const INTERNAL_DECISION_STATUSES = new Set([
-  "VERIFIED_CANONICAL_TITLE",
-  "AUTO_PARSED_FROM_VERIFIED_TITLE",
-  "REVIEWED_INTERNAL"
-]);
+export { decisionActiveCatalogCard } from "../lib/listing/catalog/catalog-decision-eligibility.mjs";
 
 function cleanText(value = "") {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -28,26 +16,6 @@ function normalizedStatus(value = "") {
 function increment(object, key) {
   const normalized = cleanText(key) || "UNKNOWN";
   object[normalized] = Number(object[normalized] || 0) + 1;
-}
-
-function isRejected(row = {}) {
-  return ["REJECTED", "BLOCKED", "DISABLED", "DEPRECATED"].includes(
-    normalizedStatus(row.retrieval_status || row.reference_status || row.review_status)
-  );
-}
-
-export function decisionActiveCatalogCard({ source = {}, card = {} } = {}) {
-  if (isRejected(source) || isRejected(card)) return false;
-  const sourceType = normalizedStatus(source.source_type);
-  const sourceStatus = normalizedStatus(card.source_status || source.source_status);
-  const retrievalStatus = normalizedStatus(card.retrieval_status || source.retrieval_status);
-  if (sourceType === "INTERNAL_CORRECTED_TITLE") {
-    return INTERNAL_DECISION_STATUSES.has(sourceStatus);
-  }
-  if (isOfficialCatalogSourceType(sourceType)) {
-    return retrievalStatus === "REGISTRY" || OFFICIAL_DECISION_STATUSES.has(sourceStatus);
-  }
-  return false;
 }
 
 export function buildCatalogOperationalCoverage({
@@ -154,7 +122,7 @@ export function buildCatalogOperationalCoverage({
   for (const row of rows) increment(stageBreakdown, row.operational_stage);
 
   return {
-    schema_version: "catalog-operational-coverage-v2",
+    schema_version: "catalog-operational-coverage-v3",
     generated_at: generatedAt,
     summary: {
       registered_source_type_count: rows.length,
@@ -173,7 +141,8 @@ export function buildCatalogOperationalCoverage({
       provenance_breakdown: provenanceBreakdown
     },
     sources: rows,
-    unregistered_source_types: unregisteredSourceTypes
+    unregistered_source_types: unregisteredSourceTypes,
+    tcg_demand_coverage: buildTcgDemandCoverage({ sources, cards, generatedAt })
   };
 }
 
@@ -225,7 +194,7 @@ export async function auditCatalogOperationalCoverage({ env = process.env, fetch
       baseUrl,
       serviceRoleKey,
       table: "catalog_cards",
-      select: "id,source_id,source_status,review_status"
+      select: "id,source_id,source_status,review_status,canonical_title,sport,manufacturer,brand,product,set_or_insert,card_number,checklist_code"
     }),
     fetchAllRows({
       baseUrl,

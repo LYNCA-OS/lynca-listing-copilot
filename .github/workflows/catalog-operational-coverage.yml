@@ -2,6 +2,8 @@ name: catalog-operational-coverage
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
 
 concurrency:
   group: catalog-operational-coverage
@@ -18,7 +20,9 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - name: Verify audit contract
-        run: node scripts/catalog-operational-coverage.test.mjs
+        run: |
+          node scripts/catalog-operational-coverage.test.mjs
+          node scripts/tcg-demand-coverage.test.mjs
       - name: Audit production catalog
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
@@ -31,6 +35,10 @@ jobs:
           const inactive = report.sources.filter(row => row.operational_stage !== 'DECISION_ACTIVE');
           console.log(JSON.stringify({
             summary: report.summary,
+            tcg_demand_summary: report.tcg_demand_coverage.summary,
+            tcg_demand_gaps: report.tcg_demand_coverage.families
+              .filter(row => row.reviewed_demand_count > 0 && row.coverage_state !== 'OFFICIAL_CARD_CODE_ANCHORS_COVERED')
+              .sort((left, right) => right.reviewed_demand_count - left.reviewed_demand_count),
             inactive_sources: inactive.map(row => ({
               provider: row.provider,
               source_type: row.source_type,
@@ -44,6 +52,10 @@ jobs:
           if (report.summary.unattributed_catalog_entity_count > 0) process.exit(1);
           if (report.summary.broken_source_reference_count > 0) process.exit(1);
           if (report.summary.unregistered_source_type_count > 0) process.exit(1);
+          if (report.tcg_demand_coverage.invariants.read_only !== true) process.exit(1);
+          if (report.tcg_demand_coverage.invariants.raw_writer_titles_emitted !== false) process.exit(1);
+          if (report.tcg_demand_coverage.invariants.writer_directory_rows_modified !== false) process.exit(1);
+          if (report.tcg_demand_coverage.invariants.changes_catalog_decisions !== false) process.exit(1);
           NODE
       - name: Upload report
         if: always()
