@@ -39,4 +39,15 @@ const violated = auditStageTraceCoverage({
 });
 assert.equal(violated.gate.passed, true);
 assert.equal(violated.gate.experiment_eligible, false);
+const scoped = auditStageTraceCoverage({
+  dataset: { items: [
+    { item_id: "a", retrieval_ground_truth: { retrieval_evaluable: true } },
+    { item_id: "pending", retrieval_ground_truth: { retrieval_evaluable: false } }
+  ] },
+  trace: { items: [{ query_card_id: "a", stage_trace: completeTrace }] },
+  independentIdentityOnly: true
+});
+assert.equal(scoped.gate.card_count, 1);
+assert.equal(scoped.gate.excluded_non_evaluable_count, 1);
+assert.equal(scoped.gate.evaluation_scope, "INDEPENDENT_IDENTITY_ONLY");
 console.log("stage trace coverage tests passed");

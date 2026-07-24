@@ -4,7 +4,9 @@ import crypto from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { planGoldenSemReviewSplits } from "../lib/listing/evaluation/golden-sem-release.mjs";
+
+const splitNames = Object.freeze(["development", "validation", "holdout"]);
+const splitRatios = Object.freeze({ development: 0.70, validation: 0.15, holdout: 0.15 });
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
@@ -13,6 +15,67 @@ function argValue(argv, name, fallback = "") {
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function clean(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function comparable(value) {
+  if (Array.isArray(value)) return [...new Set(value.map(comparable).filter(Boolean))].sort().join("|");
+  if (value && typeof value === "object") {
+    return Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${key}:${comparable(child)}`).join("|");
+  }
+  return clean(value).toLowerCase().replace(/[^a-z0-9/.-]+/g, " ").trim();
+}
+
+function planningGroup(item = {}) {
+  const explicit = clean(item.split_group_id || item.card_identity_id);
+  if (explicit) return explicit;
+  const fields = item.parser_suggestion?.fields || {};
+  const identityFields = ["year", "manufacturer", "product", "set", "subject", "card_name", "card_number"];
+  const identity = identityFields.map((field) => `${field}:${comparable(fields[field])}`).join("\n");
+  const useful = ["year", "product", "subject"].filter((field) => comparable(fields[field])).length >= 2;
+  return useful
+    ? `parser-plan:${sha256(identity)}`
+    : `sealed-title:${sha256(item.sealed_reference?.writer_reviewed_title || item.item_id)}`;
+}
+
+function targetCounts(total, minimumHoldout) {
+  if (total < minimumHoldout) throw new Error(`Oracle release requires at least ${minimumHoldout} image-backed cards; found ${total}`);
+  const holdout = Math.max(Math.round(total * splitRatios.holdout), minimumHoldout);
+  const remaining = total - holdout;
+  const development = Math.round(remaining * (splitRatios.development / (splitRatios.development + splitRatios.validation)));
+  return { development, validation: remaining - development, holdout };
+}
+
+function planSplits(items, { minimumHoldout, seed = "lynca-golden-sem-v4-oracle" }) {
+  const groups = new Map();
+  for (const item of items) {
+    const groupId = planningGroup(item);
+    const group = groups.get(groupId) || [];
+    group.push(item);
+    groups.set(groupId, group);
+  }
+  const ordered = [...groups.entries()].sort(([left], [right]) => (
+    sha256(`${seed}:${left}`).localeCompare(sha256(`${seed}:${right}`))
+  ));
+  const targets = targetCounts(items.length, minimumHoldout);
+  const partitions = Object.fromEntries(splitNames.map((name) => [name, []]));
+  for (const [groupId, groupItems] of ordered) {
+    const partition = splitNames.map((name) => ({
+      name,
+      deficit: targets[name] - partitions[name].length,
+      overflow: Math.max(0, partitions[name].length + groupItems.length - targets[name])
+    })).sort((left, right) => right.deficit - left.deficit || left.overflow - right.overflow)[0].name;
+    partitions[partition].push(...groupItems.map((item) => ({ item_id: item.item_id, planning_group_id: groupId })));
+  }
+  return {
+    seed,
+    actual_counts: Object.fromEntries(splitNames.map((name) => [name, partitions[name].length])),
+    partitions
+  };
 }
 
 async function writeJson(path, value) {
@@ -30,7 +93,7 @@ export function buildReproducibleOracleSplits(packet = {}, {
     dataset_id: `${packet.dataset_id}-image-backed`,
     items: imageBackedItems
   };
-  const splitPlan = planGoldenSemReviewSplits(imageBackedPacket, { minimumHoldout });
+  const splitPlan = planSplits(imageBackedItems, { minimumHoldout });
   const partitionById = new Map(Object.entries(splitPlan.partitions).flatMap(([partition, rows]) => (
     rows.map((row) => [row.item_id, partition])
   )));

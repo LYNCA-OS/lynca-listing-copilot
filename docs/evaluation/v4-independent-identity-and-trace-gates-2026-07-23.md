@@ -4,7 +4,7 @@
 
 The independent identity gate now passes with 122 Development and 30 Validation identities. Retrieval, Reranker, Selection, and Evidence tuning remain blocked until a fresh run also passes the Trace/source-contract gate.
 
-Identity labeling and Trace hardening should proceed in parallel after their contracts are frozen. Accuracy experiments may start only when both gates pass. Fact Engine remains NO-GO.
+Identity labeling and Trace hardening should proceed in parallel after their contracts are frozen. Accuracy experiments may start only when both gates pass.
 
 This change affects evaluation contracts and offline trace adaptation only. It does not change production title behavior, frontend, assets, queue, OCR, GPT prompt, SEM, Resolver, Renderer, database, or deployment.
 
@@ -70,5 +70,13 @@ No Retrieval or Selection weight changes are allowed until all are true:
 3. A fresh Development/Validation run has strict Stage Trace Coverage at least 99%.
 4. Every skipped stage and dropped field has a reason code; UNKNOWN is zero or near zero.
 5. Source pipeline contract violations are zero for the experiment packet.
+
+## Mainline migration replay — 2026-07-24
+
+The evaluation contracts were replayed from a clean branch based on the current production source. The independent identity denominator remains valid at 122 Development and 30 Validation identities, with zero invalid confirmed labels.
+
+Existing result artifacts cover 124 of the 152 independently evaluable cards. Strict stage coverage is 868/1,064 slots (81.5789%), with 28 cards entirely missing a persisted seven-stage trace and zero UNKNOWN reasons. Fifteen traced cards contain recorded source-contract warnings. This is a failed experiment gate, not an accuracy result.
+
+The next replay is therefore limited to the 28 missing identities. Completed identities are not repeated. Retrieval, Selection, and Application changes remain prohibited until the strict trace gate passes.
 
 Afterward, Evidence Recovery may begin on Development/Validation only. Application remains field-family-by-field-family with 100% precision, positive recall, and zero critical entity regressions. Holdout stays sealed until the final Oracle run.

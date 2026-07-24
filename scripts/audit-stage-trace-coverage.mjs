@@ -21,7 +21,8 @@ export async function main(argv = process.argv.slice(2)) {
   const report = auditStageTraceCoverage({
     dataset: await json(datasetPath),
     trace: await json(tracePath),
-    minimumCoverage: Number(arg(argv, "--minimum-coverage", "0.99"))
+    minimumCoverage: Number(arg(argv, "--minimum-coverage", "0.99")),
+    independentIdentityOnly: argv.includes("--independent-identity-only")
   });
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`);
