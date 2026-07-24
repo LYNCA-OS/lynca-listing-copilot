@@ -88,5 +88,7 @@ assert.match(importWorkflow, /verified_existing_source_count !== 1/);
 assert.match(importWorkflow, /Prove repository and production catalog parity/);
 assert.match(importWorkflow, /audit-official-catalog-manifest-parity\.mjs/);
 assert.match(importWorkflow, /catalog-operational-coverage\.mjs/);
+assert.match(importWorkflow, /Prove every official source remains retrievable/);
+assert.match(importWorkflow, /audit-official-catalog-retrieval-sentinels\.mjs/);
 
 console.log("official catalog manifest parity tests passed");

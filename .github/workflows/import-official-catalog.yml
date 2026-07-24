@@ -137,6 +137,13 @@ jobs:
           }, null, 2));
           if (!parity.valid || !sourceGraphValid) process.exit(1);
           NODE
+      - name: Prove every official source remains retrievable
+        if: inputs.apply
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ENABLE_CATALOG_RETRIEVAL: "true"
+        run: node scripts/audit-official-catalog-retrieval-sentinels.mjs --out /tmp/official-catalog-retrieval-sentinels.json
       - name: Summarize
         run: |
           node - <<'NODE'
@@ -175,3 +182,4 @@ jobs:
             /tmp/official-catalog-manifest-repository.json
             /tmp/official-catalog-manifest-parity.json
             /tmp/catalog-operational-coverage.json
+            /tmp/official-catalog-retrieval-sentinels.json
