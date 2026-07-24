@@ -12,9 +12,10 @@ const repository = validateOfficialCatalogManifestSet(repositoryEntries, {
   providerProfiles: officialCatalogSourceProfiles
 });
 assert.equal(repository.valid, true, JSON.stringify(repository.errors));
-assert.equal(repository.manifest_count, 9);
-assert.equal(repository.source_count, 24);
+assert.equal(repository.manifest_count, 10);
+assert.equal(repository.source_count, 49);
 assert.ok(repositoryEntries.some(({ manifest }) => manifest.provider === "battle_spirits"));
+assert.ok(repositoryEntries.some(({ manifest }) => manifest.provider === "dragon_ball_masters"));
 
 const source = {
   source_name: "Official Set One",
@@ -79,6 +80,7 @@ assert.equal(driftedParity.summary.underfilled_source_count, 1);
 
 const importWorkflow = await readFile(".github/workflows/import-official-catalog.yml", "utf8");
 assert.match(importWorkflow, /- battle_spirits/);
+assert.match(importWorkflow, /- dragon_ball_masters/);
 assert.match(importWorkflow, /environment: production/);
 assert.match(importWorkflow, /Fail closed for production writes outside current main/);
 assert.match(importWorkflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);

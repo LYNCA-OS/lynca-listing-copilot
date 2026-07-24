@@ -14,6 +14,7 @@ on:
           - one_piece
           - digimon
           - dragon_ball_fusion_world
+          - dragon_ball_masters
           - battle_spirits
           - wotc_gatherer
         default: topps
