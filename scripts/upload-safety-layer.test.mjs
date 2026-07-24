@@ -58,9 +58,9 @@ assert.match(js, /URL\.createObjectURL/, "selected images should receive an imme
 assert.match(js, /PREINGEST_API_ENDPOINT/, "background pre-ingestion endpoint should be wired for prepared assets");
 assert.match(js, /backgroundPreparationRunId/, "background preparation should be guarded against stale file batches");
 assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并启动内部识别…/, "local preview preparation should announce the automatic recognition handoff");
-assert.match(js, /0% · 图片已准备，开始识别…/, "recognition start status should include progress");
+assert.match(js, /卡片已进入识别队列；后续图片准备完成后会自动加入。/, "recognition intent should cover the still-arriving batch");
 assert.match(js, /setStatus\("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…",\s*\{\s*busy:\s*true\s*\}\)/, "preview preparation should render as an active waiting state");
-assert.match(js, /setStatus\("0% · 图片已准备，开始识别…",\s*\{\s*busy:\s*true\s*\}\)/, "recognition start should render as an active waiting state");
+assert.match(js, /setStatus\("卡片已进入识别队列；后续图片准备完成后会自动加入。",\s*\{\s*busy:\s*true\s*\}\)/, "recognition intent should render as an active waiting state");
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /const MAX_BACKGROUND_PREP_WORKERS\s*=\s*4/, "background preparation should use its own bounded worker pool");

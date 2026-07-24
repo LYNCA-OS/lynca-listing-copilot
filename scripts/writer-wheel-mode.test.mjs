@@ -13,7 +13,7 @@ const html = await readFile("app/index.html", "utf8");
 const loginHtml = await readFile("app/login.html", "utf8");
 const registerHtml = await readFile("app/register.html", "utf8");
 const js = await readFile("app/listing-copilot.js", "utf8");
-const css = await readFile("app/commercial-ui.css", "utf8");
+const css = await readFile("app/workbench-v2.css", "utf8");
 const sessionControls = await readFile("app/session-controls.js", "utf8");
 
 assert.match(html, /<main class="workspace"[^>]*data-workspace-mode="standard"[^>]*data-batch-state="empty"/, "the product must expose one staged writer workspace");
@@ -47,7 +47,7 @@ assert.ok(
 );
 assert.match(feedbackSource, /result\.persistenceStatus = "persisted";/, "the transaction acknowledgement must be the source of persisted state");
 assert.match(feedbackSource, /catch \(error\)[\s\S]*result\.persistenceStatus = "failed";/, "failed persistence must leave the card retryable");
-assert.match(feedbackSource, /async function saveTitleFeedback[\s\S]*return saveFeedbackForResult\(result, asset\)/, "writer saves must return the persistence result");
+assert.match(feedbackSource, /async function saveTitleFeedback[\s\S]*const persisted = await saveFeedbackForResult\(result, asset,[\s\S]*return persisted/, "writer saves must return the persistence result");
 assert.match(feedbackSource, /\(!correctedTitle && !explicitReject\)[\s\S]*return false/, "an empty title must fail locally unless the writer explicitly rejects the card");
 assert.match(js, /event\.isComposing/, "Enter must not submit while an IME composition is active");
 assert.doesNotMatch(js, /feedbackStatus = payload\.training_eligible/, "training eligibility must never decide whether an accepted title is treated as stored");
@@ -79,13 +79,24 @@ assert.match(js, /backgroundPreparationRunId/, "asynchronous image preparation m
 assert.match(js, /filePreparationRunId/, "file preparation must own an independent UI stale-run guard");
 assert.match(js, /assetLifecycleGeneration/, "product interactions must retain the canonical image generation fence");
 assert.match(js, /async function saveWriterTitleAndAdvance/, "writer mode must advance only through the persistence bridge");
-assert.match(js, /persisted = await saveFeedbackForResult\(result, asset\)/, "writer advance must await durable persistence");
+assert.match(js, /persisted = await saveFeedbackForResult\(result, asset, \{ deferFinalRender: true \}\)/, "writer advance must await durable persistence");
 assert.match(js, /titleSnapshotByIndex/, "writer export must freeze persisted titles before asynchronous uploads");
 assert.match(js, /state\.priorityRetryInFlight/, "priority retry must participate in the workspace mutation lock");
 assert.match(js, /function updateCorrectedTitle[\s\S]*result\.persistenceStatus = "";/, "editing a persisted title must reopen its persistence contract");
 assert.match(css, /prefers-reduced-motion: reduce/, "writer transitions must respect reduced-motion preferences");
-assert.match(css, /:root\[data-lynca-theme="deep-purple"\]/, "the commercial theme system must include the default preset");
-assert.match(css, /\.writer-wheel/, "the commercial stylesheet must ship the writer wheel");
+assert.match(css, /--wb-bg:/, "the writer workbench must own one coherent visual token layer");
+assert.match(css, /\.writer-wheel/, "the workbench stylesheet must ship the writer wheel");
+assert.match(js, /slice\(0, INTAKE_PREVIEW_CARD_WINDOW\)/, "the writer queue must expose at most eight outstanding cards");
+assert.match(js, /writerQueueWindowHtml\(current\)/, "the writer wheel must replenish its bounded queue window");
+assert.match(css, /\.writer-queue-window-list/, "the writer queue window must have a bounded visual rail");
+assert.match(js, /kind: "queue-advance"/, "persisted cards should advance through one shared queue transition");
+assert.match(js, /saveWriterTitleAndAdvance\(resultIndex, \{ animate: false \}\)/, "keyboard saves must stay instant");
+assert.match(css, /data-workbench-transition="queue-advance"[\s\S]*animation-duration: var\(--duration-queue\)/, "queue movement must stay on the reviewed duration token");
+assert.doesNotMatch(
+  js.slice(js.indexOf("function renderWriterWheel"), js.indexOf("function renderAssetRows")),
+  /writerPeekHtml\(/,
+  "the bounded queue must not duplicate hidden wheel peeks"
+);
 
 const assets = [{ index: 1 }, { index: 2 }, { index: 3 }];
 const savedOne = [{ index: 1, correctedTitle: "Saved title", feedbackStatus: "saved", persistenceStatus: "persisted" }];

@@ -759,6 +759,26 @@ async function fetchWithBoundedRetry(url, init = {}, {
   });
 }
 
+// lib/listing/client/batch-recognition-intent.mjs
+var INTAKE_PREVIEW_CARD_WINDOW = 8;
+function claimNextBatchAsset(assets = [], claimedAssetIndexes = /* @__PURE__ */ new Set()) {
+  for (const asset of Array.isArray(assets) ? assets : []) {
+    const index = Number(asset?.index);
+    if (!Number.isFinite(index) || claimedAssetIndexes.has(index)) continue;
+    claimedAssetIndexes.add(index);
+    return asset;
+  }
+  return null;
+}
+function windowIntakePreviewGroups(groups = [], limit = INTAKE_PREVIEW_CARD_WINDOW) {
+  const source = Array.isArray(groups) ? groups : [];
+  const boundedLimit = Math.max(1, Math.trunc(Number(limit) || INTAKE_PREVIEW_CARD_WINDOW));
+  return {
+    visible: source.slice(0, boundedLimit),
+    remaining: Math.max(0, source.length - boundedLimit)
+  };
+}
+
 // lib/listing/client/upload-phases.mjs
 function firstFailedOutcome(outcomes = []) {
   return (Array.isArray(outcomes) ? outcomes : []).find((outcome) => outcome?.ok === false) || null;
@@ -799,6 +819,7 @@ function summarizeDerivedUploadOutcomes(outcomes = []) {
 }
 
 // lib/listing/client/upload-recovery-policy.mjs
+var WRITER_IMAGE_INTAKE_CONTRACT_VERSION = "writer-image-intake-v1";
 var SIGNED_UPLOAD_URL_GENERATION_LIMIT = 2;
 var retryableSignedUploadStatuses = /* @__PURE__ */ new Set([401, 403, 408, 425, 429, 500, 502, 503, 504]);
 function shouldRefreshSignedUpload({ generation = 1, status = 0, networkError = false } = {}) {
@@ -935,8 +956,11 @@ function withRecognitionRequestIntent(value = {}, {
   };
 }
 export {
+  INTAKE_PREVIEW_CARD_WINDOW,
   SIGNED_UPLOAD_URL_GENERATION_LIMIT,
+  WRITER_IMAGE_INTAKE_CONTRACT_VERSION,
   analyzeImageQualityFromImageData,
+  claimNextBatchAsset,
   defaultCaptureProfileId,
   defaultRecognitionProfileId,
   fetchWithBoundedRetry,
@@ -952,5 +976,6 @@ export {
   stripClientImageTransport,
   summarizeAssetImageQuality,
   summarizeDerivedUploadOutcomes,
+  windowIntakePreviewGroups,
   withRecognitionRequestIntent
 };

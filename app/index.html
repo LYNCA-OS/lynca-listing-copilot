@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#160F23">
+    <meta name="theme-color" content="#08152F">
     <title>LYNCA Listing Copilot</title>
     <link rel="icon" type="image/svg+xml" href="/app/favicon.svg">
     <script src="/app/theme-controller.js"></script>
     <link rel="stylesheet" href="/app/listing-copilot.css">
-    <link rel="stylesheet" href="/app/commercial-ui.css">
+    <link rel="stylesheet" href="/app/workbench-v2.css">
   </head>
   <body class="commercial-workbench">
     <div class="page-shell">
@@ -22,7 +22,7 @@
         </a>
         <div class="header-context" aria-hidden="true">
           <span class="header-context-dot"></span>
-          <span>批次工作台</span>
+          <span>标题生产台</span>
         </div>
         <div class="header-actions">
           <button class="theme-cycle-button" type="button" data-theme-cycle>
@@ -46,22 +46,22 @@
       <main class="workspace" data-workspace-mode="standard" data-batch-state="empty">
         <section class="workspace-intro" aria-labelledby="workbenchTitle">
           <div>
-            <p class="eyebrow">卡片标题工作台</p>
-            <h1 id="workbenchTitle">从卡片图片到可发布标题</h1>
+            <p class="eyebrow">Writer Workbench</p>
+            <h1 id="workbenchTitle">把卡片变成可发布标题</h1>
           </div>
-          <p class="subtitle">批量识别、写手确认、持久化和 Excel 导出，保持在同一个工作流里。</p>
+          <p class="subtitle">添加图片后即可开始；系统在后台接收后续卡片，你只需逐张确认。</p>
         </section>
 
         <section class="workspace-toolbar" aria-label="工作台控制">
           <div class="workspace-mode-switcher">
             <div class="workspace-mode-tabs" role="group" aria-label="工作模式">
               <button class="workspace-mode-tab is-active" type="button" aria-pressed="true" aria-controls="assetPreviewList" data-workspace-mode="standard">
-                <span>默认模式</span>
-                <small>卡片纵列</small>
+                <span>队列总览</span>
+                <small>同时查看 8 张</small>
               </button>
               <button class="workspace-mode-tab" type="button" aria-pressed="false" aria-controls="assetPreviewList" data-workspace-mode="writer">
-                <span>写手模式</span>
-                <small>键盘连续录入</small>
+                <span>连续录入</span>
+                <small>确认后自动前进</small>
               </button>
             </div>
             <p id="workspaceModeHint">查看全部卡片，逐张检查和编辑。</p>
@@ -84,20 +84,20 @@
                 </svg>
               </span>
               <span class="drop-zone-copy">
-                <strong>拖入卡片图片</strong>
+                <strong>添加卡片图片</strong>
                 <span id="statusText" role="status" aria-live="polite">每两张图片组成一张卡；最后一张会单独处理。</span>
               </span>
             </label>
             <div class="primary-actions">
-              <label class="secondary-button" for="imageInput">选择图片</label>
-              <button class="primary-button" type="button" id="processButton" disabled>生成标题</button>
+              <label class="secondary-button" for="imageInput">添加图片</label>
+              <button class="primary-button" type="button" id="processButton" disabled>开始识别</button>
             </div>
           </div>
 
           <section class="batch-summary" aria-label="处理进度">
             <div class="batch-summary-heading">
                 <p class="eyebrow">当前批次</p>
-              <strong>批次状态</strong>
+              <strong>本批进度</strong>
             </div>
             <dl>
               <div><dt>图片</dt><dd id="statImages">0</dd></div>
@@ -119,11 +119,11 @@
           <div class="asset-board">
             <div class="section-head">
               <div>
-                <p class="section-kicker">审核队列</p>
-                <h2 id="assetBoardTitle">标题工作区</h2>
+                <p class="section-kicker">当前任务</p>
+                <h2 id="assetBoardTitle">卡片队列</h2>
                 <p id="previewSummary">等待上传图片。</p>
               </div>
-              <span class="section-state" aria-hidden="true">01 / 审核</span>
+              <span class="section-state" aria-hidden="true">最多显示 8 张</span>
             </div>
             <div class="asset-preview-list" id="assetPreviewList" role="region" aria-label="卡片工作区">
               <div class="empty-state">
