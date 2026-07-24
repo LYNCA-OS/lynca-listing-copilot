@@ -19,9 +19,17 @@ on:
       offset:
         description: "Dataset offset"
         default: "0"
+      reviewed_cold_20:
+        description: "Run the fixed internal reviewed 20-card cold-chain diagnostic"
+        type: boolean
+        default: false
+      expected_deployment_id:
+        description: "Immutable production deployment id required by reviewed cold-20"
+        default: ""
 
 jobs:
   gate:
+    if: ${{ !inputs.reviewed_cold_20 }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -107,3 +115,144 @@ jobs:
         with:
           name: gate-report
           path: /tmp/gate-report.json
+  reviewed-cold-20:
+    if: ${{ inputs.reviewed_cold_20 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+      DATASET_PATH: /tmp/reviewed-cold-20.json
+      SEALED_LABELS_PATH: /tmp/reviewed-cold-20-sealed-labels.jsonl
+      REPORT_PATH: /tmp/reviewed-cold-20-report.json
+      DIAGNOSTIC_PATH: /tmp/reviewed-cold-20-diagnostic.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build fixed blind reviewed-20 sample
+        run: |
+          node scripts/build-reviewed-title-blind-eval.mjs \
+            --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
+            --out "$DATASET_PATH" \
+            --sealed-labels-out "$SEALED_LABELS_PATH" \
+            --limit 20 \
+            --selection-seed google-vision-smoke-20-20260722 \
+            --sample-mode fixed_regression \
+            --reuse-reason "Fixed 20-card cold-chain speed and accuracy diagnostic." \
+            --reuse-scope-id google-vision-smoke-20-20260722
+          node - <<'NODE'
+          const fs = require('fs');
+          const dataset = JSON.parse(fs.readFileSync(process.env.DATASET_PATH, 'utf8'));
+          const labels = fs.readFileSync(process.env.SEALED_LABELS_PATH, 'utf8').trim().split(/\n/).filter(Boolean).map(JSON.parse);
+          const datasetText = fs.readFileSync(process.env.DATASET_PATH, 'utf8');
+          const checks = {
+            exact_20: dataset.item_count === 20 && labels.length === 20,
+            fixed_regression: dataset.evaluation_sample_policy?.mode === 'FIXED_REGRESSION',
+            fixed_scope: dataset.evaluation_sample_policy?.reuse_scope_id === 'google-vision-smoke-20-20260722',
+            reviewed_titles_sealed: labels.every((label) => !datasetText.includes(String(label.reviewed_title || ''))),
+            image_only: dataset.intake_policy?.image_only === true,
+            self_retrieval_exclusion: dataset.items.every((item) => item.source_record?.self_retrieval_exclusion_required === true)
+          };
+          console.log(JSON.stringify(checks, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+      - name: Verify production and empty queue
+        run: |
+          test -n "$EXPECTED_DEPLOYMENT_ID"
+          curl -fsS --max-time 30 "$API_BASE_URL/api/v4/health" -o /tmp/v4-health.json
+          node - <<'NODE'
+          const health = require('/tmp/v4-health.json');
+          const checks = {
+            runtime_ready: health.ready === true,
+            immutable_deployment: health.deployment?.deployment_id === process.env.EXPECTED_DEPLOYMENT_ID,
+            production_environment: health.deployment?.vercel_env === 'production',
+            model_locked: health.default_model === 'gpt-5-mini',
+            provider_concurrency_2: health.openai_pool?.global_concurrency === 2,
+            queue_ready: health.production_queue?.queue_rpc_ready === true
+          };
+          console.log(JSON.stringify(checks, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
+          node --input-type=module - <<'NODE'
+          import { assertSupabaseGlobalQueueEmpty } from './scripts/run-launch-gate-eval.mjs';
+          console.log(JSON.stringify(await assertSupabaseGlobalQueueEmpty({ env: process.env }), null, 2));
+          NODE
+      - name: Run fixed reviewed cold-20
+        run: |
+          node scripts/v4-ebay-smoke.mjs \
+            --dataset "$DATASET_PATH" \
+            --sealed-labels "$SEALED_LABELS_PATH" \
+            --base-url "$API_BASE_URL" \
+            --limit 20 \
+            --concurrency 2 \
+            --submission-concurrency 2 \
+            --preparation-concurrency 3 \
+            --queue --speculative --use-preingestion \
+            --benchmark-profile cold \
+            --verified-asset-cache-mode refresh \
+            --sample-mode fixed_regression \
+            --model gpt-5-mini \
+            --compact-l2 --no-ultra-fast-l2 \
+            --think-ms 0 \
+            --l2-wait-ms 240000 \
+            --request-timeout-ms 120000 \
+            --out "$REPORT_PATH"
+      - name: Enforce fixed cold-20 contract
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { attachReviewedTitleSemProjection } from './lib/listing/evaluation/reviewed-title-sem-projection.mjs';
+          import { observedExecutionContractChecks } from './scripts/run-launch-gate-eval.mjs';
+
+          const report = JSON.parse(fs.readFileSync(process.env.REPORT_PATH, 'utf8'));
+          const results = attachReviewedTitleSemProjection(report.results || []);
+          const observed = observedExecutionContractChecks([{ cohort: 'INTERNAL_REVIEWED_GT', report }]);
+          const tokenRecall = report.summary?.final_accuracy_proxy?.policy_fair_token_recall_avg;
+          const semScores = results.map((row) => row.sem_projection_scoring?.weighted_accuracy).filter(Number.isFinite);
+          const semMin = semScores.length ? Math.min(...semScores) : null;
+          const cardsPerMinute = report.summary?.completed_cards_per_minute;
+          const checks = {
+            exact_20: report.summary?.attempted_count === 20,
+            complete_20: report.summary?.ok_count === 20 && report.summary?.l2_ready_count === 20,
+            token_recall_at_least_0_85: Number(tokenRecall) >= 0.85,
+            no_catastrophic_sem_card: Number(semMin) >= 0.5,
+            writer_perceived_at_least_6_cpm: Number(cardsPerMinute) >= 6,
+            ...observed
+          };
+          const diagnostic = {
+            deployment_id: process.env.EXPECTED_DEPLOYMENT_ID,
+            sample_fingerprint: report.evaluation_sample_policy?.evaluated_item_ids_sha256,
+            token_recall,
+            sem_min: semMin,
+            completed_cards_per_minute: cardsPerMinute,
+            writer_ready_p50_ms: report.summary?.writer_ready_p50_ms,
+            writer_ready_p95_ms: report.summary?.writer_ready_p95_ms,
+            provider_slot_idle_gaps: report.summary?.provider_slot_idle_gaps,
+            exact_anchor_fast_final_shadow: report.summary?.exact_anchor_fast_final_shadow,
+            checks,
+            passed: Object.values(checks).every((value) => value === true)
+          };
+          fs.writeFileSync(process.env.DIAGNOSTIC_PATH, `${JSON.stringify(diagnostic, null, 2)}\n`);
+          console.log(JSON.stringify(diagnostic, null, 2));
+          if (!diagnostic.passed) process.exit(1);
+          NODE
+      - name: Upload fixed cold-20 evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: reviewed-cold-20-report
+          retention-days: 30
+          path: |
+            /tmp/reviewed-cold-20.json
+            /tmp/reviewed-cold-20-sealed-labels.jsonl
+            /tmp/reviewed-cold-20-report.json
+            /tmp/reviewed-cold-20-diagnostic.json
