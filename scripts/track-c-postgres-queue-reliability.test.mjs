@@ -39,6 +39,8 @@ const responseLossJobId = `${idPrefix}_response_loss`;
 const crossTenantJobId = `${idPrefix}_cross_tenant`;
 const primaryAssetId = `asset_${crypto.randomUUID()}`;
 const crossTenantAssetId = `asset_${crypto.randomUUID()}`;
+const primarySessionId = `${idPrefix}_session_primary`;
+const crossTenantSessionId = `${idPrefix}_session_cross`;
 const expectedRetryDelaysMs = [10_000, 30_000, 120_000];
 let primaryImageManifest = null;
 let crossTenantImageManifest = null;
@@ -169,6 +171,24 @@ async function createVerifiedAsset(assetId, assetTenantId) {
   return manifest.rows[0].manifest;
 }
 
+async function createRecognitionSession(sessionId, assetId, sessionTenantId, imageManifest) {
+  await pool.query(`
+    insert into public.v4_recognition_sessions (
+      id, schema_version, status, asset_id, tenant_id, identity_snapshot,
+      route_plan, request_summary, resolved_fields, field_states,
+      candidate_control_plane_trace, provider_result_summary
+    ) values (
+      $1, 'v4-recognition-session-v1', 'QUEUED', $2, $3,
+      $4::jsonb || pg_catalog.jsonb_build_object(
+        'tenant_id', $3::text,
+        'asset_id', $2::text
+      ),
+      '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb,
+      '{}'::jsonb, '{}'::jsonb
+    )
+  `, [sessionId, assetId, sessionTenantId, JSON.stringify(imageManifest)]);
+}
+
 async function insertJob({
   id,
   batchId,
@@ -176,7 +196,8 @@ async function insertJob({
   lane = "background",
   jobTenantId = tenantId,
   assetId = primaryAssetId,
-  imageManifest = primaryImageManifest
+  imageManifest = primaryImageManifest,
+  sessionId = primarySessionId
 }) {
   await pool.query(`
     insert into public.v4_recognition_jobs (
@@ -185,6 +206,7 @@ async function insertJob({
       batch_id,
       tenant_id,
       asset_id,
+      recognition_session_id,
       job_type,
       provider_id,
       status,
@@ -201,18 +223,24 @@ async function insertJob({
       $2,
       $3,
       $7,
+      $9,
       'FINAL_ASSISTED_TITLE',
       'openai_legacy',
       'QUEUED',
       $4,
       $5,
-      $8::jsonb || pg_catalog.jsonb_build_object('integration_test', true, 'run_suffix', $6::text),
+      $8::jsonb || pg_catalog.jsonb_build_object(
+        'integration_test', true,
+        'run_suffix', $6::text,
+        'recognition_session_id', $9::text,
+        'asset_id', $7::text
+      ),
       4,
       pg_catalog.clock_timestamp() - interval '1 second',
       pg_catalog.clock_timestamp(),
       pg_catalog.clock_timestamp()
     )
-  `, [id, batchId, jobTenantId, priority, lane, runSuffix, assetId, JSON.stringify(imageManifest)]);
+  `, [id, batchId, jobTenantId, priority, lane, runSuffix, assetId, JSON.stringify(imageManifest), sessionId]);
 }
 
 async function claimJobs({ limit = 25, workerId, leaseSeconds = 300, lane = null }) {
@@ -349,6 +377,18 @@ async function cleanup() {
       where tenant_id = any($1::text[])
     `, [[tenantId, crossTenantId]]);
     await pool.query(`
+      delete from public.v4_recognition_sessions
+      where tenant_id = any($1::text[])
+    `, [[tenantId, crossTenantId]]);
+    await pool.query(`
+      update public.listing_image_verifications
+      set canonical_eligible = false,
+          object_verified = false,
+          updated_at = pg_catalog.clock_timestamp()
+      where tenant_id = any($1::text[])
+        and canonical_eligible is true
+    `, [[tenantId, crossTenantId]]);
+    await pool.query(`
       delete from public.listing_image_verifications
       where tenant_id = any($1::text[])
     `, [[tenantId, crossTenantId]]);
@@ -388,6 +428,8 @@ try {
   createdTenant = true;
   primaryImageManifest = await createVerifiedAsset(primaryAssetId, tenantId);
   crossTenantImageManifest = await createVerifiedAsset(crossTenantAssetId, crossTenantId);
+  await createRecognitionSession(primarySessionId, primaryAssetId, tenantId, primaryImageManifest);
+  await createRecognitionSession(crossTenantSessionId, crossTenantAssetId, crossTenantId, crossTenantImageManifest);
 
   await createBatch(mainBatchId, 1_000, "one_thousand_job_claim_and_completion");
   const inserted = await pool.query(`
@@ -397,6 +439,7 @@ try {
       batch_id,
       tenant_id,
       asset_id,
+      recognition_session_id,
       job_type,
       provider_id,
       status,
@@ -414,6 +457,7 @@ try {
       $2,
       $3,
       $5,
+      $7,
       'FINAL_ASSISTED_TITLE',
       'openai_legacy',
       'QUEUED',
@@ -422,7 +466,9 @@ try {
       $6::jsonb || pg_catalog.jsonb_build_object(
         'integration_test', true,
         'ordinal', series.job_no,
-        'run_suffix', $4::text
+        'run_suffix', $4::text,
+        'recognition_session_id', $7::text,
+        'asset_id', $5::text
       ),
       4,
       pg_catalog.clock_timestamp() - interval '1 second',
@@ -430,7 +476,7 @@ try {
       pg_catalog.clock_timestamp()
     from pg_catalog.generate_series(1, 1000) as series(job_no)
     returning id
-  `, [idPrefix, mainBatchId, tenantId, runSuffix, primaryAssetId, JSON.stringify(primaryImageManifest)]);
+  `, [idPrefix, mainBatchId, tenantId, runSuffix, primaryAssetId, JSON.stringify(primaryImageManifest), primarySessionId]);
   assert.equal(inserted.rows.length, 1_000, "all 1000 jobs must be durably inserted");
 
   const persisted = await pool.query(`
@@ -584,7 +630,8 @@ try {
     priority: 0,
     jobTenantId: crossTenantId,
     assetId: crossTenantAssetId,
-    imageManifest: crossTenantImageManifest
+    imageManifest: crossTenantImageManifest,
+    sessionId: crossTenantSessionId
   });
   assert.equal((await claimJobsWithCapacity({
     limit: 1,

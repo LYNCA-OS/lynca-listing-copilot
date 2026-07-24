@@ -96,7 +96,26 @@ async function createHostedVerifiedAsset(tenantId) {
   });
   const manifest = Array.isArray(rpc.value) ? rpc.value[0] : rpc.value;
   assert.equal(manifest?.asset_id, assetId);
-  return { assetId, manifest };
+  const sessionId = `${runId}_${tenantId.slice(-4)}_session`;
+  await insert("v4_recognition_sessions", {
+    id: sessionId,
+    schema_version: "v4-recognition-session-v1",
+    status: "QUEUED",
+    asset_id: assetId,
+    tenant_id: tenantId,
+    identity_snapshot: {
+      ...manifest,
+      tenant_id: tenantId,
+      asset_id: assetId
+    },
+    route_plan: {},
+    request_summary: {},
+    resolved_fields: {},
+    field_states: {},
+    candidate_control_plane_trace: {},
+    provider_result_summary: {}
+  });
+  return { assetId, sessionId, manifest };
 }
 
 async function invokePump(tenantId, { timeoutMs = 120_000, allowAbort = false } = {}) {
@@ -171,6 +190,12 @@ async function cleanup(tenantIds) {
   await remove("job_attempt_events", filter);
   await remove("v4_recognition_jobs", filter);
   await remove("v4_recognition_batches", filter);
+  await remove("v4_recognition_sessions", filter);
+  await rest(`listing_image_verifications?${filter}&canonical_eligible=eq.true`, {
+    method: "PATCH",
+    body: { canonical_eligible: false, object_verified: false },
+    prefer: "return=minimal"
+  });
   await remove("listing_image_verifications", filter);
   await remove("listing_assets", filter);
   await remove("tenants", `id=in.(${encodeURIComponent(encoded)})`);
@@ -222,6 +247,7 @@ try {
         batch_id: `batch_${tenantId}`,
         tenant_id: tenantId,
         asset_id: asset.assetId,
+        recognition_session_id: asset.sessionId,
         job_type: "CONTROL_PLANE_SOAK",
         provider_id: "openai_legacy",
         status: "QUEUED",
@@ -229,6 +255,8 @@ try {
         lane: "background",
         payload: {
           ...asset.manifest,
+          recognition_session_id: asset.sessionId,
+          asset_id: asset.assetId,
           control_plane_soak: true,
           run_id: runId,
           wave,
