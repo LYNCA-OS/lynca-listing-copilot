@@ -466,10 +466,18 @@ function catalogGapTypeFromTrace(trace = {}) {
   return "NO_PROMPT_SAFE_CANDIDATE_GAP";
 }
 
-function providerRuntimeSummary(result = {}) {
+function providerRuntimeSummary(result = {}, payload = {}) {
   const vectorContext = result.candidate_context?.vector || {};
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
   const reportedProviderCalls = Number(result.usage?.provider_calls);
+  const providerCallSkipped = result.identity_cache?.provider_call_skipped === true;
+  const inferredProviderCalls = providerCallSkipped
+    ? 0
+    : (Number(result.provider_latency_ms || 0) > 0
+      || (result.provider_slot_timing?.started_at && result.provider_slot_timing?.completed_at))
+      ? 1
+      : null;
+  const providerOptions = payload.provider_options || payload.providerOptions || {};
   return {
     model: result.model || result.model_id || null,
     prompt_version: result.prompt_version || null,
@@ -483,9 +491,13 @@ function providerRuntimeSummary(result = {}) {
     provider_service_tier: result.provider_service_tier || null,
     provider_calls: Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
       ? Math.trunc(reportedProviderCalls)
-      : null,
-    recognition_benchmark_profile: result.recognition_benchmark_profile || null,
-    recognition_benchmark_phase: result.recognition_benchmark_phase || null,
+      : inferredProviderCalls,
+    recognition_benchmark_profile: result.recognition_benchmark_profile
+      || providerOptions.recognition_benchmark_profile
+      || null,
+    recognition_benchmark_phase: result.recognition_benchmark_phase
+      || providerOptions.recognition_benchmark_phase
+      || null,
     identity_resolution_status: result.identity_resolution_status || null,
     ambiguity_status: result.ambiguity_status || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
@@ -980,7 +992,7 @@ async function persistPipelineResult({
           l1_already_returned: true,
           l1_visible_to_writer: false,
           l1_return_barrier_version: l1ReturnBarrierVersion,
-          ...providerRuntimeSummary(result),
+          ...providerRuntimeSummary(result, payload),
           ...extraProviderSummary
         },
         resolved_fields: resolvedFromResult(result)
@@ -1043,7 +1055,7 @@ async function persistPipelineResult({
       provider_error_type: result.provider_error_type || result.provider_error_code || null,
       noncritical_persistence_status: deferNonCriticalPersistence ? "DEFERRED" : "SYNC",
       writer_ready_persistence_mode: deferNonCriticalPersistence ? "minimal_session_first" : "synchronous_full_persistence",
-      ...providerRuntimeSummary(result),
+      ...providerRuntimeSummary(result, payload),
       ...extraProviderSummary
     }
   };

@@ -201,7 +201,7 @@ jobs:
             --verified-asset-cache-mode refresh \
             --sample-mode fixed_regression \
             --model gpt-5-mini \
-            --compact-l2 --no-ultra-fast-l2 \
+            --compact-l2 --no-ultra-fast-l2 --no-fast-initial-prompt \
             --think-ms 0 \
             --l2-wait-ms 240000 \
             --request-timeout-ms 120000 \
