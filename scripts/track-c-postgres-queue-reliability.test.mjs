@@ -2,12 +2,18 @@
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import pg from "pg";
 
 const { Pool } = pg;
 const databaseUrl = String(process.env.TRACK_C_TEST_DATABASE_URL || "").trim();
+const databaseRequired = /^(?:1|true|yes)$/i.test(String(process.env.TRACK_C_REQUIRE_DATABASE || ""));
+const reportPath = String(process.env.TRACK_C_REPORT_PATH || "").trim();
 
 if (!databaseUrl) {
+  if (databaseRequired) {
+    throw new Error("TRACK_C_TEST_DATABASE_URL is required for the cloud 1000-job soak");
+  }
   console.log(JSON.stringify({
     ok: true,
     skipped: true,
@@ -23,8 +29,14 @@ const idPrefix = `tcpg_${runSuffix}`;
 const mainBatchId = `batch_${idPrefix}_main`;
 const leaseBatchId = `batch_${idPrefix}_lease`;
 const retryBatchId = `batch_${idPrefix}_retry`;
+const capacityBatchId = `batch_${idPrefix}_capacity`;
+const responseLossBatchId = `batch_${idPrefix}_response_loss`;
+const crossTenantId = `tenant_tcpg_cross_${runSuffix}`;
+const crossTenantBatchId = `batch_${idPrefix}_cross_tenant`;
 const leaseJobId = `${idPrefix}_lease`;
 const retryJobId = `${idPrefix}_retry`;
+const responseLossJobId = `${idPrefix}_response_loss`;
+const crossTenantJobId = `${idPrefix}_cross_tenant`;
 const expectedRetryDelaysMs = [10_000, 30_000, 120_000];
 
 const pool = new Pool({
@@ -63,7 +75,16 @@ async function preflight() {
       ) as fail_function,
       pg_catalog.to_regprocedure(
         'public.heartbeat_v4_recognition_job(text,text,integer)'
-      ) as heartbeat_function
+      ) as heartbeat_function,
+      pg_catalog.to_regprocedure(
+        'public.claim_v4_recognition_jobs_with_balanced_capacity(integer,text,integer,text,text,text,integer,integer,integer)'
+      ) as balanced_claim_function,
+      pg_catalog.to_regprocedure(
+        'public.release_v4_provider_capacity_for_job(text,text)'
+      ) as capacity_release_function,
+      pg_catalog.to_regprocedure(
+        'public.try_acquire_v4_queue_kick(text,text,integer)'
+      ) as queue_kick_function
   `);
   const objectRow = objects.rows[0] || {};
   for (const [name, value] of Object.entries(objectRow)) {
@@ -100,7 +121,7 @@ async function preflight() {
   );
 }
 
-async function createBatch(batchId, itemCount, purpose) {
+async function createBatch(batchId, itemCount, purpose, batchTenantId = tenantId) {
   await pool.query(`
     insert into public.v4_recognition_batches (
       id,
@@ -113,10 +134,10 @@ async function createBatch(batchId, itemCount, purpose) {
       'purpose', $4::text,
       'run_suffix', $5::text
     ))
-  `, [batchId, tenantId, itemCount, purpose, runSuffix]);
+  `, [batchId, batchTenantId, itemCount, purpose, runSuffix]);
 }
 
-async function insertJob({ id, batchId, priority = 100, lane = "background" }) {
+async function insertJob({ id, batchId, priority = 100, lane = "background", jobTenantId = tenantId }) {
   await pool.query(`
     insert into public.v4_recognition_jobs (
       id,
@@ -149,7 +170,7 @@ async function insertJob({ id, batchId, priority = 100, lane = "background" }) {
       pg_catalog.clock_timestamp(),
       pg_catalog.clock_timestamp()
     )
-  `, [id, batchId, tenantId, priority, lane, runSuffix]);
+  `, [id, batchId, jobTenantId, priority, lane, runSuffix]);
 }
 
 async function claimJobs({ limit = 25, workerId, leaseSeconds = 300, lane = null }) {
@@ -168,6 +189,32 @@ async function claimJobs({ limit = 25, workerId, leaseSeconds = 300, lane = null
     from public.claim_v4_recognition_jobs($1, $2, $3, $4, $5)
   `, [limit, workerId, leaseSeconds, lane, tenantId]);
   return result.rows;
+}
+
+async function claimJobsWithCapacity({
+  limit = 25,
+  workerId,
+  leaseSeconds = 300,
+  lane = null,
+  claimTenantId = tenantId,
+  providerCapacity = 8
+}) {
+  const result = await pool.query(`
+    select *
+    from public.claim_v4_recognition_jobs_with_balanced_capacity(
+      $1, $2, $3, $4, $5, 'openai_legacy', $6, $6, 1
+    )
+  `, [limit, workerId, leaseSeconds, lane, claimTenantId, providerCapacity]);
+  return result.rows;
+}
+
+async function releaseCapacity(jobIds, workerId = null) {
+  if (!jobIds.length) return 0;
+  const result = await pool.query(`
+    select coalesce(sum(public.release_v4_provider_capacity_for_job(job_id, $2)), 0) as released
+    from pg_catalog.unnest($1::text[]) as job_id
+  `, [jobIds, workerId]);
+  return count(result.rows[0]?.released || 0);
 }
 
 async function completeClaimedJobs(ids, workerId = null) {
@@ -244,21 +291,25 @@ async function cleanup() {
       where job_id like $1
     `, [`${idPrefix}%`]);
     await pool.query(`
+      delete from public.v4_queue_kick_leases
+      where scope like $1
+    `, [`${idPrefix}%`]);
+    await pool.query(`
       delete from public.job_attempt_events
-      where tenant_id = $1
-    `, [tenantId]);
+      where tenant_id = any($1::text[])
+    `, [[tenantId, crossTenantId]]);
     await pool.query(`
       delete from public.v4_recognition_jobs
-      where tenant_id = $1
-    `, [tenantId]);
+      where tenant_id = any($1::text[])
+    `, [[tenantId, crossTenantId]]);
     await pool.query(`
       delete from public.v4_recognition_batches
-      where tenant_id = $1
-    `, [tenantId]);
+      where tenant_id = any($1::text[])
+    `, [[tenantId, crossTenantId]]);
     await pool.query(`
       delete from public.tenants
-      where id = $1
-    `, [tenantId]);
+      where id = any($1::text[])
+    `, [[tenantId, crossTenantId]]);
     await pool.query("commit");
   } catch (error) {
     await pool.query("rollback").catch(() => null);
@@ -275,8 +326,15 @@ try {
   await preflight();
   await pool.query(`
     insert into public.tenants (id, name, plan, status)
-    values ($1, $2, 'pilot', 'ACTIVE')
-  `, [tenantId, `Track C PostgreSQL reliability ${runSuffix}`]);
+    values
+      ($1, $3, 'pilot', 'ACTIVE'),
+      ($2, $4, 'pilot', 'ACTIVE')
+  `, [
+    tenantId,
+    crossTenantId,
+    `Track C PostgreSQL reliability ${runSuffix}`,
+    `Track C PostgreSQL cross-tenant sentinel ${runSuffix}`
+  ]);
   createdTenant = true;
 
   await createBatch(mainBatchId, 1_000, "one_thousand_job_claim_and_completion");
@@ -403,6 +461,106 @@ try {
   assert.equal(count(completion.rows[0].success_count), 1_000);
   assert.equal(count(completion.rows[0].single_attempt_count), 1_000);
   assert.equal(count(completion.rows[0].leaked_lease_count), 0);
+
+  // A wake is a hint, not ownership. Repeating the same wake scope must be
+  // idempotent while the first kick lease is live.
+  const wakeScope = `${idPrefix}_duplicate_wake`;
+  const firstWake = await pool.query(`
+    select public.try_acquire_v4_queue_kick($1, $2, 30000) as acquired
+  `, [wakeScope, `${idPrefix}_wake_a`]);
+  const duplicateWake = await pool.query(`
+    select public.try_acquire_v4_queue_kick($1, $2, 30000) as acquired
+  `, [wakeScope, `${idPrefix}_wake_b`]);
+  assert.equal(firstWake.rows[0]?.acquired, true, "the first wake must acquire its dedup lease");
+  assert.equal(duplicateWake.rows[0]?.acquired, false, "a duplicate wake must be deduplicated");
+
+  // Model an HTTP response disappearing after the claim transaction commits:
+  // ignore the RPC response and recover the exact live ownership by worker id.
+  await createBatch(responseLossBatchId, 1, "claim_response_loss_recovery");
+  await insertJob({ id: responseLossJobId, batchId: responseLossBatchId, priority: 0 });
+  const responseLossWorker = `${idPrefix}_response_loss_worker`;
+  await claimJobsWithCapacity({
+    limit: 1,
+    workerId: responseLossWorker,
+    leaseSeconds: 300,
+    lane: "background",
+    providerCapacity: 2
+  });
+  const recoveredAfterResponseLoss = await pool.query(`
+    select id, lease_owner, status
+    from public.v4_recognition_jobs
+    where tenant_id = $1
+      and lease_owner = $2
+      and lease_expires_at > pg_catalog.clock_timestamp()
+  `, [tenantId, responseLossWorker]);
+  assert.deepEqual(recoveredAfterResponseLoss.rows.map((row) => row.id), [responseLossJobId]);
+  assert.equal(recoveredAfterResponseLoss.rows[0]?.status, "RUNNING");
+  assert.deepEqual(await completeClaimedJobs([responseLossJobId], responseLossWorker), [responseLossJobId]);
+  assert.equal(await releaseCapacity([responseLossJobId], responseLossWorker), 1);
+
+  // Exercise the real provider-capacity lease table independently of the 1000
+  // row claim-throughput test. All slots must be reusable and empty afterward.
+  const capacityJobIds = Array.from({ length: 8 }, (_, index) => `${idPrefix}_capacity_${index + 1}`);
+  await createBatch(capacityBatchId, capacityJobIds.length, "capacity_slot_release");
+  for (const jobId of capacityJobIds) await insertJob({ id: jobId, batchId: capacityBatchId });
+  const capacityWorker = `${idPrefix}_capacity_worker`;
+  const capacityClaims = await claimJobsWithCapacity({
+    limit: capacityJobIds.length,
+    workerId: capacityWorker,
+    lane: "background",
+    providerCapacity: capacityJobIds.length
+  });
+  assert.equal(capacityClaims.length, capacityJobIds.length);
+  assert.equal(new Set(capacityClaims.map((row) => row.id)).size, capacityJobIds.length);
+  assert.deepEqual(await completeClaimedJobs(capacityJobIds, capacityWorker), capacityJobIds);
+  assert.equal(await releaseCapacity(capacityJobIds, capacityWorker), capacityJobIds.length);
+  const liveCapacitySlots = await pool.query(`
+    select count(*) as live_count
+    from public.v4_provider_capacity_leases
+    where job_id like $1
+  `, [`${idPrefix}%`]);
+  assert.equal(count(liveCapacitySlots.rows[0].live_count), 0, "all capacity slots must be released");
+
+  // Tenant-scoped claims must not observe or mutate a queued job belonging to
+  // another tenant.
+  await createBatch(crossTenantBatchId, 1, "cross_tenant_isolation", crossTenantId);
+  await insertJob({
+    id: crossTenantJobId,
+    batchId: crossTenantBatchId,
+    priority: 0,
+    jobTenantId: crossTenantId
+  });
+  assert.equal((await claimJobsWithCapacity({
+    limit: 1,
+    workerId: `${idPrefix}_wrong_tenant_worker`,
+    lane: "background",
+    claimTenantId: tenantId,
+    providerCapacity: 2
+  })).length, 0, "a tenant-scoped worker must not claim another tenant's job");
+  const crossTenantWorker = `${idPrefix}_cross_tenant_worker`;
+  const crossTenantClaim = await claimJobsWithCapacity({
+    limit: 1,
+    workerId: crossTenantWorker,
+    lane: "background",
+    claimTenantId: crossTenantId,
+    providerCapacity: 2
+  });
+  assert.deepEqual(crossTenantClaim.map((row) => row.id), [crossTenantJobId]);
+  assert.deepEqual(await completeClaimedJobs([crossTenantJobId], crossTenantWorker), []);
+  const crossTenantCompletion = await pool.query(`
+    update public.v4_recognition_jobs
+    set status = 'L2_READY',
+        result = pg_catalog.jsonb_build_object('ok', true, 'integration_test', true),
+        stage_result = pg_catalog.jsonb_build_object('ok', true, 'integration_test', true),
+        completed_at = pg_catalog.clock_timestamp(),
+        lease_owner = null,
+        lease_expires_at = null,
+        updated_at = pg_catalog.clock_timestamp()
+    where id = $1 and tenant_id = $2 and lease_owner = $3 and status = 'RUNNING'
+    returning id
+  `, [crossTenantJobId, crossTenantId, crossTenantWorker]);
+  assert.deepEqual(crossTenantCompletion.rows.map((row) => row.id), [crossTenantJobId]);
+  assert.equal(await releaseCapacity([crossTenantJobId], crossTenantWorker), 1);
 
   await createBatch(leaseBatchId, 1, "expired_lease_reclaim");
   await insertJob({ id: leaseJobId, batchId: leaseBatchId, priority: 0 });
@@ -640,6 +798,16 @@ try {
       failed_final_after_attempts: 4,
       manual_rerun_attempt: 5,
       manual_rerun_status: manualSuccess.rows[0].canonical_state
+    },
+    invariants: {
+      terminal_jobs: 1_000,
+      lost_jobs: 0,
+      duplicate_results: 0,
+      cross_tenant_claims: 0,
+      duplicate_wake_deduplicated: true,
+      response_loss_recovered: true,
+      capacity_slots_released: true,
+      external_provider_calls: 0
     }
   };
 } catch (error) {
@@ -660,8 +828,10 @@ try {
 }
 
 if (!testFailure && process.exitCode !== 1 && testSummary) {
-  console.log(JSON.stringify({
+  const report = {
     ...testSummary,
     cleanup: cleanupCompleted ? "completed" : "not_required"
-  }, null, 2));
+  };
+  if (reportPath) await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(JSON.stringify(report, null, 2));
 }

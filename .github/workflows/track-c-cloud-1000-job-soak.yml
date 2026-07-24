@@ -1,0 +1,70 @@
+name: track-c-cloud-1000-job-soak
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/track-c-cloud-1000-job-soak.yml"
+      - "lib/listing/v4/jobs/**"
+      - "scripts/track-c-1000-job-reliability.test.mjs"
+      - "scripts/track-c-postgres-queue-reliability.test.mjs"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+  pull_request:
+    paths:
+      - ".github/workflows/track-c-cloud-1000-job-soak.yml"
+      - "lib/listing/v4/jobs/**"
+      - "scripts/track-c-1000-job-reliability.test.mjs"
+      - "scripts/track-c-postgres-queue-reliability.test.mjs"
+      - "supabase/config.toml"
+      - "supabase/migrations/**"
+  workflow_dispatch:
+
+concurrency:
+  group: track-c-cloud-1000-job-soak-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-queue-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TRACK_C_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      TRACK_C_REQUIRE_DATABASE: "true"
+      TRACK_C_REPORT_PATH: /tmp/track-c-cloud-1000-job-soak.json
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.108.0
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Start disposable database and apply real migrations
+        run: |
+          set -euo pipefail
+          supabase db start
+          supabase db reset --local --no-seed
+      - name: Run deterministic state model
+        run: node scripts/track-c-1000-job-reliability.test.mjs
+      - name: Run 1000-job PostgreSQL control-plane soak
+        run: node scripts/track-c-postgres-queue-reliability.test.mjs | tee /tmp/track-c-cloud-1000-job-soak.log
+      - name: Upload soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: track-c-cloud-1000-job-soak-${{ github.run_id }}
+          path: |
+            /tmp/track-c-cloud-1000-job-soak.json
+            /tmp/track-c-cloud-1000-job-soak.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Destroy disposable Supabase stack
+        if: always()
+        run: supabase stop --no-backup
