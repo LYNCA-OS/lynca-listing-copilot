@@ -1,9 +1,11 @@
 import {
   analyzeImageQualityFromImageData,
+  claimNextBatchAsset,
   defaultCaptureProfileId,
   defaultRecognitionProfileId,
   fetchWithBoundedRetry,
   groupClientResultsByJobId,
+  INTAKE_PREVIEW_CARD_WINDOW,
   isClientStatusNotFound,
   labelForCsmField,
   observeClientJobPoll,
@@ -16,6 +18,7 @@ import {
   stripClientImageTransport,
   summarizeAssetImageQuality,
   summarizeDerivedUploadOutcomes,
+  windowIntakePreviewGroups,
   withRecognitionRequestIntent
 } from "./listing-copilot-sdk.mjs";
 import {
@@ -116,7 +119,6 @@ const state = {
   writerReviewComplete: false,
   writerCompletionFocusPending: false,
   writerCompositionActive: false,
-  writerLastWheelNavigationAt: 0,
   fileSelectionPointerRequested: false,
   workbenchTransitionSequence: 0,
   activeWorkbenchTransition: null,
@@ -447,10 +449,11 @@ function renderInstantIntakePreviews(records = []) {
   for (let index = 0; index < source.length; index += groupSize) {
     groups.push(source.slice(index, index + groupSize));
   }
+  const previewWindow = windowIntakePreviewGroups(groups, INTAKE_PREVIEW_CARD_WINDOW);
 
   elements.processButton.disabled = true;
   elements.previewSummary.textContent = `${source.length} 张图片已选择，本地预览已显示；正在后台校验原图。`;
-  elements.assetPreviewList.innerHTML = groups.map((images, index) => `
+  elements.assetPreviewList.innerHTML = previewWindow.visible.map((images, index) => `
     <article class="asset-row-card intake-preview-card" aria-busy="true">
       <div class="asset-source">
         <div class="preview-images ${images.length === 1 ? "single" : ""}">
@@ -472,7 +475,11 @@ function renderInstantIntakePreviews(records = []) {
         </div>
       </div>
     </article>
-  `).join("");
+  `).join("") + (previewWindow.remaining > 0 ? `
+    <div class="empty-state intake-preview-overflow" role="status">
+      其余 ${previewWindow.remaining} 张卡已接收，正在后台进入同一识别批次。
+    </div>
+  ` : "");
 }
 
 function stringByteLength(value) {
@@ -2164,7 +2171,12 @@ function speculativeNeedsFreshEnqueue(speculative = {}) {
 
 function syncProcessButtonState() {
   const busy = state.processing || state.results.some((result) => v4WriterTitlePending(result));
-  elements.processButton.disabled = !canGenerateTitles() || workspaceInteractionLocked();
+  // File intake is deliberately not a submission lock. Once the first card is
+  // represented in state, one click commits the whole still-arriving batch.
+  // Later cards inherit that intent and are claimed by the same worker pool.
+  elements.processButton.disabled = !canGenerateTitles()
+    || state.writerSaveInFlight
+    || state.exportingWorkbook;
   setProcessButtonBusy(busy);
 }
 
@@ -2232,7 +2244,7 @@ function setStatus(message, options = {}) {
 function setProcessButtonBusy(isBusy) {
   elements.processButton.classList.toggle("is-loading", Boolean(isBusy));
   elements.processButton.setAttribute("aria-busy", isBusy ? "true" : "false");
-  elements.processButton.textContent = isBusy ? "识别中" : "生成标题";
+  elements.processButton.textContent = isBusy ? "识别中" : "开始识别";
 }
 
 function clampNumber(value, min, max) {
@@ -2727,23 +2739,11 @@ function syncWriterActiveIndex() {
   }
 
   const current = state.assets.find((asset) => asset.index === Number(state.writerActiveIndex));
-  const currentPersisted = current ? writerFeedbackPersisted(resultForAsset(current)) : false;
-  if (
-    current
-    && writerAssetReadyForInput(current)
-    && (state.writerSaveInFlight || state.writerReviewComplete || !currentPersisted)
-  ) return current;
-
-  const outstanding = writerOutstandingAssets();
-  const next = outstanding.find(writerAssetReadyForInput) || current || outstanding[0] || state.assets[0];
+  if (state.writerReviewComplete && writerProcessedCount() === state.assets.length && current) return current;
+  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
+  const next = outstanding[0] || state.assets[0];
   state.writerActiveIndex = next?.index ?? null;
   return next || null;
-}
-
-function writerAdjacentAsset(index, direction) {
-  const position = state.assets.findIndex((asset) => asset.index === Number(index));
-  if (position < 0) return null;
-  return state.assets[position + direction] || null;
 }
 
 function scheduleWriterInputFocus(assetIndex = state.writerActiveIndex) {
@@ -2794,7 +2794,10 @@ function clearCardViewTransitionNames() {
 }
 
 function setCardViewTransitionNames(indexes = []) {
-  const visibleIndexes = [...new Set(indexes.map(Number).filter(Number.isFinite))].slice(0, 4);
+  const visibleIndexes = [...new Set(indexes.map(Number).filter(Number.isFinite))]
+    // The UI still exposes eight cards. During one queue handoff the outgoing
+    // card and the incoming ninth card coexist only as transition snapshots.
+    .slice(0, INTAKE_PREVIEW_CARD_WINDOW + 1);
   const visibleIndexSet = new Set(visibleIndexes);
   clearCardViewTransitionNames();
   elements.assetPreviewList?.querySelectorAll("[data-card-transition-index]").forEach((card) => {
@@ -2804,13 +2807,30 @@ function setCardViewTransitionNames(indexes = []) {
   return visibleIndexes;
 }
 
+function visibleOutstandingAssetIndexes() {
+  return writerOutstandingAssets()
+    .sort((left, right) => left.index - right.index)
+    .slice(0, INTAKE_PREVIEW_CARD_WINDOW)
+    .map((asset) => asset.index);
+}
+
+function renderQueueAdvance(beforeIndexes = [], { animate = true } = {}) {
+  const transitionIndexes = [...new Set([...beforeIndexes, ...visibleOutstandingAssetIndexes()])];
+  return runWorkbenchViewTransition({
+    kind: "queue-advance",
+    enabled: animate,
+    prepareSharedElements: () => setCardViewTransitionNames(transitionIndexes),
+    update: () => renderResults({ forceWriterRender: true })
+  });
+}
+
 function writerWheelVisibleAssetIndexes(activeIndex = state.writerActiveIndex) {
-  const current = state.assets.find((asset) => asset.index === Number(activeIndex));
+  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
+  const current = outstanding.find((asset) => asset.index === Number(activeIndex)) || outstanding[0];
   if (!current) return [];
-  const previous = writerAdjacentAsset(current.index, -1);
-  const nextDepthOne = writerAdjacentAsset(current.index, 1);
-  const nextDepthTwo = nextDepthOne ? writerAdjacentAsset(nextDepthOne.index, 1) : null;
-  return [previous, current, nextDepthOne, nextDepthTwo].filter(Boolean).map((asset) => asset.index);
+  return [current, ...outstanding.filter((asset) => asset.index !== current.index)]
+    .slice(0, INTAKE_PREVIEW_CARD_WINDOW)
+    .map((asset) => asset.index);
 }
 
 function workbenchViewTransitionAllowed() {
@@ -3094,20 +3114,6 @@ function writerAssetStatusLabel(asset) {
   return "待录入";
 }
 
-function writerPeekHtml(asset, position) {
-  if (!asset) return `<div class="writer-wheel-peek writer-wheel-peek-${position} writer-wheel-peek-empty" aria-hidden="true"></div>`;
-  const image = asset.images?.[0];
-  const status = writerAssetStatusLabel(asset);
-  const relativeLabel = position === "previous" ? "上一张" : position === "next-depth-2" ? "下两张" : "下一张";
-  return `
-    <button class="writer-wheel-peek writer-wheel-peek-${position}" type="button" data-writer-go="${asset.index}" data-writer-direction="${position === "previous" ? "backward" : "forward"}" data-card-transition-index="${asset.index}" aria-label="${relativeLabel}，卡片 ${asset.index}，${escapeHtml(status)}">
-      ${image ? `<img src="${escapeHtml(imagePreviewUrl(image))}" alt="">` : ""}
-      <span>卡片 ${asset.index}</span>
-      <small>${escapeHtml(status)}</small>
-    </button>
-  `;
-}
-
 function writerCurrentCardHtml(asset) {
   const result = resultForAsset(asset);
   const status = writerAssetStatusLabel(asset);
@@ -3131,6 +3137,31 @@ function writerCurrentCardHtml(asset) {
         ${result ? resultBox(result, asset) : pendingBox(asset)}
       </div>
     </article>
+  `;
+}
+
+function writerQueueWindowHtml(current) {
+  const visible = writerOutstandingAssets()
+    .sort((left, right) => left.index - right.index)
+    .slice(0, INTAKE_PREVIEW_CARD_WINDOW);
+  const queued = visible.filter((asset) => asset.index !== current.index);
+  if (!queued.length) return "";
+  return `
+    <section class="writer-queue-window" aria-label="当前八张卡片队列">
+      <header><strong>待处理窗口</strong><span>${visible.length} / ${INTAKE_PREVIEW_CARD_WINDOW}</span></header>
+      <div class="writer-queue-window-list">
+        ${queued.map((asset, index) => {
+          const image = asset.images?.[0];
+          return `
+            <div class="writer-queue-window-item" data-card-transition-index="${asset.index}" aria-label="队列第 ${index + 2} 张，卡片 ${asset.index}">
+              ${image ? `<img src="${escapeHtml(imagePreviewUrl(image))}" alt="" loading="lazy" decoding="async">` : ""}
+              <span>卡片 ${asset.index}</span>
+              <small>${escapeHtml(writerAssetStatusLabel(asset))}</small>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -3171,9 +3202,6 @@ function renderWriterWheel() {
     return;
   }
 
-  const previous = writerAdjacentAsset(current.index, -1);
-  const nextDepthOne = writerAdjacentAsset(current.index, 1);
-  const nextDepthTwo = nextDepthOne ? writerAdjacentAsset(nextDepthOne.index, 1) : null;
   const savedCount = writerSavedAssets().length;
   const writerTransition = state.writerTransition;
   state.writerTransition = "";
@@ -3184,13 +3212,11 @@ function renderWriterWheel() {
         <p>${savedCount} 张已入库 · Enter 保存并推进</p>
       </header>
       <div class="writer-wheel-viewport" data-writer-wheel>
-        <div class="writer-wheel-track ${writerTransition ? `writer-transition-${writerTransition}` : ""}">
+        <div class="writer-wheel-track writer-queue-mode ${writerTransition ? `writer-transition-${writerTransition}` : ""}">
           ${writerCurrentCardHtml(current)}
-          ${writerPeekHtml(previous, "previous")}
-          ${writerPeekHtml(nextDepthOne, "next-depth-1")}
-          ${writerPeekHtml(nextDepthTwo, "next-depth-2")}
         </div>
       </div>
+      ${writerQueueWindowHtml(current)}
       <footer class="writer-wheel-footer">
         <span>标题保存成功后卡片才会上移；失败会停留在当前卡。</span>
         <button class="copy-button" type="button" data-writer-export ${completedExportRowsReady() ? "" : "disabled"}>导出已入库 ${savedCount} 张</button>
@@ -3208,9 +3234,16 @@ function renderAssetRows() {
     return;
   }
 
+  const visibleAssets = writerOutstandingAssets()
+    .sort((left, right) => left.index - right.index)
+    .slice(0, INTAKE_PREVIEW_CARD_WINDOW);
+  if (!visibleAssets.length) {
+    elements.assetPreviewList.innerHTML = `<div class="empty-state"><strong>本批卡片已全部确认</strong><p>可以导出已入库标题，或开始下一批。</p></div>`;
+    return;
+  }
   const hasAnyResult = state.results.length > 0;
   if (!hasAnyResult) {
-    elements.assetPreviewList.innerHTML = state.assets.map(assetRowHtml).join("");
+    elements.assetPreviewList.innerHTML = visibleAssets.map(assetRowHtml).join("");
     return;
   }
 
@@ -3218,12 +3251,12 @@ function renderAssetRows() {
     {
       key: "quick",
       label: "优先检查",
-      assets: state.assets.filter((asset) => modelQuickApprovalCandidate(resultForAsset(asset)))
+      assets: visibleAssets.filter((asset) => modelQuickApprovalCandidate(resultForAsset(asset)))
     },
     {
       key: "review",
       label: "需要确认",
-      assets: state.assets.filter((asset) => {
+      assets: visibleAssets.filter((asset) => {
         const result = resultForAsset(asset);
         if (!result || modelQuickApprovalCandidate(result)) return false;
         const gate = result.publication_gate || {};
@@ -3233,7 +3266,7 @@ function renderAssetRows() {
     {
       key: "manual",
       label: "需要处理",
-      assets: state.assets.filter((asset) => {
+      assets: visibleAssets.filter((asset) => {
         const result = resultForAsset(asset);
         if (!result) return true;
         if (modelQuickApprovalCandidate(result)) return false;
@@ -4102,6 +4135,8 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
       state.assets.sort((left, right) => left.index - right.index);
       state.files = state.assets.flatMap((entry) => entry.images);
       scheduleAssetBackgroundPreparation(asset, backgroundRunId);
+      if (state.processing) state.processingTotal = state.assets.length;
+      syncProcessButtonState();
       syncBackgroundPreparationStatus();
       return asset;
     });
@@ -4393,23 +4428,33 @@ async function processTitles() {
   state.completedAssetCount = 0;
   state.processingTotal = state.assets.length;
   const generationQueuedAt = Date.now();
-  state.assets.forEach((asset) => markAssetQueued(asset, generationQueuedAt));
   renderResults();
   elements.processButton.disabled = true;
   setProcessButtonBusy(true);
-  setStatus("0% · 图片已准备，开始识别…", { busy: true });
+  setStatus("卡片已进入识别队列；后续图片准备完成后会自动加入。", { busy: true });
 
-  const queue = [...state.assets];
   const recognitionBatchId = state.backgroundRecognitionBatchId || createClientBatchId();
   state.backgroundRecognitionBatchId = recognitionBatchId;
   // This pool only prepares and enqueues durable jobs. Provider concurrency is
   // enforced independently by the server-side capacity lease.
-  const workerCount = Math.min(queueSubmissionConcurrencyLimit(), queue.length);
+  // Start the full bounded pool even if only one card has arrived. Each worker
+  // waits for the same intake run to either expose another card or finish.
+  const workerCount = queueSubmissionConcurrencyLimit();
+  const claimedAssetIndexes = new Set();
   let completedCount = 0;
 
   async function worker() {
-    while (queue.length) {
-      const asset = queue.shift();
+    while (true) {
+      const asset = claimNextBatchAsset(state.assets, claimedAssetIndexes);
+      if (!asset) {
+        if (state.preparingFiles) {
+          await wait(50);
+          continue;
+        }
+        return;
+      }
+      state.processingTotal = state.assets.length;
+      markAssetQueued(asset, generationQueuedAt);
       state.activeAssetIndexes.add(asset.index);
       setAssetProgress(asset.index, "进入识别队列", 0.03);
 
@@ -5387,7 +5432,7 @@ function clearPendingV4FeedbackSubmission(result, submission = {}) {
   delete result.pendingFeedbackOccurredAt;
 }
 
-async function saveFeedbackForResult(result, asset) {
+async function saveFeedbackForResult(result, asset, { deferFinalRender = false } = {}) {
   if (!result) return false;
 
   const generatedTitle = String(
@@ -5531,14 +5576,18 @@ async function saveFeedbackForResult(result, asset) {
     result.feedbackMessage = error.message || "记忆保存失败。";
     return false;
   } finally {
-    renderResults();
+    if (!deferFinalRender) renderResults();
   }
 }
 
-async function saveTitleFeedback(button) {
+async function saveTitleFeedback(button, { animate = true } = {}) {
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
-  return saveFeedbackForResult(result, asset);
+  const beforeIndexes = visibleOutstandingAssetIndexes();
+  const persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
+  if (persisted) renderQueueAdvance(beforeIndexes, { animate });
+  else renderResults();
+  return persisted;
 }
 
 function advanceWriterAfterPersistence(index) {
@@ -5554,7 +5603,7 @@ function advanceWriterAfterPersistence(index) {
   state.writerCompletionFocusPending = nextIndex === null;
 }
 
-async function saveWriterTitleAndAdvance(resultIndex) {
+async function saveWriterTitleAndAdvance(resultIndex, { animate = true } = {}) {
   if (workspaceInteractionLocked()) return false;
   const index = Number(resultIndex);
   const result = state.results.find((item) => item.index === index);
@@ -5580,20 +5629,22 @@ async function saveWriterTitleAndAdvance(resultIndex) {
   }
 
   state.writerSaveInFlight = true;
+  const beforeIndexes = visibleOutstandingAssetIndexes();
   let persisted = false;
   try {
-    persisted = await saveFeedbackForResult(result, asset);
+    persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
     if (!persisted) return false;
     advanceWriterAfterPersistence(index);
     return true;
   } finally {
     state.writerSaveInFlight = false;
     if (!persisted) state.writerFocusPending = true;
-    renderResults({ forceWriterRender: true });
+    if (persisted) renderQueueAdvance(beforeIndexes, { animate });
+    else renderResults({ forceWriterRender: true });
   }
 }
 
-async function rejectWriterTitleAndAdvance(resultIndex) {
+async function rejectWriterTitleAndAdvance(resultIndex, { animate = true } = {}) {
   if (workspaceInteractionLocked()) return false;
   const index = Number(resultIndex);
   const result = state.results.find((item) => item.index === index);
@@ -5606,32 +5657,38 @@ async function rejectWriterTitleAndAdvance(resultIndex) {
   }
 
   state.writerSaveInFlight = true;
+  const beforeIndexes = visibleOutstandingAssetIndexes();
   result.explicitReviewOutcome = "REJECTED";
   result.feedbackStatus = "";
   result.persistenceStatus = "";
   result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
   let persisted = false;
   try {
-    persisted = await saveFeedbackForResult(result, asset);
+    persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
     if (!persisted) return false;
     advanceWriterAfterPersistence(index);
     return true;
   } finally {
     state.writerSaveInFlight = false;
     if (!persisted) state.writerFocusPending = true;
-    renderResults({ forceWriterRender: true });
+    if (persisted) renderQueueAdvance(beforeIndexes, { animate });
+    else renderResults({ forceWriterRender: true });
   }
 }
 
-async function rejectTitleFeedback(button) {
+async function rejectTitleFeedback(button, { animate = true } = {}) {
   const result = state.results.find((item) => item.index === Number(button.dataset.rejectTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.rejectTitle));
   if (!result || writerFeedbackPersisted(result) || result.feedbackStatus === "saving") return false;
+  const beforeIndexes = visibleOutstandingAssetIndexes();
   result.explicitReviewOutcome = "REJECTED";
   result.feedbackStatus = "";
   result.persistenceStatus = "";
   result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
-  return saveFeedbackForResult(result, asset);
+  const persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
+  if (persisted) renderQueueAdvance(beforeIndexes, { animate });
+  else renderResults();
+  return persisted;
 }
 
 async function copyAllTitles() {
@@ -5921,15 +5978,15 @@ function bindEvents() {
 
     const saveButton = event.target.closest("[data-save-title]");
     if (saveButton) {
-      if (writerModeActive()) void saveWriterTitleAndAdvance(Number(saveButton.dataset.saveTitle));
-      else void saveTitleFeedback(saveButton);
+      if (writerModeActive()) void saveWriterTitleAndAdvance(Number(saveButton.dataset.saveTitle), { animate: true });
+      else void saveTitleFeedback(saveButton, { animate: true });
       return;
     }
 
     const rejectButton = event.target.closest("[data-reject-title]");
     if (rejectButton) {
-      if (writerModeActive()) void rejectWriterTitleAndAdvance(Number(rejectButton.dataset.rejectTitle));
-      else void rejectTitleFeedback(rejectButton);
+      if (writerModeActive()) void rejectWriterTitleAndAdvance(Number(rejectButton.dataset.rejectTitle), { animate: true });
+      else void rejectTitleFeedback(rejectButton, { animate: true });
       return;
     }
 
@@ -5984,11 +6041,11 @@ function bindEvents() {
     const nextResultIndex = Number(inputs[currentPosition + 1]?.dataset.titleInput);
     finalizeTitleOverride(titleInput);
     if (writerModeActive()) {
-      void saveWriterTitleAndAdvance(resultIndex);
+      void saveWriterTitleAndAdvance(resultIndex, { animate: false });
       return;
     }
     if (saveButton && !saveButton.disabled) {
-      void saveTitleFeedback(saveButton).then((saved) => {
+      void saveTitleFeedback(saveButton, { animate: false }).then((saved) => {
         if (!saved || !Number.isFinite(nextResultIndex)) return;
         elements.assetPreviewList.querySelector(`[data-title-input="${nextResultIndex}"]:not([disabled])`)?.focus();
       });
@@ -5996,24 +6053,6 @@ function bindEvents() {
       elements.assetPreviewList.querySelector(`[data-title-input="${nextResultIndex}"]:not([disabled])`)?.focus();
     }
   });
-
-  elements.assetPreviewList.addEventListener("wheel", (event) => {
-    if (!writerModeActive() || !event.target.closest("[data-writer-wheel]")) return;
-    if (event.target.closest("[data-writer-card] textarea, [data-writer-card] input, [data-writer-card] select, [data-writer-card] button, [data-writer-card] [contenteditable='true']")) return;
-    if (workspaceInteractionLocked() || Math.abs(event.deltaY) < 8) return;
-    const now = Date.now();
-    if (now - state.writerLastWheelNavigationAt < 280) return;
-    const direction = event.deltaY > 0 ? 1 : -1;
-    const adjacent = writerAdjacentAsset(state.writerActiveIndex, direction);
-    if (!adjacent) return;
-    event.preventDefault();
-    state.writerLastWheelNavigationAt = now;
-    setWriterActiveIndex(adjacent.index, {
-      focus: true,
-      animate: true,
-      direction: direction > 0 ? "forward" : "backward"
-    });
-  }, { passive: false });
 
   elements.imageModal.addEventListener("click", (event) => {
     if (event.target.closest("[data-modal-close]")) {

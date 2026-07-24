@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import {
   SIGNED_UPLOAD_URL_GENERATION_LIMIT,
+  WRITER_IMAGE_INTAKE_CONTRACT_VERSION,
   shouldRefreshSignedUpload
 } from "../lib/listing/client/upload-recovery-policy.mjs";
 
+assert.equal(WRITER_IMAGE_INTAKE_CONTRACT_VERSION, "writer-image-intake-v1");
 assert.equal(SIGNED_UPLOAD_URL_GENERATION_LIMIT, 2);
 assert.equal(shouldRefreshSignedUpload({ generation: 1, networkError: true }), true);
 assert.equal(shouldRefreshSignedUpload({ generation: 2, networkError: true }), false);

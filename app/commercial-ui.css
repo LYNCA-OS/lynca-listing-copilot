@@ -5,6 +5,54 @@
  * changing the DOM and event contracts owned by listing-copilot.js.
  */
 
+:root[data-lynca-theme="foundation-navy"] {
+  --theme-color-scheme: dark;
+  --theme-bg: #08152f;
+  --theme-bg-rgb: 8, 21, 47;
+  --theme-surface: #0d203f;
+  --theme-surface-rgb: 13, 32, 63;
+  --theme-elevated: #12305a;
+  --theme-elevated-rgb: 18, 48, 90;
+  --theme-muted-surface: #173a69;
+  --theme-accent: #76e6ff;
+  --theme-accent-rgb: 118, 230, 255;
+  --theme-accent-hover: #a5efff;
+  --theme-accent-bright: #b8f4ff;
+  --theme-focus: #76e6ff;
+  --theme-signal: #76e6ff;
+  --theme-signal-rgb: 118, 230, 255;
+  --theme-success: #75d7a5;
+  --theme-warning: #efc477;
+  --theme-danger: #ff969f;
+  --theme-line: rgba(151, 188, 230, 0.18);
+  --theme-line-strong: rgba(151, 188, 230, 0.42);
+  --theme-edge-rgb: 151, 188, 230;
+  --theme-peek: rgba(15, 39, 73, 0.96);
+  --theme-peek-previous: var(--theme-peek);
+  --theme-peek-depth-one: var(--theme-peek);
+  --theme-peek-depth-two: var(--theme-peek);
+  --theme-depth-previous-opacity: 0.78;
+  --theme-depth-one-opacity: 0.72;
+  --theme-depth-two-opacity: 0.62;
+  --theme-mobile-depth-one-opacity: 0.74;
+  --theme-mobile-depth-two-opacity: 0.64;
+  --theme-glass: rgba(8, 25, 52, 0.84);
+  --theme-header-glass: var(--theme-glass);
+  --theme-chrome: var(--theme-surface);
+  --theme-on-chrome: var(--theme-ink);
+  --theme-on-chrome-muted: var(--theme-muted);
+  --theme-on-glass: var(--theme-ink);
+  --theme-on-glass-muted: var(--theme-muted);
+  --theme-wheel-track: var(--theme-bg);
+  --theme-wheel-track-rgb: var(--theme-bg-rgb);
+  --theme-wheel-shell: var(--theme-surface);
+  --theme-peek-ink: var(--theme-ink);
+  --theme-story: var(--theme-elevated);
+  --theme-ink: #f5f8ff;
+  --theme-muted: #afbed8;
+  --theme-subtle: #7f95b7;
+}
+
 :root,
 :root[data-lynca-theme="deep-purple"] {
   --theme-color-scheme: dark;

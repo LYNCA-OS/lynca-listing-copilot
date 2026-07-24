@@ -1,9 +1,10 @@
 (function () {
   "use strict";
 
-  var STORAGE_KEY = "lynca-listing-theme-v1";
-  var DEFAULT_THEME = "deep-purple";
+  var STORAGE_KEY = "lynca-listing-theme-v2";
+  var DEFAULT_THEME = "foundation-navy";
   var themes = Object.freeze([
+    Object.freeze({ id: "foundation-navy", label: "Foundation Navy", themeColor: "#08152F" }),
     Object.freeze({ id: "deep-purple", label: "深紫科技", themeColor: "#160F23" }),
     Object.freeze({ id: "midnight-blue", label: "午夜蓝", themeColor: "#07111F" }),
     Object.freeze({ id: "jade-tech", label: "翡翠科技", themeColor: "#071813" }),
