@@ -22,7 +22,7 @@ as $function$
   select trim(regexp_replace(lower(
     coalesce(p_title,'') || ' ' || coalesce(p_sport,'') || ' ' || coalesce(p_year,'') || ' ' ||
     coalesce(p_brand,'') || ' ' || coalesce(p_manu,'') || ' ' || coalesce(p_product,'') || ' ' ||
-    coalesce(p_set,'') || ' ' || public.catalog_players_text(p_players) || ' ' ||
+    coalesce(p_set,'') || ' ' || coalesce(pg_catalog.array_to_string(p_players, ' '), '') || ' ' ||
     coalesce(p_card,'') || ' ' || coalesce(p_check,'') || ' ' || coalesce(p_color,'')
   ), '[^[:alnum:]]+', ' ', 'g'));
 $function$;
