@@ -57,6 +57,48 @@ async function remove(table, query) {
   return rest(`${table}?${query}`, { method: "DELETE", prefer: "return=minimal" });
 }
 
+async function createHostedVerifiedAsset(tenantId) {
+  const assetId = `asset_${crypto.randomUUID()}`;
+  const objectPath = `tenants/${tenantId}/listing-assets/2026-07-24/${assetId}/front.jpg`;
+  const contentSha256 = crypto.createHash("sha256").update(`${tenantId}:${assetId}:front`).digest("hex");
+  await insert("listing_assets", {
+    id: assetId,
+    tenant_id: tenantId,
+    category: "control_plane_soak",
+    front_object_path: objectPath,
+    additional_image_paths: [],
+    image_generation_id: assetId,
+    expected_original_count: 1,
+    image_set_state: "INCOMPLETE"
+  });
+  await insert("listing_image_verifications", {
+    object_path: objectPath,
+    bucket: "listing-card-images",
+    tenant_id: tenantId,
+    asset_id: assetId,
+    image_id: "front",
+    storage_role: "front_original",
+    content_type: "image/jpeg",
+    size: 1,
+    width: 1,
+    height: 1,
+    object_verified: true,
+    content_hash_verified: true,
+    content_sha256: contentSha256,
+    dimension_source: "object_bytes",
+    image_generation_id: assetId,
+    crop_metadata: null,
+    canonical_eligible: true
+  });
+  const rpc = await rest("rpc/canonical_listing_asset_image_set", {
+    method: "POST",
+    body: { p_tenant_id: tenantId, p_asset_id: assetId }
+  });
+  const manifest = Array.isArray(rpc.value) ? rpc.value[0] : rpc.value;
+  assert.equal(manifest?.asset_id, assetId);
+  return { assetId, manifest };
+}
+
 async function invokePump(tenantId, { timeoutMs = 120_000, allowAbort = false } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -129,6 +171,8 @@ async function cleanup(tenantIds) {
   await remove("job_attempt_events", filter);
   await remove("v4_recognition_jobs", filter);
   await remove("v4_recognition_batches", filter);
+  await remove("listing_image_verifications", filter);
+  await remove("listing_assets", filter);
   await remove("tenants", `id=in.(${encodeURIComponent(encoded)})`);
 }
 
@@ -157,6 +201,10 @@ try {
       plan: "pilot",
       status: "ACTIVE"
     })));
+    const assetsByTenant = new Map();
+    for (const tenantId of tenantIds) {
+      assetsByTenant.set(tenantId, await createHostedVerifiedAsset(tenantId));
+    }
     const batches = tenantIds.map((tenantId, index) => ({
       id: `batch_${tenantId}`,
       tenant_id: tenantId,
@@ -167,17 +215,20 @@ try {
     await insert("v4_recognition_batches", batches);
     const jobs = Array.from({ length: jobsPerWave }, (_, offset) => {
       const tenantId = offset < jobsPerWave / 2 ? tenantA : tenantB;
+      const asset = assetsByTenant.get(tenantId);
       return {
         id: `${runId}_w${wave}_${String(offset + 1).padStart(3, "0")}`,
         schema_version: "v4-recognition-session-v1",
         batch_id: `batch_${tenantId}`,
         tenant_id: tenantId,
+        asset_id: asset.assetId,
         job_type: "CONTROL_PLANE_SOAK",
         provider_id: "openai_legacy",
         status: "QUEUED",
         priority: 100,
         lane: "background",
         payload: {
+          ...asset.manifest,
           control_plane_soak: true,
           run_id: runId,
           wave,

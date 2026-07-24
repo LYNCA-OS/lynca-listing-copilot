@@ -75,7 +75,11 @@ jobs:
       - name: Run deterministic state model
         run: node scripts/track-c-1000-job-reliability.test.mjs
       - name: Run 1000-job PostgreSQL control-plane soak
-        run: node scripts/track-c-postgres-queue-reliability.test.mjs | tee /tmp/track-c-cloud-1000-job-soak.log
+        run: |
+          set -euo pipefail
+          node scripts/track-c-postgres-queue-reliability.test.mjs | tee /tmp/track-c-cloud-1000-job-soak.log
+          test -s "$TRACK_C_REPORT_PATH"
+          node -e 'const r=require(process.env.TRACK_C_REPORT_PATH); if(r.ok!==true || r.invariants?.terminal_jobs!==1000) process.exit(1)'
       - name: Upload soak evidence
         if: always()
         uses: actions/upload-artifact@v4

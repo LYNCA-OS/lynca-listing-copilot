@@ -37,7 +37,11 @@ const leaseJobId = `${idPrefix}_lease`;
 const retryJobId = `${idPrefix}_retry`;
 const responseLossJobId = `${idPrefix}_response_loss`;
 const crossTenantJobId = `${idPrefix}_cross_tenant`;
+const primaryAssetId = `asset_${crypto.randomUUID()}`;
+const crossTenantAssetId = `asset_${crypto.randomUUID()}`;
 const expectedRetryDelaysMs = [10_000, 30_000, 120_000];
+let primaryImageManifest = null;
+let crossTenantImageManifest = null;
 
 const pool = new Pool({
   connectionString: databaseUrl,
@@ -137,13 +141,50 @@ async function createBatch(batchId, itemCount, purpose, batchTenantId = tenantId
   `, [batchId, batchTenantId, itemCount, purpose, runSuffix]);
 }
 
-async function insertJob({ id, batchId, priority = 100, lane = "background", jobTenantId = tenantId }) {
+async function createVerifiedAsset(assetId, assetTenantId) {
+  const objectPath = `tenants/${assetTenantId}/listing-assets/2026-07-24/${assetId}/front.jpg`;
+  const contentSha256 = crypto.createHash("sha256").update(`${assetTenantId}:${assetId}:front`).digest("hex");
+  await pool.query(`
+    insert into public.listing_assets (
+      id, tenant_id, category, front_object_path, additional_image_paths,
+      image_generation_id, expected_original_count, image_set_state
+    ) values ($1, $2, 'control_plane_soak', $3, '[]'::jsonb, $1, 1, 'INCOMPLETE')
+  `, [assetId, assetTenantId, objectPath]);
+  await pool.query(`
+    insert into public.listing_image_verifications (
+      object_path, bucket, tenant_id, asset_id, image_id, storage_role,
+      content_type, size, width, height, object_verified,
+      content_hash_verified, content_sha256, dimension_source,
+      image_generation_id, crop_metadata, canonical_eligible
+    ) values (
+      $1, 'listing-card-images', $2, $3, 'front', 'front_original',
+      'image/jpeg', 1, 1, 1, true,
+      true, $4, 'object_bytes',
+      $3, null, true
+    )
+  `, [objectPath, assetTenantId, assetId, contentSha256]);
+  const manifest = await pool.query(`
+    select public.canonical_listing_asset_image_set($1, $2) as manifest
+  `, [assetTenantId, assetId]);
+  return manifest.rows[0].manifest;
+}
+
+async function insertJob({
+  id,
+  batchId,
+  priority = 100,
+  lane = "background",
+  jobTenantId = tenantId,
+  assetId = primaryAssetId,
+  imageManifest = primaryImageManifest
+}) {
   await pool.query(`
     insert into public.v4_recognition_jobs (
       id,
       schema_version,
       batch_id,
       tenant_id,
+      asset_id,
       job_type,
       provider_id,
       status,
@@ -159,18 +200,19 @@ async function insertJob({ id, batchId, priority = 100, lane = "background", job
       'v4-recognition-session-v1',
       $2,
       $3,
+      $7,
       'FINAL_ASSISTED_TITLE',
       'openai_legacy',
       'QUEUED',
       $4,
       $5,
-      pg_catalog.jsonb_build_object('integration_test', true, 'run_suffix', $6::text),
+      $8::jsonb || pg_catalog.jsonb_build_object('integration_test', true, 'run_suffix', $6::text),
       4,
       pg_catalog.clock_timestamp() - interval '1 second',
       pg_catalog.clock_timestamp(),
       pg_catalog.clock_timestamp()
     )
-  `, [id, batchId, jobTenantId, priority, lane, runSuffix]);
+  `, [id, batchId, jobTenantId, priority, lane, runSuffix, assetId, JSON.stringify(imageManifest)]);
 }
 
 async function claimJobs({ limit = 25, workerId, leaseSeconds = 300, lane = null }) {
@@ -307,6 +349,14 @@ async function cleanup() {
       where tenant_id = any($1::text[])
     `, [[tenantId, crossTenantId]]);
     await pool.query(`
+      delete from public.listing_image_verifications
+      where tenant_id = any($1::text[])
+    `, [[tenantId, crossTenantId]]);
+    await pool.query(`
+      delete from public.listing_assets
+      where tenant_id = any($1::text[])
+    `, [[tenantId, crossTenantId]]);
+    await pool.query(`
       delete from public.tenants
       where id = any($1::text[])
     `, [[tenantId, crossTenantId]]);
@@ -336,6 +386,8 @@ try {
     `Track C PostgreSQL cross-tenant sentinel ${runSuffix}`
   ]);
   createdTenant = true;
+  primaryImageManifest = await createVerifiedAsset(primaryAssetId, tenantId);
+  crossTenantImageManifest = await createVerifiedAsset(crossTenantAssetId, crossTenantId);
 
   await createBatch(mainBatchId, 1_000, "one_thousand_job_claim_and_completion");
   const inserted = await pool.query(`
@@ -344,6 +396,7 @@ try {
       schema_version,
       batch_id,
       tenant_id,
+      asset_id,
       job_type,
       provider_id,
       status,
@@ -360,12 +413,13 @@ try {
       'v4-recognition-session-v1',
       $2,
       $3,
+      $5,
       'FINAL_ASSISTED_TITLE',
       'openai_legacy',
       'QUEUED',
       100,
       'background',
-      pg_catalog.jsonb_build_object(
+      $6::jsonb || pg_catalog.jsonb_build_object(
         'integration_test', true,
         'ordinal', series.job_no,
         'run_suffix', $4::text
@@ -376,7 +430,7 @@ try {
       pg_catalog.clock_timestamp()
     from pg_catalog.generate_series(1, 1000) as series(job_no)
     returning id
-  `, [idPrefix, mainBatchId, tenantId, runSuffix]);
+  `, [idPrefix, mainBatchId, tenantId, runSuffix, primaryAssetId, JSON.stringify(primaryImageManifest)]);
   assert.equal(inserted.rows.length, 1_000, "all 1000 jobs must be durably inserted");
 
   const persisted = await pool.query(`
@@ -528,7 +582,9 @@ try {
     id: crossTenantJobId,
     batchId: crossTenantBatchId,
     priority: 0,
-    jobTenantId: crossTenantId
+    jobTenantId: crossTenantId,
+    assetId: crossTenantAssetId,
+    imageManifest: crossTenantImageManifest
   });
   assert.equal((await claimJobsWithCapacity({
     limit: 1,
