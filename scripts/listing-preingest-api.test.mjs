@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import handler from "../api/listing-preingest.js";
+import handler, { shouldWakePreingestionOcr } from "../api/listing-preingest.js";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 import { preingestionOcrJobVersion } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
@@ -14,6 +14,9 @@ process.env.PADDLE_OCR_WORKER_URL = "https://ocr.test";
 process.env.PADDLE_OCR_WORKER_TOKEN = "test-ocr-token";
 process.env.V4_INTERNAL_BASE_URL = "https://internal.test";
 process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
+assert.equal(shouldWakePreingestionOcr({ enqueueOcr: true, enqueued: 1, attempted: 1 }), true);
+assert.equal(shouldWakePreingestionOcr({ enqueueOcr: true, enqueueOcrDetail: true, enqueued: 0, attempted: 10 }), true);
+assert.equal(shouldWakePreingestionOcr({ enqueueOcr: true, enqueueOcrDetail: false, enqueued: 0, attempted: 10 }), false);
 const assetId = "asset_22222222-2222-4222-8222-222222222222";
 const otherAssetId = "asset_33333333-3333-4333-8333-333333333333";
 

@@ -26,6 +26,18 @@ import {
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 import { scheduleTrustedPreingestionOcrWake } from "../lib/listing/preingestion/internal-ocr-wake.mjs";
 
+export function shouldWakePreingestionOcr({
+  enqueueOcr = false,
+  enqueueOcrDetail = false,
+  enqueued = 0,
+  attempted = 0
+} = {}) {
+  return enqueueOcr === true && (
+    Number(enqueued || 0) > 0
+    || (enqueueOcrDetail === true && Number(attempted || 0) > 0)
+  );
+}
+
 const allowedBrowserSources = new Set([
   "listing_preingest_api",
   "listing_copilot_background_prepare"
@@ -315,7 +327,12 @@ export default async function handler(req, res) {
     // Wake the independent OCR consumer as soon as durable enqueue finishes.
     // This endpoint still only persists/schedules work: leases, retries and OCR
     // execution remain behind the authenticated worker boundary.
-    const ocrDispatchStarted = enqueueOcr && Number(enqueueResult.enqueued || 0) > 0;
+    const ocrDispatchStarted = shouldWakePreingestionOcr({
+      enqueueOcr,
+      enqueueOcrDetail,
+      enqueued: enqueueResult.enqueued,
+      attempted: enqueueResult.attempted || jobs.length
+    });
     if (ocrDispatchStarted) {
       scheduleTrustedPreingestionOcrWake({
         tenantId: context.tenantId,
