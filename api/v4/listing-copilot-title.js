@@ -498,6 +498,7 @@ function providerRuntimeSummary(result = {}, payload = {}) {
     recognition_benchmark_phase: result.recognition_benchmark_phase
       || providerOptions.recognition_benchmark_phase
       || null,
+    evaluation_decision_trace_packet: result.evaluation_decision_trace_packet || null,
     identity_resolution_status: result.identity_resolution_status || null,
     ambiguity_status: result.ambiguity_status || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
