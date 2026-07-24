@@ -4,15 +4,98 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  assertResumeManifestMatchesItems,
+  attachPostRecognitionScoring,
+  buildResumedPreparedRows,
   canonicalBatchIdForPoll,
+  jobStatusPaths,
   durableSourceFingerprint,
+  durableBatchStatusAddress,
   durableUploadResilienceContract,
   materializeSmokeSourceImages,
-  prepareDurableSmokeItem
+  preingestionPayload,
+  prepareDurableSmokeItem,
+  summarize,
+  verifiedAssetEntriesBySource,
+  verifiedAssetIdsBySource
 } from "./v4-ebay-smoke.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
 
 const tempDirectory = await mkdtemp(join(tmpdir(), "lynca-v4-smoke-upload-"));
+
+assert.equal(preingestionPayload({ assetId: "asset-1", images: [], ocrDetail: true }).enqueue_ocr_detail, true);
+assert.equal(preingestionPayload({ assetId: "asset-1", images: [] }).enqueue_ocr_detail, false);
+
+assert.doesNotThrow(() => assertResumeManifestMatchesItems({
+  item_count: 1,
+  items: [{ source_feedback_id: "feedback-1" }]
+}, [{ source_feedback_id: "feedback-1" }]));
+assert.throws(() => assertResumeManifestMatchesItems({
+  item_count: 1,
+  items: [{ source_feedback_id: "feedback-wrong" }]
+}, [{ source_feedback_id: "feedback-1" }]), /identity\/order mismatch/);
+assert.equal(verifiedAssetIdsBySource({ items: [{
+  source_feedback_id: "feedback-1",
+  verified_asset_id: "asset-verified-1"
+}] }).get("feedback-1"), "asset-verified-1");
+assert.deepEqual(verifiedAssetEntriesBySource({ items: [{
+  source_feedback_id: "feedback-1",
+  verified_asset_id: "asset-verified-1",
+  tenant_id: "tenant-1",
+  image_generation_id: "generation-1"
+}] }).get("feedback-1"), {
+  asset_id: "asset-verified-1",
+  tenant_id: "tenant-1",
+  image_generation_id: "generation-1"
+});
+const inlineScored = attachPostRecognitionScoring([{
+  final_title: "2025 Topps Chrome Player"
+}], [{
+  reviewed_title: "2025 Topps Chrome Player",
+  policy: { reviewed_title_is_ground_truth: true, model_prompt_visible: false }
+}]);
+assert.equal(inlineScored[0].reference_title_is_reviewed_ground_truth, true);
+assert.equal(inlineScored[0].final_scoring.policy_fair_token_recall, 1);
+const serviceSummary = summarize([{
+  ok: true,
+  job_created_at: "2026-01-01T00:00:00Z",
+  job_started_at: "2026-01-01T00:00:10Z",
+  job_completed_at: "2026-01-01T00:00:20Z"
+}, {
+  ok: true,
+  job_created_at: "2026-01-01T00:00:05Z",
+  job_started_at: "2026-01-01T00:00:15Z",
+  job_completed_at: "2026-01-01T00:00:30Z"
+}]);
+assert.equal(serviceSummary.service_window_ms, 30_000);
+assert.equal(serviceSummary.completed_cards_per_minute_service_window, 4);
+assert.equal(serviceSummary.execution_window_ms, 20_000);
+assert.equal(serviceSummary.completed_cards_per_minute_execution_window, 6);
+
+const resumedRows = buildResumedPreparedRows({
+  items: [{ source_feedback_id: "feedback-1" }],
+  cachedAssetIds: ["asset-verified-1"],
+  batchId: "batch-1",
+  existingJobs: [{
+    job_id: "job-1",
+    job_type: "FINAL_ASSISTED_TITLE",
+    asset_id: "asset-verified-1",
+    tenant_id: "tenant-1"
+  }]
+});
+assert.equal(resumedRows[0].source_asset_id, "v4-ebay-smoke-1");
+assert.equal(resumedRows[0].asset_id, "asset-verified-1");
+assert.equal(resumedRows[0].job.job_id, "job-1");
+assert.equal(resumedRows[0].error, null);
+assert.equal(durableBatchStatusAddress(resumedRows), null);
+assert.equal(durableBatchStatusAddress([{
+  job: { batch_id: "server-batch-1" }
+}]), "server-batch-1");
+assert.equal(durableBatchStatusAddress([{
+  job: { batch_id: "server-batch-1" }
+}, {
+  job: { batch_id: "server-batch-1" }
+}]), null, "multi-card polling must use durable job ids even when a client token resembles a batch id");
 const firstPath = join(tempDirectory, "image-1.jpg");
 const secondPath = join(tempDirectory, "image-2.jpg");
 const jpegBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0xff, 0xd9]);
@@ -60,6 +143,12 @@ assert.equal(
   }, 0),
   "verified asset identity must not drift when a stable stored image is locally materialized"
 );
+
+const statusPaths = jobStatusPaths(Array.from({ length: 83 }, (_, index) => `job-${index + 1}`));
+assert.equal(statusPaths.length, 9);
+assert.equal(new URL(`https://example.test${statusPaths[0]}`).searchParams.get("job_ids").split(",").length, 10);
+assert.equal(new URL(`https://example.test${statusPaths[8]}`).searchParams.get("job_ids").split(",").length, 3);
+assert.equal(jobStatusPaths(["job-1", "job-1", "job-2"], 1).length, 2);
 assert.equal(
   await durableSourceFingerprint(storedSource, 0),
   await durableSourceFingerprint({
@@ -187,6 +276,18 @@ assert.equal(
   "v4batch_canonical",
   "status polling must use the server-issued canonical batch id"
 );
+
+const multiBatchResumedRows = buildResumedPreparedRows({
+  items: [{ source_feedback_id: "feedback-1" }, { source_feedback_id: "feedback-2" }],
+  existingJobs: [
+    { job_id: "job-1", job_type: "FINAL_ASSISTED_TITLE", asset_id: "asset-1", batch_id: "server-batch-1" },
+    { job_id: "job-2", job_type: "FINAL_ASSISTED_TITLE", asset_id: "asset-2", batch_id: "server-batch-2" }
+  ],
+  cachedAssetIds: ["asset-1", "asset-2"],
+  batchId: "client-batch"
+});
+assert.deepEqual(multiBatchResumedRows.map((row) => row.batch_id), ["server-batch-1", "server-batch-2"]);
+assert.equal(canonicalBatchIdForPoll(multiBatchResumedRows, "client-batch"), null);
 assert.equal(
   canonicalBatchIdForPoll([
     { batch_id: "client-token", job: null },
