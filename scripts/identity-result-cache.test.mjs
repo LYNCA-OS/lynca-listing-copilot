@@ -168,7 +168,23 @@ assert.equal(isCacheableIdentityResult({
   ...confirmedResult,
   identity_resolution_status: "ABSTAIN",
   ambiguity_status: "AMBIGUOUS"
-}).reason, "ambiguity_status_ambiguous");
+}).reason, "cacheable_terminal_l2_draft");
+assert.equal(isCacheableIdentityResult({
+  ...confirmedResult,
+  identity_resolution_status: "ABSTAIN",
+  resolved: {},
+  unresolved: ["Identity resolution abstain"]
+}).reason, "cacheable_terminal_l2_draft");
+assert.equal(isCacheableIdentityResult({
+  ...confirmedResult,
+  identity_resolution_status: "ABSTAIN",
+  technical_failure: true
+}).reason, "technical_failure_not_cacheable");
+assert.equal(isCacheableIdentityResult({
+  ...confirmedResult,
+  identity_resolution_status: "ABSTAIN",
+  assisted_draft_status: "FAILED"
+}).reason, "failed_draft_not_cacheable");
 assert.equal(isCacheableIdentityResult({ ...confirmedResult, identity_resolution_status: "RESOLVED" }).reason, "resolved_cache_write_disabled");
 
 const built = identityResultToCacheRow({
