@@ -587,11 +587,9 @@ async function auditIdentityResultCache(env = process.env) {
     }
     if (!/storage_verified/.test(cacheModule.text)
       || !/final_title_required/.test(cacheModule.text)
-      || !/year_required/.test(cacheModule.text)
-      || !/product_required/.test(cacheModule.text)
-      || !/subject_required/.test(cacheModule.text)
-      || !/ambiguity_status_ambiguous/.test(cacheModule.text)) {
-      details.failures.push("cacheability guard does not require verified storage and complete non-ambiguous writer-ready L2");
+      || !/technical_failure_not_cacheable/.test(cacheModule.text)
+      || !/failed_draft_not_cacheable/.test(cacheModule.text)) {
+      details.failures.push("cacheability guard does not require verified storage and a completed non-technical L2");
     }
     if (!/resolution_trace/.test(cacheModule.text)) {
       details.failures.push("cache module does not preserve resolution_trace");
