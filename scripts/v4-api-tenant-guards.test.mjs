@@ -323,6 +323,41 @@ try {
   assert.equal(validPersistenceCalls.length, 1, "valid feedback must retain its single atomic persistence call");
   assert.equal(validPersistenceCalls[0].p_feedback_event.writer_final_title, "Writer safe title");
 
+  const managerPersistenceCalls = [];
+  globalThis.fetch = mockTenantFetch({
+    role: "MANAGER",
+    userId: "user_manager",
+    assignedUserId: "user_manager",
+    observedPersistenceCalls: managerPersistenceCalls
+  });
+  const managerOwnedFeedback = await callPost(feedbackHandler, {
+    headers: { cookie: sessionCookie({ userId: "user_manager" }), "x-request-id": "req-manager-owned-feedback" },
+    payload: {
+      recognition_session_id: "session_target",
+      feedback_submission_id: "submission-manager-owned-0001",
+      action: "EDIT",
+      writer_final_title: "Manager owned title"
+    }
+  });
+  assert.equal(managerOwnedFeedback.statusCode, 200, "Manager may finish a session assigned to the same principal");
+  assert.equal(managerPersistenceCalls.length, 1);
+
+  globalThis.fetch = mockTenantFetch({
+    role: "MANAGER",
+    userId: "user_manager",
+    assignedUserId: "another_writer"
+  });
+  const managerCrossAssignmentFeedback = await callPost(feedbackHandler, {
+    headers: { cookie: sessionCookie({ userId: "user_manager" }), "x-request-id": "req-manager-cross-feedback" },
+    payload: {
+      recognition_session_id: "session_target",
+      feedback_submission_id: "submission-manager-cross-0001",
+      action: "EDIT",
+      writer_final_title: "Forbidden manager title"
+    }
+  });
+  assert.equal(managerCrossAssignmentFeedback.statusCode, 404, "Manager cannot edit another writer's assignment");
+
   const ownerPersistenceCalls = [];
   globalThis.fetch = mockTenantFetch({
     role: "OWNER",
