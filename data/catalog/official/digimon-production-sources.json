@@ -139,6 +139,19 @@
       "minimum_promotion_candidate_count": 243,
       "maximum_review_required_count": 0,
       "required_records": [{ "card_number": "P-001", "card_name": "Agumon", "external_id": "P-001", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }]
+    },
+    {
+      "source_name": "Digimon Rasielmon LM-042 Official Card Search",
+      "source_url": "https://world.digimoncard.com/cards/?card_no=LM-042&search=true",
+      "source_type": "BANDAI_DIGIMON_OFFICIAL_CARDLIST",
+      "category": "tcg",
+      "minimum_card_count": 2,
+      "minimum_promotion_candidate_count": 2,
+      "maximum_review_required_count": 0,
+      "required_records": [
+        { "card_number": "LM-042", "card_name": "Rasielmon", "external_id": "LM-042", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" },
+        { "card_number": "LM-042", "card_name": "Rasielmon", "external_id": "LM-042_P1", "parallel_exact": "Alternative Art", "expected_import_status": "OFFICIAL_CHECKLIST_CANDIDATE" }
+      ]
     }
   ]
 }
