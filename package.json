@@ -64,7 +64,7 @@
     "check:reviewed-field-accuracy": "node --check scripts/build-reviewed-ground-truth-dev-set.mjs && node --check scripts/evaluate-reviewed-field-accuracy.mjs && node --check scripts/reviewed-field-accuracy.test.mjs",
     "test:reviewed-field-accuracy": "node scripts/reviewed-field-accuracy.test.mjs",
     "check:launch-benchmark": "node --check lib/listing/evaluation/golden-sem-release.mjs && node --check lib/listing/evaluation/golden-sem-accuracy.mjs && node --check lib/listing/evaluation/launch-benchmark.mjs && node --check scripts/build-golden-sem-review-packet.mjs && node --check scripts/build-reviewed-title-sem-proxy.mjs && node --check scripts/freeze-golden-sem-release-sets.mjs && node --check scripts/evaluate-golden-sem.mjs && node --check scripts/assess-launch-gate.mjs && node --check scripts/run-launch-throughput-benchmark.mjs && node --check scripts/golden-sem-release.test.mjs && node --check scripts/reviewed-title-sem-proxy.test.mjs && node --check scripts/launch-benchmark.test.mjs",
-    "test:launch-benchmark": "node scripts/golden-sem-release.test.mjs && node scripts/reviewed-title-sem-proxy.test.mjs && node scripts/launch-benchmark.test.mjs",
+    "test:launch-benchmark": "node scripts/golden-sem-release.test.mjs && node scripts/reviewed-title-sem-proxy.test.mjs && node scripts/launch-benchmark.test.mjs && node scripts/analyze-provider-idle-gap-causes.test.mjs && node scripts/analyze-sem-stage-loss.test.mjs",
     "launch:golden-review-packet": "node scripts/build-golden-sem-review-packet.mjs",
     "launch:title-sem-proxy": "node scripts/build-reviewed-title-sem-proxy.mjs",
     "launch:freeze-sem": "node scripts/freeze-golden-sem-release-sets.mjs",
