@@ -45,6 +45,9 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v2");
+assert.deepEqual(packet.field_lineage.find((row) => row.field === "year")?.provider.values, ["2025"]);
+assert.equal(packet.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, false);
 assert.equal(packet.retrieval.top_k[0].source_trust, "OFFICIAL");
 assert.equal(packet.application[0].action, "BLOCK");
 assert.equal(packet.resolver.dropped[0].field, "subject");
@@ -53,5 +56,35 @@ assert.equal(classifyEvaluationMissingField({ ...packet, provider_observation_fi
 assert.equal(classifyEvaluationMissingField(packet, "year"), "CATALOG_NOT_RETRIEVED");
 assert.equal(JSON.stringify(packet).includes("complete natural language response"), false);
 assert.equal(buildEvaluationDecisionTracePacket({}, {}), null);
+
+const productionCandidateTrace = buildEvaluationDecisionTracePacket({
+  raw_provider_fields: { year: "2025" },
+  raw_observed_fields: { year: "2025" },
+  resolved_fields: { year: "2025" },
+  rendered_fields: { fields: { year: "2025" } },
+  final_title: "2025 Topps Test Player",
+  l2_candidate_debug: {
+    selected_candidate_id: "catalog-1",
+    candidate_application_trace: [{
+      candidate_id: "catalog-1",
+      candidate_lane: "catalog",
+      source_type: "INTERNAL_APPROVED_HISTORY",
+      source_trust: "APPROVED_REFERENCE"
+    }],
+    retrieval_application: {
+      decisions: [{
+        candidate_id: "catalog-1",
+        field: "year",
+        candidate_value: "2025",
+        decision: "SUPPORT",
+        reason: "selected_identity_matches_current_field"
+      }]
+    }
+  }
+}, payload);
+assert.equal(productionCandidateTrace.retrieval.candidate_count, 1);
+assert.equal(productionCandidateTrace.retrieval.top_k[0].selected, true);
+assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.retrieval.decisions[0].value, "2025");
+assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, true);
 
 console.log("evaluation decision trace packet tests passed");
