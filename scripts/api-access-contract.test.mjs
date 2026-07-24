@@ -158,6 +158,14 @@ for (const file of publicRoutes) {
 assert.equal(actualApiFiles.length, 54);
 assert.equal(publicRoutes.length, 4);
 assert.equal(internalSecretRoutes.length, 19);
+
+const browserEntrypoint = fs.readFileSync(path.join(repoRoot, "app/listing-copilot.js"), "utf8");
+const publicBrowserSdk = fs.readFileSync(path.join(repoRoot, "app/listing-copilot-sdk.mjs"), "utf8");
+const serverCompatibilityFacade = fs.readFileSync(path.join(repoRoot, "lib/listing/client/listing-copilot-sdk.mjs"), "utf8");
+assert.match(browserEntrypoint, /from "\.\/listing-copilot-sdk\.mjs";/, "browser modules must import from the public app tree");
+assert.doesNotMatch(browserEntrypoint, /from "\.\.\/lib\//, "browser modules must not import middleware-protected server paths");
+assert.match(publicBrowserSdk, /Stable public browser-facing facade/, "the public browser SDK must remain the canonical implementation");
+assert.match(serverCompatibilityFacade, /export \* from "\.\.\/\.\.\/\.\.\/app\/listing-copilot-sdk\.mjs";/, "server imports must remain compatible without duplicating browser SDK logic");
 assert.equal(tenantAuthRoutes.length, 31);
 
 console.log(JSON.stringify({
