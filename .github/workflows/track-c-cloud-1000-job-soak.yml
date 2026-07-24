@@ -68,7 +68,9 @@ jobs:
       - name: Start disposable database and apply real migrations
         run: |
           set -euo pipefail
-          supabase db start --workdir "$SOAK_SUPABASE_WORKDIR"
+          supabase start \
+            --exclude analytics,edge-runtime,functions,imgproxy,inbucket,realtime,studio,vector \
+            --workdir "$SOAK_SUPABASE_WORKDIR"
           test "$SOAK_MIGRATION_COUNT" -ge 80
       - name: Run deterministic state model
         run: node scripts/track-c-1000-job-reliability.test.mjs

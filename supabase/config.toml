@@ -1,7 +1,7 @@
 project_id = "lynca-listing-copilot-ci-soak"
 
 [api]
-enabled = false
+enabled = true
 port = 54321
 schemas = ["public", "graphql_public"]
 extra_search_path = ["public", "extensions"]
@@ -31,10 +31,10 @@ enabled = false
 enabled = false
 
 [storage]
-enabled = false
+enabled = true
 
 [auth]
-enabled = false
+enabled = true
 
 [edge_runtime]
 enabled = false

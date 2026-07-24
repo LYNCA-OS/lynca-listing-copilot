@@ -14,7 +14,10 @@ Workflow: `track-c-cloud-1000-job-soak.yml`
   files and coarse duplicate version prefixes cannot be fed directly to the
   Supabase migration-history table. It preserves forward SQL content and order,
   excludes rollback files, and does not rename deployed migration sources.
-- Calls no GPT, OCR, Storage, image, Vercel, or hosted Supabase service.
+- Calls no GPT, OCR, Storage API, image, Vercel, or hosted Supabase service.
+- Starts the local Storage schema because historical forward migrations write
+  `storage.buckets`; it still performs no Storage API or image operation and
+  consumes no hosted Supabase quota.
 - Requires all 1,000 deterministic jobs to reach one terminal result with zero
   lost jobs, duplicate claims, cross-tenant claims, or leaked capacity slots.
 - Also verifies heartbeat fencing, expired-lease recovery, response-loss
