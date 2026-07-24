@@ -462,6 +462,7 @@ function catalogGapTypeFromTrace(trace = {}) {
 function providerRuntimeSummary(result = {}) {
   const vectorContext = result.candidate_context?.vector || {};
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
+  const reportedProviderCalls = Number(result.usage?.provider_calls);
   return {
     model: result.model || result.model_id || null,
     prompt_version: result.prompt_version || null,
@@ -472,9 +473,18 @@ function providerRuntimeSummary(result = {}) {
     provider_text_verbosity: result.provider_text_verbosity || null,
     provider_requested_service_tier: result.provider_requested_service_tier || null,
     provider_service_tier: result.provider_service_tier || null,
+    provider_calls: Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
+      ? Math.trunc(reportedProviderCalls)
+      : null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
     identity_cache_read_bypassed: result.identity_cache?.read_bypassed === true,
+    identity_cache_miss_reason: result.identity_cache?.miss_reason || null,
+    provider_call_skipped: result.identity_cache?.provider_call_skipped === true,
+    cached_result_version_match: result.identity_cache?.cached_result_version_match ?? null,
+    identity_cache_version_fingerprint: result.identity_cache?.version_fingerprint || null,
+    identity_cache_image_generation_hash: result.identity_cache?.image_generation_hash || null,
     identity_cache_write_reason: result.identity_cache?.write_reason || null,
+    native_core_stage_trace: Array.isArray(result.native_core_stage_trace) ? result.native_core_stage_trace : [],
     provider_input_image_count: Number.isFinite(Number(result.provider_input_image_count)) ? Number(result.provider_input_image_count) : null,
     provider_image_detail: result.provider_image_detail || null,
     provider_finish_reason: result.provider_finish_reason || null,
