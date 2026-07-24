@@ -33,6 +33,29 @@ assert.equal(audit.passed, true);
 assert.equal(audit.evaluation_trace_count, 20);
 assert.equal(audit.provider_capacity_timing.provider_execution_ms.total_ms, 20000);
 
+const reconstructed = analyzeFixed20ColdBenchmark({
+  summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
+  results: results.map((row) => ({
+    ...row,
+    provider_capacity_timeline: {
+      provider_capacity_acquired_at: "2026-07-24T00:00:00.000Z",
+      provider_capacity_released_at: "2026-07-24T00:00:02.100Z",
+      provider_slot_held_before_provider_ms: null,
+      provider_execution_ms: null
+    },
+    provider_slot_timing: {
+      queued_at: "2026-07-24T00:00:00.100Z",
+      started_at: "2026-07-24T00:00:00.500Z",
+      completed_at: "2026-07-24T00:00:02.000Z",
+      execution_ms: 1500
+    }
+  }))
+});
+assert.equal(reconstructed.provider_capacity_timing.provider_slot_held_before_provider_ms.p50_ms, 500);
+assert.equal(reconstructed.provider_capacity_timing.prepared_waiting_for_provider_ms.p50_ms, 400);
+assert.equal(reconstructed.provider_capacity_timing.provider_execution_ms.p50_ms, 1500);
+assert.equal(reconstructed.provider_capacity_timing.provider_slot_release_ms.p50_ms, 100);
+
 const invalid = analyzeFixed20ColdBenchmark({
   summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
   results: results.map((row, index) => index === 0 ? { ...row, provider_calls: 0 } : row)
