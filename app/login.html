@@ -45,17 +45,17 @@
           <h2 id="authEntryTitle">进入工作台</h2>
           <p id="legacyLoginHelp">使用你的工作账号登录；租户与角色权限由服务端会话确认。</p>
         </div>
-        <form class="auth-form listing-login-form" id="listingLoginForm" autocomplete="on" novalidate>
+        <form class="auth-form listing-login-form" id="listingLoginForm" data-testid="login-form" autocomplete="on" novalidate>
           <label for="username">工作账号</label>
-          <input class="auth-input" id="username" name="username" type="text" autocomplete="username" aria-describedby="legacyLoginHelp loginError" required autofocus>
+          <input class="auth-input" id="username" name="username" data-testid="login-username" type="text" autocomplete="username" aria-describedby="legacyLoginHelp loginError" required autofocus>
           <label for="password">密码</label>
-          <input class="auth-input" id="password" name="password" type="password" autocomplete="current-password" aria-describedby="legacyLoginHelp loginError" required>
+          <input class="auth-input" id="password" name="password" data-testid="login-password" type="password" autocomplete="current-password" aria-describedby="legacyLoginHelp loginError" required>
           <label for="tenant_id" hidden>
             <span>工作区</span>
             <select class="auth-input" id="tenant_id" name="tenant_id"></select>
           </label>
-          <p class="auth-status form-error" id="loginError" role="alert" aria-live="polite"></p>
-          <button class="auth-primary-button" id="loginButton" type="submit" aria-busy="false">登录</button>
+          <p class="auth-status form-error" id="loginError" data-testid="login-error" role="alert" aria-live="polite"></p>
+          <button class="auth-primary-button" id="loginButton" data-testid="login-submit" type="submit" aria-busy="false">登录</button>
         </form>
         <p class="auth-phone-note">需要加入新的工作区？请让工作区 Owner 登录后从工作台打开成员管理。</p>
       </section>

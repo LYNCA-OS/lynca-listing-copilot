@@ -3762,25 +3762,25 @@ function TitleCardComponent(result, asset = null) {
   const omissionNotice = writerTitleOmissionNotice(result);
 
   return `
-    <div class="title-output ${confidenceClass(displayConfidence)}">
+    <div class="title-output ${confidenceClass(displayConfidence)}" data-testid="writer-title-result" data-result-index="${result.index}">
       <div class="title-output-head">
         <span class="confidence-badge ${confidenceClass(displayConfidence)}">${escapeHtml(statusLabel)}</span>
         <div class="title-actions">
           ${generationTimingBadge(result.index)}
           ${canPriorityRetry ? `<button class="copy-button retry-priority-button" type="button" data-priority-retry="${result.index}" ${retryState.disabled ? "disabled" : ""}>${retryLabel}</button>` : ""}
           <button class="copy-button" type="button" data-copy-result="${result.index}" ${copyDisabled ? "disabled" : ""}>复制</button>
-          <button class="copy-button" type="button" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
+          <button class="copy-button" type="button" data-testid="accept-writer-title" data-save-title="${result.index}" ${saveDisabled ? "disabled" : ""}>${saveLabel}</button>
           <button class="copy-button reject-button" type="button" data-reject-title="${result.index}" ${rejectDisabled ? "disabled" : ""}>拒绝</button>
         </div>
       </div>
       ${assistedDraftNotice(result)}
       ${titlePending && pendingProgress ? progressMeter(pendingProgress.percent, pendingProgress.label || "云端生成中", result.index) : ""}
       ${titlePending && pendingProgress ? `<span class="progress-label" data-progress-label-asset="${result.index}">${escapeHtml(pendingProgress.label || "云端生成中")}</span>` : ""}
-      <textarea rows="1" maxlength="80" spellcheck="false" aria-label="卡片 ${result.index} 最终英文标题" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${editorDisabled ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
+      <textarea rows="1" maxlength="80" spellcheck="false" aria-label="卡片 ${result.index} 最终英文标题" data-testid="writer-title-input" data-title-input="${result.index}" placeholder="${escapeHtml(unavailableTitle)}" ${editorDisabled ? "disabled" : ""}>${escapeHtml(textareaValue)}</textarea>
       ${omissionNotice ? `<p class="title-omission-notice">${escapeHtml(omissionNotice)}</p>` : ""}
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${queueFailureAdviceHtml(result.reason || "", failed && Boolean(queueFailureLines[0]))}</p>` : ""}
-      ${result.feedbackMessage ? `<p class="feedback-save-status" role="status" aria-live="polite">${escapeHtml(result.feedbackMessage)}</p>` : ""}
+      ${result.feedbackMessage ? `<p class="feedback-save-status" data-testid="writer-persistence-status" role="status" aria-live="polite">${escapeHtml(result.feedbackMessage)}</p>` : ""}
     </div>
   `;
 }

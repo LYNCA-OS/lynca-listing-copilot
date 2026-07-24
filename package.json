@@ -187,7 +187,10 @@
     "check:advanced-retrieval": "node --check lib/listing/retrieval/hybrid-reranker.mjs && node --check lib/listing/retrieval/card-domain-reranker.mjs && node --check lib/listing/retrieval/visual-fingerprint.mjs && node --check lib/listing/retrieval/postgres-hybrid-provider.mjs && node --check lib/listing/retrieval/advanced-retrieval-eval.mjs && node --check scripts/advanced-retrieval.test.mjs && node --check scripts/card-domain-reranker.test.mjs",
     "test:advanced-retrieval": "node scripts/advanced-retrieval.test.mjs && node scripts/card-domain-reranker.test.mjs",
     "check:public-browser-sdk": "node --check scripts/build-public-browser-sdk.mjs && node scripts/build-public-browser-sdk.mjs --check",
-    "test:public-browser-sdk": "node scripts/build-public-browser-sdk.mjs --check"
+    "test:public-browser-sdk": "node scripts/build-public-browser-sdk.mjs --check",
+    "check:e2e:production-writer-journey": "node --check e2e/production-writer-journey.spec.mjs && node --check playwright.config.mjs && node --check scripts/production-writer-journey-contract.test.mjs",
+    "test:e2e:production-writer-journey:contract": "node scripts/production-writer-journey-contract.test.mjs",
+    "test:e2e:production-writer-journey": "playwright test e2e/production-writer-journey.spec.mjs --project=chromium"
   },
   "dependencies": {
     "@vercel/functions": "latest",
@@ -200,6 +203,7 @@
     "uuid": "11.1.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "esbuild": "^0.25.8",
     "pdfjs-dist": "^5.4.296"
   }

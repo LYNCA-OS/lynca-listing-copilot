@@ -1,0 +1,77 @@
+name: Production Writer Journey
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - "e2e/**"
+      - "scripts/production-writer-journey-contract.test.mjs"
+      - "playwright.config.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/production-writer-journey.yml"
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["deploy-production"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-writer-journey
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check:e2e:production-writer-journey
+      - run: npm run test:e2e:production-writer-journey:contract
+
+  writer-journey:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      WRITER_JOURNEY_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Assert scoped production credentials
+        run: test -n "$METAVERSE_USERNAME" && test -n "$METAVERSE_PASSWORD" && test -n "$LAUNCH_GATE_EVAL_SECRET"
+      - run: npx playwright install --with-deps chromium
+      - name: Run real production Writer Journey
+        run: npm run test:e2e:production-writer-journey
+      - name: Upload passing evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-writer-journey-evidence
+          path: artifacts/production-writer-journey/evidence.json
+          retention-days: 14
+      - name: Upload failure screenshot trace and HAR
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-writer-journey-failure
+          path: |
+            artifacts/production-writer-journey/
+            test-results/production-writer-journey/
+          retention-days: 14

@@ -77,7 +77,7 @@
         <section class="intake-grid" aria-label="新批次">
           <div class="control-panel">
             <label class="drop-zone" for="imageInput" id="dropZone">
-              <input id="imageInput" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
+              <input id="imageInput" data-testid="image-upload-input" type="file" accept=".jpg,.jpeg,.png,.webp,.heic,.heif,image/jpeg,image/png,image/webp,image/heic,image/heif" multiple>
               <span class="drop-zone-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false">
                   <path d="M12 16V4m0 0 4.5 4.5M12 4 7.5 8.5M5 14v3.5A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5V14"/>
@@ -85,12 +85,12 @@
               </span>
               <span class="drop-zone-copy">
                 <strong>添加卡片图片</strong>
-                <span id="statusText" role="status" aria-live="polite">每两张图片组成一张卡；最后一张会单独处理。</span>
+                <span id="statusText" data-testid="writer-journey-status" role="status" aria-live="polite">每两张图片组成一张卡；最后一张会单独处理。</span>
               </span>
             </label>
             <div class="primary-actions">
               <label class="secondary-button" for="imageInput">添加图片</label>
-              <button class="primary-button" type="button" id="processButton" disabled>开始识别</button>
+              <button class="primary-button" type="button" id="processButton" data-testid="start-recognition" disabled>开始识别</button>
             </div>
           </div>
 
