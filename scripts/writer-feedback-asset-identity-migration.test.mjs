@@ -18,6 +18,8 @@ assert.doesNotMatch(
 );
 assert.match(migration, /events\.submission_id = incoming_submission_id/);
 assert.doesNotMatch(migration, /events\.submission_id = submission_id/);
+assert.match(migration, /pg_catalog\.pg_advisory_xact_lock/);
+assert.doesNotMatch(migration, /for share of events/);
 assert.match(migration, /from public, anon, authenticated;[\s\S]*to service_role;/);
 
 console.log("writer feedback durable asset identity migration tests passed");

@@ -80,6 +80,13 @@ begin
     raise exception 'feedback_projection_mismatch';
   end if;
 
+  -- Serialize retries for one recognition session without taking a row lock
+  -- on the append-only feedback table. FOR SHARE would require UPDATE table
+  -- privilege and would defeat the immutable feedback permission boundary.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('writer-feedback:' || p_session_id, 0)
+  );
+
   select sessions.operator_id,
          coalesce(
            sessions.assigned_to_user_id,
@@ -200,8 +207,7 @@ begin
   left join public.v4_learning_events learning
     on learning.feedback_event_id = events.id
   where events.recognition_session_id = p_session_id
-    and events.submission_id = incoming_submission_id
-  for share of events;
+    and events.submission_id = incoming_submission_id;
 
   if found then
     if existing_feedback_id is distinct from feedback_id
