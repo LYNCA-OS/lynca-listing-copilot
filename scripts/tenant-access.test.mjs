@@ -136,15 +136,28 @@ const managerAllowed = new Set([
   TENANT_PERMISSIONS.CREATE_JOB,
   TENANT_PERMISSIONS.ASSIGN_TASK,
   TENANT_PERMISSIONS.VIEW_TEAM,
-  TENANT_PERMISSIONS.RETRY_JOB
+  TENANT_PERMISSIONS.RETRY_JOB,
+  TENANT_PERMISSIONS.EDIT_TITLE,
+  TENANT_PERMISSIONS.SUBMIT_FEEDBACK
 ]);
 for (const permission of allPermissions) {
   assert.equal(
-    hasTenantPermission({ role: TENANT_ROLES.MANAGER, userId: "manager" }, permission),
+    hasTenantPermission(
+      { role: TENANT_ROLES.MANAGER, userId: "manager" },
+      permission,
+      { assignedUserId: "manager" }
+    ),
     managerAllowed.has(permission),
     `manager matrix mismatch for ${permission}`
   );
 }
+assert.equal(permissionScopeFor(TENANT_ROLES.MANAGER, TENANT_PERMISSIONS.EDIT_TITLE), PERMISSION_SCOPES.ASSIGNED);
+assert.equal(permissionScopeFor(TENANT_ROLES.MANAGER, TENANT_PERMISSIONS.SUBMIT_FEEDBACK), PERMISSION_SCOPES.ASSIGNED);
+assert.equal(hasTenantPermission(
+  { role: TENANT_ROLES.MANAGER, userId: "manager" },
+  TENANT_PERMISSIONS.SUBMIT_FEEDBACK,
+  { assignedUserId: "another_writer" }
+), false);
 
 const writerAssigned = new Set([
   TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK,
