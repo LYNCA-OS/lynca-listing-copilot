@@ -668,7 +668,11 @@ const complexSurfaceColorDoesNotPolluteKnownParallel = renderResolvedTitle({
   maxLength: 80
 });
 assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /\bRed\b/);
-assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
+// The reviewed title for this exact card is "2025 Topps Finest Shohei Ohtani
+// Gusto Red Refractor 5/5 Los Angeles ...", and 31 of the 255 reviewed titles
+// write "<colour> Refractor", so the parallel belongs in the title. What must
+// not leak is the unusable multi-colour surface_color, asserted above.
+assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
 assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, new RegExp("Red/Orange/Blue"));
 
 const oneOfOneSerialLimitPreserved = renderResolvedTitle({
