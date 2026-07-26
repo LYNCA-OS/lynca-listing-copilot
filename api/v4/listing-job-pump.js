@@ -14,6 +14,7 @@ import {
   workerSecretHeader
 } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
+import { pumpDisabled, shouldRetryInvocation } from "../../lib/listing/v4/jobs/pump-circuit-breaker.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -86,10 +87,12 @@ async function invokeWorkerWithTransientRetry(
   let lastError = null;
   let attempts = 0;
   let transientFailureCount = 0;
+  let retrySkipReason = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     attempts = attempt;
     lastError = null;
+    const startedAt = Date.now();
     try {
       response = await invokeWorker(workerPayload, context);
     } catch (error) {
@@ -103,9 +106,21 @@ async function invokeWorkerWithTransientRetry(
       };
     }
 
-    const statusCode = Number(response?.statusCode || 0);
-    const retryable = statusCode === 0 || statusCode >= 500;
-    if (!retryable || attempt >= maxAttempts) break;
+    const decision = shouldRetryInvocation({
+      statusCode: Number(response?.statusCode || 0),
+      latencyMs: Date.now() - startedAt,
+      attempt,
+      maxAttempts,
+      env: process.env
+    });
+    if (!decision.retry) {
+      // A slow failure means the backend is saturated; a second attempt would
+      // hold another connection for just as long without a better chance.
+      if (decision.reason === "slow_failure_suspected_backend_saturation") {
+        retrySkipReason = decision.reason;
+      }
+      break;
+    }
     transientFailureCount += 1;
     await delay(retryDelayMs * attempt);
   }
@@ -119,6 +134,7 @@ async function invokeWorkerWithTransientRetry(
     attempts,
     retryCount: Math.max(0, attempts - 1),
     transientFailureCount,
+    retrySkipReason,
     recoveredAfterRetry: attempts > 1 && finalOk,
     lastError: lastError ? String(lastError?.message || lastError).slice(0, 240) : null
   };
@@ -209,6 +225,10 @@ export async function runV4QueuePump({
       const workerPayload = {
         lane,
         tenant_id: tenantId,
+        // The pump owns the bounded drain loop. A worker invoked from this
+        // loop must not create another HTTP wake back into the same function
+        // graph; the outer loop (plus the independent cron) is the redundancy.
+        pump_managed_drain: true,
         limit: laneLimit,
         process_concurrency: laneProcessConcurrency,
         lease_seconds: leaseSeconds,
@@ -388,6 +408,16 @@ export default async function handler(req, res) {
   }
   if (!isV4WorkerRequest(req, process.env) && !isV4CronRequest(req, process.env)) {
     sendJson(res, 401, withV4Version({ ok: false, message: "Unauthorized pump" }));
+    return;
+  }
+  // Checked before any work so an incident can be stopped by flipping one
+  // variable, without waiting on a deploy to land.
+  if (pumpDisabled(process.env)) {
+    sendJson(res, 200, withV4Version({
+      ok: true,
+      skipped: true,
+      reason: "v4_queue_pump_disabled"
+    }));
     return;
   }
   if (!enforceApiRateLimit(req, res, {

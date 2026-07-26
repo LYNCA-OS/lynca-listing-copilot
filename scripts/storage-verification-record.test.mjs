@@ -209,6 +209,28 @@ const missing = await readListingImageVerificationRecord({
 assert.equal(missing.verified, false);
 assert.equal(missing.reason, "verification_record_missing");
 
+let transientReadAttempts = 0;
+const recoveredRead = await readListingImageVerificationRecord({
+  tenantId,
+  assetId: "asset-1",
+  objectPath: verification.object_path,
+  bucket: verification.bucket,
+  contentType: verification.content_type,
+  size: verification.size,
+  width: verification.width,
+  height: verification.height,
+  env: { ...env, LISTING_VERIFICATION_READ_ATTEMPTS: "2" },
+  fetchImpl: async () => {
+    transientReadAttempts += 1;
+    if (transientReadAttempts === 1) {
+      return { ok: false, status: 503, text: async () => "temporary overload" };
+    }
+    return { ok: true, status: 200, text: async () => JSON.stringify([storedRow]) };
+  }
+});
+assert.equal(recoveredRead.verified, true, "a bounded retry must recover a transient verification read failure");
+assert.equal(transientReadAttempts, 2);
+
 const cropVerification = {
   ...verification,
   object_path: "tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/serial_crop-front-serial.png",
