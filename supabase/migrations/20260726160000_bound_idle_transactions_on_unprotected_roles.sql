@@ -1,0 +1,44 @@
+-- Bound idle-in-transaction sessions on the two roles that had no limit.
+--
+-- Recognition load took authentication down for roughly 40 minutes on
+-- 2026-07-26. The chain: sessions sat idle inside open transactions, each
+-- holding one of the cluster's 60 connections; GoTrue runs a fixed pool of 10
+-- against the same cluster, could not get one, and every login returned
+-- "500: Database error querying schema" / "error finding user: context
+-- canceled" for as long as it lasted. A recognition workload should not be able
+-- to lock listers out of signing in.
+--
+-- Postgres logged 34 "terminating connection due to idle-in-transaction
+-- timeout" during the incident, which is the safety net working -- but only for
+-- one role. Reviewing the cluster afterwards:
+--
+--   authenticator         statement_timeout=120s  idle_in_transaction=30s
+--   anon                  statement_timeout=3s
+--   authenticated         statement_timeout=8s
+--   supabase_auth_admin                           idle_in_transaction=60s
+--   service_role          (no configuration at all)
+--   postgres              (no timeouts beyond the 120s cluster statement one)
+--
+-- idle_in_transaction_session_timeout is 0 cluster-wide, so it exists only
+-- where a role sets it. Traffic through PostgREST logs in as `authenticator`
+-- and inherits its 30s; a direct connection as `postgres` -- migrations, admin
+-- endpoints using pg.Client, ad-hoc SQL tooling -- inherits nothing and can
+-- hold a transaction open indefinitely.
+--
+-- These timeouts only terminate a session that is idle *inside* a transaction.
+-- Work in progress is untouched: a migration executing DDL is not idle, however
+-- long the DDL runs. 60s on postgres leaves room for interactive tooling
+-- between statements while still bounding a leak; 30s on service_role matches
+-- what authenticator already enforces on the same traffic.
+--
+-- This bounds the blast radius. It does not fix the underlying coupling --
+-- authentication still shares one 60-connection cluster with everything else,
+-- so enough concurrent load can still starve it. Separating them is the real
+-- fix and is not this migration.
+--
+-- To revert:
+--   alter role service_role reset idle_in_transaction_session_timeout;
+--   alter role postgres reset idle_in_transaction_session_timeout;
+
+alter role service_role set idle_in_transaction_session_timeout = '30s';
+alter role postgres set idle_in_transaction_session_timeout = '60s';
