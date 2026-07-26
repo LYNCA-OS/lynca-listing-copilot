@@ -951,6 +951,629 @@
       "official_page_url": "https://www.topps.com/pages/checklists",
       "source_type": "TOPPS_OFFICIAL_CHECKLIST",
       "category": "soccer"
+    },
+    {
+      "source_name": "2024-25 Bowman University Best Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NIL2504-CheckList_25BUBB_VERSION4.pdf?v=1746025195",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Bowman University Best Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NIL2403-CheckList_24BBFB_VERSION2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024-25 Bowman University Chrome Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NIL2502-CheckList_25BUCB.pdf?v=1740769142",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Archives Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2423-2024ToppsArchivesBaseball-CHECKLIST.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024-25 Topps Chrome Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2502Checklistfinal.pdf?v=1746817269",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Chrome Black Star Wars Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/STW2448-CheckList_24SWCB_VERSION1_9e2a4d0d-0661-4860-b51e-e5883ad38202.pdf?v=1741957463",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2024 Topps Chrome Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2402-2024ToppsChromeFBChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2024 Topps Chrome Football Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2402-CheckList_24CFBL_Sapphire.pdf?v=1740779274",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2024 Topps Chrome Sapphire Formula 1 Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/FOR2406-Checklist-2024ToppsChromeFormula1-Sapphire.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "racing"
+    },
+    {
+      "source_name": "2024 Topps Chrome Sapphire Garbage Pail Kids Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/GPK2403-2024GPKChromeSapphireChecklist.pdf?v=1741284886",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2024 Topps Chrome Boxing Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2024_Topps_Chrome_Boxing_-_Checklist.pdf?v=1756308581",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "combat"
+    },
+    {
+      "source_name": "2024-25 Topps Chrome UEFA Club Competitions Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/mZuhO0ANZ9yK1437vQhCUZ8TQDWLKcy7.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2024-25 Topps Chrome UEFA Club Competitions Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/CHP2419-2024_25ToppsChrome_SapphireUEFAClubCompetitionsChecklist.pdf?v=1748876089",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2024 Topps Cosmic Chrome Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2405-2024ToppsCosmicChromeChecklist_V2.pdf?v=1744134769",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2024 Topps Definitive Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2488-2024DefinitiveChecklist-v2.pdf?v=1739302313",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Diamond Icons Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2475-2024ToppsDiamondIconsChecklist-v2.pdf?v=1738687543",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Dune Chrome Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2024_Dune_Chrome_Checklist.pdf?v=1757941923",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2024 Topps Dynasty Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2024_Topps_Dynasty_Checklist_55c90c24-426b-46cb-86f0-a4d076a3e65c.pdf?v=1750173501",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024-25 Topps Finest Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/CheckList_25TFBK_VERSION1_1.pdf?v=1753211805",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Finest Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2403-CheckList_24FFBL_VERSION5.pdf?v=1741700513",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2024 Topps Finest UFC Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/UFC2406-CheckList_24TFUF.pdf?v=1738964373",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "combat"
+    },
+    {
+      "source_name": "2024 Topps Garbage Pail Kids Chrome 7 Hobby Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/GPK2403-2024GPKChromeChecklist__Hobby.pdf?v=1738964373",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2024 Topps Garbage Pail Kids Chrome 7 Retail Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/GPK2403-2024GPKChromeChecklist__Retail.pdf?v=1738964373",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2024-25 Topps G-League Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2025G-LeagueCheckList_25GLBK_VERSION3.pdf?v=1750108035",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Heritage High Number Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2446-24HBHNChecklistFINAL.pdf?v=1742586685",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps High-Tek Stranger Things Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/STH2406-2025ToppsHighTekStrangerThingsChecklist.pdf?v=1741284886",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2024 Topps Inception Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2449CheckList_24TIBB.pdf?v=1747058937",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024-25 Topps Inception Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2024-25_Topps_Inception_Basketball_Checklist.pdf?v=1755011938",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Inception Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2407-2024ToppsInceptionChecklist-V2.pdf?v=1744043557",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2024 Topps Luminaries Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2492-2024LuminariesBaseballChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Masterwork Star Wars Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/STW2456-2024StarWarsMasterworkChecklistv2.pdf?v=1744746688",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2024 Topps McDonalds All American Chrome Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MCD2426-2024ToppsChromeMcDonaldsAllAmericanBasketballChecklist.pdf?v=1738964373",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Midnight Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2406-2024ToppsMidnightFootball_V1_Checklist.pdf?v=1745854407",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2024 Topps MLS Chrome Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLS240524MLSC_Checklist_Sapphire.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2023-24 Topps Motif Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2410-CheckList_24TMBL_VERSION4.pdf?v=1742585257",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024-25 Topps NBL Chrome Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2024_25_NBL_Chrome_Basketball_Checklist.pdf?v=1755719939",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Resurgence Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2409-CheckList_24TRFB_VERSION1.pdf?v=1744121930",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2023-24 Topps Royalty Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2408-24TRCBToppsRoyaltyChecklist.pdf?v=1744122548",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Royalty UFC Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/UFC2407-CheckList_24RUFC_VERSION_FINAL.pdf?v=1743427651",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "combat"
+    },
+    {
+      "source_name": "2024 Topps Signature Class Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NFL2418-CheckList_24CSFB_VERSION1.pdf?v=1745349306",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "football"
+    },
+    {
+      "source_name": "2024 Topps Star Wars High-Tek Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/STW2487-2024StarWarsHigh-TekChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2023-24 Topps Three Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2415-CheckList_24T3BK_Final.pdf?v=1741284866",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Baseball Series 1 Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2401-2024ToppsSeries1BBChecklistV1.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Baseball Series 2 Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2402-2024ToppsBBSeries2ChecklistFinal.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Allen Ginter Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2412-2024ToppsAllen_GinterChecklistV2.pdf?v=1738851132",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Baseball Holiday Mega Box Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2420-2024ToppsHolidayChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2407-2024BowmanBaseballChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Baseball Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2407-2024BowmanSapphireChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowmans Best Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2470-2024BowmansBestBaseballChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Chrome Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2408-2024BowmanChromeChecklistV2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Chrome Baseball Mega Box Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2435-2024BowmanChromeMegaBoxChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2023 Bowman Draft Baseball Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2332-2023BowmanDraftSapphireBaseballchecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Draft Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2411-2024BowmanDraftChecklistV2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Draft Baseball Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2411-2024BowmanDraftBaseballSapphireEditionChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Mega Box Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2493-2024BowmanMegaBoxChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Bowman Sterling Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2410-2024BowmanSterlingBaseballChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2023 Bowman University Best Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NIL2323-CheckList_23BBFB_VERSION1.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2023-24 Bowman University Chrome Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NIL2402-2023-24BowmanUniversityChromeBasketballChecklistFinal.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Bowman University Chrome Football Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NIL2401-CheckList_24BUCF.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Complete Sets Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB24152024ToppsCompleteSetsChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Cosmic Chrome Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2414-2024ToppsCosmicChromeBaseballChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2023-24 Topps Cosmic Chrome Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2409-CheckList_24CCBK_VERSION4.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Brooklyn Collection Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2495-2024BrooklynCollectionBaseballChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome NBL Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBL2402-24NBLCChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Chrome Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/2426-2024ToppsChromeBaseballChecklist-updated.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Chrome Baseball Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2477-2024ToppsChromeSapphireChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome Basketball Hobby Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2402-24TCBKChecklistsHOBBYONLY.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome Basketball Retail Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2402-24TCBKRetailChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome Basketball Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2402-24TCBKSapphireChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome Bundesliga Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/DFL2440-24CBUN_Checklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2024 Topps Chrome Baseball Logofractor Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2485-2024ToppsChromeLogofractorChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Chrome Formula 1 Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/FOR2406-CheckList_24TCF1_VERSION3.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "racing"
+    },
+    {
+      "source_name": "2024 Topps Chrome Tennis Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/TEN2402-2024ToppsChromeTennisChecklistv2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "tennis"
+    },
+    {
+      "source_name": "2024 Topps Chrome Tennis Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/TEN2402-2024ToppsChromeTennisSapphireEditionChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "tennis"
+    },
+    {
+      "source_name": "2024 Topps Chrome UFC Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/UFC2402-CheckList_24UFCC_VERSION5.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "combat"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome UEFA Club Competitions Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/CHP2406-ToppsChromeUCC2023-24Checklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome UEFA Club Competitions Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/CHP2406-CheckList_24UCCSAPPHIRE_VERSION1.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2024 Topps Chrome UEFA EURO Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/EUR2402-24UCEO_Checklist_V2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2024 Topps Chrome UEFA EURO Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/EUR2402-24EUROSAPPHIRE_Checklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2024 Topps Chrome UEFA Womens Champions League Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/CHP2432-24UWCLSapphire_Checklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2024 Topps Chrome Update Series Baseball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2419-ChromeUpdatesChecklistV2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Chrome Updates Baseball Sapphire Edition Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/MLB2451-2024ChromeUpdateSapphireChecklistv2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "baseball"
+    },
+    {
+      "source_name": "2024 Topps Chrome US Olympic Paralympic Team Hopefuls Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/OLY2401-2024ToppsChromeOlympicsandHopefulsChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "olympics"
+    },
+    {
+      "source_name": "2023-24 Topps Chrome UWCL Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/CHP2432-24UWCLChrome_Checklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "soccer"
+    },
+    {
+      "source_name": "2023-24 Topps Finest Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/NBA2403-CheckList_24TFBK_VERSION6.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 GPK Series 1 Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/GPK2401-GPKKidsAtPlayChecklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "entertainment"
+    },
+    {
+      "source_name": "2023-24 Topps G League Basketball Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/GLB2401-CheckList_24GLBK_VERSION2.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "basketball"
+    },
+    {
+      "source_name": "2024 Topps Gold Label UFC Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/UFC2405-2024ToppsGoldLabelUFC-Checklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "combat"
+    },
+    {
+      "source_name": "2024 Topps Graphite Tennis Checklist",
+      "source_url": "https://cdn.shopify.com/s/files/1/0662/9749/5709/files/TEN2404-2024ToppsGraphiteTennisCheklist.pdf",
+      "official_page_url": "https://www.topps.com/pages/checklists",
+      "source_type": "TOPPS_OFFICIAL_CHECKLIST",
+      "category": "tennis"
     }
   ]
 }
