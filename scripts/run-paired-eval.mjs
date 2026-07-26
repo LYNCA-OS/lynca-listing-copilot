@@ -30,7 +30,7 @@ function argValue(argv, name, fallback = "") {
   return index >= 0 ? (argv[index + 1] ?? fallback) : fallback;
 }
 
-function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit }) {
+function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs }) {
   const args = [
     "--use-env-proxy",
     "scripts/v4-ebay-smoke.mjs",
@@ -44,6 +44,7 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit }) {
     "--dataset", dataset,
     "--sealed-labels", sealedLabels,
     "--limit", String(limit),
+    "--l2-wait-ms", String(l2WaitMs),
     "--out", outPath
   ];
   return new Promise((resolveRun, rejectRun) => {
@@ -53,13 +54,37 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit }) {
   });
 }
 
-async function scoreFromReport(path) {
-  const report = JSON.parse(await readFile(path, "utf8"));
-  const scores = (report.results || [])
-    .map((row) => row?.final_scoring?.policy_fair_token_recall)
-    .filter((value) => Number.isFinite(value));
-  if (!scores.length) return null;
+export function scoreFromReportData(report = {}, { expectedCount } = {}) {
+  const results = Array.isArray(report.results) ? report.results : [];
+  if (results.length !== expectedCount) {
+    throw new Error(`invalid paired round: expected ${expectedCount} rows, received ${results.length}`);
+  }
+  const invalidRows = results.filter((row) => (
+    row?.ok !== true
+    || row?.l2_ready !== true
+    || row?.writer_ready !== true
+    || Boolean(row?.error)
+    || row?.identity_cache_hit === true
+    || row?.provider_call_skipped === true
+    || Number(row?.provider_calls) !== 1
+    || !Number.isFinite(row?.final_scoring?.policy_fair_token_recall)
+  ));
+  if (invalidRows.length) {
+    const reasons = invalidRows.slice(0, 3).map((row) => (
+      `${row?.job_id || row?.asset_id || "unknown"}:`
+      + `${row?.error || row?.job_status || row?.l2_status || "invalid_cold_result"}`
+    ));
+    throw new Error(
+      `invalid paired round: ${invalidRows.length}/${expectedCount} rows are not complete cold results (${reasons.join(", ")})`
+    );
+  }
+  const scores = results.map((row) => row.final_scoring.policy_fair_token_recall);
   return scores.reduce((sum, value) => sum + value, 0) / scores.length;
+}
+
+async function scoreFromReport(path, { expectedCount }) {
+  const report = JSON.parse(await readFile(path, "utf8"));
+  return scoreFromReportData(report, { expectedCount });
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -70,6 +95,7 @@ export async function main(argv = process.argv.slice(2)) {
   const sealedLabels = argValue(argv, "--sealed-labels", "artifacts/smoke/cold20-labels.jsonl");
   const model = argValue(argv, "--model", "gpt-5-mini");
   const limit = Number(argValue(argv, "--limit", "20")) || 20;
+  const l2WaitMs = Math.max(18_000, Number(argValue(argv, "--l2-wait-ms", "18000")) || 18_000);
   const outDir = resolve(argValue(argv, "--out-dir", "artifacts/smoke/paired-eval"));
   const label = argValue(argv, "--label", "paired");
   if (!candidateUrl) throw new Error("--candidate-url is required");
@@ -83,9 +109,8 @@ export async function main(argv = process.argv.slice(2)) {
       const baseUrl = arm === "baseline" ? baselineUrl : candidateUrl;
       const outPath = resolve(outDir, `${label}-${arm}-r${round}.json`);
       process.stderr.write(`round ${round}/${rounds} ${arm}\n`);
-      await runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit });
-      const score = await scoreFromReport(outPath);
-      if (score === null) throw new Error(`round ${round} ${arm} produced no scored rows`);
+      await runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs });
+      const score = await scoreFromReport(outPath, { expectedCount: limit });
       (arm === "baseline" ? baselineScores : candidateScores).push(score);
       process.stderr.write(`  ${arm} score=${score.toFixed(6)}\n`);
     }

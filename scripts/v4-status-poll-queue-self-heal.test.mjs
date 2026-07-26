@@ -24,6 +24,18 @@ assert.equal(statusPollQueueSelfHealPlan([{ ...staleQueued, created_at: "2026-07
   processConcurrency: 2
 }).reason, "queue_age_below_self_heal_floor");
 
+const dueRetry = {
+  ...staleQueued,
+  id: "job-retrying",
+  status: "RETRYING",
+  not_before: "2026-07-20T00:00:10Z"
+};
+assert.equal(statusPollQueueSelfHealPlan([dueRetry], { nowMs, processConcurrency: 2 }).trigger, true);
+assert.equal(statusPollQueueSelfHealPlan([{ ...dueRetry, not_before: "2026-07-20T00:01:00Z" }], {
+  nowMs,
+  processConcurrency: 2
+}).reason, "no_ready_queued_jobs");
+
 let scheduled = null;
 let request = null;
 const triggered = triggerStatusPollQueueSelfHeal([staleQueued], {
