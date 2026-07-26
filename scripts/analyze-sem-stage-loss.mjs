@@ -164,8 +164,26 @@ export function analyzeSemStageLoss(report = {}) {
   if ((missingCounts[LOSS.RETRIEVAL] || 0) > 0) {
     traceLimitations.add("When neither normalized observation nor persisted candidate decisions contain the expected value, the report cannot distinguish an Evidence miss from a Retrieval miss.");
   }
+  // Classification totals say which *stage* leaks; they do not say which field,
+  // and the field is what you go and fix. On the 2026-07-25 cold-20 the totals
+  // read "25 evidence/retrieval missing", which is not actionable, while the
+  // per-field rollup showed one field (search_optimization) accounted for 8 of
+  // 32 losses and was null on 20/20 cards. Ship the rollup with the audit so
+  // that step is not a manual re-derivation every time.
+  const fieldLoss = new Map();
+  for (const row of missingRows) {
+    const field = row.field || "(unknown)";
+    const entry = fieldLoss.get(field) || { field, total: 0, by_classification: {} };
+    entry.total += 1;
+    entry.by_classification[row.classification] = (entry.by_classification[row.classification] || 0) + 1;
+    fieldLoss.set(field, entry);
+  }
+  const fieldLossSummary = [...fieldLoss.values()].sort((left, right) => (
+    (right.total - left.total) || left.field.localeCompare(right.field)
+  ));
+
   return {
-    schema_version: "sem-stage-loss-audit-v1",
+    schema_version: "sem-stage-loss-audit-v2",
     authority: "reviewed-title-derived-sem-proxy",
     tuning_eligible: false,
     result_count: Array.isArray(report.results) ? report.results.length : 0,
@@ -175,6 +193,8 @@ export function analyzeSemStageLoss(report = {}) {
     preservation_rate: rows.length ? Number(((counts[LOSS.PRESERVED] || 0) / rows.length).toFixed(6)) : null,
     classification_counts: counts,
     largest_actionable_or_trace_category: largest ? { category: largest[0], count: largest[1] } : null,
+    field_loss_summary: fieldLossSummary,
+    top_lossy_field: fieldLossSummary[0] || null,
     trace_limitations: [...traceLimitations],
     rows
   };

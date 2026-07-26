@@ -438,7 +438,11 @@ const bowmansBestJordan = renderListingPresentation({
   },
   maxLength: 85
 });
-assert.equal(bowmansBestJordan.final_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+// Reviewed titles are the SEM standard and none of the 255 reviewed titles use
+// parentheses anywhere; the franchise is written plainly ("... Lucky Hyper
+// Lakers 2/8"). module-renderer already emitted the bare value, so only this
+// assembly step wrapped it.
+assert.equal(bowmansBestJordan.final_title, "1997-98 Bowman's Best Michael Jordan Best Performance Chicago Bulls");
 assert.equal(bowmansBestJordan.modules.card_name.text, "Best Performance");
 assert.equal(bowmansBestJordan.modules.search_optimization.text, "Chicago Bulls");
 
@@ -499,7 +503,7 @@ const bowmansBestJordanInsertFallback = renderResolvedTitle({
 }, {
   maxLength: 85
 });
-assert.equal(bowmansBestJordanInsertFallback.rendered_title, "1997-98 Bowman's Best Michael Jordan Best Performance (Chicago Bulls)");
+assert.equal(bowmansBestJordanInsertFallback.rendered_title, "1997-98 Bowman's Best Michael Jordan Best Performance Chicago Bulls");
 
 const brandProductOverlapKeepsSet = renderResolvedTitle({
   year: "2025",
@@ -514,7 +518,7 @@ const brandProductOverlapKeepsSet = renderResolvedTitle({
   maxLength: 80
 });
 assert.match(brandProductOverlapKeepsSet.rendered_title, /\bGusto\b/);
-assert.match(brandProductOverlapKeepsSet.rendered_title, /\(Los Angeles Dodgers\)$/);
+assert.match(brandProductOverlapKeepsSet.rendered_title, /Los Angeles Dodgers$/);
 assert.doesNotMatch(brandProductOverlapKeepsSet.rendered_title, /Topps Finest Topps Finest/i);
 
 const sportSuffixProductKeepsSet = renderResolvedTitle({
@@ -546,7 +550,7 @@ const teamIncludedOnlyWhenRoom = renderResolvedTitle({
 }, {
   maxLength: 85
 });
-assert.match(teamIncludedOnlyWhenRoom.rendered_title, /\(Los Angeles Dodgers\)$/);
+assert.match(teamIncludedOnlyWhenRoom.rendered_title, /Los Angeles Dodgers$/);
 assert.ok(teamIncludedOnlyWhenRoom.rendered_title.length <= 85);
 
 const teamOmittedWhenTitleWouldOverflow = renderResolvedTitle({
@@ -668,7 +672,11 @@ const complexSurfaceColorDoesNotPolluteKnownParallel = renderResolvedTitle({
   maxLength: 80
 });
 assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /\bRed\b/);
-assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
+// The reviewed title for this exact card is "2025 Topps Finest Shohei Ohtani
+// Gusto Red Refractor 5/5 Los Angeles ...", and 31 of the 255 reviewed titles
+// write "<colour> Refractor", so the parallel belongs in the title. What must
+// not leak is the unusable multi-colour surface_color, asserted above.
+assert.match(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, /Red Refractor/);
 assert.doesNotMatch(complexSurfaceColorDoesNotPolluteKnownParallel.rendered_title, new RegExp("Red/Orange/Blue"));
 
 const oneOfOneSerialLimitPreserved = renderResolvedTitle({
@@ -1817,3 +1825,31 @@ assert.equal(
 assert.ok(multiSubjectSeparatorCompactionPreservesNames.rendered_title.length <= 80);
 
 console.log("renderer tests passed");
+
+// A card whose own name declares its type ("Prodigious Pairings Relic Card")
+// states that component as fact, so the Relic component must reach the title
+// even when the provider left fields.relic false. Product prose that merely
+// contains "Cards" ("PRO CARDS") or an insert name ("Mojo Prizm") must not.
+const declaredRelicCard = renderListingPresentation({
+  resolved: {
+    year: "2024",
+    product: "Topps Royalty Tennis",
+    players: ["Iga Swiatek", "Aryna Sabalenka"],
+    card_name: "Prodigious Pairings Relic Card",
+    set: "Prodigious Pairings Relic Card"
+  },
+  maxLength: 85
+});
+assert.match(declaredRelicCard.rendered_title, /\bRelic\b/);
+
+const proCardsNotRelic = renderListingPresentation({
+  resolved: {
+    year: "1993",
+    product: "Fleer ProCards",
+    players: ["Ryan Klesko"],
+    card_name: "PRO CARDS",
+    set: "ProCards 1993"
+  },
+  maxLength: 85
+});
+assert.doesNotMatch(proCardsNotRelic.rendered_title, /\b(?:Relic|Patch|Auto)\b/);

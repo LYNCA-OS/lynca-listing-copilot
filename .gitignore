@@ -63,3 +63,6 @@ data/catalog/writer-title-seed/audit-*.json
 # the checkout. It must never be committed or make the exact-main release
 # worktree appear dirty.
 gha-creds-*.json
+
+# Harvested catalog snapshots are large and regenerable from the harvest scripts.
+data/catalog/official/panini-mapped-*.json
