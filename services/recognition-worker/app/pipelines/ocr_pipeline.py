@@ -254,6 +254,64 @@ def _contains_serial_target(candidates: list[dict[str, Any]]) -> bool:
     )
 
 
+def _serial_readings_from_vision_result(result: dict[str, Any]) -> dict[str, float]:
+    readings: dict[str, float] = {}
+    candidates = list(result.get("candidates") or [])
+    if result.get("raw_text"):
+        candidates.append({"text": result["raw_text"], "confidence": result.get("confidence") or 0})
+    for candidate in candidates:
+        confidence = float(candidate.get("confidence") or 0)
+        for match in _SERIAL_TARGET_PATTERN.finditer(str(candidate.get("text") or "")):
+            numerator = int(match.group(0).split("/", 1)[0].strip())
+            denominator = int(match.group(0).split("/", 1)[1].strip())
+            if numerator < 1 or denominator < 1 or numerator > denominator:
+                continue
+            value = f"{numerator}/{denominator}"
+            readings[value] = max(readings.get(value, 0), confidence)
+    return readings
+
+
+def _google_serial_variant_consensus(
+    primary: dict[str, Any],
+    enhanced: dict[str, Any],
+) -> dict[str, Any]:
+    primary_values = _serial_readings_from_vision_result(primary)
+    enhanced_values = _serial_readings_from_vision_result(enhanced)
+    agreed = sorted(set(primary_values).intersection(enhanced_values))
+    chosen = agreed[0] if len(agreed) == 1 else ""
+    primary_denominators = {value.split("/", 1)[1] for value in primary_values}
+    enhanced_denominators = {value.split("/", 1)[1] for value in enhanced_values}
+    denominator_agreement = sorted(primary_denominators.intersection(enhanced_denominators))
+    denominator = denominator_agreement[0] if len(denominator_agreement) == 1 else ""
+    if chosen:
+        confidence = min(primary_values[chosen], enhanced_values[chosen])
+        candidates = [{"text": chosen, "confidence": round(confidence, 4), "box": None}]
+        raw_text = chosen
+    elif denominator:
+        confidence = 0.75
+        candidates = [{"text": f"#/{denominator}", "confidence": confidence, "box": None}]
+        raw_text = f"#/{denominator}"
+    else:
+        confidence = 0.0
+        candidates = []
+        raw_text = ""
+    return {
+        "status": "OK" if candidates else "NO_TEXT",
+        "candidates": candidates,
+        "raw_text": raw_text,
+        "confidence": confidence,
+        "serial_consensus": {
+            "verified": bool(chosen),
+            "chosen": chosen or None,
+            "denominator_only": denominator if not chosen else None,
+            "primary_readings": sorted(primary_values),
+            "enhanced_readings": sorted(enhanced_values),
+            "conflict": bool(primary_values and enhanced_values and not chosen),
+            "variant": "raw_plus_clahe_v1",
+        },
+    }
+
+
 def _dedupe_ocr_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -734,10 +792,39 @@ def ocr_field_from_loaded_image(
             backend_telemetry["deepseek_usage"] = deepseek_result.get("usage")
 
     # Google Cloud Vision lane (API, no GPU). Reads hard keys PaddleOCR misses.
+    serial_consensus: dict[str, Any] | None = None
     if backend in {"google_vision", "hybrid"}:
-        from .google_vision_ocr import run_google_vision_ocr
+        from .google_vision_ocr import run_google_vision_ocr, run_google_vision_ocr_batch
 
-        vision_result = run_google_vision_ocr(crop_array, crop_type=crop_type, config=config)
+        if normalized_crop_type in {"serial_number", "serial_crop"}:
+            enhanced = _serial_contrast_variant(crop_array)
+        else:
+            enhanced = None
+        if enhanced is not None:
+            vision_batch = run_google_vision_ocr_batch(
+                [crop_array, enhanced],
+                crop_types=[crop_type, f"{crop_type}_contrast"],
+                config=config,
+            )
+            vision_rows = list(vision_batch.get("results") or [])
+            if len(vision_rows) == 2:
+                vision_result = {
+                    **vision_rows[0],
+                    **_google_serial_variant_consensus(vision_rows[0], vision_rows[1]),
+                    "vision_unit_count": int(vision_batch.get("vision_unit_count") or 0),
+                    "cost_estimate": float(vision_batch.get("cost_estimate") or 0),
+                    "latency_ms": int(vision_batch.get("latency_ms") or 0),
+                }
+            else:
+                vision_result = {
+                    "status": "UNAVAILABLE",
+                    "reason": vision_batch.get("reason") or "serial_variant_response_count_mismatch",
+                    "candidates": [],
+                    "vision_unit_count": 0,
+                    "cost_estimate": 0,
+                }
+        else:
+            vision_result = run_google_vision_ocr(crop_array, crop_type=crop_type, config=config)
         vision_status = str(vision_result.get("status") or "").strip().upper()
         vision_reason = str(vision_result.get("reason") or "").strip()
         vision_candidates = vision_result.get("candidates", []) or []
@@ -748,6 +835,8 @@ def ocr_field_from_loaded_image(
         backend_telemetry["vision_cost_estimate"] = vision_result.get("cost_estimate")
         vision_unit_count += max(0, int(vision_result.get("vision_unit_count") or 0))
         vision_cost_estimate += max(0.0, float(vision_result.get("cost_estimate") or 0.0))
+        if isinstance(vision_result.get("serial_consensus"), dict):
+            serial_consensus = vision_result["serial_consensus"]
         if vision_result.get("reason"):
             backend_telemetry["vision_reason"] = vision_result.get("reason")
 
@@ -802,6 +891,7 @@ def ocr_field_from_loaded_image(
         "backend_telemetry": backend_telemetry,
         "vision_unit_count": vision_unit_count,
         "vision_cost_estimate": round(vision_cost_estimate, 6),
+        **({"serial_consensus": serial_consensus} if serial_consensus is not None else {}),
     }
     if status == "UNAVAILABLE" and paddle_hard_error:
         result["reason"] = paddle_hard_error
