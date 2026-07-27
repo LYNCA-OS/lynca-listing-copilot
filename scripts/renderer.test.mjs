@@ -1684,9 +1684,22 @@ const reviewRoutedMultiSubjectDraftKeepsFullNames = renderResolvedTitle({
 });
 assert.equal(
   reviewRoutedMultiSubjectDraftKeepsFullNames.rendered_title,
-  "2026 Bowman Chrome Sam Petersen / Luis Cova / David Davalillo 1st Bowman Green"
+  "2026 Bowman Chrome Sam Petersen / Luis Cova / David Davalillo 034/499"
 );
 assert.doesNotMatch(reviewRoutedMultiSubjectDraftKeepsFullNames.rendered_title, /\bLot\b/);
+assert.match(reviewRoutedMultiSubjectDraftKeepsFullNames.rendered_title, /034\/499/);
+
+const trueLotDoesNotBorrowOneCardSerial = renderResolvedTitle({
+  multi_card: true,
+  card_count: 3,
+  year: "2026",
+  product: "Bowman Chrome",
+  players: ["Sam Petersen", "Luis Cova", "David Davalillo"],
+  print_run_number: "034/499"
+}, {
+  maxLength: 80
+});
+assert.doesNotMatch(trueLotDoesNotBorrowOneCardSerial.rendered_title, /034\/499/);
 
 const baseColorSurvivesGenericAutoCompression = renderResolvedTitle({
   year: "2025",
