@@ -64,6 +64,21 @@ const unsignedObservationIsNotACommercialCardName = renderListingPresentation({
 });
 assert.equal(unsignedObservationIsNotACommercialCardName.final_title.includes("unsigned"), false);
 
+const literalPlaceholderIsNeverRendered = renderListingPresentation({
+  resolved: {
+    year: "2025-26",
+    manufacturer: "Topps",
+    product: "Chrome UCC",
+    players: ["Lionel Messi"],
+    card_name: "(none)",
+    insert: "Shadow Etch",
+    collector_number: "SE-18"
+  },
+  maxLength: 80
+});
+assert.equal(/\b(?:none|null|undefined|unknown|n\/?a)\b/i.test(literalPlaceholderIsNeverRendered.final_title), false);
+assert.equal(literalPlaceholderIsNeverRendered.final_title, "2025-26 Topps Chrome UCC Lionel Messi Shadow Etch #SE-18");
+
 const sportsCollectorsDigestGrade = renderListingPresentation({
   resolved: {
     year: "1986",

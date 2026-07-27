@@ -86,6 +86,75 @@ async function retryBoundedIdempotentWrite(operation, { attempts = 3, retryBaseM
   return { ...result, write_attempts: maxAttempts };
 }
 
+const writerReadyProviderSummaryKeys = Object.freeze([
+  "assisted_draft_status",
+  "writer_review_required",
+  "writer_review_reason",
+  "title_stage",
+  "outcome_type",
+  "provider_error_type",
+  "recognition_clock_started_at",
+  "recognition_clock_source",
+  "noncritical_persistence_status",
+  "writer_ready_persistence_mode",
+  "writer_ready_capacity_release_mode",
+  "writer_ready_capacity_release_error"
+]);
+
+export function minimalWriterReadySessionPatch(patch = {}) {
+  const providerSummary = patch.provider_result_summary && typeof patch.provider_result_summary === "object"
+    ? Object.fromEntries(writerReadyProviderSummaryKeys
+      .filter((key) => patch.provider_result_summary[key] !== undefined)
+      .map((key) => [key, patch.provider_result_summary[key]]))
+    : undefined;
+  return Object.fromEntries(Object.entries({
+    status: patch.status,
+    failure_reason: patch.failure_reason,
+    route: patch.route,
+    model_version: patch.model_version,
+    prompt_version: patch.prompt_version,
+    prompt_mode: patch.prompt_mode,
+    generation_completed_at: patch.generation_completed_at,
+    provider_result_summary: providerSummary,
+    final_title: patch.final_title,
+    l2_status: patch.l2_status,
+    l2_title: patch.l2_title,
+    l2_ready_at: patch.l2_ready_at,
+    l2_route: patch.l2_route,
+    resolved_fields: patch.resolved_fields,
+    field_states: patch.field_states
+  }).filter(([, value]) => value !== undefined));
+}
+
+export async function persistWriterReadySession({
+  sessionId,
+  patch,
+  updateSession = updateV4RecognitionSessionWithRetry
+} = {}) {
+  const primary = await updateSession({ sessionId, patch, attempts: 3, retryBaseMs: 150 });
+  if (primary?.saved === true) return { ...primary, persistence_mode: "writer_ready_full_patch" };
+  const fallback = await updateSession({
+    sessionId,
+    patch: minimalWriterReadySessionPatch(patch),
+    attempts: 5,
+    retryBaseMs: 250
+  });
+  return {
+    ...fallback,
+    persistence_mode: fallback?.saved === true ? "writer_ready_minimal_fallback" : "writer_ready_failed",
+    primary_error: primary?.error || "writer_ready_full_patch_failed",
+    primary_write_attempts: primary?.write_attempts || 3
+  };
+}
+
+export function assertWriterReadySessionPersisted(result = {}) {
+  if (result?.saved === true) return result;
+  throw Object.assign(new Error(`writer_ready_session_persistence_failed:${result?.error || result?.primary_error || "unknown_error"}`), {
+    code: "V4_SESSION_STATE_PERSISTENCE_FAILED",
+    retryable: true
+  });
+}
+
 // Bundle identity is resolved only after the queue lease and persisted session
 // have both been verified. The queue RPC therefore remains strict (no bundle
 // fields are accepted), while execution can still reuse server-owned OCR
@@ -1110,7 +1179,7 @@ async function persistPipelineResult({
         capacityRelease: providerStageHandoff
       });
     sessionPatch.provider_result_summary.writer_ready_capacity_refill = writerReadyCapacityRefill;
-    sessionUpdate = await updateV4RecognitionSessionWithRetry({ sessionId, patch: sessionPatch });
+    sessionUpdate = await persistWriterReadySession({ sessionId, patch: sessionPatch });
     writerReadyCapacityRelease = {
       ...providerStageHandoff,
       saved: sessionUpdate.saved === true,
@@ -1154,7 +1223,7 @@ async function persistPipelineResult({
           writerReadyCapacityRelease.error || "atomic_writer_ready_capacity_release_failed"
         ).slice(0, 160);
       }
-      sessionUpdate = await updateV4RecognitionSession({ sessionId, patch: sessionPatch });
+      sessionUpdate = await persistWriterReadySession({ sessionId, patch: sessionPatch });
       writerReadyCapacityRelease = {
         ...writerReadyCapacityRelease,
         released: false,
@@ -1167,6 +1236,7 @@ async function persistPipelineResult({
       capacityRelease: writerReadyCapacityRelease
     });
   }
+  assertWriterReadySessionPersisted(sessionUpdate);
   sessionPatch.provider_result_summary.writer_ready_capacity_refill = writerReadyCapacityRefill;
   if (deferNonCriticalPersistence) {
     const persistence = {
