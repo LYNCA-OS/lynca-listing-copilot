@@ -459,6 +459,52 @@ code change**. A focused crop/direct read or a correctly selected trusted
 Catalog identity may establish `Refractor` in the future; normalized presence
 alone may not.
 
+## 15. Queue long-tail containment and evaluation isolation
+
+The invalid Candidate arm was not evidence that the Provider became slower.
+Successful Provider calls still completed in roughly 12--27 seconds. The
+seven illegal rows were amplified by two separate control-plane defects:
+
+- a transient heartbeat/RPC failure aborted work even while the original job
+  lease was still safely live, replaying the same card up to four times;
+- the paired runner authenticated each arm independently but did not compare
+  their execution controls before starting paid work. The old Preview had
+  Catalog and Vector stage-capacity control disabled while Production had both
+  enabled, so the run was infrastructure-confounded before its first card.
+
+Commit `268014b` adds lease-aware heartbeat degradation: a transport failure
+does not imply ownership loss, so a live original lease absorbs the outage and
+retries the heartbeat shortly. A clean negative ownership response still
+fences immediately. Supabase RPC calls now receive the task cancellation
+signal, including Late Provider Capacity acquisition, so an aborted attempt
+does not leave an unbounded control-plane request behind.
+
+The same commit adds a fail-closed paired-evaluation preflight. Before either
+arm uploads a card it compares the administrator-visible execution controls,
+including Provider concurrency, Late Binding, capacity handoff and every stage
+capacity plan. The old Preview was rejected without uploading, enqueueing, or
+calling the Provider. Preview configuration was then fixed to match Production:
+Late Binding off, Catalog stage capacity on, and Vector stage capacity on.
+
+Preview deployment `dpl_4t11WoeWsVM3MvZq7epubfLfDeeV` reported an equivalent
+control snapshot to Production. A three-card cold engineering canary then
+produced:
+
+| Metric | Result |
+| --- | ---: |
+| L2 terminal | 3/3 |
+| Provider calls | 3/3, exactly one per card |
+| Retried cards / retry attempts | 0 / 0 |
+| Lease, execution-timeout or capacity errors | 0 |
+| Preparation p50 / p95 | 5.782 s / 7.773 s |
+| Writer-ready p50 / p95 | 45.522 s / 54.637 s |
+| Provider-slot idle gap total | 2.540 s |
+
+This is an engineering containment result, not an accuracy verdict and not a
+20-card throughput claim. It proves the previous 109--153 second preparation
+tail and 8--12 minute retry amplification did not recur in the bounded canary.
+Production and the frozen accuracy policy remain unchanged.
+
 ## Verification
 
 `npm test` completed successfully after all campaign changes. The dedicated
