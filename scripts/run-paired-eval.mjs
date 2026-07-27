@@ -87,7 +87,7 @@ export async function preflightArm({
   if (response.status === 401 || response.status === 403 || response.status >= 500) {
     throw new Error(`paired preflight failed HTTP ${response.status}: ${body.slice(0, 200)}`);
   }
-  return { status: response.status };
+  return { status: response.status, cookie };
 }
 
 function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs, env, extraArgs = [] }) {
@@ -176,7 +176,7 @@ export async function main(argv = process.argv.slice(2)) {
       const baseUrl = arm === "baseline" ? baselineUrl : candidateUrl;
       const outPath = resolve(outDir, `${label}-${arm}-r${round}.json`);
       process.stderr.write(`round ${round}/${rounds} ${arm}\n`);
-      await preflightArm({
+      const preflight = await preflightArm({
         baseUrl,
         username: credentials.username,
         password: credentials.password,
@@ -185,7 +185,7 @@ export async function main(argv = process.argv.slice(2)) {
       process.stderr.write("  preflight=pass\n");
       await runSmoke({
         baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs,
-        env: credentials.env,
+        env: { ...credentials.env, LISTING_EVAL_SESSION_COOKIE: preflight.cookie },
         extraArgs: armSmokeArgs[arm]
       });
       const score = await scoreFromReport(outPath, { expectedCount: limit });

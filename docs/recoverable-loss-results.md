@@ -230,6 +230,14 @@ Production preflight's 15-second timeout. This second live attempt also made
 zero uploads and zero provider calls, so it remains invalid rather than being
 scored as a regression.
 
+A later simultaneous preflight passed both arms, but the smoke process then
+performed a redundant second login and immediately received
+`AUTH_UNAVAILABLE 503`. This third attempt also stopped before upload. The
+paired runners now pass the already-authenticated preflight session to the
+smoke child through an ephemeral environment variable. No cookie is written to
+disk, command arguments, artifacts, or logs, and one full arm run now requires
+one login instead of two.
+
 The paired runner now also supports independent arm values for catalog assist,
 catalog cache, vector retrieval, and vector retrieval mode. This makes the four
 remaining A/Bs executable against the same deployment and source version; their

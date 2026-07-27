@@ -71,6 +71,7 @@ const passingPreflight = await preflightArm({
   fetchImpl: async () => new Response(JSON.stringify({ message: "not found" }), { status: 404 })
 });
 assert.equal(passingPreflight.status, 404);
+assert.equal(passingPreflight.cookie, "listing_session=test");
 
 await assert.rejects(
   () => preflightArm({

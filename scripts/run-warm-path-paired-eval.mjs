@@ -157,23 +157,24 @@ export async function main(argv = process.argv.slice(2)) {
     for (const armName of order) {
       const arm = arms[armName];
       process.stderr.write(`round ${round}/${rounds} ${armName} preflight\n`);
-      await preflightArm({
+      const preflight = await preflightArm({
         baseUrl: arm.base_url,
         username: credentials.username,
         password: credentials.password,
         env: credentials.env
       });
+      const runEnv = { ...credentials.env, LISTING_EVAL_SESSION_COOKIE: preflight.cookie };
       const prefix = resolve(outDir, `${label}-${armName}-r${round}`);
       const coldPath = `${prefix}-cold.json`;
       const replayPath = `${prefix}-replay.json`;
       const assetCachePath = resolve(outDir, `${label}-${armName}-verified-assets.json`);
       await runSmoke({
         baseUrl: arm.base_url, dataset, sealedLabels, outPath: coldPath,
-        assetCachePath, model, limit, l2WaitMs, phase: "cold", env: credentials.env
+        assetCachePath, model, limit, l2WaitMs, phase: "cold", env: runEnv
       });
       await runSmoke({
         baseUrl: arm.base_url, dataset, sealedLabels, outPath: replayPath,
-        assetCachePath, model, limit, l2WaitMs, phase: "replay", env: credentials.env
+        assetCachePath, model, limit, l2WaitMs, phase: "replay", env: runEnv
       });
       const metrics = validateWarmPairReports(
         await readReport(coldPath),

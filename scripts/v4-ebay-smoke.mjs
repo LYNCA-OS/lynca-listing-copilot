@@ -4739,6 +4739,7 @@ export async function runV4EbaySmoke({
   sourceStorageUrl = "",
   sourceStorageServiceRoleKey = "",
   sourceMaterializationDir = "/tmp/lynca-v4-smoke-source",
+  sessionCookie = "",
   outPath = "",
   progress = true
 } = {}) {
@@ -4775,7 +4776,7 @@ export async function runV4EbaySmoke({
   const assetCacheEntries = normalizedVerifiedAssetCacheMode === "disabled"
     ? new Map()
     : await readVerifiedAssetCache(verifiedAssetCachePath);
-  const cookie = await login({ baseUrl, username, password });
+  const cookie = cleanText(sessionCookie) || await login({ baseUrl, username, password });
   let executionControlSnapshot = null;
   let executionControlError = null;
   try {
@@ -5251,6 +5252,7 @@ export async function main(argv = process.argv, env = process.env) {
     sourceStorageUrl: cleanText(env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL),
     sourceStorageServiceRoleKey: cleanText(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY),
     sourceMaterializationDir: cleanText(argValue(argv, "--source-materialization-dir", "/tmp/lynca-v4-smoke-source")),
+    sessionCookie: cleanText(env.LISTING_EVAL_SESSION_COOKIE),
     outPath,
     progress: !hasFlag(argv, "--quiet")
   });
