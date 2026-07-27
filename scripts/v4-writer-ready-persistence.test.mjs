@@ -51,11 +51,34 @@ assert.equal(calls.length, 2);
 assert.equal(calls[0].patch, fullPatch);
 assert.deepEqual(calls[1].patch, minimal);
 assert.equal(calls[1].attempts, 5);
+assert.equal(recovered.provider_replay_required, false);
+
+const stagedCalls = [];
+const stageRecovered = await persistWriterReadySession({
+  sessionId: "session-stage-retry",
+  patch: fullPatch,
+  updateSession: async (args) => {
+    stagedCalls.push(args);
+    return stagedCalls.length < 3
+      ? { saved: false, error: `transient_${stagedCalls.length}`, write_attempts: args.attempts }
+      : { saved: true, write_attempts: 2 };
+  }
+});
+assert.equal(stageRecovered.saved, true);
+assert.equal(stageRecovered.persistence_mode, "writer_ready_persistence_stage_retry");
+assert.equal(stageRecovered.stage_retry_attempted, true);
+assert.equal(stageRecovered.provider_replay_required, false);
+assert.equal(stagedCalls.length, 3);
+assert.deepEqual(stagedCalls[2].patch, minimal);
+assert.equal(stagedCalls[2].attempts, 5);
+assert.equal(stagedCalls[2].retryBaseMs, 800);
 
 assert.doesNotThrow(() => assertWriterReadySessionPersisted(recovered));
 assert.throws(
   () => assertWriterReadySessionPersisted({ saved: false, error: "still_down" }),
-  (error) => error.code === "V4_SESSION_STATE_PERSISTENCE_FAILED" && error.retryable === true
+  (error) => error.code === "V4_SESSION_STATE_PERSISTENCE_FAILED"
+    && error.retryable === true
+    && error.failed_stage === "WRITER_READY_PERSISTENCE"
 );
 
 console.log("v4 writer-ready persistence tests passed");

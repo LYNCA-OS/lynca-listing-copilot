@@ -133,17 +133,44 @@ export async function persistWriterReadySession({
 } = {}) {
   const primary = await updateSession({ sessionId, patch, attempts: 3, retryBaseMs: 150 });
   if (primary?.saved === true) return { ...primary, persistence_mode: "writer_ready_full_patch" };
+  const minimalPatch = minimalWriterReadySessionPatch(patch);
   const fallback = await updateSession({
     sessionId,
-    patch: minimalWriterReadySessionPatch(patch),
+    patch: minimalPatch,
     attempts: 5,
     retryBaseMs: 250
   });
+  if (fallback?.saved === true) {
+    return {
+      ...fallback,
+      persistence_mode: "writer_ready_minimal_fallback",
+      primary_error: primary?.error || "writer_ready_full_patch_failed",
+      primary_write_attempts: primary?.write_attempts || 3,
+      stage_retry_attempted: false,
+      provider_replay_required: false
+    };
+  }
+  // The Provider result is already complete and remains in this invocation.
+  // Give only the minimal Writer-Ready commit a bounded recovery window rather
+  // than returning to the queue and paying for the whole recognition stage.
+  const stageRetry = await updateSession({
+    sessionId,
+    patch: minimalPatch,
+    attempts: 5,
+    retryBaseMs: 800
+  });
   return {
-    ...fallback,
-    persistence_mode: fallback?.saved === true ? "writer_ready_minimal_fallback" : "writer_ready_failed",
+    ...stageRetry,
+    persistence_mode: stageRetry?.saved === true
+      ? "writer_ready_persistence_stage_retry"
+      : "writer_ready_failed",
     primary_error: primary?.error || "writer_ready_full_patch_failed",
-    primary_write_attempts: primary?.write_attempts || 3
+    primary_write_attempts: primary?.write_attempts || 3,
+    fallback_error: fallback?.error || "writer_ready_minimal_fallback_failed",
+    fallback_write_attempts: fallback?.write_attempts || 5,
+    stage_retry_attempted: true,
+    stage_retry_write_attempts: stageRetry?.write_attempts || 5,
+    provider_replay_required: false
   };
 }
 
@@ -151,7 +178,9 @@ export function assertWriterReadySessionPersisted(result = {}) {
   if (result?.saved === true) return result;
   throw Object.assign(new Error(`writer_ready_session_persistence_failed:${result?.error || result?.primary_error || "unknown_error"}`), {
     code: "V4_SESSION_STATE_PERSISTENCE_FAILED",
-    retryable: true
+    retryable: true,
+    failed_stage: "WRITER_READY_PERSISTENCE",
+    provider_replay_required: result?.provider_replay_required !== false
   });
 }
 
