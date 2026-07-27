@@ -253,6 +253,46 @@ assert.deepEqual(built.row.evidence_snapshot, {});
 assert.deepEqual(built.row.field_states, confirmedResult.field_states);
 assert.doesNotMatch(JSON.stringify(built.row), /tenant-cache|listing-assets|signedUrl|signed_url|asset_222/);
 
+const staleProviderSnapshot = {
+  identity_resolution_status: "ABSTAIN",
+  ambiguity_status: "ABSTAIN",
+  final_title: "Topps Chrome Star Clusters Blue Refractor",
+  resolved: {
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    card_name: "Star Clusters",
+    surface_color: "Blue",
+    parallel_family: "Refractor"
+  },
+  resolved_fields: {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Topps Chrome",
+    set: "Star Clusters",
+    card_name: "Star Clusters",
+    player: "Johnny Bench / Barry Larkin / Elly De La Cruz",
+    players: ["Johnny Bench", "Barry Larkin", "Elly De La Cruz"]
+  },
+  retrieval_application: {
+    owns_candidate_application: true,
+    resolver_consumed: true
+  }
+};
+const terminalSnapshot = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation(
+  staleProviderSnapshot,
+  payload
+);
+const terminalBuilt = identityResultToCacheRow({
+  result: terminalSnapshot,
+  payload,
+  now: new Date("2026-06-23T10:00:00.000Z")
+});
+assert.equal(terminalBuilt.ok, true);
+assert.equal(terminalBuilt.row.final_title, terminalSnapshot.final_title);
+assert.deepEqual(terminalBuilt.row.resolved_fields, terminalSnapshot.resolved_fields);
+assert.match(terminalBuilt.row.final_title, /Johnny Bench/);
+assert.equal(terminalBuilt.row.resolved_fields.year, "2025");
+
 const cachedResult = identityResultCacheRecordToListingResult({
   record: built.row,
   payload,
