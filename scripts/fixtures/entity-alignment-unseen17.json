@@ -1,0 +1,25 @@
+{
+  "schema_version": "entity-alignment-unseen17-labels-v1",
+  "label_scope": "card carries at least one asserted product-or-set identity with no semantic relation to the manufacturer-checklist product or set",
+  "authority": "manufacturer-checklist identity labels loaded only after predictions were frozen",
+  "source": "artifacts/smoke/unseen20-labels.jsonl",
+  "cases": [
+    { "key": "unseen_e90b6054163320bbc04b", "expected_none": true, "reason": "Prizm and Prizm Purple are unrelated to Phoenix Base" },
+    { "key": "unseen_40b6057985f303926690", "expected_none": false, "reason": "Contours is the exact published set, even though it occupied the product field" },
+    { "key": "unseen_4a387a2e25fe69fa7508", "expected_none": false, "reason": "Panini Phoenix is exact and Phoenix is its broader product token" },
+    { "key": "unseen_af443b0004240f0107ee", "expected_none": false, "reason": "Contours is the exact published set" },
+    { "key": "unseen_745e2fed2b81fdb80c63", "expected_none": true, "reason": "Absolute Basketball and Rookie Signs are unrelated to Phoenix Instant Phenom" },
+    { "key": "unseen_c1f30c005617e6986ef1", "expected_none": true, "reason": "Prizm and Prizm Mosaic are unrelated to Phoenix Fire Fabrics" },
+    { "key": "unseen_e2317539ffdb61b4693b", "expected_none": true, "reason": "Paragon is unrelated to Phoenix Mystique" },
+    { "key": "unseen_189096ee2adb683d47b0", "expected_none": true, "reason": "Panini Chronicles is unrelated to Phoenix Fade To Black" },
+    { "key": "unseen_d2014506e773d47e7536", "expected_none": true, "reason": "Donruss Optic is unrelated to Phoenix Base" },
+    { "key": "unseen_bbfc75a6ba32ffe48343", "expected_none": true, "reason": "Prizm Mosaic is unrelated to Phoenix Rookies" },
+    { "key": "unseen_382c09472dc13c325652", "expected_none": true, "reason": "Prizm Draft Picks is unrelated to Phoenix Color Blast" },
+    { "key": "unseen_e9c74d3fa6e36cc2a779", "expected_none": true, "reason": "Prizm and Emerald Prism are unrelated to Phoenix Base" },
+    { "key": "unseen_265e71d598ed841e4475", "expected_none": true, "reason": "Prizm Red Wave is unrelated to Phoenix Base" },
+    { "key": "unseen_5aaa54c150b4479171cb", "expected_none": true, "reason": "Contours is unrelated to the published Panini Phoenix Archetype identity" },
+    { "key": "unseen_302227384e4e19804899", "expected_none": false, "reason": "Panini Prizm is a broader claim for Panini Prizm FIFA" },
+    { "key": "unseen_39194858fc5eeec7d09d", "expected_none": false, "reason": "Prizm is broader than Panini Prizm FIFA and Talisman is a spelling variant of Talismen" },
+    { "key": "unseen_09dd62702d9d39ae7da6", "expected_none": false, "reason": "Panini Prizm is broader than Panini Prizm FIFA and Club Legends prefixes Club Legends Signatures" }
+  ]
+}
