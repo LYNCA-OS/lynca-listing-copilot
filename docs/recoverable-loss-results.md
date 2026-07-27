@@ -152,9 +152,22 @@ and Storage 544s, while a direct SQL `select 1` succeeded. A direct PostgREST
 read subsequently timed out at 15 seconds.
 
 This is a hosted REST/Storage service-plane failure, not a model, renderer,
-queue-policy, or credential failure. The smallest in-scope mitigation has been
-implemented: fail-fast preflight. Restoring or replacing the production data
-plane would be a production operation and is prohibited by this campaign.
+queue-policy, or credential failure. Postgres logs add evidence that the
+benchmark itself amplified the failure: one checkpoint took 124.333 seconds,
+provider-claim RPCs took 15–25 seconds, a `vector_query_logs` insert took about
+16 seconds, and multiple idle-in-transaction connections were terminated.
+
+Two in-scope mitigations are now implemented:
+
+1. fail-fast preflight before any upload or provider cost;
+2. cold-benchmark suppression of nonessential vector telemetry, workflow
+   sidecars, automatic annotation tasks, and quality-finding writes (`c014b73`).
+
+The suppression is request-scoped to the cold algorithm benchmark and leaves
+retrieval, selection, resolver, renderer, and the evaluation decision trace
+unchanged. Production workloads retain their existing telemetry behaviour.
+Restoring or replacing the production data plane would be a production
+operation and is prohibited by this campaign.
 
 ## 8. Gates not yet run
 
