@@ -58,6 +58,8 @@ import {
   numberOrNull as smokeNumberOrNull,
   payloadForItem as smokePayloadForItem,
   fastInitialPromptOverride,
+  optionalBooleanProviderOption,
+  optionalVectorRetrievalMode,
   perCardTsv,
   providerDoneHandoffOverride,
   resultFromBatchJob,
@@ -330,6 +332,13 @@ assert.throws(
   () => providerDoneHandoffOverride(["node", "smoke", "--provider-done-handoff", "--no-provider-done-handoff"]),
   /mutually exclusive/
 );
+assert.equal(optionalBooleanProviderOption(["node", "smoke"], "--catalog-assist", true), true);
+assert.equal(optionalBooleanProviderOption(["node", "smoke", "--catalog-assist", "false"], "--catalog-assist", true), false);
+assert.equal(optionalBooleanProviderOption(["node", "smoke", "--catalog-assist", "omit"], "--catalog-assist", true), null);
+assert.equal(optionalBooleanProviderOption(["node", "smoke", "--catalog-cache", "false"], "--catalog-cache", true), false);
+assert.equal(optionalVectorRetrievalMode(["node", "smoke"]), "assist");
+assert.equal(optionalVectorRetrievalMode(["node", "smoke", "--vector-retrieval-mode", "shadow"]), "shadow");
+assert.equal(optionalVectorRetrievalMode(["node", "smoke", "--vector-retrieval-mode", "omit"]), null);
 assert.equal(ultraFastL2Override(["node", "smoke"]), null, "omitted ultra-fast mode must inherit production configuration");
 assert.equal(ultraFastL2Override(["node", "smoke", "--ultra-fast-l2"]), true);
 assert.equal(ultraFastL2Override(["node", "smoke", "--no-ultra-fast-l2"]), false);
@@ -343,6 +352,26 @@ const disabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: f
 assert.equal(disabledUltraFastPayload.provider_options.v4_ultra_fast_l2, false);
 const enabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: true });
 assert.equal(enabledUltraFastPayload.provider_options.v4_ultra_fast_l2, true);
+const retrievalOverridePayload = smokePayloadForItem({}, 0, [], {
+  catalogAssist: false,
+  catalogCache: false,
+  vectorRetrieval: false,
+  vectorRetrievalMode: "off"
+});
+assert.equal(retrievalOverridePayload.provider_options.enable_catalog_assist, false);
+assert.equal(retrievalOverridePayload.provider_options.enable_catalog_cache, false);
+assert.equal(retrievalOverridePayload.provider_options.enable_vector_retrieval, false);
+assert.equal(retrievalOverridePayload.provider_options.vector_retrieval_mode, "off");
+const retrievalOmitPayload = smokePayloadForItem({}, 0, [], {
+  catalogAssist: null,
+  catalogCache: null,
+  vectorRetrieval: null,
+  vectorRetrievalMode: null
+});
+assert.equal("enable_catalog_assist" in retrievalOmitPayload.provider_options, false);
+assert.equal("enable_catalog_cache" in retrievalOmitPayload.provider_options, false);
+assert.equal("enable_vector_retrieval" in retrievalOmitPayload.provider_options, false);
+assert.equal("vector_retrieval_mode" in retrievalOmitPayload.provider_options, false);
 assert.equal(fastInitialPromptOverride(["node", "smoke"]), null);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--fast-initial-prompt"]), true);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--full-listing-prompt"]), false);

@@ -88,6 +88,25 @@ export function providerDoneHandoffOverride(argv = []) {
   return null;
 }
 
+export function optionalBooleanProviderOption(argv = [], name, fallback = true) {
+  const raw = argValue(argv, name, null);
+  if (raw === null) return fallback;
+  const value = cleanText(raw).toLowerCase();
+  if (value === "omit") return null;
+  if (["1", "true", "yes", "on"].includes(value)) return true;
+  if (["0", "false", "no", "off"].includes(value)) return false;
+  throw new Error(`${name} must be true, false, or omit.`);
+}
+
+export function optionalVectorRetrievalMode(argv = [], fallback = "assist") {
+  const raw = argValue(argv, "--vector-retrieval-mode", null);
+  if (raw === null) return fallback;
+  const value = cleanText(raw).toLowerCase();
+  if (value === "omit") return null;
+  if (["off", "shadow", "assist"].includes(value)) return value;
+  throw new Error("--vector-retrieval-mode must be off, shadow, assist, or omit.");
+}
+
 export function ultraFastL2Override(argv = []) {
   const enabled = hasFlag(argv, "--ultra-fast-l2");
   const disabled = hasFlag(argv, "--no-ultra-fast-l2");
@@ -813,18 +832,23 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   disableIdentityCache = false,
   benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
   benchmarkPhase = null,
-  coldStartBlind = false
+  coldStartBlind = false,
+  catalogAssist = true,
+  catalogCache = true,
+  vectorRetrieval = true,
+  vectorRetrievalMode = "assist"
 } = {}) {
   let providerOptions = {
-    enable_catalog_assist: true,
-    enable_vector_retrieval: true,
-    vector_retrieval_mode: "assist",
     vector_query_timeout_ms: 20000,
     enable_v4_progressive_l1: true,
     cloud_eval_blind_to_corrected_title_hint: true,
     corrected_title_as_temporary_gt: false,
     send_corrected_title_hint_to_cloud: false
   };
+  if (typeof catalogAssist === "boolean") providerOptions.enable_catalog_assist = catalogAssist;
+  if (typeof catalogCache === "boolean") providerOptions.enable_catalog_cache = catalogCache;
+  if (typeof vectorRetrieval === "boolean") providerOptions.enable_vector_retrieval = vectorRetrieval;
+  if (vectorRetrievalMode !== null) providerOptions.vector_retrieval_mode = vectorRetrievalMode;
   if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
   if (compactL2) providerOptions.v4_compact_l2_prompt = true;
   if (typeof ultraFastL2 === "boolean") {
@@ -2089,6 +2113,10 @@ async function runOne({
   benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
   benchmarkPhase = null,
   coldStartBlind = false,
+  catalogAssist = true,
+  catalogCache = true,
+  vectorRetrieval = true,
+  vectorRetrievalMode = "assist",
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
@@ -2126,7 +2154,11 @@ async function runOne({
     disableIdentityCache,
     benchmarkProfile,
     benchmarkPhase,
-    coldStartBlind
+    coldStartBlind,
+    catalogAssist,
+    catalogCache,
+    vectorRetrieval,
+    vectorRetrievalMode
   });
   const prewarmPromise = prewarm
     ? postJson({
@@ -2847,6 +2879,10 @@ async function enqueueSpeculativeItem({
   benchmarkProfile,
   benchmarkPhase,
   coldStartBlind,
+  catalogAssist,
+  catalogCache,
+  vectorRetrieval,
+  vectorRetrievalMode,
   usePreingestion,
   preingestionSource,
   requestTimeoutMs,
@@ -2885,7 +2921,11 @@ async function enqueueSpeculativeItem({
       disableIdentityCache,
       benchmarkProfile,
       benchmarkPhase,
-      coldStartBlind
+      coldStartBlind,
+      catalogAssist,
+      catalogCache,
+      vectorRetrieval,
+      vectorRetrievalMode
     });
     const prewarmPromise = prewarm
       ? postJson({
@@ -4673,6 +4713,10 @@ export async function runV4EbaySmoke({
   disableIdentityCache = false,
   benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
   benchmarkPhase = null,
+  catalogAssist = true,
+  catalogCache = true,
+  vectorRetrieval = true,
+  vectorRetrievalMode = "assist",
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
@@ -4847,6 +4891,10 @@ export async function runV4EbaySmoke({
           benchmarkProfile,
           benchmarkPhase,
           coldStartBlind,
+          catalogAssist,
+          catalogCache,
+          vectorRetrieval,
+          vectorRetrievalMode,
           usePreingestion,
           preingestionSource,
           requestTimeoutMs,
@@ -4930,6 +4978,10 @@ export async function runV4EbaySmoke({
           benchmarkProfile,
           benchmarkPhase,
           coldStartBlind,
+          catalogAssist,
+          catalogCache,
+          vectorRetrieval,
+          vectorRetrievalMode,
           usePreingestion,
           preingestionSource,
           speculative,
@@ -5177,6 +5229,10 @@ export async function main(argv = process.argv, env = process.env) {
     resumeBatchId: cleanText(argValue(argv, "--resume-batch-id", "")),
     evaluationSampleMode: cleanText(argValue(argv, "--sample-mode", "UNSPECIFIED")),
     coldStartBlind: hasFlag(argv, "--cold-start-blind"),
+    catalogAssist: optionalBooleanProviderOption(argv, "--catalog-assist", true),
+    catalogCache: optionalBooleanProviderOption(argv, "--catalog-cache", true),
+    vectorRetrieval: optionalBooleanProviderOption(argv, "--vector-retrieval", true),
+    vectorRetrievalMode: optionalVectorRetrievalMode(argv, "assist"),
     // CLI smoke runs are iterative by design. Persist verified generations by
     // immutable source fingerprint so rerunning a seen card does not repeat
     // asset creation, signed upload, PUT, or verification. Programmatic callers
