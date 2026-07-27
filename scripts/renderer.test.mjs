@@ -79,6 +79,18 @@ const literalPlaceholderIsNeverRendered = renderListingPresentation({
 assert.equal(/\b(?:none|null|undefined|unknown|n\/?a)\b/i.test(literalPlaceholderIsNeverRendered.final_title), false);
 assert.equal(literalPlaceholderIsNeverRendered.final_title, "2025-26 Topps Chrome UCC Lionel Messi Shadow Etch #SE-18");
 
+const canonicalUefaProductUsesMarketplaceAbbreviation = renderListingPresentation({
+  resolved: {
+    year: "2025-26",
+    manufacturer: "Topps",
+    product: "Topps Chrome UEFA Club Competitions",
+    players: ["Lionel Messi"],
+    insert: "Shadow Etch"
+  },
+  maxLength: 80
+});
+assert.equal(canonicalUefaProductUsesMarketplaceAbbreviation.final_title, "2025-26 Topps Chrome UCC Lionel Messi Shadow Etch");
+
 const sportsCollectorsDigestGrade = renderListingPresentation({
   resolved: {
     year: "1986",
