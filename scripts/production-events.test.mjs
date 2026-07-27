@@ -3,6 +3,7 @@ import {
   buildErrorLogRow,
   buildProductionEventRow,
   buildRequestLogRow,
+  bindProductionRequestContext,
   createRequestTelemetry,
   operationalErrorFingerprint,
   requestIdFromRequest,
@@ -97,6 +98,18 @@ assert.equal(headers["x-request-id"], "req-safe-123");
 assert.equal(writes.length, 1);
 assert.equal(writes[0].body.tenant_id, "tenant_001");
 assert.equal((await telemetry.finish()).skipped, true);
+
+const authzHeaders = {};
+const authzContext = { tenantId: "tenant_001", authorizationSource: "SIGNED_RECENT_MEMBERSHIP" };
+assert.equal(bindProductionRequestContext({
+  setHeader(name, value) { authzHeaders[name] = value; },
+  __lyncaProductionTelemetry: { bindContext: (context) => context }
+}, authzContext), authzContext);
+assert.equal(authzHeaders["x-lynca-authz-source"], "SIGNED_RECENT_MEMBERSHIP");
+bindProductionRequestContext({
+  setHeader(name, value) { authzHeaders[name] = value; }
+}, { authorizationSource: "unsafe source with spaces" });
+assert.equal(authzHeaders["x-lynca-authz-source"], "SIGNED_RECENT_MEMBERSHIP");
 
 const pricedV4 = adaptRecognitionResultToV4({
   sessionId: "session-priced",

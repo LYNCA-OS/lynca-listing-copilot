@@ -980,6 +980,7 @@ async function postJson({
       latency_ms: Date.now() - started,
       attempts: request.attempts,
       retried: request.retried === true,
+      authz_source: cleanText(response.headers.get("x-lynca-authz-source")) || null,
       data
     };
   } catch (error) {
@@ -1009,6 +1010,7 @@ async function getJson({ baseUrl, path, cookie, requestTimeoutMs, fetchImpl = gl
       ok: response.ok,
       http_status: response.status,
       latency_ms: Date.now() - started,
+      authz_source: cleanText(response.headers.get("x-lynca-authz-source")) || null,
       data
     };
   } finally {
@@ -3034,6 +3036,7 @@ async function enqueueSpeculativeItem({
       asset_cache_entry: preparedItem.asset_cache_entry || null,
       enqueue_attempts: Number(enqueue.attempts || 1),
       enqueue_recovered_by_retry: enqueue.retried === true,
+      enqueue_authz_source: enqueue.authz_source || null,
       preingestion: preingestionResult,
       prewarm: prewarmResult,
       error: null
@@ -3055,6 +3058,7 @@ async function enqueueSpeculativeItem({
       asset_cache_entry: preparedItem?.asset_cache_entry || null,
       enqueue_attempts: null,
       enqueue_recovered_by_retry: false,
+      enqueue_authz_source: null,
       preingestion: null,
       prewarm: null,
       error: cleanText(error?.message || error || "batch_enqueue_failed").slice(0, 240)
@@ -3234,7 +3238,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
       preparation_cache_hit: prepared.preparation_diagnostics?.asset_cache_hit === true,
       upload_skipped_due_to_verified_asset_cache: prepared.preparation_diagnostics?.upload_skipped_due_to_verified_asset_cache === true,
       enqueue_attempts: prepared.enqueue_attempts ?? null,
-      enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true
+      enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true,
+      enqueue_authz_source: prepared.enqueue_authz_source || null
     };
   }
   const jobRow = batchPoll.jobsById.get(prepared.job.job_id) || null;
@@ -3310,6 +3315,7 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     preparation_recovered_by_retry: prepared.preparation_diagnostics?.recovered_by_retry === true,
     enqueue_attempts: prepared.enqueue_attempts ?? null,
     enqueue_recovered_by_retry: prepared.enqueue_recovered_by_retry === true,
+    enqueue_authz_source: prepared.enqueue_authz_source || null,
     enqueue_persistence_mode: prepared.enqueue?.data?.persistence_mode || null,
     l1_wall_latency_ms: prewarm.latency_ms ?? null,
     l2_ready: ready,
@@ -4153,6 +4159,7 @@ export function summarize(results = [], { runWallMs = null } = {}) {
     enqueue_p50_ms: quantile(results.map((item) => item.enqueue_latency_ms), 0.5),
     enqueue_p95_ms: quantile(results.map((item) => item.enqueue_latency_ms), 0.95),
     enqueue_recovered_by_retry_count: results.filter((item) => item.enqueue_recovered_by_retry === true).length,
+    enqueue_authz_source_breakdown: countBy("enqueue_authz_source"),
     enqueue_retry_attempt_count: results.reduce((sum, item) => (
       sum + Math.max(0, Number(item.enqueue_attempts || 1) - 1)
     ), 0),
@@ -5279,6 +5286,7 @@ export async function main(argv = process.argv, env = process.env) {
     `preingestion_enabled: ${report.preingestion_enabled}`,
     `submission_concurrency: ${report.submission_concurrency}`,
     `preparation_concurrency: ${report.preparation_concurrency}`,
+    `enqueue_authz_sources: ${JSON.stringify(report.summary.enqueue_authz_source_breakdown)}`,
     `provider_concurrency: ${report.provider_concurrency ?? "unknown"}`,
     `compact_l2_enabled: ${report.compact_l2_enabled}`,
     `preingestion_ok: ${report.summary.preingestion_ok_count}/${report.summary.preingestion_used_count}`,

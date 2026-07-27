@@ -122,6 +122,25 @@ function tenantRequest({
   };
 }
 
+function attestedTenantRequest({
+  tenantId = "tenant_a",
+  userId = "user_a",
+  email = `${userId}@example.test`,
+  role = TENANT_ROLES.OWNER,
+  membershipCheckedAt = Date.now(),
+  now = membershipCheckedAt
+} = {}) {
+  const token = createListingSessionToken({
+    userId,
+    tenantId,
+    email,
+    role,
+    sessionVersion: LISTING_SESSION_VERSION,
+    membershipCheckedAt
+  }, secret, { now });
+  return { headers: { cookie: `${cookieName}=${token}` } };
+}
+
 // The matrix is explicit, complete, and fail-closed for unknown capabilities.
 const allPermissions = Object.values(TENANT_PERMISSIONS);
 for (const permission of allPermissions) {
@@ -469,7 +488,9 @@ assert.deepEqual(resolvedIdentity, {
   tenantId: "tenant_a",
   email: "user_a@example.test",
   role: TENANT_ROLES.OWNER,
-  sessionVersion: LISTING_SESSION_VERSION
+  sessionVersion: LISTING_SESSION_VERSION,
+  tenantName: "Tenant tenant_a",
+  tenantPlan: "pilot"
 });
 const tenantChoices = await listTenantChoicesForAuthUser({ authUserId: authUserUuid }, {
   env: serviceEnv,
@@ -606,6 +627,47 @@ assert.throws(() => requireWorkerContext({
   await requireTenantAccess(tenantRequest(), { env: serviceEnv, fetchImpl: disabledFetch });
   assert.equal(disabledFetchCalls, 2, "TTL 0 must disable membership caching");
   __clearTenantMembershipCacheForTests();
+}
+
+// ---- signed recent membership snapshot (cross-instance, TTL, fail-closed) --
+{
+  const attestedEnv = Object.freeze({
+    ...serviceEnv,
+    TENANT_MEMBERSHIP_CACHE_TTL_MS: "45000",
+    TENANT_SESSION_AUTHZ_TTL_MS: "45000"
+  });
+  const checkedAt = Date.now();
+  const freshRequest = attestedTenantRequest({ membershipCheckedAt: checkedAt, now: checkedAt });
+  const context = await requireTenantAccess(freshRequest, {
+    permission: TENANT_PERMISSIONS.CREATE_JOB,
+    env: attestedEnv,
+    now: checkedAt + 1_000,
+    fetchImpl: async () => { throw new Error("fresh signed snapshot must not reach Supabase"); }
+  });
+  assert.equal(context.authorizationSource, "SIGNED_RECENT_MEMBERSHIP");
+  assert.equal(context.role, TENANT_ROLES.OWNER);
+
+  await expectCode(() => requireTenantAccess(attestedTenantRequest({
+    role: TENANT_ROLES.WRITER,
+    membershipCheckedAt: checkedAt,
+    now: checkedAt
+  }), {
+    permission: TENANT_PERMISSIONS.CREATE_JOB,
+    env: attestedEnv,
+    now: checkedAt + 1_000,
+    fetchImpl: async () => { throw new Error("permission denial must not reach Supabase"); }
+  }), "ACCESS_DENIED");
+
+  let staleFetchCalls = 0;
+  await requireTenantAccess(freshRequest, {
+    env: attestedEnv,
+    now: checkedAt + 45_001,
+    fetchImpl: async () => {
+      staleFetchCalls += 1;
+      return jsonResponse([membershipRow()]);
+    }
+  });
+  assert.equal(staleFetchCalls, 1, "expired signed snapshots must revalidate persisted membership");
 }
 
 console.log("tenant access tests passed");

@@ -4,6 +4,8 @@ import loginHandler from "../api/login.js";
 import logoutHandler from "../api/logout.js";
 import sessionHandler from "../api/session.js";
 import {
+  cookieName,
+  createListingSessionToken,
   listingSessionCookieIsSecure,
   readSignedSession
 } from "../lib/listing-session.mjs";
@@ -76,6 +78,8 @@ async function login() {
   assert.equal(session.tenant_id, "tenant_legacy");
   assert.equal(session.email, "admin@example.test");
   assert.equal(session.session_version, 1);
+  assert.equal(session.role, "OWNER");
+  assert.equal(typeof session.membership_checked_at, "number");
   assert.match(session.sid, /^[0-9a-f-]{36}$/i);
   assert.equal(typeof session.iat, "number");
   assert.equal(typeof session.exp, "number");
@@ -207,7 +211,16 @@ try {
 
   membershipAvailable = false;
   __clearTenantMembershipCacheForTests();
-  const unavailable = await readSession(first.cookie);
+  const staleNow = Date.now();
+  const staleToken = createListingSessionToken({
+    userId: "user_legacy",
+    tenantId: "tenant_legacy",
+    email: "admin@example.test",
+    role: "OWNER",
+    sessionVersion: 1,
+    membershipCheckedAt: staleNow - 60_000
+  }, process.env.METAVERSE_AUTH_SECRET, { now: staleNow });
+  const unavailable = await readSession(`${cookieName}=${staleToken}`);
   assert.equal(unavailable.res.statusCode, 503, "a membership-store outage must not masquerade as a signed-out session");
   assert.equal(unavailable.payload.authenticated, false);
   assert.equal(unavailable.payload.code, "AUTH_UNAVAILABLE");
