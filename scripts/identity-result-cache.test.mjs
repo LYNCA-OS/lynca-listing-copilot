@@ -441,6 +441,13 @@ assert.equal(coldOptions.disable_identity_inflight_replay, true);
 assert.equal(coldOptions.exact_anchor_fast_final_shadow_only, true);
 assert.equal(coldOptions.disable_recognition_worker_fast_final, true);
 
+const replayOptions = applyRecognitionBenchmarkProfile({}, {
+  profile: recognitionBenchmarkProfileIds.EXACT_REPLAY,
+  phase: exactReplayPhases.REPLAY
+});
+assert.equal(replayOptions.disable_identity_result_cache_read, false);
+assert.equal(replayOptions.disable_identity_result_cache_write, true);
+
 assert.deepEqual(__listingCopilotTitleTestHooks.exactAnchorFastFinalShadowFromPayload({
   v4_anchor_probe: {
     finalized: true,

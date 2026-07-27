@@ -33,6 +33,7 @@ function quantile(values = [], percentile = 0.5) {
 
 function identityKey(row = {}, index = 0) {
   return row.identity_cache_image_generation_hash
+    || row.source_asset_id
     || row.source_feedback_id
     || row.physical_card_id
     || row.asset_id

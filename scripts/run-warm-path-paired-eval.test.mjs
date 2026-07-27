@@ -41,6 +41,13 @@ assert.equal(metrics.replay_provider_calls, 0);
 assert.equal(metrics.accuracy_delta, 0);
 assert.equal(metrics.replay_writer_ready_p95_ms, 150);
 
+const stableSourceMetrics = validateWarmPairReports(
+  { results: [row({ identity_cache_image_generation_hash: null, source_asset_id: "reviewed-card-1", asset_id: "cold-upload" })] },
+  { results: [row({ ...replay, identity_cache_image_generation_hash: null, source_asset_id: "reviewed-card-1", asset_id: "replay-upload" })] },
+  { expectedCount: 1 }
+);
+assert.equal(stableSourceMetrics.sample_count, 1);
+
 assert.throws(
   () => validateWarmPairReports(
     { results: [cold] },
