@@ -14,6 +14,10 @@ function argValue(argv, name, fallback = "") {
   return index >= 0 ? (argv[index + 1] ?? fallback) : fallback;
 }
 
+function hasFlag(argv, name) {
+  return argv.includes(name);
+}
+
 function finite(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -104,13 +108,13 @@ async function readReport(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
-function runSmoke({ baseUrl, dataset, sealedLabels, outPath, assetCachePath, model, limit, l2WaitMs, phase, env }) {
+function runSmoke({ baseUrl, dataset, sealedLabels, outPath, assetCachePath, model, limit, l2WaitMs, phase, direct, env }) {
   const args = [
     "--use-env-proxy",
     "scripts/v4-ebay-smoke.mjs",
     "--base-url", baseUrl,
     "--model", model,
-    "--queue", "--speculative", "--use-preingestion",
+    "--use-preingestion",
     "--ultra-image-detail", "high",
     "--concurrency", "2", "--preparation-concurrency", "2", "--submission-concurrency", "2",
     "--abort-on-preparation-failure",
@@ -125,6 +129,7 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, assetCachePath, mod
     "--verified-asset-cache-mode", "reuse",
     "--out", outPath
   ];
+  args.push(...(direct ? ["--force-l2-direct"] : ["--queue", "--speculative"]));
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, args, { stdio: ["ignore", "ignore", "inherit"], env });
     child.on("error", rejectRun);
@@ -145,6 +150,7 @@ export async function main(argv = process.argv.slice(2)) {
   const l2WaitMs = Math.max(18_000, Number(argValue(argv, "--l2-wait-ms", "18000")) || 18_000);
   const outDir = resolve(argValue(argv, "--out-dir", "artifacts/smoke/warm-path-paired-eval"));
   const label = argValue(argv, "--label", "warm-path");
+  const direct = hasFlag(argv, "--direct");
   if (!candidateUrl) throw new Error("--candidate-url is required");
   const credentials = resolveListingEvalCredentials(process.env);
   if (!credentials.username || !credentials.password) throw new Error("listing evaluation credentials are missing");
@@ -172,11 +178,11 @@ export async function main(argv = process.argv.slice(2)) {
       const assetCachePath = resolve(outDir, `${label}-${armName}-verified-assets.json`);
       await runSmoke({
         baseUrl: arm.base_url, dataset, sealedLabels, outPath: coldPath,
-        assetCachePath, model, limit, l2WaitMs, phase: "cold", env: runEnv
+        assetCachePath, model, limit, l2WaitMs, phase: "cold", direct, env: runEnv
       });
       await runSmoke({
         baseUrl: arm.base_url, dataset, sealedLabels, outPath: replayPath,
-        assetCachePath, model, limit, l2WaitMs, phase: "replay", env: runEnv
+        assetCachePath, model, limit, l2WaitMs, phase: "replay", direct, env: runEnv
       });
       const metrics = validateWarmPairReports(
         await readReport(coldPath),
@@ -200,6 +206,7 @@ export async function main(argv = process.argv.slice(2)) {
     sealed_labels: sealedLabels,
     limit,
     rounds_completed: rounds,
+    execution_mode: direct ? "direct" : "queue",
     exact_replay_gate: {
       identity_cache_hit_rate_required: 1,
       provider_calls_required: "1_to_0_per_card",
