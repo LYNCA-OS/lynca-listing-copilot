@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { preflightArm, scoreFromReportData } from "./run-paired-eval.mjs";
+import { preflightArm, scoreFromReportData, smokeArgsForArm } from "./run-paired-eval.mjs";
 
 function row(overrides = {}) {
   return {
@@ -28,6 +28,27 @@ assert.throws(
     error: "batch_poll_timeout"
   })] }, { expectedCount: 1 }),
   /not complete cold results/
+);
+
+assert.deepEqual(smokeArgsForArm([], "baseline"), []);
+assert.deepEqual(smokeArgsForArm([
+  "--baseline-catalog-assist", "false",
+  "--baseline-catalog-cache", "omit",
+  "--candidate-vector-retrieval-mode", "shadow"
+], "baseline"), [
+  "--catalog-assist", "false",
+  "--catalog-cache", "omit"
+]);
+assert.deepEqual(smokeArgsForArm([
+  "--candidate-vector-retrieval", "true",
+  "--candidate-vector-retrieval-mode", "shadow"
+], "candidate"), [
+  "--vector-retrieval", "true",
+  "--vector-retrieval-mode", "shadow"
+]);
+assert.throws(
+  () => smokeArgsForArm(["--candidate-catalog-cache", "maybe"], "candidate"),
+  /must be one of/
 );
 
 assert.throws(

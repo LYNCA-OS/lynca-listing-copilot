@@ -223,6 +223,26 @@ propagation bug in the preflight helper both Candidate and Production passed
 login plus authenticated status probes in the same window (7.7s and 10.0s).
 No card was uploaded before both arms reached that state.
 
+The replacement Preview `dpl_GHAwHcoJka1o1KZKzu95vtm2Ttmm` was then built
+from commit `35f9264`, so UCC and request-scoped evaluation-write suppression
+were present together. The first UCC paired round still stopped at the
+Production preflight's 15-second timeout. This second live attempt also made
+zero uploads and zero provider calls, so it remains invalid rather than being
+scored as a regression.
+
+The paired runner now also supports independent arm values for catalog assist,
+catalog cache, vector retrieval, and vector retrieval mode. This makes the four
+remaining A/Bs executable against the same deployment and source version; their
+arm configuration is persisted in the summary rather than inferred from a
+deployment name.
+
+Finally, the previously referenced reviewed-200 files did not exist. They are
+now deterministically generated from the 255-row reviewed image-backed source,
+with all 20 cold20 identities excluded. The resulting ignored evaluation pack
+contains 200 image-only inputs, 200 sealed labels, zero cold20 overlap, and zero
+reviewed-title leakage. Its `PAIRED_ABLATION` policy requires both arms to use
+the identical item set.
+
 ## Verification
 
 `npm test` completed successfully after all campaign changes. The dedicated

@@ -32,6 +32,25 @@ function argValue(argv, name, fallback = "") {
   return index >= 0 ? (argv[index + 1] ?? fallback) : fallback;
 }
 
+function optionalArmValue(argv, arm, name, allowed) {
+  const flag = `--${arm}-${name}`;
+  if (!argv.includes(flag)) return null;
+  const value = String(argValue(argv, flag, "")).trim().toLowerCase();
+  if (!allowed.includes(value)) throw new Error(`${flag} must be one of: ${allowed.join(", ")}`);
+  return value;
+}
+
+export function smokeArgsForArm(argv = [], arm = "baseline") {
+  if (!["baseline", "candidate"].includes(arm)) throw new Error(`unsupported paired arm: ${arm}`);
+  const values = [
+    ["catalog-assist", optionalArmValue(argv, arm, "catalog-assist", ["true", "false", "omit"])],
+    ["catalog-cache", optionalArmValue(argv, arm, "catalog-cache", ["true", "false", "omit"])],
+    ["vector-retrieval", optionalArmValue(argv, arm, "vector-retrieval", ["true", "false", "omit"])],
+    ["vector-retrieval-mode", optionalArmValue(argv, arm, "vector-retrieval-mode", ["off", "shadow", "assist", "omit"])]
+  ];
+  return values.flatMap(([name, value]) => value === null ? [] : [`--${name}`, value]);
+}
+
 function protectionHeaders(env = process.env) {
   const secret = String(env.VERCEL_AUTOMATION_BYPASS_SECRET || "").trim();
   return secret ? { "x-vercel-protection-bypass": secret } : {};
@@ -71,7 +90,7 @@ export async function preflightArm({
   return { status: response.status };
 }
 
-function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs, env }) {
+function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs, env, extraArgs = [] }) {
   const args = [
     "--use-env-proxy",
     "scripts/v4-ebay-smoke.mjs",
@@ -86,7 +105,8 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2Wai
     "--sealed-labels", sealedLabels,
     "--limit", String(limit),
     "--l2-wait-ms", String(l2WaitMs),
-    "--out", outPath
+    "--out", outPath,
+    ...extraArgs
   ];
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, args, { stdio: ["ignore", "ignore", "inherit"], env });
@@ -146,6 +166,10 @@ export async function main(argv = process.argv.slice(2)) {
   await mkdir(outDir, { recursive: true });
   const baselineScores = [];
   const candidateScores = [];
+  const armSmokeArgs = {
+    baseline: smokeArgsForArm(argv, "baseline"),
+    candidate: smokeArgsForArm(argv, "candidate")
+  };
 
   for (let round = 1; round <= rounds; round += 1) {
     for (const arm of ["baseline", "candidate"]) {
@@ -159,7 +183,11 @@ export async function main(argv = process.argv.slice(2)) {
         env: credentials.env
       });
       process.stderr.write("  preflight=pass\n");
-      await runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs, env: credentials.env });
+      await runSmoke({
+        baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs,
+        env: credentials.env,
+        extraArgs: armSmokeArgs[arm]
+      });
       const score = await scoreFromReport(outPath, { expectedCount: limit });
       (arm === "baseline" ? baselineScores : candidateScores).push(score);
       process.stderr.write(`  ${arm} score=${score.toFixed(6)}\n`);
@@ -187,6 +215,7 @@ export async function main(argv = process.argv.slice(2)) {
     limit,
     baseline_url: baselineUrl,
     candidate_url: candidateUrl,
+    arm_smoke_args: armSmokeArgs,
     rounds_completed: baselineScores.length,
     baseline: {
       scores: baselineScores, mean: mean(baselineScores), median: median(baselineScores), sd: stdDev(baselineScores)
