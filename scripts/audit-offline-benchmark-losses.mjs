@@ -52,7 +52,40 @@ function decisionStrings(row = {}) {
   ].flatMap((key) => primitiveStrings(decision?.[key], `retrieval_application.decisions[${index}].${key}`)));
 }
 
+function lineageSourceGroups(row = {}) {
+  const packet = row?.evaluation_decision_trace_packet || {};
+  const fields = Array.isArray(packet?.field_lineage_ledger?.fields)
+    ? packet.field_lineage_ledger.fields
+    : [];
+  if (!fields.length) return null;
+  const stageValues = (stage, field, stageName) => primitiveStrings(
+    stage?.values || [],
+    `field_lineage_ledger.${field}.${stageName}.values`
+  );
+  return {
+    resolver: fields.flatMap((entry) => [
+      ...stageValues(entry?.resolver_result, entry?.field, "resolver_result"),
+      ...stageValues(entry?.renderer_module, entry?.field, "renderer_module"),
+      ...primitiveStrings(
+        entry?.final_title_span?.matched_values || [],
+        `field_lineage_ledger.${text(entry?.field)}.final_title_span.matched_values`
+      )
+    ]),
+    evidence: fields.flatMap((entry) => [
+      ...stageValues(entry?.raw_provider, entry?.field, "raw_provider"),
+      ...stageValues(entry?.normalized, entry?.field, "normalized")
+    ]),
+    candidate: fields.flatMap((entry) => primitiveStrings(
+      entry?.retrieval_supported?.decisions || [],
+      `field_lineage_ledger.${text(entry?.field)}.retrieval_supported.decisions`,
+      (path) => /\.value$/.test(path)
+    ))
+  };
+}
+
 function sourceGroups(row = {}) {
+  const lineage = lineageSourceGroups(row);
+  if (lineage) return lineage;
   return {
     resolver: [
       ...primitiveStrings(row.resolved_fields, "resolved_fields"),

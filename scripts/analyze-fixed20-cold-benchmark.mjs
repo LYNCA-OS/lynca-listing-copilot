@@ -89,11 +89,16 @@ function classifyMissing(row, packet) {
   // are not raw Provider contract fields, so absence of a same-named Provider
   // key must never be reported as a Provider observation miss.
   if (DERIVED_SEM_FIELDS.has(row.field)) return "DERIVED_SEM_NOT_EMITTED";
-  const lineage = (Array.isArray(packet.field_lineage) ? packet.field_lineage : [])
+  const lineageRows = Array.isArray(packet?.field_lineage_ledger?.fields)
+    ? packet.field_lineage_ledger.fields
+    : Array.isArray(packet.field_lineage) ? packet.field_lineage : [];
+  const lineage = lineageRows
     .find((entry) => entry?.field === row.field);
   if (lineage) {
-    if (!Array.isArray(lineage.provider?.values) || lineage.provider.values.length === 0) return "PROVIDER_NOT_OBSERVED";
-    if (!Array.isArray(lineage.normalization?.values) || lineage.normalization.values.length === 0) return "NORMALIZATION_DROPPED";
+    const provider = lineage.raw_provider || lineage.provider;
+    const normalized = lineage.normalized || lineage.normalization;
+    if (!Array.isArray(provider?.values) || provider.values.length === 0) return "PROVIDER_NOT_OBSERVED";
+    if (!Array.isArray(normalized?.values) || normalized.values.length === 0) return "NORMALIZATION_DROPPED";
     return "CATALOG_NOT_RETRIEVED";
   }
   if (!hasAlias(packetFields(packet, "provider_observation_fields"), row.field)) return "PROVIDER_NOT_OBSERVED";

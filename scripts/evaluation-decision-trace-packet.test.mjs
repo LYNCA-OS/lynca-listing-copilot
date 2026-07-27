@@ -10,6 +10,7 @@ import {
   applyRecognitionBenchmarkProfile,
   recognitionBenchmarkProfileIds
 } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import { rehydrateFieldLineageReport } from "./rehydrate-field-lineage-ledger.mjs";
 
 const payload = {
   provider_options: {
@@ -46,6 +47,8 @@ const packet = buildEvaluationDecisionTracePacket({
 
 assert.equal(packet.provider_observation_fields.year, "2025");
 assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v2");
+assert.equal(packet.field_lineage_ledger.schema_version, "field-lineage-ledger-v1");
+assert.equal(packet.field_lineage_ledger.owner, "EVALUATION_FIELD_LINEAGE");
 assert.deepEqual(packet.field_lineage.find((row) => row.field === "year")?.provider.values, ["2025"]);
 assert.equal(packet.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, false);
 assert.equal(packet.retrieval.top_k[0].source_trust, "OFFICIAL");
@@ -61,7 +64,7 @@ const productionCandidateTrace = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025" },
   raw_observed_fields: { year: "2025" },
   resolved_fields: { year: "2025" },
-  rendered_fields: { fields: { year: "2025" } },
+  rendered_fields: { fields: {} },
   final_title: "2025 Topps Test Player",
   l2_candidate_debug: {
     selected_candidate_id: "catalog-1",
@@ -86,6 +89,10 @@ assert.equal(productionCandidateTrace.retrieval.candidate_count, 1);
 assert.equal(productionCandidateTrace.retrieval.top_k[0].selected, true);
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.retrieval.decisions[0].value, "2025");
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, true);
+assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.renderer_module.decision, "INCLUDE");
+assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.renderer_module.reason, "FINAL_TITLE_SPAN_CONFIRMS_INCLUDE");
+assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.candidate_selection.decision, "SELECTED");
+assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.candidate_application.decision, "SUPPORT");
 
 const nativeCoreCandidateTrace = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025" },
@@ -113,5 +120,20 @@ const nativeCoreCandidateTrace = buildEvaluationDecisionTracePacket({
 assert.equal(nativeCoreCandidateTrace.retrieval.candidate_count, 1);
 assert.equal(nativeCoreCandidateTrace.retrieval.top_k[0].selected, true);
 assert.equal(nativeCoreCandidateTrace.field_lineage.find((row) => row.field === "year")?.retrieval.decisions[0].value, "2025");
+
+const rehydrated = rehydrateFieldLineageReport({
+  results: [{
+    final_title: "2025 Topps Test Player",
+    resolved_fields: { year: "2025" },
+    l2_candidate_debug: productionCandidateTrace.retrieval.top_k.length ? {
+      selected_candidate_id: "catalog-1",
+      candidate_application_trace: [{ candidate_id: "catalog-1", selected: true }],
+      retrieval_application: { decisions: [{ candidate_id: "catalog-1", field: "year", candidate_value: "2025", decision: "SUPPORT" }] }
+    } : {}
+  }]
+});
+assert.equal(rehydrated.field_lineage_rehydration.provider_calls, 0);
+assert.equal(rehydrated.field_lineage_rehydration.title_results_changed, false);
+assert.equal(rehydrated.results[0].evaluation_decision_trace_packet.field_lineage_ledger.schema_version, "field-lineage-ledger-v1");
 
 console.log("evaluation decision trace packet tests passed");

@@ -64,9 +64,11 @@ function anyValueMatches(field, expected, values = []) {
 }
 
 function fieldLineage(result, field) {
-  return (Array.isArray(result?.evaluation_decision_trace_packet?.field_lineage)
-    ? result.evaluation_decision_trace_packet.field_lineage
-    : []).find((entry) => entry?.field === field) || null;
+  const packet = result?.evaluation_decision_trace_packet || {};
+  const rows = Array.isArray(packet?.field_lineage_ledger?.fields)
+    ? packet.field_lineage_ledger.fields
+    : Array.isArray(packet.field_lineage) ? packet.field_lineage : [];
+  return rows.find((entry) => entry?.field === field) || null;
 }
 
 function retrievalMatches(result, field, expected) {
@@ -131,8 +133,8 @@ export function analyzeSemStageLoss(report = {}) {
       if (!normalizeGoldenSemValue(field, value)) continue;
       const retrieval = retrievalMatches(result, field, value);
       const lineage = fieldLineage(result, field);
-      const lineageObservation = lineage?.normalization?.values || [];
-      const lineageResolved = lineage?.resolver?.values || [];
+      const lineageObservation = lineage?.normalized?.values || lineage?.normalization?.values || [];
+      const lineageResolved = lineage?.resolver_result?.values || lineage?.resolver?.values || [];
       const lineageFinal = lineage?.final_title_span?.matched_values || [];
       const classification = classifyField({
         expected: { field, value },

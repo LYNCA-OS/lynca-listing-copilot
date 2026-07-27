@@ -34,4 +34,28 @@ assert.equal(audit.structural.missing_by_disposition.RESOLVER_HELD_NOT_RENDERED,
 assert.equal(audit.structural.missing_by_disposition.EVIDENCE_HELD_NOT_RESOLVED, 4);
 assert.equal(audit.structural.missing_by_disposition.NEVER_HELD, 2);
 
+const canonicalLedgerAudit = auditRows([{
+  asset_id: "ledger-a",
+  reviewed_title: "2024 Topps Player 7/50",
+  final_title: "2024 Topps Player",
+  // Conflicting legacy diagnostics must not override the canonical ledger.
+  resolved_fields: { numerical_rarity: "50" },
+  evaluation_decision_trace_packet: {
+    field_lineage_ledger: {
+      schema_version: "field-lineage-ledger-v1",
+      fields: [{
+        field: "numerical_rarity",
+        raw_provider: { values: ["50"] },
+        normalized: { values: ["50"] },
+        retrieval_supported: { decisions: [] },
+        resolver_result: { values: [] },
+        renderer_module: { values: [] },
+        final_title_span: { matched_values: [] }
+      }]
+    }
+  }
+}]);
+assert.equal(canonicalLedgerAudit.serial.denominator_missing_by_disposition.EVIDENCE_HELD_NOT_RESOLVED, 1);
+assert.equal(canonicalLedgerAudit.serial.denominator_missing_by_disposition.RESOLVER_HELD_NOT_RENDERED || 0, 0);
+
 console.log("offline benchmark loss audit tests passed");
