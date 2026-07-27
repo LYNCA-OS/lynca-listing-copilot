@@ -22,6 +22,41 @@ never held (real recognition gap)    30
 The information is already inside the pipeline and is being discarded on the
 way to the title. That is the campaign.
 
+### Read this before touching any of it
+
+**"Recoverable" means the value is present, not that printing it is an
+improvement.** The first fix attempted from this audit regressed by 5.4 points
+and was reverted.
+
+`2b1b7f4` extended the grounding that already trusts a first-pass vision read
+for `surface_color` to cover `parallel_family` as well, on the reasoning that
+the finish family is a coarse visual property of the same kind as the colour
+sitting beside it. The audit said it would recover twenty-two tokens. The live
+paired eval said:
+
+```
+baseline  (production)  median 0.8414
+candidate (the fix)     median 0.7875
+delta -0.0539 against a 0.0123 threshold, REGRESSED, 3 of 3 rounds
+```
+
+The reasoning was wrong, and the gate was load-bearing. A colour is readable
+off the pixels; a finish family is not — a Chrome card shines like a Refractor
+whether or not it is one, so the first pass guesses, and printing the guess put
+a wrong word on more cards than it fixed the right word on. The twenty-two
+recovered tokens were bought with more than twenty-two wrong ones.
+
+Two consequences for everything below:
+
+1. **The audit counts tokens missing, not the tokens a fix would add wrongly.**
+   Every entry in the queue is a hypothesis about a fix, not a scored win. Do
+   not sum the buckets into an expected gain.
+2. **A live paired eval is mandatory before any of these is called an
+   improvement**, and REGRESSED is a likely outcome for at least some of them.
+   Revert on REGRESSED, record why, and move to the next bucket. Finding that a
+   gate is load-bearing is a real result — it is how we learned that
+   `ENABLE_RETRIEVAL_APPLICATION` must stay on, and now that this one must too.
+
 Reproduce the split any time with:
 
 ```bash
@@ -45,11 +80,12 @@ treated as a signal against.
    refused it" and printed `#/25` instead of `12/25`. Twenty-seven of sixty
    cards, twenty-three of which held the exactly correct numerator. Fixed in
    `78cf4d8`.
-3. **Parallel family.** A first-pass vision read at confidence ≥ 0.78 grounds
-   `surface_color` but not `parallel_family`, which can only be grounded by a
-   focused crop-and-read that mostly never runs. Same image, same observation,
-   `Orange` kept and `Refractor` dropped. Fixed in `2b1b7f4`, **live validation
-   in flight**.
+3. **Parallel family.** A first-pass vision read at confidence >= 0.78 grounds
+   `surface_color` but not `parallel_family`. The trace named the loss exactly
+   -- `RESOLVER_NOT_PRESERVED` -- and the diagnosis was correct. The *fix* was
+   not: `2b1b7f4` extended the colour's grounding to the family and regressed
+   by 5.4 points, and was reverted in `9237e0f`. The recipe below finds where a
+   value dies; it does not tell you that reviving it is safe.
 
 The recipe that found all three:
 
@@ -75,12 +111,15 @@ The recipe that found all three:
 Work in order. Each entry is: diagnose, fix, validate live, record. Do not
 batch fixes — one change per paired eval, or the verdict cannot be attributed.
 
-### 0. Finish validating the parallel-family fix
+### 0. Done: parallel family, REGRESSED and reverted
 
-A paired eval is running (`/tmp/parallel-ab.log`, label `parallel-family`,
-production as baseline against preview `hx151ix2k`). Wait for the verdict and
-record it. If NOT_PROVEN, say so and leave the commit unvalidated rather than
-re-running for a better number.
+Verdict recorded in `artifacts/smoke/paired-eval/parallel-family.json`, revert
+in `9237e0f`. The finish family stays gated behind a focused crop-and-read.
+
+The open question this leaves is worth more than the fix was: the family is
+genuinely present in the reviewed titles, so it has to arrive some other way --
+from the catalog rather than from a vision guess. Which is item 7, where the
+catalog currently returns nothing at all.
 
 ### 1. The rest of RESOLVER_HELD_NOT_RENDERED (49)
 
