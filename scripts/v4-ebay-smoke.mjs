@@ -196,10 +196,21 @@ async function readDataset(path) {
   return JSON.parse(await readFile(resolve(path), "utf8"));
 }
 
-async function readSealedLabels(path) {
+export async function readSealedLabels(path, { required = false } = {}) {
   const byCaseId = new Map();
-  if (!path) return byCaseId;
-  const text = await readFile(resolve(path), "utf8").catch(() => "");
+  if (!path) {
+    if (required) throw new Error("sealed_labels_required_but_path_missing");
+    return byCaseId;
+  }
+  let text = "";
+  try {
+    text = await readFile(resolve(path), "utf8");
+  } catch (error) {
+    if (required) {
+      throw new Error(`sealed_labels_unreadable:${resolve(path)}:${cleanText(error?.code || error?.message || error)}`);
+    }
+    return byCaseId;
+  }
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
@@ -210,6 +221,7 @@ async function readSealedLabels(path) {
       // Ignore bad sealed-label rows; smoke should still run.
     }
   }
+  if (required && byCaseId.size === 0) throw new Error(`sealed_labels_empty:${resolve(path)}`);
   return byCaseId;
 }
 
@@ -1781,6 +1793,9 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     l2_route: summary.route || row.l2_route || null,
     recognition_session_id: row.recognition_session_id || summary.recognition_session_id || null,
     job_status: summary.job_status || row.job_status || null,
+    job_created_at: job.created_at || row.job_created_at || null,
+    job_started_at: job.started_at || row.job_started_at || null,
+    job_completed_at: job.completed_at || row.job_completed_at || null,
     attempt_count: summary.attempt_count ?? row.attempt_count ?? null,
     retry_attempt_history: summary.retry_attempt_history?.length
       ? summary.retry_attempt_history
@@ -4707,6 +4722,7 @@ export function perCardTsv(results = []) {
 export async function runV4EbaySmoke({
   datasetPath,
   sealedLabelsPath,
+  sealedLabelsRequired = false,
   baseUrl,
   username,
   password,
@@ -4783,6 +4799,19 @@ export async function runV4EbaySmoke({
   });
   const selectedItems = loadDatasetItems(dataset).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!selectedItems.length) throw new Error("dataset slice has no items");
+  // Accuracy labels are an evaluation input, not a best-effort report add-on.
+  // Validate them before uploads, queue writes, or paid Provider calls.
+  const sealedLabels = await readSealedLabels(sealedLabelsPath, { required: sealedLabelsRequired });
+  if (sealedLabelsRequired) {
+    const missingLabelKeys = selectedItems.flatMap((item, localIndex) => (
+      sealedLabelForItem(item, offset + localIndex, sealedLabels)
+        ? []
+        : [item.sealed_eval_label_ref?.key || candidateId(item, offset + localIndex)]
+    ));
+    if (missingLabelKeys.length) {
+      throw new Error(`sealed_labels_incomplete:${missingLabelKeys.slice(0, 5).join(",")}:missing=${missingLabelKeys.length}`);
+    }
+  }
   const items = await materializeSmokeSourceImages(selectedItems, {
     supabaseUrl: sourceStorageUrl,
     serviceRoleKey: sourceStorageServiceRoleKey,
@@ -5041,7 +5070,6 @@ export async function runV4EbaySmoke({
     };
   recognitionResults = diagnosticHydration.results;
   const predictionsSha256 = predictionHash(recognitionResults);
-  const sealedLabels = await readSealedLabels(sealedLabelsPath);
   const results = attachPostRecognitionScoring(recognitionResults, items, sealedLabels, offset);
   const allReviewedTitleGroundTruth = results.length > 0
     && results.every((row) => row.reference_title_is_reviewed_ground_truth === true);
@@ -5207,6 +5235,7 @@ export async function main(argv = process.argv, env = process.env) {
   const report = await runV4EbaySmoke({
     datasetPath: argValue(argv, "--dataset", env.V4_EBAY_SMOKE_DATASET || "data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json"),
     sealedLabelsPath: argValue(argv, "--sealed-labels", env.V4_EBAY_SMOKE_SEALED_LABELS || "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl"),
+    sealedLabelsRequired: argv.some((arg) => arg === "--sealed-labels" || arg.startsWith("--sealed-labels=")),
     baseUrl: cleanText(argValue(argv, "--base-url", env.V4_EBAY_SMOKE_BASE_URL || env.API_BASE_URL || "https://listing.lyncafei.team")).replace(/\/+$/, ""),
     username: cleanText(argValue(argv, "--username", env.METAVERSE_USERNAME || "")),
     password: cleanText(argValue(argv, "--password", env.METAVERSE_PASSWORD || "")),
