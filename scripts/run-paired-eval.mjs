@@ -24,10 +24,41 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { evaluateChange, formatDecision, mean, median, stdDev } from "./eval-decision.mjs";
+import { login } from "./v4-ebay-smoke.mjs";
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
   return index >= 0 ? (argv[index + 1] ?? fallback) : fallback;
+}
+
+function protectionHeaders(env = process.env) {
+  const secret = String(env.VERCEL_AUTOMATION_BYPASS_SECRET || "").trim();
+  return secret ? { "x-vercel-protection-bypass": secret } : {};
+}
+
+export async function preflightArm({
+  baseUrl,
+  username = process.env.METAVERSE_USERNAME,
+  password = process.env.METAVERSE_PASSWORD,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  loginImpl = login,
+  timeoutMs = 15_000
+}) {
+  const timedFetch = (url, init = {}) => fetchImpl(url, {
+    ...init,
+    signal: init.signal || AbortSignal.timeout(timeoutMs)
+  });
+  const cookie = await loginImpl({ baseUrl, username, password, fetchImpl: timedFetch });
+  const probeId = `paired-preflight-${Date.now()}`;
+  const response = await timedFetch(`${baseUrl}/api/v4/listing-job-status?job_id=${probeId}`, {
+    headers: { cookie, ...protectionHeaders(env) }
+  });
+  const body = await response.text();
+  if (response.status === 401 || response.status === 403 || response.status >= 500) {
+    throw new Error(`paired preflight failed HTTP ${response.status}: ${body.slice(0, 200)}`);
+  }
+  return { status: response.status };
 }
 
 function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs }) {
@@ -109,6 +140,8 @@ export async function main(argv = process.argv.slice(2)) {
       const baseUrl = arm === "baseline" ? baselineUrl : candidateUrl;
       const outPath = resolve(outDir, `${label}-${arm}-r${round}.json`);
       process.stderr.write(`round ${round}/${rounds} ${arm}\n`);
+      await preflightArm({ baseUrl });
+      process.stderr.write("  preflight=pass\n");
       await runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs });
       const score = await scoreFromReport(outPath, { expectedCount: limit });
       (arm === "baseline" ? baselineScores : candidateScores).push(score);

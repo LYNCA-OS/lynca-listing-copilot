@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { scoreFromReportData } from "./run-paired-eval.mjs";
+import { preflightArm, scoreFromReportData } from "./run-paired-eval.mjs";
 
 function row(overrides = {}) {
   return {
@@ -38,6 +38,22 @@ assert.throws(
 assert.throws(
   () => scoreFromReportData({ results: [] }, { expectedCount: 1 }),
   /expected 1 rows, received 0/
+);
+
+const passingPreflight = await preflightArm({
+  baseUrl: "https://candidate.example",
+  loginImpl: async () => "listing_session=test",
+  fetchImpl: async () => new Response(JSON.stringify({ message: "not found" }), { status: 404 })
+});
+assert.equal(passingPreflight.status, 404);
+
+await assert.rejects(
+  () => preflightArm({
+    baseUrl: "https://candidate.example",
+    loginImpl: async () => "listing_session=test",
+    fetchImpl: async () => new Response(JSON.stringify({ code: "AUTH_UNAVAILABLE" }), { status: 503 })
+  }),
+  /paired preflight failed HTTP 503/
 );
 
 console.log("paired eval round validity tests passed");
