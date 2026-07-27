@@ -313,6 +313,27 @@ assert.equal(cachedResult.resolution_trace[0].phase, "identity_result_cache");
 assert.equal(cachedResult.resolution_trace.length, 1);
 assert.match(cachedResult.final_title, /2025 Topps Chrome Cooper Flagg/);
 
+const suppressedSerialReplay = identityResultCacheRecordToListingResult({
+  record: {
+    ...built.row,
+    final_title: "2021 Topps Chrome Auto Red Refractor #/5 PSA 9",
+    resolved_fields: {
+      ...built.row.resolved_fields,
+      serial_number: "5/5",
+      print_run_number: "5/5",
+      print_run_numerator: "5",
+      print_run_denominator: "5"
+    }
+  },
+  payload
+});
+const preservedSerialReplay = __listingCopilotTitleTestHooks.finalizeListingResultForResponse(
+  suppressedSerialReplay,
+  payload
+);
+assert.equal(preservedSerialReplay.final_title, "2021 Topps Chrome Auto Red Refractor #/5 PSA 9");
+assert.equal(preservedSerialReplay.resolved.print_run_number, "5/5");
+
 const fetchCalls = [];
 globalThis.fetch = async (url, options = {}) => {
   const requestUrl = new URL(String(url));
