@@ -102,21 +102,59 @@ Both numbers are reported together from here on. A change that lifts familiar
 accuracy while leaving unseen-product accuracy flat is not progress toward the
 ambition.
 
-## Plan
+## Plan, reordered after two failures
 
-1. **Build the unseen-product benchmark.** Draw cards from the 139 product
-   lines the catalog does not know, get real images, seal ground-truth titles,
-   and measure the current system. This is the baseline the whole plan is
-   judged against.
-2. **Diagnose why catalog retrieval returns nothing**, including on products we
-   *do* hold. A mirror that is not queried is worth nothing, and this is
-   already broken independently of freshness.
-3. **Turn the harvesters into scheduled delta syncs** with a freshness metric
-   per manufacturer.
-4. **Build open-world resolution with write-back**, measured by whether the
-   second card of an unseen product resolves from the catalog.
-5. **Re-measure both scoreboards** after each step.
+The first ordering put "make the catalog speak earlier and louder" first and
+"make the catalog complete" last. Two live paired evals proved that backwards.
 
-Steps 1 and 2 are independent of the rest and come first: step 1 because
-nothing is falsifiable without it, step 2 because a retrieval lane returning
-zero makes every layer above it moot.
+**Attempt 1 — let a vision read state the finish family** (`2b1b7f4`). The
+trace correctly showed `parallel_family` dying at the resolver. Extending the
+colour's grounding to cover it regressed 5.4 points on familiar products and
+was reverted. A Chrome card shines like a Refractor whether it is one or not.
+
+**Attempt 2 — consult the catalog before the model observes** (`88d807ad`).
+Keyed on (player, card_number) the harvested checklist resolves to a median of
+one product line, so a shortlist looked free. On the unseen benchmark it
+regressed 11.75 points, 0.4939 to 0.3764, and was reverted.
+
+The reason is the whole lesson. That median of one was measured over the 2.26M
+cards **in the harvest files on disk**. Retrieval queries the **database**, and
+the database holds zero rows for Phoenix — the product fifteen of the seventeen
+benchmark cards come from. So the earlier lookup took a correctly-read player
+and card number to an index that does not contain the answer, returned the
+nearest wrong product, and anchored the model to it. Worse than a free guess,
+because now the guess had false confirmation.
+
+> **Giving an incomplete index more authority amplifies its errors. Completeness
+> comes first, always.**
+
+So:
+
+1. **Make the catalog complete for a bounded slice, and re-measure.** Ingest
+   the products the unseen benchmark draws from and run the same seventeen
+   cards. This tests the load-bearing claim of everything below -- that an
+   unseen product becomes recognisable once the checklist is present -- at a
+   size that can be reverted in one command.
+2. **Let a high-confidence catalog row state identity without the model's
+   endorsement.** Today 2,626 application decisions are rejected as
+   `not_in_provider_prompt_safe_candidate_ids` and `product` is blocked on
+   60 of 60 cards. Only worth doing once (1) shows the catalog is right.
+3. **Move retrieval before observation** -- the change just reverted, retried
+   against a complete index.
+4. **Feed the constraint engine.** `productSchemas` is `[]` at every call site,
+   so `parallelSerialTaxonomyCompatibility` and `allowedCardTypes` evaluate over
+   an empty set and constrain nothing. It should have rejected
+   `2021 Panini Contours`, a year and set combination that does not exist.
+5. **Scheduled delta sync per manufacturer**, with a freshness metric. This is
+   what makes "day one" true rather than "true for what we happened to import".
+6. **Open-world fallback with write-back**, off the critical path: on a miss,
+   investigate, answer, and write the answer into the catalog so the next card
+   of that product is a hit.
+
+### Coverage priority is currently misaligned with demand
+
+The catalog work so far went to Panini because its API was the easiest to
+harvest. Our own trade history says the volume is elsewhere: Topps Chrome
+(3,275 listings), Bowman Chrome (1,115), MTG Final Fantasy (854), Pokemon
+(454), against Panini (425). Sync order should follow that, not harvest
+convenience.
