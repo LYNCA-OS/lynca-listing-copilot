@@ -857,6 +857,38 @@ assert.equal(transientHeartbeatRun.heartbeat.retry_count, 1);
 assert.equal(transientHeartbeatRun.heartbeat.recovered_after_retry_count, 1);
 assert.equal(transientHeartbeatRun.heartbeat.failure_count, 0, "one transient RPC failure must not replay the whole card");
 
+let degradedHeartbeatCalls = 0;
+let resolveDegradedPulse;
+const degradedPulse = new Promise((resolve) => { resolveDegradedPulse = resolve; });
+const degradedHeartbeatRun = await runWithV4JobLeaseHeartbeat({
+  job: {
+    id: "v4job-degraded-heartbeat",
+    lease_owner: "worker-degraded",
+    lease_expires_at: new Date(Date.now() + 60_000).toISOString()
+  },
+  leaseSeconds: 60,
+  intervalMs: 5,
+  heartbeatMaxAttempts: 2,
+  heartbeatRetryBaseMs: 1,
+  heartbeat: async () => {
+    degradedHeartbeatCalls += 1;
+    if (degradedHeartbeatCalls >= 2) resolveDegradedPulse();
+    return { extended: false, skipped: false, error: "temporary rpc outage" };
+  },
+  task: async () => {
+    await Promise.race([
+      degradedPulse,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("degraded_heartbeat_test_timeout")), 250))
+    ]);
+    return "completed_under_live_lease";
+  }
+});
+assert.equal(degradedHeartbeatRun.value, "completed_under_live_lease");
+assert.equal(degradedHeartbeatRun.heartbeat.degraded_pulse_count, 1);
+assert.equal(degradedHeartbeatRun.heartbeat.rpc_failure_count, 1);
+assert.equal(degradedHeartbeatRun.heartbeat.failure_count, 0, "a live original lease must absorb a transient heartbeat outage");
+assert.equal(degradedHeartbeatRun.heartbeat.aborted, false);
+
 assert.equal(v4JobFailureCode({
   statusCode: 200,
   body: { ok: false, message: "Provider response schema validation failed: unknown field" }

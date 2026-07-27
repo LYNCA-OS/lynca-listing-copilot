@@ -471,6 +471,9 @@ export async function runWithV4JobLeaseHeartbeat({
     recovered_after_retry_count: 0,
     success_count: 0,
     failure_count: 0,
+    rpc_failure_count: 0,
+    degraded_pulse_count: 0,
+    recovered_from_degraded_count: 0,
     lost_ownership_count: 0,
     last_error: null,
     aborted: false,
@@ -484,6 +487,10 @@ export async function runWithV4JobLeaseHeartbeat({
   let stopped = false;
   let timer = null;
   let inFlight = Promise.resolve();
+  let leaseDeadlineMs = Number.isFinite(Date.parse(String(job.lease_expires_at || "")))
+    ? Date.parse(String(job.lease_expires_at))
+    : null;
+  let degraded = false;
   const abortTask = (reason, cause = null) => {
     if (taskAbort.signal.aborted) return;
     stopped = true;
@@ -510,7 +517,8 @@ export async function runWithV4JobLeaseHeartbeat({
         result = await heartbeat({
           jobId: job.id,
           workerId: job.lease_owner,
-          leaseSeconds
+          leaseSeconds,
+          signal: taskAbort.signal
         });
       } catch (error) {
         lastError = error;
@@ -518,7 +526,10 @@ export async function runWithV4JobLeaseHeartbeat({
       if (result?.extended) {
         stats.success_count += 1;
         if (attempt > 1) stats.recovered_after_retry_count += 1;
-        return;
+        if (degraded) stats.recovered_from_degraded_count += 1;
+        degraded = false;
+        leaseDeadlineMs = Date.now() + (Math.max(30, Number(leaseSeconds) || 300) * 1000);
+        return { retrySoon: false };
       }
       // A clean negative response proves another worker owns the row. Retrying
       // it would only extend the stale invocation, so fence immediately.
@@ -526,7 +537,7 @@ export async function runWithV4JobLeaseHeartbeat({
         stats.lost_ownership_count += 1;
         stats.last_error = "lease_ownership_lost";
         abortTask("lease_ownership_lost");
-        return;
+        return { retrySoon: false };
       }
       lastError = lastError || result?.error || (result?.skipped ? "lease_renewal_skipped" : "lease_renewal_failed");
       if (attempt < maxAttempts) {
@@ -534,11 +545,23 @@ export async function runWithV4JobLeaseHeartbeat({
         await new Promise((resolve) => setTimeout(resolve, retryBaseMs * (2 ** (attempt - 1))));
       }
     }
-    stats.failure_count += 1;
+    stats.rpc_failure_count += 1;
     stats.last_error = safeError(lastError);
+    // A transport failure does not prove loss of ownership. If the lease row
+    // returned by the claim is still safely live, keep the current attempt and
+    // retry the heartbeat shortly. Aborting here used to replay an otherwise
+    // healthy card up to four times during brief PostgREST/RPC stalls.
+    const leaseSafetyMs = Math.max(5_000, Math.min(30_000, Math.floor((Number(leaseSeconds) || 300) * 1000 / 8)));
+    if (leaseDeadlineMs !== null && leaseDeadlineMs - Date.now() > leaseSafetyMs) {
+      stats.degraded_pulse_count += 1;
+      degraded = true;
+      return { retrySoon: true };
+    }
+    stats.failure_count += 1;
     abortTask("lease_renewal_failed", lastError instanceof Error ? lastError : null);
+    return { retrySoon: false };
   };
-  const schedule = () => {
+  const schedule = (delayMs = intervalMs) => {
     if (stopped) return;
     timer = setTimeout(() => {
       inFlight = pulse()
@@ -546,9 +569,10 @@ export async function runWithV4JobLeaseHeartbeat({
           stats.failure_count += 1;
           stats.last_error = safeError(error);
           abortTask("lease_renewal_failed", error);
+          return { retrySoon: false };
         })
-        .finally(schedule);
-    }, intervalMs);
+        .then((outcome) => schedule(outcome?.retrySoon ? Math.min(5_000, intervalMs) : intervalMs));
+    }, delayMs);
     timer.unref?.();
   };
   schedule();

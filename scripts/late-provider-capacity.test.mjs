@@ -93,4 +93,13 @@ await assert.rejects(() => waitForV4LateProviderCapacity({
   acquire: async () => ({ acquired: false, reason: "job_lease_not_live" })
 }), (error) => error.code === "V4_PROVIDER_CAPACITY_ACQUIRE_FAILED" && error.retryable === true);
 
+const cancelled = new AbortController();
+cancelled.abort(Object.assign(new Error("job_cancelled"), { code: "V4_JOB_EXECUTION_TIMEOUT" }));
+await assert.rejects(() => waitForV4LateProviderCapacity({
+  jobId: "job-cancelled",
+  workerId: "worker-cancelled",
+  signal: cancelled.signal,
+  acquire: async () => ({ acquired: false, reason: "provider_capacity_unavailable" })
+}), (error) => error.code === "V4_JOB_EXECUTION_TIMEOUT");
+
 console.log("late provider capacity tests passed");

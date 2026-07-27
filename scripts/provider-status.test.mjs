@@ -158,6 +158,7 @@ assert.equal(ocrReadiness.details.backend, "unknown");
 assert.equal(ocrReadiness.details.auth_mode, "unknown");
 assert.equal(ocrReadiness.details.paddle_loaded, null);
 assert.equal(response.body.execution_control.distributed_provider_capacity_enabled, true);
+assert.equal(response.body.execution_control.late_provider_lease_binding_enabled, false);
 assert.equal(response.body.execution_control.provider_done_capacity_handoff_enabled, true);
 assert.equal(response.body.execution_control.global_fair_drain_enabled, true);
 assert.equal(response.body.execution_control.queue_kick_dedup_ms, 1200);

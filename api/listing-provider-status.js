@@ -24,6 +24,7 @@ import {
   v4QueueGlobalDrainEnabled,
   v4QueueKickDedupMs
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
+import { v4LateProviderLeaseBindingEnabled } from "../lib/listing/v4/jobs/late-provider-capacity.mjs";
 import { listingStageCapacityPlan } from "../lib/listing/v4/orchestration/stage-capacity.mjs";
 import { v4DeploymentInfo } from "../lib/listing/v4/prewarm.mjs";
 
@@ -414,6 +415,10 @@ export default async function handler(req, res) {
         configured: paddleOcr.configured === true && Boolean(paddleOcr.token)
       },
       distributed_provider_capacity_enabled: v4ProviderCapacityControlEnabled(process.env),
+      late_provider_lease_binding_enabled: v4LateProviderLeaseBindingEnabled({
+        tenantId: context.tenantId,
+        env: process.env
+      }),
       provider_done_capacity_handoff_enabled: v4ProviderDoneCapacityHandoffEnabled(process.env),
       global_fair_drain_enabled: v4QueueGlobalDrainEnabled(process.env),
       queue_kick_dedup_ms: v4QueueKickDedupMs(process.env),

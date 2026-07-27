@@ -56,6 +56,36 @@ function protectionHeaders(env = process.env) {
   return secret ? { "x-vercel-protection-bypass": secret } : {};
 }
 
+function stableExecutionControl(control = {}) {
+  return {
+    recognition_worker: control.recognition_worker || null,
+    paddle_ocr_verifier: control.paddle_ocr_verifier || null,
+    distributed_provider_capacity_enabled: control.distributed_provider_capacity_enabled === true,
+    late_provider_lease_binding_enabled: control.late_provider_lease_binding_enabled === true,
+    provider_done_capacity_handoff_enabled: control.provider_done_capacity_handoff_enabled === true,
+    global_fair_drain_enabled: control.global_fair_drain_enabled === true,
+    provider_key_pool_size: Number(control.provider_key_pool_size || 0),
+    per_key_stable_concurrency: Number(control.per_key_stable_concurrency || 0),
+    global_provider_concurrency: Number(control.global_provider_concurrency || 0),
+    queue_submission_concurrency: Number(control.queue_submission_concurrency || 0),
+    stage_capacity: control.stage_capacity || null
+  };
+}
+
+export function assertComparableExecutionControls(baseline = {}, candidate = {}) {
+  const baselineStable = stableExecutionControl(baseline);
+  const candidateStable = stableExecutionControl(candidate);
+  const baselineJson = JSON.stringify(baselineStable);
+  const candidateJson = JSON.stringify(candidateStable);
+  if (baselineJson !== candidateJson) {
+    throw new Error(
+      "paired preflight execution controls differ; refusing paid run: "
+      + `baseline=${baselineJson} candidate=${candidateJson}`
+    );
+  }
+  return baselineStable;
+}
+
 export async function preflightArm({
   baseUrl,
   username = "",
@@ -87,7 +117,28 @@ export async function preflightArm({
   if (response.status === 401 || response.status === 403 || response.status >= 500) {
     throw new Error(`paired preflight failed HTTP ${response.status}: ${body.slice(0, 200)}`);
   }
-  return { status: response.status, cookie };
+  const providerStatus = await timedFetch(`${baseUrl}/api/listing-provider-status`, {
+    headers: { cookie, ...protectionHeaders(credentials.env) }
+  });
+  const providerBody = await providerStatus.text();
+  if (!providerStatus.ok) {
+    throw new Error(`paired execution-control preflight failed HTTP ${providerStatus.status}: ${providerBody.slice(0, 200)}`);
+  }
+  let providerPayload = null;
+  try {
+    providerPayload = JSON.parse(providerBody);
+  } catch {
+    throw new Error("paired execution-control preflight returned invalid JSON");
+  }
+  if (!providerPayload?.execution_control) {
+    throw new Error("paired execution-control preflight requires an administrator-visible control snapshot");
+  }
+  return {
+    status: response.status,
+    cookie,
+    executionControl: stableExecutionControl(providerPayload.execution_control),
+    deployment: providerPayload.deployment || null
+  };
 }
 
 function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs, env, extraArgs = [] }) {
@@ -173,16 +224,26 @@ export async function main(argv = process.argv.slice(2)) {
   };
 
   for (let round = 1; round <= rounds; round += 1) {
+    const roundPreflights = {};
     for (const arm of ["baseline", "candidate"]) {
       const baseUrl = arm === "baseline" ? baselineUrl : candidateUrl;
-      const outPath = resolve(outDir, `${label}-${arm}-r${round}.json`);
-      process.stderr.write(`round ${round}/${rounds} ${arm}\n`);
-      const preflight = await preflightArm({
+      roundPreflights[arm] = await preflightArm({
         baseUrl,
         username: credentials.username,
         password: credentials.password,
         env: credentials.env
       });
+    }
+    assertComparableExecutionControls(
+      roundPreflights.baseline.executionControl,
+      roundPreflights.candidate.executionControl
+    );
+    process.stderr.write(`round ${round}/${rounds} controls=equivalent\n`);
+    for (const arm of ["baseline", "candidate"]) {
+      const baseUrl = arm === "baseline" ? baselineUrl : candidateUrl;
+      const outPath = resolve(outDir, `${label}-${arm}-r${round}.json`);
+      process.stderr.write(`round ${round}/${rounds} ${arm}\n`);
+      const preflight = roundPreflights[arm];
       process.stderr.write("  preflight=pass\n");
       await runSmoke({
         baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs,
