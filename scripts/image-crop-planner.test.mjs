@@ -102,7 +102,7 @@ assert.deepEqual(riskPlans.map((plan) => plan.source_region), [
   "checklist_code"
 ]);
 assert.equal(riskPlans[0].reason, "high_risk_field");
-assert.equal(riskPlans[0].crop_metadata.crop_id, "asset-1__image-front__serial_number__field-crop-v1");
+assert.equal(riskPlans[0].crop_metadata.crop_id, "asset-1__image-front__serial_number__field-crop-v2");
 assert.equal(riskPlans[0].crop_metadata.asset_id, "asset-1");
 assert.equal(riskPlans[0].crop_metadata.source_object_path, "listing-assets/source.jpg");
 assert.equal(riskPlans[0].crop_metadata.source_side, "front");
@@ -110,6 +110,11 @@ assert.equal(riskPlans[0].crop_metadata.source_width, 1400);
 assert.equal(riskPlans[0].crop_metadata.source_height, 2000);
 assert.equal(riskPlans[0].crop_metadata.crop_role, "serial_crop");
 assert.deepEqual(Object.keys(riskPlans[0].crop_metadata.pixel_bounds), ["left", "top", "width", "height"]);
+assert.ok(riskPlans[0].crop_region.y <= 0.12, "serial scan must include the common upper numbering band");
+assert.ok(
+  riskPlans[0].crop_region.y + riskPlans[0].crop_region.height >= 0.85,
+  "serial scan must retain the lower numbering band"
+);
 
 const requestedPlans = planTargetedCrops({
   imageId: "image-front",

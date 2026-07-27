@@ -225,6 +225,11 @@ const slabJobs = buildPreingestionWorkerJobs({
   }
 });
 assert.equal(slabJobs.filter((job) => job.payload.crop.role === "grade_label_crop").length, 1);
+assert.equal(
+  slabJobs.find((job) => job.payload.crop.role === "serial_crop")?.payload.crop.crop_metadata.source_side,
+  "back",
+  "slab serial OCR must inspect the card reverse without adding a second serial job"
+);
 const detailJobs = buildPreingestionWorkerJobs({ bundle, enableOcrDetail: true });
 assert.ok(detailJobs.some((job) => job.payload.crop.role === "year_product_crop" && job.priority === 30));
 assert.ok(detailJobs.some((job) => job.payload.crop.role === "subject_crop" && job.priority === 35));
