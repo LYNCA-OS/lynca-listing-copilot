@@ -400,6 +400,65 @@ complete post-fix gate:
 Therefore item 6 remains open and the sample is not expanded to 20. Production,
 production traffic, and the frozen accuracy policy remain unchanged.
 
+## 13. Serial resolver-held remainder: multi-subject grammar
+
+The latest cold-20 audit reduced the old serial bucket to five missing
+denominators. Three were labelled `RESOLVER_HELD_NOT_RENDERED`; they do not
+share a safe global Serial gate:
+
+- D'Angelo Russell and Tyran Stokes were routed to
+  `MULTI_SUBJECT_REVIEW`. This is still one physical card, but the
+  multi-subject title grammar had no Numerical Rarity slot.
+- Walker Jenkins was routed as a real `multi_card` lot. Its `01/25` observation
+  also disagreed with the reviewed `11/25`, so applying that serial to the lot
+  would be unsafe.
+
+Commit `1b414e5` adds Numerical Rarity only to the single-card multi-subject
+grammar. True lots remain unchanged. On the frozen 20-card renderer replay it
+changed exactly the two single-card rows, changed zero lot rows, and produced
+zero row-level regressions relative to the immediately preceding renderer
+replay:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Policy-fair token recall | 0.793025 | 0.803126 |
+| Absolute delta | — | +0.010101 |
+| Changed rows | — | 2 |
+| Regressed rows | — | 0 |
+
+The required live paired evaluation used Preview deployment
+`dpl_J9XR9Zcv9m9UaJn2ge9goW4qcf99`. Production completed 20/20 with score
+`0.843786`; Candidate produced only 13/20 legal cold results. Seven rows were
+invalid, including three `lease_expired_after_max_attempts`, one
+`v4_job_execution_timeout_100000ms`, and one
+`late_provider_capacity_not_acquired`. The runner correctly refused to score
+the incomplete arm.
+
+Verdict: **NOT_PROVEN**. The structured record is
+`artifacts/smoke/paired-eval/serial-multisubject.json`. Per protocol, the same
+paired run was not repeated in search of a cleaner result. Production was not
+changed, and the commit remains explicitly unvalidated rather than being
+called an accuracy improvement.
+
+## 14. Evidence-held remainder: duplicate of the reverted finish-family path
+
+The latest cold-20 audit has two
+`EVIDENCE_HELD_NOT_RESOLVED` structural rows: Dalton Rushing and Lamine Yamal,
+both missing `Refractor`. They are not a new recoverable cause.
+
+For Dalton Rushing the Provider observed `Orange`; for Lamine Yamal it observed
+`Orange Lava` plus `Orange`. In both rows `Refractor` appeared only after
+normalization or on an unselected Catalog candidate. Identity Resolver
+therefore retained the directly observed color/exact wording and dropped the
+unsupported family.
+
+This is exactly the path changed by `2b1b7f4`, which regressed the live paired
+score by 5.4 points and was reverted in `9237e0f`. Reopening the same gate under
+a different bucket name would repeat the known error. Verdict: **NO-GO, no
+code change**. A focused crop/direct read or a correctly selected trusted
+Catalog identity may establish `Refractor` in the future; normalized presence
+alone may not.
+
 ## Verification
 
 `npm test` completed successfully after all campaign changes. The dedicated
