@@ -351,6 +351,55 @@ idle-gap reports no longer silently lose their classification inputs.
 | 8 Retrieval controls | Completed |
 | 9 Catalog cache trace | Completed |
 
+## 12. Warm replay terminal-snapshot audit
+
+The first real three-card Exact Replay run reached the intended fast path:
+all three replay jobs reported an identity-cache hit, skipped the Provider,
+matched the pipeline fingerprint, and changed Provider calls from `3` to `0`.
+The gate still failed because all three replay titles differed from their cold
+writer-visible L2 titles.
+
+The failure was not an accuracy-model regression. The cache write occurred
+before the final deterministic presentation boundary, while the cold API
+response was finalized afterwards. The stored row could therefore omit fields
+that the writer had already received. A second independent defect then ran the
+Resolver/Renderer again on a terminal cache hit; this could turn a deliberately
+suppressed serial such as `#/5` back into `5/5` even when cached fields were
+otherwise identical.
+
+The repair is split across two ownership boundaries:
+
+- cache writes now persist the terminal deterministic L2 snapshot and prefer
+  terminal `resolved_fields` over a stale provider `resolved` object;
+- `TERMINAL_L2_IDEMPOTENT` cache hits are returned byte-for-byte without a
+  second Resolver/Renderer pass.
+
+The cache contract is now
+`identity-result-cache-v5-terminal-l2-snapshot`, which changes the pipeline
+fingerprint and prevents older pre-terminal rows from being accepted as exact
+replays. Cache authority remains unchanged: a replay is still non-training,
+non-catalog-promotion, and non-identity-truth data. Writer-final and approved
+memory authority were not reordered.
+
+The same audit exposed two evaluation debts. Cache-write suppression in the
+replay phase no longer overwrites cache-read diagnostics, and warm-pair
+identity comparison now falls back to the stable source asset ID when a failed
+cold write has no image-generation hash. A proposed direct-mode shortcut was
+removed after the API correctly rejected it with
+`V4_DURABLE_ENQUEUE_REQUIRED`; durable Queue remains a hard contract.
+
+Live Preview attempts proved the operational halves separately but not the
+complete post-fix gate:
+
+- Queue replay proved `3 -> 0` Provider calls on three cards;
+- the post-fix terminal snapshot and no-rerender behavior pass dedicated unit
+  and benchmark-contract tests;
+- an isolated Preview pump did not complete its preflight, so no post-fix
+  three-card cloud verdict was produced.
+
+Therefore item 6 remains open and the sample is not expanded to 20. Production,
+production traffic, and the frozen accuracy policy remain unchanged.
+
 ## Verification
 
 `npm test` completed successfully after all campaign changes. The dedicated
