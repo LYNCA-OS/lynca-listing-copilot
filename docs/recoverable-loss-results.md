@@ -505,6 +505,29 @@ This is an engineering containment result, not an accuracy verdict and not a
 tail and 8--12 minute retry amplification did not recur in the bounded canary.
 Production and the frozen accuracy policy remain unchanged.
 
+## 16. Provider-not-observed reconciliation
+
+The earlier 20-card report counted 15 fields as `PROVIDER_NOT_OBSERVED`. That
+number is stale after the trace and evidence repairs. The latest frozen audit
+has only two such outcomes out of 122 confirmed SEM fields; `CATALOG_NOT_RETRIEVED`
+is now the larger evidence/retrieval cause with five fields.
+
+Direct inspection of both remaining image pairs shows why
+`PROVIDER_NOT_OBSERVED` is a sensor outcome, not automatically a Provider root
+cause:
+
+- the Star Wars Duel of the Fates card shows `DF-3` but no `15/50` on either
+  side; the reviewed serial is not visible in the supplied images;
+- the Shohei Ohtani card shows the subject, autograph and `24/25`, but neither
+  side prints `Image Variation`; that release variant requires identity/catalog
+  comparison rather than OCR.
+
+Therefore no Prompt or OCR patch is justified for this remainder. Treating
+these two rows as visible-text misses would train the system to invent
+non-visible facts. Their safe recovery path is independent trusted identity
+retrieval. The old “15 Provider misses” conclusion is closed and must not be
+used as the next optimization target.
+
 ## Verification
 
 `npm test` completed successfully after all campaign changes. The dedicated
