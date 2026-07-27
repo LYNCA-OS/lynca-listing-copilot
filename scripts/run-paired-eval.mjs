@@ -25,6 +25,7 @@ import { resolve } from "node:path";
 
 import { evaluateChange, formatDecision, mean, median, stdDev } from "./eval-decision.mjs";
 import { login } from "./v4-ebay-smoke.mjs";
+import { resolveListingEvalCredentials } from "./listing-eval-credentials.mjs";
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
@@ -38,21 +39,30 @@ function protectionHeaders(env = process.env) {
 
 export async function preflightArm({
   baseUrl,
-  username = process.env.METAVERSE_USERNAME,
-  password = process.env.METAVERSE_PASSWORD,
+  username = "",
+  password = "",
   env = process.env,
   fetchImpl = globalThis.fetch,
   loginImpl = login,
   timeoutMs = 15_000
 }) {
+  const credentials = resolveListingEvalCredentials(env);
+  const resolvedUsername = username || credentials.username;
+  const resolvedPassword = password || credentials.password;
   const timedFetch = (url, init = {}) => fetchImpl(url, {
     ...init,
     signal: init.signal || AbortSignal.timeout(timeoutMs)
   });
-  const cookie = await loginImpl({ baseUrl, username, password, fetchImpl: timedFetch });
+  const cookie = await loginImpl({
+    baseUrl,
+    username: resolvedUsername,
+    password: resolvedPassword,
+    fetchImpl: timedFetch,
+    env: credentials.env
+  });
   const probeId = `paired-preflight-${Date.now()}`;
   const response = await timedFetch(`${baseUrl}/api/v4/listing-job-status?job_id=${probeId}`, {
-    headers: { cookie, ...protectionHeaders(env) }
+    headers: { cookie, ...protectionHeaders(credentials.env) }
   });
   const body = await response.text();
   if (response.status === 401 || response.status === 403 || response.status >= 500) {
@@ -61,7 +71,7 @@ export async function preflightArm({
   return { status: response.status };
 }
 
-function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs }) {
+function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs, env }) {
   const args = [
     "--use-env-proxy",
     "scripts/v4-ebay-smoke.mjs",
@@ -79,7 +89,7 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2Wai
     "--out", outPath
   ];
   return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(process.execPath, args, { stdio: ["ignore", "ignore", "inherit"] });
+    const child = spawn(process.execPath, args, { stdio: ["ignore", "ignore", "inherit"], env });
     child.on("error", rejectRun);
     child.on("close", (code) => (code === 0 ? resolveRun() : rejectRun(new Error(`smoke exited ${code}`))));
   });
@@ -130,6 +140,8 @@ export async function main(argv = process.argv.slice(2)) {
   const outDir = resolve(argValue(argv, "--out-dir", "artifacts/smoke/paired-eval"));
   const label = argValue(argv, "--label", "paired");
   if (!candidateUrl) throw new Error("--candidate-url is required");
+  const credentials = resolveListingEvalCredentials(process.env);
+  if (!credentials.username || !credentials.password) throw new Error("listing evaluation credentials are missing");
 
   await mkdir(outDir, { recursive: true });
   const baselineScores = [];
@@ -140,9 +152,14 @@ export async function main(argv = process.argv.slice(2)) {
       const baseUrl = arm === "baseline" ? baselineUrl : candidateUrl;
       const outPath = resolve(outDir, `${label}-${arm}-r${round}.json`);
       process.stderr.write(`round ${round}/${rounds} ${arm}\n`);
-      await preflightArm({ baseUrl });
+      await preflightArm({
+        baseUrl,
+        username: credentials.username,
+        password: credentials.password,
+        env: credentials.env
+      });
       process.stderr.write("  preflight=pass\n");
-      await runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs });
+      await runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs, env: credentials.env });
       const score = await scoreFromReport(outPath, { expectedCount: limit });
       (arm === "baseline" ? baselineScores : candidateScores).push(score);
       process.stderr.write(`  ${arm} score=${score.toFixed(6)}\n`);

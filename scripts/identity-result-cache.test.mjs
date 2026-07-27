@@ -459,7 +459,7 @@ const exactCold = {
 };
 const exactReplay = {
   ...exactCold,
-  identity_cache: { cache_hit: true, provider_call_skipped: true },
+  identity_cache: { cache_hit: true, provider_call_skipped: true, cached_result_version_match: true },
   usage: { provider_calls: 0 }
 };
 assert.equal(assertExactReplayBenchmarkPair(exactCold, exactReplay), true);

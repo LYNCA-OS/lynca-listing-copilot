@@ -186,6 +186,43 @@ invalid data:
 They must resume in this order after both arms pass preflight. No holdout,
 production deployment, or database write was used in this campaign.
 
+## 9. Warm-path contract and renewed preflight
+
+The warm path is now executable as a first-class paired benchmark through
+`scripts/run-warm-path-paired-eval.mjs`. Each arm warms itself and is measured
+immediately afterwards; arm order reverses on alternating rounds. The exact
+replay gate now requires, per card:
+
+- provider calls `1 -> 0`;
+- `identity_cache_hit = true` on replay;
+- `provider_call_skipped = true` on replay;
+- `cached_result_version_match = true` on replay;
+- byte-identical title and resolver state;
+- the same image-generation identity and pipeline fingerprint.
+
+The report separates cold and replay accuracy, writer-visible p50/p95,
+writer-ready p50/p95, cache-hit rate, and provider-call totals. Both Cold
+Algorithm and Exact Replay profiles suppress only nonessential evaluation
+writes; production workload behaviour remains unchanged.
+
+Renewed preflight found two environment issues before any card was uploaded:
+
+1. the checked-in execution environment did not inject the frozen `metaverse`
+   administrator credential, although production passed when that credential
+   was supplied explicitly;
+2. Preview was behind Vercel Authentication and the local process had no
+   automation bypass secret.
+
+The second issue is fixed without making Preview public: the project's existing
+automation bypass was stored in macOS Keychain for the evaluator, and an
+accidentally generated duplicate was revoked. Administrator username and
+password use the same environment-first, Keychain-fallback resolver, so a new
+shell or conversation no longer silently loses them. The first explicit probes
+still observed intermittent `AUTH_UNAVAILABLE 503`, but after fixing an env
+propagation bug in the preflight helper both Candidate and Production passed
+login plus authenticated status probes in the same window (7.7s and 10.0s).
+No card was uploaded before both arms reached that state.
+
 ## Verification
 
 `npm test` completed successfully after all campaign changes. The dedicated

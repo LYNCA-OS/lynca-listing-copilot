@@ -42,7 +42,11 @@ assert.throws(
 
 const passingPreflight = await preflightArm({
   baseUrl: "https://candidate.example",
-  loginImpl: async () => "listing_session=test",
+  loginImpl: async ({ env }) => {
+    assert.equal(env.VERCEL_AUTOMATION_BYPASS_SECRET, "test-bypass");
+    return "listing_session=test";
+  },
+  env: { VERCEL_AUTOMATION_BYPASS_SECRET: "test-bypass" },
   fetchImpl: async () => new Response(JSON.stringify({ message: "not found" }), { status: 404 })
 });
 assert.equal(passingPreflight.status, 404);

@@ -918,12 +918,12 @@ async function readJsonResponse(response) {
   }
 }
 
-export async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch }) {
+export async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch, env = process.env }) {
   const response = await fetchImpl(`${baseUrl}/api/login`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...deploymentProtectionHeaders()
+      ...deploymentProtectionHeaders(env)
     },
     body: JSON.stringify({ username, password })
   });
