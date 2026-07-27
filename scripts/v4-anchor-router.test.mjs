@@ -143,3 +143,30 @@ assert.equal(sportsProbe.metrics.lookup_attempted, true);
 assert.equal(sportsProbe.finalize.resolved_fields.players[0], "Jaren Jackson");
 
 console.log("v4-anchor-router.test.mjs OK");
+
+// A card number plus a directly-read player name must reach the catalog on its
+// own. Requiring two of {year, product, subject} is circular when product is
+// the thing the lookup would establish: on the unseen-product benchmark every
+// card stalled at anchor_missing_sufficient_direct_context while the catalog
+// held thousands of sets for that product. Keyed on (player, card_number) the
+// harvested checklist resolves to a median of one distinct product line.
+{
+  const dossier = {
+    anchors: [{ anchor_type: "collector_number", value: "76", confidence: 0.95, direct: true }],
+    context: { subjects: ["Tank Bigsby"], subject_direct: true }
+  };
+  const route = planAnchorRoute(dossier);
+  assert.equal(route.route, anchorRoutes.SPORTS_COMPOSITE_LOOKUP);
+  assert.equal(route.reason, "direct_card_code_with_direct_subject");
+  assert.equal(route.lookup_target, "catalog");
+}
+
+// Without a directly-read subject the old bar still applies: a bare card number
+// matches too many cards to be worth a lookup.
+{
+  const dossier = {
+    anchors: [{ anchor_type: "collector_number", value: "76", confidence: 0.95, direct: true }],
+    context: { subjects: [], subject_direct: false }
+  };
+  assert.equal(planAnchorRoute(dossier).route, anchorRoutes.NORMAL_L2);
+}
