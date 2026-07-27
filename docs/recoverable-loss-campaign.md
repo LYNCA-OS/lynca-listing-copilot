@@ -143,6 +143,79 @@ node --use-env-proxy <env files> scripts/run-paired-eval.mjs \
 At roughly twelve seconds per card this is about forty minutes per arm, so
 budget three hours. It is the right way to end the campaign.
 
+### 6. Measure the warm path — it has never been measured at all
+
+This is the largest item in the campaign and it is not an ablation.
+
+Every number this project has — 0.8329 accuracy, ~12s latency, 21.7% lister
+acceptance — comes from runs that pass `--disable-identity-cache`. All twenty
+cold20 rows report `route: COLD_START_SAFE_DRAFT` and `identity_cache_hit:
+false`. Last night's ablation recorded `ENABLE_LISTING_FAST_PATH` as
+"no trigger opportunities", which is true and is the wrong conclusion to stop
+at: the fast path cannot fire because the harness forbids it, so **the warm
+path has never been evaluated once.**
+
+A lister works through a stack of cards from the same product. From the second
+card onward they are on the path we have never looked at.
+
+It is measurable. `buildIdentityResultCacheKey` keys on
+`sha256(image content sha256 + role)` plus a version fingerprint, so the same
+card images produce the same key: run the dataset once to populate, then again
+without `--disable-identity-cache`, and the second pass hits. The version
+fingerprint includes model and prompt version, so **each arm must warm itself**
+— warm arm A, measure arm A, warm arm B, measure arm B, interleaved as usual.
+
+Report warm-path accuracy, warm-path latency, and the cache hit rate. If warm
+accuracy is materially different from cold, that changes what the whole project
+should be optimising.
+
+### 7. Find out why the catalog returns no candidates
+
+On cold20, 15 of 20 cards get vector candidates and **0 of 20 get catalog
+candidates** (`pre_l2_anchor_catalog_candidate_count` is zero on every row).
+
+This is why `DISABLE_CANDIDATE_PROMPT_INJECTION` measured as "no active
+effect": there were no catalog candidates to withhold. The flag is fine; the
+catalog is contributing nothing on this dataset.
+
+That matters more than the flag. The catalog now holds 75,990 official
+checklist rows and 14,056 auto-parsed ones, and a day was spent expanding it.
+If it retrieves nothing on the benchmark, either the retrieval query never
+matches, the admission gate rejects everything, or the lane is not running.
+Diagnose it from `l2_candidate_debug` and the retrieval trace on recorded rows
+first — no model calls needed — and only then look at code.
+
+### 8. Unshadow the three flags the harness overrides
+
+`scripts/v4-ebay-smoke.mjs` hard-codes into every request:
+
+```js
+enable_catalog_assist: true,
+enable_vector_retrieval: true,
+vector_retrieval_mode: "assist",
+```
+
+Request options beat environment defaults, which is exactly why
+`ENABLE_CATALOG_ASSIST_DEFAULT`, `ENABLE_VECTOR_ASSIST_DEFAULT` and
+`ENABLE_VECTOR_LAZY_MODE` came back unmeasurable. They are not unmeasurable —
+the wrong lever was being pulled.
+
+Add CLI overrides so an ablation can send `false` (or omit the key), then run
+the three A/Bs that were previously impossible. Keep the current values as
+defaults so every existing run is unchanged.
+
+### 9. Give the catalog lookup cache a trace signature
+
+`ENABLE_CATALOG_LOOKUP_CACHE` came back unmeasurable because nothing in the
+trace distinguishes a hit from a miss, so the two arms cannot be told apart —
+and arm identity must be established empirically, never from deploy
+bookkeeping.
+
+The flag is read at `native-recognition-core.mjs:3048`. Add hit/miss counters
+alongside the existing `catalog_cache_ms` timing, surface them in
+`response_timing`, then run the A/B. The counters are worth having regardless
+of how the ablation turns out.
+
 ## Protocol
 
 **One paired eval at a time.** Two runs contend for provider capacity and
@@ -161,6 +234,29 @@ candidate-application changes.
 
 **NOT_PROVEN is a result.** Record it, leave the commit marked unvalidated,
 move on. Do not re-run hoping for a better number.
+
+**"Cannot be measured" is not a finished answer.** The point of the campaign is
+a number, not a status. Last night four components came back unmeasurable and
+every one of them turned out to be measurable within the hour: three because
+the harness hard-codes the option that the environment flag was supposed to
+control, and one because nothing in the trace distinguished the arms. Neither
+is a property of the component — both are properties of the tooling, and
+tooling is ours to change.
+
+So when a path is blocked, the deliverable is not "blocked". It is:
+
+1. **what exactly blocks it**, quoted from the code or the data — "the harness
+   sends `enable_catalog_assist: true` at `v4-ebay-smoke.mjs:819`, which beats
+   the environment default", not "the flag is shadowed";
+2. **the smallest change that unblocks it**, and then **make that change and
+   run it**;
+3. only if the change is genuinely out of scope — it needs production access,
+   a paid API, or a human decision — say so and say precisely what is needed.
+
+Reporting a blocker honestly is right and is much better than inventing a
+result. Reporting it *instead of removing it* is the thing to avoid. Budget for
+this: unblocking the tooling is expected work in this campaign, not a detour
+from it.
 
 **Never deploy to production.** Preview deployments only. Production currently
 runs the validated set and should stay there until a human decides otherwise.
