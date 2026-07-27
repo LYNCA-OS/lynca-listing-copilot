@@ -260,6 +260,97 @@ contains 200 image-only inputs, 200 sealed labels, zero cold20 overlap, and zero
 reviewed-title leakage. Its `PAIRED_ABLATION` policy requires both arms to use
 the identical item set.
 
+## 10. Latest cold-20 reconciliation after workflow hardening
+
+A new cold-algorithm run completed 20/20 cards on the isolated Preview after
+the queue checkpoint, Field Lineage, OCR rendezvous, and Provider-capacity
+work. The original run accidentally referenced an ephemeral `/tmp` sealed
+label file that no longer existed. Predictions were already frozen, so they
+were rescored offline against the repository-owned
+`artifacts/smoke/cold20-labels.jsonl`; this added zero Provider calls and
+changed zero prediction rows.
+
+The durable rescored artifact is
+`artifacts/smoke/fixed20-final-late-binding-serial-v23-rescored.json`.
+
+| Metric | Previous lineage run | Latest run |
+| --- | ---: | ---: |
+| Confirmed SEM fields | 122 | 122 |
+| Preserved fields | 89 | 97 |
+| Missing fields | 33 | 25 |
+| SEM preservation | 72.95% | 79.51% |
+| Provider-not-observed | 11 | 2 |
+| Policy-fair token recall | 0.796364 | 0.796283 |
+
+The field-flow improvement is real, but it did not increase title-level token
+recall. The release gate therefore remains closed: `0.796283 < 0.85`.
+
+### Catalog item 7 is no longer an open zero-candidate diagnosis
+
+The latest run proves that the main post-observation Catalog lane is active:
+
+- raw Catalog candidates: 79 total, nonzero on 18/20 cards;
+- approved Catalog candidates: 78;
+- Catalog candidates entering the Provider prompt: 23 total, nonzero on 15/20;
+- selected Catalog identity: 16/20 cards;
+- at least one candidate field applied: 10/20 cards;
+- pre-provider exact-anchor Catalog candidates: still 0/20.
+
+Thus the old “Catalog returns zero” statement is true only for the pre-provider
+exact-anchor lane. It is false for the main decision lane and must not be used
+again to justify reconnecting or widening Catalog globally.
+
+### Candidate-held item 2 has no safe common widening
+
+Across the latest decision trace there were 1,087 field decisions: 25 APPLY,
+71 SUPPORT, 44 BLOCK, and 947 REJECT. The large reject count is not evidence
+that 947 fields should be opened. It is dominated by 869
+`not_in_provider_prompt_safe_candidate_ids` decisions across unselected
+candidates.
+
+Three representative failures prove distinct identity-selection causes:
+
+1. Dalton Rushing: the correct `Orange Refractor` reviewed candidate exists,
+   but ranks behind another Catalog identity.
+2. VeeFriends: multiple official/reviewed rows agree on the base identity but
+   conflict on `Red Sparkle`, `Lava`, and print-run values; the current image
+   observation itself conflicts with the reviewed title (`14/25` versus
+   `4/5`). Applying an unselected candidate would create a critical entity
+   regression.
+3. Lorcana: the correct reviewed `Disney Lorcana JP` row exists beside unrelated
+   Pokemon and Topps vector candidates. This is identity disambiguation, not an
+   Application permission failure.
+
+Per the campaign stop rule, no global Application gate was widened. The next
+algorithmic owner is Selection/identity disambiguation with direct-conflict
+evidence; opening `candidate_not_selected` or post-observation candidates as a
+class would repeat the parallel-family mistake.
+
+### Evaluation debt removed
+
+`scripts/rescore-v4-smoke-report.mjs` now provides deterministic offline
+rescoring from frozen predictions, dataset, and sealed labels. Explicit
+`--sealed-labels` input is also validated before image upload, queue mutation,
+or Provider use. Missing, empty, or incomplete labels now fail closed instead
+of producing a paid run with an empty accuracy denominator. Job created,
+started, and completed timestamps are retained during diagnostic hydration so
+idle-gap reports no longer silently lose their classification inputs.
+
+## 11. Current queue status
+
+| Item | Current state |
+| --- | --- |
+| 0 Parallel family | REGRESSED and reverted; closed |
+| 1 Remaining resolver-held | Multi-cause; UCC candidate still lacks valid paired verdict |
+| 2 Candidate-held | Diagnosed as heterogeneous Selection/identity failures; no safe common widening |
+| 3 Serial resolver-held | Safe denominator behaviour retained; Vision numerator recovery remains incomplete |
+| 4 Evidence-held | Multi-cause; no common resolver fix |
+| 5 Reviewed-200 cumulative | Pack exists; not run because 20-card release gate is below 0.85 |
+| 6 Warm path | Harness exists; measurement not completed |
+| 7 Catalog zero | Closed: only pre-provider exact-anchor is zero; main lane is active |
+| 8 Retrieval controls | Completed |
+| 9 Catalog cache trace | Completed |
+
 ## Verification
 
 `npm test` completed successfully after all campaign changes. The dedicated
