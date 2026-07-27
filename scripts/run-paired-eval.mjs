@@ -99,6 +99,7 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2Wai
     "--queue", "--speculative", "--use-preingestion",
     "--ultra-image-detail", "high",
     "--concurrency", "2", "--preparation-concurrency", "2", "--submission-concurrency", "2",
+    "--abort-on-preparation-failure",
     "--disable-identity-cache",
     "--sample-mode", "UNSPECIFIED",
     "--dataset", dataset,

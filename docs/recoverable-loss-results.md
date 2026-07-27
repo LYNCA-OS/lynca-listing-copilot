@@ -238,6 +238,15 @@ smoke child through an ephemeral environment variable. No cookie is written to
 disk, command arguments, artifacts, or logs, and one full arm run now requires
 one login instead of two.
 
+With session reuse enabled, the next baseline attempt entered the real queue:
+three cards were enqueued, then two concurrent preparation requests failed
+after 155.5s and 170.0s with `queue_enqueue_failed:503 AUTH_UNAVAILABLE`.
+Candidate was not started and the partial baseline has no score. Paired and
+warm benchmarks now enable an evaluation-only preparation fail-fast switch:
+after the first failed preparation, the process exits and no new cards are
+started beyond the at-most-two requests already in flight. Writer production
+retry behaviour is unchanged.
+
 The paired runner now also supports independent arm values for catalog assist,
 catalog cache, vector retrieval, and vector retrieval mode. This makes the four
 remaining A/Bs executable against the same deployment and source version; their

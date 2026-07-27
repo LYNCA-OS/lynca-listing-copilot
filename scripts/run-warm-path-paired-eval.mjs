@@ -112,6 +112,7 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, assetCachePath, mod
     "--queue", "--speculative", "--use-preingestion",
     "--ultra-image-detail", "high",
     "--concurrency", "2", "--preparation-concurrency", "2", "--submission-concurrency", "2",
+    "--abort-on-preparation-failure",
     "--benchmark-profile", "exact-replay",
     "--benchmark-phase", phase,
     "--sample-mode", "PAIRED_ABLATION",

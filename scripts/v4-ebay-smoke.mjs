@@ -33,6 +33,13 @@ export const verifiedAssetCacheContract = Object.freeze({
   modes: ["disabled", "reuse", "refresh"]
 });
 
+export function enforceEvaluationPreparationFailure(row = {}, abortOnPreparationFailure = false) {
+  if (abortOnPreparationFailure && row.error) {
+    throw new Error(`evaluation_preparation_failed:${row.error}`);
+  }
+  return row;
+}
+
 function deploymentProtectionHeaders(env = process.env) {
   const bypassSecret = cleanText(env.VERCEL_AUTOMATION_BYPASS_SECRET);
   return bypassSecret ? { "x-vercel-protection-bypass": bypassSecret } : {};
@@ -4727,6 +4734,7 @@ export async function runV4EbaySmoke({
   concurrency = 2,
   submissionConcurrency = null,
   preparationConcurrency = null,
+  abortOnPreparationFailure = false,
   tenantCount = 1,
   tenantPrefix = "",
   batchPoll = true,
@@ -4907,7 +4915,7 @@ export async function runV4EbaySmoke({
         });
         row.preparation_recovery_attempted = recovery;
         if (progress) process.stderr.write(`  enqueued=${Boolean(row.job?.job_id)} prepare=${row.preparation_latency_ms}ms error=${row.error || "none"}\n`);
-        return row;
+        return enforceEvaluationPreparationFailure(row, abortOnPreparationFailure);
       };
       prepared = await mapWithConcurrency(items, normalizedPreparationConcurrency, (item, localIndex) => (
         prepareOne(item, localIndex)
@@ -5224,6 +5232,7 @@ export async function main(argv = process.argv, env = process.env) {
       ? Math.max(1, Math.trunc(numberArg(argv, "--submission-concurrency", 2)))
       : null,
     preparationConcurrency: Math.max(1, Math.trunc(numberArg(argv, "--preparation-concurrency", 2))),
+    abortOnPreparationFailure: hasFlag(argv, "--abort-on-preparation-failure"),
     tenantCount: Math.max(1, Math.trunc(numberArg(argv, "--tenant-count", 1))),
     tenantPrefix: cleanText(argValue(argv, "--tenant-prefix", "")),
     batchPoll: !hasFlag(argv, "--per-card-poll"),

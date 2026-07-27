@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { preflightArm, scoreFromReportData, smokeArgsForArm } from "./run-paired-eval.mjs";
+import { enforceEvaluationPreparationFailure } from "./v4-ebay-smoke.mjs";
 
 function row(overrides = {}) {
   return {
@@ -28,6 +29,15 @@ assert.throws(
     error: "batch_poll_timeout"
   })] }, { expectedCount: 1 }),
   /not complete cold results/
+);
+assert.equal(enforceEvaluationPreparationFailure({ error: null }, true).error, null);
+assert.throws(
+  () => enforceEvaluationPreparationFailure({ error: "queue_enqueue_failed:503" }, true),
+  /evaluation_preparation_failed/
+);
+assert.equal(
+  enforceEvaluationPreparationFailure({ error: "queue_enqueue_failed:503" }, false).error,
+  "queue_enqueue_failed:503"
 );
 
 assert.deepEqual(smokeArgsForArm([], "baseline"), []);
