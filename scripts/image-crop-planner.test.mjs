@@ -102,7 +102,7 @@ assert.deepEqual(riskPlans.map((plan) => plan.source_region), [
   "checklist_code"
 ]);
 assert.equal(riskPlans[0].reason, "high_risk_field");
-assert.equal(riskPlans[0].crop_metadata.crop_id, "asset-1__image-front__serial_number__field-crop-v2");
+assert.equal(riskPlans[0].crop_metadata.crop_id, "asset-1__image-front__serial_number__field-crop-v3");
 assert.equal(riskPlans[0].crop_metadata.asset_id, "asset-1");
 assert.equal(riskPlans[0].crop_metadata.source_object_path, "listing-assets/source.jpg");
 assert.equal(riskPlans[0].crop_metadata.source_side, "front");
@@ -114,6 +114,21 @@ assert.ok(riskPlans[0].crop_region.y <= 0.12, "serial scan must include the comm
 assert.ok(
   riskPlans[0].crop_region.y + riskPlans[0].crop_region.height >= 0.85,
   "serial scan must retain the lower numbering band"
+);
+
+const inferredBackPlans = planTargetedCrops({
+  assetId: "asset-2",
+  imageId: "inventory-card_back",
+  sourceObjectPath: "listing-assets/image_2_original-back.jpg",
+  sourceWidth: 850,
+  sourceHeight: 1400,
+  imageQuality: { critical_region_occlusion: {} },
+  maxCrops: 1
+});
+assert.equal(
+  inferredBackPlans[0].crop_metadata.source_side,
+  "back",
+  "canonical image identity must preserve side when an explicit sourceSide is absent"
 );
 
 const requestedPlans = planTargetedCrops({
