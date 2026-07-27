@@ -29,6 +29,23 @@ assert.equal(timeline.late_binding_design_enabled, false);
 assert.equal(lateProviderLeaseBindingDesign.enabled, false);
 assert.equal(lateProviderLeaseBindingDesign.capacity_acquisition_transition, "WAITING_PROVIDER->PROVIDER_RUNNING");
 
+const lateTimeline = buildProviderCapacityTimeline({
+  job: { started_at: "2026-07-24T00:00:01.000Z", queue_tags: {} },
+  providerCapacityLateBinding: {
+    binding_mode: "late_provider_lease_v1",
+    waiting_provider_at: "2026-07-24T00:00:04.000Z",
+    acquired_at: "2026-07-24T00:00:04.100Z"
+  },
+  providerSlotTiming: {
+    started_at: "2026-07-24T00:00:04.150Z",
+    completed_at: "2026-07-24T00:00:14.150Z"
+  },
+  providerCapacityReleasedAt: "2026-07-24T00:00:14.250Z"
+});
+assert.equal(lateTimeline.late_binding_design_enabled, true);
+assert.equal(lateTimeline.provider_slot_held_before_provider_ms, 50);
+assert.equal(lateTimeline.prepared_waiting_for_provider_ms, 150);
+
 const incomplete = buildProviderCapacityTimeline({ job: {} });
 assert.equal(incomplete.provider_slot_held_before_provider_ms, null);
 assert.equal(incomplete.provider_execution_ms, null);

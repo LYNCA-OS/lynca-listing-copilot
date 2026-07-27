@@ -25,6 +25,7 @@ import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs
 import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { v4EventRefillContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
 import { buildProviderCapacityTimeline } from "../../lib/listing/v4/jobs/provider-capacity-timeline.mjs";
+import { v4LateProviderLeaseBindingEnabled } from "../../lib/listing/v4/jobs/late-provider-capacity.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -653,6 +654,7 @@ export default async function handler(req, res) {
   const tenantId = payload.tenant_id || payload.tenantId || null;
   if (tenantId) bindProductionRequestContext(res, { tenantId, actorType: "WORKER" });
   const workerId = workerIdFrom(req, payload);
+  const lateProviderBinding = v4LateProviderLeaseBindingEnabled({ tenantId, env: process.env });
   const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
   const processBatch = async (rows = [], concurrency = 1, leaseSeconds = 300) => mapWithConcurrency(rows, concurrency, async (job) => {
     const wrapped = await runWithV4JobLeaseHeartbeat({
@@ -724,6 +726,9 @@ export default async function handler(req, res) {
                   providerSlotTiming: result.response.provider_result?.provider_slot_timing
                     || result.response.provider_result_summary?.provider_slot_timing
                     || null,
+                  providerCapacityLateBinding: result.response.provider_result?.provider_capacity_late_binding
+                    || result.response.provider_result_summary?.provider_capacity_late_binding
+                    || null,
                   providerCapacityReleasedAt: writerReadyCapacityRelease?.released_at || null
                 }),
                 writer_ready_capacity_release: writerReadyCapacityRelease,
@@ -741,6 +746,9 @@ export default async function handler(req, res) {
             preparationStartedAt,
             providerSlotTiming: result.response.provider_result?.provider_slot_timing
               || result.response.provider_result_summary?.provider_slot_timing
+              || null,
+            providerCapacityLateBinding: result.response.provider_result?.provider_capacity_late_binding
+              || result.response.provider_result_summary?.provider_capacity_late_binding
               || null,
             providerCapacityReleasedAt: capacityRelease?.released_at
               || writerReadyCapacityRelease?.released_at
@@ -923,7 +931,8 @@ export default async function handler(req, res) {
       workerId: `${workerId}-b${batchIndex + 1}`,
       leaseSeconds,
       lane,
-      tenantId
+      tenantId,
+      lateProviderBinding
     });
     if (!claim.ok) {
       sendJson(res, 500, withV4Version({ ok: false, message: "Unable to claim V4 jobs.", error: claim.error }));
@@ -941,7 +950,8 @@ export default async function handler(req, res) {
       process_concurrency: concurrency,
       lease_seconds: leaseSeconds,
       job_execution_timeout_ms: v4JobExecutionTimeoutMs(process.env),
-      worker_claim_latency_ms: Date.now() - claimStarted
+      worker_claim_latency_ms: Date.now() - claimStarted,
+      late_provider_binding: lateProviderBinding
     });
     if (!batchRows.length && emptyClaimStop) break;
   }
@@ -951,6 +961,7 @@ export default async function handler(req, res) {
     worker_id: workerId,
     lane: lane || null,
     tenant_id: tenantId || null,
+    late_provider_binding: lateProviderBinding,
     process_concurrency: batches[0]?.process_concurrency || laneProcessConcurrency(lane, payload),
     claimed_count: batches.reduce((sum, batch) => sum + Number(batch.claimed_count || 0), 0),
     processed_count: processed.length,

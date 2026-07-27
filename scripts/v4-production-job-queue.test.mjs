@@ -573,6 +573,27 @@ assert.ok(rpcCalls[0].request.body.includes('"p_provider_capacity":2'));
 assert.ok(rpcCalls[0].request.body.includes('"p_per_key_concurrency":2'));
 assert.ok(rpcCalls[0].request.body.includes('"p_provider_key_count":2'));
 
+const lateClaimCalls = [];
+const lateClaim = await claimV4RecognitionJobs({
+  limit: 2,
+  workerId: "worker-late",
+  tenantId: "tenant-canary",
+  lateProviderBinding: true,
+  env: {
+    SUPABASE_URL: "https://supabase.test",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role",
+    OPENAI_API_KEY: "key-one"
+  },
+  fetchImpl: async (url, request = {}) => {
+    lateClaimCalls.push({ url: String(url), request });
+    return jsonResponse([{ id: "v4job-late", status: "RUNNING", queue_tags: {} }]);
+  }
+});
+assert.equal(lateClaim.ok, true);
+assert.equal(lateClaim.rpc_mode, "late_provider_unbound");
+assert.ok(lateClaimCalls[0].url.endsWith("/rest/v1/rpc/claim_v4_recognition_jobs"));
+assert.equal(JSON.parse(lateClaimCalls[0].request.body).p_provider_capacity, undefined);
+
 const affinityClaimCalls = [];
 const affinityClaim = await claimV4RecognitionJobs({
   env: {

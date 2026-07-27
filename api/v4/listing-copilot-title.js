@@ -44,6 +44,7 @@ import {
   sessionIdForV4Request
 } from "../../lib/listing/v4/session/trusted-session-identity.mjs";
 import { fenceV4RecognitionJobExecution } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
+import { v4LateProviderLeaseBindingEnabled } from "../../lib/listing/v4/jobs/late-provider-capacity.mjs";
 import { v4SessionStatuses } from "../../lib/listing/v4/session/status.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
@@ -98,7 +99,8 @@ const writerReadyProviderSummaryKeys = Object.freeze([
   "noncritical_persistence_status",
   "writer_ready_persistence_mode",
   "writer_ready_capacity_release_mode",
-  "writer_ready_capacity_release_error"
+  "writer_ready_capacity_release_error",
+  "provider_capacity_late_binding"
 ]);
 
 export function minimalWriterReadySessionPatch(patch = {}) {
@@ -601,6 +603,7 @@ function providerRuntimeSummary(result = {}, payload = {}) {
     prompt_version: result.prompt_version || null,
     provider_latency_ms: result.provider_latency_ms ?? null,
     provider_slot_timing: result.provider_slot_timing || null,
+    provider_capacity_late_binding: result.provider_capacity_late_binding || null,
     provider_response_profile: result.provider_response_profile || "standard",
     provider_prompt_mode: result.provider_prompt_mode || null,
     provider_prompt_chars: Number.isFinite(Number(result.provider_prompt_chars)) ? Number(result.provider_prompt_chars) : null,
@@ -1633,6 +1636,17 @@ export default async function handler(req, res) {
     if (rejectAbortedWorkerExecution(req, res, workerAuthorized)) return;
     try {
       payload = scopeV4RecognitionPayloadFromFencedJob(fenced.job);
+      const existingProviderCapacitySlot = Number(
+        fenced.job?.queue_tags?.provider_capacity_slot
+        || fenced.job?.queue_tags?.providerCapacitySlot
+        || 0
+      );
+      if (
+        !(existingProviderCapacitySlot > 0)
+        && v4LateProviderLeaseBindingEnabled({ tenantId: fenced.job?.tenant_id, env: process.env })
+      ) {
+        payload.v4_late_provider_lease_binding = true;
+      }
     } catch {
       sendJson(res, 409, withV4Version({
         ok: false,
