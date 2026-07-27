@@ -187,6 +187,17 @@ assert.deepEqual(targetedSerialAndGradeWait.target_fields, ["serial_number", "gr
 assert.equal(targetedSerialAndGradeWait.wait_budget_ms, 8000);
 assert.equal(targetedSerialAndGradeWait.should_wait, true);
 
+const denominatorOnlySerialWait = criticalOcrRendezvousDecision({
+  currentFields: { numbered_to: "25" },
+  unresolved: [],
+  latestOcrState: { configured: true, serial_active_count: 1, grade_label_active_count: 0 },
+  configuredWaitMs: 0,
+  criticalWaitMs: 2500
+});
+assert.deepEqual(denominatorOnlySerialWait.target_fields, ["serial_number"]);
+assert.deepEqual(denominatorOnlySerialWait.reasons, ["current_print_run_requires_hard_text_verification"]);
+assert.equal(denominatorOnlySerialWait.wait_budget_ms, 8000);
+
 const entirelyMissingGradeWait = criticalOcrRendezvousDecision({
   currentFields: { year: "2024", players: ["Tester"] },
   unresolved: ["grade_company", "card_grade"],
