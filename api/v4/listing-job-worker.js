@@ -25,7 +25,10 @@ import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs
 import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { v4EventRefillContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
 import { buildProviderCapacityTimeline } from "../../lib/listing/v4/jobs/provider-capacity-timeline.mjs";
-import { v4LateProviderLeaseBindingEnabled } from "../../lib/listing/v4/jobs/late-provider-capacity.mjs";
+import {
+  v4LateProviderLeaseBindingClaimTenantId,
+  v4LateProviderLeaseBindingEnabled
+} from "../../lib/listing/v4/jobs/late-provider-capacity.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -654,7 +657,15 @@ export default async function handler(req, res) {
   const tenantId = payload.tenant_id || payload.tenantId || null;
   if (tenantId) bindProductionRequestContext(res, { tenantId, actorType: "WORKER" });
   const workerId = workerIdFrom(req, payload);
-  const lateProviderBinding = v4LateProviderLeaseBindingEnabled({ tenantId, env: process.env });
+  const lateProviderClaimTenantId = v4LateProviderLeaseBindingClaimTenantId({
+    tenantId,
+    env: process.env
+  });
+  const lateProviderBinding = v4LateProviderLeaseBindingEnabled({
+    tenantId: lateProviderClaimTenantId,
+    env: process.env
+  });
+  const claimTenantId = lateProviderBinding ? lateProviderClaimTenantId : tenantId;
   const limit = positiveInteger(payload.limit, v4WorkerClaimLimit(process.env), { min: 1, max: 96 });
   const processBatch = async (rows = [], concurrency = 1, leaseSeconds = 300) => mapWithConcurrency(rows, concurrency, async (job) => {
     const wrapped = await runWithV4JobLeaseHeartbeat({
@@ -931,7 +942,7 @@ export default async function handler(req, res) {
       workerId: `${workerId}-b${batchIndex + 1}`,
       leaseSeconds,
       lane,
-      tenantId,
+      tenantId: claimTenantId,
       lateProviderBinding
     });
     if (!claim.ok) {
@@ -951,7 +962,8 @@ export default async function handler(req, res) {
       lease_seconds: leaseSeconds,
       job_execution_timeout_ms: v4JobExecutionTimeoutMs(process.env),
       worker_claim_latency_ms: Date.now() - claimStarted,
-      late_provider_binding: lateProviderBinding
+      late_provider_binding: lateProviderBinding,
+      late_provider_claim_tenant_id: lateProviderBinding ? claimTenantId : null
     });
     if (!batchRows.length && emptyClaimStop) break;
   }
@@ -962,6 +974,7 @@ export default async function handler(req, res) {
     lane: lane || null,
     tenant_id: tenantId || null,
     late_provider_binding: lateProviderBinding,
+    late_provider_claim_tenant_id: lateProviderBinding ? claimTenantId : null,
     process_concurrency: batches[0]?.process_concurrency || laneProcessConcurrency(lane, payload),
     claimed_count: batches.reduce((sum, batch) => sum + Number(batch.claimed_count || 0), 0),
     processed_count: processed.length,

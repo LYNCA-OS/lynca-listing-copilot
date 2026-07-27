@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import {
+  v4LateProviderLeaseBindingClaimTenantId,
   v4LateProviderLeaseBindingEnabled,
   waitForV4LateProviderCapacity
 } from "../lib/listing/v4/jobs/late-provider-capacity.mjs";
@@ -12,6 +13,18 @@ const canaryEnv = {
   VERCEL_ENV: "preview"
 };
 assert.equal(v4LateProviderLeaseBindingEnabled({ tenantId: "tenant_canary", env: canaryEnv }), true);
+assert.equal(v4LateProviderLeaseBindingClaimTenantId({ env: canaryEnv }), null);
+assert.equal(v4LateProviderLeaseBindingClaimTenantId({
+  env: { ...canaryEnv, V4_LATE_PROVIDER_LEASE_BINDING_TENANT_IDS: "tenant_canary" }
+}), "tenant_canary");
+assert.equal(v4LateProviderLeaseBindingClaimTenantId({
+  tenantId: "tenant_canary",
+  env: canaryEnv
+}), "tenant_canary");
+assert.equal(v4LateProviderLeaseBindingClaimTenantId({
+  tenantId: "tenant_unknown",
+  env: canaryEnv
+}), null);
 assert.equal(v4LateProviderLeaseBindingEnabled({ tenantId: "tenant_unknown", env: canaryEnv }), false);
 assert.equal(v4LateProviderLeaseBindingEnabled({
   tenantId: "tenant_canary",
