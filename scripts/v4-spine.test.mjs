@@ -24,7 +24,10 @@ import {
   v4PipelineStages
 } from "../lib/listing/v4/pipeline/pipeline-contract.mjs";
 import { candidateSelectionHeuristicVersion } from "../lib/listing/candidates/candidate-selection-pass.mjs";
-import { catalogRetrievalFamiliesForFields } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
+import {
+  catalogRetrievalFamiliesForFields,
+  evaluationTelemetryEnvForPayload
+} from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { retrievalQueryFamilies } from "../lib/listing/retrieval/retrieval-contract.mjs";
 import {
   explicitlyUncertainIdentityFields,
@@ -372,6 +375,19 @@ assert.equal("enable_catalog_assist" in retrievalOmitPayload.provider_options, f
 assert.equal("enable_catalog_cache" in retrievalOmitPayload.provider_options, false);
 assert.equal("enable_vector_retrieval" in retrievalOmitPayload.provider_options, false);
 assert.equal("vector_retrieval_mode" in retrievalOmitPayload.provider_options, false);
+const coldTelemetryPayload = smokePayloadForItem({}, 0, [], { disableIdentityCache: true });
+assert.equal(coldTelemetryPayload.provider_options.disable_nonessential_evaluation_writes, true);
+const originalTelemetryEnv = {
+  VECTOR_QUERY_LOG_ENABLED: "true",
+  DATA_LOOP_SIDECARS_ENABLED: "true",
+  DATA_LOOP_WORKFLOW_EVENT_LOG_ENABLED: "true"
+};
+assert.equal(evaluationTelemetryEnvForPayload({}, originalTelemetryEnv), originalTelemetryEnv);
+const suppressedTelemetryEnv = evaluationTelemetryEnvForPayload(coldTelemetryPayload, originalTelemetryEnv);
+assert.notEqual(suppressedTelemetryEnv, originalTelemetryEnv);
+assert.equal(suppressedTelemetryEnv.VECTOR_QUERY_LOG_ENABLED, "false");
+assert.equal(suppressedTelemetryEnv.DATA_LOOP_SIDECARS_ENABLED, "false");
+assert.equal(suppressedTelemetryEnv.DATA_LOOP_WORKFLOW_EVENT_LOG_ENABLED, "false");
 assert.equal(fastInitialPromptOverride(["node", "smoke"]), null);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--fast-initial-prompt"]), true);
 assert.equal(fastInitialPromptOverride(["node", "smoke", "--full-listing-prompt"]), false);

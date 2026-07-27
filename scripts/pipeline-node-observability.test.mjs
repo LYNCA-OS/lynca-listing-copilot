@@ -21,6 +21,7 @@ const context = createTimingContext({
 assert.equal(context.timing.catalog_cache_hit_count, 0);
 assert.equal(context.timing.catalog_cache_miss_count, 0);
 assert.equal(context.timing.catalog_cache_bypass_count, 0);
+assert.equal(context.timing.evaluation_telemetry_write_suppressed_count, 0);
 
 timeSync(context, "image_quality_check_ms", () => ({ status: "PASS" }));
 await timeAsync(context, "approved_memory_lookup_ms", async () => null);

@@ -873,6 +873,7 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
     providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
       profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
     });
+    providerOptions.disable_nonessential_evaluation_writes = true;
   } else if (benchmarkProfile) {
     providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
       profile: benchmarkProfile,
