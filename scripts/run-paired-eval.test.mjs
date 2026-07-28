@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { scoreFromReportData } from "./run-paired-eval.mjs";
+import { buildSmokeArgs, scoreFromReportData } from "./run-paired-eval.mjs";
 
 function row(overrides = {}) {
   return {
@@ -29,6 +29,21 @@ assert.throws(
   })] }, { expectedCount: 1 }),
   /not complete cold results/
 );
+
+const commonArgs = {
+  baseUrl: "https://listing.lyncafei.team",
+  dataset: "data.json",
+  sealedLabels: "labels.jsonl",
+  outPath: "out.json",
+  model: "gpt-5-mini",
+  limit: 20,
+  l2WaitMs: 18000
+};
+assert.equal(buildSmokeArgs(commonArgs).includes("--read-only-provider-contract"), false);
+assert.equal(buildSmokeArgs({
+  ...commonArgs,
+  readOnlyProviderContract: true
+}).includes("--read-only-provider-contract"), true);
 
 assert.throws(
   () => scoreFromReportData({ results: [row({ provider_calls: 0, provider_call_skipped: true })] }, { expectedCount: 1 }),

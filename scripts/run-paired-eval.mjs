@@ -30,7 +30,16 @@ function argValue(argv, name, fallback = "") {
   return index >= 0 ? (argv[index + 1] ?? fallback) : fallback;
 }
 
-function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs }) {
+export function buildSmokeArgs({
+  baseUrl,
+  dataset,
+  sealedLabels,
+  outPath,
+  model,
+  limit,
+  l2WaitMs,
+  readOnlyProviderContract = false
+}) {
   const args = [
     "--use-env-proxy",
     "scripts/v4-ebay-smoke.mjs",
@@ -47,6 +56,12 @@ function runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2Wai
     "--l2-wait-ms", String(l2WaitMs),
     "--out", outPath
   ];
+  if (readOnlyProviderContract) args.push("--read-only-provider-contract");
+  return args;
+}
+
+function runSmoke(options) {
+  const args = buildSmokeArgs(options);
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, args, { stdio: ["ignore", "ignore", "inherit"] });
     child.on("error", rejectRun);
@@ -98,6 +113,7 @@ export async function main(argv = process.argv.slice(2)) {
   const l2WaitMs = Math.max(18_000, Number(argValue(argv, "--l2-wait-ms", "18000")) || 18_000);
   const outDir = resolve(argValue(argv, "--out-dir", "artifacts/smoke/paired-eval"));
   const label = argValue(argv, "--label", "paired");
+  const candidateReadOnlyProviderContract = argv.includes("--candidate-read-only-provider-contract");
   if (!candidateUrl) throw new Error("--candidate-url is required");
 
   await mkdir(outDir, { recursive: true });
@@ -109,7 +125,16 @@ export async function main(argv = process.argv.slice(2)) {
       const baseUrl = arm === "baseline" ? baselineUrl : candidateUrl;
       const outPath = resolve(outDir, `${label}-${arm}-r${round}.json`);
       process.stderr.write(`round ${round}/${rounds} ${arm}\n`);
-      await runSmoke({ baseUrl, dataset, sealedLabels, outPath, model, limit, l2WaitMs });
+      await runSmoke({
+        baseUrl,
+        dataset,
+        sealedLabels,
+        outPath,
+        model,
+        limit,
+        l2WaitMs,
+        readOnlyProviderContract: arm === "candidate" && candidateReadOnlyProviderContract
+      });
       const score = await scoreFromReport(outPath, { expectedCount: limit });
       (arm === "baseline" ? baselineScores : candidateScores).push(score);
       process.stderr.write(`  ${arm} score=${score.toFixed(6)}\n`);
@@ -137,6 +162,7 @@ export async function main(argv = process.argv.slice(2)) {
     limit,
     baseline_url: baselineUrl,
     candidate_url: candidateUrl,
+    candidate_read_only_provider_contract: candidateReadOnlyProviderContract,
     rounds_completed: baselineScores.length,
     baseline: {
       scores: baselineScores, mean: mean(baselineScores), median: median(baselineScores), sd: stdDev(baselineScores)

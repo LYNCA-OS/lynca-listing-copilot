@@ -807,6 +807,7 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   ultraFastL2 = null,
   fastInitialPrompt = null,
   ultraSparseTransport = false,
+  readOnlyProviderContract = false,
   providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
@@ -827,6 +828,7 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   };
   if (modelOverride) providerOptions.openai_listing_model_override = modelOverride;
   if (compactL2) providerOptions.v4_compact_l2_prompt = true;
+  if (readOnlyProviderContract) providerOptions.v4_read_only_provider_contract = true;
   if (typeof ultraFastL2 === "boolean") {
     providerOptions.v4_ultra_fast_l2 = ultraFastL2;
   }
@@ -2082,6 +2084,7 @@ async function runOne({
   ultraFastL2 = null,
   fastInitialPrompt = null,
   ultraSparseTransport = false,
+  readOnlyProviderContract = false,
   providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
@@ -2120,6 +2123,7 @@ async function runOne({
     ultraFastL2,
     fastInitialPrompt,
     ultraSparseTransport,
+    readOnlyProviderContract,
     providerDoneHandoff,
     ultraFastImageDetail,
     ultraFastServiceTier,
@@ -2840,6 +2844,7 @@ async function enqueueSpeculativeItem({
   ultraFastL2,
   fastInitialPrompt,
   ultraSparseTransport,
+  readOnlyProviderContract,
   providerDoneHandoff,
   ultraFastImageDetail,
   ultraFastServiceTier,
@@ -2879,6 +2884,7 @@ async function enqueueSpeculativeItem({
       ultraFastL2,
       fastInitialPrompt,
       ultraSparseTransport,
+      readOnlyProviderContract,
       providerDoneHandoff,
       ultraFastImageDetail,
       ultraFastServiceTier,
@@ -4667,6 +4673,7 @@ export async function runV4EbaySmoke({
   ultraFastL2 = null,
   fastInitialPrompt = null,
   ultraSparseTransport = false,
+  readOnlyProviderContract = false,
   providerDoneHandoff = null,
   ultraFastImageDetail = "auto",
   ultraFastServiceTier = "",
@@ -4840,6 +4847,7 @@ export async function runV4EbaySmoke({
           ultraFastL2,
           fastInitialPrompt,
           ultraSparseTransport,
+          readOnlyProviderContract,
           providerDoneHandoff,
           ultraFastImageDetail,
           ultraFastServiceTier,
@@ -4923,6 +4931,7 @@ export async function runV4EbaySmoke({
           ultraFastL2,
           fastInitialPrompt,
           ultraSparseTransport,
+          readOnlyProviderContract,
           providerDoneHandoff,
           ultraFastImageDetail,
           ultraFastServiceTier,
@@ -5037,6 +5046,7 @@ export async function runV4EbaySmoke({
         ? false
         : null,
     ultra_sparse_transport_enabled: ultraSparseTransport,
+    read_only_provider_contract_enabled: readOnlyProviderContract,
     provider_done_capacity_handoff_override: providerDoneHandoff,
     ultra_fast_image_detail: ultraFastL2 === true ? ultraFastImageDetail : null,
     ultra_fast_service_tier: ultraFastL2 === true ? ultraFastServiceTier || null : null,
@@ -5152,6 +5162,7 @@ export async function main(argv = process.argv, env = process.env) {
     ultraFastL2: ultraFastL2Override(argv),
     fastInitialPrompt: fastInitialPromptOverride(argv),
     ultraSparseTransport: hasFlag(argv, "--ultra-sparse-v2"),
+    readOnlyProviderContract: hasFlag(argv, "--read-only-provider-contract"),
     providerDoneHandoff: providerDoneHandoffOverride(argv),
     ultraFastImageDetail: cleanText(argValue(argv, "--ultra-image-detail", "auto")).toLowerCase(),
     ultraFastServiceTier: cleanText(argValue(argv, "--ultra-service-tier", "")).toLowerCase(),
