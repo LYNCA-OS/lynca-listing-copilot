@@ -1,14 +1,33 @@
-name: world-knowledge-paired20
+name: world-knowledge-paired-canary
 
 on:
   workflow_dispatch:
+    inputs:
+      cohort:
+        description: "Run one 10-card development cohort, or both only when explicitly authorized"
+        required: true
+        default: familiar
+        type: choice
+        options:
+          - familiar
+          - unseen
+          - both
+      limit:
+        description: "Unique cards per selected cohort (hard maximum 10)"
+        required: true
+        default: 10
+        type: number
+      expected_git_sha:
+        description: "Exact production SHA required before paid calls"
+        required: true
+        type: string
 
 concurrency:
-  group: world-knowledge-paired20
+  group: world-knowledge-paired-canary
   cancel-in-progress: false
 
 jobs:
-  paired20:
+  paired-canary:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -19,6 +38,9 @@ jobs:
       METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CANARY_COHORT: ${{ inputs.cohort }}
+      CANARY_LIMIT: ${{ inputs.limit }}
+      EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -33,18 +55,27 @@ jobs:
           test -n "$METAVERSE_PASSWORD"
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
+      - name: Verify canary budget and exact production
+        run: |
+          test "$CANARY_LIMIT" -ge 1
+          test "$CANARY_LIMIT" -le 10
+          test -n "$EXPECTED_GIT_SHA"
+          actual_git_sha="$(curl --fail --silent --show-error "$API_BASE_URL/api/v4/health" | jq -r '.deployment.git_commit_sha // empty')"
+          test "$actual_git_sha" = "$EXPECTED_GIT_SHA"
       - name: Build frozen familiar 10
+        if: ${{ inputs.cohort != 'unseen' }}
         run: |
           node scripts/build-reviewed-title-blind-eval.mjs \
             --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
             --out /tmp/familiar10.json \
             --sealed-labels-out /tmp/familiar10-labels.jsonl \
-            --limit 10 \
+            --limit "$CANARY_LIMIT" \
             --selection-seed world-knowledge-paired20-v1 \
             --sample-mode PAIRED_ABLATION \
             --reuse-reason "Frozen familiar cohort for paired world-knowledge ablation." \
             --reuse-scope-id world-knowledge-paired20-familiar-v1
       - name: Paired familiar 10
+        if: ${{ inputs.cohort != 'unseen' }}
         run: |
           node scripts/run-paired-eval.mjs \
             --baseline-url "$API_BASE_URL" \
@@ -53,7 +84,7 @@ jobs:
             --report-only \
             --dataset /tmp/familiar10.json \
             --sealed-labels /tmp/familiar10-labels.jsonl \
-            --limit 10 \
+            --limit "$CANARY_LIMIT" \
             --l2-wait-ms 360000 \
             --both-read-only-provider-contract \
             --candidate-world-knowledge-proposals \
@@ -62,6 +93,7 @@ jobs:
             --out-dir /tmp/world-knowledge-paired20 \
             --label familiar
       - name: Paired unseen 10
+        if: ${{ inputs.cohort != 'familiar' }}
         run: |
           node scripts/run-paired-eval.mjs \
             --baseline-url "$API_BASE_URL" \
@@ -70,7 +102,7 @@ jobs:
             --report-only \
             --dataset data/eval/unseen-product/unseen17.json \
             --sealed-labels data/eval/unseen-product/unseen17-labels.jsonl \
-            --limit 10 \
+            --limit "$CANARY_LIMIT" \
             --l2-wait-ms 360000 \
             --both-read-only-provider-contract \
             --candidate-world-knowledge-proposals \
@@ -79,7 +111,7 @@ jobs:
             --out-dir /tmp/world-knowledge-paired20 \
             --label unseen
       - name: Summarize both scoreboards
-        if: always()
+        if: ${{ always() && inputs.cohort == 'both' }}
         run: |
           test -f /tmp/world-knowledge-paired20/familiar-baseline-r1.json
           test -f /tmp/world-knowledge-paired20/familiar-candidate-r1.json
