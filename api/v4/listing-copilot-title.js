@@ -17,6 +17,7 @@ import {
   summarizePreIngestionBundle
 } from "../../lib/listing/preingestion/preingestion-bundle.mjs";
 import { adaptRecognitionResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
+import { buildEvaluationDecisionTracePacket } from "../../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 import { classifyV4ResultOutcome } from "../../lib/listing/v4/result-outcome.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
@@ -555,6 +556,14 @@ function catalogGapTypeFromTrace(trace = {}) {
   return "NO_PROMPT_SAFE_CANDIDATE_GAP";
 }
 
+export function terminalEvaluationDecisionTracePacket(result = {}, payload = {}) {
+  if (!result.evaluation_decision_trace_packet) return null;
+  return buildEvaluationDecisionTracePacket(
+    prepareV4PresentationResult({ result, payload }).result,
+    payload
+  );
+}
+
 function providerRuntimeSummary(result = {}, payload = {}) {
   const vectorContext = result.candidate_context?.vector || {};
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
@@ -567,6 +576,12 @@ function providerRuntimeSummary(result = {}, payload = {}) {
       ? 1
       : null;
   const providerOptions = payload.provider_options || payload.providerOptions || {};
+  // The native core emits the sensor-stage trace, but V4 presentation can
+  // reconcile fields and the deterministic title afterwards. Evaluation must
+  // persist the terminal V4 view, otherwise a structurally valid packet can
+  // still describe a pre-application title. Production profiles pay no extra
+  // work because the builder remains disabled outside cold/evaluation mode.
+  const terminalEvaluationTrace = terminalEvaluationDecisionTracePacket(result, payload);
   return {
     model: result.model || result.model_id || null,
     prompt_version: result.prompt_version || null,
@@ -587,7 +602,7 @@ function providerRuntimeSummary(result = {}, payload = {}) {
     recognition_benchmark_phase: result.recognition_benchmark_phase
       || providerOptions.recognition_benchmark_phase
       || null,
-    evaluation_decision_trace_packet: result.evaluation_decision_trace_packet || null,
+    evaluation_decision_trace_packet: terminalEvaluationTrace || result.evaluation_decision_trace_packet || null,
     identity_resolution_status: result.identity_resolution_status || null,
     ambiguity_status: result.ambiguity_status || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,

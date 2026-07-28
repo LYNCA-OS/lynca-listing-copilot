@@ -11,7 +11,10 @@ import {
   providerOutputFieldClass
 } from "../lib/listing/providers/provider-output-field-contract.mjs";
 import { scoreReviewedTitleSemProjection } from "../lib/listing/evaluation/reviewed-title-sem-projection.mjs";
-import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import {
+  applyIdentityResolutionGate,
+  identityResolverPolicyVersion
+} from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 
 const readFields = new Set(providerFieldsByClass(providerOutputFieldClass.READ));
@@ -66,7 +69,11 @@ export async function replayProviderOutputContract(report = {}, {
   for (const result of results) {
     const packet = result.evaluation_decision_trace_packet;
     const snapshot = packet?.replay_snapshot;
-    if (!snapshot || snapshot.status !== "COMPLETE") {
+    const repairableMissing = snapshot?.status === "PARTIAL"
+      && Array.isArray(snapshot.missing_components)
+      && snapshot.missing_components.length === 1
+      && snapshot.missing_components[0] === "resolver_version";
+    if (!snapshot || (snapshot.status !== "COMPLETE" && !repairableMissing)) {
       rows.push({
         asset_id: result.asset_id || null,
         replayable: false,
@@ -96,7 +103,9 @@ export async function replayProviderOutputContract(report = {}, {
       maxLength,
       providerId: "openai_legacy"
     });
-    const baselineTitle = clean(snapshot.final_title || result.final_title || result.title);
+    const terminalTitle = clean(result.final_title || result.title);
+    const snapshotTitle = clean(snapshot.final_title);
+    const baselineTitle = terminalTitle || snapshotTitle;
     const candidateTitle = clean(candidate.final_title || candidate.title);
     const reference = referenceTitle(result);
     const baselineRecall = reference ? policyFairTokenRecall(reference, baselineTitle) : null;
@@ -118,7 +127,15 @@ export async function replayProviderOutputContract(report = {}, {
     rows.push({
       asset_id: result.asset_id || null,
       replayable: true,
+      replay_snapshot_status: repairableMissing ? "REPAIRED" : "COMPLETE",
+      replay_snapshot_repaired_components: repairableMissing ? [{
+        component: "resolver_version",
+        value: identityResolverPolicyVersion,
+        reason: "exact deployed source revision has a canonical static resolver owner version"
+      }] : [],
       baseline_title: baselineTitle,
+      replay_snapshot_title: snapshotTitle || null,
+      replay_snapshot_terminal_title_match: Boolean(snapshotTitle && baselineTitle === snapshotTitle),
       candidate_title: candidateTitle,
       title_changed: baselineTitle !== candidateTitle,
       reference_title: reference || null,
