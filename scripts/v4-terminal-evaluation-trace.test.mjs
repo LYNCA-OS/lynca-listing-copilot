@@ -24,6 +24,11 @@ const result = {
   },
   raw_provider_field_evidence: [],
   forward_enumeration_trace: [],
+  forward_enumeration_candidate_packet: {
+    enumerator_version: "constraint-enumerator-v3",
+    constraint_snapshot_version: "constraint-model-test-v1",
+    constraint_snapshot_source_sha256: "b".repeat(64)
+  },
   raw_observed_fields: {
     year: "2025",
     manufacturer: "Panini",

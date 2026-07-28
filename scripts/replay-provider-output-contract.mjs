@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { attachForwardEnumerationCandidates } from "../lib/listing/catalog/forward-enumeration-adapter.mjs";
+import { constraintEnumerationVersion } from "../lib/listing/catalog/constraint-enumerator.mjs";
 import { loadConstraintModelSnapshot } from "../lib/listing/catalog/constraint-model-store.mjs";
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 import {
@@ -265,6 +266,9 @@ function missingRequiredReplaySnapshotComponents(snapshot = {}) {
     normalization_version: Boolean(clean(versions.normalization)),
     resolver_version: Boolean(clean(versions.resolver)),
     pipeline_fingerprint: Boolean(clean(versions.recognition_pipeline_fingerprint)),
+    constraint_snapshot_version: Boolean(clean(versions.constraint_snapshot)),
+    constraint_snapshot_source_sha256: Boolean(clean(versions.constraint_snapshot_sha256)),
+    constraint_enumerator_version: Boolean(clean(versions.constraint_enumerator)),
     effective_terminal_renderer_inputs:
       Object.hasOwn(rendererInputs, "serial_numerator_verified")
       && [true, false, null].includes(rendererInputs.serial_numerator_verified)
@@ -380,7 +384,11 @@ function hasIndependentReplayEvidence(state = {}, field = "") {
   ));
   if (attributedCandidates.length) return attributedCandidates.some((candidate) => (
     replayValueKey(candidate?.normalized_value ?? candidate?.value) === replayValueKey(resolvedValue)
-    && candidate.sources.some(independentReplayEvidenceSource)
+    && candidate.sources.some((source) => independentSourceSupportsValue(
+      source,
+      candidate?.normalized_value ?? candidate?.value,
+      field
+    ))
   ));
   const unattributedCandidateKeys = new Set(candidates.map((candidate) => (
     replayValueKey(candidate?.normalized_value ?? candidate?.value)
@@ -653,9 +661,19 @@ function replaySerialVerificationTrace(serialNumeratorVerified) {
 
 export async function replayProviderOutputContract(report = {}, {
   model = null,
-  maxLength = 80
+  maxLength = 80,
+  allowConstraintModelChange = false
 } = {}) {
   const constraintModel = model || await loadConstraintModelSnapshot();
+  const candidateConstraintVersions = Object.freeze({
+    constraint_snapshot: clean(
+      constraintModel.snapshot_version
+      || constraintModel.schema_version
+      || constraintModel.version
+    ) || null,
+    constraint_snapshot_sha256: clean(constraintModel.snapshot_source_sha256) || null,
+    constraint_enumerator: constraintEnumerationVersion
+  });
   const results = Array.isArray(report.results) ? report.results : [];
   const rows = [];
 
@@ -738,6 +756,38 @@ export async function replayProviderOutputContract(report = {}, {
         replayable: false,
         reason: "SNAPSHOT_REQUIRED_COMPONENTS_MISSING",
         missing_components: missingRequiredComponents
+      });
+      continue;
+    }
+    const recordedConstraintVersions = {
+      constraint_snapshot: clean(snapshot.versions?.constraint_snapshot) || null,
+      constraint_snapshot_sha256: clean(snapshot.versions?.constraint_snapshot_sha256) || null,
+      constraint_enumerator: clean(snapshot.versions?.constraint_enumerator) || null
+    };
+    const candidateConstraintVersionsMissing = Object.entries(candidateConstraintVersions)
+      .filter(([, value]) => !value)
+      .map(([field]) => field);
+    if (candidateConstraintVersionsMissing.length) {
+      rows.push({
+        asset_id: result.asset_id || null,
+        replayable: false,
+        reason: "CONSTRAINT_CANDIDATE_VERSION_MISSING",
+        missing_components: candidateConstraintVersionsMissing,
+        candidate_constraint_versions: candidateConstraintVersions
+      });
+      continue;
+    }
+    const constraintVersionMismatches = Object.keys(recordedConstraintVersions).filter((field) => (
+      recordedConstraintVersions[field] !== candidateConstraintVersions[field]
+    ));
+    if (constraintVersionMismatches.length && !allowConstraintModelChange) {
+      rows.push({
+        asset_id: result.asset_id || null,
+        replayable: false,
+        reason: "CONSTRAINT_REPLAY_VERSION_MISMATCH",
+        mismatch_fields: constraintVersionMismatches,
+        recorded_constraint_versions: recordedConstraintVersions,
+        candidate_constraint_versions: candidateConstraintVersions
       });
       continue;
     }
@@ -824,6 +874,10 @@ export async function replayProviderOutputContract(report = {}, {
     rows.push({
       asset_id: result.asset_id || null,
       replayable: true,
+      constraint_model_change_allowed: allowConstraintModelChange === true,
+      constraint_model_changed: constraintVersionMismatches.length > 0,
+      recorded_constraint_versions: recordedConstraintVersions,
+      candidate_constraint_versions: candidateConstraintVersions,
       replay_snapshot_status: "COMPLETE",
       replay_snapshot_repaired_components: [],
       baseline_title: baselineTitle,
@@ -856,7 +910,9 @@ export async function replayProviderOutputContract(report = {}, {
     ? Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(6))
     : null;
   return {
-    schema_version: "provider-output-contract-replay-v2",
+    schema_version: "provider-output-contract-replay-v3",
+    constraint_model_change_allowed: allowConstraintModelChange === true,
+    candidate_constraint_versions: candidateConstraintVersions,
     result_count: results.length,
     replayable_count: replayable.length,
     incomplete_snapshot_count: results.length - replayable.length,
@@ -881,8 +937,9 @@ export async function main(argv = process.argv) {
   if (!inputPath) throw new Error("--input is required");
   const outputPath = argValue(argv, "--out");
   const maxLength = Math.max(1, Number(argValue(argv, "--max-length", "80")) || 80);
+  const allowConstraintModelChange = argv.includes("--allow-constraint-model-change");
   const report = JSON.parse(await readFile(resolve(inputPath), "utf8"));
-  const replay = await replayProviderOutputContract(report, { maxLength });
+  const replay = await replayProviderOutputContract(report, { maxLength, allowConstraintModelChange });
   if (outputPath) {
     const resolved = resolve(outputPath);
     await mkdir(dirname(resolved), { recursive: true });

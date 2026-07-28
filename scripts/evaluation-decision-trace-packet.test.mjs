@@ -17,6 +17,12 @@ const payload = {
     trace_level: "evaluation"
   }
 };
+const constraintSnapshotHash = "b".repeat(64);
+const forwardEnumerationCandidatePacket = {
+  enumerator_version: "constraint-enumerator-v3",
+  constraint_snapshot_version: "constraint-model-test-v1",
+  constraint_snapshot_source_sha256: constraintSnapshotHash
+};
 assert.equal(evaluationTraceEnabled(payload), true);
 assert.equal(applyRecognitionBenchmarkProfile({}, {
   profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
@@ -97,7 +103,8 @@ const completeReplayPacket = buildEvaluationDecisionTracePacket({
     enabled: false,
     decisions: []
   },
-  forward_enumeration_trace: [{ field: "product", status: "UNKNOWN", rule_id: "set_not_in_model" }]
+  forward_enumeration_trace: [{ field: "product", status: "UNKNOWN", rule_id: "set_not_in_model" }],
+  forward_enumeration_candidate_packet: forwardEnumerationCandidatePacket
 }, payload);
 assert.equal(completeReplayPacket.replay_snapshot.status, "COMPLETE");
 assert.equal(completeReplayPacket.replay_snapshot.versions.recognition_pipeline_fingerprint, "a".repeat(64));
@@ -124,7 +131,8 @@ const missingReplayEvidenceArrays = buildEvaluationDecisionTracePacket({
     serial_numerator_verified: null,
     trust_resolved_print_run_without_evidence: true
   },
-  retrieval_application: { enabled: false, decisions: [] }
+  retrieval_application: { enabled: false, decisions: [] },
+  forward_enumeration_candidate_packet: forwardEnumerationCandidatePacket
 }, payload);
 assert.equal(missingReplayEvidenceArrays.replay_snapshot.status, "PARTIAL");
 assert.ok(missingReplayEvidenceArrays.replay_snapshot.missing_components.includes("provider_field_evidence"));

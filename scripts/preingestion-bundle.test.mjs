@@ -473,6 +473,8 @@ const typedKnowledgeFirstRoute = __listingCopilotTitleTestHooks.knowledgeFirstRo
   },
   constraintModel: {
     schema_version: "test-constraint-model-v1",
+    snapshot_version: "test-constraint-model-v1",
+    snapshot_source_sha256: "b".repeat(64),
     team_value_contract: {
       schema_version: "team-identity-semantics-v1",
       semantic_values_validated: true,
@@ -509,6 +511,8 @@ const untrustedPremiseCannotBecomeDecisiveFact = __listingCopilotTitleTestHooks.
   },
   constraintModel: {
     schema_version: "test-constraint-model-v1",
+    snapshot_version: "test-constraint-model-v1",
+    snapshot_source_sha256: "b".repeat(64),
     team_value_contract: {
       schema_version: "team-identity-semantics-v1",
       semantic_values_validated: true,

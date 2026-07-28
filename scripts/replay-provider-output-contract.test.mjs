@@ -15,12 +15,23 @@ assert.equal(requiredAcceptanceFailureRegression([], ["lot_quantity"]), true);
 
 const model = {
   schema_version: "constraint-model-test-v1",
+  snapshot_version: "constraint-model-test-v1",
+  snapshot_source_sha256: "b".repeat(64),
   source_card_count: 1,
   player_teams: {},
   player_team_years: {},
   set_product_years: {
     "fade to black": ["2025|Panini Phoenix"]
   }
+};
+const emptyModel = {
+  schema_version: "constraint-model-empty-test-v1",
+  snapshot_version: "constraint-model-empty-test-v1",
+  snapshot_source_sha256: "c".repeat(64),
+  source_card_count: 0,
+  player_teams: {},
+  player_team_years: {},
+  set_product_years: {}
 };
 
 function normalizationProjection(input = {}, output = {}) {
@@ -130,6 +141,9 @@ const snapshot = {
   semantic_retrieval_application: { enabled: false, decisions: [] },
   versions: {
     recognition_pipeline_fingerprint: "a".repeat(64),
+    constraint_snapshot: "constraint-model-test-v1",
+    constraint_snapshot_sha256: "b".repeat(64),
+    constraint_enumerator: "constraint-enumerator-v3",
     normalization: "normalization-v1",
     resolver: "resolver-v1",
     renderer: "renderer-v3-scg"
@@ -331,6 +345,24 @@ const normalizationDroppedWithMismatchedOcrCandidate = projectReadOnlyProviderSn
   normalization: normalizationProjection({ year: "2025" }, {})
 });
 assert.equal(normalizationDroppedWithMismatchedOcrCandidate.fields.year, undefined);
+
+const attributedCandidateSourceMustSupportItsValue = projectReadOnlyProviderSnapshot({
+  provider_fields: { set: "Prizm" },
+  observed_fields: {},
+  normalized_evidence: {
+    set: {
+      value: "Prizm",
+      normalized_value: "Prizm",
+      status: "CONFIRMED",
+      candidates: [{
+        value: "Prizm",
+        sources: [{ source_type: "OCR", observed_text: "Chrome" }]
+      }]
+    }
+  },
+  normalization: normalizationProjection({ set: "Prizm" }, {})
+});
+assert.equal(attributedCandidateSourceMustSupportItsValue.fields.set, undefined);
 
 const normalizationDroppedWithMatchingOcrCandidate = projectReadOnlyProviderSnapshot({
   provider_fields: { year: "2025" },
@@ -694,16 +726,13 @@ const serialRejected = await replayProviderOutputContract({
     }
   }]
 }, {
-  model: {
-    schema_version: "constraint-model-empty-test-v1",
-    source_card_count: 0,
-    player_teams: {},
-    player_team_years: {},
-    set_product_years: {}
-  }
+  model: emptyModel,
+  allowConstraintModelChange: true
 });
 assert.equal(serialRejected.gate_passed, true, JSON.stringify(serialRejected.rows[0], null, 2));
 assert.equal(serialRejected.rows[0].candidate_title, serialRejectedTitle);
+assert.equal(serialRejected.rows[0].constraint_model_changed, true);
+assert.equal(serialRejected.rows[0].constraint_model_change_allowed, true);
 
 assert.equal(replayRowsPassGate([{
   replayable: true,
@@ -780,13 +809,8 @@ const reordered = await replayProviderOutputContract({
     }
   }]
 }, {
-  model: {
-    schema_version: "constraint-model-empty-test-v1",
-    source_card_count: 0,
-    player_teams: {},
-    player_team_years: {},
-    set_product_years: {}
-  }
+  model: emptyModel,
+  allowConstraintModelChange: true
 });
 assert.equal(reordered.rows[0].title_changed, true);
 assert.equal(reordered.rows[0].baseline_policy_fair_token_recall, 1);
@@ -835,16 +859,56 @@ const normalizationDropReplay = await replayProviderOutputContract({
     }
   }]
 }, {
+  model: emptyModel,
+  allowConstraintModelChange: true
+});
+assert.equal(normalizationDropReplay.rows[0].candidate_title.includes("2025"), false);
+assert.equal(normalizationDropReplay.gate_passed, false);
+
+const implicitConstraintModelDriftIsRejected = await replayProviderOutputContract({
+  results: [{
+    asset_id: "asset-constraint-drift",
+    final_title: snapshot.final_title,
+    reference_title: snapshot.final_title,
+    evaluation_decision_trace_packet: { replay_snapshot: snapshot }
+  }]
+}, { model: emptyModel });
+assert.equal(implicitConstraintModelDriftIsRejected.replayable_count, 0);
+assert.equal(
+  implicitConstraintModelDriftIsRejected.rows[0].reason,
+  "CONSTRAINT_REPLAY_VERSION_MISMATCH"
+);
+assert.deepEqual(
+  implicitConstraintModelDriftIsRejected.rows[0].mismatch_fields.sort(),
+  ["constraint_snapshot", "constraint_snapshot_sha256"]
+);
+
+const unversionedConstraintCandidateIsRejected = await replayProviderOutputContract({
+  results: [{
+    asset_id: "asset-unversioned-constraint-model",
+    final_title: snapshot.final_title,
+    reference_title: snapshot.final_title,
+    evaluation_decision_trace_packet: { replay_snapshot: snapshot }
+  }]
+}, {
   model: {
-    schema_version: "constraint-model-empty-test-v1",
+    schema_version: "constraint-model-unversioned-test-v1",
     source_card_count: 0,
     player_teams: {},
     player_team_years: {},
     set_product_years: {}
-  }
+  },
+  allowConstraintModelChange: true
 });
-assert.equal(normalizationDropReplay.rows[0].candidate_title.includes("2025"), false);
-assert.equal(normalizationDropReplay.gate_passed, false);
+assert.equal(unversionedConstraintCandidateIsRejected.replayable_count, 0);
+assert.equal(
+  unversionedConstraintCandidateIsRejected.rows[0].reason,
+  "CONSTRAINT_CANDIDATE_VERSION_MISSING"
+);
+assert.deepEqual(
+  unversionedConstraintCandidateIsRejected.rows[0].missing_components,
+  ["constraint_snapshot_sha256"]
+);
 
 const partialResolverVersionIsNotRepairable = await replayProviderOutputContract({
   results: [{
@@ -888,5 +952,8 @@ assert.ok(selfReportedCompleteButMissingRequiredComponents.rows[0].missing_compo
 assert.ok(selfReportedCompleteButMissingRequiredComponents.rows[0].missing_components.includes("semantic_retrieval_application"));
 assert.ok(selfReportedCompleteButMissingRequiredComponents.rows[0].missing_components.includes("provider_field_evidence"));
 assert.ok(selfReportedCompleteButMissingRequiredComponents.rows[0].missing_components.includes("derivation_provenance"));
+assert.ok(selfReportedCompleteButMissingRequiredComponents.rows[0].missing_components.includes("constraint_snapshot_version"));
+assert.ok(selfReportedCompleteButMissingRequiredComponents.rows[0].missing_components.includes("constraint_snapshot_source_sha256"));
+assert.ok(selfReportedCompleteButMissingRequiredComponents.rows[0].missing_components.includes("constraint_enumerator_version"));
 
 console.log("provider output contract replay tests passed");

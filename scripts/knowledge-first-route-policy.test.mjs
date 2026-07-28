@@ -31,6 +31,7 @@ function enumerated(field, status, value = null, candidates = []) {
       source: "CATALOG_CONSTRAINT_SNAPSHOT",
       trust: "CONSENSUS_FACT",
       version: "test-constraint-model-v1",
+      source_sha256: "b".repeat(64),
       rule_id: reason,
       team_value_contract: field === "team" && status === "VALUE"
         ? "team-identity-semantics-v1"
@@ -113,6 +114,27 @@ const deterministic = planKnowledgeFirstRecognition({
 });
 assert.equal(deterministic.route, knowledgeFirstRoutes.DETERMINISTIC_FINAL);
 assert.equal(deterministic.model_call_budget, 0);
+
+const conflictingManufacturerAliases = planKnowledgeFirstRecognition({
+  usableImageCount: 2,
+  evidenceDocument: evidence({
+    year: "2025",
+    manufacturer: "Panini",
+    brand: "Topps",
+    players: ["Victor Wembanyama"],
+    card_name: "Fade To Black",
+    product: "Phoenix"
+  }, {
+    year: confirmed("2025"),
+    manufacturer: confirmed("Panini"),
+    brand: confirmed("Topps"),
+    players: confirmed(["Victor Wembanyama"]),
+    card_name: confirmed("Fade To Black"),
+    product: confirmed("Phoenix")
+  })
+});
+assert.equal(conflictingManufacturerAliases.route, knowledgeFirstRoutes.WRITER_REVIEW);
+assert.ok(conflictingManufacturerAliases.evidence_snapshot.blocked_fields.includes("manufacturer"));
 
 const conflicted = planKnowledgeFirstRecognition({
   usableImageCount: 2,

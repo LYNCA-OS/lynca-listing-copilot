@@ -12,6 +12,8 @@ import { constraintModelSnapshot, loadConstraintModelSnapshot } from "../lib/lis
 
 const model = {
   schema_version: "constraint-model-v1",
+  snapshot_version: "constraint-model-v1",
+  snapshot_source_sha256: "b".repeat(64),
   source_card_count: 100,
   team_value_contract: {
     schema_version: "team-identity-semantics-v1",
@@ -62,6 +64,8 @@ test("only VALUE or EMPTY crosses into CSM candidates; UNKNOWN remains trace", (
     sport: "basketball"
   }, model);
   assert.equal(packet.trace.find((row) => row.field === "team").status, outcomes.UNKNOWN);
+  assert.equal(packet.constraint_snapshot_version, "constraint-model-v1");
+  assert.equal(packet.constraint_snapshot_source_sha256, "b".repeat(64));
   assert.equal(packet.candidates.some((row) => row.derived_field === "team"), false);
   assert.equal(packet.candidates.find((row) => row.derived_field === "product").value.canonical, "panini phoenix");
 });
