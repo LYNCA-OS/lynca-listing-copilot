@@ -1237,20 +1237,25 @@ assert.ok(
 );
 assert.match(
   nativeRecognitionCoreSource,
-  /if \(decision\?\.shadow_only !== true\)[\s\S]*recognition_preflight: await recognitionPreflightPromise[\s\S]*const snapshot = await waitForPromiseWithin\(recognitionPreflightPromise, 0\)/,
+  /if \(decision\?\.shadow_only !== true\)[\s\S]*recognition_preflight: await recognitionPreflightPromise[\s\S]*snapshot = await waitForPromiseWithin\(recognitionPreflightPromise, 0\)/,
   "only an authoritative Worker may join; shadow-only Worker evidence must use a zero-budget snapshot"
 );
 assert.match(
   nativeRecognitionCoreSource,
   /completion_status: "DEFERRED_AFTER_WRITER_READY"[\s\S]*writer_join_wait_ms: 0[\s\S]*writer_critical_path_joined: false/,
-  "a late shadow Worker must leave an explicit non-blocking trace"
+  "a late shadow Worker must leave an explicit non-blocking marker"
+);
+assert.match(
+  nativeRecognitionCoreSource,
+  /catch \(error\) \{[\s\S]*recognition_preflight_shadow_failed_before_writer_ready[\s\S]*completion_status: "FAILED_BEFORE_WRITER_READY"[\s\S]*writer_critical_path_joined: false/,
+  "a rejected shadow Worker must fail closed without escaping into the writer title path"
 );
 const knowledgeFirstRefreshPromise = nativeRecognitionCoreSource.indexOf(
   "const knowledgeFirstRouteShadowPromise = Promise.all"
 );
 assert.match(
   nativeRecognitionCoreSource,
-  /const typedRouteEvaluationEnabled = evaluationTraceEnabled\(payload\);[\s\S]*typedRouteEvaluationEnabled[\s\S]*knowledge_first_constraint_model_load_ms[\s\S]*loadConstraintModelSnapshot\(\)[\s\S]*: Promise\.resolve\(null\)/,
+  /const typedRouteEvaluationEnabled = evaluationTraceEnabled\(payload\);[\s\S]*const constraintModelPromise = \(typedRouteEvaluationEnabled[\s\S]*\? loadConstraintModelSnapshot\(\)[\s\S]*: Promise\.resolve\(null\)/,
   "normal production must not read and parse the Shadow constraint snapshot"
 );
 const knowledgeFirstRefreshDetached = nativeRecognitionCoreSource.indexOf(
@@ -1285,6 +1290,31 @@ assert.match(
   nativeRecognitionCoreSource,
   /snapshotKnowledgeFirstRouteShadowForEvaluation[\s\S]*waitForPromiseWithin\([\s\S]*completedDecisionPromise[\s\S]*0[\s\S]*DEFERRED_AFTER_WRITER_READY/,
   "a late knowledge-first Shadow must not delay writer-ready persistence"
+);
+const shadowConstraintLoadStart = nativeRecognitionCoreSource.indexOf(
+  "const constraintModelPromise = (typedRouteEvaluationEnabled"
+);
+const shadowConstraintLoadEnd = nativeRecognitionCoreSource.indexOf(
+  "const recognitionFastFinalDisabled",
+  shadowConstraintLoadStart
+);
+assert.ok(
+  shadowConstraintLoadStart > 0 && shadowConstraintLoadEnd > shadowConstraintLoadStart,
+  "the evaluation-only constraint load must remain visible in the native core"
+);
+const shadowConstraintLoadSource = nativeRecognitionCoreSource.slice(
+  shadowConstraintLoadStart,
+  shadowConstraintLoadEnd
+);
+assert.match(
+  shadowConstraintLoadSource,
+  /typedRouteEvaluationEnabled[\s\S]*loadConstraintModelSnapshot\(\)/,
+  "cold evaluation may still load the constraint snapshot for counterfactual routing"
+);
+assert.doesNotMatch(
+  shadowConstraintLoadSource,
+  /timeAsync\(\s*timingContext/,
+  "a late counterfactual constraint load must not mutate the writer timing or node ledger"
 );
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");

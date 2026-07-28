@@ -353,11 +353,63 @@ try {
     productionEvidenceDocument,
     "a late shadow Worker must not alter production evidence or the title path"
   );
+  const deferredWorkerSnapshotBeforeLateCompletion = structuredClone(deferredWorkerSnapshot);
   finishLateWorker({
     decision: { run: true, shadow_only: true, reason: "cold_evaluation" },
     evidenceDocument: workerEvidenceDocument
   });
   await lateWorkerPromise;
+  await Promise.resolve();
+  assert.deepEqual(
+    deferredWorkerSnapshot,
+    deferredWorkerSnapshotBeforeLateCompletion,
+    "late Worker completion must not backpatch the returned writer snapshot"
+  );
+
+  const failedShadowSnapshot = await snapshotRecognitionPreflightAfterProvider({
+    recognitionPreflightPromise: Promise.reject(new Error("shadow worker rejected")),
+    decision: { run: true, shadow_only: true, reason: "cold_evaluation" }
+  });
+  assert.equal(failedShadowSnapshot.completion_status, "FAILED_BEFORE_WRITER_READY");
+  assert.equal(failedShadowSnapshot.writer_join_wait_ms, 0);
+  assert.equal(failedShadowSnapshot.writer_critical_path_joined, false);
+  assert.equal(failedShadowSnapshot.recognition_preflight.failed_before_writer_ready, true);
+  assert.equal(failedShadowSnapshot.recognition_preflight.error.code, "recognition_worker_error");
+  assert.equal(
+    recognitionPreflightEvidenceApplication(
+      productionEvidenceDocument,
+      failedShadowSnapshot.recognition_preflight
+    ).production_evidence_document,
+    productionEvidenceDocument,
+    "a rejected shadow Worker must remain fail-closed outside the writer title path"
+  );
+
+  let finishAuthoritativeWorker;
+  let authoritativeSnapshotSettled = false;
+  const authoritativeWorkerPromise = new Promise((resolve) => {
+    finishAuthoritativeWorker = resolve;
+  });
+  const authoritativeSnapshotPromise = snapshotRecognitionPreflightAfterProvider({
+    recognitionPreflightPromise: authoritativeWorkerPromise,
+    decision: { run: true, shadow_only: false, reason: "authoritative_test" }
+  }).then((value) => {
+    authoritativeSnapshotSettled = true;
+    return value;
+  });
+  await Promise.resolve();
+  assert.equal(
+    authoritativeSnapshotSettled,
+    false,
+    "an authoritative Worker must retain its existing writer-critical join"
+  );
+  finishAuthoritativeWorker({
+    decision: { run: true, shadow_only: false, reason: "authoritative_test" },
+    evidenceDocument: workerEvidenceDocument
+  });
+  const authoritativeSnapshot = await authoritativeSnapshotPromise;
+  assert.equal(authoritativeSnapshot.completion_status, "REQUIRED_JOIN_COMPLETED");
+  assert.equal(authoritativeSnapshot.writer_critical_path_joined, true);
+  assert.equal(authoritativeSnapshot.recognition_preflight.evidenceDocument, workerEvidenceDocument);
 
   const completeShadowRoute = { route: "TARGETED_VISUAL_AND_KNOWLEDGE" };
   assert.deepEqual(
@@ -390,8 +442,15 @@ try {
     writer_critical_path_joined: false,
     late_result_policy: "NO_BUSINESS_STATE_BACKPATCH"
   });
+  const deferredRouteBeforeLateCompletion = structuredClone(deferredRoute);
   finishLateRoute(completeShadowRoute);
   await lateRoutePromise;
+  await Promise.resolve();
+  assert.deepEqual(
+    deferredRoute,
+    deferredRouteBeforeLateCompletion,
+    "late counterfactual route completion must not backpatch the returned writer trace"
+  );
 } finally {
   globalThis.fetch = originalFetch;
   for (const [key, value] of Object.entries(originalEnv)) {
