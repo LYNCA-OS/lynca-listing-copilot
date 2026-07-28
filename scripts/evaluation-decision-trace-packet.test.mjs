@@ -36,6 +36,17 @@ const packet = buildEvaluationDecisionTracePacket({
   rendered_fields: { fields: { year: "2025" } },
   renderer: "deterministic",
   renderer_version: "v1",
+  usage: { provider_calls: 1 },
+  provider_call_skipped: false,
+  knowledge_first_route_shadow: {
+    route: "TARGETED_VISUAL_ASSIST",
+    provider_aux_route_shadow: {
+      schema_version: "provider-aux-route-shadow-v1",
+      route: "TARGETED_MODEL_ASSIST",
+      production_effect: "SHADOW_ONLY",
+      title_effect: "NONE"
+    }
+  },
   retrieval: { query_fields: { year: "2025" } },
   candidate_control_plane_trace: {
     candidate_application_trace: [{
@@ -64,7 +75,7 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v6");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v7");
 assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
 assert.equal(packet.replay_snapshot.status, "PARTIAL");
 assert.ok(packet.replay_snapshot.missing_components.includes("pipeline_fingerprint"));
@@ -79,6 +90,10 @@ assert.equal(packet.recognition_preflight.shadow_only, true);
 assert.equal(packet.recognition_preflight.worker_call_count, 1);
 assert.equal(packet.recognition_preflight.evidence_field_count, 4);
 assert.equal(packet.recognition_preflight.worker_execution_ms, 8400);
+assert.equal(packet.provider_aux_route.route, "TARGETED_MODEL_ASSIST");
+assert.equal(packet.provider_aux_route.observed_production_action, "RUN_FULL_PROVIDER");
+assert.equal(packet.provider_aux_route.observed_provider_calls, 1);
+assert.equal(packet.provider_aux_route.observed_provider_call_skipped, false);
 assert.equal(classifyEvaluationMissingField(packet, "manufacturer"), "PROVIDER_NOT_OBSERVED");
 assert.equal(classifyEvaluationMissingField({ ...packet, provider_observation_fields: { manufacturer: "Topps" }, normalization: { output: {} } }, "manufacturer"), "NORMALIZATION_DROPPED");
 assert.equal(classifyEvaluationMissingField(packet, "year"), "CATALOG_NOT_RETRIEVED");

@@ -418,10 +418,12 @@ try {
       Promise.resolve(completeShadowRoute)
     ),
     {
-      ...completeShadowRoute,
+      route: "FULL_PROVIDER",
+      post_initial_diagnostic_decision: completeShadowRoute,
       shadow_trace_completion: {
         status: "COMPLETED_BEFORE_WRITER_READY",
-        writer_critical_path_joined: false
+        writer_critical_path_joined: false,
+        activation_input: "INITIAL_DECISION_ONLY"
       }
     }
   );
