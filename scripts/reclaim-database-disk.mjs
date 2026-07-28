@@ -116,6 +116,10 @@ export function orphanStatements(cohort = ORPHAN_COHORT) {
 
 export function plan() {
   return [
+    "-- 0. EXPORT FIRST. scripts/export-telemetry-local.mjs pulls these tables",
+    "--    onto the local machine. Truncate is irreversible and these records",
+    "--    are wanted; run the export to completion before anything below.",
+    "",
     "-- 1. instant, needs no headroom: pure logs",
     ...truncateStatements(),
     "",
