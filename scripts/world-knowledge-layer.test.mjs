@@ -97,6 +97,36 @@ assert.equal(attached.world_knowledge.accepted_count, 2);
 assert.equal(attached.world_knowledge.identity_evidence_items.length, 2);
 assert.ok(attached.world_knowledge.identity_evidence_items.every((item) => item.metadata.candidate_is_evidence_not_truth));
 
+const uncheckedStaysTraceOnly = attachWorldKnowledgeProposals({
+  fields: {
+    players: ["Caleb Williams"],
+    year: "2024",
+    manufacturer: "Panini",
+    set: "Rookies"
+  },
+  world_knowledge_proposals: [
+    { field: "product", value: "Prizm", basis: "KNOWN" },
+    { field: "team", value: "Chicago Bears", basis: "KNOWN" }
+  ]
+}, null, { enabled: true });
+assert.equal(uncheckedStaysTraceOnly.world_knowledge.unchecked_count, 2);
+assert.equal(uncheckedStaysTraceOnly.world_knowledge.trace_only_count, 2);
+assert.equal(uncheckedStaysTraceOnly.world_knowledge.evidence_eligible_count, 0);
+assert.deepEqual(uncheckedStaysTraceOnly.world_knowledge.identity_evidence_items, []);
+
+const selfLabelledObservationStaysTraceOnly = attachWorldKnowledgeProposals({
+  fields: { players: ["Caleb Williams"], year: "2024" },
+  world_knowledge_proposals: [
+    { field: "team", value: "Chicago Bears", basis: "OBSERVED" }
+  ]
+}, model, { enabled: true });
+assert.equal(selfLabelledObservationStaysTraceOnly.world_knowledge.unchecked_count, 1);
+assert.equal(
+  selfLabelledObservationStaysTraceOnly.world_knowledge.decisions[0].reason,
+  "observed_proposal_lacks_direct_evidence"
+);
+assert.deepEqual(selfLabelledObservationStaysTraceOnly.world_knowledge.identity_evidence_items, []);
+
 assert.equal(Object.hasOwn(providerReadOnlyOutputShape(), "k"), false);
 assert.equal(providerReadOnlyOutputShape({ includeWorldKnowledge: true }).k.length, 1);
 const prompt = readOnlyV4RecognitionPrompt({

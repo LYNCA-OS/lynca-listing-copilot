@@ -122,7 +122,19 @@ assert.equal(key.result_version.owner_versions.provider.model_revision, "gpt-4.1
 assert.equal(key.result_version.owner_versions.sem, "linear-cos-10-23-v25");
 assert.equal(key.result_version.owner_versions.renderer, "renderer-v3-scg");
 assert.equal(key.result_version.owner_versions.catalog, "catalog-revision-test-1");
+assert.equal(Object.hasOwn(key.result_version.owner_versions, "world_knowledge"), false);
 assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
+
+const worldKnowledgeKey = buildIdentityResultCacheKey({
+  ...payload,
+  provider_options: {
+    v4_world_knowledge_proposals: true,
+    recognition_benchmark_profile: "cold_algorithm_benchmark",
+    trace_level: "evaluation"
+  }
+});
+assert.equal(worldKnowledgeKey.result_version.owner_versions.world_knowledge, "world-knowledge-layer-v3");
+assert.notEqual(worldKnowledgeKey.version_fingerprint, key.version_fingerprint);
 
 const noTenantKey = buildIdentityResultCacheKey({ ...payload, tenant_id: "" });
 assert.equal(noTenantKey.ok, true);
