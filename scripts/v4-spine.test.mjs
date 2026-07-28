@@ -1235,6 +1235,34 @@ assert.ok(
   providerDoneHandoff < recognitionPreflightJoin,
   "provider capacity must be released before waiting for non-provider recognition preflight evidence."
 );
+const knowledgeFirstRefreshPromise = nativeRecognitionCoreSource.indexOf(
+  "const knowledgeFirstRouteShadowPromise = Promise.all"
+);
+assert.match(
+  nativeRecognitionCoreSource,
+  /const typedRouteEvaluationEnabled = evaluationTraceEnabled\(payload\);[\s\S]*typedRouteEvaluationEnabled[\s\S]*knowledge_first_constraint_model_load_ms[\s\S]*loadConstraintModelSnapshot\(\)[\s\S]*: Promise\.resolve\(null\)/,
+  "normal production must not read and parse the Shadow constraint snapshot"
+);
+const knowledgeFirstRefreshDetached = nativeRecognitionCoreSource.indexOf(
+  "void knowledgeFirstRouteShadowPromise",
+  knowledgeFirstRefreshPromise
+);
+const fullProviderFallbackCall = nativeRecognitionCoreSource.indexOf(
+  "const providerResult = await createProviderTitle",
+  knowledgeFirstRefreshPromise
+);
+assert.ok(
+  knowledgeFirstRefreshPromise >= 0
+    && knowledgeFirstRefreshDetached > knowledgeFirstRefreshPromise
+    && knowledgeFirstRefreshDetached < fullProviderFallbackCall
+    && fullProviderFallbackCall > knowledgeFirstRefreshPromise,
+  "knowledge-first Shadow must refresh from typed preflight evidence without delaying the deployed Provider start"
+);
+assert.doesNotMatch(
+  nativeRecognitionCoreSource.slice(knowledgeFirstRefreshPromise, fullProviderFallbackCall + 2_000),
+  /await knowledgeFirstRouteShadowPromise/,
+  "Shadow route telemetry must never add a terminal critical-path join"
+);
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
 assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish its cache probe before final telemetry is assembled.");
@@ -1475,6 +1503,40 @@ const resolvedOcrOverridePresentation = adaptRecognitionResultToV4({
 });
 assert.match(resolvedOcrOverridePresentation.final_title, /03\/10/);
 assert.equal(resolvedOcrOverridePresentation.resolved_fields.print_run_number, "03/10");
+
+const missingSerialVerificationRemainsConservative = adaptRecognitionResultToV4({
+  sessionId: "v4sess-missing-serial-verification",
+  result: {
+    confidence: "HIGH",
+    final_title: "2025 Panini Test Player #/25",
+    resolved_fields: {
+      year: "2025",
+      manufacturer: "Panini",
+      players: ["Test Player"],
+      print_run_number: "03/25",
+      print_run_numerator: "03",
+      print_run_denominator: "25",
+      serial_number: "03/25"
+    },
+    normalized_evidence: {
+      print_run_number: {
+        value: "03/25",
+        normalized_value: "03/25",
+        status: "CONFIRMED",
+        sources: [{ source_type: "OCR", observed_text: "03/25" }]
+      }
+    },
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.match(missingSerialVerificationRemainsConservative.final_title, /#\/25/);
+assert.equal(
+  missingSerialVerificationRemainsConservative.provider_result.effective_terminal_renderer_inputs.serial_numerator_verified,
+  false,
+  "shadow-only work must capture, not change, the deployed conservative serial fallback"
+);
 
 const verifiedOcrMustBeatDenominatorOnlyEvidence = adaptRecognitionResultToV4({
   sessionId: "v4sess-verified-ocr-beats-denominator",

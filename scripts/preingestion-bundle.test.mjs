@@ -419,6 +419,116 @@ assert.equal(hardEvidenceDocument.evidence.print_run_number.value, "09/50");
 assert.equal(hardEvidenceDocument.evidence.card_grade.value, "9.5");
 assert.equal(hardEvidenceDocument.evidence.auto_grade.value, "10");
 
+const knowledgeFirstPreflightMerge = __listingCopilotTitleTestHooks.knowledgeFirstEvidenceDocumentBeforeProvider(
+  hardEvidencePayload,
+  {
+    resolved: { print_run_number: "08/50" },
+    evidence: {
+      print_run_number: {
+        value: "08/50",
+        normalized_value: "08/50",
+        status: "CONFIRMED",
+        confidence: 0.94,
+        candidates: [{
+          value: "08/50",
+          confidence: 0.94,
+          sources: [{ source_type: "OCR", observed_text: "08/50" }]
+        }],
+        sources: [{ source_type: "OCR", observed_text: "08/50" }],
+        conflicts: []
+      }
+    },
+    unresolved: []
+  }
+);
+assert.equal(
+  knowledgeFirstPreflightMerge.evidence.print_run_number.status,
+  "CONFLICT",
+  "late preflight evidence must be merged into the Shadow snapshot instead of being lost after the 50 ms race"
+);
+
+const directCardEvidence = (value) => ({
+  value,
+  normalized_value: value,
+  status: "CONFIRMED",
+  sources: [{ source_type: "CARD_FRONT", observed_text: Array.isArray(value) ? value.join(" / ") : String(value) }]
+});
+const typedKnowledgeFirstRoute = __listingCopilotTitleTestHooks.knowledgeFirstRouteFromPreProviderEvidence({
+  usableImageCount: 2,
+  evidenceDocument: {
+    resolved: {
+      year: "2025",
+      manufacturer: "Panini",
+      players: ["Victor Wembanyama"],
+      set: "Fade To Black",
+      sport: "basketball"
+    },
+    evidence: {
+      year: directCardEvidence("2025"),
+      manufacturer: directCardEvidence("Panini"),
+      players: directCardEvidence(["Victor Wembanyama"]),
+      set: directCardEvidence("Fade To Black"),
+      sport: directCardEvidence("basketball")
+    }
+  },
+  constraintModel: {
+    schema_version: "test-constraint-model-v1",
+    snapshot_version: "test-constraint-model-v1",
+    snapshot_source_sha256: "b".repeat(64),
+    team_value_contract: {
+      schema_version: "team-identity-semantics-v1",
+      semantic_values_validated: true,
+      subject_coverage_exhaustive: true
+    },
+    player_teams: { "victor wembanyama": ["San Antonio Spurs"] },
+    set_product_years: { "fade to black": ["2025|Panini Phoenix"] }
+  }
+});
+assert.deepEqual(
+  typedKnowledgeFirstRoute.forward_enumeration_trace.map(({ field, status }) => ({ field, status })),
+  [{ field: "team", status: "VALUE" }, { field: "product", status: "VALUE" }]
+);
+assert.equal(typedKnowledgeFirstRoute.route, "DETERMINISTIC_FINAL");
+assert.equal(typedKnowledgeFirstRoute.model_call_budget, 0);
+assert.equal(typedKnowledgeFirstRoute.production_action, "RUN_FULL_PROVIDER");
+
+const untrustedPremiseCannotBecomeDecisiveFact = __listingCopilotTitleTestHooks.knowledgeFirstRouteFromPreProviderEvidence({
+  usableImageCount: 2,
+  evidenceDocument: {
+    resolved: {
+      year: "2025",
+      manufacturer: "Panini",
+      players: ["Victor Wembanyama"],
+      set: "Fade To Black",
+      sport: "tcg"
+    },
+    evidence: {
+      year: directCardEvidence("2025"),
+      manufacturer: directCardEvidence("Panini"),
+      players: directCardEvidence(["Victor Wembanyama"]),
+      card_number: directCardEvidence("FTB-1")
+    }
+  },
+  constraintModel: {
+    schema_version: "test-constraint-model-v1",
+    snapshot_version: "test-constraint-model-v1",
+    snapshot_source_sha256: "b".repeat(64),
+    team_value_contract: {
+      schema_version: "team-identity-semantics-v1",
+      semantic_values_validated: true,
+      subject_coverage_exhaustive: true
+    },
+    player_teams: { "victor wembanyama": ["San Antonio Spurs"] },
+    set_product_years: { "fade to black": ["2025|Panini Phoenix"] }
+  }
+});
+assert.notEqual(untrustedPremiseCannotBecomeDecisiveFact.route, "DETERMINISTIC_FINAL");
+assert.deepEqual(
+  untrustedPremiseCannotBecomeDecisiveFact.forward_enumeration_trace.map(({ field, status }) => ({ field, status })),
+  [{ field: "team", status: "UNKNOWN" }, { field: "product", status: "UNKNOWN" }],
+  "unsourced set/sport values must not be laundered into decisive catalog facts"
+);
+
 const atomicGradeDocument = __listingCopilotTitleTestHooks.preingestionEvidenceDocumentFromPayload({
   preingestion_evidence_patches: [
     {

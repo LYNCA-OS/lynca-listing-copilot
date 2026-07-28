@@ -14,26 +14,32 @@ import {
 } from "../lib/listing/providers/openai-emergency-provider.mjs";
 
 const model = {
+  schema_version: "test-constraint-model-v1",
+  team_value_contract: {
+    schema_version: "team-identity-semantics-v1",
+    semantic_values_validated: true,
+    subject_coverage_exhaustive: true
+  },
   player_teams: { "kobe bryant": ["Lakers"] },
   player_team_years: { "kobe bryant": { 2008: ["Lakers"] } },
-  set_product_years: { contours: ["2025|Panini Phoenix"] }
+  set_product_years: { contours: ["2008|Panini Phoenix"] }
 };
 
 assert.equal(validateWorldKnowledgeProposal(
   { field: "team", value: "Lakers", basis: "KNOWN" },
-  { players: ["Kobe Bryant"], year: "2008" },
+  { players: ["Kobe Bryant"], year: "2008", sport: "basketball" },
   model
 ).disposition, "ACCEPTED");
 
 assert.equal(validateWorldKnowledgeProposal(
   { field: "team", value: "Celtics", basis: "KNOWN" },
-  { players: ["Kobe Bryant"], year: "2008" },
+  { players: ["Kobe Bryant"], year: "2008", sport: "basketball" },
   model
 ).disposition, "REFUTED");
 
 assert.equal(validateWorldKnowledgeProposal(
   { field: "team", value: "Inter Miami", basis: "KNOWN" },
-  { players: ["Lionel Messi"], year: "2024" },
+  { players: ["Lionel Messi"], year: "2024", sport: "soccer" },
   model
 ).disposition, "UNCHECKED");
 
@@ -56,8 +62,32 @@ assert.equal(validateWorldKnowledgeProposal(
   model
 ).disposition, "INVALID");
 
+assert.equal(validateWorldKnowledgeProposal(
+  { field: "product", value: "Panini Phoenix", basis: "KNOWN" },
+  { set: "Contours", year: "2024", manufacturer: "Panini" },
+  model
+).disposition, "UNCHECKED");
+
+assert.equal(validateWorldKnowledgeProposal(
+  { field: "product", value: "Panini Phoenix", basis: "KNOWN" },
+  { set: "Contours", year: "2008", manufacturer: "Topps" },
+  model
+).disposition, "UNCHECKED");
+
+assert.equal(validateWorldKnowledgeProposal(
+  { field: "team", value: "Lakers", basis: "KNOWN" },
+  { players: ["Kobe Bryant"], year: "2008", sport: "basketball" },
+  { ...model, team_value_contract: undefined }
+).disposition, "UNCHECKED");
+
 const attached = attachWorldKnowledgeProposals({
-  fields: { players: ["Kobe Bryant"], year: "2008", set: "Contours" },
+  fields: {
+    players: ["Kobe Bryant"],
+    year: "2008",
+    sport: "basketball",
+    manufacturer: "Panini",
+    set: "Contours"
+  },
   world_knowledge_proposals: [
     { field: "team", value: "Lakers", basis: "KNOWN" },
     { field: "product", value: "Panini Phoenix", basis: "KNOWN" }
