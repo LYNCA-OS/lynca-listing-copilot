@@ -32,7 +32,7 @@ function resolved(row = {}) {
 
 function summarizeArm(report = {}, { candidate = false } = {}) {
   const rows = results(report);
-  const world = rows.map((row) => row.evaluation_decision_trace_packet?.world_knowledge).filter(Boolean);
+  const world = rows.map((row) => row.evaluation_decision_trace_packet?.world_knowledge_shadow_assist).filter(Boolean);
   const count = (field) => world.reduce((sum, item) => sum + Number(item?.[field] || 0), 0);
   return {
     cards: rows.length,
@@ -45,11 +45,9 @@ function summarizeArm(report = {}, { candidate = false } = {}) {
     product_present: rows.filter((row) => cleanText(resolved(row).product)).length,
     ...(candidate ? {
       world_knowledge_trace_coverage: `${world.length}/${rows.length}`,
-      proposal_count: count("proposal_count"),
-      accepted_count: count("accepted_count"),
-      unchecked_count: count("unchecked_count"),
-      refuted_count: count("refuted_count"),
-      invalid_count: count("invalid_count")
+      shadow_assist_requested: world.filter((item) => item.requested === true).length,
+      shadow_assist_not_run: world.filter((item) => item.execution_status === "NOT_RUN").length,
+      shadow_paid_provider_calls: count("paid_provider_calls")
     } : {})
   };
 }
@@ -79,7 +77,7 @@ export async function main(argv = process.argv.slice(2)) {
   const unseenBaseline = JSON.parse(await readFile(resolve(argValue(argv, "--unseen-baseline")), "utf8"));
   const unseenCandidate = JSON.parse(await readFile(resolve(argValue(argv, "--unseen-candidate")), "utf8"));
   const summary = {
-    schema_version: "world-knowledge-paired20-summary-v1",
+    schema_version: "world-knowledge-paired20-summary-v2",
     generated_at: new Date().toISOString(),
     unique_cards: 20,
     provider_calls_expected: 40,

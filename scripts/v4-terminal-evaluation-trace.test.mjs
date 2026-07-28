@@ -81,23 +81,22 @@ const result = {
     counterfactual_action: "KNOWLEDGE_ASSIST",
     route: "KNOWLEDGE_ASSIST"
   },
-  world_knowledge: {
-    schema_version: "world-knowledge-layer-v2",
-    enabled: true,
-    proposal_count: 1,
-    accepted_count: 1,
-    unchecked_count: 0,
-    refuted_count: 0,
-    invalid_count: 0,
-    decisions: [{
-      field: "team",
-      value: "Example Team",
-      basis: "KNOWN",
-      disposition: "ACCEPTED",
-      checked: true,
-      reason: "player_team_year_covered",
-      allowed_values: ["Example Team"]
-    }]
+  world_knowledge_shadow_assist: {
+    schema_version: "world-knowledge-shadow-assist-v1",
+    mode: "POST_OBSERVATION_SHADOW_ONLY",
+    requested: true,
+    execution_status: "NOT_RUN",
+    execution_reason: "separate_shadow_provider_not_implemented",
+    paid_provider_calls: 0,
+    resolver_effect: "NONE",
+    title_effect: "NONE",
+    input_hash: "c".repeat(64),
+    input: {
+      schema_version: "read_only_sparse_v3",
+      fields: { year: "2025", manufacturer: "Panini", players: ["Test Player"] },
+      unresolved: []
+    },
+    output: null
   },
   evaluation_decision_trace_packet: { schema_version: "pre-terminal-test" }
 };
@@ -109,15 +108,11 @@ assert.equal(packet.replay_snapshot.versions.resolver, identityResolverPolicyVer
 assert.notEqual(packet.replay_snapshot.final_title, result.final_title);
 assert.equal(packet.knowledge_first_route.production_action, "RUN_FULL_PROVIDER");
 assert.equal(packet.knowledge_first_route.counterfactual_action, "KNOWLEDGE_ASSIST");
-assert.deepEqual(packet.world_knowledge.decisions[0], {
-  field: "team",
-  value: "Example Team",
-  basis: "KNOWN",
-  disposition: "ACCEPTED",
-  checked: true,
-  reason: "player_team_year_covered",
-  allowed_values: ["Example Team"]
-});
+assert.equal(packet.world_knowledge_shadow_assist.execution_status, "NOT_RUN");
+assert.equal(packet.world_knowledge_shadow_assist.paid_provider_calls, 0);
+assert.equal(packet.world_knowledge_shadow_assist.resolver_effect, "NONE");
+assert.equal(packet.world_knowledge_shadow_assist.title_effect, "NONE");
+assert.equal(packet.world_knowledge_shadow_assist.output, null);
 assert.equal(terminalEvaluationDecisionTracePacket({}, payload), null);
 
 const productionPayload = {
