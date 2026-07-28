@@ -1,0 +1,104 @@
+name: world-knowledge-paired20
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: world-knowledge-paired20
+  cancel-in-progress: false
+
+jobs:
+  paired20:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      API_BASE_URL: https://listing.lyncafei.team
+      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify hosted credentials
+        run: |
+          test -n "$METAVERSE_USERNAME"
+          test -n "$METAVERSE_PASSWORD"
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+      - name: Build frozen familiar 10
+        run: |
+          node scripts/build-reviewed-title-blind-eval.mjs \
+            --source data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json \
+            --out /tmp/familiar10.json \
+            --sealed-labels-out /tmp/familiar10-labels.jsonl \
+            --limit 10 \
+            --selection-seed world-knowledge-paired20-v1 \
+            --sample-mode PAIRED_ABLATION \
+            --reuse-reason "Frozen familiar cohort for paired world-knowledge ablation." \
+            --reuse-scope-id world-knowledge-paired20-familiar-v1
+      - name: Paired familiar 10
+        run: |
+          node scripts/run-paired-eval.mjs \
+            --baseline-url "$API_BASE_URL" \
+            --candidate-url "$API_BASE_URL" \
+            --rounds 1 \
+            --report-only \
+            --dataset /tmp/familiar10.json \
+            --sealed-labels /tmp/familiar10-labels.jsonl \
+            --limit 10 \
+            --l2-wait-ms 360000 \
+            --both-read-only-provider-contract \
+            --candidate-world-knowledge-proposals \
+            --verified-asset-cache /tmp/familiar10-assets.json \
+            --verified-asset-cache-mode reuse \
+            --out-dir /tmp/world-knowledge-paired20 \
+            --label familiar
+      - name: Paired unseen 10
+        run: |
+          node scripts/run-paired-eval.mjs \
+            --baseline-url "$API_BASE_URL" \
+            --candidate-url "$API_BASE_URL" \
+            --rounds 1 \
+            --report-only \
+            --dataset data/eval/unseen-product/unseen17.json \
+            --sealed-labels data/eval/unseen-product/unseen17-labels.jsonl \
+            --limit 10 \
+            --l2-wait-ms 360000 \
+            --both-read-only-provider-contract \
+            --candidate-world-knowledge-proposals \
+            --verified-asset-cache data/eval/unseen-product/unseen17-verified-assets.json \
+            --verified-asset-cache-mode reuse \
+            --out-dir /tmp/world-knowledge-paired20 \
+            --label unseen
+      - name: Summarize both scoreboards
+        if: always()
+        run: |
+          test -f /tmp/world-knowledge-paired20/familiar-baseline-r1.json
+          test -f /tmp/world-knowledge-paired20/familiar-candidate-r1.json
+          test -f /tmp/world-knowledge-paired20/unseen-baseline-r1.json
+          test -f /tmp/world-knowledge-paired20/unseen-candidate-r1.json
+          node scripts/summarize-world-knowledge-paired-eval.mjs \
+            --familiar-baseline /tmp/world-knowledge-paired20/familiar-baseline-r1.json \
+            --familiar-candidate /tmp/world-knowledge-paired20/familiar-candidate-r1.json \
+            --unseen-baseline /tmp/world-knowledge-paired20/unseen-baseline-r1.json \
+            --unseen-candidate /tmp/world-knowledge-paired20/unseen-candidate-r1.json \
+            --out /tmp/world-knowledge-paired20/summary.json
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: world-knowledge-paired20-evidence
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/familiar10.json
+            /tmp/familiar10-labels.jsonl
+            /tmp/world-knowledge-paired20

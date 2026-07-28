@@ -50,6 +50,13 @@ assert.equal(buildSmokeArgs({
   ...commonArgs,
   worldKnowledgeProposals: true
 }).includes("--world-knowledge-proposals"), true);
+const cacheArgs = buildSmokeArgs({
+  ...commonArgs,
+  verifiedAssetCachePath: "cache.json",
+  verifiedAssetCacheMode: "reuse"
+});
+assert.ok(cacheArgs.includes("cache.json"));
+assert.ok(cacheArgs.includes("reuse"));
 
 assert.throws(
   () => scoreFromReportData({ results: [row({ provider_calls: 0, provider_call_skipped: true })] }, { expectedCount: 1 }),
