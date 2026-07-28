@@ -90,15 +90,43 @@ export function buildSchemas(rows = []) {
     }
   }
 
-  const schemas = [...products.values()].map((entry) => ({
-    season_year: entry.season_year,
+  // The consumer contract is not free-form. constraint-engine.mjs reads
+  // `collector_numbers`/`checklist_codes` for allowedChecklistCodes and
+  // `card_types` for allowedCardTypes, and matches a schema to an identity on
+  // `product` alone -- it never looks at the year. An earlier version of this
+  // file emitted `card_numbers` and `sets`, which the engine silently ignored:
+  // the same dead wiring as passing `[]`, only harder to notice.
+  //
+  // So schemas are keyed by product across years, and carry the names the
+  // engine actually reads. season_years is kept alongside for callers that do
+  // care about the year, since the pair (year, set) is what refutes a
+  // fabricated combination like "2021 Contours".
+  const byProductOnly = new Map();
+  for (const entry of products.values()) {
+    const existing = byProductOnly.get(entry.product) || {
+      product: entry.product,
+      sport: entry.sport,
+      season_years: new Set(),
+      sets: new Set(),
+      collector_numbers: new Set()
+    };
+    existing.season_years.add(entry.season_year);
+    for (const set of entry.sets) existing.sets.add(set);
+    for (const number of entry.card_numbers) existing.collector_numbers.add(number);
+    byProductOnly.set(entry.product, existing);
+  }
+  const schemas = [...byProductOnly.values()].map((entry) => ({
     product: entry.product,
     sport: entry.sport,
+    season_years: [...entry.season_years].sort(),
+    // `card_types` is what allowedCardTypes reads. A manufacturer set name is
+    // the closest published equivalent of a card type, and leaving it empty
+    // would make that rule vacuous rather than absent.
+    card_types: [...entry.sets].sort(),
+    collector_numbers: [...entry.collector_numbers].sort(),
     set_count: entry.sets.size,
-    card_number_count: entry.card_numbers.size,
-    sets: [...entry.sets].sort(),
-    card_numbers: [...entry.card_numbers].sort()
-  })).sort((left, right) => (left.product + left.season_year).localeCompare(right.product + right.season_year));
+    collector_number_count: entry.collector_numbers.size
+  })).sort((left, right) => left.product.localeCompare(right.product));
 
   // Only the discriminating entries are worth carrying: a set name found in one
   // product line identifies it outright, and that is the whole value here.
@@ -125,7 +153,7 @@ export async function main(argv = process.argv.slice(2)) {
   const { schemas, setToProducts } = buildSchemas(rows);
   const unique = discriminatingSets(setToProducts);
 
-  console.log(`product-years        ${schemas.length}`);
+  console.log(`product lines        ${schemas.length}`);
   console.log(`distinct set names   ${Object.keys(setToProducts).length}`);
   console.log(`  identifying exactly one product-year   ${unique.length}  (${(100 * unique.length / Object.keys(setToProducts).length).toFixed(1)}%)`);
 
