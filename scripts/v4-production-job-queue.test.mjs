@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
+  checkV4QueueEnqueueContractReady,
   claimV4RecognitionJobs,
   completeV4RecognitionJob,
   createV4DeterministicJobId,
@@ -16,12 +18,14 @@ import {
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
   tryAcquireV4QueueKick,
+  v4CanonicalJobIdentitySha256,
   v4JobLeaseHeartbeatEnabled,
   v4JobLeaseHeartbeatIntervalMs,
   v4JobLanes,
   v4JobTypes,
   v4JobStatuses,
   v4QueueDeploymentAffinity,
+  v4QueueEnqueueContractVersion,
   v4QueueSubmissionConcurrency
 } from "../lib/listing/v4/jobs/production-job-queue.mjs";
 import {
@@ -31,15 +35,45 @@ import {
 } from "../api/v4/listing-job-worker.js";
 import {
   authorizeFreshManualRetryJobs,
+  assertUniqueQueueJobIntents,
+  buildQueueDecisionFingerprint,
   canonicalizeQueueJobs,
   createQueueRequestBatchId,
   queueJobsRequireCreatePermission,
-  queueJobsRequireRetryPermission
+  queueJobsRequireRetryPermission,
+  schedulePreingestionRecognitionCommitWake
 } from "../api/v4/listing-job-enqueue.js";
 import { isV4CronRequest, isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
 import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/session/session-store.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
+const queueIdentityMigration = readFileSync(
+  new URL("../supabase/migrations/20260728120000_v4_queue_unique_stage_identity.sql", import.meta.url),
+  "utf8"
+);
+assert.match(queueIdentityMigration, /group by tenant_id, recognition_session_id, job_type/i);
+assert.match(queueIdentityMigration, /create unique index if not exists v4_recognition_jobs_tenant_session_stage_uidx/i);
+assert.match(queueIdentityMigration, /create unique index if not exists v4_recognition_jobs_semantic_work_uidx/i);
+assert.match(queueIdentityMigration, /image_generation_id/i);
+assert.match(queueIdentityMigration, /image_set_sha256/i);
+assert.match(queueIdentityMigration, /queue_decision_fingerprint/i);
+assert.match(queueIdentityMigration, /authorized_retry_of_job_id/i);
+assert.match(queueIdentityMigration, /queue_terminal_replay_revision_not_ready/i);
+assert.match(queueIdentityMigration, /count\(distinct job_item ->> 'id'\)/i);
+assert.match(queueIdentityMigration, /duplicate_job_id/i);
+assert.match(queueIdentityMigration, /job_semantic_identity_invalid/i);
+assert.match(queueIdentityMigration, /group by[\s\S]*job_item ->> 'asset_id'[\s\S]*queue_decision_fingerprint/i);
+assert.match(queueIdentityMigration, /duplicate_job_semantic_identity/i);
+assert.match(queueIdentityMigration, /create table if not exists public\.preingestion_recognition_commit_outbox/i);
+assert.match(queueIdentityMigration, /v4_queue_enqueue_contract_version/i);
+assert.match(queueIdentityMigration, /lease_expired_after_max_attempts/i);
+assert.match(queueIdentityMigration, /status in \('completed', 'processing', 'dead_letter'\)/i);
+assert.match(queueIdentityMigration, /enqueue_v4_recognition_batch_atomic_impl_20260728/i);
+assert.match(
+  queueIdentityMigration,
+  /revoke all on function public\.enqueue_v4_recognition_batch_atomic_impl_20260728\([\s\S]*from public, anon, authenticated, service_role/i,
+  "the unwrapped implementation must not remain callable by PostgREST roles"
+);
 
 assert.equal(
   v4QueueSubmissionConcurrency({}),
@@ -102,39 +136,101 @@ assert.equal(repeatedRow.recognition_session_id, row.recognition_session_id);
 assert.notEqual(createV4DeterministicJobId({ batchId: "other-batch", assetId: "asset-1" }), row.id);
 assert.notEqual(createV4DeterministicSessionId({ batchId: "other-batch", assetId: "asset-1" }), row.recognition_session_id);
 
-const selfExclusionFeedbackId = "feedback-current-card";
-const selfExclusionAssetId = "asset_33333333-3333-4333-8333-333333333333";
-const selfExclusionGenerationId = "asset_44444444-4444-4444-8444-444444444444";
-const canonicalizedSelfExclusionJob = await canonicalizeQueueJobs({
-  tenantId: "tenant-stage",
+const cacheBoundAssetId = "asset_56565656-5656-4565-8565-565656565656";
+const canonicalizedCacheBoundJob = await canonicalizeQueueJobs({
+  tenantId: "tenant-cache-bound",
   jobs: [{
-    asset_id: selfExclusionAssetId,
-    image_generation_id: selfExclusionGenerationId,
+    asset_id: cacheBoundAssetId,
+    image_generation_id: cacheBoundAssetId,
     payload: {
-      asset_id: selfExclusionAssetId,
-      image_generation_id: selfExclusionGenerationId,
-      source_feedback_id: selfExclusionFeedbackId,
-      images: [{ url: "data:image/jpeg;base64,client-transport-must-be-replaced" }]
+      asset_id: cacheBoundAssetId,
+      client_asset_ref: "cache-bound-client-ref",
+      identity_result_cache_key: "f".repeat(64),
+      identity_cache_image_generation_hash: "e".repeat(64)
     }
   }],
+  env: { OPENAI_LISTING_MODEL: "gpt-5-mini-2025-08-07" },
+  readCatalogRevision: async () => ({ ok: true, revision: "catalog-cache-bound-v1" }),
   readCanonical: async () => ({
-    image_generation_id: selfExclusionGenerationId,
-    image_set_sha256: "canonical-image-set-sha",
-    expected_original_count: 2,
-    images: [
-      { image_id: "front", bucket: "listing-feedback-images", object_path: "feedback/current/front.jpg" },
-      { image_id: "back", bucket: "listing-feedback-images", object_path: "feedback/current/back.jpg" }
-    ],
+    image_generation_id: cacheBoundAssetId,
+    image_set_sha256: "b".repeat(64),
+    expected_original_count: 1,
+    images: [{
+      image_id: "front",
+      role: "front_original",
+      storageRole: "front_original",
+      contentSha256: "a".repeat(64),
+      content_sha256: "a".repeat(64),
+      storageVerified: true,
+      storage_verified: true,
+      objectPath: "tenants/tenant-cache-bound/listing-assets/2026-07-28/cache-bound/front.jpg",
+      object_path: "tenants/tenant-cache-bound/listing-assets/2026-07-28/cache-bound/front.jpg",
+      bucket: "listing-card-images"
+    }],
     image_references: [],
     image_paths: {}
   })
 });
-assert.equal(
-  canonicalizedSelfExclusionJob[0].payload.source_feedback_id,
-  selfExclusionFeedbackId,
-  "canonical image rebinding must preserve the blind-eval self-exclusion identity"
+assert.match(canonicalizedCacheBoundJob[0].payload.identity_result_cache_key, /^[0-9a-f]{64}$/);
+assert.match(canonicalizedCacheBoundJob[0].payload.identity_cache_image_generation_hash, /^[0-9a-f]{64}$/);
+assert.notEqual(
+  canonicalizedCacheBoundJob[0].payload.identity_result_cache_key,
+  "f".repeat(64),
+  "the browser cannot forge the exact-result cache identity"
 );
-assert.equal(canonicalizedSelfExclusionJob[0].payload.images.length, 2);
+assert.notEqual(
+  canonicalizedCacheBoundJob[0].payload.identity_cache_image_generation_hash,
+  "e".repeat(64),
+  "the browser cannot forge the verified image-generation hash"
+);
+
+let activeCanonicalReads = 0;
+let peakCanonicalReads = 0;
+let activeCatalogRevisionReads = 0;
+const boundedCanonicalInputs = Array.from({ length: 18 }, (_, index) => {
+  const suffix = String(index + 1).padStart(12, "0");
+  const assetId = `asset_11111111-1111-4111-8111-${suffix}`;
+  return { asset_id: assetId, image_generation_id: assetId, payload: { asset_id: assetId } };
+});
+const boundedCanonicalized = await canonicalizeQueueJobs({
+  tenantId: "tenant-stage",
+  jobs: boundedCanonicalInputs,
+  env: { OPENAI_LISTING_MODEL: "gpt-5-mini-2025-08-07" },
+  readCatalogRevision: async () => {
+    activeCatalogRevisionReads += 1;
+    return { ok: true, revision: "catalog-test-revision" };
+  },
+  readCanonical: async ({ assetId }) => {
+    activeCanonicalReads += 1;
+    peakCanonicalReads = Math.max(peakCanonicalReads, activeCanonicalReads);
+    await new Promise((resolve) => setTimeout(resolve, 4));
+    activeCanonicalReads -= 1;
+    return {
+      image_generation_id: assetId,
+      image_set_sha256: assetId.slice(-12).padStart(64, "a"),
+      expected_original_count: 1,
+      images: [],
+      image_references: [],
+      image_paths: {}
+    };
+  }
+});
+assert.deepEqual(
+  boundedCanonicalized.map((job) => job.asset_id),
+  boundedCanonicalInputs.map((job) => job.asset_id),
+  "bounded canonical reads must preserve request order"
+);
+assert.ok(peakCanonicalReads <= 6, `canonical image reads must remain bounded; observed ${peakCanonicalReads}`);
+assert.ok(peakCanonicalReads > 1, "canonical reads should retain bounded parallelism");
+assert.equal(activeCatalogRevisionReads, 1, "one queue batch must read the active catalog revision exactly once");
+assert.ok(
+  boundedCanonicalized.every((job) => job.payload.active_catalog_snapshot_revision === "catalog-test-revision"),
+  "the one active catalog snapshot must be attached to every canonical job"
+);
+assert.ok(
+  boundedCanonicalized.every((job) => job.payload.queue_decision_replay_ready === true),
+  "complete immutable revisions must authorize cross-intent semantic replay"
+);
 
 const stageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-staged",
@@ -173,6 +269,10 @@ assert.equal(l2OnlyJobs.length, 1);
 assert.equal(l2OnlyJobs[0].job_type, v4JobTypes.FINAL_ASSISTED_TITLE);
 
 const freshRetryAssetId = "asset_11111111-1111-4111-8111-111111111111";
+const stableQueueDecisionPayload = {
+  queue_decision_fingerprint: "9".repeat(64),
+  queue_decision_replay_ready: true
+};
 assert.equal(
   queueJobsRequireRetryPermission([{ payload: { retry_of_job_id: "v4job_failed_prior" } }]),
   true,
@@ -189,22 +289,336 @@ const streamedBatchA = createQueueRequestBatchId({
   clientBatchToken: "client-batch",
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
-  jobs: [{ asset_id: freshRetryAssetId }]
+  jobs: [{ asset_id: freshRetryAssetId, payload: stableQueueDecisionPayload }]
 });
 const streamedBatchARepeat = createQueueRequestBatchId({
   clientBatchToken: "client-batch",
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
-  jobs: [{ asset_id: freshRetryAssetId }]
+  jobs: [{ asset_id: freshRetryAssetId, payload: stableQueueDecisionPayload }]
 });
 const streamedBatchB = createQueueRequestBatchId({
   clientBatchToken: "client-batch",
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
-  jobs: [{ asset_id: "asset_22222222-2222-4222-8222-222222222222" }]
+  jobs: [{ asset_id: "asset_22222222-2222-4222-8222-222222222222", payload: stableQueueDecisionPayload }]
 });
 assert.equal(streamedBatchA, streamedBatchARepeat, "the same streamed card must keep an idempotent batch id");
 assert.notEqual(streamedBatchA, streamedBatchB, "different streamed cards must not contend for one immutable batch row");
+const streamedBatchAcrossPageRefresh = createQueueRequestBatchId({
+  clientBatchToken: "new-page-local-token",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, payload: stableQueueDecisionPayload }]
+});
+assert.equal(streamedBatchA, streamedBatchAcrossPageRefresh, "page-local tokens must not fragment canonical request idempotency");
+const streamedBatchAcrossOperator = createQueueRequestBatchId({
+  clientBatchToken: "operator-b-transport-token",
+  tenantId: "tenant-stage",
+  operatorId: "operator-b",
+  jobs: [{ asset_id: freshRetryAssetId, payload: stableQueueDecisionPayload }]
+});
+const streamedBatchAcrossTenant = createQueueRequestBatchId({
+  clientBatchToken: "operator-b-transport-token",
+  tenantId: "tenant-other",
+  operatorId: "operator-b",
+  jobs: [{ asset_id: freshRetryAssetId, payload: stableQueueDecisionPayload }]
+});
+assert.notEqual(
+  streamedBatchA,
+  streamedBatchAcrossOperator,
+  "writer-owned queue sessions must remain separate across operators"
+);
+assert.notEqual(
+  streamedBatchA,
+  streamedBatchAcrossTenant,
+  "queue identity remains tenant-scoped even when verified-content cache replay is global"
+);
+const crossOperatorStagesA = expandV4RecognitionStageJobs({
+  batchId: streamedBatchA,
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, payload: { ...stableQueueDecisionPayload, force_l2_only: true } }]
+});
+const crossOperatorStagesB = expandV4RecognitionStageJobs({
+  batchId: streamedBatchAcrossOperator,
+  tenantId: "tenant-stage",
+  operatorId: "operator-b",
+  jobs: [{ asset_id: freshRetryAssetId, payload: { ...stableQueueDecisionPayload, force_l2_only: true } }]
+});
+assert.notEqual(crossOperatorStagesA[0].id, crossOperatorStagesB[0].id);
+assert.notEqual(crossOperatorStagesA[0].recognition_session_id, crossOperatorStagesB[0].recognition_session_id);
+assert.notEqual(
+  crossOperatorStagesA[0].operator_id,
+  crossOperatorStagesB[0].operator_id,
+  "the acting operator owns the independent writer workflow; exact-result replay handles shared recognition"
+);
+const queueDecisionFingerprintA = "a".repeat(64);
+const queueDecisionFingerprintB = "b".repeat(64);
+const decisionBoundBatch = createQueueRequestBatchId({
+  clientBatchToken: "page-token-a",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{
+    asset_id: freshRetryAssetId,
+    payload: {
+      image_generation_id: freshRetryAssetId,
+      image_set_sha256: "c".repeat(64),
+      recognition_profile: "writer-assisted-v1",
+      queue_decision_fingerprint: queueDecisionFingerprintA,
+      queue_decision_replay_ready: true,
+      clientTiming: { upload_ms: 10 },
+      category: "sports"
+    }
+  }]
+});
+const decisionBoundBatchTelemetryChanged = createQueueRequestBatchId({
+  clientBatchToken: "page-token-b",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{
+    asset_id: freshRetryAssetId,
+    payload: {
+      image_generation_id: freshRetryAssetId,
+      image_set_sha256: "c".repeat(64),
+      recognition_profile: "writer-assisted-v1",
+      queue_decision_fingerprint: queueDecisionFingerprintA,
+      queue_decision_replay_ready: true,
+      clientTiming: { upload_ms: 9999 },
+      category: "tcg"
+    }
+  }]
+});
+const decisionBoundBatchVersionChanged = createQueueRequestBatchId({
+  clientBatchToken: "page-token-c",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{
+    asset_id: freshRetryAssetId,
+    payload: {
+      image_generation_id: freshRetryAssetId,
+      image_set_sha256: "c".repeat(64),
+      recognition_profile: "writer-assisted-v1",
+      queue_decision_fingerprint: queueDecisionFingerprintB,
+      queue_decision_replay_ready: true
+    }
+  }]
+});
+const decisionBoundBatchClientNonceChanged = createQueueRequestBatchId({
+  clientBatchToken: "page-token-d",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{
+    asset_id: freshRetryAssetId,
+    idempotency_key: "forged-top-level-nonce",
+    payload: {
+      image_generation_id: freshRetryAssetId,
+      image_set_sha256: "c".repeat(64),
+      recognition_profile: "writer-assisted-v1",
+      queue_decision_fingerprint: queueDecisionFingerprintA,
+      queue_decision_replay_ready: true,
+      idempotency_key: "forged-payload-nonce"
+    }
+  }]
+});
+assert.equal(
+  decisionBoundBatch,
+  decisionBoundBatchTelemetryChanged,
+  "timing, category and page refresh changes must keep the same canonical batch"
+);
+assert.notEqual(
+  decisionBoundBatch,
+  decisionBoundBatchVersionChanged,
+  "a server decision version change must create a new durable queue identity"
+);
+assert.equal(
+  decisionBoundBatch,
+  decisionBoundBatchClientNonceChanged,
+  "client idempotency keys and nonces must not fork one semantic paid-work identity"
+);
+const immutableRevisionEnv = { OPENAI_LISTING_MODEL: "gpt-5-mini-2025-08-07" };
+const baseDecisionPayload = {
+  recognition_contract_version: "recognition-request-v2",
+  recognition_profile: "writer-assisted-v1",
+  mode: "pair",
+  max_title_length: 80,
+  capture_profile_id: "standard-card-v1",
+  force_l2_only: true,
+  create_l2_job: true,
+  provider_options: { enable_catalog_assist: true }
+};
+const catalogDecisionA = buildQueueDecisionFingerprint({
+  ...baseDecisionPayload,
+  active_catalog_snapshot_revision: "catalog-a"
+}, immutableRevisionEnv);
+const catalogDecisionB = buildQueueDecisionFingerprint({
+  ...baseDecisionPayload,
+  active_catalog_snapshot_revision: "catalog-b"
+}, immutableRevisionEnv);
+assert.equal(catalogDecisionA.replay_ready, true);
+assert.equal(catalogDecisionB.replay_ready, true);
+assert.notEqual(catalogDecisionA.fingerprint, catalogDecisionB.fingerprint, "catalog promotion must rotate queue identity");
+const catalogBatchA = createQueueRequestBatchId({
+  clientBatchToken: "catalog-page-a",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, payload: {
+    image_set_sha256: "d".repeat(64),
+    recognition_profile: "writer-assisted-v1",
+    queue_decision_fingerprint: catalogDecisionA.fingerprint,
+    queue_decision_replay_ready: catalogDecisionA.replay_ready
+  } }]
+});
+const catalogBatchB = createQueueRequestBatchId({
+  clientBatchToken: "catalog-page-b",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, payload: {
+    image_set_sha256: "d".repeat(64),
+    recognition_profile: "writer-assisted-v1",
+    queue_decision_fingerprint: catalogDecisionB.fingerprint,
+    queue_decision_replay_ready: catalogDecisionB.replay_ready
+  } }]
+});
+assert.notEqual(catalogBatchA, catalogBatchB, "catalog revision A/B must not replay one completed queue job");
+const catalogRevisionMissing = buildQueueDecisionFingerprint(baseDecisionPayload, immutableRevisionEnv);
+assert.equal(catalogRevisionMissing.replay_ready, false);
+assert.equal(catalogRevisionMissing.replay_block_reason, "active_catalog_snapshot_revision_required");
+const movingModelRevisionMissing = buildQueueDecisionFingerprint({
+  ...baseDecisionPayload,
+  active_catalog_snapshot_revision: "catalog-a"
+}, {});
+assert.equal(movingModelRevisionMissing.replay_ready, false);
+assert.equal(movingModelRevisionMissing.replay_block_reason, "provider_model_revision_required");
+const incompleteRevisionBatchA = createQueueRequestBatchId({
+  clientBatchToken: "request-retry-token",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, payload: {
+    image_generation_id: freshRetryAssetId,
+    image_set_sha256: "e".repeat(64),
+    recognition_profile: "writer-assisted-v1",
+    queue_decision_fingerprint: movingModelRevisionMissing.fingerprint,
+    queue_decision_replay_ready: false
+  } }]
+});
+const incompleteRevisionBatchRetry = createQueueRequestBatchId({
+  clientBatchToken: "request-retry-token",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, payload: {
+    image_generation_id: freshRetryAssetId,
+    image_set_sha256: "e".repeat(64),
+    recognition_profile: "writer-assisted-v1",
+    queue_decision_fingerprint: movingModelRevisionMissing.fingerprint,
+    queue_decision_replay_ready: false
+  } }]
+});
+const incompleteRevisionNewIntent = createQueueRequestBatchId({
+  clientBatchToken: "new-request-token",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: freshRetryAssetId, payload: {
+    image_generation_id: freshRetryAssetId,
+    image_set_sha256: "e".repeat(64),
+    recognition_profile: "writer-assisted-v1",
+    queue_decision_fingerprint: movingModelRevisionMissing.fingerprint,
+    queue_decision_replay_ready: false
+  } }]
+});
+const incompleteRevisionDifferentAssetSameTransportToken = createQueueRequestBatchId({
+  clientBatchToken: "request-retry-token",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  jobs: [{ asset_id: "asset_22222222-2222-4222-8222-222222222222", payload: {
+    image_generation_id: "asset_22222222-2222-4222-8222-222222222222",
+    image_set_sha256: "e".repeat(64),
+    recognition_profile: "writer-assisted-v1",
+    queue_decision_fingerprint: movingModelRevisionMissing.fingerprint,
+    queue_decision_replay_ready: false
+  } }]
+});
+assert.equal(incompleteRevisionBatchA, incompleteRevisionBatchRetry, "same network request token remains idempotent");
+assert.equal(
+  incompleteRevisionBatchA,
+  incompleteRevisionNewIntent,
+  "client tokens must never create a second paid-work identity, even when immutable revision readiness is incomplete"
+);
+assert.notEqual(
+  incompleteRevisionBatchA,
+  incompleteRevisionDifferentAssetSameTransportToken,
+  "one transport token must not collide across two verified assets"
+);
+assert.throws(() => assertUniqueQueueJobIntents([
+  { asset_id: freshRetryAssetId, payload: { image_set_sha256: "a".repeat(64), recognition_profile: "writer-assisted-v1" } },
+  { asset_id: freshRetryAssetId, payload: { image_set_sha256: "a".repeat(64), recognition_profile: "writer-assisted-v1" } }
+]), /duplicate_job_identity/);
+assert.doesNotThrow(() => assertUniqueQueueJobIntents([
+  { asset_id: freshRetryAssetId, payload: { image_set_sha256: "a".repeat(64), recognition_profile: "writer-assisted-v1" } },
+  { asset_id: freshRetryAssetId, payload: { image_set_sha256: "b".repeat(64), recognition_profile: "writer-assisted-v1" } }
+]));
+
+const identityBase = normalizeV4JobInput({
+  batchId: "batch-telemetry-identity",
+  tenantId: "tenant-stage",
+  operatorId: "operator-stage",
+  job: {
+    asset_id: freshRetryAssetId,
+    payload: {
+      image_set_sha256: "c".repeat(64),
+      category: "sports",
+      clientTiming: { client_upload_ms: 1 },
+      client_capture_quality: { glare_score: 1 },
+      effective_capture_quality: { image_count: 2 }
+    }
+  }
+});
+const identityTelemetryChanged = {
+  ...identityBase,
+  payload: {
+    ...identityBase.payload,
+    category: "tcg",
+    clientTiming: { client_upload_ms: 9999 },
+    client_capture_quality: { glare_score: 999 }
+  }
+};
+assert.equal(
+  v4CanonicalJobIdentitySha256(identityBase),
+  v4CanonicalJobIdentitySha256(identityTelemetryChanged),
+  "client telemetry and category must not fragment immutable job identity"
+);
+assert.notEqual(
+  v4CanonicalJobIdentitySha256(identityBase),
+  v4CanonicalJobIdentitySha256({
+    ...identityBase,
+    payload: { ...identityBase.payload, effective_capture_quality: { image_count: 1 } }
+  }),
+  "server-owned effective capture quality remains a decision-bearing identity input"
+);
+
+const deferredPreingestion = [];
+const scheduledPreingestion = schedulePreingestionRecognitionCommitWake({
+  tenantId: "tenant-stage",
+  jobs: [{ asset_id: freshRetryAssetId }, { asset_id: freshRetryAssetId }],
+  wake: async ({ assetId }) => ({ invoked: true, ok: true, asset_id: assetId }),
+  defer: (promise) => deferredPreingestion.push(promise)
+});
+assert.deepEqual(scheduledPreingestion, { scheduled: true, asset_count: 1 });
+assert.equal(deferredPreingestion.length, 1);
+assert.equal((await deferredPreingestion[0]).length, 1, "post-click outbox wake must deduplicate asset work");
+let deferFailureWakeCalls = 0;
+const scheduleWithBrokenRuntime = schedulePreingestionRecognitionCommitWake({
+  tenantId: "tenant-stage",
+  jobs: [{ asset_id: freshRetryAssetId }],
+  wake: async () => {
+    deferFailureWakeCalls += 1;
+    return { invoked: true, ok: true };
+  },
+  defer: () => { throw new Error("waitUntil unavailable"); }
+});
+assert.deepEqual(scheduleWithBrokenRuntime, { scheduled: false, asset_count: 1 });
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(deferFailureWakeCalls, 1, "a broken scheduler may affect latency but not erase the durable outbox wake attempt");
 await assert.rejects(() => authorizeFreshManualRetryJobs({
   tenantId: "tenant-stage",
   operatorId: "operator-stage",
@@ -246,6 +660,7 @@ const authorizedManualRetryJobs = await authorizeFreshManualRetryJobs({
   }
 });
 assert.equal(authorizedManualRetryJobs[0].trusted_manual_retry, true);
+assert.equal(authorizedManualRetryJobs[0].payload.authorized_retry_of_job_id, "v4job_failed_prior");
 assert.equal(authorizedManualRetryJobs[0].queue_tags.manual_retry_requested_by_user_id, "operator-stage");
 assert.equal(authorizedManualRetryJobs[0].queue_tags.manual_retry_original_operator_id, "operator-original");
 const freshManualRetryJobs = expandV4RecognitionStageJobs({
@@ -399,6 +814,14 @@ assert.equal(capacityLeasedPayload.provider_capacity_slot, 4);
 assert.equal(capacityLeasedPayload.v4_queue_worker_id, "worker-capacity-2");
 
 const writes = [];
+const queueContractRpcSuffix = "/rest/v1/rpc/v4_queue_enqueue_contract_version";
+const atomicEnqueueRpcSuffix = "/rest/v1/rpc/enqueue_v4_recognition_batch_atomic";
+function isQueueContractRequest(url) {
+  return String(url).endsWith(queueContractRpcSuffix);
+}
+function queueContractResponse() {
+  return jsonResponse(v4QueueEnqueueContractVersion);
+}
 function atomicEnqueueResponse(request = {}, overrides = {}) {
   const body = JSON.parse(request.body || "{}");
   const jobs = Array.isArray(body.p_jobs) ? body.p_jobs : [];
@@ -418,11 +841,13 @@ function atomicEnqueueResponse(request = {}, overrides = {}) {
     deduplicated_count: 0,
     session_rows_written: Array.isArray(body.p_sessions) ? body.p_sessions.length : 0,
     job_rows_written: jobs.length,
+    queue_enqueue_contract_version: v4QueueEnqueueContractVersion,
     ...overrides.transaction
   };
 }
 const fetchForWrites = async (url, request = {}) => {
   writes.push({ url: String(url), request });
+  if (isQueueContractRequest(url)) return queueContractResponse();
   if (String(url).includes("/rest/v1/rpc/enqueue_v4_recognition_batch_atomic")) {
     return jsonResponse(atomicEnqueueResponse(request));
   }
@@ -448,14 +873,85 @@ const enqueue = await enqueueV4RecognitionJobs({
 assert.equal(enqueue.batchId, "batch-enqueue");
 assert.equal(enqueue.queued_count, 2);
 assert.equal(enqueue.persistence_mode, "atomic_rpc");
-assert.equal(writes.length, 1);
-assert.ok(writes[0].url.endsWith("/rest/v1/rpc/enqueue_v4_recognition_batch_atomic"));
-const atomicBody = JSON.parse(writes[0].request.body);
+assert.equal(writes.length, 2);
+assert.ok(writes[0].url.endsWith(queueContractRpcSuffix));
+const atomicWrite = writes.find((entry) => entry.url.endsWith(atomicEnqueueRpcSuffix));
+assert.ok(atomicWrite, "contract-ready enqueue must reach the atomic RPC");
+const atomicBody = JSON.parse(atomicWrite.request.body);
 assert.equal(atomicBody.p_tenant_id, "tenant-2");
 assert.equal(atomicBody.p_operator_id, "operator-2");
 assert.equal(atomicBody.p_sessions.length, 2);
 assert.equal(atomicBody.p_jobs.length, 2);
 assert.equal(atomicBody.p_jobs[0].payload.client_asset_ref, "asset-a");
+
+const duplicateSemantic = await enqueueV4RecognitionJobs({
+  batchId: "batch-duplicate-semantic",
+  operatorId: "operator-2",
+  tenantId: "tenant-2",
+  jobs: [
+    {
+      id: "v4job_duplicate_a",
+      asset_id: "asset_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      recognition_session_id: "v4sess_duplicate",
+      job_type: v4JobTypes.FINAL_ASSISTED_TITLE,
+      payload: {
+        client_asset_ref: "asset-a",
+        recognition_session_id: "v4sess_duplicate"
+      }
+    },
+    {
+      id: "v4job_duplicate_b",
+      asset_id: "asset_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      recognition_session_id: "v4sess_duplicate",
+      job_type: v4JobTypes.FINAL_ASSISTED_TITLE,
+      payload: {
+        client_asset_ref: "asset-a",
+        recognition_session_id: "v4sess_duplicate"
+      }
+    }
+  ],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: fetchForWrites
+});
+assert.equal(duplicateSemantic.accepted_count, 0);
+assert.equal(duplicateSemantic.persistence_mode, "atomic_validation_failed");
+assert.ok(duplicateSemantic.jobs.every((entry) => entry.error === "atomic_enqueue_duplicate_job_identity"));
+assert.equal(
+  writes.filter((entry) => entry.url.endsWith(atomicEnqueueRpcSuffix)).length,
+  1,
+  "duplicate semantic identities must fail before the atomic RPC call"
+);
+
+const missingContractCalls = [];
+const missingContract = await enqueueV4RecognitionJobs({
+  batchId: "batch-contract-missing",
+  operatorId: "operator-contract",
+  tenantId: "tenant-contract",
+  jobs: [{
+    asset_id: "asset_12121212-1212-4121-8121-121212121212",
+    payload: { client_asset_ref: "asset-contract", images: [] }
+  }],
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async (url) => {
+    missingContractCalls.push(String(url));
+    return jsonResponse({ message: "missing" }, { ok: false, status: 404 });
+  }
+});
+assert.equal(missingContract.accepted_count, 0);
+assert.equal(missingContract.persistence_mode, "atomic_contract_not_ready");
+assert.equal(missingContractCalls.length, 1);
+assert.ok(missingContractCalls[0].endsWith(queueContractRpcSuffix));
+assert.equal(
+  missingContractCalls.some((url) => url.endsWith(atomicEnqueueRpcSuffix)),
+  false,
+  "code-first rollout must fail before the legacy atomic RPC can accept work without an outbox"
+);
+
+const contractProbe = await checkV4QueueEnqueueContractReady({
+  env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
+  fetchImpl: async () => queueContractResponse()
+});
+assert.equal(contractProbe.ready, true);
 
 const affinityWrites = [];
 await enqueueV4RecognitionJobs({
@@ -474,11 +970,13 @@ await enqueueV4RecognitionJobs({
   },
   fetchImpl: async (url, request = {}) => {
     affinityWrites.push({ url: String(url), request });
+    if (isQueueContractRequest(url)) return queueContractResponse();
     return jsonResponse(atomicEnqueueResponse(request));
   }
 });
+const affinityAtomicWrite = affinityWrites.find((entry) => entry.url.endsWith(atomicEnqueueRpcSuffix));
 assert.equal(
-  JSON.parse(affinityWrites[0].request.body).p_jobs[0].queue_tags.deployment_affinity,
+  JSON.parse(affinityAtomicWrite.request.body).p_jobs[0].queue_tags.deployment_affinity,
   "dpl_Preview123"
 );
 
@@ -503,6 +1001,7 @@ const dedupEnqueue = await enqueueV4RecognitionJobs({
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
   fetchImpl: async (url, request = {}) => {
     dedupWrites.push({ url: String(url), request });
+    if (isQueueContractRequest(url)) return queueContractResponse();
     if (String(url).includes("/rest/v1/rpc/enqueue_v4_recognition_batch_atomic")) {
       return jsonResponse(atomicEnqueueResponse(request, {
         transaction: {
@@ -535,13 +1034,15 @@ const rejectedEnqueue = await enqueueV4RecognitionJobs({
     payload: { client_asset_ref: "asset-rejected", images: [] }
   }],
   env: { SUPABASE_URL: "https://supabase.test", SUPABASE_SERVICE_ROLE_KEY: "service-role" },
-  fetchImpl: async (_url, request = {}) => jsonResponse(atomicEnqueueResponse(request, {
-    transaction: {
-      saved: false,
-      reason: "root_listing_asset_not_found",
-      jobs: []
-    }
-  }))
+  fetchImpl: async (url, request = {}) => isQueueContractRequest(url)
+    ? queueContractResponse()
+    : jsonResponse(atomicEnqueueResponse(request, {
+      transaction: {
+        saved: false,
+        reason: "root_listing_asset_not_found",
+        jobs: []
+      }
+    }))
 });
 assert.equal(rejectedEnqueue.queued_count, 0);
 assert.equal(rejectedEnqueue.persistence_mode, "atomic_rpc_rejected");
@@ -1255,6 +1756,14 @@ assert.equal(missingReadTenant.error, "tenant_id_required");
 
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, { V4_JOB_WORKER_SECRET: "secret" }), true);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "wrong" } }, { V4_JOB_WORKER_SECRET: "secret" }), false);
+assert.equal(
+  isV4WorkerRequest(
+    { headers: { [workerSecretHeader]: "preview-bypass" } },
+    { VERCEL_AUTOMATION_BYPASS_SECRET: "preview-bypass" }
+  ),
+  false,
+  "Preview protection credentials must never authorize queue execution"
+);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, {}), false);
 assert.equal(isV4CronRequest({ headers: { authorization: "Bearer cron-secret" } }, { CRON_SECRET: "cron-secret" }), true);
 assert.equal(isV4CronRequest({ headers: { authorization: "Bearer wrong" } }, { CRON_SECRET: "cron-secret" }), false);

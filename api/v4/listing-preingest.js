@@ -2,7 +2,12 @@ import v2PreingestHandler from "../listing-preingest.js";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { persistV4PreingestionBundle } from "../../lib/listing/v4/session/session-store.mjs";
-import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import {
+  callJsonHandler,
+  readJsonPayload,
+  requestPayloadErrorStatus,
+  sendJson
+} from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../../lib/tenant/index.mjs";
 
 export default async function handler(req, res) {
@@ -24,9 +29,14 @@ export default async function handler(req, res) {
 
   let payload;
   try {
-    payload = await readJsonPayload(req);
-  } catch {
-    sendJson(res, 400, withV4Version({ ok: false, message: "Invalid request." }));
+    payload = await readJsonPayload(req, { maxBytes: 64 * 1024 });
+  } catch (error) {
+    const status = requestPayloadErrorStatus(error);
+    sendJson(res, status, withV4Version({
+      ok: false,
+      code: status === 413 ? "preingestion_request_too_large" : "preingestion_invalid_request",
+      message: status === 413 ? "Pre-ingestion request is too large." : "Invalid request."
+    }));
     return;
   }
 
@@ -40,8 +50,12 @@ export default async function handler(req, res) {
     }
   });
   const body = v2Response.body || {};
-  const bundleId = body.bundle_id || payload.preingestion_bundle_id || payload.preingestionBundleId || "";
-  const v4Persistence = bundleId
+  // Only the authenticated v2 handler may mint/resolve bundle identity. A
+  // browser-supplied bundle id is never a persistence fallback.
+  const bundleId = v2Response.statusCode >= 200 && v2Response.statusCode < 300
+    ? String(body.bundle_id || "").trim()
+    : "";
+  const v4Persistence = bundleId && body.ok !== false
     ? await persistV4PreingestionBundle({
       bundleId,
       tenantId: context.tenantId,

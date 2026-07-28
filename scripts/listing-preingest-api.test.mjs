@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import handler from "../api/listing-preingest.js";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
-import { preingestionOcrJobVersion } from "../lib/listing/preingestion/preingestion-bundle.mjs";
+import { preingestionOcrJobKeyPrefix } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
 process.env.SUPABASE_URL = "https://supabase.test";
@@ -12,6 +12,7 @@ process.env.LISTING_IMAGE_SIGNED_URL_TTL_SECONDS = "600";
 process.env.ENABLE_PADDLE_OCR_FIELD_VERIFIER = "true";
 process.env.PADDLE_OCR_WORKER_URL = "https://ocr.test";
 process.env.PADDLE_OCR_WORKER_TOKEN = "test-ocr-token";
+process.env.OCR_WORKER_REVISION = "ocr-worker-rev-current";
 process.env.V4_INTERNAL_BASE_URL = "https://internal.test";
 process.env.V4_JOB_WORKER_SECRET = "test-worker-secret";
 const assetId = "asset_22222222-2222-4222-8222-222222222222";
@@ -245,11 +246,11 @@ assert.equal(result.body.ok, true);
 assert.equal(result.body.bundle_id, bundleWrite.bundle_id);
 assert.equal(result.body.saved, true);
 assert.equal(result.body.preprocessing_summary.image_count, 2);
-assert.equal(result.body.signed_read_url_count, 2);
-assert.ok(result.body.worker_jobs_enqueued >= 2);
-assert.equal(result.body.ocr_dispatch_started, true);
-await new Promise((resolve) => setTimeout(resolve, 0));
-assert.ok(calls.some((call) => call.path.endsWith("/api/v4/listing-preingest-worker")));
+assert.equal(result.body.signed_read_url_count, 0);
+assert.equal(result.body.worker_jobs_enqueued, 0);
+assert.equal(result.body.ocr_dispatch_started, false);
+assert.equal(result.body.preprocessing_summary.paid_work_deferred_until_recognition_commit, true);
+assert.equal(calls.some((call) => call.path.endsWith("/api/v4/listing-preingest-worker")), false);
 assert.equal(bundleWrite.asset_id, assetId);
 assert.equal(bundleWrite.tenant_id, "tenant_a");
 assert.equal(bundleWrite.source, "listing_preingest_api", "untrusted source names must not create arbitrary bundle lanes");
@@ -266,13 +267,10 @@ assert.deepEqual(bundleWrite.images.map((image) => ({
 ], "pre-ingestion must replace, not merge, browser image identity and dimensions");
 assert.deepEqual(bundleWrite.initial_evidence, {}, "browser initial evidence must be ignored");
 assert.deepEqual(bundleWrite.evidence_patches, [], "browser evidence patches must be ignored");
+assert.equal(bundleWrite.quality_summary.client_capture_quality, null, "browser quality telemetry must not control stored preprocessing");
 assert.equal(JSON.stringify(bundleWrite).includes("read-token"), false, "signed read URLs must not be written to Supabase");
 assert.equal(calls.some((call) => call.path.endsWith("/image_derived_assets")), false, "legacy non-generation-scoped derived rows must not enter the canonical bundle");
-assert.ok(Array.isArray(jobsWrite));
-// Consumerless job types default OFF; only OCR crop jobs are enqueued.
-assert.ok(jobsWrite.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobsWrite.every((job) => job.tenant_id === "tenant_a"));
-assert.equal(new Set(jobsWrite.map((job) => job.job_key)).size, jobsWrite.length);
+assert.equal(jobsWrite, null, "paid OCR jobs must not be created before the writer commits recognition");
 
 // Re-ingestion retains only evidence produced by the authenticated OCR worker.
 const trustedWorkerPatch = {
@@ -286,7 +284,7 @@ const trustedWorkerPatch = {
   confidence: 0.94,
   provenance: {
     generated_by: "preingestion_ocr_worker",
-    job_key: `ocr:${preingestionOcrJobVersion}:${bundleWrite.bundle_id}:serial-front`
+    job_key: `${preingestionOcrJobKeyPrefix({ ocrWorkerRevision: process.env.OCR_WORKER_REVISION })}${bundleWrite.bundle_id}:serial-front`
   }
 };
 bundleWrite.initial_evidence = {
@@ -303,6 +301,15 @@ bundleWrite.evidence_patches = [
     patch_id: "browser-forgery",
     value: "999/999",
     provenance: { generated_by: "browser", job_key: "forged" }
+  },
+  {
+    ...trustedWorkerPatch,
+    patch_id: "stale-worker-revision",
+    value: "1/1",
+    provenance: {
+      generated_by: "preingestion_ocr_worker",
+      job_key: `ocr:ocr-crop-v21:ocr-worker-rev-old:${bundleWrite.bundle_id}:serial-front`
+    }
   }
 ];
 const secondResult = await callApi({
@@ -316,7 +323,7 @@ const secondResult = await callApi({
     source_image_id: "front",
     provenance: {
       generated_by: "preingestion_ocr_worker",
-      job_key: `ocr:${preingestionOcrJobVersion}:${bundleWrite.bundle_id}:client-forgery`
+      job_key: `${preingestionOcrJobKeyPrefix({ ocrWorkerRevision: process.env.OCR_WORKER_REVISION })}${bundleWrite.bundle_id}:client-forgery`
     }
   }]
 });
@@ -346,6 +353,10 @@ assert.equal(missing.body.ok, false);
 const nonDurable = await callApi({ asset_id: "asset-1" });
 assert.equal(nonDurable.statusCode, 400);
 assert.equal(nonDurable.body.code, "invalid_durable_listing_asset_id");
+
+const oversized = await callApi({ asset_id: assetId, ignored: "x".repeat(70 * 1024) });
+assert.equal(oversized.statusCode, 413);
+assert.equal(oversized.body.code, "preingestion_request_too_large");
 
 const bundleWritesBeforeScopeFailures = calls.filter((call) => (
   call.path.endsWith("/preingestion_bundles") && call.method === "POST"

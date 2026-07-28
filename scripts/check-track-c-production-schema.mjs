@@ -15,6 +15,7 @@ const requiredTables = Object.freeze([
   "listing_assets",
   "listing_reviews",
   "preingestion_jobs",
+  "preingestion_recognition_commit_outbox",
   "v4_recognition_batches",
   "v4_recognition_sessions",
   "v4_recognition_jobs",
@@ -38,6 +39,7 @@ const tenantScopedTables = Object.freeze([
   "listing_assets",
   "listing_reviews",
   "preingestion_jobs",
+  "preingestion_recognition_commit_outbox",
   "v4_recognition_batches",
   "v4_recognition_sessions",
   "v4_recognition_jobs",
@@ -54,14 +56,16 @@ const serviceOnlyFactTables = Object.freeze([
   "v4_sem_validation_events",
   "listing_identity_resolution_cache",
   "listing_active_catalog_snapshot",
-  "listing_writer_final_replay"
+  "listing_writer_final_replay",
+  "preingestion_recognition_commit_outbox"
 ]);
 
 const serviceUpdatableFactTables = Object.freeze([
   "v4_learning_events",
   "listing_identity_resolution_cache",
   "listing_active_catalog_snapshot",
-  "listing_writer_final_replay"
+  "listing_writer_final_replay",
+  "preingestion_recognition_commit_outbox"
 ]);
 
 const serviceDeletableFactTables = Object.freeze([
@@ -117,6 +121,10 @@ const requiredFunctions = Object.freeze([
   "release_v4_stage_capacity(text,text,text)",
   "persist_v4_writer_feedback_transaction(text,text,text,text,jsonb,jsonb)",
   "enqueue_v4_recognition_batch_atomic(jsonb,jsonb,text,jsonb,text)",
+  "claim_preingestion_recognition_commit_outbox(integer,text,text,text)",
+  "settle_preingestion_recognition_commit_outbox(bigint,text,boolean,text,integer)",
+  "enqueue_recognition_preingestion_ocr_jobs(jsonb,text)",
+  "v4_queue_enqueue_contract_version()",
   "fence_v4_recognition_job_execution(text,text,integer)",
   "persist_v4_noncritical_artifacts(text,jsonb,jsonb,jsonb,jsonb)",
   "persist_v4_writer_ready_and_release_capacity(text,jsonb,text,text)",
@@ -146,6 +154,10 @@ const serviceOnlyFunctions = Object.freeze([
   "heartbeat_v4_recognition_job(text,text,integer)",
   "persist_v4_writer_feedback_transaction(text,text,text,text,jsonb,jsonb)",
   "enqueue_v4_recognition_batch_atomic(jsonb,jsonb,text,jsonb,text)",
+  "claim_preingestion_recognition_commit_outbox(integer,text,text,text)",
+  "settle_preingestion_recognition_commit_outbox(bigint,text,boolean,text,integer)",
+  "enqueue_recognition_preingestion_ocr_jobs(jsonb,text)",
+  "v4_queue_enqueue_contract_version()",
   "fence_v4_recognition_job_execution(text,text,integer)",
   "track_c_production_schema_catalog_snapshot()",
   "track_c_storage_boundary_snapshot()",
@@ -448,6 +460,9 @@ const requiredNotValidConstraints = Object.freeze(
 
 const requiredIndexes = Object.freeze([
   ["preingestion_jobs", "preingestion_jobs_ocr_stale_lease_idx"],
+  ["preingestion_recognition_commit_outbox", "preingestion_recognition_commit_outbox_claim_idx"],
+  ["v4_recognition_jobs", "v4_recognition_jobs_tenant_session_stage_uidx"],
+  ["v4_recognition_jobs", "v4_recognition_jobs_semantic_work_uidx"],
   ["v4_preingestion_bundles", "v4_preingestion_bundles_tenant_id_uidx"],
   ["v4_writer_feedback_events", "v4_writer_feedback_submission_uidx"],
   ["v4_writer_feedback_events", "v4_writer_feedback_revision_uidx"],

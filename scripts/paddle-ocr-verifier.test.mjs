@@ -440,7 +440,8 @@ const client = createPaddleOcrClient({
     ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
     PADDLE_OCR_WORKER_URL: "https://ocr.internal",
     PADDLE_OCR_WORKER_TOKEN: "secret-token",
-    PADDLE_OCR_MODEL_REVISION: "ppocr-v5"
+    PADDLE_OCR_MODEL_REVISION: "ppocr-v5",
+    OCR_WORKER_REVISION: "ocr-revision-17"
   },
   fetchImpl: async (url, init) => {
     captured = {
@@ -452,6 +453,7 @@ const client = createPaddleOcrClient({
       ok: true,
       status: 200,
       text: async () => JSON.stringify({
+        service_revision: "ocr-revision-17",
         raw_text: "31/50",
         status: "OK",
         confidence: 0.94,
@@ -483,6 +485,7 @@ assert.equal(clientResult.worker_status, "OK");
 assert.equal(clientResult.worker_reason, null);
 assert.deepEqual(clientResult.backend_telemetry, { vision_status: "OK" });
 assert.equal(clientResult.worker_attempt_count, 1);
+assert.equal(clientResult.worker_service_revision, "ocr-revision-17");
 assert.equal(clientResult.inline_full_image_fallback_evaluated, true);
 assert.equal(clientResult.inline_full_image_fallback_used, true);
 assert.equal(clientResult.inline_full_image_fallback_target_found, true);
@@ -498,7 +501,8 @@ const batchClient = createPaddleOcrClient({
   env: {
     ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
     PADDLE_OCR_WORKER_URL: "https://vision-ocr.internal",
-    PADDLE_OCR_WORKER_TOKEN: "batch-secret"
+    PADDLE_OCR_WORKER_TOKEN: "batch-secret",
+    OCR_WORKER_REVISION: "vision-revision-9"
   },
   fetchImpl: async (url, init) => {
     capturedBatch = { url, headers: init.headers, body: JSON.parse(init.body) };
@@ -506,6 +510,7 @@ const batchClient = createPaddleOcrClient({
       ok: true,
       status: 200,
       text: async () => JSON.stringify({
+        service_revision: "vision-revision-9",
         results: [
           {
             request_id: "ocr-serial-1",
@@ -545,7 +550,33 @@ assert.equal(batchResults.length, 2);
 assert.equal(batchResults[0].normalized_fields.serial_number, "24/25");
 assert.equal(batchResults[0].vision_unit_count, 2);
 assert.equal(batchResults[0].serial_consensus.verified, true);
+assert.equal(batchResults[0].worker_service_revision, "vision-revision-9");
 assert.equal(batchResults[1].normalized_fields.collector_number, "381");
+
+const mismatchedRevisionClient = createPaddleOcrClient({
+  env: {
+    ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+    PADDLE_OCR_WORKER_URL: "https://vision-ocr.internal",
+    OCR_WORKER_REVISION: "vision-revision-expected",
+    PADDLE_OCR_REQUEST_MAX_ATTEMPTS: "1"
+  },
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      service_revision: "vision-revision-stale",
+      raw_text: "31/50",
+      status: "OK",
+      confidence: 0.94
+    })
+  })
+});
+await assert.rejects(
+  mismatchedRevisionClient.verifyCrop(request),
+  (error) => error instanceof PaddleOcrClientError
+    && error.code === "ocr_worker_revision_mismatch"
+    && error.retryable === true
+);
 
 let compatibilityCalls = 0;
 const compatibilityClient = createPaddleOcrClient({

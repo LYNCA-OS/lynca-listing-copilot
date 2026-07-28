@@ -426,6 +426,7 @@ def analyze_payload(payload: dict[str, Any], authorization: str | None = None) -
         "candidate_verification": candidate_verification_unavailable(),
         "processing": {
             "pipeline_version": config.pipeline_version,
+            "service_revision": config.service_revision,
             "model_versions": {
                 "paddleocr": "not_enabled",
                 "tesseract": "enabled" if config.enable_tesseract_ocr else "disabled",
@@ -475,6 +476,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
 
     if not config.enable_image_download:
         return {
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "request_id": request_id,
             "crop_type": crop_type,
             "status": "UNAVAILABLE",
@@ -497,6 +500,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
     deepseek_available = bool(config.deepseek_ocr_endpoint)
     if requested_backend == "paddle" and not config.enable_paddleocr:
         return {
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "request_id": request_id,
             "crop_type": crop_type,
             "status": "UNAVAILABLE",
@@ -512,6 +517,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         }
     if requested_backend == "deepseek" and not deepseek_available:
         return {
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "request_id": request_id,
             "crop_type": crop_type,
             "status": "UNAVAILABLE",
@@ -527,6 +534,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         }
     if requested_backend == "google_vision" and not config.vision_api_key:
         return {
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "request_id": request_id,
             "crop_type": crop_type,
             "status": "UNAVAILABLE",
@@ -555,6 +564,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         )
     except (ImageLoadError, SecurityError) as error:
         return {
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "request_id": request_id,
             "crop_type": crop_type,
             "status": "UNAVAILABLE",
@@ -633,6 +644,8 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
     if not should_fallback:
         return {
             **primary,
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "latency_ms": int((time.time() - started) * 1000),
             "primary_ocr_latency_ms": primary.get("latency_ms"),
             "inline_full_image_fallback_evaluated": False,
@@ -658,7 +671,12 @@ def ocr_field_payload(payload: dict[str, Any], authorization: str | None = None)
         crop_type=crop_type,
         total_latency_ms=int((time.time() - started) * 1000),
     )
-    return {**merged, **(grade_component_fallback or {})}
+    return {
+        **merged,
+        **(grade_component_fallback or {}),
+        "service_revision": config.service_revision,
+        "declared_service_revision": config.declared_service_revision,
+    }
 
 
 if FastAPI is not None:
@@ -678,7 +696,12 @@ if FastAPI is not None:
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+        config = load_config()
+        return {
+            "status": "ok",
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
+        }
 
     @app.get("/readyz")
     def readyz() -> dict[str, Any]:
@@ -686,6 +709,8 @@ if FastAPI is not None:
         return {
             "status": "ready" if config.token else "not_ready",
             "pipeline_version": config.pipeline_version,
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "paddleocr_enabled": config.enable_paddleocr,
             "paddleocr_preload_enabled": config.paddleocr_preload,
             "paddleocr_preload_status": _PADDLEOCR_PRELOAD_STATUS,

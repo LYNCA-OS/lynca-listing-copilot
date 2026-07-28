@@ -22,7 +22,10 @@ REGIONAL_CPU_QUOTA="${CLOUD_RUN_REGIONAL_CPU_QUOTA:-20}"
 ROLLOUT_CPU_RESERVE="${CLOUD_RUN_ROLLOUT_CPU_RESERVE:-1}"
 DEPLOY_ATTEMPTS="${VISION_OCR_DEPLOY_ATTEMPTS:-3}"
 DEPLOY_RETRY_SECONDS="${VISION_OCR_DEPLOY_RETRY_SECONDS:-15}"
+READY_ATTEMPTS="${VISION_OCR_READY_ATTEMPTS:-12}"
+READY_RETRY_SECONDS="${VISION_OCR_READY_RETRY_SECONDS:-2}"
 IMAGE_TAG="${VISION_OCR_IMAGE_TAG:-$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)}"
+WORKER_BUILD_REVISION="${OCR_WORKER_BUILD_REVISION:-${IMAGE_TAG}}"
 IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/${SERVICE_NAME}:${IMAGE_TAG}"
 CACHE_IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/${SERVICE_NAME}:build-cache"
 
@@ -100,7 +103,7 @@ deploy_vision_revision() {
     --min-instances default \
     --max-instances "$VISION_MAX" \
     --set-secrets "RECOGNITION_WORKER_TOKEN=${TOKEN_SECRET_NAME}:latest" \
-    --set-env-vars "RECOGNITION_ALLOWED_IMAGE_HOSTS=osrrujmpxxiefppjfgpd.supabase.co,RECOGNITION_MAX_IMAGE_BYTES=26214400,RECOGNITION_MAX_TOTAL_PIXELS=50000000,ENABLE_IMAGE_DOWNLOAD=true,OCR_BACKEND=google_vision,VISION_USE_ADC=true,VISION_FEATURE_TYPE=DOCUMENT_TEXT_DETECTION,VISION_TIMEOUT_SECONDS=30,RECOGNITION_REQUEST_TIMEOUT_SECONDS=30,WORKER_PROCESSES=1" \
+    --set-env-vars "OCR_WORKER_BUILD_REVISION=${WORKER_BUILD_REVISION},RECOGNITION_ALLOWED_IMAGE_HOSTS=osrrujmpxxiefppjfgpd.supabase.co,RECOGNITION_MAX_IMAGE_BYTES=26214400,RECOGNITION_MAX_TOTAL_PIXELS=50000000,ENABLE_IMAGE_DOWNLOAD=true,OCR_BACKEND=google_vision,VISION_USE_ADC=true,VISION_FEATURE_TYPE=DOCUMENT_TEXT_DETECTION,VISION_TIMEOUT_SECONDS=30,RECOGNITION_REQUEST_TIMEOUT_SECONDS=30,WORKER_PROCESSES=1" \
     --format='value(status.url)'
 }
 
@@ -119,3 +122,44 @@ for attempt in $(seq 1 "$DEPLOY_ATTEMPTS"); do
 done
 
 test -s /tmp/vision-ocr-service-url.txt
+# Cloud Run preserves an old explicit traffic pin across later deploys. Move
+# the untagged service URL to the new latest revision before publishing the
+# immutable revision to Vercel; tagged historical revisions remain available
+# as rollback targets.
+gcloud run services update-traffic "$SERVICE_NAME" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" \
+  --to-latest \
+  --format='none'
+
+DEPLOYED_URL="$(tail -n 1 /tmp/vision-ocr-service-url.txt | tr -d '[:space:]')"
+test -n "$DEPLOYED_URL"
+DEPLOYED_REVISION="$(gcloud run services describe "$SERVICE_NAME" \
+  --project "$GCP_PROJECT_ID" \
+  --region "$GCP_REGION" \
+  --format='value(status.latestReadyRevisionName)')"
+test -n "$DEPLOYED_REVISION"
+
+READY_REVISION=""
+for attempt in $(seq 1 "$READY_ATTEMPTS"); do
+  if READY_PAYLOAD="$(curl --fail --silent --show-error --max-time 30 "${DEPLOYED_URL%/}/readyz")"; then
+    READY_REVISION="$(printf '%s' "$READY_PAYLOAD" | node --input-type=module -e '
+      let source = "";
+      for await (const chunk of process.stdin) source += chunk;
+      const payload = JSON.parse(source);
+      if (payload.status !== "ready") process.exit(2);
+      process.stdout.write(String(payload.service_revision || ""));
+    ' || true)"
+    if [ "$READY_REVISION" = "$DEPLOYED_REVISION" ]; then
+      break
+    fi
+  fi
+  READY_REVISION=""
+  if [ "$attempt" -eq "$READY_ATTEMPTS" ]; then
+    echo "Vision OCR readyz did not serve deployed revision ${DEPLOYED_REVISION}." >&2
+    exit 1
+  fi
+  sleep "$READY_RETRY_SECONDS"
+done
+test "$READY_REVISION" = "$DEPLOYED_REVISION"
+printf 'OCR_WORKER_REVISION=%s\n' "$DEPLOYED_REVISION" >&2

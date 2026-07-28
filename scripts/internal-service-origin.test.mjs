@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { triggerV4QueuePumpAfterEnqueue } from "../api/v4/listing-job-enqueue.js";
-import { triggerPump as triggerPrewarmPump } from "../api/v4/listing-job-prewarm.js";
 import { triggerV4QueuePumpContinuation } from "../api/v4/listing-job-pump.js";
 import { triggerV4BackgroundWorkerAfterL1Release } from "../api/v4/listing-job-worker.js";
 import { trustedInternalServiceOrigin } from "../lib/listing/v4/jobs/internal-service-origin.mjs";
@@ -72,19 +71,6 @@ function assertSecretStayedOnTrustedOrigin(calls, expectedPath) {
     defer: recorded.defer,
     acquireKick: async () => ({ ok: true, acquired: true }),
     sleep: async () => {}
-  });
-  assert.equal(result.triggered, true);
-  await recorded.settle();
-  assertSecretStayedOnTrustedOrigin(recorded.calls, "/api/v4/listing-job-pump");
-}
-
-{
-  const recorded = recorder();
-  const result = triggerPrewarmPump(hostileRequest, {
-    tenantId: "tenant_a",
-    env,
-    fetchImpl: recorded.fetchImpl,
-    defer: recorded.defer
   });
   assert.equal(result.triggered, true);
   await recorded.settle();

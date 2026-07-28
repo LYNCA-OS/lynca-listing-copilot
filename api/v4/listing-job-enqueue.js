@@ -1,10 +1,22 @@
+import crypto from "node:crypto";
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { bindRecognitionProfileToPayload } from "../../lib/listing/v4/application/recognition-profile-adapter.mjs";
+import {
+  bindRecognitionProfileToPayload,
+  recognitionProfileAdapterVersion
+} from "../../lib/listing/v4/application/recognition-profile-adapter.mjs";
+import {
+  buildRecognitionPipelineFingerprint,
+  recognitionCacheRevisionReadiness
+} from "../../lib/listing/cache/identity-cache-version-contract.mjs";
+import { buildIdentityResultCacheKey } from "../../lib/listing/cache/identity-result-cache.mjs";
+import { readActiveCatalogSnapshotRevision } from "../../lib/listing/catalog/active-catalog-snapshot.mjs";
 import {
   RecognitionRequestContractError,
+  defaultRecognitionProfileId,
+  normalizeRecognitionProfileId,
   recognitionProfileIdFromPayload,
-  stripClientAlgorithmControls
+  sanitizeClientRecognitionIntent
 } from "../../lib/listing/v4/contracts/recognition-request.mjs";
 import {
   AssetLifecycleContractError,
@@ -13,6 +25,7 @@ import {
   stripClientImageTransport
 } from "../../lib/listing/v4/assets/asset-lifecycle-contract.mjs";
 import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
+import { buildServerCaptureQualityFromCanonicalImages } from "../../lib/listing/image-quality/quality-gate.mjs";
 import {
   CanonicalImageReferenceError,
   readCanonicalListingImageReferences
@@ -26,6 +39,7 @@ import {
   publicTenantAuthError,
   requirePermission,
   requireTenantAccess,
+  TENANT_ROLES,
   TENANT_PERMISSIONS
 } from "../../lib/tenant/index.mjs";
 import {
@@ -43,11 +57,79 @@ import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal
 import { invokeTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { v4DurableQueueDrainContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
 import { configuredWorkerSecret } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { invokeTrustedPreingestionOcrWorker } from "../../lib/listing/preingestion/internal-ocr-wake.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 
 const queueControlChars = /[\u0000-\u001f\u007f]/g;
+export const queueDecisionFingerprintContractVersion = "queue-decision-fingerprint-v1";
+
+function stableQueueJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableQueueJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableQueueJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function queueSha256(value) {
+  return crypto.createHash("sha256").update(stableQueueJson(value)).digest("hex");
+}
+
+export function buildQueueDecisionFingerprint(payload = {}, env = process.env) {
+  const providerOptions = payload.provider_options && typeof payload.provider_options === "object"
+    && !Array.isArray(payload.provider_options)
+    ? payload.provider_options
+    : {};
+  // Pipeline owners contribute their versions through the same fingerprint
+  // used by exact replay. Category and client telemetry are intentionally
+  // normalized away: neither is allowed to fragment durable queue identity.
+  const pipeline = buildRecognitionPipelineFingerprint({
+    ...payload,
+    category: "collectible_card",
+    client_timing: undefined,
+    clientTiming: undefined,
+    client_capture_quality: undefined,
+    capture_quality: undefined,
+    captureQuality: undefined
+  }, env);
+  const decision = {
+    contract_version: queueDecisionFingerprintContractVersion,
+    recognition_contract_version: String(payload.recognition_contract_version || "").trim(),
+    recognition_profile: String(payload.recognition_profile || "").trim().toLowerCase(),
+    recognition_profile_adapter_version: recognitionProfileAdapterVersion,
+    recognition_pipeline_fingerprint: pipeline.recognition_pipeline_fingerprint,
+    mode: String(payload.mode || "pair").trim().toLowerCase(),
+    execution: {
+      force_l2_only: payload.force_l2_only === true,
+      create_l1_job: payload.create_l1_job === true,
+      create_l2_job: payload.create_l2_job === true,
+      disable_fast_scout_l1: payload.disable_fast_scout_l1 === true,
+      v4_force_l2_direct: payload.v4_force_l2_direct === true
+    },
+    title_contract: {
+      max_length: Number(payload.max_title_length || payload.maxTitleLength || 80),
+      capture_profile_id: String(payload.capture_profile_id || payload.captureProfileId || "").trim()
+    },
+    catalog: {
+      active_snapshot_revision: String(payload.active_catalog_snapshot_revision || "").trim() || null,
+      card_code_resolution_map_revision: String(payload.resolution_map_revision || "").trim() || null
+    },
+    provider_options: providerOptions,
+    effective_capture_quality: payload.effective_capture_quality || null
+  };
+  const readiness = recognitionCacheRevisionReadiness(payload, env);
+  return Object.freeze({
+    contract_version: queueDecisionFingerprintContractVersion,
+    recognition_profile_adapter_version: recognitionProfileAdapterVersion,
+    recognition_pipeline_fingerprint: pipeline.recognition_pipeline_fingerprint,
+    replay_ready: readiness.ok === true,
+    replay_block_reason: readiness.ok === true ? null : readiness.reason,
+    fingerprint: queueSha256(decision)
+  });
+}
+
 class QueueSchedulingIntentError extends Error {
   constructor(code, { statusCode = 409, retryable = false } = {}) {
     super(code);
@@ -120,6 +202,16 @@ function withoutClientSessionIdentity(job = {}) {
     "preingestion_summary", "preingestionSummary",
     "preingestion_initial_evidence", "preingestionInitialEvidence",
     "preingestion_evidence_patches", "preingestionEvidencePatches",
+    "queue_decision_contract_version", "queueDecisionContractVersion",
+    "queue_decision_fingerprint", "queueDecisionFingerprint",
+    "queue_decision_replay_ready", "queueDecisionReplayReady",
+    "queue_decision_replay_block_reason", "queueDecisionReplayBlockReason",
+    "recognition_profile_adapter_version", "recognitionProfileAdapterVersion",
+    "recognition_pipeline_fingerprint", "recognitionPipelineFingerprint",
+    "identity_result_cache_key", "identityResultCacheKey",
+    "identity_cache_image_generation_hash", "identityCacheImageGenerationHash",
+    "idempotency_key", "idempotencyKey",
+    "authorized_retry_of_job_id", "authorizedRetryOfJobId",
     "trusted_manual_retry",
     "manual_retry_requested_by_user_id", "manualRetryRequestedByUserId",
     "manual_retry_original_operator_id", "manualRetryOriginalOperatorId",
@@ -163,24 +255,72 @@ export function createQueueRequestBatchId({
   operatorId = ""
 } = {}) {
   const token = String(clientBatchToken || "").trim();
-  if (!token) return createV4BatchId("v4batch");
-
-  // The browser streams each ready card independently so later cards do not
-  // wait for the slowest upload. Scope the deterministic batch identity to the
-  // assets in this request: retries remain idempotent, while concurrent cards
-  // sharing one client batch token cannot race on a single immutable DB row.
-  const assetIds = [...new Set((Array.isArray(jobs) ? jobs : [])
-    .map((job) => String(job?.asset_id || job?.assetId || job?.payload?.asset_id || job?.payload?.assetId || "").trim())
-    .filter(Boolean))]
-    .sort();
-  const requestIdentity = assetIds.length
-    ? `${token}\u001e${assetIds.join("\u001f")}`
+  // Batch identity is derived from server-canonical recognition inputs, not a
+  // browser timing/category value or a fresh page-local token. Exact request
+  // replay therefore remains idempotent across response loss and page refresh.
+  const jobIdentities = (Array.isArray(jobs) ? jobs : []).map((job) => {
+    const payload = job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+      ? job.payload
+      : {};
+    return [
+      String(job?.asset_id || job?.assetId || payload.asset_id || payload.assetId || "").trim(),
+      String(payload.image_generation_id || "").trim(),
+      String(payload.image_set_sha256 || "").trim().toLowerCase(),
+      String(job?.recognition_profile || payload.recognition_profile || "").trim().toLowerCase(),
+      String(payload.queue_decision_fingerprint || "").trim().toLowerCase(),
+      String(payload.authorized_retry_of_job_id || job?.retry_of_job_id || job?.retryOfJobId || payload.retry_of_job_id || payload.retryOfJobId || "").trim()
+    ].join("\u001f");
+  }).filter((identity) => identity.replaceAll("\u001f", "")).sort();
+  const requestIdentity = jobIdentities.length
+    ? `canonical\u001e${jobIdentities.join("\u001d")}`
     : token;
+  if (!requestIdentity) return createV4BatchId("v4batch");
   return createV4DeterministicBatchId({
     tenantId,
     operatorId,
     idempotencyKey: requestIdentity
   }) || createV4BatchId("v4batch");
+}
+
+function canonicalQueueIntentIdentity(job = {}) {
+  const payload = job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+    ? job.payload
+    : {};
+  return [
+    String(job.asset_id || payload.asset_id || "").trim(),
+    String(payload.image_generation_id || "").trim(),
+    String(payload.image_set_sha256 || "").trim().toLowerCase(),
+    String(job.recognition_profile || payload.recognition_profile || "").trim().toLowerCase(),
+    String(payload.queue_decision_fingerprint || "").trim().toLowerCase(),
+    String(payload.authorized_retry_of_job_id || job.retry_of_job_id || payload.retry_of_job_id || "").trim()
+  ].join("\u001f");
+}
+
+export function assertUniqueQueueJobIntents(jobs = []) {
+  const seen = new Set();
+  for (const job of Array.isArray(jobs) ? jobs : []) {
+    const identity = canonicalQueueIntentIdentity(job);
+    if (seen.has(identity)) {
+      throw new QueueSchedulingIntentError("duplicate_job_identity", { statusCode: 409 });
+    }
+    seen.add(identity);
+  }
+  return jobs;
+}
+
+async function mapWithConcurrency(items = [], concurrency = 6, mapper) {
+  const source = Array.isArray(items) ? items : [];
+  const output = new Array(source.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(Math.max(1, concurrency), source.length) }, async () => {
+    while (cursor < source.length) {
+      const index = cursor;
+      cursor += 1;
+      output[index] = await mapper(source[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return output;
 }
 
 export async function authorizeFreshManualRetryJobs({
@@ -271,7 +411,8 @@ export async function authorizeFreshManualRetryJobs({
       payload: {
         ...(job.payload || {}),
         manual_retry: true,
-        retry_of_job_id: claim.retryOfJobId
+        retry_of_job_id: claim.retryOfJobId,
+        authorized_retry_of_job_id: claim.retryOfJobId
       }
     };
   });
@@ -282,8 +423,17 @@ export async function canonicalizeQueueJobs({
   tenantId,
   env = process.env,
   fetchImpl = globalThis.fetch,
-  readCanonical = readCanonicalListingImageReferences
+  readCanonical = readCanonicalListingImageReferences,
+  readCatalogRevision = readActiveCatalogSnapshotRevision
 } = {}) {
+  // A batch shares one active catalog decision snapshot. Reading once avoids
+  // N identical database requests while still making catalog promotion change
+  // the canonical queue identity.
+  const catalogRevisionPromise = Promise.resolve().then(() => readCatalogRevision({
+    env,
+    fetchImpl,
+    timeoutMs: 1_000
+  })).catch(() => ({ ok: false, revision: "", reason: "catalog_revision_read_exception" }));
   const canonicalByAsset = new Map();
   const canonicalForAsset = (assetId) => {
     if (!canonicalByAsset.has(assetId)) {
@@ -296,10 +446,13 @@ export async function canonicalizeQueueJobs({
     }
     return canonicalByAsset.get(assetId);
   };
-  return Promise.all((Array.isArray(jobs) ? jobs : []).map(async (job) => {
+  return mapWithConcurrency(jobs, 6, async (job) => {
     const identity = queueJobIdentity(job);
     const requestedGenerationId = requestedImageGenerationId(job);
-    const canonical = await canonicalForAsset(identity.asset_id);
+    const [canonical, catalogRevision] = await Promise.all([
+      canonicalForAsset(identity.asset_id),
+      catalogRevisionPromise
+    ]);
     v4ProductionStrategy.asset_lifecycle.assert_image_generation({
       requestedGenerationId,
       canonicalGenerationId: canonical.image_generation_id
@@ -311,49 +464,138 @@ export async function canonicalizeQueueJobs({
         : identity.rawPayload
     );
     const requestedProfileId = recognitionProfileIdFromPayload(scopedPayload)
-      || recognitionProfileIdFromPayload(scoped);
-    const profiledJob = requestedProfileId
-      ? stripClientAlgorithmControls(scoped)
-      : scoped;
-    const applicationPayload = requestedProfileId
-      ? bindRecognitionProfileToPayload(scopedPayload, {
-        profileId: requestedProfileId,
-        env
-      })
-      : scopedPayload;
+      || recognitionProfileIdFromPayload(scoped)
+      || defaultRecognitionProfileId;
+    const canonicalProfileId = normalizeRecognitionProfileId(requestedProfileId);
+    // Every queue job is bound to a server-owned profile. Omitting the profile
+    // selects the production default; it never re-opens client algorithm knobs.
+    const boundApplicationPayload = bindRecognitionProfileToPayload(sanitizeClientRecognitionIntent(scopedPayload), {
+      profileId: canonicalProfileId,
+      env
+    });
+    const applicationPayload = catalogRevision?.ok === true && String(catalogRevision.revision || "").trim()
+      ? {
+        ...boundApplicationPayload,
+        active_catalog_snapshot_revision: String(catalogRevision.revision).trim()
+      }
+      : boundApplicationPayload;
     const images = canonical.images.map((image) => ({ ...image }));
     const imageReferences = canonical.image_references.map((reference) => ({ ...reference }));
     const imagePaths = canonical.image_paths || {};
-    return {
-      ...profiledJob,
+    const effectiveCaptureQuality = buildServerCaptureQualityFromCanonicalImages(images, {
+      imageGenerationHash: canonical.image_set_sha256
+    });
+    const queueDecision = buildQueueDecisionFingerprint({
+      ...applicationPayload,
+      effective_capture_quality: effectiveCaptureQuality
+    }, env);
+    const canonicalPayload = {
+      ...applicationPayload,
       asset_id: identity.asset_id,
       assetId: identity.asset_id,
       client_asset_ref: identity.client_asset_ref,
       clientAssetRef: identity.client_asset_ref,
-      payload: {
-        ...applicationPayload,
-        asset_id: identity.asset_id,
-        assetId: identity.asset_id,
-        client_asset_ref: identity.client_asset_ref,
-        clientAssetRef: identity.client_asset_ref,
-        image_generation_id: canonical.image_generation_id,
-        image_set_sha256: canonical.image_set_sha256,
-        expected_original_count: canonical.expected_original_count,
-        images,
-        image_references: imageReferences,
-        imageReferences,
-        front_bucket: imagePaths.front_bucket || null,
-        front_object_path: imagePaths.front_object_path || null,
-        front_content_sha256: imagePaths.front_content_sha256 || null,
-        back_bucket: imagePaths.back_bucket || null,
-        back_object_path: imagePaths.back_object_path || null,
-        back_content_sha256: imagePaths.back_content_sha256 || null,
-        additional_image_paths: Array.isArray(imagePaths.additional_image_paths)
-          ? imagePaths.additional_image_paths.map((reference) => ({ ...reference }))
-          : []
-      }
+      image_generation_id: canonical.image_generation_id,
+      image_set_sha256: canonical.image_set_sha256,
+      queue_decision_contract_version: queueDecision.contract_version,
+      queue_decision_fingerprint: queueDecision.fingerprint,
+      queue_decision_replay_ready: queueDecision.replay_ready,
+      queue_decision_replay_block_reason: queueDecision.replay_block_reason,
+      recognition_profile_adapter_version: queueDecision.recognition_profile_adapter_version,
+      effective_capture_quality: effectiveCaptureQuality,
+      expected_original_count: canonical.expected_original_count,
+      images,
+      image_references: imageReferences,
+      imageReferences,
+      front_bucket: imagePaths.front_bucket || null,
+      front_object_path: imagePaths.front_object_path || null,
+      front_content_sha256: imagePaths.front_content_sha256 || null,
+      back_bucket: imagePaths.back_bucket || null,
+      back_object_path: imagePaths.back_object_path || null,
+      back_content_sha256: imagePaths.back_content_sha256 || null,
+      additional_image_paths: Array.isArray(imagePaths.additional_image_paths)
+        ? imagePaths.additional_image_paths.map((reference) => ({ ...reference }))
+        : []
     };
-  }));
+    const cacheIdentity = buildIdentityResultCacheKey(canonicalPayload, env);
+    const serverPayload = cacheIdentity.ok === true
+      ? {
+        ...canonicalPayload,
+        identity_result_cache_key: cacheIdentity.cache_key,
+        identity_cache_image_generation_hash: cacheIdentity.image_generation_hash
+      }
+      : canonicalPayload;
+    return {
+      recognition_contract_version: applicationPayload.recognition_contract_version,
+      recognition_profile: canonicalProfileId,
+      asset_id: identity.asset_id,
+      assetId: identity.asset_id,
+      client_asset_ref: identity.client_asset_ref,
+      clientAssetRef: identity.client_asset_ref,
+      payload: serverPayload
+    };
+  });
+}
+
+export function schedulePreingestionRecognitionCommitWake({
+  jobs = [],
+  tenantId,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  wake = invokeTrustedPreingestionOcrWorker,
+  defer = waitUntil
+} = {}) {
+  const assetIds = [...new Set((Array.isArray(jobs) ? jobs : [])
+    .map((job) => String(job?.asset_id || job?.payload?.asset_id || "").trim())
+    .filter(Boolean))];
+  if (!assetIds.length) return { scheduled: false, asset_count: 0 };
+  // The atomic enqueue RPC has already persisted the authoritative outbox
+  // intent. These best-effort calls only reduce pickup latency; losing every
+  // one of them is safe because the authenticated cron consumes the same rows.
+  const completion = mapWithConcurrency(assetIds, 4, (assetId) => wake({
+    tenantId,
+    assetId,
+    limit: 1,
+    env,
+    fetchImpl
+  })).then((results) => {
+    console.log(JSON.stringify({
+      level: results.every((item) => item?.ok === true || item?.committed === true || item?.reason === "ocr_runtime_not_ready") ? "info" : "warn",
+      message: "v4_preingestion_outbox_wake_after_recognition_enqueue",
+      tenant_id: tenantId,
+      asset_count: assetIds.length,
+      successful_wake_count: results.filter((item) => item?.ok === true || item?.invoked === true).length,
+      results
+    }));
+    return results;
+  }).catch((error) => {
+    console.warn(JSON.stringify({
+      level: "warn",
+      message: "v4_preingestion_outbox_wake_failed_after_durable_enqueue",
+      tenant_id: tenantId,
+      asset_count: assetIds.length,
+      error: String(error?.message || "preingestion outbox wake failed").slice(0, 240)
+    }));
+    return [];
+  });
+  let deferRegistered = false;
+  try {
+    if (typeof defer === "function") {
+      defer(completion);
+      deferRegistered = true;
+    }
+  } catch (error) {
+    // The outbox is already durable. A scheduler failure changes latency only;
+    // the authenticated cron remains the correctness path.
+    console.warn(JSON.stringify({
+      level: "warn",
+      message: "v4_preingestion_outbox_wake_defer_failed_after_durable_enqueue",
+      tenant_id: tenantId,
+      asset_count: assetIds.length,
+      error: String(error?.message || "preingestion wake defer failed").slice(0, 240)
+    }));
+  }
+  return { scheduled: deferRegistered, asset_count: assetIds.length };
 }
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -592,6 +834,7 @@ export default async function handler(req, res) {
       env: process.env,
       fetchImpl: globalThis.fetch
     });
+    assertUniqueQueueJobIntents(sourceJobs);
   } catch (error) {
     const recognitionProfileError = error instanceof RecognitionRequestContractError;
     const canonicalError = error instanceof CanonicalImageReferenceError;
@@ -659,7 +902,10 @@ export default async function handler(req, res) {
     tenantId,
     operatorId
   });
-  const requestPriority = positiveInteger(payload.priority, 100, { min: 0, max: 10_000 });
+  // Public enqueue scheduling is server-owned. The only priority-zero path is
+  // authorizeFreshManualRetryJobs(), which verifies the failed job and the
+  // operator's retry permission before adding trusted_manual_retry.
+  const requestPriority = 100;
   const stageJobs = expandV4RecognitionStageJobs({
     jobs: sourceJobs,
     batchId,
@@ -674,6 +920,14 @@ export default async function handler(req, res) {
     tenantId,
     priority: requestPriority
   });
+  const preingestionCommit = Number(result.accepted_count || 0) > 0
+    ? schedulePreingestionRecognitionCommitWake({
+      jobs: sourceJobs,
+      tenantId,
+      env: process.env,
+      fetchImpl: globalThis.fetch
+    })
+    : { scheduled: false, asset_count: 0 };
   const pump = triggerV4QueuePumpAfterEnqueue(req, {
     tenantId,
     batchId: result.batchId,
@@ -723,6 +977,8 @@ export default async function handler(req, res) {
     pump_triggered: pump.triggered,
     pump_reason: pump.reason,
     pump_global_drain: pump.global_drain === true,
+    preingestion_commit_scheduled: preingestionCommit.scheduled === true,
+    preingestion_commit_asset_count: preingestionCommit.asset_count,
     jobs: result.jobs.map((entry) => ({
       ok: entry.saved,
       job_id: entry.row?.id || null,

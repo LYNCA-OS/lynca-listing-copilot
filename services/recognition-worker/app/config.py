@@ -80,6 +80,8 @@ class WorkerConfig:
     tesseract_psm: int
     tesseract_timeout_seconds: int
     tesseract_image_concurrency: int = 2
+    service_revision: str = ""
+    declared_service_revision: str = ""
     pipeline_version: str = "recognition-worker-contract-v1"
     # OCR backend selection. "paddle" preserves the existing behavior;
     # "deepseek" routes crops to a self-hosted DeepSeek-OCR vLLM endpoint;
@@ -141,6 +143,15 @@ def load_config() -> WorkerConfig:
         tesseract_psm=_int_env("TESSERACT_PSM", 11),
         tesseract_timeout_seconds=_int_env("TESSERACT_TIMEOUT_SECONDS", 20),
         tesseract_image_concurrency=_bounded_int_env("TESSERACT_IMAGE_CONCURRENCY", 2, 2),
+        # K_REVISION is assigned by Cloud Run and cannot be reused for a
+        # different deployment. A human build label is useful provenance but
+        # is not a cache or client-verification authority.
+        service_revision=os.getenv("K_REVISION", "").strip(),
+        declared_service_revision=(
+            os.getenv("RECOGNITION_WORKER_BUILD_REVISION")
+            or os.getenv("OCR_WORKER_BUILD_REVISION")
+            or ""
+        ).strip(),
         ocr_backend=_ocr_backend_env(),
         deepseek_ocr_endpoint=os.getenv("DEEPSEEK_OCR_ENDPOINT", "").strip(),
         deepseek_ocr_model=os.getenv("DEEPSEEK_OCR_MODEL", "deepseek-ai/DeepSeek-OCR-2") or "deepseek-ai/DeepSeek-OCR-2",

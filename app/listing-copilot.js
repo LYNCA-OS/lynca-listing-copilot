@@ -73,11 +73,8 @@ const STATUS_POLL_TIMEOUT_MS = 15000;
 const STATUS_ORPHAN_MIN_FAILURES = 3;
 const STATUS_ORPHAN_MIN_ELAPSED_MS = 20000;
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
-// 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
-// L1 scout 与预处理并行，缓存就绪后只启动一次 L2；L1 永不直接展示给写手。
-// 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
-const ENABLE_SPECULATIVE_RECOGNITION = true;
-const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
+// Pre-click work is deliberately limited to upload and pre-ingestion. The
+// writer's Generate click is the durable batch-recognition commitment.
 const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
@@ -470,7 +467,7 @@ function renderInstantIntakePreviews(records = []) {
         <div class="pending-state pending-active" role="status" aria-live="polite">
           <span class="loading-spinner" aria-hidden="true"></span>
           <strong>本地图片已读取</strong>
-          <p>正在校验原图；完成后自动上传并进入识别准备。</p>
+          <p>正在校验并上传原图；点击生成后才会开始识别。</p>
           <span class="pending-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         </div>
       </div>
@@ -1653,8 +1650,7 @@ function backgroundPreparationLabel(asset = {}) {
   return {
     queued: "图片准备排队中",
     uploading: "图片上传中",
-    fast_scout_prewarming: "识别准备中",
-    preingesting: "图片分析准备中",
+    preingesting: "云端图片准备中",
     ready: "图片已准备",
     failed: "图片准备未完成"
   }[asset.backgroundPrepareStatus] || "";
@@ -1671,7 +1667,7 @@ function syncBackgroundPreparationStatus() {
   const failed = Number(counts.failed || 0);
   const total = state.assets.length;
   if (state.preparingFiles) {
-    setStatus(`已读取 ${total} 张卡；已就绪的卡正在后台上传和识别，其余图片继续读取中…`, { busy: true });
+    setStatus(`已读取 ${total} 张卡；已就绪的卡正在后台上传，其余图片继续读取中…`, { busy: true });
     return;
   }
   if (ready === total) {
@@ -1693,8 +1689,7 @@ async function ensurePreingestionBundle(asset) {
     };
   }
 
-  const images = preingestionImagesForAsset(asset);
-  if (!images.length) {
+  if (!preingestionImagesForAsset(asset).length) {
     throw new Error("no_verified_storage_images");
   }
 
@@ -1708,28 +1703,7 @@ async function ensurePreingestionBundle(asset) {
       asset_id: canonicalAssetId(asset),
       assetId: canonicalAssetId(asset),
       client_asset_ref: asset.clientAssetRef || asset.id,
-      images,
-      captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
-      requested_fields: [
-        "serial_number",
-        "collector_number",
-        "checklist_code",
-        "grade_label",
-        "year_product",
-        "subject",
-        "surface"
-      ],
-      source: "listing_copilot_background_prepare",
-      enqueue_workers: true,
-      enqueue_ocr: true,
-      // Only OCR currently has a production consumer. Query embeddings still
-      // run concurrently inside recognition; do not create durable dead jobs.
-      enqueue_embeddings: false,
-      enqueue_surface: false,
-      enqueue_quality: false,
-      // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
-      // 签名只增加 L2 起跑等待，不增加证据强度。
-      verify_signed_read_urls: false
+      source: "listing_copilot_background_prepare"
     })
   }, {
     timeoutMs: PREINGEST_REQUEST_TIMEOUT_MS,
@@ -1778,11 +1752,6 @@ async function prepareAssetInBackground(asset, runId) {
           asset.backgroundPrepareStatus = "preingesting";
           syncBackgroundPreparationStatus();
           const bundle = await ensurePreingestionBundle(asset);
-
-          if (runId === state.backgroundPreparationRunId) {
-            // 证据包持久化后立即提交最终 L2。L1 继续保持写手不可见。
-            void ensureSpeculativeRecognition(asset, runId);
-          }
 
           asset.backgroundPrepareStatus = "ready";
           asset.backgroundPrepareError = "";
@@ -1846,98 +1815,6 @@ async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
       error: String(error.message || "background_prepare_failed").slice(0, 160)
     };
   }
-}
-
-async function ensureSpeculativeRecognition(asset, runId) {
-  if (!ENABLE_SPECULATIVE_RECOGNITION || !asset) return null;
-  if (asset.speculativeRunId === runId && asset.speculativePromise) return asset.speculativePromise;
-  asset.speculativeRunId = runId;
-  asset.speculativePromise = (async () => {
-    const startedAt = performance.now();
-    try {
-      const requestBody = buildAssetQueueIntentBody(asset);
-      if (runId !== state.backgroundPreparationRunId) return { stale: true, run_id: runId };
-
-      const enqueueJobPayload = JSON.parse(requestBody);
-      enqueueJobPayload.client_speculative = true;
-
-      const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
-      const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          batch_id: batchId,
-          priority: 100,
-          jobs: [{
-            asset_id: canonicalAssetId(asset),
-            image_generation_id: asset.imageGenerationId,
-            payload: enqueueJobPayload
-          }]
-        })
-      }, {
-        timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS,
-        maxAttempts: 3,
-        retryNetworkErrors: true,
-        asset,
-        stage: "speculative_enqueue"
-      });
-      if (enqueueRequest.error) throw enqueueRequest.error;
-      const enqueuePayload = enqueueRequest.payload;
-      const job = enqueuePayload
-        ? ((enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
-          || (enqueuePayload.jobs || []).find((entry) => entry?.ok)
-          || null)
-        : null;
-      return {
-        ok: Boolean(job && job.job_id && job.recognition_session_id),
-        run_id: runId,
-        request_body: requestBody,
-        enqueue_payload: enqueuePayload,
-        job: job && job.job_id && job.recognition_session_id ? job : null,
-        speculative_ms: Math.round(performance.now() - startedAt)
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        run_id: runId,
-        error: String(error?.message || "speculative_failed").slice(0, 160),
-        speculative_ms: Math.round(performance.now() - startedAt)
-      };
-    }
-  })();
-  return asset.speculativePromise;
-}
-
-async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTLE_MAX_WAIT_MS) {
-  if (!ENABLE_SPECULATIVE_RECOGNITION) return { used: false };
-  if (!asset?.speculativePromise || asset.speculativeRunId !== state.backgroundPreparationRunId) {
-    return { used: false };
-  }
-  const startedAt = performance.now();
-  const timedOut = Symbol("speculative_timeout");
-  // 完整等待（有上限）而不是短超时后另起一路：投机流程里已经包含一次 L2 入队，
-  // 若这里超时改走常规入队，会给同一张卡排两个 L2 任务。
-  const result = await Promise.race([
-    asset.speculativePromise,
-    wait(maxWaitMs).then(() => timedOut)
-  ]).catch(() => null);
-  if (result === timedOut) {
-    return {
-      used: true,
-      pending: true,
-      timed_out: true,
-      wait_ms: Math.round(performance.now() - startedAt)
-    };
-  }
-  if (!result || result.stale || result.run_id !== state.backgroundPreparationRunId) {
-    return {
-      used: false,
-      timed_out: false,
-      wait_ms: Math.round(performance.now() - startedAt)
-    };
-  }
-  return { used: true, wait_ms: Math.round(performance.now() - startedAt), ...result };
 }
 
 function backgroundPreparationAvailable() {
@@ -2158,15 +2035,6 @@ function generationSubmissionAllowed({
   resultCount = 0
 } = {}) {
   return Boolean(assetCount && providerId && workflowReady && !processing && Number(resultCount) === 0);
-}
-
-function speculativeNeedsFreshEnqueue(speculative = {}) {
-  if (speculative.pending === true) return false;
-  if (speculative.job?.job_id && speculative.job?.recognition_session_id) return false;
-  // The speculative POST uses the same deterministic batch/asset identity as
-  // the fallback enqueue. Replaying a request that returned no trackable job
-  // is therefore idempotent and must not strand the card permanently.
-  return true;
 }
 
 function syncProcessButtonState() {
@@ -2661,7 +2529,6 @@ export const __listingCopilotAppTestHooks = {
   recognitionClockFromServerPayload,
   resetAssetPreparationForRetry,
   retryStateForResult,
-  speculativeNeedsFreshEnqueue,
   shouldUseStorageFirstImage,
   storageDimensionsForImage,
   storageSourceForImage,
@@ -4074,7 +3941,7 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
 
   try {
     stopAllV4AssistedDraftPolling();
-    setStatus("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…", { busy: true });
+    setStatus("本地预览已显示；正在校验并上传原图，点击生成后才会开始识别…", { busy: true });
     closeImageModal();
     releaseImagePreviewUrls(state.files);
     state.files = [];
@@ -4243,12 +4110,6 @@ async function processAssetViaQueue(asset, options = {}) {
     queuePreingestionRetry.elapsed_ms = Math.round(performance.now() - preingestionRetryStartedAt);
   }
 
-  const fastScoutPrewarm = asset.fastScoutPrewarmResult || {
-    used: Boolean(asset.fastScoutPrewarmStatus),
-    wait_ms: 0,
-    cache_status: asset.fastScoutPrewarmStatus || "",
-    timed_out: false
-  };
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
     client_upload_ms: uploadMs,
@@ -4260,47 +4121,8 @@ async function processAssetViaQueue(asset, options = {}) {
     client_preingestion_retry_ms: queuePreingestionRetry.elapsed_ms,
     client_preingestion_retry_error: queuePreingestionRetry.error,
     client_derived_upload_status: asset.derivedStorageUploadStatus || "not_started",
-    client_derived_upload_failure_count: Math.max(0, Number(asset.derivedStorageUploadFailureCount || 0)),
-    client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
-    client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
-    client_fast_scout_prewarm_cache_status: fastScoutPrewarm.cache_status || "",
-    client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
+    client_derived_upload_failure_count: Math.max(0, Number(asset.derivedStorageUploadFailureCount || 0))
   };
-
-  let speculative = options.skipSpeculative === true
-    ? { used: false }
-    : await settleSpeculativeRecognition(asset);
-  if (speculative.used && speculative.pending) {
-    setAssetProgress(asset.index, "等待已提交的预识别任务", 0.46);
-    const settled = await asset.speculativePromise;
-    speculative = {
-      used: true,
-      wait_ms: Math.round(Number(speculative.wait_ms || 0)),
-      ...settled
-    };
-  }
-  if (speculative.used && speculative.job) {
-    // 识别在图片就绪时已经开始：直接挂到已在跑的 L2 job 上。
-    // L1 始终隐藏，只作为 L2 可选的同图证据缓存。
-    asset.clientTiming.client_speculative_used = true;
-    asset.clientTiming.client_speculative_ms = Math.round(Number(speculative.speculative_ms || 0));
-    asset.clientTiming.client_speculative_wait_ms = Math.round(Number(speculative.wait_ms || 0));
-    setAssetProgress(asset.index, "复用预识别结果", 0.5);
-    const clientTotalMs = Math.round(performance.now() - processStartedAt);
-    const pending = queuedPendingResult(asset, speculative.enqueue_payload || {}, speculative.job, {
-      client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
-      client_upload_ms: uploadMs,
-      client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
-      client_speculative_used: true,
-      client_speculative_ms: asset.clientTiming.client_speculative_ms,
-      client_speculative_wait_ms: asset.clientTiming.client_speculative_wait_ms,
-      client_total_ms: clientTotalMs
-    });
-    return pending;
-  }
-  if (!speculativeNeedsFreshEnqueue(speculative)) {
-    throw new Error(speculative.error || "预识别任务未返回可追踪 ID；为避免重复付费，系统没有自动提交第二个任务。请稍后重试。");
-  }
 
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备生产队列请求", 0.3);
@@ -4520,8 +4342,6 @@ function successorClientAssetRef(asset = {}) {
 }
 
 function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {}) {
-  asset.speculativePromise = null;
-  asset.speculativeRunId = null;
   asset.backgroundPrepareError = "";
 
   if (inputRebind) {

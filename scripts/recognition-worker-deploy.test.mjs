@@ -23,6 +23,26 @@ assert.match(deploy, /VISION_SECRET_NAME="\$\{VISION_API_KEY_SECRET_NAME:-lynca-
 assert.match(deploy, /OCR_BACKEND="\$\{OCR_BACKEND:-google_vision\}"/);
 assert.match(deploy, /VISION_API_KEY=\$\{VISION_SECRET_NAME\}:latest/);
 assert.match(deploy, /OCR_BACKEND=\$\{OCR_BACKEND\}/);
+assert.match(deploy, /WORKER_REVISION="\$\{RECOGNITION_WORKER_BUILD_REVISION:-\$\{IMAGE_TAG\}\}"/);
+assert.match(deploy, /RECOGNITION_WORKER_BUILD_REVISION=\$\{WORKER_REVISION\}/);
+assert.match(deploy, /RECOGNITION_WORKER_REVISION=%s/);
+assert.match(deploy, /status\.latestReadyRevisionName/);
+assert.match(visionDeploy, /OCR_WORKER_BUILD_REVISION=\$\{WORKER_BUILD_REVISION\}/);
+assert.match(visionDeploy, /OCR_WORKER_REVISION=%s/);
+assert.match(visionDeploy, /status\.latestReadyRevisionName/);
+assert.match(
+  visionDeploy,
+  /gcloud run services update-traffic "\$SERVICE_NAME"[\s\S]*--to-latest[\s\S]*status\.latestReadyRevisionName/,
+  "Vision OCR release must move the service URL to latest before reading its immutable revision"
+);
+assert.match(visionDeploy, /\$\{DEPLOYED_URL%\/\}\/readyz/);
+assert.match(visionDeploy, /payload\.service_revision/);
+assert.match(visionDeploy, /READY_REVISION" = "\$DEPLOYED_REVISION"/);
+assert.match(
+  visionDeploy,
+  /test "\$READY_REVISION" = "\$DEPLOYED_REVISION"[\s\S]*OCR_WORKER_REVISION=%s/,
+  "Vercel may only receive an OCR revision after the real service URL proves it is serving that revision"
+);
 assert.match(deploy, /PADDLEOCR_ROLE="\$\{PADDLEOCR_ROLE:-shadow\}"/);
 assert.match(
   deploy,

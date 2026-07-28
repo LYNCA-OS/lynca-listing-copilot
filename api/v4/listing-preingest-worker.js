@@ -1,10 +1,10 @@
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
-import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
+import { instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { processQueuedPreingestionOcrJobs } from "../../lib/listing/preingestion/preingestion-ocr-worker.mjs";
+import { reconcilePreingestionRecognitionCommitIntents } from "../../lib/listing/preingestion/recognition-commit.mjs";
 import { isV4CronRequest, isV4WorkerRequest } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
-import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
-import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../../lib/tenant/index.mjs";
+import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
 // Sweep endpoint for queued `ocr_crop_verification` preingestion jobs.
 // Browser pre-ingestion persists jobs and sends an authenticated wake here;
@@ -17,15 +17,14 @@ export default async function handler(req, res) {
   }
 
   const internalAuthorized = isV4WorkerRequest(req, process.env) || isV4CronRequest(req, process.env);
-  let context = null;
   if (!internalAuthorized) {
-    try {
-      context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.UPLOAD_ASSET });
-      bindProductionRequestContext(res, context);
-    } catch (error) {
-      sendJson(res, Number(error?.statusCode || 503), withV4Version(publicTenantAuthError(error)));
-      return;
-    }
+    sendJson(res, 401, withV4Version({
+      ok: false,
+      retryable: false,
+      code: "preingestion_worker_auth_required",
+      message: "Internal worker or cron authentication is required."
+    }));
+    return;
   }
 
   if (!enforceApiRateLimit(req, res, {
@@ -35,12 +34,33 @@ export default async function handler(req, res) {
     message: "Too many pre-ingestion worker sweeps. Please try again shortly."
   })) return;
 
-  const payload = req.method === "POST" ? await readJsonPayload(req) : {};
+  let payload = {};
+  try {
+    payload = req.method === "POST" ? await readJsonPayload(req, { maxBytes: 32 * 1024 }) : {};
+  } catch (error) {
+    const status = requestPayloadErrorStatus(error);
+    sendJson(res, status, withV4Version({
+      ok: false,
+      retryable: false,
+      code: status === 413 ? "preingestion_worker_request_too_large" : "preingestion_worker_invalid_request"
+    }));
+    return;
+  }
   const includeDetail = payload.include_detail === true || payload.includeDetail === true;
 
   try {
+    // Recognition enqueue persists an outbox row in the same database
+    // transaction. Every direct wake and the independent minute cron first
+    // reconciles those intents, so a lost waitUntil cannot lose OCR work.
+    const recognitionCommit = await reconcilePreingestionRecognitionCommitIntents({
+      tenantId: payload.tenant_id || payload.tenantId || "",
+      assetId: payload.asset_id || payload.assetId || "",
+      limit: payload.commit_limit || payload.commitLimit || payload.limit,
+      env: process.env,
+      fetchImpl: globalThis.fetch
+    });
     const result = await processQueuedPreingestionOcrJobs({
-      tenantId: context?.tenantId || payload.tenant_id || payload.tenantId || "",
+      tenantId: payload.tenant_id || payload.tenantId || "",
       assetId: payload.asset_id || payload.assetId || "",
       bundleId: payload.bundle_id || payload.bundleId || "",
       limit: payload.limit,
@@ -52,7 +72,12 @@ export default async function handler(req, res) {
       env: process.env,
       fetchImpl: globalThis.fetch
     });
-    sendJson(res, result.ok ? 200 : 503, withV4Version(result));
+    const ok = recognitionCommit.ok === true && result.ok === true;
+    sendJson(res, ok ? 200 : 503, withV4Version({
+      ...result,
+      ok,
+      recognition_commit_reconciliation: recognitionCommit
+    }));
   } catch (error) {
     sendJson(res, 500, withV4Version({
       ok: false,

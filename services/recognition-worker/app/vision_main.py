@@ -114,7 +114,15 @@ def _serial_consensus(primary: dict[str, Any], expanded: dict[str, Any]) -> dict
     }
 
 
-def _public_result(request: dict[str, Any], result: dict[str, Any], *, batch_latency_ms: int, unit_count: int) -> dict[str, Any]:
+def _public_result(
+    request: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    batch_latency_ms: int,
+    unit_count: int,
+    service_revision: str,
+    declared_service_revision: str,
+) -> dict[str, Any]:
     candidates = list(result.get("candidates") or [])
     return {
         "request_id": request.get("request_id"),
@@ -133,6 +141,8 @@ def _public_result(request: dict[str, Any], result: dict[str, Any], *, batch_lat
         "ocr_backend": "google_vision",
         "vision_unit_count": unit_count,
         "vision_cost_estimate": result.get("cost_estimate"),
+        "service_revision": service_revision,
+        "declared_service_revision": declared_service_revision,
         **({"reason": result.get("reason")} if result.get("reason") else {}),
         **({"serial_consensus": result.get("serial_consensus")} if result.get("serial_consensus") else {}),
     }
@@ -193,7 +203,14 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
             expanded = raw_results[expanded_index] if expanded_index < len(raw_results) else {"status": "UNAVAILABLE"}
             primary = {**primary, **_serial_consensus(primary, expanded)}
             unit_count = 2
-        output.append(_public_result(request, primary, batch_latency_ms=int(batch.get("latency_ms") or 0), unit_count=unit_count))
+        output.append(_public_result(
+            request,
+            primary,
+            batch_latency_ms=int(batch.get("latency_ms") or 0),
+            unit_count=unit_count,
+            service_revision=config.service_revision,
+            declared_service_revision=config.declared_service_revision,
+        ))
     return {
         "status": "OK" if any(item.get("status") == "OK" for item in output) else batch.get("status", "UNAVAILABLE"),
         "results": output,
@@ -204,6 +221,8 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
         "latency_ms": int((time.time() - started) * 1000),
         "backend": "google_vision",
         "auth_mode": "adc",
+        "service_revision": config.service_revision,
+        "declared_service_revision": config.declared_service_revision,
     }
 
 
@@ -217,7 +236,13 @@ if FastAPI is not None:
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
-        return {"status": "ok", "service": "vision-ocr"}
+        config = load_config()
+        return {
+            "status": "ok",
+            "service": "vision-ocr",
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
+        }
 
     @app.get("/readyz")
     def readyz() -> dict[str, Any]:
@@ -226,6 +251,8 @@ if FastAPI is not None:
             "status": "ready" if config.vision_use_adc and bool(config.token) else "not_ready",
             "service": "vision-ocr",
             "backend": "google_vision",
+            "service_revision": config.service_revision,
+            "declared_service_revision": config.declared_service_revision,
             "auth_mode": "adc",
             "max_sync_images": MAX_SYNC_IMAGES,
             "paddle_loaded": False,

@@ -15,6 +15,7 @@ process.env.LISTING_IDENTITY_INFLIGHT_DEDUP_ENABLED = "true";
 process.env.ENABLE_RECOGNITION_WORKER = "true";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.internal";
 process.env.RECOGNITION_WORKER_TOKEN = "worker-token";
+process.env.RECOGNITION_WORKER_REVISION = "recognition-worker-test-r1";
 process.env.RECOGNITION_WORKER_FAST_LANE_BUDGET_MS = "100";
 process.env.DEFAULT_VISION_PROVIDER = "openai_legacy";
 process.env.OPENAI_API_KEY = "test-openai-key";
@@ -105,6 +106,7 @@ const recognitionPayload = {
   visual_features: {},
   processing: {
     pipeline_version: "recognition-worker-contract-v1",
+    service_revision: "recognition-worker-test-r1",
     model_versions: { ocr: "mock" },
     latency_ms: 33
   }
@@ -161,6 +163,7 @@ globalThis.fetch = async (url, options = {}) => {
 
 const payload = {
   assetId,
+  active_catalog_snapshot_revision: "catalog-inflight-test-r1",
   mode: "single",
   images,
   resolutionMap: {},

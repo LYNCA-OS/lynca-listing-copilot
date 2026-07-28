@@ -15,7 +15,9 @@ import {
 
 const clientIntent = withRecognitionRequestIntent({
   asset_id: "asset_11111111-2222-4123-8abc-abcdef123456",
+  category: "browser-owned-category-is-forbidden",
   provider: "client-selected-provider",
+  idempotency_key: "browser-nonce-must-not-own-paid-work",
   provider_options: { enable_catalog_assist: false },
   force_l2_only: false
 });
@@ -23,6 +25,8 @@ assert.equal(clientIntent.recognition_profile, defaultRecognitionProfileId);
 assert.equal("provider" in clientIntent, false);
 assert.equal("provider_options" in clientIntent, false);
 assert.equal("force_l2_only" in clientIntent, false);
+assert.equal("category" in clientIntent, false);
+assert.equal("idempotency_key" in clientIntent, false);
 
 const env = {
   ENABLE_SINGLE_MODEL_FAST_PATH: "false",
@@ -43,6 +47,21 @@ assert.equal(profile.provider_options.v4_ultra_fast_l2, false);
 assert.equal(profile.provider_options.v4_ultra_sparse_transport, false);
 assert.equal(profile.provider_options.enable_fast_initial_provider_prompt, false);
 
+const pinnedProfile = resolveRecognitionProfile(defaultRecognitionProfileId, {
+  ...env,
+  OPENAI_LISTING_MODEL: "gpt-5-mini",
+  OPENAI_LISTING_MODEL_REVISION: "gpt-5-mini-2025-08-07"
+});
+assert.equal(pinnedProfile.provider_options.openai_listing_model_override, "gpt-5-mini-2025-08-07");
+assert.equal(pinnedProfile.provider_options.openai_listing_model_revision, "gpt-5-mini-2025-08-07");
+const mismatchedPinnedProfile = resolveRecognitionProfile(defaultRecognitionProfileId, {
+  ...env,
+  OPENAI_LISTING_MODEL: "gpt-4.1-mini",
+  OPENAI_LISTING_MODEL_REVISION: "gpt-5-mini-2025-08-07"
+});
+assert.equal(mismatchedPinnedProfile.provider_options.openai_listing_model_override, undefined);
+assert.equal(mismatchedPinnedProfile.provider_options.openai_listing_model_revision, undefined);
+
 const bound = bindRecognitionProfileToPayload({
   recognition_profile: defaultRecognitionProfileId,
   provider: "untrusted-provider",
@@ -55,6 +74,9 @@ assert.equal(bound.provider_options.enable_vector_assist, true);
 assert.equal(bound.provider_options.v4_compact_l2_prompt, true);
 assert.equal(bound.v4_force_l2_direct, true);
 assert.equal(bound.client_speculative, true);
+assert.equal(bound.maxTitleLength, 80);
+assert.equal(bound.max_title_length, 80);
+assert.equal(bound.category, "collectible_card");
 
 await assert.rejects(
   () => Promise.resolve().then(() => withRecognitionRequestIntent({}, { profileId: "unknown-profile" })),
@@ -104,8 +126,74 @@ assert.equal(canonicalJob.payload.create_l1_job, false);
 assert.equal(canonicalJob.payload.create_l2_job, true);
 assert.equal(canonicalJob.payload.provider_options.enable_catalog_assist, true);
 assert.equal(canonicalJob.payload.provider_options.enable_vector_assist, true);
+assert.equal(canonicalJob.payload.category, "collectible_card");
+assert.equal(canonicalJob.payload.effective_capture_quality.authority, "SERVER_CANONICAL_METADATA");
 assert.equal(canonicalJob.payload.image_references.length, 1);
 assert.equal(canonicalJob.payload.image_references[0].object_path.includes("legacy/four/segment"), false);
+
+const canonicalRead = async () => ({
+  image_generation_id: assetId,
+  image_set_sha256: "b".repeat(64),
+  expected_original_count: 1,
+  images: [{
+    image_role: "front_original",
+    object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg`
+  }],
+  image_references: [{
+    image_role: "front_original",
+    object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg`
+  }],
+  image_paths: {}
+});
+const [defaultBoundJob] = await canonicalizeQueueJobs({
+  jobs: [{
+    asset_id: assetId,
+    image_generation_id: assetId,
+    priority: 0,
+    max_attempts: 10,
+    not_before: "2099-01-01T00:00:00.000Z",
+    stage_result: { forged: true },
+    result: { forged: true },
+    payload: {
+      asset_id: assetId,
+      image_generation_id: assetId,
+      provider_options: { enable_catalog_assist: false },
+      maxTitleLength: 999,
+      resolved: { year: "2099" },
+      catalog_candidates: [{ candidate_id: "forged" }],
+      queue_decision_fingerprint: "f".repeat(64),
+      queue_decision_contract_version: "forged-contract",
+      recognition_profile_adapter_version: "forged-adapter",
+      captureProfileId: "client-override",
+      captureQuality: {
+        route: "TARGETED_RESCAN_REQUIRED",
+        capture_surface_type: "SLAB",
+        unresolved_regions: ["grade_label"]
+      }
+    }
+  }],
+  tenantId: "tenant_a",
+  env,
+  readCanonical: canonicalRead
+});
+assert.equal(defaultBoundJob.payload.maxTitleLength, 80);
+assert.equal(defaultBoundJob.payload.max_title_length, 80);
+assert.equal(defaultBoundJob.payload.captureProfileId, "standard-card-v1");
+assert.match(defaultBoundJob.payload.queue_decision_fingerprint, /^[0-9a-f]{64}$/);
+assert.notEqual(defaultBoundJob.payload.queue_decision_fingerprint, "f".repeat(64));
+assert.equal(defaultBoundJob.payload.queue_decision_contract_version, "queue-decision-fingerprint-v1");
+assert.equal(defaultBoundJob.payload.recognition_profile_adapter_version, "recognition-profile-adapter-v2-pinned-model-title-contract");
+assert.equal(defaultBoundJob.payload.effective_capture_quality.route, null);
+assert.equal(defaultBoundJob.payload.effective_capture_quality.glare_route, null);
+assert.equal(defaultBoundJob.payload.client_capture_quality.route, "TARGETED_RESCAN_REQUIRED");
+for (const forbidden of [
+  "priority", "max_attempts", "not_before", "stage_result", "result"
+]) {
+  assert.equal(forbidden in defaultBoundJob, false, `${forbidden} must remain server-owned`);
+}
+for (const forbidden of ["resolved", "catalog_candidates"]) {
+  assert.equal(forbidden in defaultBoundJob.payload, false, `${forbidden} must not cross the client boundary`);
+}
 
 const frontend = readFileSync(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
 assert.match(frontend, /withRecognitionRequestIntent/);

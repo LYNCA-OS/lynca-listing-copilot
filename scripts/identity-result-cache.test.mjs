@@ -5,6 +5,7 @@ import {
   runNativeV4Recognition
 } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import {
+  buildAuthoritativeResolverReplaySnapshot,
   buildIdentityResultCacheKey,
   buildTenantScopedIdentityInFlightKey,
   identityResultCacheRecordToListingResult,
@@ -17,6 +18,7 @@ import { writerFinalReplayRecordToListingResult } from "../lib/listing/cache/wri
 import {
   applyRecognitionBenchmarkProfile,
   assertExactReplayBenchmarkPair,
+  assertExactReplayBenchmarkPhaseResult,
   exactReplayPhases,
   recognitionBenchmarkProfileIds,
   summarizeProductionWorkloadBenchmark
@@ -122,6 +124,9 @@ assert.equal(key.result_version.owner_versions.provider.model_revision, "gpt-4.1
 assert.equal(key.result_version.owner_versions.sem, "linear-cos-10-23-v25");
 assert.equal(key.result_version.owner_versions.renderer, "renderer-v3-scg");
 assert.equal(key.result_version.owner_versions.catalog, "catalog-revision-test-1");
+assert.equal(key.result_version.fingerprint_contract_version, "recognition-pipeline-fingerprint-v2");
+assert.equal(key.result_version.owner_source_manifest.version, "recognition-owner-source-manifest-v1");
+assert.match(key.result_version.owner_source_manifest.hash, /^[0-9a-f]{64}$/);
 assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
 
 const noTenantKey = buildIdentityResultCacheKey({ ...payload, tenant_id: "" });
@@ -140,12 +145,112 @@ const catalogRevisionKey = buildIdentityResultCacheKey({
 assert.notEqual(catalogRevisionKey.cache_key, key.cache_key);
 assert.notEqual(catalogRevisionKey.version_fingerprint, key.version_fingerprint);
 
-const modelRevisionKey = buildIdentityResultCacheKey(payload, {
+const modelAliasWithoutRevisionKey = buildIdentityResultCacheKey(payload, {
   ...process.env,
   OPENAI_LISTING_MODEL: "gpt-5-mini"
 });
+assert.equal(modelAliasWithoutRevisionKey.ok, false);
+assert.equal(modelAliasWithoutRevisionKey.reason, "provider_model_revision_required");
+
+const descriptiveRevisionOnlyKey = buildIdentityResultCacheKey(payload, {
+  ...process.env,
+  OPENAI_LISTING_MODEL: "gpt-5-mini",
+  OPENAI_LISTING_MODEL_REVISION: "gpt-5-mini-snapshot-2026-07-01"
+});
+assert.equal(descriptiveRevisionOnlyKey.ok, false);
+assert.equal(descriptiveRevisionOnlyKey.reason, "provider_model_revision_required");
+
+const modelRevisionKey = buildIdentityResultCacheKey({
+  ...payload,
+  provider_options: {
+    openai_listing_model_override: "gpt-5-mini-2025-08-07",
+    openai_listing_model_revision: "gpt-5-mini-2025-08-07"
+  }
+}, {
+  ...process.env,
+  OPENAI_LISTING_MODEL: "gpt-5-mini",
+  OPENAI_LISTING_MODEL_REVISION: "gpt-5-mini-2025-08-07"
+});
+assert.equal(modelRevisionKey.ok, true);
 assert.notEqual(modelRevisionKey.cache_key, key.cache_key);
 assert.notEqual(modelRevisionKey.version_fingerprint, key.version_fingerprint);
+assert.equal(modelRevisionKey.result_version.owner_versions.provider.model_id, "gpt-5-mini-2025-08-07");
+assert.equal(
+  modelRevisionKey.result_version.owner_versions.provider.model_revision,
+  "gpt-5-mini-2025-08-07"
+);
+
+const ocrRevisionMissingKey = buildIdentityResultCacheKey(payload, {
+  ...process.env,
+  ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+  OCR_WORKER_REVISION: ""
+});
+assert.equal(ocrRevisionMissingKey.ok, false);
+assert.equal(ocrRevisionMissingKey.reason, "ocr_worker_revision_required");
+
+const ocrRevisionKey = buildIdentityResultCacheKey(payload, {
+  ...process.env,
+  ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+  OCR_WORKER_REVISION: "vision-revision-9"
+});
+assert.equal(ocrRevisionKey.ok, true);
+assert.equal(ocrRevisionKey.result_version.owner_versions.ocr.service_revision, "vision-revision-9");
+assert.notEqual(ocrRevisionKey.version_fingerprint, key.version_fingerprint);
+
+const stableOcrEnv = {
+  ...process.env,
+  ENABLE_PADDLE_OCR_FIELD_VERIFIER: "true",
+  OCR_WORKER_REVISION: "vision-revision-stable",
+  OCR_BACKEND: "google_vision",
+  OCR_MODEL_REVISION: "vision-document-text-v1",
+  OCR_PROMPT_REVISION: "none"
+};
+const beforeBundleCacheKey = buildIdentityResultCacheKey(payload, stableOcrEnv);
+const afterBundleCacheKey = buildIdentityResultCacheKey({
+  ...payload,
+  ocr_worker_revision: "runtime-payload-must-not-reversion-owner",
+  ocr_backend: "runtime-output-backend",
+  preingestion_summary: {
+    ocr_stage_execution: {
+      ocr_backend: "runtime-observed-google-vision",
+      ocr_model: "runtime-observed-model"
+    }
+  },
+  preingestion_evidence_patches: [{
+    provenance: {
+      model_id: "runtime-observed-model-id",
+      model_revision: "runtime-observed-model-revision"
+    }
+  }]
+}, stableOcrEnv);
+assert.equal(beforeBundleCacheKey.ok, true);
+assert.equal(afterBundleCacheKey.ok, true);
+assert.equal(
+  afterBundleCacheKey.recognition_pipeline_fingerprint,
+  beforeBundleCacheKey.recognition_pipeline_fingerprint,
+  "attaching runtime OCR evidence must not change the precomputed pipeline fingerprint"
+);
+assert.equal(
+  afterBundleCacheKey.cache_key,
+  beforeBundleCacheKey.cache_key,
+  "outbox cache preflight and Native Core terminal cache lookup must use the same exact key"
+);
+assert.notEqual(
+  buildIdentityResultCacheKey(payload, {
+    ...stableOcrEnv,
+    OCR_WORKER_REVISION: "vision-revision-next"
+  }).cache_key,
+  beforeBundleCacheKey.cache_key,
+  "changing the configured OCR service revision must invalidate exact replay"
+);
+assert.notEqual(
+  buildIdentityResultCacheKey(payload, {
+    ...stableOcrEnv,
+    OCR_MODEL_REVISION: "vision-document-text-v2"
+  }).cache_key,
+  beforeBundleCacheKey.cache_key,
+  "changing the configured OCR model revision must invalidate exact replay"
+);
 
 const noHashKey = buildIdentityResultCacheKey({
   images: [{ ...images[0], contentSha256: "" }]
@@ -248,9 +353,14 @@ assert.equal(built.row.identity_status, "CONFIRMED");
 assert.equal(built.row.image_fingerprints.length, 2);
 assert.equal(built.row.image_fingerprints.every((item) => !Object.hasOwn(item, "object_path")), true);
 assert.equal(built.row.final_title, confirmedResult.final_title);
-assert.equal(built.row.resolution_trace.length, 0);
+assert.deepEqual(built.row.resolution_trace, confirmedResult.resolution_trace);
 assert.deepEqual(built.row.evidence_snapshot, {});
 assert.deepEqual(built.row.field_states, confirmedResult.field_states);
+assert.equal(built.row.identity_resolution.cache_envelope_version, "identity-cache-resolver-snapshot-v1");
+assert.deepEqual(
+  built.row.identity_resolution.resolver_snapshot.unresolved,
+  null
+);
 assert.doesNotMatch(JSON.stringify(built.row), /tenant-cache|listing-assets|signedUrl|signed_url|asset_222/);
 
 const cachedResult = identityResultCacheRecordToListingResult({
@@ -270,7 +380,10 @@ assert.equal(Object.hasOwn(cachedResult.identity_cache, "tenant_id"), false);
 assert.equal(cachedResult.usage.provider_calls, 0);
 assert.equal(cachedResult.usage.recognition_worker_calls, 0);
 assert.equal(cachedResult.resolution_trace[0].phase, "identity_result_cache");
-assert.equal(cachedResult.resolution_trace.length, 1);
+assert.deepEqual(cachedResult.resolution_trace.slice(1), confirmedResult.resolution_trace);
+assert.deepEqual(cachedResult.resolver_replay_snapshot.unresolved, null);
+assert.deepEqual(cachedResult.resolver_replay_snapshot.conflict_map, confirmedResult.conflict_map);
+assert.deepEqual(cachedResult.resolver_replay_snapshot.confidence_report, confirmedResult.confidence_report);
 assert.match(cachedResult.final_title, /2025 Topps Chrome Cooper Flagg/);
 
 const fetchCalls = [];
@@ -283,6 +396,15 @@ globalThis.fetch = async (url, options = {}) => {
     method: options.method || "GET",
     body: options.body ? JSON.parse(options.body) : null
   });
+
+  if (table === "listing_active_catalog_snapshot") {
+    return jsonResponse([{
+      singleton: true,
+      revision: "catalog-revision-test-1",
+      content_revision: "catalog-revision-test-1",
+      updated_at: "2026-06-23T00:00:00.000Z"
+    }]);
+  }
 
   if (table === "listing_image_verifications") {
     const objectPath = requestUrl.searchParams.get("object_path")?.replace(/^eq\./, "");
@@ -388,7 +510,7 @@ assert.deepEqual(fetchCalls.map((call) => call.table), [
   "listing_image_verifications",
   "listing_writer_final_replay",
   "listing_identity_resolution_cache"
-]);
+], "a queue-bound Catalog revision must not be refreshed once per replayed job");
 
 const coldOptions = applyRecognitionBenchmarkProfile({}, {
   profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
@@ -454,15 +576,35 @@ const exactCold = {
   field_states: confirmedResult.field_states,
   identity_resolution_status: "CONFIRMED",
   ambiguity_status: "CONFIRMED",
-  identity_cache: { cache_hit: false, provider_call_skipped: false },
+  identity_cache: {
+    cache_hit: false,
+    provider_call_skipped: false,
+    write_saved: true,
+    cache_key: "c".repeat(64),
+    image_generation_hash: "d".repeat(64),
+    recognition_pipeline_fingerprint: "e".repeat(64)
+  },
   usage: { provider_calls: 1 }
 };
 const exactReplay = {
   ...exactCold,
-  identity_cache: { cache_hit: true, provider_call_skipped: true },
+  identity_cache: {
+    ...exactCold.identity_cache,
+    cache_hit: true,
+    provider_call_skipped: true,
+    cached_result_version_match: true
+  },
+  resolver_replay_snapshot: buildAuthoritativeResolverReplaySnapshot(exactCold),
   usage: { provider_calls: 0 }
 };
 assert.equal(assertExactReplayBenchmarkPair(exactCold, exactReplay), true);
+assert.throws(
+  () => assertExactReplayBenchmarkPhaseResult({
+    ...exactReplay,
+    usage: { provider_calls: null }
+  }, exactReplayPhases.REPLAY),
+  /expected_0_received_null/
+);
 assert.deepEqual(summarizeProductionWorkloadBenchmark([exactCold, exactReplay]), {
   profile: recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
   sample_count: 2,

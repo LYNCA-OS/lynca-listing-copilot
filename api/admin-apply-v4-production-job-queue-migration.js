@@ -16,7 +16,8 @@ const migrationPaths = [
   "supabase/migrations/20260715065752_track_d_feedback_capture_v1.sql",
   "supabase/migrations/20260715065803_track_c_tenant_foundation_expand.sql",
   "supabase/migrations/20260715065830_track_d_data_flywheel_convergence.sql",
-  "supabase/migrations/20260717100000_fix_v4_queue_atomic_rpc_signature.sql"
+  "supabase/migrations/20260717100000_fix_v4_queue_atomic_rpc_signature.sql",
+  "supabase/migrations/20260728120000_v4_queue_unique_stage_identity.sql"
 ].map((path) => join(process.cwd(), path));
 
 const inlineInteractiveBackgroundLaneMigrationSql = `
@@ -165,6 +166,37 @@ async function verify(client) {
             'p_batch jsonb, p_jobs jsonb, p_operator_id text, p_sessions jsonb, p_tenant_id text'
       ) as enqueue_atomic_rpc
       ,
+      exists (
+        select 1
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = 'preingestion_recognition_commit_outbox'
+      ) as preingestion_commit_outbox_table,
+      exists (
+        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'claim_preingestion_recognition_commit_outbox'
+          and p.pronargs = 4
+      ) as preingestion_commit_claim_rpc,
+      exists (
+        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'settle_preingestion_recognition_commit_outbox'
+          and p.pronargs = 5
+      ) as preingestion_commit_settle_rpc,
+      exists (
+        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'enqueue_recognition_preingestion_ocr_jobs'
+          and p.pronargs = 2
+      ) as preingestion_ocr_enqueue_rpc,
+      exists (
+        select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'v4_queue_enqueue_contract_version'
+          and p.pronargs = 0
+          and public.v4_queue_enqueue_contract_version() = 'v4-queue-identity-outbox-v1'
+      ) as queue_enqueue_contract_rpc,
       exists (
         select 1
         from information_schema.tables
@@ -375,7 +407,11 @@ async function verifyAtomicEnqueueV4FunctionBehavior(client) {
       tenant_id: tenantId,
       operator_id: operatorId,
       asset_id: assetId,
-      recognition_session_id: sessionId
+      recognition_session_id: sessionId,
+      image_generation_id: assetId,
+      image_set_sha256: "a".repeat(64),
+      queue_decision_fingerprint: "b".repeat(64),
+      queue_decision_replay_ready: true
     },
     max_attempts: 2,
     status: "CREATED",
@@ -408,7 +444,7 @@ async function verifyAtomicEnqueueV4FunctionBehavior(client) {
     const acceptedCount = Number(transaction?.accepted_count || 0);
     const sessionRowsWritten = Number(transaction?.session_rows_written || 0);
     const jobRowsWritten = Number(transaction?.job_rows_written || 0);
-    const [batchRows, sessionRows, jobRows] = await Promise.all([
+    const [batchRows, sessionRows, jobRows, outboxRows] = await Promise.all([
       client.query(`
         select 1
         from public.v4_recognition_batches
@@ -433,11 +469,22 @@ async function verifyAtomicEnqueueV4FunctionBehavior(client) {
           and tenant_id = $2
           and operator_id = $3
           and recognition_session_id = $4
-      `, [jobId, tenantId, operatorId, sessionId])
+      `, [jobId, tenantId, operatorId, sessionId]),
+      client.query(`
+        select 1
+        from public.preingestion_recognition_commit_outbox
+        where tenant_id = $1
+          and asset_id = $2
+          and image_generation_id = $2
+          and image_set_sha256 = $3
+          and queue_decision_fingerprint = $4
+      `, [tenantId, assetId, "a".repeat(64), "b".repeat(64)])
     ]);
     const batchRowsVisible = batchRows.rowCount === 1;
     const sessionRowsVisible = sessionRows.rowCount === 1;
     const jobRowsVisible = jobRows.rowCount === 1;
+    const outboxRowsVisible = outboxRows.rowCount === 1;
+    const enqueueContractVersion = String(transaction?.queue_enqueue_contract_version || "");
     const canaryAssertionPassed = transactionSaved
       && acceptedCount === 1
       && sessionRowsWritten === 1
@@ -445,20 +492,28 @@ async function verifyAtomicEnqueueV4FunctionBehavior(client) {
       && batchRowsVisible
       && sessionRowsVisible
       && jobRowsVisible;
+    const outboxContractPassed = enqueueContractVersion === "v4-queue-identity-outbox-v1"
+      && Number(transaction?.preingestion_commit_intent_count || 0) === 1
+      && outboxRowsVisible;
     return {
       probe_rpc_ok: true,
       probe_rpc_saved: transactionSaved,
       probe_rpc_reason: transactionReason || null,
       probe_expected_operator_not_active_member: transactionReason === "operator_not_active_member",
-      probe_expected_atomic_acceptance: canaryAssertionPassed,
+      probe_expected_atomic_acceptance: canaryAssertionPassed && outboxContractPassed,
       probe_accepted_count: acceptedCount,
       probe_session_rows_written: sessionRowsWritten,
       probe_job_rows_written: jobRowsWritten,
       probe_batch_rows_visible: batchRowsVisible,
       probe_session_rows_visible: sessionRowsVisible,
       probe_job_rows_visible: jobRowsVisible,
-      probe_canary_assertions_passed: canaryAssertionPassed,
-      probe_rpc_error_class: canaryAssertionPassed ? null : "atomic_queue_canary_assertion_mismatch",
+      probe_outbox_contract_passed: outboxContractPassed,
+      probe_outbox_row_visible: outboxRowsVisible,
+      probe_enqueue_contract_version: enqueueContractVersion || null,
+      probe_canary_assertions_passed: canaryAssertionPassed && outboxContractPassed,
+      probe_rpc_error_class: canaryAssertionPassed && outboxContractPassed
+        ? null
+        : "atomic_queue_canary_assertion_mismatch",
       probe_rpc_error_sqlstate: String(transaction?.sqlstate || "")
     };
   } catch (error) {
@@ -672,6 +727,11 @@ export default async function handler(req, res) {
       && verification.stage_capacity_release_rpc
       && verification.tenant_fair_scheduler
       && verification.enqueue_atomic_rpc
+      && verification.preingestion_commit_outbox_table
+      && verification.preingestion_commit_claim_rpc
+      && verification.preingestion_commit_settle_rpc
+      && verification.preingestion_ocr_enqueue_rpc
+      && verification.queue_enqueue_contract_rpc
       && behavior.claim_ok
       && behavior.balanced_key_assignment_ok
       && behavior.tenant_fair_claim_ok

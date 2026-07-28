@@ -435,7 +435,18 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
         strategy_replay_trace: {
           schema_version: "provider-terminal-strategy-replay-trace-v1",
           observed_terminal_path: "evidence_completion"
-        }
+        },
+        provider_calls: 0,
+        provider_call_skipped: true,
+        identity_cache_hit: true,
+        cached_result_version_match: true,
+        identity_cache_key: "a".repeat(64),
+        identity_cache_image_generation_hash: "b".repeat(64),
+        identity_cache_version_fingerprint: "c".repeat(64),
+        identity_cache_write_saved: false,
+        replay_class: "TERMINAL_L2_IDEMPOTENT",
+        identity_truth: false,
+        resolver_replay_snapshot: { snapshot_version: "identity-cache-resolver-snapshot-v1", unresolved: [] }
       }
     }
   }]
@@ -461,6 +472,16 @@ assert.equal(hydratedDiagnostic.v4_pipeline_contract.contract_status, "PASSED");
 assert.equal(hydratedDiagnostic.v4_pipeline_contract.bridged_stage_count, 3);
 assert.equal(hydratedDiagnostic.strategy_replay_trace.schema_version, "provider-terminal-strategy-replay-trace-v1");
 assert.equal(hydratedDiagnostic.strategy_replay_trace.observed_terminal_path, "evidence_completion");
+assert.equal(hydratedDiagnostic.provider_calls, 0);
+assert.equal(hydratedDiagnostic.provider_call_skipped, true);
+assert.equal(hydratedDiagnostic.identity_cache_hit, true);
+assert.equal(hydratedDiagnostic.cached_result_version_match, true);
+assert.equal(hydratedDiagnostic.identity_cache_key, "a".repeat(64));
+assert.equal(hydratedDiagnostic.identity_cache_image_generation_hash, "b".repeat(64));
+assert.equal(hydratedDiagnostic.identity_cache_version_fingerprint, "c".repeat(64));
+assert.equal(hydratedDiagnostic.replay_class, "TERMINAL_L2_IDEMPOTENT");
+assert.equal(hydratedDiagnostic.identity_truth, false);
+assert.equal(hydratedDiagnostic.resolver_replay_snapshot.snapshot_version, "identity-cache-resolver-snapshot-v1");
 assert.equal(hydratedDiagnostic.ok, true);
 assert.equal(hydratedDiagnostic.writer_ready, true);
 assert.equal(hydratedDiagnostic.l2_ready, true);
@@ -1237,8 +1258,8 @@ assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSumm
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
 assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish its cache probe before final telemetry is assembled.");
 assert.match(v4SmokeSource, /prewarmCacheOnly: !hasFlag\(argv, "--paid-prewarm"\)/, "direct smoke prewarm must stay cache-only and avoid a duplicate provider call.");
-assert.match(v4SmokeSource, /create_l1_job: enableL1/, "hidden L1 must be explicit experiment-only work rather than a default paid stage.");
-assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must always poll the final L2 stage.");
+assert.match(v4SmokeSource, /create_l1_job: false/, "server-bound smoke must never hide an extra paid L1 stage.");
+assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must always enqueue the final L2 stage.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
 assert.match(queueStatusApiSource, /provider_capacity_stage_handoff: summary\.provider_capacity_stage_handoff \|\| null/, "job status must preserve provider-stage handoff telemetry for production capacity audits.");
 assert.match(queueStatusApiSource, /v4_pipeline_contract: summary\.v4_pipeline_contract \|\| null/, "job status must expose the V4 convergence contract to production audits.");

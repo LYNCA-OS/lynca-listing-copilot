@@ -96,7 +96,9 @@ assert.equal(exportTimeoutFailure.body.retryable, true);
 const prewarmSource = sources["api/v4/listing-job-prewarm.js"];
 assert.match(prewarmSource, /TENANT_PERMISSIONS\.CREATE_JOB/);
 assert.match(prewarmSource, /const tenantId = context\.tenantId/);
-assert.match(prewarmSource, /readV4RecognitionJobs\(\{[\s\S]*tenantId,/);
+assert.match(prewarmSource, /V4_PREWARM_ROUTE_RETIRED_USE_CANONICAL_ENQUEUE/);
+assert.doesNotMatch(prewarmSource, /enqueueV4RecognitionJobs|expandV4RecognitionStageJobs|readJsonPayload/);
+assert.doesNotMatch(prewarmSource, /\.\.\.payload|\.\.\.asset/, "the retired route must not reconstruct or persist browser payloads");
 assert.doesNotMatch(prewarmSource, /const tenantId = payload\.(?:tenant_id|tenantId)/);
 
 const fastScoutSource = sources["api/v4/fast-scout-prewarm.js"];

@@ -20,14 +20,19 @@ import {
   retryableOcrFailure,
   requeuePreingestionOcrJob,
   requeueRetryableFailedPreingestionOcrJobs,
+  mergeOcrExecutionSummary,
+  summarizeOcrEvidenceOutcome,
   waitForPreingestionOcrEvidence
 } from "../lib/listing/preingestion/preingestion-ocr-worker.mjs";
-import { preingestionOcrJobVersion } from "../lib/listing/preingestion/preingestion-bundle.mjs";
+import { preingestionOcrJobKeyPrefix } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 
 const env = {
   SUPABASE_URL: "https://supabase.test",
-  SUPABASE_SERVICE_ROLE_KEY: "service-role-test"
+  SUPABASE_SERVICE_ROLE_KEY: "service-role-test",
+  OCR_WORKER_REVISION: "ocr-worker-rev-test"
 };
+const currentOcrPrefix = preingestionOcrJobKeyPrefix({ ocrWorkerRevision: env.OCR_WORKER_REVISION });
+const currentOcrJobKey = (suffix) => `${currentOcrPrefix}bundle-1:${suffix}`;
 
 {
   const batches = [];
@@ -77,7 +82,7 @@ function jsonResponse(payload, { ok = true, status = 200 } = {}) {
 
 function currentOcrPatch(field, value, extra = {}) {
   const serialField = ["print_run_number", "serial_number", "numerical_rarity"].includes(field);
-  const jobKey = extra.provenance?.job_key || `ocr:${preingestionOcrJobVersion}:bundle-1:${field}`;
+  const jobKey = extra.provenance?.job_key || currentOcrJobKey(field);
   return {
     field,
     value,
@@ -90,7 +95,7 @@ function currentOcrPatch(field, value, extra = {}) {
       crop_type: extra.provenance?.crop_type || (serialField ? "serial_number" : null),
       source_region: extra.provenance?.source_region || (serialField ? "serial_region" : null),
       serial_consensus_verified: extra.provenance?.serial_consensus_verified
-        ?? (serialField && jobKey.includes(`ocr:${preingestionOcrJobVersion}:`))
+        ?? (serialField && jobKey.startsWith(currentOcrPrefix))
     }
   };
 }
@@ -111,7 +116,7 @@ assert.throws(
 const sampleJob = {
   tenant_id: "tenant_a",
   job_id: "job-1",
-  job_key: "ocr:bundle-1:crop-1",
+  job_key: currentOcrJobKey("crop-1"),
   asset_id: "asset-1",
   bundle_id: "bundle-1",
   attempts: 0,
@@ -202,7 +207,7 @@ assert.ok(
 
 // --- ocrRequestForPreingestionJob maps crop plan into the OCR contract ---
 const request = ocrRequestForPreingestionJob(sampleJob, { imageUrl: "https://signed.test/front.jpg" });
-assert.equal(request.request_id, "ocr:bundle-1:crop-1");
+assert.equal(request.request_id, currentOcrJobKey("crop-1"));
 assert.equal(request.crop_type, "serial_crop");
 assert.match(request.expected_pattern, /\\d/);
 assert.equal(request.image_url, "https://signed.test/front.jpg");
@@ -238,7 +243,7 @@ assert.equal(serialPatch.source_type, "OCR");
 assert.equal(serialPatch.source_image_id, "img-front");
 assert.equal(serialPatch.crop_id, "crop-1");
 assert.equal(serialPatch.confidence, 0.94);
-assert.equal(serialPatch.provenance.job_key, "ocr:bundle-1:crop-1");
+assert.equal(serialPatch.provenance.job_key, currentOcrJobKey("crop-1"));
 
 const exactLineConfidence = ocrConfidenceForFieldValue({
   confidence: 0.71,
@@ -256,6 +261,117 @@ const lineWeightedPatches = bundlePatchesFromOcrResult({
   evidence_patch: { ...ocrResult.evidence_patch, confidence: 0.71 }
 }, sampleJob);
 assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number")?.confidence, 0.96);
+
+const codeNoTextOutcome = summarizeOcrEvidenceOutcome([{
+  result: {
+    worker_status: "OK",
+    raw_text: "",
+    text_candidates: [],
+    normalized_fields: {},
+    evidence_patch: { evidence: {} }
+  }
+}], []);
+assert.equal(codeNoTextOutcome.status, "NO_TEXT_OBSERVED");
+assert.deepEqual(codeNoTextOutcome.reason_codes, ["OCR_NO_TEXT_OBSERVED"]);
+assert.equal(codeNoTextOutcome.evidence_produced, false);
+
+const codeUnparsedOutcome = summarizeOcrEvidenceOutcome([{
+  result: {
+    worker_status: "OK",
+    raw_text: "CARD CODE MAYBE",
+    text_candidates: [{ text: "CARD CODE MAYBE", confidence: 0.91 }],
+    normalized_fields: {},
+    evidence_patch: { evidence: {} }
+  }
+}], []);
+assert.equal(codeUnparsedOutcome.status, "TEXT_NOT_NORMALIZED");
+assert.deepEqual(codeUnparsedOutcome.reason_codes, ["OCR_TEXT_NOT_NORMALIZED_TO_SUPPORTED_FIELD"]);
+
+const codeReadyOutcome = summarizeOcrEvidenceOutcome([{
+  result: {
+    worker_status: "OK",
+    raw_text: "OP01-120",
+    normalized_fields: { collector_number: "OP01-120" },
+    evidence_patch: { evidence: { collector_number: { value: "OP01-120" } } }
+  }
+}], [{ field: "collector_number", value: "OP01-120" }]);
+assert.equal(codeReadyOutcome.status, "EVIDENCE_PATCH_READY");
+assert.equal(codeReadyOutcome.patch_count, 1);
+assert.equal(codeReadyOutcome.evidence_produced, true);
+
+const boundedDiagnosticOutcome = summarizeOcrEvidenceOutcome([{
+  result: {
+    worker_status: "OK",
+    raw_text: "DO NOT PERSIST THIS OCR TEXT",
+    normalized_fields: {
+      zzz_untrusted_field: "must-not-persist",
+      auto_grade: "10",
+      card_grade: "9.5",
+      cert_number: "12345678",
+      checklist_code: "CL-1",
+      collector_number: "54",
+      grade_company: "PSA",
+      grade_type: "AUTO",
+      numbered_to: "99",
+      player_names: ["Player"],
+      print_run_denominator: "99",
+      print_run_number: "1/99",
+      print_run_numerator: "1",
+      product_text: "Product",
+      rarity: "Rare",
+      serial_denominator: "99",
+      serial_number: "1/99",
+      tcg_card_number: "OP01-120",
+      tcg_set_code: "OP01",
+      year: "2024"
+    },
+    evidence_patch: { evidence: {} }
+  }
+}], []);
+assert.equal(boundedDiagnosticOutcome.status, "NORMALIZED_FIELD_DROPPED");
+assert.equal(boundedDiagnosticOutcome.normalized_field_count, 8);
+assert.equal(boundedDiagnosticOutcome.normalized_field_observed_count, 19);
+assert.equal(boundedDiagnosticOutcome.normalized_field_truncated_count, 11);
+assert.deepEqual(boundedDiagnosticOutcome.normalized_fields, [
+  "auto_grade",
+  "card_grade",
+  "cert_number",
+  "checklist_code",
+  "collector_number",
+  "grade_company",
+  "grade_type",
+  "numbered_to"
+]);
+assert.equal(boundedDiagnosticOutcome.normalized_fields.includes("zzz_untrusted_field"), false);
+assert.equal(JSON.stringify(boundedDiagnosticOutcome).includes("DO NOT PERSIST THIS OCR TEXT"), false);
+
+const mergedEvidenceSummary = mergeOcrExecutionSummary({
+  evidence_job_observability: [
+    { job_id: "year-job", crop_role: "year_product_crop", status: "SUCCEEDED", evidence_produced: true },
+    { job_id: "stable-terminal", crop_role: "card_code_crop", status: "SUCCEEDED", evidence_produced: true }
+  ]
+}, {
+  claimed: 1,
+  evidence_job_observability: [
+    { job_id: "subject-job", crop_role: "subject_crop", status: "SUCCEEDED", evidence_produced: true },
+    { job_id: "stable-terminal", crop_role: "card_code_crop", status: "RUNNING", evidence_produced: false }
+  ]
+});
+assert.equal(
+  mergedEvidenceSummary.aggregate_scope,
+  "MERGED_JOB_HISTORY_BOUNDED"
+);
+assert.deepEqual(
+  mergedEvidenceSummary.evidence_job_observability.map((row) => row.job_id),
+  ["stable-terminal", "subject-job", "year-job"]
+);
+assert.equal(
+  mergedEvidenceSummary.evidence_job_observability.find((row) => row.job_id === "stable-terminal").status,
+  "SUCCEEDED",
+  "a later stale nonterminal row must not erase terminal evidence"
+);
+assert.equal(mergedEvidenceSummary.evidence_job_observability_count, 3);
+assert.equal(mergedEvidenceSummary.evidence_job_observability_truncated_count, 0);
 
 // --- claim is conditional on status=queued (atomic per row) ---
 {
@@ -297,6 +413,70 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.ok(Date.parse(claimBody.lease_expires_at) > Date.now());
   assert.equal(jobs[0].durable_lease_supported, true);
   assert.equal(jobs[0].lease_owner, "lease-owner-a");
+}
+
+// --- claim is revision-scoped: historical rows remain auditable but inert ---
+{
+  const historicalOcrPrefix = currentOcrPrefix.replace(
+    env.OCR_WORKER_REVISION,
+    "ocr-worker-rev-historical"
+  );
+  const historicalJob = {
+    ...sampleJob,
+    job_id: "job-historical-revision",
+    job_key: `${historicalOcrPrefix}bundle-1:crop-historical`
+  };
+  const currentJob = {
+    ...sampleJob,
+    job_id: "job-current-revision",
+    job_key: currentOcrJobKey("crop-current")
+  };
+  let listUrl = "";
+  const patchedJobIds = [];
+  const jobs = await claimQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
+    bundleId: "bundle-1",
+    leaseOwner: "worker-current-revision",
+    env,
+    fetchImpl: async (url, init = {}) => {
+      const target = new URL(String(url));
+      if (!init.method) {
+        listUrl = String(url);
+        // Return a stale row deliberately even though a compliant PostgREST
+        // server applies the prefix predicate. The local boundary must still
+        // prevent it from reaching the conditional claim PATCH.
+        return jsonResponse([historicalJob, currentJob]);
+      }
+      const jobId = String(target.searchParams.get("job_id") || "").replace(/^eq\./, "");
+      patchedJobIds.push(jobId);
+      assert.equal(target.searchParams.get("job_key"), `like.${currentOcrPrefix}*`);
+      return jsonResponse([{ status: "running", attempts: 1, job_id: jobId }]);
+    }
+  });
+  assert.equal(new URL(listUrl).searchParams.get("job_key"), `like.${currentOcrPrefix}*`);
+  assert.deepEqual(patchedJobIds, ["job-current-revision"]);
+  assert.deepEqual(jobs.map((job) => job.job_id), ["job-current-revision"]);
+  assert.equal(
+    jobs.some((job) => job.job_key === historicalJob.job_key),
+    false,
+    "historical OCR revisions must not consume a claim, capacity slot or Provider call"
+  );
+}
+
+// Missing immutable worker revision fails closed before reading the queue.
+{
+  let fetchCalled = false;
+  const jobs = await claimQueuedPreingestionOcrJobs({
+    tenantId: "tenant_a",
+    bundleId: "bundle-1",
+    env: { ...env, OCR_WORKER_REVISION: "" },
+    fetchImpl: async () => {
+      fetchCalled = true;
+      return jsonResponse([]);
+    }
+  });
+  assert.deepEqual(jobs, []);
+  assert.equal(fetchCalled, false);
 }
 
 // --- rolling deployments fail closed to the legacy claim shape when lease columns are unavailable ---
@@ -534,7 +714,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           {
             tenant_id: "tenant_a",
             job_id: "stale-retry",
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-1`,
+            job_key: currentOcrJobKey("crop-1"),
             bundle_id: "bundle-1",
             status: "running",
             attempts: 1,
@@ -546,7 +726,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           {
             tenant_id: "tenant_a",
             job_id: "stale-terminal",
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-2`,
+            job_key: currentOcrJobKey("crop-2"),
             bundle_id: "bundle-1",
             status: "running",
             attempts: 3,
@@ -558,7 +738,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           {
             tenant_id: "tenant_a",
             job_id: "stale-legacy",
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-3`,
+            job_key: currentOcrJobKey("crop-3"),
             bundle_id: "bundle-1",
             status: "running",
             attempts: 1,
@@ -570,7 +750,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           {
             tenant_id: "tenant_a",
             job_id: "fresh-running",
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-4`,
+            job_key: currentOcrJobKey("crop-4"),
             bundle_id: "bundle-1",
             status: "running",
             attempts: 1,
@@ -582,7 +762,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           {
             tenant_id: "tenant_b",
             job_id: "foreign-stale",
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-5`,
+            job_key: currentOcrJobKey("crop-5"),
             bundle_id: "bundle-1",
             status: "running",
             attempts: 1,
@@ -804,9 +984,9 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     fetchImpl: async (url, init = {}) => {
       if (!init.method) {
         return jsonResponse([
-          { tenant_id: "tenant_a", job_id: "retry-current", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-1`, attempts: 1, last_error: "PaddleOCR worker request timed out." },
+          { tenant_id: "tenant_a", job_id: "retry-current", job_key: currentOcrJobKey("crop-1"), attempts: 1, last_error: "PaddleOCR worker request timed out." },
           { tenant_id: "tenant_a", job_id: "old-version", job_key: "ocr:ocr-crop-v3:bundle-1:crop-1", attempts: 1, last_error: "PaddleOCR worker request timed out." },
-          { tenant_id: "tenant_a", job_id: "permanent", job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:crop-2`, attempts: 1, last_error: "crop source_object_path missing" }
+          { tenant_id: "tenant_a", job_id: "permanent", job_key: currentOcrJobKey("crop-2"), attempts: 1, last_error: "crop source_object_path missing" }
         ]);
       }
       const target = new URL(String(url));
@@ -871,7 +1051,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const slabGradeJob = {
     ...sampleJob,
     job_id: "job-grade-slab",
-    job_key: "ocr:bundle-1:grade-slab",
+    job_key: currentOcrJobKey("grade-slab"),
     payload: {
       crop: {
         ...sampleJob.payload.crop,
@@ -949,7 +1129,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const inlineGradeJob = {
     ...sampleJob,
     job_id: "job-grade-inline",
-    job_key: "ocr:bundle-1:grade-inline",
+    job_key: currentOcrJobKey("grade-inline"),
     payload: {
       crop: {
         ...sampleJob.payload.crop,
@@ -1032,7 +1212,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const slabWithoutDimensionsJob = {
     ...sampleJob,
     job_id: "job-grade-slab-no-dimensions",
-    job_key: "ocr:bundle-1:grade-slab-no-dimensions",
+    job_key: currentOcrJobKey("grade-slab-no-dimensions"),
     payload: {
       crop: {
         ...sampleJob.payload.crop,
@@ -1100,7 +1280,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const rawCardGradeJob = {
     ...sampleJob,
     job_id: "job-grade-raw",
-    job_key: "ocr:bundle-1:grade-raw",
+    job_key: currentOcrJobKey("grade-raw"),
     payload: {
       crop: {
         ...sampleJob.payload.crop,
@@ -1159,8 +1339,8 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       const target = String(url);
       if (target.includes("preingestion_jobs")) {
         return jsonResponse([
-          { job_id: "a", status: "succeeded", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:a` },
-          { job_id: "b", status: "failed", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:b`, last_error: "no text" },
+          { job_id: "a", status: "succeeded", attempts: 1, job_key: currentOcrJobKey("a") },
+          { job_id: "b", status: "failed", attempts: 1, job_key: currentOcrJobKey("b"), last_error: "no text" },
           { job_id: "historical", status: "failed", attempts: 1, job_key: "ocr:ocr-crop-v3:bundle-1:old", last_error: "old timeout" }
         ]);
       }
@@ -1196,7 +1376,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       const target = String(url);
       if (target.includes("preingestion_jobs")) {
         jobReads += 1;
-        return jsonResponse([{ job_id: "a", status: jobReads === 1 ? "running" : "succeeded", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:a` }]);
+        return jsonResponse([{ job_id: "a", status: jobReads === 1 ? "running" : "succeeded", attempts: 1, job_key: currentOcrJobKey("a") }]);
       }
       return jsonResponse([{
         bundle_id: "bundle-1",
@@ -1229,7 +1409,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           job_id: "serial",
           status: "succeeded",
           attempts: 1,
-          job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+          job_key: currentOcrJobKey("serial"),
           payload: { crop: { role: "serial_crop" } }
         }]);
       }
@@ -1261,14 +1441,14 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
             job_id: "serial",
             status: "succeeded",
             attempts: 1,
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+            job_key: currentOcrJobKey("serial"),
             payload: { crop: { role: "serial_crop" } }
           },
           {
             job_id: "grade",
             status: jobReads === 1 ? "running" : "succeeded",
             attempts: 1,
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`,
+            job_key: currentOcrJobKey("grade"),
             payload: { crop: { role: "grade_label_crop" } }
           }
         ]);
@@ -1287,7 +1467,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
             raw_text: "2021 PANINI CONTENDERS OPTIC\nSPLTNG.IMG - BLACK SCOPE\nPSA 10",
             provenance: {
               crop_type: "grade_label",
-              job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`
+              job_key: currentOcrJobKey("grade")
             }
           }] : [])
         ]
@@ -1318,21 +1498,21 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
             job_id: "serial",
             status: "succeeded",
             attempts: 1,
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+            job_key: currentOcrJobKey("serial"),
             payload: { crop: { role: "serial_crop" } }
           },
           {
             job_id: "grade",
             status: "succeeded",
             attempts: 1,
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`,
+            job_key: currentOcrJobKey("grade"),
             payload: { crop: { role: "grade_label_crop" } }
           },
           {
             job_id: "code",
             status: "running",
             attempts: 1,
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:code`,
+            job_key: currentOcrJobKey("code"),
             payload: { crop: { role: "card_code_crop" } }
           }
         ]);
@@ -1367,14 +1547,14 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
             job_id: "serial",
             status: jobReads === 1 ? "running" : "succeeded",
             attempts: 1,
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`,
+            job_key: currentOcrJobKey("serial"),
             payload: { crop: { role: "serial_crop" } }
           },
           {
             job_id: "grade",
             status: "running",
             attempts: 1,
-            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:grade`,
+            job_key: currentOcrJobKey("grade"),
             payload: { crop: { role: "grade_label_crop" } }
           }
         ]);
@@ -1404,7 +1584,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
           job_id: "current-empty",
           status: "succeeded",
           attempts: 1,
-          job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:serial`
+          job_key: currentOcrJobKey("serial")
         }]);
       }
       return jsonResponse([{
@@ -1567,7 +1747,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const fastJob = {
     ...sampleJob,
     job_id: "fast-job",
-    job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:fast`,
+    job_key: currentOcrJobKey("fast"),
     payload: {
       crop: {
         ...sampleJob.payload.crop,
@@ -1579,7 +1759,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const slowJob = {
     ...fastJob,
     job_id: "slow-job",
-    job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:slow`,
+    job_key: currentOcrJobKey("slow"),
     payload: {
       crop: {
         ...fastJob.payload.crop,
@@ -1655,7 +1835,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const jobs = Array.from({ length: 5 }, (_, index) => ({
     ...sampleJob,
     job_id: `parallel-job-${index}`,
-    job_key: `ocr:ocr-crop-v2:bundle-1:parallel-crop-${index}`,
+    job_key: currentOcrJobKey(`parallel-crop-${index}`),
     payload: {
       crop: {
         ...sampleJob.payload.crop,
@@ -1733,7 +1913,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const jobs = roles.map((role, index) => ({
     ...sampleJob,
     job_id: `stage-job-${index}`,
-    job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:stage-${index}`,
+    job_key: currentOcrJobKey(`stage-${index}`),
     payload: {
       crop: {
         ...sampleJob.payload.crop,

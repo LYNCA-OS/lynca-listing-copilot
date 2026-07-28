@@ -558,7 +558,13 @@ function catalogGapTypeFromTrace(trace = {}) {
 function providerRuntimeSummary(result = {}, payload = {}) {
   const vectorContext = result.candidate_context?.vector || {};
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
-  const reportedProviderCalls = Number(result.usage?.provider_calls);
+  const rawProviderCalls = result.usage?.provider_calls;
+  const reportedProviderCalls = rawProviderCalls === null
+    || rawProviderCalls === undefined
+    || rawProviderCalls === ""
+    || typeof rawProviderCalls === "boolean"
+    ? null
+    : Number(rawProviderCalls);
   const providerCallSkipped = result.identity_cache?.provider_call_skipped === true;
   const inferredProviderCalls = providerCallSkipped
     ? 0
@@ -578,7 +584,9 @@ function providerRuntimeSummary(result = {}, payload = {}) {
     provider_text_verbosity: result.provider_text_verbosity || null,
     provider_requested_service_tier: result.provider_requested_service_tier || null,
     provider_service_tier: result.provider_service_tier || null,
-    provider_calls: Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
+    provider_calls: reportedProviderCalls !== null
+      && Number.isFinite(reportedProviderCalls)
+      && reportedProviderCalls >= 0
       ? Math.trunc(reportedProviderCalls)
       : inferredProviderCalls,
     recognition_benchmark_profile: result.recognition_benchmark_profile
@@ -601,7 +609,22 @@ function providerRuntimeSummary(result = {}, payload = {}) {
       || result.identity_cache?.version_fingerprint
       || null,
     identity_cache_image_generation_hash: result.identity_cache?.image_generation_hash || null,
+    identity_cache_key: result.identity_cache?.cache_key || null,
+    identity_cache_write_saved: result.identity_cache?.write_saved ?? null,
     identity_cache_write_reason: result.identity_cache?.write_reason || null,
+    replay_class: result.replay_class || result.replay?.replay_class || null,
+    identity_truth: result.identity_truth ?? result.replay?.identity_truth ?? null,
+    resolver_replay_snapshot: result.resolver_replay_snapshot || null,
+    provider_execution_skipped: Number.isFinite(reportedProviderCalls)
+      ? Math.trunc(reportedProviderCalls) === 0
+      : inferredProviderCalls === 0
+        ? true
+        : null,
+    provider_execution_skip_route: result.identity_cache?.provider_call_skipped === true
+      ? "IDENTITY_RESULT_CACHE"
+      : inferredProviderCalls === 0
+        ? (result.route || result.source || null)
+        : null,
     native_core_stage_trace: Array.isArray(result.native_core_stage_trace) ? result.native_core_stage_trace : [],
     exact_anchor_fast_final_shadow: result.exact_anchor_fast_final_shadow || null,
     provider_input_image_count: Number.isFinite(Number(result.provider_input_image_count)) ? Number(result.provider_input_image_count) : null,

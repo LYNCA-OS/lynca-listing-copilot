@@ -7,6 +7,7 @@ import {
   currentPreingestionEvidencePatches,
   imagesFromPreIngestionBundle,
   normalizeEvidencePatch,
+  preingestionOcrJobKeyPrefix,
   preingestionOcrJobVersion,
   readPreIngestionBundleByAsset,
   readPreIngestionBundle,
@@ -25,6 +26,10 @@ const tenantId = "tenant_a";
 const assetId = "asset_11111111-1111-4111-8111-111111111111";
 process.env.SUPABASE_URL = env.SUPABASE_URL;
 process.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+process.env.OCR_WORKER_REVISION = "ocr-worker-rev-test";
+const currentOcrPrefix = preingestionOcrJobKeyPrefix({
+  ocrWorkerRevision: process.env.OCR_WORKER_REVISION
+});
 
 const front = {
   id: "front",
@@ -87,7 +92,7 @@ const currentPatchSet = currentPreingestionEvidencePatches([
     field: "serial_number",
     value: "242/250",
     source_type: "OCR",
-    provenance: { job_key: `ocr:${preingestionOcrJobVersion}:bundle:serial` }
+    provenance: { job_key: `${currentOcrPrefix}bundle:serial` }
   },
   {
     field: "serial_number",
@@ -196,7 +201,7 @@ assert.deepEqual(summaryWithOcrExecution.ocr_stage_execution, {
 // enqueued unless a type is explicitly enabled.
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
-assert.ok(jobs.every((job) => job.job_key.startsWith(`ocr:${preingestionOcrJobVersion}:`)));
+assert.ok(jobs.every((job) => job.job_key.startsWith(currentOcrPrefix)));
 assert.deepEqual(
   jobs.map((job) => `${job.payload.crop.crop_metadata.source_side}:${job.payload.crop.role}`).sort(),
   ["back:card_code_crop", "front:serial_crop"],

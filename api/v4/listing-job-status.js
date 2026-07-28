@@ -311,7 +311,14 @@ function operationalSessionStatus(session = null, job = null) {
       provider_text_verbosity: summary.provider_text_verbosity || null,
       provider_requested_service_tier: summary.provider_requested_service_tier || null,
       provider_service_tier: summary.provider_service_tier || null,
-      provider_calls: Number.isFinite(Number(summary.provider_calls)) ? Number(summary.provider_calls) : null,
+      provider_calls: summary.provider_calls === null
+        || summary.provider_calls === undefined
+        || summary.provider_calls === ""
+        || typeof summary.provider_calls === "boolean"
+        ? null
+        : Number.isFinite(Number(summary.provider_calls))
+          ? Number(summary.provider_calls)
+          : null,
       recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
       recognition_benchmark_phase: summary.recognition_benchmark_phase || null,
       evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
@@ -324,7 +331,14 @@ function operationalSessionStatus(session = null, job = null) {
       identity_cache_scope: summary.identity_cache_scope || null,
       identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
       identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
+      identity_cache_key: summary.identity_cache_key || null,
+      identity_cache_write_saved: summary.identity_cache_write_saved ?? null,
       identity_cache_write_reason: summary.identity_cache_write_reason || null,
+      replay_class: summary.replay_class || null,
+      identity_truth: summary.identity_truth ?? null,
+      resolver_replay_snapshot: summary.resolver_replay_snapshot || null,
+      provider_execution_skipped: summary.provider_execution_skipped ?? null,
+      provider_execution_skip_route: summary.provider_execution_skip_route || null,
       native_core_stage_trace: Array.isArray(summary.native_core_stage_trace) ? summary.native_core_stage_trace : [],
       exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
       provider_finish_reason: summary.provider_finish_reason || null,

@@ -242,9 +242,11 @@ assert.match(api, /envFlag\(env, "ENABLE_STORED_VISUAL_FEATURE_LOOKUP", false\)/
 assert.doesNotMatch(api, /runFocusedVisionImpl:\s*createGptCriticalVerifierRunner/, "automatic second-model focused vision should not be wired from the title API");
 assert.match(api, /optional bounded derived crop images/, "title API should accept derived crop images without allowing unbounded inputs");
 assert.match(js, /function TitleCardComponent\(result, asset = null\)/, "frontend should render the one-line title card product surface");
-assert.match(js, /enqueue_embeddings:\s*false/, "frontend must not enqueue embedding jobs without a production consumer");
-assert.match(js, /enqueue_surface:\s*false/, "frontend must not enqueue surface jobs without a production consumer");
-assert.match(js, /enqueue_quality:\s*false/, "frontend must not enqueue quality jobs without a production consumer");
+assert.doesNotMatch(
+  js,
+  /\b(?:enqueue_workers|enqueue_ocr|enqueue_ocr_detail|enqueue_embeddings|enqueue_surface|enqueue_quality|verify_signed_read_urls)\s*:/,
+  "frontend must not own server preingestion policy knobs",
+);
 assert.match(js, /writerTitleOmissionNotice/, "title-only UI should explain CSM fields omitted by the 80-character policy");
 assert.match(js, /已识别但因 80 字符限制省略/, "writer omission copy should be concrete and non-technical");
 assert.match(js, /data-title-input/, "title cards should expose a single editable title input");
@@ -697,29 +699,6 @@ assert.equal(
   }),
   false,
   "the batch submit button must stay locked after any durable job/result exists"
-);
-assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: true, pending: true }),
-  false,
-  "an in-flight speculative enqueue must not be duplicated"
-);
-assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({
-    used: true,
-    job: { job_id: "job-1", recognition_session_id: "session-1" }
-  }),
-  false,
-  "a trackable speculative job must be reused"
-);
-assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: true, ok: false, job: null }),
-  true,
-  "a completed speculative request without a trackable job must be idempotently re-enqueued"
-);
-assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: false }),
-  true,
-  "a fresh enqueue is allowed only when no speculative submission existed"
 );
 assert.equal(
   __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({

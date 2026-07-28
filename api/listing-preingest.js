@@ -4,43 +4,43 @@ import {
   CanonicalImageReferenceError,
   readCanonicalListingImageReferences
 } from "../lib/listing/storage/canonical-image-references.mjs";
-import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { assertTenantListingAssetObjectPath } from "../lib/listing/storage/storage-verification-store.mjs";
 import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
 import {
   buildPreingestionCropPlan,
   buildPreingestionQualitySummary,
-  buildPreingestionWorkerJobs,
   createPreIngestionBundle,
   dedupePreingestionImages,
-  enqueuePreIngestionJobs,
   normalizePreingestionImageRecord,
-  preingestionOcrJobVersion,
+  preingestionOcrJobKeyPrefix,
   preingestionStatuses,
   readPreIngestionBundle,
   readPreIngestionBundleIdByAsset,
   summarizePreIngestionBundle,
   upsertPreIngestionBundle
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
+import { buildServerCaptureQualityFromCanonicalImages } from "../lib/listing/image-quality/quality-gate.mjs";
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
-import { scheduleTrustedPreingestionOcrWake } from "../lib/listing/preingestion/internal-ocr-wake.mjs";
+import {
+  readJsonPayload,
+  requestPayloadErrorStatus
+} from "../lib/listing/v4/session/http-handler-utils.mjs";
 
 const allowedBrowserSources = new Set([
   "listing_preingest_api",
   "listing_copilot_background_prepare"
 ]);
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
-  });
-}
+const preingestionRequestMaxBytes = 64 * 1024;
+const productionRequestedFields = Object.freeze([
+  "serial_number",
+  "collector_number",
+  "checklist_code",
+  "grade_label",
+  "year_product",
+  "subject",
+  "surface"
+]);
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -111,44 +111,22 @@ function normalizeCanonicalImages(canonical = {}, assetId = "", tenantId = "") {
   return deduped;
 }
 
-function trustedExistingEvidencePatches(bundle = {}, images = []) {
+function trustedExistingEvidencePatches(bundle = {}, images = [], { ocrWorkerRevision = "" } = {}) {
   const persistedBundle = bundle && typeof bundle === "object" ? bundle : {};
   const bundleId = safeString(persistedBundle.bundle_id);
   const sourceImageIds = new Set(images.map((image) => safeString(image.image_id)).filter(Boolean));
-  const jobPrefix = `ocr:${preingestionOcrJobVersion}:${bundleId}:`;
+  const versionPrefix = preingestionOcrJobKeyPrefix({ ocrWorkerRevision });
+  const jobPrefix = versionPrefix && bundleId ? `${versionPrefix}${bundleId}:` : "";
   return (Array.isArray(persistedBundle.evidence_patches) ? persistedBundle.evidence_patches : []).filter((patch) => {
     const provenance = patch?.provenance && typeof patch.provenance === "object"
       ? patch.provenance
       : {};
     return safeString(patch?.source_type).toUpperCase() === "OCR"
       && safeString(provenance.generated_by) === "preingestion_ocr_worker"
+      && Boolean(jobPrefix)
       && safeString(provenance.job_key).startsWith(jobPrefix)
       && sourceImageIds.has(safeString(patch?.source_image_id));
   });
-}
-
-async function countSignedReadUrls(images, tenantId, env, fetchImpl) {
-  const results = await Promise.all(images.map(async (image) => {
-    try {
-      await createListingImageSignedReadUrl({
-        objectPath: image.object_path,
-        tenantId,
-        bucket: image.bucket,
-        env,
-        fetchImpl
-      });
-      return { ok: true };
-    } catch (error) {
-      return {
-        ok: false,
-        object_path: image.object_path,
-        reason: String(error.message || "signed_url_failed").slice(0, 160)
-      };
-    }
-  }));
-  const signedReadUrlCount = results.filter((result) => result.ok).length;
-  const errors = results.filter((result) => !result.ok);
-  return { signedReadUrlCount, errors };
 }
 
 export default async function handler(req, res) {
@@ -179,9 +157,14 @@ export default async function handler(req, res) {
 
   let payload;
   try {
-    payload = JSON.parse(await readBody(req) || "{}");
-  } catch {
-    sendJson(res, 400, { ok: false, message: "Invalid request." });
+    payload = await readJsonPayload(req, { maxBytes: preingestionRequestMaxBytes });
+  } catch (error) {
+    const status = requestPayloadErrorStatus(error);
+    sendJson(res, status, {
+      ok: false,
+      code: status === 413 ? "preingestion_request_too_large" : "preingestion_invalid_request",
+      message: status === 413 ? "Pre-ingestion request is too large." : "Invalid request."
+    });
     return;
   }
 
@@ -233,23 +216,27 @@ export default async function handler(req, res) {
       return;
     }
 
-    const captureQuality = payload.capture_quality || payload.captureQuality || null;
+    const captureQuality = buildServerCaptureQualityFromCanonicalImages(images, {
+      imageGenerationHash: canonical.image_set_sha256
+    });
     const cropPlan = buildPreingestionCropPlan({
       assetId,
       images,
       captureQuality,
-      requestedFields: payload.requested_fields || payload.requestedFields || []
+      requestedFields: productionRequestedFields
     });
     const qualitySummary = buildPreingestionQualitySummary({
       images,
       derivedImages,
       captureQuality,
+      clientCaptureQuality: null,
       cropPlan
     });
-
-    const signed = payload.verify_signed_read_urls === false
-      ? { signedReadUrlCount: 0, errors: [] }
-      : await countSignedReadUrls(images, context.tenantId, process.env, globalThis.fetch);
+    // This endpoint only prepares canonical metadata before the writer clicks
+    // Generate. Signed provider reads and paid OCR work are committed by the
+    // server after durable recognition enqueue, never by browser flags.
+    const signed = { signedReadUrlCount: 0, errors: [] };
+    const paddleOcr = paddleOcrConfig(process.env);
 
     const existingBundle = existingBundleId
       ? await readPreIngestionBundle({
@@ -271,7 +258,9 @@ export default async function handler(req, res) {
       // written by the authenticated OCR worker survives a re-ingestion; old
       // client-authored initial evidence is intentionally retired.
       initialEvidence: {},
-      evidencePatches: trustedExistingEvidencePatches(existingBundle, images),
+      evidencePatches: trustedExistingEvidencePatches(existingBundle, images, {
+        ocrWorkerRevision: paddleOcr.worker_revision
+      }),
       qualitySummary,
       cropPlan
     });
@@ -281,50 +270,8 @@ export default async function handler(req, res) {
       fetchImpl: globalThis.fetch
     });
     const durableBundle = writeResult.bundle || bundle;
-    const enqueueWorkers = payload.enqueue_workers !== false;
-    const paddleOcr = paddleOcrConfig(process.env);
-    // Never create durable OCR work that the current runtime cannot consume.
-    // A disabled verifier used to leave six queued rows per two-image card,
-    // which looked like a long-tail backlog even though no worker could claim
-    // a single row. Launch-gate preflight separately fails closed when OCR is
-    // required, so this guard cannot silently turn a broken evaluator green.
-    const enqueueOcr = payload.enqueue_ocr !== false
-      && paddleOcr.enabled === true
-      && paddleOcr.configured === true
-      && Boolean(paddleOcr.token);
-    const jobs = enqueueWorkers
-      ? buildPreingestionWorkerJobs({
-        bundle: durableBundle,
-        enableOcr: enqueueOcr,
-        enableOcrDetail: payload.enqueue_ocr_detail === true
-          || String(process.env.PREINGESTION_OCR_DETAIL_JOBS_ENABLED || "false").toLowerCase() === "true",
-        enableEmbeddings: payload.enqueue_embeddings === true,
-        enableSurface: payload.enqueue_surface === true,
-        enableQuality: payload.enqueue_quality === true
-      })
-      : [];
-    const enqueueResult = enqueueWorkers
-      ? await enqueuePreIngestionJobs({
-        jobs,
-        env: process.env,
-        fetchImpl: globalThis.fetch
-      })
-      : { enqueued: 0, durable: true, skipped: true };
-
-    // Wake the independent OCR consumer as soon as durable enqueue finishes.
-    // This endpoint still only persists/schedules work: leases, retries and OCR
-    // execution remain behind the authenticated worker boundary.
-    const ocrDispatchStarted = enqueueOcr && Number(enqueueResult.enqueued || 0) > 0;
-    if (ocrDispatchStarted) {
-      scheduleTrustedPreingestionOcrWake({
-        tenantId: context.tenantId,
-        assetId,
-        bundleId: durableBundle.bundle_id,
-        limit: 3,
-        env: process.env,
-        fetchImpl: globalThis.fetch
-      });
-    }
+    const enqueueResult = { enqueued: 0, attempted: 0, durable: true, skipped: true };
+    const ocrDispatchStarted = false;
 
     sendJson(res, 200, {
       ok: true,
@@ -333,7 +280,7 @@ export default async function handler(req, res) {
       bundle_status: durableBundle.status,
       saved: Boolean(writeResult.saved),
       worker_jobs_enqueued: enqueueResult.enqueued || 0,
-      worker_jobs_attempted: enqueueResult.attempted || jobs.length,
+      worker_jobs_attempted: 0,
       ocr_dispatch_started: ocrDispatchStarted,
       signed_read_url_count: signed.signedReadUrlCount,
       signed_read_url_error_count: signed.errors.length,
@@ -342,11 +289,12 @@ export default async function handler(req, res) {
         signed_read_url_count: signed.signedReadUrlCount,
         signed_read_url_error_count: signed.errors.length,
         worker_jobs_enqueued: enqueueResult.enqueued || 0,
-        worker_jobs_attempted: enqueueResult.attempted || jobs.length,
+        worker_jobs_attempted: 0,
         ocr_dispatch_started: ocrDispatchStarted,
         ocr_verifier_enabled: paddleOcr.enabled === true,
         ocr_verifier_configured: paddleOcr.configured === true && Boolean(paddleOcr.token),
-        ocr_jobs_suppressed_unavailable: payload.enqueue_ocr !== false && !enqueueOcr
+        ocr_jobs_suppressed_unavailable: false,
+        paid_work_deferred_until_recognition_commit: true
       }
     });
   } catch (error) {

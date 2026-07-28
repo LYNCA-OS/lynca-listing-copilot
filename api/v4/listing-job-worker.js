@@ -112,7 +112,7 @@ export function v4ResponseUsage(response = {}) {
     ? Math.trunc(providerCalls)
     : inferredProviderCall
       ? 1
-      : 0;
+      : null;
   const inputTokens = firstNumber(tokenSources, ["input_tokens", "prompt_tokens", "total_input_tokens"]);
   const outputTokens = firstNumber(tokenSources, ["output_tokens", "completion_tokens", "total_output_tokens"]);
   const rawEstimatedCostUsd = firstNumber(
@@ -146,7 +146,9 @@ export function v4ResponseUsage(response = {}) {
     costConfigured,
     pricingCoverage: estimatedCostUsd !== null
       ? "PRICED"
-      : resolvedProviderCalls > 0
+      : resolvedProviderCalls === null
+        ? "UNKNOWN"
+        : resolvedProviderCalls > 0
         ? "UNPRICED"
         : "NO_PROVIDER_CALL",
     observed: providerCallsKnown

@@ -98,6 +98,10 @@ class RecognitionWorkerTests(unittest.TestCase):
         self.assertIn('--max-instances "$MAX_INSTANCES"', deploy_script)
         self.assertIn('gcloud run services update "$SERVICE_NAME"', deploy_script)
         self.assertIn('--min "$MIN_INSTANCES"', deploy_script)
+        self.assertIn('WORKER_REVISION="${RECOGNITION_WORKER_BUILD_REVISION:-${IMAGE_TAG}}"', deploy_script)
+        self.assertIn('RECOGNITION_WORKER_BUILD_REVISION=${WORKER_REVISION}', deploy_script)
+        self.assertIn("RECOGNITION_WORKER_REVISION=%s", deploy_script)
+        self.assertIn("status.latestReadyRevisionName", deploy_script)
 
     def test_config_bounds_large_images_and_pins_embedding_revision(self):
         with patch.dict(os.environ, {

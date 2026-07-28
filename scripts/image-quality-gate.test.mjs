@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   analyzeImageQualityFromImageData,
+  buildServerCaptureQualityFromCanonicalImages,
   criticalRegionStatus,
   defaultCaptureProfile,
   glareRoutes,
@@ -97,5 +98,26 @@ const clearSummary = summarizeAssetImageQuality([
 assert.equal(clearSummary.route, glareRoutes.CLEAR);
 assert.deepEqual(clearSummary.recovered_regions, []);
 assert.deepEqual(clearSummary.unresolved_regions, []);
+
+const metadataOnlyUnknown = buildServerCaptureQualityFromCanonicalImages([{
+  image_id: "front",
+  storage_verified: true
+}], { imageGenerationHash: "a".repeat(64) });
+assert.equal(metadataOnlyUnknown.route, null, "metadata alone must not claim a glare-clear visual observation");
+assert.equal(metadataOnlyUnknown.glare_route, null);
+assert.equal(metadataOnlyUnknown.image_quality_degraded, null, "missing dimensions are UNKNOWN, not degraded");
+assert.equal(metadataOnlyUnknown.images[0].resolution_sufficient, null);
+assert.equal(metadataOnlyUnknown.images[0].crop_complete, null);
+assert.equal(metadataOnlyUnknown.images[0].image_quality_degraded, null);
+const metadataOnlyMeasured = buildServerCaptureQualityFromCanonicalImages([{
+  image_id: "front",
+  width: 900,
+  height: 1260,
+  storage_verified: true
+}]);
+assert.equal(metadataOnlyMeasured.images[0].resolution_sufficient, true);
+assert.equal(metadataOnlyMeasured.images[0].crop_complete, true);
+assert.equal(metadataOnlyMeasured.image_quality_degraded, false);
+assert.equal(metadataOnlyMeasured.glare_route, null, "dimensions still cannot prove glare state");
 
 console.log("image quality gate tests passed");

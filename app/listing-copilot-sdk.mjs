@@ -884,7 +884,7 @@ function stripClientImageTransport(value = {}) {
 }
 
 // lib/listing/v4/contracts/recognition-request.mjs
-var recognitionRequestContractVersion = "recognition-request-v1";
+var recognitionRequestContractVersion = "recognition-request-v2";
 var recognitionProfileIds = Object.freeze({
   WRITER_ASSISTED: "writer-assisted-v1"
 });
@@ -913,8 +913,84 @@ var clientForbiddenAlgorithmControlKeys = Object.freeze([
   "v4_force_l2_direct",
   "v4ForceL2Direct",
   "v4_queue_l1_only",
-  "v4QueueL1Only"
+  "v4QueueL1Only",
+  "recognition_benchmark_profile",
+  "recognitionBenchmarkProfile",
+  "benchmark_profile",
+  "benchmarkProfile",
+  "recognition_benchmark_phase",
+  "recognitionBenchmarkPhase",
+  "benchmark_phase",
+  "benchmarkPhase",
+  "evaluation_assist_profile",
+  "evaluationAssistProfile",
+  "evaluation_cold_start_blind",
+  "evaluationColdStartBlind",
+  "trace_level",
+  "traceLevel",
+  "product_schema_shadow_enabled",
+  "productSchemaShadowEnabled",
+  "product_schema_shadow_profile",
+  "productSchemaShadowProfile",
+  "enable_anchor_route_late_shadow",
+  "enableAnchorRouteLateShadow",
+  "disable_exact_anchor_finalize",
+  "disableExactAnchorFinalize",
+  "exact_anchor_fast_final_shadow_only",
+  "exactAnchorFastFinalShadowOnly",
+  "v4_l2_exact_anchor_allow_blocking_scout",
+  "v4L2ExactAnchorAllowBlockingScout",
+  "l2_exact_anchor_allow_blocking_scout",
+  "l2ExactAnchorAllowBlockingScout",
+  "v4_defer_noncritical_persistence",
+  "v4DeferNoncriticalPersistence",
+  "defer_noncritical_persistence",
+  "deferNoncriticalPersistence",
+  "v4_atomic_writer_ready_capacity_release",
+  "v4AtomicWriterReadyCapacityRelease",
+  "v4_force_fast_scout_l1",
+  "v4ForceFastScoutL1",
+  "serial_numerator_verified",
+  "serialNumeratorVerified",
+  "active_catalog_snapshot_revision",
+  "activeCatalogSnapshotRevision",
+  "catalog_snapshot_version",
+  "catalogSnapshotVersion",
+  "recognition_worker_revision",
+  "recognitionWorkerRevision",
+  "resolution_map",
+  "resolutionMap",
+  "resolution_map_revision",
+  "resolutionMapRevision",
+  "category",
+  "idempotency_key",
+  "idempotencyKey"
 ]);
+var clientRecognitionBusinessIntentKeys = Object.freeze(/* @__PURE__ */ new Set([
+  "asset_id",
+  "assetId",
+  "image_generation_id",
+  "imageGenerationId",
+  "client_asset_ref",
+  "clientAssetRef",
+  "recognition_profile",
+  "recognitionProfile",
+  "mode",
+  "capture_profile_id",
+  "captureProfileId",
+  "capture_quality",
+  "captureQuality",
+  "client_timing",
+  "clientTiming",
+  "deferred_image_count",
+  "deferredImageCount",
+  "idempotency_key",
+  "idempotencyKey",
+  "manual_retry",
+  "manualRetry",
+  "retry_of_job_id",
+  "retryOfJobId"
+]));
 var knownRecognitionProfiles = new Set(Object.values(recognitionProfileIds));
 function cleanText2(value) {
   return String(value ?? "").trim();

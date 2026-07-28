@@ -78,6 +78,7 @@ const images = [
 ];
 const payload = {
   assetId,
+  active_catalog_snapshot_revision: "catalog-test-20260728",
   mode: "single",
   images,
   resolutionMap: {},

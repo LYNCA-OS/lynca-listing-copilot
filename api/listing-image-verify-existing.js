@@ -9,23 +9,13 @@ import {
   saveListingImageVerificationRecord
 } from "../lib/listing/storage/storage-verification-store.mjs";
 import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
+import { readJsonPayload, requestPayloadErrorStatus } from "../lib/listing/v4/session/http-handler-utils.mjs";
 import {
   isTenantAuthError,
   publicTenantAuthError,
   requireTenantAccess,
   TENANT_PERMISSIONS
 } from "../lib/tenant/index.mjs";
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    req.on("data", (chunk) => {
-      body += chunk;
-    });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
-  });
-}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -59,9 +49,14 @@ export default async function handler(req, res) {
 
   let payload;
   try {
-    payload = JSON.parse(await readBody(req));
-  } catch {
-    sendJson(res, 400, { ok: false, message: "Invalid request." });
+    payload = await readJsonPayload(req, { maxBytes: 128 * 1024 });
+  } catch (error) {
+    const status = requestPayloadErrorStatus(error);
+    sendJson(res, status, {
+      ok: false,
+      code: status === 413 ? "existing_image_verification_request_too_large" : "existing_image_verification_invalid_request",
+      message: status === 413 ? "Existing image verification request is too large." : "Invalid request."
+    });
     return;
   }
 

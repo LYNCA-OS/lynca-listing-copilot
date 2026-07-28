@@ -94,5 +94,10 @@ assert.equal(locked.resolved_fields.parallel_exact, "Black Scope");
 assert.equal(locked.evidence.parallel_exact.status, "CONFIRMED");
 assert.equal(locked.evidence.parallel_exact.sources[0].source_type, "SLAB_LABEL");
 assert.equal(locked.conflict_map.at(-1).conflict_type, "SLAB_LABEL_CURRENT_IMAGE_OVERRIDE");
+const slabTraceInput = locked.resolution_trace.at(-1).input;
+assert.equal(slabTraceInput.raw_text_present, true);
+assert.ok(slabTraceInput.raw_text_length > 0);
+assert.match(slabTraceInput.raw_text_sha256, /^[0-9a-f]{64}$/);
+assert.equal(Object.hasOwn(slabTraceInput, "raw_text"), false);
 
 console.log("slab-label-evidence.test.mjs OK");

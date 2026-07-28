@@ -1337,7 +1337,12 @@ function sessionL2Summary(statusPayload = {}) {
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
+    identity_cache_key: summary.identity_cache_key || null,
+    identity_cache_write_saved: summary.identity_cache_write_saved ?? null,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
+    resolver_replay_snapshot: summary.resolver_replay_snapshot || null,
+    replay_class: summary.replay_class || null,
+    identity_truth: summary.identity_truth ?? null,
     native_core_stage_trace: Array.isArray(summary.native_core_stage_trace) ? summary.native_core_stage_trace : [],
     v4_l2_timing: summary.v4_l2_timing || null,
     v4_pipeline_contract: summary.v4_pipeline_contract || null,
@@ -1471,7 +1476,12 @@ function jobL2Summary(statusPayload = {}) {
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
+    identity_cache_key: summary.identity_cache_key || null,
+    identity_cache_write_saved: summary.identity_cache_write_saved ?? null,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
+    resolver_replay_snapshot: summary.resolver_replay_snapshot || null,
+    replay_class: summary.replay_class || null,
+    identity_truth: summary.identity_truth ?? null,
     native_core_stage_trace: Array.isArray(summary.native_core_stage_trace) ? summary.native_core_stage_trace : [],
     v4_l2_timing: summary.v4_l2_timing || null,
     v4_pipeline_contract: summary.v4_pipeline_contract || null,
@@ -1777,6 +1787,26 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     provider_key_slot: summary.provider_key_slot ?? row.provider_key_slot ?? null,
     provider_slot_timing: summary.provider_slot_timing || row.provider_slot_timing || null,
     exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || row.exact_anchor_fast_final_shadow || null,
+    provider_calls: numberOrNull(summary.provider_calls) ?? row.provider_calls ?? null,
+    provider_call_skipped: summary.provider_call_skipped === true
+      ? true
+      : row.provider_call_skipped ?? false,
+    identity_cache_hit: summary.identity_cache_hit === true
+      ? true
+      : row.identity_cache_hit ?? false,
+    cached_result_version_match: summary.cached_result_version_match ?? row.cached_result_version_match ?? null,
+    identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint
+      || row.identity_cache_version_fingerprint
+      || null,
+    identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash
+      || row.identity_cache_image_generation_hash
+      || null,
+    identity_cache_key: summary.identity_cache_key || row.identity_cache_key || null,
+    identity_cache_write_saved: summary.identity_cache_write_saved ?? row.identity_cache_write_saved ?? null,
+    identity_cache_write_reason: summary.identity_cache_write_reason || row.identity_cache_write_reason || null,
+    resolver_replay_snapshot: summary.resolver_replay_snapshot || row.resolver_replay_snapshot || null,
+    replay_class: summary.replay_class || row.replay_class || null,
+    identity_truth: summary.identity_truth ?? row.identity_truth ?? null,
     provider_capacity: summary.provider_capacity ?? row.provider_capacity ?? null,
     provider_key_count: summary.provider_key_count ?? row.provider_key_count ?? null,
     provider_key_assignment: summary.provider_key_assignment || row.provider_key_assignment || null,
@@ -2194,11 +2224,11 @@ async function runOne({
     const batchId = `smoke-v4-spec-${Date.now()}-${index}`;
     const queuedPayload = {
       ...payload,
-      force_l2_only: !enableL1,
-      create_l1_job: enableL1,
+      force_l2_only: true,
+      create_l1_job: false,
       create_l2_job: true,
-      disable_fast_scout_l1: !enableL1,
-      v4_force_l2_direct: !enableL1,
+      disable_fast_scout_l1: true,
+      v4_force_l2_direct: true,
       client_speculative: true
     };
     const t0 = Date.now();
@@ -2213,8 +2243,8 @@ async function runOne({
         jobs: [{
           asset_id: id,
           image_generation_id: payload.image_generation_id,
-          force_l2_only: !enableL1,
-          create_l1_job: enableL1,
+          force_l2_only: true,
+          create_l1_job: false,
           create_l2_job: true,
           payload: queuedPayload
         }]
@@ -2549,7 +2579,12 @@ async function runOne({
       cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
       identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
       identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
+      identity_cache_key: l2.summary?.identity_cache_key || null,
+      identity_cache_write_saved: l2.summary?.identity_cache_write_saved ?? null,
       identity_cache_write_reason: l2.summary?.identity_cache_write_reason || null,
+      resolver_replay_snapshot: l2.summary?.resolver_replay_snapshot || null,
+      replay_class: l2.summary?.replay_class || null,
+      identity_truth: l2.summary?.identity_truth ?? null,
       native_core_stage_trace: Array.isArray(l2.summary?.native_core_stage_trace) ? l2.summary.native_core_stage_trace : [],
       v4_l2_timing: l2.summary?.v4_l2_timing || null,
       v4_pipeline_contract: l2.summary?.v4_pipeline_contract || null,
@@ -2799,7 +2834,12 @@ async function runOne({
     cached_result_version_match: l2.summary?.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: l2.summary?.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: l2.summary?.identity_cache_image_generation_hash || null,
+    identity_cache_key: l2.summary?.identity_cache_key || null,
+    identity_cache_write_saved: l2.summary?.identity_cache_write_saved ?? null,
     identity_cache_write_reason: l2.summary?.identity_cache_write_reason || null,
+    resolver_replay_snapshot: l2.summary?.resolver_replay_snapshot || null,
+    replay_class: l2.summary?.replay_class || null,
+    identity_truth: l2.summary?.identity_truth ?? null,
     native_core_stage_trace: Array.isArray(l2.summary?.native_core_stage_trace) ? l2.summary.native_core_stage_trace : [],
     l1_provider_diagnostics: l1ProviderDiagnostics,
     l2_provider_diagnostics: l2ProviderDiagnostics,
@@ -2930,11 +2970,11 @@ async function enqueueSpeculativeItem({
     const prewarmResult = await prewarmPromise;
     const queuedPayload = {
       ...payload,
-      force_l2_only: !enableL1,
-      create_l1_job: enableL1,
+      force_l2_only: true,
+      create_l1_job: false,
       create_l2_job: true,
-      disable_fast_scout_l1: !enableL1,
-      v4_force_l2_direct: !enableL1,
+      disable_fast_scout_l1: true,
+      v4_force_l2_direct: true,
       client_speculative: true
     };
     const enqueueStartedAt = Date.now();
@@ -2949,8 +2989,8 @@ async function enqueueSpeculativeItem({
         jobs: [{
           asset_id: id,
           image_generation_id: payload.image_generation_id,
-          force_l2_only: !enableL1,
-          create_l1_job: enableL1,
+          force_l2_only: true,
+          create_l1_job: false,
           create_l2_job: true,
           payload: queuedPayload
         }]
@@ -3385,7 +3425,12 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     cached_result_version_match: summary.cached_result_version_match ?? null,
     identity_cache_version_fingerprint: summary.identity_cache_version_fingerprint || null,
     identity_cache_image_generation_hash: summary.identity_cache_image_generation_hash || null,
+    identity_cache_key: summary.identity_cache_key || null,
+    identity_cache_write_saved: summary.identity_cache_write_saved ?? null,
     identity_cache_write_reason: summary.identity_cache_write_reason || null,
+    resolver_replay_snapshot: summary.resolver_replay_snapshot || null,
+    replay_class: summary.replay_class || null,
+    identity_truth: summary.identity_truth ?? null,
     native_core_stage_trace: Array.isArray(summary.native_core_stage_trace) ? summary.native_core_stage_trace : [],
     v4_l2_timing: summary.v4_l2_timing || null,
     v4_pipeline_contract: summary.v4_pipeline_contract || null,
