@@ -125,6 +125,13 @@ assert.equal(key.result_version.owner_versions.catalog, "catalog-revision-test-1
 assert.equal(Object.hasOwn(key.result_version.owner_versions, "world_knowledge"), false);
 assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
 
+const worldKnowledgeShadowBaselineKey = buildIdentityResultCacheKey({
+  ...payload,
+  provider_options: {
+    recognition_benchmark_profile: "cold_algorithm_benchmark",
+    trace_level: "evaluation"
+  }
+});
 const worldKnowledgeKey = buildIdentityResultCacheKey({
   ...payload,
   provider_options: {
@@ -133,8 +140,12 @@ const worldKnowledgeKey = buildIdentityResultCacheKey({
     trace_level: "evaluation"
   }
 });
-assert.equal(worldKnowledgeKey.result_version.owner_versions.world_knowledge, "world-knowledge-layer-v3");
-assert.notEqual(worldKnowledgeKey.version_fingerprint, key.version_fingerprint);
+assert.equal(Object.hasOwn(worldKnowledgeKey.result_version.owner_versions, "world_knowledge"), false);
+assert.equal(
+  worldKnowledgeKey.version_fingerprint,
+  worldKnowledgeShadowBaselineKey.version_fingerprint,
+  "a trace-only post-observation request must not invalidate recognition results"
+);
 
 const noTenantKey = buildIdentityResultCacheKey({ ...payload, tenant_id: "" });
 assert.equal(noTenantKey.ok, true);

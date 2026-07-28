@@ -11,7 +11,6 @@ import {
   criticalFieldsForIdentityResolution,
   evidenceDocumentToIdentityEvidenceItems
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
-import { attachWorldKnowledgeProposals } from "../lib/listing/knowledge/world-knowledge-layer.mjs";
 
 function printedSource(sourceType, side, observedText) {
   return {
@@ -94,16 +93,20 @@ const worldKnowledgeBaselineInput = {
   unresolved: []
 };
 const worldKnowledgeBaseline = applyIdentityResolutionGate(worldKnowledgeBaselineInput);
-const worldKnowledgeUnverified = applyIdentityResolutionGate(attachWorldKnowledgeProposals({
+const legacyWorldKnowledgeReplay = applyIdentityResolutionGate({
   ...worldKnowledgeBaselineInput,
-  world_knowledge_proposals: [
-    { field: "product", value: "Prizm", basis: "KNOWN" },
-    { field: "team", value: "Chicago Bears", basis: "OBSERVED" }
-  ]
-}, null, { enabled: true }));
-assert.equal(worldKnowledgeUnverified.world_knowledge.identity_evidence_items.length, 0);
-assert.equal(worldKnowledgeUnverified.resolved.product, worldKnowledgeBaseline.resolved.product);
-assert.equal(worldKnowledgeUnverified.final_title, worldKnowledgeBaseline.final_title);
+  world_knowledge: {
+    enabled: true,
+    identity_evidence_items: [
+      { field: "product", value: "Prizm", source: "MODEL_WORLD_KNOWLEDGE", confidence: 0.99 },
+      { field: "team", value: "Chicago Bears", source: "MODEL_WORLD_KNOWLEDGE", confidence: 0.99 }
+    ]
+  }
+});
+assert.equal(legacyWorldKnowledgeReplay.resolved.product, worldKnowledgeBaseline.resolved.product);
+assert.equal(legacyWorldKnowledgeReplay.final_title, worldKnowledgeBaseline.final_title);
+assert.equal(legacyWorldKnowledgeReplay.retrieval_evidence_isolation.world_knowledge_evidence_item_count, 0);
+assert.equal(legacyWorldKnowledgeReplay.retrieval_evidence_isolation.blocked_world_knowledge_evidence_item_count, 2);
 
 const modelInferenceOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",

@@ -4,7 +4,8 @@ import {
   providerFieldsByClass,
   providerOutputFieldContract,
   providerOutputFieldNames,
-  providerReadFieldNamesByType
+  providerReadFieldNamesByType,
+  readOnlyProviderResponseProfile
 } from "../lib/listing/providers/provider-output-field-contract.mjs";
 import {
   buildInitialProviderPrompt,
@@ -14,6 +15,7 @@ import {
 import { openAiReadOnlyProviderResponseSchema } from "../lib/listing/providers/openai-emergency-provider.mjs";
 
 assert.equal(assertProviderOutputFieldContract(providerOutputFieldNames), true);
+assert.equal(readOnlyProviderResponseProfile, "read_only_sparse_v3");
 
 const all = [
   ...providerFieldsByClass("READ"),
