@@ -49,11 +49,29 @@ assert.equal(replay.replayable_count, 1);
 assert.equal(replay.forward_value_count, 1);
 assert.ok(replay.rows[0].forward_value_fields.includes("product"));
 assert.equal(replay.rows[0].forward_unknown_fields.includes("team"), true);
+assert.equal(replay.rows[0].replay_snapshot_terminal_title_match, true);
 
 const incomplete = await replayProviderOutputContract({
   results: [{ asset_id: "asset-2", evaluation_decision_trace_packet: { replay_snapshot: { status: "PARTIAL" } } }]
 }, { model });
 assert.equal(incomplete.gate_passed, false);
 assert.equal(incomplete.incomplete_snapshot_count, 1);
+
+const repairable = await replayProviderOutputContract({
+  results: [{
+    asset_id: "asset-3",
+    reference_title: "2025 Panini Phoenix Fade To Black Victor Wembanyama",
+    evaluation_decision_trace_packet: {
+      replay_snapshot: {
+        ...snapshot,
+        status: "PARTIAL",
+        missing_components: ["resolver_version"]
+      }
+    }
+  }]
+}, { model });
+assert.equal(repairable.replayable_count, 1);
+assert.equal(repairable.rows[0].replay_snapshot_status, "REPAIRED");
+assert.equal(repairable.rows[0].replay_snapshot_repaired_components[0].component, "resolver_version");
 
 console.log("provider output contract replay tests passed");
