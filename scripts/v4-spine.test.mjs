@@ -352,6 +352,8 @@ assert.throws(
 );
 const fullPromptPayload = smokePayloadForItem({}, 0, [], { fastInitialPrompt: false });
 assert.equal(fullPromptPayload.provider_options.enable_fast_initial_provider_prompt, false);
+const readOnlyContractPayload = smokePayloadForItem({}, 0, [], { readOnlyProviderContract: true });
+assert.equal(readOnlyContractPayload.provider_options.v4_read_only_provider_contract, true);
 assert.equal(fastInitialProviderPromptEnabled(fullPromptPayload, { ENABLE_FAST_INITIAL_PROVIDER_PROMPT: "true" }), false);
 assert.equal(fastInitialProviderPromptEnabled({}, {}), true, "production path must default to the reviewed fast prompt");
 assert.equal(fastInitialProviderPromptEnabled({}, { ENABLE_FAST_INITIAL_PROVIDER_PROMPT: "true" }), true);
