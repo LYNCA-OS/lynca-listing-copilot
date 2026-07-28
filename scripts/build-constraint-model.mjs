@@ -38,6 +38,7 @@ import { mapRows } from "./map-panini-harvest.mjs";
 
 const PANINI_DIR = "/tmp/panini-cards";
 const TOPPS_DIR = "/tmp/topps-cards";
+const MTG_DIR = "/tmp/mtg-cards";
 
 function argValue(argv, name, fallback = "") {
   const i = argv.indexOf(name);
@@ -46,10 +47,23 @@ function argValue(argv, name, fallback = "") {
 
 const cleanText = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
 export const norm = (value) => cleanText(value).toLowerCase();
-export const bareProduct = (value) => cleanText(value)
-  .replace(/\(\s*\d{2}\s*-\s*\d{2}\s*\)/g, " ")
-  .replace(/\s+/g, " ")
-  .trim();
+// Two things fragment a product name and both were measured, not guessed.
+// The manufacturer appends a season -- "Panini Phoenix (23-24)". The pipeline
+// appends the sport -- "Panini Donruss Optic Basketball" against a stored
+// "Donruss Optic", which alone refuted a card that was entirely correct.
+// Neither belongs to the product's identity, so both come off on both sides.
+const SPORT_SUFFIX = /\s+(football|basketball|baseball|hockey|soccer|tennis|racing|golf|wwe|ufc)$/i;
+
+export const bareProduct = (value) => {
+  let text = cleanText(value)
+    .replace(/\(\s*\d{2}\s*-\s*\d{2}\s*\)/g, " ")
+    .replace(/^\s*(?:19|20)\d{2}(?:-\d{2})?\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  let previous;
+  do { previous = text; text = text.replace(SPORT_SUFFIX, "").trim(); } while (text !== previous);
+  return text;
+};
 
 // A season may be "2025" or "2025-26"; both start in the same year, and the
 // start year is what a claimed year has to agree with.
@@ -68,6 +82,11 @@ function loadAll() {
   try {
     for (const file of readdirSync(TOPPS_DIR).filter((n) => n.endsWith(".json"))) {
       rows.push(...(JSON.parse(readFileSync(`${TOPPS_DIR}/${file}`, "utf8")).rows || []));
+    }
+  } catch { /* harvest absent */ }
+  try {
+    for (const file of readdirSync(MTG_DIR).filter((n) => n.endsWith(".json"))) {
+      rows.push(...(JSON.parse(readFileSync(`${MTG_DIR}/${file}`, "utf8")).rows || []));
     }
   } catch { /* harvest absent */ }
   return rows;
@@ -146,7 +165,10 @@ export const refutations = Object.freeze({
 // manufacturer absent from the harvest yields no refutations at all, because
 // treating our own missing coverage as evidence against is the error that has
 // already cost two reverted changes.
-export function refute(claim = {}, model = null, { coveredManufacturers = ["panini", "donruss", "topps", "bowman", "score", "prizm", "optic"] } = {}) {
+// Coverage is stated per manufacturer family because refuting requires having
+// harvested the publisher. Magic joins by set name rather than a brand word,
+// since a lister writes "Final Fantasy", not "Wizards of the Coast".
+export function refute(claim = {}, model = null, { coveredManufacturers = ["panini", "donruss", "topps", "bowman", "score", "prizm", "optic", "final fantasy", "magic"] } = {}) {
   if (!model) return { refutations: [], checked: false, reason: "no_model" };
   const product = bareProduct(claim.product);
   const covered = coveredManufacturers.some((name) => norm(product).includes(name)
@@ -172,7 +194,12 @@ export function refute(claim = {}, model = null, { coveredManufacturers = ["pani
       found.push({ code: refutations.PLAYER_YEAR, value: `${year} ${player}`, published: years });
     }
   }
-  if (set) {
+  // The provider frequently reports a product name in the set field -- "set":
+  // "Topps Chrome" on a Topps Chrome card. Refuting that as an unknown set is
+  // an artefact of our own field mapping, not a claim about the world, and it
+  // was the single largest source of false alarms on familiar cards.
+  const setIsAProductName = Boolean(model.product_years[bareProduct(set)]);
+  if (set && !setIsAProductName) {
     const years = model.set_years[set];
     if (!years) found.push({ code: refutations.SET_UNKNOWN, value: set });
     else if (year && !years.includes(year)) {
