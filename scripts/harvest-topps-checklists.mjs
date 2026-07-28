@@ -58,6 +58,50 @@ export function parseSourceName(name = "") {
 // to, so they are tracked rather than discarded.
 const CARD_LINE = /^([A-Za-z]{0,5}-?\d{1,5}[A-Za-z]?)\t(.+)$/;
 
+// A dual-player card prints two names and no team:
+//
+//   6<TAB>Shohei Ohtani<TAB>Mookie Betts
+//
+// which is indistinguishable from `player<TAB>team` by position alone. Taking
+// column two as the team put "aaron judge" and "cal raleigh" into Ohtani's team
+// set in the constraint model, and a world engine that thinks a player is a
+// team cannot narrow anything.
+//
+// The discriminator is roster breadth, not a team whitelist: a real team is
+// shared by many players, while a co-player pairs with one. So a column-two
+// value is a co-player when it is a known player name AND at most one distinct
+// player in this checklist lists it as their team.
+//
+// `knownPlayers` must span every checklist, not just this one. A product like
+// Dynamic Duals is entirely dual cards, so a name such as "Mookie Betts" never
+// appears in column one there and a within-file test cannot see that it is a
+// person at all -- which is exactly how it survived the first version of this
+// fix and stayed in Ohtani's team set.
+//
+// "Japan" survives as a team because it is never a player name anywhere.
+export function disambiguateTeams(rows = [], { knownPlayers = null } = {}) {
+  const players = knownPlayers || new Set(rows.map((row) => norm(row.player)).filter(Boolean));
+  const teamRosters = new Map();
+  for (const row of rows) {
+    const team = norm(row.team);
+    if (!team) continue;
+    if (!teamRosters.has(team)) teamRosters.set(team, new Set());
+    teamRosters.get(team).add(norm(row.player));
+  }
+  return rows.map((row) => {
+    const team = norm(row.team);
+    if (!team) return row;
+    const rosterSize = teamRosters.get(team)?.size || 0;
+    if (players.has(team) && rosterSize <= 1) {
+      // Column two named a person: keep them as a second subject, not a team.
+      return { ...row, team: null, players: [row.player, row.team] };
+    }
+    return row;
+  });
+}
+
+const norm = (value) => String(value ?? "").trim().toLowerCase();
+
 export function parseChecklistText(text = "") {
   const rows = [];
   let currentSet = "Base";
@@ -89,7 +133,8 @@ export function parseChecklistText(text = "") {
       if (normalized && normalized !== currentSet.toLowerCase()) currentSet = heading;
     }
   }
-  return rows;
+  // Frequency is only knowable once the whole checklist is parsed.
+  return disambiguateTeams(rows);
 }
 
 // Group flat card rows into the set-grained shape map-panini-harvest.mjs emits.
@@ -98,7 +143,12 @@ export function toHarvestShape(rows = [], { season_year, product, sport }) {
   for (const row of rows) {
     const key = row.set_or_insert;
     if (!bySet.has(key)) bySet.set(key, []);
-    bySet.get(key).push({ card_number: row.card_number, player: row.player, team: row.team });
+    bySet.get(key).push({
+      card_number: row.card_number,
+      player: row.player,
+      team: row.team,
+      ...(row.players ? { players: row.players } : {})
+    });
   }
   return [...bySet.entries()].map(([set_or_insert, cards]) => ({
     sport,

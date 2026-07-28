@@ -35,6 +35,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { mapRows } from "./map-panini-harvest.mjs";
+import { disambiguateTeams } from "./harvest-topps-checklists.mjs";
+
+// Topps prints the trademark symbol on its team names -- "Los Angeles Dodgers®"
+// -- which a lister never types, so it must not fragment the team identity.
+const stripTrademark = (value) => String(value ?? "").replace(/[®™©]/g, "").replace(/\s+/g, " ").trim();
 
 const PANINI_DIR = "/tmp/panini-cards";
 const TOPPS_DIR = "/tmp/topps-cards";
@@ -80,8 +85,37 @@ function loadAll() {
     }
   } catch { /* harvest absent */ }
   try {
-    for (const file of readdirSync(TOPPS_DIR).filter((n) => n.endsWith(".json"))) {
-      rows.push(...(JSON.parse(readFileSync(`${TOPPS_DIR}/${file}`, "utf8")).rows || []));
+    const toppsFiles = readdirSync(TOPPS_DIR).filter((n) => n.endsWith(".json"));
+    // Column one is always a person, so every checklist read together gives the
+    // name vocabulary needed to recognise a person sitting in the team column.
+    const knownPlayers = new Set();
+    for (const file of toppsFiles) {
+      for (const row of JSON.parse(readFileSync(`${TOPPS_DIR}/${file}`, "utf8")).rows || []) {
+        for (const card of row.cards || []) {
+          const player = norm(card.player);
+          if (player) knownPlayers.add(player);
+        }
+      }
+    }
+    for (const file of toppsFiles) {
+      const fileRows = JSON.parse(readFileSync(`${TOPPS_DIR}/${file}`, "utf8")).rows || [];
+      // Harvests written before the dual-player fix carry a co-player in the
+      // team column. Disambiguation is frequency-based and therefore has to see
+      // a whole checklist at once, so it runs per file, here, rather than
+      // requiring all 66 PDFs to be fetched again.
+      const flat = fileRows.flatMap((row) => (row.cards || []).map((card) => ({
+        player: card.player, team: stripTrademark(card.team)
+      })));
+      const fixed = disambiguateTeams(flat, { knownPlayers });
+      let cursor = 0;
+      for (const row of fileRows) {
+        for (const card of row.cards || []) {
+          card.team = fixed[cursor]?.team ?? null;
+          if (fixed[cursor]?.players) card.players = fixed[cursor].players;
+          cursor += 1;
+        }
+      }
+      rows.push(...fileRows);
     }
   } catch { /* harvest absent */ }
   try {
@@ -95,6 +129,15 @@ function loadAll() {
 export function deriveConstraints(rows = []) {
   const playerYears = new Map();
   const playerTeams = new Map();
+  // player -> year -> teams. player_teams alone cannot answer "which of these
+  // two teams", and the year is already printed on the card, so it is free
+  // evidence the model was structurally unable to use.
+  const playerTeamYears = new Map();
+  // set name -> product-years that publish it. The product line is the one
+  // thing a card never states as text -- it is an emblem -- while the set name
+  // is printed large. So this is the cheapest path from what can be read to
+  // what cannot.
+  const setProducts = new Map();
   const setYears = new Map();
   const productYears = new Map();
   const productSports = new Map();
@@ -117,6 +160,12 @@ export function deriveConstraints(rows = []) {
       if (!setYears.has(set)) setYears.set(set, new Set());
       setYears.get(set).add(year);
     }
+    // A generic heading like "base" belongs to every product and identifies
+    // nothing, so it is not worth an entry.
+    if (set && product && set !== "base" && set !== "base cards") {
+      if (!setProducts.has(set)) setProducts.set(set, new Set());
+      setProducts.get(set).add(year ? `${year}|${product}` : product);
+    }
 
     for (const card of row.cards || []) {
       const player = norm(card.player);
@@ -127,8 +176,17 @@ export function deriveConstraints(rows = []) {
       // Topps states the team on the card's own line; Panini does not. A player
       // with a known team set is one more thing a claim can contradict.
       if (player && card.team) {
-        if (!playerTeams.has(player)) playerTeams.set(player, new Set());
-        playerTeams.get(player).add(norm(card.team));
+        const team = norm(stripTrademark(card.team));
+        if (team) {
+          if (!playerTeams.has(player)) playerTeams.set(player, new Set());
+          playerTeams.get(player).add(team);
+          if (year) {
+            if (!playerTeamYears.has(player)) playerTeamYears.set(player, new Map());
+            const byYear = playerTeamYears.get(player);
+            if (!byYear.has(year)) byYear.set(year, new Set());
+            byYear.get(year).add(team);
+          }
+        }
       }
       const number = cleanText(card.card_number);
       if (product && year && /^\d+$/.test(number)) {
@@ -140,9 +198,16 @@ export function deriveConstraints(rows = []) {
   }
 
   const spread = (map) => Object.fromEntries([...map].map(([k, v]) => [k, [...v].sort()]));
+  const spreadNested = (map) => Object.fromEntries(
+    [...map].map(([player, byYear]) => [player, Object.fromEntries(
+      [...byYear].sort((a, b) => a[0] - b[0]).map(([year, teams]) => [year, [...teams].sort()])
+    )])
+  );
   return {
     player_years: spread(playerYears),
     player_teams: spread(playerTeams),
+    player_team_years: spreadNested(playerTeamYears),
+    set_product_years: spread(setProducts),
     set_years: spread(setYears),
     product_years: spread(productYears),
     product_sports: spread(productSports),
