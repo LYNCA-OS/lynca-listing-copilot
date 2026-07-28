@@ -177,8 +177,9 @@ assert.equal(response.body.execution_control.global_provider_concurrency, 2, "mu
 assert.deepEqual(response.body.execution_control.recognition_worker, {
   enabled: true,
   configured: true,
-  runtime_ready: true,
-  contract_matches: true,
+  service_contract_ready: true,
+  service_contract_scope: "SERVICE_AUTH_ROUTE_ONLY",
+  pipeline_contract_matches: true,
   auth_verified: true,
   analysis_route_verified: true,
   pipeline_version: "recognition-worker-contract-v1",

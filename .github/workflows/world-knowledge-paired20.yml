@@ -62,7 +62,7 @@ jobs:
           test -n "$EXPECTED_GIT_SHA"
           actual_git_sha="$(curl --fail --silent --show-error "$API_BASE_URL/api/v4/health" | jq -r '.deployment.git_commit_sha // empty')"
           test "$actual_git_sha" = "$EXPECTED_GIT_SHA"
-      - name: Verify authenticated Recognition Worker capability
+      - name: Verify Recognition Worker service/auth/route contract
         run: |
           curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
             -H 'content-type: application/json' \
@@ -70,15 +70,16 @@ jobs:
             "$API_BASE_URL/api/login" -o /tmp/login.json
           curl -fsS --max-time 30 -b /tmp/lynca-cookies.txt \
             "$API_BASE_URL/api/listing-provider-status" \
-            -o /tmp/recognition-worker-capability.json
+            -o /tmp/recognition-worker-service-contract.json
           node --input-type=module - <<'NODE'
           import fs from 'node:fs';
           import { recognitionPipelineVersion } from './lib/listing/recognition/recognition-contract.mjs';
-          const status = JSON.parse(fs.readFileSync('/tmp/recognition-worker-capability.json', 'utf8'));
+          const status = JSON.parse(fs.readFileSync('/tmp/recognition-worker-service-contract.json', 'utf8'));
           const worker = status.execution_control?.recognition_worker || {};
           const checks = {
-            runtime_ready: worker.runtime_ready === true,
-            contract_matches: worker.contract_matches === true,
+            service_contract_ready: worker.service_contract_ready === true,
+            service_contract_scope: worker.service_contract_scope === 'SERVICE_AUTH_ROUTE_ONLY',
+            pipeline_contract_matches: worker.pipeline_contract_matches === true,
             auth_verified: worker.auth_verified === true,
             analysis_route_verified: worker.analysis_route_verified === true,
             pipeline_version: worker.pipeline_version === recognitionPipelineVersion,
@@ -158,5 +159,5 @@ jobs:
           path: |
             /tmp/familiar10.json
             /tmp/familiar10-labels.jsonl
-            /tmp/recognition-worker-capability.json
+            /tmp/recognition-worker-service-contract.json
             /tmp/world-knowledge-paired20

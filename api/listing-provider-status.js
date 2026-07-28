@@ -16,7 +16,7 @@ import {
 } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 import { recognitionWorkerConfig } from "../lib/listing/recognition/recognition-feature-flags.mjs";
-import { probeRecognitionWorkerCapability } from "../lib/listing/recognition/recognition-client.mjs";
+import { probeRecognitionWorkerServiceContract } from "../lib/listing/recognition/recognition-client.mjs";
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 import {
   v4ProviderDoneCapacityHandoffEnabled,
@@ -382,10 +382,10 @@ export default async function handler(req, res) {
     .map((provider) => providerStatus(provider, storage));
 
   const canViewOperations = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_TEAM);
-  const [workflowReadiness, recognitionWorkerRuntime] = await Promise.all([
+  const [workflowReadiness, recognitionWorkerServiceContract] = await Promise.all([
     loadWorkflowReadiness(),
     canViewOperations
-      ? probeRecognitionWorkerCapability({
+      ? probeRecognitionWorkerServiceContract({
         env: process.env,
         fetchImpl: globalThis.fetch,
         timeoutMs: readinessProbeTimeoutMs(process.env)
@@ -418,13 +418,14 @@ export default async function handler(req, res) {
       recognition_worker: {
         enabled: recognitionWorker.enabled === true,
         configured: recognitionWorker.configured === true,
-        runtime_ready: recognitionWorkerRuntime.ready === true,
-        contract_matches: recognitionWorkerRuntime.contract_matches === true,
-        auth_verified: recognitionWorkerRuntime.auth_verified === true,
-        analysis_route_verified: recognitionWorkerRuntime.analysis_route_verified === true,
-        pipeline_version: recognitionWorkerRuntime.pipeline_version || null,
-        service_role: recognitionWorkerRuntime.service_role || "UNKNOWN",
-        reason: recognitionWorkerRuntime.reason || null
+        service_contract_ready: recognitionWorkerServiceContract.ready === true,
+        service_contract_scope: "SERVICE_AUTH_ROUTE_ONLY",
+        pipeline_contract_matches: recognitionWorkerServiceContract.contract_matches === true,
+        auth_verified: recognitionWorkerServiceContract.auth_verified === true,
+        analysis_route_verified: recognitionWorkerServiceContract.analysis_route_verified === true,
+        pipeline_version: recognitionWorkerServiceContract.pipeline_version || null,
+        service_role: recognitionWorkerServiceContract.service_role || "UNKNOWN",
+        reason: recognitionWorkerServiceContract.reason || null
       },
       paddle_ocr_verifier: {
         enabled: paddleOcr.enabled === true,
