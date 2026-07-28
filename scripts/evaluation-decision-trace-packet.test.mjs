@@ -45,7 +45,11 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v2");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v3");
+assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v1");
+assert.equal(packet.replay_snapshot.status, "PARTIAL");
+assert.ok(packet.replay_snapshot.missing_components.includes("pipeline_fingerprint"));
+assert.deepEqual(packet.replay_snapshot.provider_fields, { year: "2025", subject: "Test Player", ignored: "UNKNOWN" });
 assert.deepEqual(packet.field_lineage.find((row) => row.field === "year")?.provider.values, ["2025"]);
 assert.equal(packet.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, false);
 assert.equal(packet.retrieval.top_k[0].source_trust, "OFFICIAL");
@@ -55,7 +59,25 @@ assert.equal(classifyEvaluationMissingField(packet, "manufacturer"), "PROVIDER_N
 assert.equal(classifyEvaluationMissingField({ ...packet, provider_observation_fields: { manufacturer: "Topps" }, normalization: { output: {} } }, "manufacturer"), "NORMALIZATION_DROPPED");
 assert.equal(classifyEvaluationMissingField(packet, "year"), "CATALOG_NOT_RETRIEVED");
 assert.equal(JSON.stringify(packet).includes("complete natural language response"), false);
+assert.equal(JSON.stringify(packet).includes("raw_model_response"), false);
 assert.equal(buildEvaluationDecisionTracePacket({}, {}), null);
+
+const completeReplayPacket = buildEvaluationDecisionTracePacket({
+  raw_provider_fields: { year: "2025", players: ["Test Player"] },
+  raw_observed_fields: { year: "2025", players: ["Test Player"] },
+  normalized_evidence: { observations: [{ field: "year", value: "2025", raw_text: "2025" }] },
+  resolved_fields: { year: "2025", players: ["Test Player"] },
+  rendered_fields: { fields: { year: "2025", players: ["Test Player"] } },
+  final_title: "2025 Test Player",
+  renderer_version: "renderer-v1",
+  normalization_version: "normalization-v1",
+  resolver_version: "resolver-v1",
+  identity_cache: { recognition_pipeline_fingerprint: "a".repeat(64) },
+  forward_enumeration_trace: [{ field: "product", status: "UNKNOWN", rule_id: "set_not_in_model" }]
+}, payload);
+assert.equal(completeReplayPacket.replay_snapshot.status, "COMPLETE");
+assert.equal(completeReplayPacket.replay_snapshot.versions.recognition_pipeline_fingerprint, "a".repeat(64));
+assert.equal(completeReplayPacket.replay_snapshot.derivation_provenance[0].status, "UNKNOWN");
 
 const productionCandidateTrace = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025" },

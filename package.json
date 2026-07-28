@@ -47,6 +47,8 @@
     "test:npm-audit-gate": "node scripts/npm-audit-gate.test.mjs",
     "check:provider-response": "node --check scripts/provider-response-normalizer.test.mjs",
     "test:provider-response": "node scripts/provider-response-normalizer.test.mjs",
+    "check:provider-output-contract": "node --check lib/listing/providers/provider-output-field-contract.mjs && node --check lib/listing/catalog/constraint-enumerator.mjs && node --check scripts/audit-provider-output-contract.mjs && node --check scripts/build-provider-contract-replay-input.mjs && node --check scripts/provider-output-field-contract.test.mjs && node --check scripts/constraint-enumerator.test.mjs",
+    "test:provider-output-contract": "node scripts/provider-output-field-contract.test.mjs && node scripts/constraint-enumerator.test.mjs",
     "check:commercial-heldout": "node --check lib/listing/evaluation/commercial-heldout-builder.mjs && node --check scripts/build-held-out-commercial.mjs && node --check scripts/commercial-heldout-builder.test.mjs",
     "test:commercial-heldout": "node scripts/commercial-heldout-builder.test.mjs",
     "check:commercial-review": "node --check lib/listing/recognition/commercial-review-packet.mjs && node --check lib/listing/recognition/commercial-review-worklist.mjs && node --check scripts/build-commercial-review-packet.mjs && node --check scripts/build-commercial-review-worklist.mjs && node --check scripts/import-commercial-review-labels.mjs && node --check scripts/commercial-review-packet.test.mjs && node --check scripts/commercial-review-worklist.test.mjs",
