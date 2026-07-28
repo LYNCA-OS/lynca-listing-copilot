@@ -564,7 +564,7 @@ export function terminalEvaluationDecisionTracePacket(result = {}, payload = {})
   );
 }
 
-function providerRuntimeSummary(result = {}, payload = {}) {
+export function providerRuntimeSummary(result = {}, payload = {}) {
   const vectorContext = result.candidate_context?.vector || {};
   const vectorProviderMetadata = vectorContext.provider_metadata || {};
   const reportedProviderCalls = Number(result.usage?.provider_calls);
@@ -602,7 +602,7 @@ function providerRuntimeSummary(result = {}, payload = {}) {
     recognition_benchmark_phase: result.recognition_benchmark_phase
       || providerOptions.recognition_benchmark_phase
       || null,
-    evaluation_decision_trace_packet: terminalEvaluationTrace || result.evaluation_decision_trace_packet || null,
+    evaluation_decision_trace_packet: terminalEvaluationTrace || null,
     identity_resolution_status: result.identity_resolution_status || null,
     ambiguity_status: result.ambiguity_status || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,

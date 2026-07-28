@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 
-import { terminalEvaluationDecisionTracePacket } from "../api/v4/listing-copilot-title.js";
+import {
+  providerRuntimeSummary,
+  terminalEvaluationDecisionTracePacket
+} from "../api/v4/listing-copilot-title.js";
 import { identityResolverPolicyVersion } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { buildEvaluationDecisionTracePacket } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
+import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 const payload = {
   maxTitleLength: 80,
@@ -17,10 +22,25 @@ const result = {
     manufacturer: "Panini",
     players: ["Test Player"]
   },
+  raw_provider_field_evidence: [],
+  forward_enumeration_trace: [],
   raw_observed_fields: {
     year: "2025",
     manufacturer: "Panini",
     players: ["Test Player"]
+  },
+  normalized_evidence: {
+    year: {
+      value: "2025",
+      normalized_value: "2025",
+      status: "CONFIRMED",
+      candidates: [{
+        value: "2025",
+        confidence: 0.99,
+        sources: [{ source_type: "OCR", observed_text: "2025" }]
+      }],
+      sources: [{ source_type: "OCR", observed_text: "2025" }]
+    }
   },
   resolved: {
     year: "2025",
@@ -94,5 +114,40 @@ assert.deepEqual(packet.world_knowledge.decisions[0], {
   allowed_values: ["Example Team"]
 });
 assert.equal(terminalEvaluationDecisionTracePacket({}, payload), null);
+
+const productionPayload = {
+  provider_options: {
+    recognition_benchmark_profile: "production_workload",
+    trace_level: "production"
+  }
+};
+assert.equal(terminalEvaluationDecisionTracePacket(result, productionPayload), null);
+assert.equal(
+  providerRuntimeSummary(result, productionPayload).evaluation_decision_trace_packet,
+  null,
+  "production summary must not persist a stale evaluation packet from the recognition result"
+);
+assert.equal(
+  __listingCopilotTitleTestHooks.withoutEvaluationDecisionTracePacket(result).evaluation_decision_trace_packet,
+  undefined,
+  "the native terminal boundary must discard a packet before conditionally rebuilding it"
+);
+
+const nativeFinalizedResult = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation({
+  ...result,
+  final_title: "",
+  rendered_fields: {},
+  evaluation_decision_trace_packet: undefined
+}, payload);
+assert.deepEqual(nativeFinalizedResult.effective_terminal_renderer_inputs, {
+  max_title_length: 80,
+  serial_numerator_verified: null,
+  trust_resolved_print_run_without_evidence: true,
+  source: "native_core_deterministic_finalizer"
+});
+const nativeTracePacket = buildEvaluationDecisionTracePacket(nativeFinalizedResult, payload);
+assert.equal(nativeTracePacket.replay_snapshot.status, "COMPLETE");
+assert.equal(nativeTracePacket.replay_snapshot.effective_terminal_renderer_inputs.serial_numerator_verified, null);
+assert.equal(nativeTracePacket.replay_snapshot.effective_terminal_renderer_inputs.trust_resolved_print_run_without_evidence, true);
 
 console.log("v4 terminal evaluation trace tests passed");

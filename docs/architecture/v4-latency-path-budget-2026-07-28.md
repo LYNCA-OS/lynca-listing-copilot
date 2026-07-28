@@ -196,12 +196,25 @@ p50 route sum at least `2.4 + 11.407 = 13.807 s`, before any RTT.
 
 This path is intentionally narrower than the current full Provider call:
 
+- run the local product/team enumerator first and preserve its typed
+  `VALUE / EMPTY / UNKNOWN` outcome;
+- send `VALUE` and `EMPTY` to the existing Resolver without model work;
 - call only when one or more named fields remain UNKNOWN;
 - send only the primary image and relevant crops needed for those fields;
 - permit ordinary world knowledge only in the bounded knowledge lane;
 - return field proposals with basis and confidence, never a complete title;
 - allow at most one model call;
 - let the existing Resolver accept, reject, or abstain.
+
+The typed outcome is fail-closed, not merely "one catalog row means VALUE".
+The bundled snapshot currently has no semantic/exhaustive team contract; a
+structural scan found 650 of 4,694 subjects touched by an intentionally narrow
+list of obvious non-team labels (`rookie`, `legend`, `raw`, `smackdown`, `nxt`,
+`then`, `now`, `east`, `west`, `toy story`), including 523 single-value rows.
+Therefore current team rows remain `UNKNOWN` unless a future snapshot carries
+the explicit verified contract. Product `VALUE` likewise requires a specific
+set key and a row compatible with the observed year; a globally unique product
+from another year is still `UNKNOWN`.
 
 The non-model stages already consume most of a universal three-second p95
 budget:

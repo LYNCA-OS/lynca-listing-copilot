@@ -45,11 +45,12 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v4");
-assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v2");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v5");
+assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
 assert.equal(packet.replay_snapshot.status, "PARTIAL");
 assert.ok(packet.replay_snapshot.missing_components.includes("pipeline_fingerprint"));
 assert.deepEqual(packet.replay_snapshot.provider_fields, { year: "2025", subject: "Test Player", ignored: "UNKNOWN" });
+assert.equal(packet.replay_snapshot.normalization.decisions.find((row) => row.field === "ignored")?.decision, "DROP");
 assert.deepEqual(packet.field_lineage.find((row) => row.field === "year")?.provider.values, ["2025"]);
 assert.equal(packet.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, false);
 assert.equal(packet.retrieval.top_k[0].source_trust, "OFFICIAL");
@@ -64,8 +65,21 @@ assert.equal(buildEvaluationDecisionTracePacket({}, {}), null);
 
 const completeReplayPacket = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025", players: ["Test Player"] },
+  raw_provider_field_evidence: [],
   raw_observed_fields: { year: "2025", players: ["Test Player"] },
-  normalized_evidence: { observations: [{ field: "year", value: "2025", raw_text: "2025" }] },
+  normalized_evidence: {
+    year: {
+      value: "2025",
+      normalized_value: "2025",
+      status: "CONFIRMED",
+      candidates: [{
+        value: "2025",
+        confidence: 0.95,
+        sources: [{ source_type: "OCR", observed_text: "2025" }]
+      }],
+      sources: [{ source_type: "OCR", observed_text: "2025" }]
+    }
+  },
   resolved_fields: { year: "2025", players: ["Test Player"] },
   rendered_fields: { fields: { year: "2025", players: ["Test Player"] } },
   final_title: "2025 Test Player",
@@ -76,6 +90,7 @@ const completeReplayPacket = buildEvaluationDecisionTracePacket({
   effective_terminal_renderer_inputs: {
     max_title_length: 80,
     serial_numerator_verified: null,
+    trust_resolved_print_run_without_evidence: true,
     source: "v4_result_adapter"
   },
   retrieval_application: {
@@ -88,6 +103,32 @@ assert.equal(completeReplayPacket.replay_snapshot.status, "COMPLETE");
 assert.equal(completeReplayPacket.replay_snapshot.versions.recognition_pipeline_fingerprint, "a".repeat(64));
 assert.equal(completeReplayPacket.replay_snapshot.derivation_provenance[0].status, "UNKNOWN");
 assert.equal(completeReplayPacket.replay_snapshot.effective_terminal_renderer_inputs.serial_numerator_verified, null);
+assert.equal(
+  completeReplayPacket.replay_snapshot.normalized_evidence.year.candidates[0].sources[0].source_type,
+  "OCR"
+);
+
+const missingReplayEvidenceArrays = buildEvaluationDecisionTracePacket({
+  raw_provider_fields: { year: "2025", players: ["Test Player"] },
+  raw_observed_fields: { year: "2025", players: ["Test Player"] },
+  normalized_evidence: completeReplayPacket.replay_snapshot.normalized_evidence,
+  resolved_fields: { year: "2025", players: ["Test Player"] },
+  rendered_fields: { fields: { year: "2025", players: ["Test Player"] } },
+  final_title: "2025 Test Player",
+  renderer_version: "renderer-v1",
+  normalization_version: "normalization-v1",
+  resolver_version: "resolver-v1",
+  identity_cache: { recognition_pipeline_fingerprint: "a".repeat(64) },
+  effective_terminal_renderer_inputs: {
+    max_title_length: 80,
+    serial_numerator_verified: null,
+    trust_resolved_print_run_without_evidence: true
+  },
+  retrieval_application: { enabled: false, decisions: [] }
+}, payload);
+assert.equal(missingReplayEvidenceArrays.replay_snapshot.status, "PARTIAL");
+assert.ok(missingReplayEvidenceArrays.replay_snapshot.missing_components.includes("provider_field_evidence"));
+assert.ok(missingReplayEvidenceArrays.replay_snapshot.missing_components.includes("derivation_provenance"));
 
 const productionCandidateTrace = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025" },
