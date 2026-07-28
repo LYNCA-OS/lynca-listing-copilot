@@ -101,6 +101,48 @@ function classifyMissing(row, packet) {
   return "CATALOG_NOT_RETRIEVED";
 }
 
+function increment(counter = {}, key = "") {
+  const normalized = String(key || "").trim() || "UNSPECIFIED";
+  counter[normalized] = Number(counter[normalized] || 0) + 1;
+}
+
+function knowledgeFirstRouteAudit(results = []) {
+  const routeCounts = {};
+  const productionActionCounts = {};
+  const visualTargetCounts = {};
+  const knowledgeTargetCounts = {};
+  const traced = [];
+  for (const row of results) {
+    const route = row.evaluation_decision_trace_packet?.knowledge_first_route;
+    if (!route || typeof route !== "object" || Array.isArray(route)) continue;
+    traced.push(route);
+    increment(routeCounts, route.route);
+    increment(productionActionCounts, route.production_action);
+    for (const field of Array.isArray(route.visual_field_targets) ? route.visual_field_targets : []) {
+      increment(visualTargetCounts, field);
+    }
+    for (const field of Array.isArray(route.knowledge_field_targets) ? route.knowledge_field_targets : []) {
+      increment(knowledgeTargetCounts, field);
+    }
+  }
+  const safetyViolations = traced.filter((route) => (
+    route.production_effect !== "SHADOW_ONLY"
+    || route.production_action !== "RUN_FULL_PROVIDER"
+    || route.complete_title_output_allowed === true
+    || Number(route.model_call_budget || 0) > 1
+  ));
+  return {
+    trace_count: traced.length,
+    route_counts: routeCounts,
+    production_action_counts: productionActionCounts,
+    zero_model_call_count: traced.filter((route) => Number(route.model_call_budget || 0) === 0).length,
+    targeted_model_assist_count: traced.filter((route) => Number(route.model_call_budget || 0) === 1).length,
+    visual_target_counts: visualTargetCounts,
+    knowledge_target_counts: knowledgeTargetCounts,
+    shadow_safety_violation_count: safetyViolations.length
+  };
+}
+
 export function analyzeFixed20ColdBenchmark(report = {}) {
   const results = Array.isArray(report.results) ? report.results : [];
   const cacheViolations = results.filter((row) => row.identity_cache_hit === true
@@ -108,6 +150,7 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
     || Number(row.provider_calls) !== 1
     || row.recognition_benchmark_profile !== recognitionBenchmarkProfileIds.COLD_ALGORITHM);
   const traceRows = results.filter((row) => row.evaluation_decision_trace_packet?.trace_level === "evaluation");
+  const knowledgeFirstRoute = knowledgeFirstRouteAudit(results);
   const timelineRows = results.map(reconstructedTimeline);
   const sem = analyzeSemStageLoss(report);
   const resultByJob = new Map(results.map((row) => [row.job_id, row]));
@@ -137,10 +180,12 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
     zero_technical_failures: Number(report.summary?.technical_failure_count || 0) === 0
       && Number(report.summary?.ok_count || 0) === EXPECTED_COUNT,
     cold_cache_contract: cacheViolations.length === 0,
-    evaluation_trace_coverage: traceRows.length === EXPECTED_COUNT
+    evaluation_trace_coverage: traceRows.length === EXPECTED_COUNT,
+    knowledge_first_route_trace_coverage: knowledgeFirstRoute.trace_count === EXPECTED_COUNT,
+    knowledge_first_route_shadow_safe: knowledgeFirstRoute.shadow_safety_violation_count === 0
   };
   return {
-    schema_version: "fixed20-cold-algorithm-audit-v1",
+    schema_version: "fixed20-cold-algorithm-audit-v2",
     generated_at: new Date().toISOString(),
     integrity,
     passed: Object.values(integrity).every(Boolean),
@@ -148,6 +193,7 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
     evaluation_trace_count: traceRows.length,
     provider_capacity_timeline_count: timelineRows.length,
     provider_capacity_timing: timing,
+    knowledge_first_route: knowledgeFirstRoute,
     sem_stage_loss: {
       confirmed_field_count: sem.confirmed_field_count,
       preserved_field_count: sem.preserved_field_count,
