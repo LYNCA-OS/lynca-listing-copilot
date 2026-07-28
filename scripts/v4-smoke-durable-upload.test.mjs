@@ -9,6 +9,7 @@ import {
   durableUploadResilienceContract,
   isRecoverablePreparationFailure,
   materializeSmokeSourceImages,
+  materializeSmokeSourceImagesForAssetReuse,
   prepareDurableSmokeItem
 } from "./v4-ebay-smoke.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
@@ -79,6 +80,31 @@ assert.equal(
   }, 99),
   "verified asset identity must not drift when a random manifest derives a new asset id"
 );
+
+const cacheOnlySource = {
+  asset_id: "cache-only-source",
+  physical_card_id: "cache-only-source",
+  images: [{
+    image_id: "cache-only-front",
+    role: "front_original",
+    local_path: "/fixture-not-present/cache-only-front.jpg",
+    content_sha256: sourceSha256
+  }]
+};
+const cacheOnlyFingerprint = await durableSourceFingerprint(cacheOnlySource, 0);
+const cacheOnlyMaterialized = await materializeSmokeSourceImagesForAssetReuse([cacheOnlySource], {
+  assetCacheEntries: new Map([[cacheOnlyFingerprint, {
+    fingerprint: cacheOnlyFingerprint,
+    source_asset_id: "cache-only-source",
+    asset_id: "asset-cached",
+    tenant_id: "tenant-cached",
+    image_generation_id: "generation-cached"
+  }]]),
+  fetchImpl: async () => {
+    throw new Error("cache hit must not materialize source bytes");
+  }
+});
+assert.equal(cacheOnlyMaterialized[0], cacheOnlySource);
 
 const durableAssetId = "asset_11111111-2222-4333-8444-555555555555";
 const calls = [];
