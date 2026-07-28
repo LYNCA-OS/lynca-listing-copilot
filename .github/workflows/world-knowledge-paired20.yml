@@ -62,6 +62,31 @@ jobs:
           test -n "$EXPECTED_GIT_SHA"
           actual_git_sha="$(curl --fail --silent --show-error "$API_BASE_URL/api/v4/health" | jq -r '.deployment.git_commit_sha // empty')"
           test "$actual_git_sha" = "$EXPECTED_GIT_SHA"
+      - name: Verify authenticated Recognition Worker capability
+        run: |
+          curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
+            -H 'content-type: application/json' \
+            --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
+            "$API_BASE_URL/api/login" -o /tmp/login.json
+          curl -fsS --max-time 30 -b /tmp/lynca-cookies.txt \
+            "$API_BASE_URL/api/listing-provider-status" \
+            -o /tmp/recognition-worker-capability.json
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { recognitionPipelineVersion } from './lib/listing/recognition/recognition-contract.mjs';
+          const status = JSON.parse(fs.readFileSync('/tmp/recognition-worker-capability.json', 'utf8'));
+          const worker = status.execution_control?.recognition_worker || {};
+          const checks = {
+            runtime_ready: worker.runtime_ready === true,
+            contract_matches: worker.contract_matches === true,
+            auth_verified: worker.auth_verified === true,
+            analysis_route_verified: worker.analysis_route_verified === true,
+            pipeline_version: worker.pipeline_version === recognitionPipelineVersion,
+            service_role: worker.service_role === 'RECOGNITION_WORKER'
+          };
+          console.log(JSON.stringify({ checks, reason: worker.reason || null }, null, 2));
+          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
+          NODE
       - name: Build frozen familiar 10
         if: ${{ inputs.cohort != 'unseen' }}
         run: |
@@ -133,4 +158,5 @@ jobs:
           path: |
             /tmp/familiar10.json
             /tmp/familiar10-labels.jsonl
+            /tmp/recognition-worker-capability.json
             /tmp/world-knowledge-paired20

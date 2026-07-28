@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { analyzeCardImagesWithRecognitionWorker } from "../lib/listing/recognition/recognition-client.mjs";
+import {
+  analyzeCardImagesWithRecognitionWorker,
+  probeRecognitionWorkerCapability
+} from "../lib/listing/recognition/recognition-client.mjs";
 import {
   recognitionImageRoles,
   recognitionRequestedFields,
@@ -115,6 +118,107 @@ assert.equal(response.asset_id, "asset_1");
 assert.equal(capturedRequest.url, "https://recognition.internal/v1/analyze-card-images");
 assert.equal(capturedRequest.headers.authorization, "Bearer worker-token");
 assert.equal(capturedRequest.body.images[0].signed_url.includes("token=secret"), true);
+
+const readyCapability = await probeRecognitionWorkerCapability({
+  env: {
+    ENABLE_RECOGNITION_WORKER: "true",
+    RECOGNITION_WORKER_URL: "https://recognition.internal",
+    RECOGNITION_WORKER_TOKEN: "worker-token"
+  },
+  fetchImpl: async (url, init = {}) => {
+    if (String(url).endsWith("/readyz")) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          status: "ready",
+          pipeline_version: "recognition-worker-contract-v1"
+        })
+      };
+    }
+    assert.equal(init.headers.authorization, "Bearer worker-token");
+    return { ok: false, status: 422, text: async () => JSON.stringify({ detail: [] }) };
+  }
+});
+assert.deepEqual(readyCapability, {
+  ready: true,
+  configured: true,
+  contract_matches: true,
+  auth_verified: true,
+  analysis_route_verified: true,
+  pipeline_version: "recognition-worker-contract-v1",
+  service_role: "RECOGNITION_WORKER",
+  reason: null
+});
+
+const wrongServiceCapability = await probeRecognitionWorkerCapability({
+  env: {
+    ENABLE_RECOGNITION_WORKER: "true",
+    RECOGNITION_WORKER_URL: "https://vision-ocr.internal",
+    RECOGNITION_WORKER_TOKEN: "worker-token"
+  },
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      status: "ready",
+      service: "vision-ocr",
+      backend: "google_vision"
+    })
+  })
+});
+assert.equal(wrongServiceCapability.ready, false);
+assert.equal(wrongServiceCapability.contract_matches, false);
+assert.equal(wrongServiceCapability.service_role, "VISION_OCR");
+assert.equal(wrongServiceCapability.reason, "recognition_worker_contract_mismatch");
+
+const wrongTokenCapability = await probeRecognitionWorkerCapability({
+  env: {
+    ENABLE_RECOGNITION_WORKER: "true",
+    RECOGNITION_WORKER_URL: "https://recognition-auth.internal",
+    RECOGNITION_WORKER_TOKEN: "wrong-token"
+  },
+  fetchImpl: async (url) => String(url).endsWith("/readyz")
+    ? { ok: true, status: 200, text: async () => JSON.stringify({ status: "ready", pipeline_version: "recognition-worker-contract-v1" }) }
+    : { ok: false, status: 403, text: async () => JSON.stringify({ detail: "invalid bearer token" }) }
+});
+assert.equal(wrongTokenCapability.ready, false);
+assert.equal(wrongTokenCapability.auth_verified, false);
+assert.equal(wrongTokenCapability.reason, "recognition_worker_auth_rejected");
+
+const missingAnalysisRouteCapability = await probeRecognitionWorkerCapability({
+  env: {
+    ENABLE_RECOGNITION_WORKER: "true",
+    RECOGNITION_WORKER_URL: "https://recognition-route-missing.internal",
+    RECOGNITION_WORKER_TOKEN: "worker-token"
+  },
+  fetchImpl: async (url) => String(url).endsWith("/readyz")
+    ? { ok: true, status: 200, text: async () => JSON.stringify({ status: "ready", pipeline_version: "recognition-worker-contract-v1" }) }
+    : { ok: false, status: 404, text: async () => "not found" }
+});
+assert.equal(missingAnalysisRouteCapability.ready, false);
+assert.equal(missingAnalysisRouteCapability.analysis_route_verified, false);
+assert.equal(missingAnalysisRouteCapability.reason, "recognition_worker_analysis_route_missing");
+
+let coalescedFetchCount = 0;
+const coalescedEnv = {
+  ENABLE_RECOGNITION_WORKER: "true",
+  RECOGNITION_WORKER_URL: "https://recognition-coalesced.internal",
+  RECOGNITION_WORKER_TOKEN: "worker-token"
+};
+const coalescedFetch = async (url) => {
+  coalescedFetchCount += 1;
+  return String(url).endsWith("/readyz")
+    ? { ok: true, status: 200, text: async () => JSON.stringify({ status: "ready", pipeline_version: "recognition-worker-contract-v1" }) }
+    : { ok: false, status: 422, text: async () => JSON.stringify({ detail: [] }) };
+};
+const [coalescedLeft, coalescedRight] = await Promise.all([
+  probeRecognitionWorkerCapability({ env: coalescedEnv, fetchImpl: coalescedFetch }),
+  probeRecognitionWorkerCapability({ env: coalescedEnv, fetchImpl: coalescedFetch })
+]);
+assert.equal(coalescedLeft.ready, true);
+assert.equal(coalescedRight.ready, true);
+assert.equal(coalescedFetchCount, 2, "concurrent status reads must share one readiness plus one authenticated route probe");
 
 await assert.rejects(
   analyzeCardImagesWithRecognitionWorker({

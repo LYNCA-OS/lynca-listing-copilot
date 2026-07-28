@@ -16,6 +16,7 @@ import {
 } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 import { recognitionWorkerConfig } from "../lib/listing/recognition/recognition-feature-flags.mjs";
+import { probeRecognitionWorkerCapability } from "../lib/listing/recognition/recognition-client.mjs";
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 import {
   v4ProviderDoneCapacityHandoffEnabled,
@@ -380,8 +381,17 @@ export default async function handler(req, res) {
     .filter((provider) => provider.visible !== false)
     .map((provider) => providerStatus(provider, storage));
 
-  const workflowReadiness = await loadWorkflowReadiness();
   const canViewOperations = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_TEAM);
+  const [workflowReadiness, recognitionWorkerRuntime] = await Promise.all([
+    loadWorkflowReadiness(),
+    canViewOperations
+      ? probeRecognitionWorkerCapability({
+        env: process.env,
+        fetchImpl: globalThis.fetch,
+        timeoutMs: readinessProbeTimeoutMs(process.env)
+      })
+      : Promise.resolve(null)
+  ]);
   if (!canViewOperations) {
     sendJson(res, 200, {
       ok: true,
@@ -407,7 +417,14 @@ export default async function handler(req, res) {
     execution_control: {
       recognition_worker: {
         enabled: recognitionWorker.enabled === true,
-        configured: recognitionWorker.configured === true
+        configured: recognitionWorker.configured === true,
+        runtime_ready: recognitionWorkerRuntime.ready === true,
+        contract_matches: recognitionWorkerRuntime.contract_matches === true,
+        auth_verified: recognitionWorkerRuntime.auth_verified === true,
+        analysis_route_verified: recognitionWorkerRuntime.analysis_route_verified === true,
+        pipeline_version: recognitionWorkerRuntime.pipeline_version || null,
+        service_role: recognitionWorkerRuntime.service_role || "UNKNOWN",
+        reason: recognitionWorkerRuntime.reason || null
       },
       paddle_ocr_verifier: {
         enabled: paddleOcr.enabled === true,
