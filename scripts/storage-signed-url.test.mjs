@@ -15,7 +15,10 @@ import {
   verifyListingImageVerificationToken,
   verifyListingImageUploadedObject
 } from "../lib/listing/storage/supabase-image-storage.mjs";
-import { supabaseServiceHeaders } from "../lib/supabase-service-headers.mjs";
+import {
+  supabaseRestAdminHeaders,
+  supabaseServiceHeaders
+} from "../lib/supabase-service-headers.mjs";
 
 const env = {
   SUPABASE_URL: "https://example.supabase.co",
@@ -218,6 +221,9 @@ assert.equal(
   supabaseServiceHeaders("eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.signature").authorization,
   "Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.signature"
 );
+assert.equal(supabaseRestAdminHeaders("sb_secret_rotated_test").authorization, undefined);
+assert.equal(supabaseRestAdminHeaders("sb_secret_rotated_test").apikey, "sb_secret_rotated_test");
+assert.equal(supabaseRestAdminHeaders("test-legacy-service-role").authorization, "Bearer test-legacy-service-role");
 assert.equal(upload.tenant_id, tenantId);
 assert.equal(upload.object_path, "tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg");
 assert.equal(upload.width, 1200);
