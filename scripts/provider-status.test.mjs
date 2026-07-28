@@ -36,7 +36,7 @@ process.env.PREINGESTION_OCR_STAGE_CAPACITY_CONTROL_ENABLED = "true";
 process.env.RETRIEVAL_CATALOG_STAGE_CAPACITY_CONTROL_ENABLED = "true";
 process.env.VECTOR_QUERY_STAGE_CAPACITY_CONTROL_ENABLED = "true";
 let membershipRole = "OWNER";
-globalThis.fetch = async (url) => {
+globalThis.fetch = async (url, init = {}) => {
   const parsed = new URL(String(url));
   if (parsed.pathname.endsWith("/tenant_members")) {
     return {
@@ -67,6 +67,15 @@ globalThis.fetch = async (url) => {
       text: async () => "[]"
     };
   }
+  if (parsed.host === "recognition.worker.test" && parsed.pathname.endsWith("/v1/analyze-card-images")) {
+    assert.equal(init.headers.authorization, "Bearer test-recognition-token");
+    return {
+      ok: false,
+      status: 422,
+      json: async () => ({ detail: [{ path: "images", message: "At least one image is required." }] }),
+      text: async () => JSON.stringify({ detail: [{ path: "images", message: "At least one image is required." }] })
+    };
+  }
   return {
     ok: true,
     status: 200,
@@ -74,6 +83,7 @@ globalThis.fetch = async (url) => {
     text: async () => parsed.pathname.endsWith("/readyz")
       ? JSON.stringify({
         status: "ready",
+        pipeline_version: "recognition-worker-contract-v1",
         visual_embeddings_enabled: true,
         visual_embedding_preload_enabled: true,
         visual_embedding_preload_status: { status: "READY" },
@@ -164,7 +174,18 @@ assert.equal(response.body.execution_control.queue_kick_dedup_ms, 1200);
 assert.equal(response.body.execution_control.provider_key_pool_size, 2);
 assert.equal(response.body.execution_control.per_key_stable_concurrency, 2);
 assert.equal(response.body.execution_control.global_provider_concurrency, 2, "multiple keys must not silently exceed the measured production knee");
-assert.deepEqual(response.body.execution_control.recognition_worker, { enabled: true, configured: true });
+assert.deepEqual(response.body.execution_control.recognition_worker, {
+  enabled: true,
+  configured: true,
+  service_contract_ready: true,
+  service_contract_scope: "SERVICE_AUTH_ROUTE_ONLY",
+  pipeline_contract_matches: true,
+  auth_verified: true,
+  analysis_route_verified: true,
+  pipeline_version: "recognition-worker-contract-v1",
+  service_role: "RECOGNITION_WORKER",
+  reason: null
+});
 assert.deepEqual(response.body.execution_control.paddle_ocr_verifier, { enabled: true, configured: true });
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.capacity_control_enabled, true);
 assert.equal(response.body.execution_control.stage_capacity.paddle_ocr.global_capacity, 8);

@@ -16,6 +16,7 @@ import {
 } from "../lib/listing/readiness/workflow-readiness-audit.mjs";
 import { publicStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 import { recognitionWorkerConfig } from "../lib/listing/recognition/recognition-feature-flags.mjs";
+import { probeRecognitionWorkerServiceContract } from "../lib/listing/recognition/recognition-client.mjs";
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 import {
   v4ProviderDoneCapacityHandoffEnabled,
@@ -380,8 +381,17 @@ export default async function handler(req, res) {
     .filter((provider) => provider.visible !== false)
     .map((provider) => providerStatus(provider, storage));
 
-  const workflowReadiness = await loadWorkflowReadiness();
   const canViewOperations = hasTenantPermission(context, TENANT_PERMISSIONS.VIEW_TEAM);
+  const [workflowReadiness, recognitionWorkerServiceContract] = await Promise.all([
+    loadWorkflowReadiness(),
+    canViewOperations
+      ? probeRecognitionWorkerServiceContract({
+        env: process.env,
+        fetchImpl: globalThis.fetch,
+        timeoutMs: readinessProbeTimeoutMs(process.env)
+      })
+      : Promise.resolve(null)
+  ]);
   if (!canViewOperations) {
     sendJson(res, 200, {
       ok: true,
@@ -407,7 +417,15 @@ export default async function handler(req, res) {
     execution_control: {
       recognition_worker: {
         enabled: recognitionWorker.enabled === true,
-        configured: recognitionWorker.configured === true
+        configured: recognitionWorker.configured === true,
+        service_contract_ready: recognitionWorkerServiceContract.ready === true,
+        service_contract_scope: "SERVICE_AUTH_ROUTE_ONLY",
+        pipeline_contract_matches: recognitionWorkerServiceContract.contract_matches === true,
+        auth_verified: recognitionWorkerServiceContract.auth_verified === true,
+        analysis_route_verified: recognitionWorkerServiceContract.analysis_route_verified === true,
+        pipeline_version: recognitionWorkerServiceContract.pipeline_version || null,
+        service_role: recognitionWorkerServiceContract.service_role || "UNKNOWN",
+        reason: recognitionWorkerServiceContract.reason || null
       },
       paddle_ocr_verifier: {
         enabled: paddleOcr.enabled === true,
