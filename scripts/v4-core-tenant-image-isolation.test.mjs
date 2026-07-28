@@ -3,8 +3,11 @@ import {
   callNativeV4RecognitionWithGpt5EmptyRetry
 } from "../api/v4/listing-copilot-title.js";
 import {
+  buildRecognitionPreflightDiagnostics,
+  completedKnowledgeFirstRouteShadowForEvaluation,
   preingestionOcrScopeFromPayload,
-  recognitionIdentityPreflightDecision
+  recognitionIdentityPreflightDecision,
+  recognitionPreflightEvidenceApplication
 } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 import { scopeV4RecognitionPayloadFromFencedJob } from "../lib/listing/v4/session/trusted-session-identity.mjs";
 import { createListingImageVerificationToken } from "../lib/listing/storage/supabase-image-storage.mjs";
@@ -164,17 +167,86 @@ try {
     preingestion_bundle_status: "READY"
   }, {}), {
     run: false,
-    reason: "preingestion_bundle_is_authoritative"
+    shadow_only: false,
+    reason: "preingestion_bundle_worker_preflight_disabled"
+  });
+  const coldEvaluationProviderOptions = {
+    recognition_benchmark_profile: "cold_algorithm_benchmark",
+    trace_level: "evaluation",
+    recognition_worker_preflight_shadow_only: true
+  };
+  assert.deepEqual(recognitionIdentityPreflightDecision({
+    preingestion_bundle_id: "bundle_tenant_a",
+    preingestion_bundle_used: true,
+    preingestion_bundle_status: "READY",
+    provider_options: coldEvaluationProviderOptions
+  }, {}), {
+    run: true,
+    shadow_only: true,
+    reason: "preingestion_bundle_has_no_publishable_evidence"
   });
   assert.deepEqual(recognitionIdentityPreflightDecision({
     preingestion_bundle_id: "bundle_tenant_a",
     preingestion_bundle_used: true,
-    preingestion_bundle_status: "READY"
-  }, {
+    preingestion_bundle_status: "READY",
+    provider_options: {
+      ...coldEvaluationProviderOptions,
+      trace_level: "none"
+    }
+  }, {}), {
+    run: false,
+    shadow_only: false,
+    reason: "preingestion_bundle_worker_preflight_disabled"
+  });
+  const partialPreingestionEvidencePayload = {
+    preingestion_bundle_id: "bundle_tenant_a",
+    preingestion_bundle_used: true,
+    preingestion_bundle_status: "READY",
+    preingestion_initial_evidence: {
+      card_number: {
+        field: "card_number",
+        value: "ABC-1",
+        raw_text: "CARD # ABC-1",
+        source_type: "OCR",
+        source_image_id: "image_front_a"
+      }
+    }
+  };
+  assert.deepEqual(recognitionIdentityPreflightDecision(partialPreingestionEvidencePayload, {}), {
+    run: false,
+    shadow_only: false,
+    reason: "preingestion_bundle_worker_preflight_disabled"
+  });
+  assert.deepEqual(recognitionIdentityPreflightDecision({
+    ...partialPreingestionEvidencePayload,
+    provider_options: coldEvaluationProviderOptions
+  }, {}), {
+    run: true,
+    shadow_only: true,
+    reason: "preingestion_bundle_evidence_is_partial"
+  });
+  assert.deepEqual(recognitionIdentityPreflightDecision(partialPreingestionEvidencePayload, {
     ENABLE_RECOGNITION_PREFLIGHT_WITH_PREINGESTION: "true"
   }), {
     run: true,
-    reason: "redundant_preflight_explicitly_enabled"
+    shadow_only: false,
+    reason: "preingestion_bundle_evidence_is_partial"
+  });
+  assert.deepEqual(recognitionIdentityPreflightDecision({
+    preingestion_bundle_id: "bundle_tenant_a",
+    preingestion_bundle_used: true,
+    preingestion_bundle_status: "READY",
+    preingestion_summary: {
+      ocr_stage_execution: {
+        claimed: 2,
+        succeeded: 2,
+        evidence_ready: true
+      }
+    }
+  }, {}), {
+    run: false,
+    shadow_only: false,
+    reason: "preingestion_bundle_worker_preflight_disabled"
   });
   assert.deepEqual(recognitionIdentityPreflightDecision({
     preingestion_bundle_id: "bundle_tenant_a",
@@ -182,8 +254,86 @@ try {
     preingestion_bundle_status: "READY"
   }, {}), {
     run: true,
+    shadow_only: false,
     reason: "preingestion_bundle_not_authoritative"
   });
+
+  const productionEvidenceDocument = {
+    resolved: { year: "2025" },
+    evidence: { year: { value: "2025" } }
+  };
+  const workerEvidenceDocument = {
+    resolved: { product: "Prizm" },
+    evidence: { product: { value: "Prizm" } }
+  };
+  const shadowEvidenceApplication = recognitionPreflightEvidenceApplication(
+    productionEvidenceDocument,
+    {
+      decision: { shadow_only: true },
+      evidenceDocument: workerEvidenceDocument
+    }
+  );
+  assert.equal(shadowEvidenceApplication.production_evidence_document, productionEvidenceDocument);
+  assert.equal(shadowEvidenceApplication.shadow_evidence_document, workerEvidenceDocument);
+  assert.equal(shadowEvidenceApplication.shadow_only, true);
+
+  const enabledEvidenceApplication = recognitionPreflightEvidenceApplication(
+    productionEvidenceDocument,
+    {
+      decision: { shadow_only: false },
+      evidenceDocument: workerEvidenceDocument
+    }
+  );
+  assert.equal(enabledEvidenceApplication.production_evidence_document, workerEvidenceDocument);
+  assert.equal(enabledEvidenceApplication.shadow_only, false);
+
+  const signedUrlFailureDiagnostics = buildRecognitionPreflightDiagnostics({
+    recognitionPreflight: {
+      decision: { run: true, shadow_only: true, reason: "cold_evaluation" },
+      worker_call_attempted: false,
+      error: { code: "signed_url_failed" }
+    },
+    shadowEvidenceDocument: null,
+    joinWaitMs: 3,
+    providerCompletedAt: "2026-07-29T00:00:01.000Z"
+  });
+  assert.equal(signedUrlFailureDiagnostics.worker_call_count, 0);
+  assert.equal(signedUrlFailureDiagnostics.worker_execution_ms, null);
+  assert.equal(signedUrlFailureDiagnostics.worker_error_code, "signed_url_failed");
+
+  const workerFailureDiagnostics = buildRecognitionPreflightDiagnostics({
+    recognitionPreflight: {
+      decision: { run: true, shadow_only: true, reason: "cold_evaluation" },
+      worker_call_attempted: true,
+      worker_started_at: "2026-07-29T00:00:00.100Z",
+      worker_completed_at: "2026-07-29T00:00:00.900Z",
+      error: { code: "worker_failed" }
+    },
+    shadowEvidenceDocument: workerEvidenceDocument,
+    joinWaitMs: 4,
+    providerCompletedAt: "2026-07-29T00:00:01.000Z"
+  });
+  assert.equal(workerFailureDiagnostics.worker_call_count, 1);
+  assert.equal(workerFailureDiagnostics.worker_execution_ms, 800);
+  assert.equal(workerFailureDiagnostics.worker_finished_before_provider, true);
+  assert.equal(workerFailureDiagnostics.evidence_field_count, 1);
+
+  const completeShadowRoute = { route: "TARGETED_VISUAL_AND_KNOWLEDGE" };
+  assert.equal(
+    await completedKnowledgeFirstRouteShadowForEvaluation(
+      { route: "FULL_PROVIDER" },
+      Promise.resolve(completeShadowRoute)
+    ),
+    completeShadowRoute
+  );
+  const fallbackShadowRoute = { route: "FULL_PROVIDER" };
+  assert.equal(
+    await completedKnowledgeFirstRouteShadowForEvaluation(
+      fallbackShadowRoute,
+      Promise.reject(new Error("shadow route failed"))
+    ),
+    fallbackShadowRoute
+  );
 } finally {
   globalThis.fetch = originalFetch;
   for (const [key, value] of Object.entries(originalEnv)) {

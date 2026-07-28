@@ -47,11 +47,24 @@ const packet = buildEvaluationDecisionTracePacket({
       rejection_reasons: ["subject conflict"],
       blocked_fields: ["subject"]
     }]
+  },
+  recognition_preflight_diagnostics: {
+    run: true,
+    decision_reason: "preingestion_bundle_has_no_publishable_evidence",
+    outcome_reason: null,
+    shadow_only: true,
+    skipped: false,
+    worker_call_count: 1,
+    evidence_field_count: 4,
+    worker_execution_ms: 8400,
+    join_wait_ms: 12,
+    worker_finished_before_provider: true,
+    worker_error_code: null
   }
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v5");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v6");
 assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
 assert.equal(packet.replay_snapshot.status, "PARTIAL");
 assert.ok(packet.replay_snapshot.missing_components.includes("pipeline_fingerprint"));
@@ -62,6 +75,10 @@ assert.equal(packet.field_lineage.find((row) => row.field === "year")?.final_tit
 assert.equal(packet.retrieval.top_k[0].source_trust, "OFFICIAL");
 assert.equal(packet.application[0].action, "BLOCK");
 assert.equal(packet.resolver.dropped[0].field, "subject");
+assert.equal(packet.recognition_preflight.shadow_only, true);
+assert.equal(packet.recognition_preflight.worker_call_count, 1);
+assert.equal(packet.recognition_preflight.evidence_field_count, 4);
+assert.equal(packet.recognition_preflight.worker_execution_ms, 8400);
 assert.equal(classifyEvaluationMissingField(packet, "manufacturer"), "PROVIDER_NOT_OBSERVED");
 assert.equal(classifyEvaluationMissingField({ ...packet, provider_observation_fields: { manufacturer: "Topps" }, normalization: { output: {} } }, "manufacturer"), "NORMALIZATION_DROPPED");
 assert.equal(classifyEvaluationMissingField(packet, "year"), "CATALOG_NOT_RETRIEVED");
