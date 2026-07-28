@@ -1,0 +1,495 @@
+{
+  "schema_version": "unseen-product-dataset-v1",
+  "generated_at": "2026-07-27T15:08:31.038Z",
+  "item_count": 17,
+  "sealed_labels_path": "data/eval/unseen-product/unseen17-labels.jsonl",
+  "accuracy_policy": {
+    "corrected_title_is_reviewed_title_ground_truth": true,
+    "corrected_title_is_field_ground_truth": true,
+    "title_visible_during_recognition": false,
+    "predictions_frozen_before_scoring": true
+  },
+  "intake_policy": {
+    "image_only": true,
+    "inventory_exhaustive": false,
+    "reviewed_titles_in_dataset": false
+  },
+  "items": [
+    {
+      "asset_id": "unseen_e90b6054163320bbc04b",
+      "physical_card_id": "unseen_e90b6054163320bbc04b",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_e90b6054163320bbc04b"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|407101856810|0",
+        "product_line": "2025 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_e90b6054163320bbc04b_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_e90b6054163320bbc04b.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "8e541998648e36f540edff4a318b7a5815cdee486c7f29fa011537c6dfc41b40",
+          "size": 412345
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_40b6057985f303926690",
+      "physical_card_id": "unseen_40b6057985f303926690",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_40b6057985f303926690"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|366568785593|0",
+        "product_line": "2025 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_40b6057985f303926690_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_40b6057985f303926690.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "6ccae9adb69bda871646f15497cd67234de644271b3a425ea23adeba57e5ca22",
+          "size": 14581
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_4a387a2e25fe69fa7508",
+      "physical_card_id": "unseen_4a387a2e25fe69fa7508",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_4a387a2e25fe69fa7508"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|407101844018|0",
+        "product_line": "2025 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_4a387a2e25fe69fa7508_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_4a387a2e25fe69fa7508.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "869fdf891fbc4501eacfc5a088e115fbd5d44363f3d5b8d27783ebe0ff54c0fc",
+          "size": 421320
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_af443b0004240f0107ee",
+      "physical_card_id": "unseen_af443b0004240f0107ee",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_af443b0004240f0107ee"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|407101868239|0",
+        "product_line": "2025 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_af443b0004240f0107ee_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_af443b0004240f0107ee.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "0f5d7708419de9875f940260b2321caffa15b2b7881cf820a035532bd3008124",
+          "size": 491912
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_745e2fed2b81fdb80c63",
+      "physical_card_id": "unseen_745e2fed2b81fdb80c63",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_745e2fed2b81fdb80c63"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|398219525073|0",
+        "product_line": "2023 Panini Phoenix (23-24)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_745e2fed2b81fdb80c63_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_745e2fed2b81fdb80c63.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "dff9fed154c33a0927530577c7c09a011337761cf885c6d878ec577753736b08",
+          "size": 653617
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_c1f30c005617e6986ef1",
+      "physical_card_id": "unseen_c1f30c005617e6986ef1",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_c1f30c005617e6986ef1"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|407101878505|0",
+        "product_line": "2023 Panini Phoenix (23-24)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_c1f30c005617e6986ef1_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_c1f30c005617e6986ef1.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "b35ef0ab1d556fcc54634754dcc79d92566dd36629b98a4f521110b1af49ab32",
+          "size": 360185
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_e2317539ffdb61b4693b",
+      "physical_card_id": "unseen_e2317539ffdb61b4693b",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_e2317539ffdb61b4693b"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|358787675169|0",
+        "product_line": "2023 Panini Phoenix (23-24)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_e2317539ffdb61b4693b_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_e2317539ffdb61b4693b.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "d167fb564c8fa36f41de4f3ac88a4fd6a5525894d4c16990c82d5778fcd7a6ff",
+          "size": 366240
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_189096ee2adb683d47b0",
+      "physical_card_id": "unseen_189096ee2adb683d47b0",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_189096ee2adb683d47b0"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|336711056086|0",
+        "product_line": "2023 Panini Phoenix (23-24)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_189096ee2adb683d47b0_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_189096ee2adb683d47b0.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "cb30548f9606797290ee3d06644c7f40e7f2e99534b9dba26a8b1249fccb2274",
+          "size": 272304
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_d2014506e773d47e7536",
+      "physical_card_id": "unseen_d2014506e773d47e7536",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_d2014506e773d47e7536"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|236966430303|0",
+        "product_line": "2023 Panini Phoenix (23-24)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_d2014506e773d47e7536_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_d2014506e773d47e7536.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "b5c2bf10bc3b9d105f48350d6219963e3d40eb124bb787276c8415b78cb30e29",
+          "size": 451957
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_bbfc75a6ba32ffe48343",
+      "physical_card_id": "unseen_bbfc75a6ba32ffe48343",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_bbfc75a6ba32ffe48343"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|358850281728|0",
+        "product_line": "2024 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_bbfc75a6ba32ffe48343_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_bbfc75a6ba32ffe48343.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "0f144669f1e9ca980ea2a46c2e22f72dbcb8580d6bd347931220ec0eb2fbfa75",
+          "size": 743775
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_382c09472dc13c325652",
+      "physical_card_id": "unseen_382c09472dc13c325652",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_382c09472dc13c325652"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|236966411790|0",
+        "product_line": "2024 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_382c09472dc13c325652_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_382c09472dc13c325652.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "e9ddca7dd916304755a4cd3d0f5145d6be0ba1a3f3f4938e34527d398bf0bca1",
+          "size": 159888
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_e9c74d3fa6e36cc2a779",
+      "physical_card_id": "unseen_e9c74d3fa6e36cc2a779",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_e9c74d3fa6e36cc2a779"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|407101258024|0",
+        "product_line": "2024 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_e9c74d3fa6e36cc2a779_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_e9c74d3fa6e36cc2a779.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "40eb6b6b109212f2bab6c07ec24bfbd6cd7ed36af7bbbecc25db75d852b55bb1",
+          "size": 172864
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_265e71d598ed841e4475",
+      "physical_card_id": "unseen_265e71d598ed841e4475",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_265e71d598ed841e4475"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|157876123654|0",
+        "product_line": "2024 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_265e71d598ed841e4475_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_265e71d598ed841e4475.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "75bcc10adc5af5348717f6bf3bf04b1868e6073d0877cf9890aefb265b48ccfe",
+          "size": 278062
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_5aaa54c150b4479171cb",
+      "physical_card_id": "unseen_5aaa54c150b4479171cb",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_5aaa54c150b4479171cb"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|137556438453|0",
+        "product_line": "2024 Panini Phoenix"
+      },
+      "images": [
+        {
+          "image_id": "unseen_5aaa54c150b4479171cb_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_5aaa54c150b4479171cb.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "cbd783d4c114081337eb0d128ea50df1d7d3266cd14bfc86f50be04e7db79528",
+          "size": 447507
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_302227384e4e19804899",
+      "physical_card_id": "unseen_302227384e4e19804899",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_302227384e4e19804899"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|158124482905|0",
+        "product_line": "2025 Panini Prizm FIFA (25-26)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_302227384e4e19804899_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_302227384e4e19804899.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "ced08e56d54a192ef64ccaa95f6d487af6c0237fee9f4d16c5b0a63b615c48f9",
+          "size": 635985
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_39194858fc5eeec7d09d",
+      "physical_card_id": "unseen_39194858fc5eeec7d09d",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_39194858fc5eeec7d09d"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|198528096520|0",
+        "product_line": "2025 Panini Prizm FIFA (25-26)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_39194858fc5eeec7d09d_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_39194858fc5eeec7d09d.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "0d15b43825dcb3de40aad5b31eac6091a5623a5837dc45b288091f3ac9a940f7",
+          "size": 558768
+        }
+      ]
+    },
+    {
+      "asset_id": "unseen_09dd62702d9d39ae7da6",
+      "physical_card_id": "unseen_09dd62702d9d39ae7da6",
+      "source_feedback_id": null,
+      "category": "collectible_card",
+      "review_status": "BLIND_EVALUATION_ONLY",
+      "canonical_title": "",
+      "source_titles": {},
+      "sealed_eval_label_ref": {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+        "key": "unseen_09dd62702d9d39ae7da6"
+      },
+      "source_record": {
+        "source": "unseen_product_benchmark",
+        "item_id": "v1|366568466138|0",
+        "product_line": "2025 Panini Prizm FIFA (25-26)"
+      },
+      "images": [
+        {
+          "image_id": "unseen_09dd62702d9d39ae7da6_front",
+          "role": "front_original",
+          "local_path": "/benchmark-fixture-not-required/unseen_09dd62702d9d39ae7da6.jpg",
+          "content_type": "image/jpeg",
+          "content_sha256": "7cd9d285b36318de43f762eb3d45fc809c351a17e4cbd189e6cf1d472730b985",
+          "size": 470503
+        }
+      ]
+    }
+  ]
+}

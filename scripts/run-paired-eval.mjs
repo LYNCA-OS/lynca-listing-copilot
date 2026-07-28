@@ -39,7 +39,9 @@ export function buildSmokeArgs({
   limit,
   l2WaitMs,
   readOnlyProviderContract = false,
-  worldKnowledgeProposals = false
+  worldKnowledgeProposals = false,
+  verifiedAssetCachePath = "",
+  verifiedAssetCacheMode = "disabled"
 }) {
   const args = [
     "--use-env-proxy",
@@ -59,6 +61,8 @@ export function buildSmokeArgs({
   ];
   if (readOnlyProviderContract) args.push("--read-only-provider-contract");
   if (worldKnowledgeProposals) args.push("--world-knowledge-proposals");
+  if (verifiedAssetCachePath) args.push("--verified-asset-cache", verifiedAssetCachePath);
+  args.push("--verified-asset-cache-mode", verifiedAssetCacheMode);
   return args;
 }
 
@@ -116,7 +120,13 @@ export async function main(argv = process.argv.slice(2)) {
   const outDir = resolve(argValue(argv, "--out-dir", "artifacts/smoke/paired-eval"));
   const label = argValue(argv, "--label", "paired");
   const candidateReadOnlyProviderContract = argv.includes("--candidate-read-only-provider-contract");
+  const baselineReadOnlyProviderContract = argv.includes("--baseline-read-only-provider-contract")
+    || argv.includes("--both-read-only-provider-contract");
+  const bothReadOnlyProviderContract = argv.includes("--both-read-only-provider-contract");
   const candidateWorldKnowledgeProposals = argv.includes("--candidate-world-knowledge-proposals");
+  const verifiedAssetCachePath = argValue(argv, "--verified-asset-cache", "");
+  const verifiedAssetCacheMode = argValue(argv, "--verified-asset-cache-mode", verifiedAssetCachePath ? "reuse" : "disabled");
+  const reportOnly = argv.includes("--report-only");
   if (!candidateUrl) throw new Error("--candidate-url is required");
 
   await mkdir(outDir, { recursive: true });
@@ -136,8 +146,12 @@ export async function main(argv = process.argv.slice(2)) {
         model,
         limit,
         l2WaitMs,
-        readOnlyProviderContract: arm === "candidate" && candidateReadOnlyProviderContract,
-        worldKnowledgeProposals: arm === "candidate" && candidateWorldKnowledgeProposals
+        readOnlyProviderContract: arm === "baseline"
+          ? baselineReadOnlyProviderContract
+          : candidateReadOnlyProviderContract || bothReadOnlyProviderContract,
+        worldKnowledgeProposals: arm === "candidate" && candidateWorldKnowledgeProposals,
+        verifiedAssetCachePath,
+        verifiedAssetCacheMode
       });
       const score = await scoreFromReport(outPath, { expectedCount: limit });
       (arm === "baseline" ? baselineScores : candidateScores).push(score);
@@ -167,7 +181,12 @@ export async function main(argv = process.argv.slice(2)) {
     baseline_url: baselineUrl,
     candidate_url: candidateUrl,
     candidate_read_only_provider_contract: candidateReadOnlyProviderContract,
+    baseline_read_only_provider_contract: baselineReadOnlyProviderContract,
+    both_read_only_provider_contract: bothReadOnlyProviderContract,
     candidate_world_knowledge_proposals: candidateWorldKnowledgeProposals,
+    verified_asset_cache_path: verifiedAssetCachePath || null,
+    verified_asset_cache_mode: verifiedAssetCacheMode,
+    report_only: reportOnly,
     rounds_completed: baselineScores.length,
     baseline: {
       scores: baselineScores, mean: mean(baselineScores), median: median(baselineScores), sd: stdDev(baselineScores)
@@ -184,7 +203,7 @@ export async function main(argv = process.argv.slice(2)) {
   console.log(`candidate n=${candidateScores.length} median=${median(candidateScores).toFixed(6)} mean=${mean(candidateScores).toFixed(6)} sd=${stdDev(candidateScores)?.toFixed(6) ?? "n/a"}`);
   console.log(`\n${formatDecision(decision)}`);
   console.log(`  written: ${summaryPath}`);
-  return decision.verdict === "IMPROVED" ? 0 : 1;
+  return reportOnly || decision.verdict === "IMPROVED" ? 0 : 1;
 }
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
