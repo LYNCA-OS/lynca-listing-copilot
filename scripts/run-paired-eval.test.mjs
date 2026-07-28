@@ -44,6 +44,12 @@ assert.equal(buildSmokeArgs({
   ...commonArgs,
   readOnlyProviderContract: true
 }).includes("--read-only-provider-contract"), true);
+assert.equal(buildSmokeArgs(commonArgs).includes("--disable-identity-cache"), false);
+assert.ok(buildSmokeArgs(commonArgs).includes("cold_algorithm_benchmark"));
+assert.equal(buildSmokeArgs({
+  ...commonArgs,
+  worldKnowledgeProposals: true
+}).includes("--world-knowledge-proposals"), true);
 
 assert.throws(
   () => scoreFromReportData({ results: [row({ provider_calls: 0, provider_call_skipped: true })] }, { expectedCount: 1 }),
