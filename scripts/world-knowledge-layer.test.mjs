@@ -37,6 +37,25 @@ assert.equal(validateWorldKnowledgeProposal(
   model
 ).disposition, "UNCHECKED");
 
+assert.deepEqual(validateWorldKnowledgeProposal(
+  { field: "product", value: "Prizm?", basis: "KNOWN" },
+  {},
+  model
+), {
+  field: "product",
+  value: "Prizm?",
+  basis: "KNOWN",
+  disposition: "INVALID",
+  checked: false,
+  reason: "uncertain_proposal_value"
+});
+
+assert.equal(validateWorldKnowledgeProposal(
+  { field: "product", value: "Rookie Signs insert", basis: "KNOWN" },
+  {},
+  model
+).disposition, "INVALID");
+
 const attached = attachWorldKnowledgeProposals({
   fields: { players: ["Kobe Bryant"], year: "2008", set: "Contours" },
   world_knowledge_proposals: [
