@@ -1,0 +1,7 @@
+{
+  "name": "@lynca/vendor-exceljs-browser",
+  "version": "4.4.0",
+  "private": true,
+  "type": "commonjs",
+  "license": "MIT"
+}

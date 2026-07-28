@@ -1,0 +1,50 @@
+{
+  "schema_version": "lynca-vendored-artifact-v1",
+  "component": {
+    "name": "exceljs",
+    "version": "4.4.0",
+    "purl": "pkg:npm/exceljs@4.4.0",
+    "license": "MIT"
+  },
+  "source": {
+    "repository": "https://github.com/exceljs/exceljs",
+    "commit": "ac96f9a61e9799c7776bd940f05c4a51d7200209",
+    "tarball": "https://registry.npmjs.org/exceljs/-/exceljs-4.4.0.tgz",
+    "npm_dist_shasum_sha1": "cfb1cb8dcc82c760a9fc9faa9e52dadab66b0156",
+    "npm_dist_integrity": "sha512-XctvKaEMaj1Ii9oDOqbW/6e1gXknSY4g/aLCDicOXqBE4M0nRWkUu0PTp++UPNzoFY12BNHMfs/VadKIS6llvg==",
+    "tarball_sha256": "8adac13d192ce80e11304732d3ab96708b2c64bb54771b5da4f946e5eea55a18"
+  },
+  "artifacts": [
+    {
+      "path": "exceljs.min.js",
+      "upstream_path": "package/dist/exceljs.min.js",
+      "size_bytes": 947702,
+      "sha256": "7e49da68588e250dbb8bba190d2caa8ab3787cc0284bda1d8b2f805c4df742c9",
+      "runtime": true
+    },
+    {
+      "path": "LICENSE",
+      "upstream_path": "package/LICENSE",
+      "size_bytes": 1084,
+      "sha256": "2ed526b7e7c7681dc2347995b5036ddf73dc27d0539cdea59b6d4a72b63a57a0",
+      "runtime": false
+    }
+  ],
+  "runtime_boundary": {
+    "format": "browserify-standalone-commonjs",
+    "allowed_api": [
+      "Workbook",
+      "Workbook.addImage",
+      "Worksheet.addImage",
+      "Workbook.xlsx.writeBuffer",
+      "Workbook.xlsx.load"
+    ],
+    "excluded_node_dependency_chain": [
+      "archiver",
+      "archiver-utils",
+      "readdir-glob",
+      "zip-stream"
+    ],
+    "integrity_test": "scripts/exceljs-vendor-integrity.test.mjs"
+  }
+}

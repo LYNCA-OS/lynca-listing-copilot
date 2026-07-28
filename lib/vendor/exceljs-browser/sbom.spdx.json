@@ -1,0 +1,95 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "lynca-vendored-exceljs-browser-4.4.0",
+  "documentNamespace": "https://github.com/LYNCA-OS/lynca-listing-copilot/sbom/exceljs-browser/4.4.0/7e49da68588e250dbb8bba190d2caa8ab3787cc0284bda1d8b2f805c4df742c9",
+  "creationInfo": {
+    "created": "2026-07-28T00:00:00Z",
+    "creators": [
+      "Organization: LYNCA",
+      "Tool: LYNCA vendored-artifact-v1"
+    ]
+  },
+  "documentDescribes": [
+    "SPDXRef-Package-exceljs-browser"
+  ],
+  "packages": [
+    {
+      "name": "exceljs-browser-bundle",
+      "SPDXID": "SPDXRef-Package-exceljs-browser",
+      "versionInfo": "4.4.0",
+      "downloadLocation": "https://registry.npmjs.org/exceljs/-/exceljs-4.4.0.tgz",
+      "filesAnalyzed": true,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "licenseInfoFromFiles": [
+        "MIT"
+      ],
+      "copyrightText": "Copyright (c) 2014-2019 Guyon Roche",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "8adac13d192ce80e11304732d3ab96708b2c64bb54771b5da4f946e5eea55a18"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/exceljs@4.4.0"
+        }
+      ],
+      "comment": "The committed runtime artifact is the upstream Browserify standalone bundle. Node-only npm dependencies are intentionally not installed."
+    }
+  ],
+  "files": [
+    {
+      "fileName": "./exceljs.min.js",
+      "SPDXID": "SPDXRef-File-exceljs-min-js",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "7e49da68588e250dbb8bba190d2caa8ab3787cc0284bda1d8b2f805c4df742c9"
+        }
+      ],
+      "licenseConcluded": "MIT",
+      "licenseInfoInFiles": [
+        "MIT"
+      ],
+      "copyrightText": "Copyright (c) 2014-2019 Guyon Roche"
+    },
+    {
+      "fileName": "./LICENSE",
+      "SPDXID": "SPDXRef-File-license",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "2ed526b7e7c7681dc2347995b5036ddf73dc27d0539cdea59b6d4a72b63a57a0"
+        }
+      ],
+      "licenseConcluded": "MIT",
+      "licenseInfoInFiles": [
+        "MIT"
+      ],
+      "copyrightText": "Copyright (c) 2014-2019 Guyon Roche"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Package-exceljs-browser"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-exceljs-browser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-exceljs-min-js"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-exceljs-browser",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-File-license"
+    }
+  ]
+}
