@@ -11,6 +11,7 @@ import {
   criticalFieldsForIdentityResolution,
   evidenceDocumentToIdentityEvidenceItems
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { attachWorldKnowledgeProposals } from "../lib/listing/knowledge/world-knowledge-layer.mjs";
 
 function printedSource(sourceType, side, observedText) {
   return {
@@ -69,6 +70,40 @@ function modelInferenceEvidence(value) {
     ]
   });
 }
+
+const worldKnowledgeBaselineInput = {
+  title: "2024 Panini Phoenix Caleb Williams Rookies #151",
+  confidence: "HIGH",
+  provider: "openai_legacy",
+  resolved: normalizeResolvedFields({
+    year: "2024",
+    manufacturer: "Panini",
+    product: "Phoenix",
+    players: ["Caleb Williams"],
+    card_name: "Rookies",
+    collector_number: "151"
+  }),
+  evidence: {
+    year: groundedEvidence("2024"),
+    manufacturer: groundedEvidence("Panini"),
+    product: groundedEvidence("Phoenix"),
+    players: groundedEvidence(["Caleb Williams"]),
+    card_name: groundedEvidence("Rookies"),
+    collector_number: groundedEvidence("151")
+  },
+  unresolved: []
+};
+const worldKnowledgeBaseline = applyIdentityResolutionGate(worldKnowledgeBaselineInput);
+const worldKnowledgeUnverified = applyIdentityResolutionGate(attachWorldKnowledgeProposals({
+  ...worldKnowledgeBaselineInput,
+  world_knowledge_proposals: [
+    { field: "product", value: "Prizm", basis: "KNOWN" },
+    { field: "team", value: "Chicago Bears", basis: "OBSERVED" }
+  ]
+}, null, { enabled: true }));
+assert.equal(worldKnowledgeUnverified.world_knowledge.identity_evidence_items.length, 0);
+assert.equal(worldKnowledgeUnverified.resolved.product, worldKnowledgeBaseline.resolved.product);
+assert.equal(worldKnowledgeUnverified.final_title, worldKnowledgeBaseline.final_title);
 
 const modelInferenceOnly = applyIdentityResolutionGate({
   title: "2024 Topps Chrome Shohei Ohtani Gold Refractor 31/50",
