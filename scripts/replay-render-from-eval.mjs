@@ -27,6 +27,28 @@ function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function hydrateFromEvaluationReplaySnapshot(result = {}) {
+  const snapshot = result.evaluation_decision_trace_packet?.replay_snapshot;
+  if (!snapshot || typeof snapshot !== "object") return { result, replay_snapshot_status: "ABSENT" };
+  return {
+    replay_snapshot_status: snapshot.status || "PARTIAL",
+    result: {
+      ...result,
+      raw_provider_fields: result.raw_provider_fields || snapshot.provider_fields || {},
+      raw_observed_fields: result.raw_observed_fields || snapshot.observed_fields || {},
+      normalized_evidence: result.normalized_evidence || snapshot.normalized_evidence || {},
+      resolved_fields: result.resolved_fields || snapshot.resolved_fields || {},
+      resolved: result.resolved || snapshot.resolved_fields || {},
+      rendered_fields: result.rendered_fields || { fields: snapshot.rendered_fields || {} },
+      final_title: result.final_title || snapshot.final_title || "",
+      title: result.title || snapshot.final_title || "",
+      renderer_version: result.renderer_version || snapshot.versions?.renderer || null,
+      serial_numerator_verified: result.serial_numerator_verified ?? snapshot.renderer_inputs?.serial_numerator_verified ?? null,
+      forward_enumeration_trace: result.forward_enumeration_trace || snapshot.derivation_provenance || []
+    }
+  };
+}
+
 function legacyTokens(value) {
   return new Set(normalizeText(value)
     .toLowerCase()
@@ -256,7 +278,15 @@ export async function replayRenderFromEval({
   let down = 0;
   let assistPreserved = 0;
 
-  for (const result of results) {
+  let completeReplaySnapshots = 0;
+  let partialReplaySnapshots = 0;
+  let absentReplaySnapshots = 0;
+  for (const rawResult of results) {
+    const hydrated = hydrateFromEvaluationReplaySnapshot(rawResult);
+    const result = hydrated.result;
+    if (hydrated.replay_snapshot_status === "COMPLETE") completeReplaySnapshots += 1;
+    else if (hydrated.replay_snapshot_status === "PARTIAL") partialReplaySnapshots += 1;
+    else absentReplaySnapshots += 1;
     const reference = referenceTitleForResult(result);
     const recorded = normalizeText(result.title || result.final_title || "");
     const titleRenderSource = result.rendered_fields?.title_render_source
@@ -365,6 +395,12 @@ export async function replayRenderFromEval({
     },
     up_count: up,
     down_count: down,
+    replay_snapshot_coverage: {
+      complete: completeReplaySnapshots,
+      partial: partialReplaySnapshots,
+      absent: absentReplaySnapshots,
+      replay_contract_gate_passed: results.length > 0 && completeReplaySnapshots === results.length
+    },
     rows
   };
 }
@@ -395,6 +431,7 @@ export async function main(argv = process.argv) {
     `replayed policy fair: avg=${report.replayed.policy_fair_avg} pass@0.72=${report.replayed.policy_fair_pass_at_0_72} pass@0.80=${report.replayed.policy_fair_pass_at_0_80}`,
     `recorded SEM: avg=${report.recorded.sem_weighted_accuracy_avg} min=${report.recorded.sem_weighted_accuracy_min}`,
     `replayed SEM: avg=${report.replayed.sem_weighted_accuracy_avg} min=${report.replayed.sem_weighted_accuracy_min}`,
+    `replay snapshots: complete=${report.replay_snapshot_coverage.complete} partial=${report.replay_snapshot_coverage.partial} absent=${report.replay_snapshot_coverage.absent} gate=${report.replay_snapshot_coverage.replay_contract_gate_passed}`,
     `up=${report.up_count} down=${report.down_count}`
   ];
   for (const row of report.rows.filter((item) => item.scored && Math.abs(item.delta) > 1e-9)) {
