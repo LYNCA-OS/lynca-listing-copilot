@@ -1,10 +1,26 @@
 # CSM Rebuild Engineering Blueprint
 
 Status: implementation blueprint; no production behavior change  
-Authority: Linear `60 CSM Rebuild Contract`, COS-23, COS-24  
+Inputs: frozen founder/system requirements, current production contracts and evidence,
+Linear `60 CSM Rebuild Contract`, COS-23, COS-24
 Machine SEM baseline: `linear-cos-10-23-v25`
 
 ## Decision
+
+### Governance precedence
+
+Linear CSM is a required semantic and acceptance input, not permission to replace
+newer proven system behavior. When inputs disagree, use this order:
+
+1. explicit founder decisions and frozen production contracts;
+2. current behavior supported by reproducible production or evaluation evidence;
+3. approved Linear CSM requirements;
+4. implementation convenience.
+
+Every divergence from Linear must be recorded as a concrete upgrade proposal in
+both the repository and the relevant Linear issue. Neither older code nor a newer
+document wins by timestamp alone; the decision follows scope, evidence, and the
+single-owner architecture.
 
 Rebuild around four immutable layers, each with one owner and one persisted contract:
 
@@ -87,13 +103,15 @@ Rules:
 ### Storage paths
 
 ```text
-listing-originals/{tenant_id}/{asset_id}/{image_generation_id}/front/{sha256}.{ext}
-listing-originals/{tenant_id}/{asset_id}/{image_generation_id}/back/{sha256}.{ext}
-listing-derived/{tenant_id}/{asset_id}/{image_generation_id}/{transform_version}/{crop_id}.{ext}
+tenants/{tenant_id}/listing-assets/{YYYY-MM-DD}/{sanitized_asset_id}/{filename}
 ```
 
-Originals are immutable and checksum-verified. Derived crops always record their
-source object, transform/crop policy version, and checksum.
+This existing six-segment production contract remains canonical. Front/back and
+additional-image roles belong to the verified generation manifest; they are not
+new path segments. Originals are immutable and checksum-verified. Derived crops
+remain `image_derived_assets` records that reference the source object and record
+their transform/crop policy version, object path, and checksum. The CSM rebuild
+must not introduce a parallel bucket or path grammar.
 
 ### Relational contracts
 
@@ -225,12 +243,26 @@ evidence preferences, not a second expanding prompt.
 
 Identity Resolution processes each bracket independently, then validates
 cross-bracket consistency. It may select exactly one candidate or `empty`.
-Conflict priority is frozen as:
 
-1. validated historical learning and calibrated CSM rules;
-2. grading label;
-3. whole-card visual evidence;
-4. card text/OCR.
+The Linear document's single global conflict order is not sufficiently precise
+for the current system. It would incorrectly allow a generic historical rule to
+override copy-specific evidence, and would place whole-card visual reasoning over
+OCR even for a card number. The upgraded policy is bracket- and provenance-aware:
+
+| Fact family | Primary admissible authority | Constraint |
+| --- | --- | --- |
+| grading company/grade/cert | current slab label | reference grade/cert can never be copied |
+| card/checklist number and visible serial | current-image text/OCR with region provenance | absence of OCR is not negative evidence |
+| print finish/release appearance | current whole-card/focused visual evidence | catalog may support, never overwrite direct conflict |
+| product/set/subject identity | reviewed internal or official unique identity anchor plus current-image compatibility | zero direct conflict; marketplace rows remain support-only |
+| normalization/aliases/grammar | versioned reviewed rules | rules transform evidence; they do not manufacture a card fact |
+
+Validated historical learning can calibrate policy and support identity, but it
+does not outrank direct current-copy evidence merely because it is historical.
+Official and reviewed writer/catalog sources receive the same candidate authority
+unless a separately reviewed source-quality study proves a difference. Current
+entity fields such as serial numerator, grade, cert, condition, and defects never
+flow from a reference candidate.
 
 The selected value, losing alternatives, conflicts, and reason codes are always
 persisted. Retrieval/catalog data can support a candidate but cannot bypass the
@@ -276,7 +308,7 @@ shadow data does not change writer titles.
 
 | Contract | Current evidence | Gap / action |
 | --- | --- | --- |
-| Durable asset generation | `asset-lifecycle-contract.mjs` has verified generations and lifecycle states | preserve; add stage commits without changing upload contract |
+| Durable asset generation | `asset-lifecycle-contract.mjs` has verified generations and lifecycle states; database/queue enforce the six-segment tenant asset path | preserve path, signed upload and generation manifest exactly; add stage commits without changing upload contract |
 | Raw evidence | `evidence-schema.mjs`, `v4_field_evidence`, pre-ingestion patches | schemas contain resolved/implementation fields; introduce observation-only contract and explicit normalization outcomes |
 | Bracket candidates | candidate control-plane JSON/trace exists | normalize per-bracket candidates and evidence links; Worker must stop applying them |
 | Canonical resolution | `lib/identity-resolution` and `resolved_fields` exist | make Resolver the only writer; support explicit `empty`; persist revision, alternates and rationale |
@@ -318,9 +350,10 @@ Each step is a separate reviewable migration/PR and must be rollback-safe.
 
 1. **Canonical bracket storage:** use typed scalar/array JSON values behind the
    frozen COS-23 bracket names; do not add implementation fields to CSM.
-2. **Validated historical priority:** only independently reviewed, versioned
-   learning may enter priority tier 1. Writer acceptance alone remains commercial
-   feedback.
+2. **Validated historical authority:** only independently reviewed, versioned
+   learning may influence policy or identity support. Writer acceptance alone
+   remains commercial feedback, and no historical source overrides direct
+   current-copy facts.
 3. **Unknown versus empty:** transport may use `UNKNOWN` only for an incomplete
    run. A completed resolver must emit `VALUE` or `EMPTY` with a reason.
 4. **Registry promotion:** promotion requires review metadata and a content hash;
