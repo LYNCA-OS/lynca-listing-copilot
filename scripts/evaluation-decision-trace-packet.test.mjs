@@ -45,8 +45,8 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v3");
-assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v1");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v4");
+assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v2");
 assert.equal(packet.replay_snapshot.status, "PARTIAL");
 assert.ok(packet.replay_snapshot.missing_components.includes("pipeline_fingerprint"));
 assert.deepEqual(packet.replay_snapshot.provider_fields, { year: "2025", subject: "Test Player", ignored: "UNKNOWN" });
@@ -73,11 +73,21 @@ const completeReplayPacket = buildEvaluationDecisionTracePacket({
   normalization_version: "normalization-v1",
   resolver_version: "resolver-v1",
   identity_cache: { recognition_pipeline_fingerprint: "a".repeat(64) },
+  effective_terminal_renderer_inputs: {
+    max_title_length: 80,
+    serial_numerator_verified: null,
+    source: "v4_result_adapter"
+  },
+  retrieval_application: {
+    enabled: false,
+    decisions: []
+  },
   forward_enumeration_trace: [{ field: "product", status: "UNKNOWN", rule_id: "set_not_in_model" }]
 }, payload);
 assert.equal(completeReplayPacket.replay_snapshot.status, "COMPLETE");
 assert.equal(completeReplayPacket.replay_snapshot.versions.recognition_pipeline_fingerprint, "a".repeat(64));
 assert.equal(completeReplayPacket.replay_snapshot.derivation_provenance[0].status, "UNKNOWN");
+assert.equal(completeReplayPacket.replay_snapshot.effective_terminal_renderer_inputs.serial_numerator_verified, null);
 
 const productionCandidateTrace = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025" },

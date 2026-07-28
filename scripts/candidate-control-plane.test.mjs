@@ -1380,6 +1380,23 @@ function testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceDat
   assert.equal(decision.resolved_after.cert_number ?? null, null);
 }
 
+function testUnknownSerialVerificationDoesNotBecomeRejection() {
+  const decision = applyCandidateDecisionStage({
+    result: {},
+    resolvedBefore: {
+      year: "2024",
+      manufacturer: "Panini",
+      product: "Prizm",
+      players: ["Test Player"],
+      print_run_number: "31/50",
+      serial_number: "31/50"
+    }
+  });
+
+  assert.match(decision.title_before, /31\/50/);
+  assert.doesNotMatch(decision.title_before, /#\/50/);
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -1407,5 +1424,6 @@ testDifferentProductFamiliesCannotShareAChromeAnchor();
 testObservedSubjectBlocksSubjectlessSameProductCandidate();
 testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate();
 testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData();
+testUnknownSerialVerificationDoesNotBecomeRejection();
 
 console.log("candidate-control-plane tests passed");

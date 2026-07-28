@@ -15,6 +15,8 @@ import {
   applyIdentityResolutionGate,
   identityResolverPolicyVersion
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { normalizeFieldValue } from "../lib/identity-resolution/normalizer.mjs";
+import { parsePrintRunValue } from "../lib/listing/print-run/print-run-fields.mjs";
 import { policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 
 const readFields = new Set(providerFieldsByClass(providerOutputFieldClass.READ));
@@ -45,15 +47,147 @@ function evidenceFieldName(item = {}) {
   return clean(item.field || item.f);
 }
 
+function present(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "boolean") return value === true;
+  const text = clean(value);
+  return value !== null && value !== undefined && text !== "" && text.toUpperCase() !== "UNKNOWN";
+}
+
+function sourceForCandidate(candidate = {}) {
+  const source = clean(candidate.source).toUpperCase();
+  const trust = clean(candidate.source_trust).toUpperCase();
+  if (source.includes("VECTOR")) return "VECTOR_APPROVED_REFERENCE";
+  if (source.includes("OFFICIAL") || trust.includes("OFFICIAL")) return "OFFICIAL_CHECKLIST";
+  if (source.includes("INTERNAL") || trust.includes("APPROVED_REFERENCE")) return "INTERNAL_APPROVED_HISTORY";
+  if (source.includes("MARKETPLACE") || source.includes("EBAY")) return "MARKETPLACE";
+  return "STRUCTURED_DATABASE";
+}
+
+function recordedCandidateApplication(result = {}, packet = {}) {
+  const recorded = object(
+    result.l2_candidate_debug?.retrieval_application
+    || result.retrieval_application
+    || packet?.replay_snapshot?.semantic_retrieval_application
+  );
+  const decisions = Array.isArray(recorded.decisions) ? recorded.decisions : [];
+  const recordedContractPresent = typeof recorded.enabled === "boolean"
+    && Array.isArray(recorded.decisions);
+  const identityEvidenceItems = [];
+  const seen = new Set();
+  for (const action of decisions) {
+    const applicationDecision = clean(action.decision || action.action).toUpperCase();
+    const field = clean(action.resolver_field || action.field);
+    const value = action.resolver_value ?? action.candidate_value ?? action.value;
+    if (!["APPLY", "SUPPORT"].includes(applicationDecision) || !field || !present(value)) continue;
+    const key = `${action.candidate_id || ""}:${field}:${JSON.stringify(value)}:${applicationDecision}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    identityEvidenceItems.push({
+      field,
+      value,
+      source: sourceForCandidate({
+        source: action.source || action.source_type || action.candidate_lane,
+        source_trust: action.source_trust
+      }),
+      confidence: Number.isFinite(Number(action.confidence))
+        ? Number(action.confidence)
+        : applicationDecision === "APPLY" ? 0.72 : 0.58,
+      metadata: {
+        candidate_id: action.candidate_id || null,
+        candidate_identity_id: action.candidate_identity_id || null,
+        candidate_lane: action.candidate_lane || null,
+        permission: action.permission || null,
+        retrieval_application_decision: applicationDecision,
+        retrieval_application_reason: action.reason || null,
+        candidate_is_evidence_not_truth: true,
+        replayed_from_evaluation_trace: true
+      }
+    });
+  }
+  return {
+    enabled: recorded.enabled === true || identityEvidenceItems.length > 0,
+    // An explicitly disabled semantic application stage still owns the
+    // candidate boundary: it means no legacy candidate path may bypass that
+    // decision in replay.
+    owns_candidate_application: recordedContractPresent || identityEvidenceItems.length > 0,
+    selected_candidate_id: recorded.selected_candidate_id || null,
+    identity_evidence_items: identityEvidenceItems
+  };
+}
+
+function validPrintRunProjection(fields = {}) {
+  const direct = fields.print_run_number;
+  const composite = !present(direct)
+    && present(fields.print_run_numerator)
+    && present(fields.print_run_denominator)
+    ? `${fields.print_run_numerator}/${fields.print_run_denominator}`
+    : direct;
+  const parsed = parsePrintRunValue(composite);
+  if (!parsed.print_run_number) return {};
+  return Object.fromEntries([
+    "print_run_number",
+    "print_run_numerator",
+    "print_run_denominator"
+  ].filter((field) => present(parsed[field])).map((field) => [field, parsed[field]]));
+}
+
 export function projectReadOnlyProviderSnapshot(snapshot = {}) {
-  const providerFields = Object.fromEntries(Object.entries(object(snapshot.provider_fields))
-    .filter(([field, value]) => readFields.has(field) && value !== null && value !== undefined && value !== ""));
+  // The output-contract experiment changes only the GPT transport. OCR,
+  // focused rereads and other current-image observations remain available, so
+  // replay must begin from the terminal observed snapshot rather than silently
+  // deleting those independent sensor values.
+  const observed = {
+    ...object(snapshot.provider_fields),
+    ...object(snapshot.observed_fields)
+  };
+  const observedReadFields = Object.fromEntries(Object.entries(observed)
+    .map(([field, value]) => [field, normalizeFieldValue(field, value)])
+    .filter(([field, value]) => readFields.has(field) && present(value)));
   const providerFieldEvidence = (Array.isArray(snapshot.provider_field_evidence)
     ? snapshot.provider_field_evidence
     : []).filter((item) => readFields.has(evidenceFieldName(item)));
+  const recordedEvidence = object(snapshot.normalized_evidence);
+  // Terminal normalized evidence also contains independent OCR/focused-reread
+  // values that are intentionally absent from `observed_fields`.  Dropping
+  // them makes replay incomparable with the deployed baseline (notably slab
+  // grade and current-instance print run).  Only READ-owned, present values
+  // may re-enter the replay input; DERIVED/DROP fields remain excluded.
+  const recordedReadFields = Object.fromEntries(Object.entries(recordedEvidence)
+    .map(([field, state]) => {
+      const evidenceState = object(state);
+      const rawValue = evidenceState.normalized_value ?? evidenceState.value;
+      return [field, normalizeFieldValue(field, rawValue)];
+    })
+    .filter(([field, value]) => readFields.has(field) && present(value)));
+  const unguardedProviderFields = {
+    ...observedReadFields,
+    ...recordedReadFields
+  };
+  const providerFields = {
+    ...Object.fromEntries(Object.entries(unguardedProviderFields)
+      .filter(([field]) => !["print_run_number", "print_run_numerator", "print_run_denominator"].includes(field))),
+    ...validPrintRunProjection(unguardedProviderFields)
+  };
+  const normalizedEvidence = Object.fromEntries(Object.entries(providerFields).map(([field, value]) => [
+    field,
+    recordedEvidence[field] || {
+      value,
+      status: "REVIEW",
+      sources: [{
+        source_type: "VISION_MODEL",
+        observed_text: Array.isArray(value) ? value.join(" / ") : String(value),
+        source_inference_method: "evaluation_replay_observed_snapshot"
+      }],
+      candidates: [{ value, confidence: 0.65 }],
+      confidence: 0.65,
+      normalized_value: value
+    }
+  ]));
   return {
     fields: providerFields,
     field_evidence: providerFieldEvidence,
+    normalized_evidence: normalizedEvidence,
     unresolved: []
   };
 }
@@ -69,6 +203,21 @@ export async function replayProviderOutputContract(report = {}, {
   for (const result of results) {
     const packet = result.evaluation_decision_trace_packet;
     const snapshot = packet?.replay_snapshot;
+    const strategyTitle = clean(result.strategy_replay_trace?.observed_output?.final_title);
+    const terminalTitle = clean(result.final_title || result.title);
+    const missingEffectiveSerialState = snapshot
+      && !snapshot.effective_terminal_renderer_inputs
+      && snapshot.renderer_inputs?.serial_numerator_verified == null
+      && /#\s*\/\s*\d+/.test(terminalTitle)
+      && !/#\s*\/\s*\d+/.test(strategyTitle);
+    if (missingEffectiveSerialState) {
+      rows.push({
+        asset_id: result.asset_id || null,
+        replayable: false,
+        reason: "TRACE_MISSING_EFFECTIVE_SERIAL_PRESENTATION_STATE"
+      });
+      continue;
+    }
     const repairableMissing = snapshot?.status === "PARTIAL"
       && Array.isArray(snapshot.missing_components)
       && snapshot.missing_components.length === 1
@@ -83,19 +232,33 @@ export async function replayProviderOutputContract(report = {}, {
     }
 
     const projected = projectReadOnlyProviderSnapshot(snapshot);
-    const evidenceDocument = providerPayloadToEvidenceDocument(projected);
+    // Replay the real normalization boundary so canonical aliases such as
+    // serial_number/numbered_to are deterministically rebuilt from the READ
+    // print-run fields.  Keep the recorded current-image evidence on top so
+    // direct OCR/slab provenance is not weakened by replay synthesis.
+    const evidenceDocument = providerPayloadToEvidenceDocument({
+      fields: projected.fields,
+      field_evidence: projected.field_evidence,
+      unresolved: projected.unresolved
+    });
+    const replayEvidence = {
+      ...evidenceDocument.evidence,
+      ...projected.normalized_evidence
+    };
+    const replayApplication = recordedCandidateApplication(result, packet);
     const base = {
       provider: "openai_legacy",
       source: "openai_legacy",
-      fields: projected.fields,
+      fields: evidenceDocument.resolved,
       raw_provider_fields: projected.fields,
       raw_provider_field_evidence: projected.field_evidence,
       raw_observed_fields: evidenceDocument.resolved,
-      evidence: evidenceDocument.evidence,
-      normalized_evidence: evidenceDocument.evidence,
+      evidence: replayEvidence,
+      normalized_evidence: replayEvidence,
       resolved: evidenceDocument.resolved,
       resolved_fields: evidenceDocument.resolved,
       unresolved: evidenceDocument.unresolved,
+      retrieval_application: replayApplication,
       recognition_status: "RESOLVED"
     };
     const candidateInput = attachForwardEnumerationCandidates(base, constraintModel, { shadow: false });
@@ -103,7 +266,6 @@ export async function replayProviderOutputContract(report = {}, {
       maxLength,
       providerId: "openai_legacy"
     });
-    const terminalTitle = clean(result.final_title || result.title);
     const snapshotTitle = clean(snapshot.final_title);
     const baselineTitle = terminalTitle || snapshotTitle;
     const candidateTitle = clean(candidate.final_title || candidate.title);

@@ -45,6 +45,17 @@ const result = {
   resolver_version: identityResolverPolicyVersion,
   renderer_version: "test-renderer-v1",
   recognition_pipeline_fingerprint: "a".repeat(64),
+  retrieval_application: {
+    enabled: false,
+    decisions: []
+  },
+  knowledge_first_route_shadow: {
+    schema_version: "knowledge-first-route-decision-v1",
+    production_effect: "SHADOW_ONLY",
+    production_action: "RUN_FULL_PROVIDER",
+    counterfactual_action: "KNOWLEDGE_ASSIST",
+    route: "KNOWLEDGE_ASSIST"
+  },
   world_knowledge: {
     schema_version: "world-knowledge-layer-v2",
     enabled: true,
@@ -71,6 +82,8 @@ assert.equal(packet.replay_snapshot.status, "COMPLETE");
 assert.equal(packet.replay_snapshot.final_title, "2025 Panini Test Player");
 assert.equal(packet.replay_snapshot.versions.resolver, identityResolverPolicyVersion);
 assert.notEqual(packet.replay_snapshot.final_title, result.final_title);
+assert.equal(packet.knowledge_first_route.production_action, "RUN_FULL_PROVIDER");
+assert.equal(packet.knowledge_first_route.counterfactual_action, "KNOWLEDGE_ASSIST");
 assert.deepEqual(packet.world_knowledge.decisions[0], {
   field: "team",
   value: "Example Team",
