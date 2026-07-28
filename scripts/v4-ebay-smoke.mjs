@@ -284,6 +284,22 @@ export async function materializeSmokeSourceImages(items = [], {
   })));
 }
 
+export async function materializeSmokeSourceImagesForAssetReuse(items = [], {
+  assetCacheEntries = new Map(),
+  ...materializationOptions
+} = {}) {
+  return Promise.all(items.map(async (item, index) => {
+    const fingerprint = await durableSourceFingerprint(item, index);
+    const cached = reusableAssetEntry(assetCacheEntries.get(fingerprint), {
+      fingerprint,
+      sourceAssetId: candidateId(item, index)
+    });
+    if (cached) return item;
+    const [materialized] = await materializeSmokeSourceImages([item], materializationOptions);
+    return materialized;
+  }));
+}
+
 export async function durableSourceFingerprint(item = {}, index = 0) {
   const sources = (Array.isArray(item.images) ? item.images : []).slice(0, 2);
   if (!sources.length) {
@@ -4736,14 +4752,15 @@ export async function runV4EbaySmoke({
   });
   const selectedItems = loadDatasetItems(dataset).slice(Math.max(0, offset), Math.max(0, offset) + Math.max(1, limit));
   if (!selectedItems.length) throw new Error("dataset slice has no items");
-  const items = await materializeSmokeSourceImages(selectedItems, {
+  const assetCacheEntries = normalizedVerifiedAssetCacheMode === "disabled"
+    ? new Map()
+    : await readVerifiedAssetCache(verifiedAssetCachePath);
+  const items = await materializeSmokeSourceImagesForAssetReuse(selectedItems, {
+    assetCacheEntries: normalizedVerifiedAssetCacheMode === "reuse" ? assetCacheEntries : new Map(),
     supabaseUrl: sourceStorageUrl,
     serviceRoleKey: sourceStorageServiceRoleKey,
     outputDirectory: sourceMaterializationDir
   });
-  const assetCacheEntries = normalizedVerifiedAssetCacheMode === "disabled"
-    ? new Map()
-    : await readVerifiedAssetCache(verifiedAssetCachePath);
   const cookie = await login({ baseUrl, username, password });
   let executionControlSnapshot = null;
   let executionControlError = null;
