@@ -2532,9 +2532,21 @@ async function runOne({
       l1_internal_scout_ms: null,
       l1_time_to_safe_draft_ms: null,
       route: l2.summary?.route || null,
-      title_stage: "V4_QUEUE_L2",
+      // These were hard-coded constants, so every report said the L1 stage
+      // produced nothing and every card was V4_QUEUE_L2 -- not because that is
+      // what happened, but because the smoke never asked. The job carries
+      // l1_status, l1_title and l1_ready_at, and reporting a constant made a
+      // whole pipeline stage invisible to every measurement taken so far.
+      title_stage: job.title_stage || "V4_QUEUE_L2",
       recognition_session_id: job.recognition_session_id || l2.summary?.recognition_session_id || null,
-      l1_title: "",
+      l1_title: job.l1_title || "",
+      l1_status: job.l1_status ?? null,
+      l1_ready_at: job.l1_ready_at ?? null,
+      l2_ready_at: job.l2_ready_at ?? null,
+      // The per-stage breakdown already exists on the job and was only ever
+      // reachable by re-querying the status API afterwards. Flattening it means
+      // every future eval carries its own latency decomposition.
+      response_timing: job.timing?.response_timing ?? null,
       l2_ready: l2Terminal,
       l2_poll_count: l2.polls,
       l2_poll_elapsed_ms: l2.elapsed_ms ?? null,
