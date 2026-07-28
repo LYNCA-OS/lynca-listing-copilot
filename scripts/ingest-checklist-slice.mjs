@@ -38,6 +38,33 @@ const HARVEST_DIR = "/tmp/panini-cards";
 const SUPABASE = "https://osrrujmpxxiefppjfgpd.supabase.co";
 const BATCH = 500;
 const SETTLE_MS = 120;
+// A single ingest should never be able to take the database down on its own.
+// Anything larger is a decision, not a default.
+const MAX_UNATTENDED_WRITE_BYTES = 200e6;
+
+// Measured, not guessed: catalog_cards is the table being written, so its own
+// total size over its own row count is the right per-row figure, indexes and
+// toast included.
+async function estimateWriteBytes(key, rowCount) {
+  const response = await fetch(
+    `${SUPABASE}/rest/v1/rpc/exec_sql`,
+    { method: "POST", headers: headers(key), body: JSON.stringify({}) }
+  ).catch(() => null);
+  // No generic SQL endpoint over PostgREST; fall back to a count and the
+  // bytes-per-row observed when the table was last inspected (204 MB /
+  // 147,936 rows). Conservative by design -- a low estimate is what caused the
+  // outage.
+  const OBSERVED_BYTES_PER_ROW = 204e6 / 147936;
+  let bytesPerRow = OBSERVED_BYTES_PER_ROW;
+  if (response?.ok) {
+    try {
+      const body = await response.json();
+      const measured = Number(body?.bytes_per_row);
+      if (Number.isFinite(measured) && measured > 0) bytesPerRow = measured;
+    } catch { /* keep the observed figure */ }
+  }
+  return { bytes: rowCount * bytesPerRow, bytesPerRow };
+}
 
 function argValue(argv, name, fallback = "") {
   const i = argv.indexOf(name);
@@ -142,6 +169,23 @@ export async function main(argv = process.argv.slice(2)) {
   const slice = selectSlice(harvested, { product, years });
   const cardCount = slice.reduce((sum, row) => sum + (row.cards?.length || 0), 0);
   console.log(`slice: ${slice.length} sets / ${cardCount.toLocaleString()} cards  (${product} ${years.join(",") || "all years"})`);
+
+  // This script filled the volume on 2026-07-27 at roughly 60,000 of 82,825
+  // rows and left Postgres unable to write pg_wal for sixteen hours. It knew
+  // how many rows it was about to write and never asked whether they would
+  // fit. Estimate the write from the target table's own bytes-per-row and
+  // refuse unless it fits with room to spare.
+  const estimate = await estimateWriteBytes(key, cardCount);
+  console.log(`  estimated write: ${(estimate.bytes / 1e6).toFixed(0)} MB`
+    + ` at ${estimate.bytesPerRow.toFixed(0)} bytes/row (measured on catalog_cards)`);
+  if (!argv.includes("--force") && estimate.bytes > MAX_UNATTENDED_WRITE_BYTES) {
+    throw new Error(
+      `refusing: estimated ${(estimate.bytes / 1e6).toFixed(0)} MB exceeds the `
+      + `${(MAX_UNATTENDED_WRITE_BYTES / 1e6).toFixed(0)} MB ceiling. Split the slice, `
+      + "or pass --force having checked free disk in the dashboard."
+    );
+  }
+
   if (!apply) { console.log("dry run: nothing written"); return 0; }
 
   // 1. one source for the whole cohort. These tables carry only a primary key,
