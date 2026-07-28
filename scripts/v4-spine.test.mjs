@@ -795,6 +795,42 @@ const invalidDecimalCodeState = buildV4FieldStates({
 });
 assert.equal(invalidDecimalCodeState.card_number.value, null);
 
+const subsetMustNotMasqueradeAsCanonicalProduct = buildV4FieldStates({
+  resolved_fields: {
+    players: ["Nikola Jokic"],
+    subset: "MILE HIGH",
+    product: null
+  }
+});
+assert.equal(
+  subsetMustNotMasqueradeAsCanonicalProduct.product.value,
+  null,
+  "a subset or team-like descriptor must not create a NORMAL canonical product state"
+);
+const canonicalProductState = buildV4FieldStates({
+  resolved_fields: {
+    subset: "MILE HIGH",
+    product: "Panini Phoenix"
+  }
+});
+assert.equal(canonicalProductState.product.value, "Panini Phoenix");
+const subsetOnlyEvidenceRows = buildV4PersistenceRows({
+  sessionId: "session-subset-only",
+  result: {
+    resolved_fields: {
+      subset: "Chicago Bears",
+      product: null
+    }
+  }
+}).fieldEvidenceRows;
+const subsetOnlyProductRow = subsetOnlyEvidenceRows.find((row) => row.field_name === "product");
+assert.equal(subsetOnlyProductRow.field_value, null);
+assert.deepEqual(
+  subsetOnlyProductRow.provenance.source_fields,
+  [],
+  "product provenance must not claim a subset alias after the canonical product was rejected"
+);
+
 const conflictSuppressedFields = buildV4ResolvedFields({
   resolved_fields: {
     year: "2013",
