@@ -102,6 +102,21 @@ These fields are read directly off the current images. When the printed text is 
 
 ## 2. Knowledge Registry / Resolution Engine
 
+### Surface marks and ordinary world knowledge are different evidence classes
+
+The prohibitions above remain absolute for card-surface marks: never infer RC,
+1st Bowman, SSP, case hit, autograph, material, serial numbering, grade,
+certification number, variation, colour, rarity, card code, or a proper parallel
+name from memory.
+
+For explicitly enabled sparse world-knowledge experiments only, an experienced
+card lister may propose `team` or `product` as a separate DERIVED fact. Every
+proposal must declare its basis as `OBSERVED` (the current card/slab visibly
+establishes it) or `KNOWN` (ordinary card-world knowledge). A proposal is never
+direct evidence and never owns the final title. `KNOWN` values pass through the
+versioned constraint engine: covered conflicts are refuted; absent coverage is
+`UNKNOWN`, never negative evidence. If unsure, make no proposal.
+
 Purpose: convert raw extracted fields into collectible-market terminology.
 
 Inputs:

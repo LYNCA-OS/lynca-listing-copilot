@@ -38,7 +38,8 @@ export function buildSmokeArgs({
   model,
   limit,
   l2WaitMs,
-  readOnlyProviderContract = false
+  readOnlyProviderContract = false,
+  worldKnowledgeProposals = false
 }) {
   const args = [
     "--use-env-proxy",
@@ -48,7 +49,7 @@ export function buildSmokeArgs({
     "--queue", "--speculative", "--use-preingestion",
     "--ultra-image-detail", "high",
     "--concurrency", "2", "--preparation-concurrency", "2", "--submission-concurrency", "2",
-    "--disable-identity-cache",
+    "--benchmark-profile", "cold_algorithm_benchmark",
     "--sample-mode", "UNSPECIFIED",
     "--dataset", dataset,
     "--sealed-labels", sealedLabels,
@@ -57,6 +58,7 @@ export function buildSmokeArgs({
     "--out", outPath
   ];
   if (readOnlyProviderContract) args.push("--read-only-provider-contract");
+  if (worldKnowledgeProposals) args.push("--world-knowledge-proposals");
   return args;
 }
 
@@ -114,6 +116,7 @@ export async function main(argv = process.argv.slice(2)) {
   const outDir = resolve(argValue(argv, "--out-dir", "artifacts/smoke/paired-eval"));
   const label = argValue(argv, "--label", "paired");
   const candidateReadOnlyProviderContract = argv.includes("--candidate-read-only-provider-contract");
+  const candidateWorldKnowledgeProposals = argv.includes("--candidate-world-knowledge-proposals");
   if (!candidateUrl) throw new Error("--candidate-url is required");
 
   await mkdir(outDir, { recursive: true });
@@ -133,7 +136,8 @@ export async function main(argv = process.argv.slice(2)) {
         model,
         limit,
         l2WaitMs,
-        readOnlyProviderContract: arm === "candidate" && candidateReadOnlyProviderContract
+        readOnlyProviderContract: arm === "candidate" && candidateReadOnlyProviderContract,
+        worldKnowledgeProposals: arm === "candidate" && candidateWorldKnowledgeProposals
       });
       const score = await scoreFromReport(outPath, { expectedCount: limit });
       (arm === "baseline" ? baselineScores : candidateScores).push(score);
@@ -163,6 +167,7 @@ export async function main(argv = process.argv.slice(2)) {
     baseline_url: baselineUrl,
     candidate_url: candidateUrl,
     candidate_read_only_provider_contract: candidateReadOnlyProviderContract,
+    candidate_world_knowledge_proposals: candidateWorldKnowledgeProposals,
     rounds_completed: baselineScores.length,
     baseline: {
       scores: baselineScores, mean: mean(baselineScores), median: median(baselineScores), sd: stdDev(baselineScores)
