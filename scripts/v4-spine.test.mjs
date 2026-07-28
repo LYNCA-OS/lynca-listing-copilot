@@ -1225,15 +1225,25 @@ const providerDoneHandoff = nativeRecognitionCoreSource.indexOf(
   "providerCapacityStageHandoffPromise = handoffProviderCapacityAfterStage",
   initialProviderCall
 );
-const recognitionPreflightJoin = nativeRecognitionCoreSource.indexOf(
-  "const recognitionPreflight = await recognitionPreflightPromise",
+const recognitionPreflightSnapshot = nativeRecognitionCoreSource.indexOf(
+  "const recognitionSnapshot = await snapshotRecognitionPreflightAfterProvider",
   initialProviderCall
 );
 assert.ok(initialProviderCall > openAiTitleStart, "the initial GPT provider call must remain visible in the native recognition core.");
 assert.ok(providerDoneHandoff > initialProviderCall, "provider capacity must not be released before the GPT call completes.");
 assert.ok(
-  providerDoneHandoff < recognitionPreflightJoin,
-  "provider capacity must be released before waiting for non-provider recognition preflight evidence."
+  providerDoneHandoff < recognitionPreflightSnapshot,
+  "provider capacity must be released before observing non-provider recognition preflight evidence."
+);
+assert.match(
+  nativeRecognitionCoreSource,
+  /if \(decision\?\.shadow_only !== true\)[\s\S]*recognition_preflight: await recognitionPreflightPromise[\s\S]*const snapshot = await waitForPromiseWithin\(recognitionPreflightPromise, 0\)/,
+  "only an authoritative Worker may join; shadow-only Worker evidence must use a zero-budget snapshot"
+);
+assert.match(
+  nativeRecognitionCoreSource,
+  /completion_status: "DEFERRED_AFTER_WRITER_READY"[\s\S]*writer_join_wait_ms: 0[\s\S]*writer_critical_path_joined: false/,
+  "a late shadow Worker must leave an explicit non-blocking trace"
 );
 const knowledgeFirstRefreshPromise = nativeRecognitionCoreSource.indexOf(
   "const knowledgeFirstRouteShadowPromise = Promise.all"
@@ -1258,18 +1268,23 @@ assert.ok(
     && fullProviderFallbackCall > knowledgeFirstRefreshPromise,
   "knowledge-first Shadow must refresh from typed preflight evidence without delaying the deployed Provider start"
 );
-const evaluationKnowledgeFirstJoin = nativeRecognitionCoreSource.indexOf(
-  "? await completedKnowledgeFirstRouteShadowForEvaluation(",
+const evaluationKnowledgeFirstSnapshot = nativeRecognitionCoreSource.indexOf(
+  "? await snapshotKnowledgeFirstRouteShadowForEvaluation(",
   fullProviderFallbackCall
 );
 assert.ok(
-  evaluationKnowledgeFirstJoin > fullProviderFallbackCall,
-  "cold evaluation may join complete Shadow evidence only after the deployed Provider call"
+  evaluationKnowledgeFirstSnapshot > fullProviderFallbackCall,
+  "cold evaluation may snapshot Shadow evidence only after the deployed Provider call"
 );
 assert.match(
-  nativeRecognitionCoreSource.slice(fullProviderFallbackCall, evaluationKnowledgeFirstJoin + 200),
-  /const persistedKnowledgeFirstRouteShadow = typedRouteEvaluationEnabled\s*\? await completedKnowledgeFirstRouteShadowForEvaluation\(/,
-  "only an evaluation trace may wait for the complete counterfactual route"
+  nativeRecognitionCoreSource.slice(fullProviderFallbackCall, evaluationKnowledgeFirstSnapshot + 220),
+  /const persistedKnowledgeFirstRouteShadow = typedRouteEvaluationEnabled\s*\? await snapshotKnowledgeFirstRouteShadowForEvaluation\(/,
+  "only an evaluation trace may take the non-blocking counterfactual route snapshot"
+);
+assert.match(
+  nativeRecognitionCoreSource,
+  /snapshotKnowledgeFirstRouteShadowForEvaluation[\s\S]*waitForPromiseWithin\([\s\S]*completedDecisionPromise[\s\S]*0[\s\S]*DEFERRED_AFTER_WRITER_READY/,
+  "a late knowledge-first Shadow must not delay writer-ready persistence"
 );
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
