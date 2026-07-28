@@ -37,7 +37,8 @@ import { dirname, resolve } from "node:path";
 
 import { mapRows } from "./map-panini-harvest.mjs";
 
-const HARVEST_DIR = "/tmp/panini-cards";
+const PANINI_DIR = "/tmp/panini-cards";
+const TOPPS_DIR = "/tmp/topps-cards";
 
 function argValue(argv, name, fallback = "") {
   const i = argv.indexOf(name);
@@ -53,10 +54,27 @@ export const bareProduct = (value) => cleanText(value)
 
 export const normalizeSet = (value) => cleanText(value).toLowerCase();
 
-export function loadHarvest(dir = HARVEST_DIR) {
+export function loadHarvest(dir = PANINI_DIR) {
   const rows = [];
   for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
     rows.push(...mapRows(JSON.parse(readFileSync(`${dir}/${file}`, "utf8")).rows));
+  }
+  return rows;
+}
+
+// The Topps harvester already writes the shape mapRows produces, one file per
+// product rather than per shard, so it only needs flattening.
+export function loadToppsHarvest(dir = TOPPS_DIR) {
+  const rows = [];
+  let files = [];
+  try {
+    files = readdirSync(dir).filter((name) => name.endsWith(".json"));
+  } catch {
+    return rows;
+  }
+  for (const file of files) {
+    const doc = JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
+    rows.push(...(doc.rows || []));
   }
   return rows;
 }
@@ -149,7 +167,19 @@ export function combinationExists(setToProducts = {}, { season_year = "", set = 
 
 export async function main(argv = process.argv.slice(2)) {
   const outPath = argValue(argv, "--out", "data/catalog/product-schemas.json");
-  const rows = loadHarvest();
+  // Topps joins the set-name index and the schemas, and deliberately does NOT
+  // join entity-existence's covered manufacturers. We hold 66 of Topps' ~883
+  // published sources -- roughly 7.5% -- so treating absence from this index as
+  // fabrication would flag the great majority of real Topps products. That is
+  // the "absent coverage as evidence against" error that has already cost two
+  // reverted changes; the guard in entity-existence.mjs stays at ["panini"].
+  //
+  // The inverse index carries no such risk: a set name that is not present
+  // simply returns nothing, and accuses no one. And it is worth more here than
+  // for Panini -- 86.6% of Topps set names identify exactly one product-year
+  // against Panini's 59.9%, because Topps names inserts distinctively where
+  // Panini reuses "Base Gold" across products.
+  const rows = [...loadHarvest(), ...loadToppsHarvest()];
   const { schemas, setToProducts } = buildSchemas(rows);
   const unique = discriminatingSets(setToProducts);
 
