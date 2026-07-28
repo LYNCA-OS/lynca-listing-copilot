@@ -45,6 +45,24 @@ const result = {
   resolver_version: identityResolverPolicyVersion,
   renderer_version: "test-renderer-v1",
   recognition_pipeline_fingerprint: "a".repeat(64),
+  world_knowledge: {
+    schema_version: "world-knowledge-layer-v2",
+    enabled: true,
+    proposal_count: 1,
+    accepted_count: 1,
+    unchecked_count: 0,
+    refuted_count: 0,
+    invalid_count: 0,
+    decisions: [{
+      field: "team",
+      value: "Example Team",
+      basis: "KNOWN",
+      disposition: "ACCEPTED",
+      checked: true,
+      reason: "player_team_year_covered",
+      allowed_values: ["Example Team"]
+    }]
+  },
   evaluation_decision_trace_packet: { schema_version: "pre-terminal-test" }
 };
 
@@ -53,6 +71,15 @@ assert.equal(packet.replay_snapshot.status, "COMPLETE");
 assert.equal(packet.replay_snapshot.final_title, "2025 Panini Test Player");
 assert.equal(packet.replay_snapshot.versions.resolver, identityResolverPolicyVersion);
 assert.notEqual(packet.replay_snapshot.final_title, result.final_title);
+assert.deepEqual(packet.world_knowledge.decisions[0], {
+  field: "team",
+  value: "Example Team",
+  basis: "KNOWN",
+  disposition: "ACCEPTED",
+  checked: true,
+  reason: "player_team_year_covered",
+  allowed_values: ["Example Team"]
+});
 assert.equal(terminalEvaluationDecisionTracePacket({}, payload), null);
 
 console.log("v4 terminal evaluation trace tests passed");
