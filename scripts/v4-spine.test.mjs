@@ -53,6 +53,7 @@ import {
 import {
   batchStatusResponseDisposition,
   batchPollWaitBudgetMs,
+  catalogAssistOverride,
   mergeJobDiagnosticsIntoResult,
   numberArg as smokeNumberArg,
   numberOrNull as smokeNumberOrNull,
@@ -60,8 +61,11 @@ import {
   fastInitialPromptOverride,
   perCardTsv,
   providerDoneHandoffOverride,
+  assertSmokeObservedEffectiveConfiguration,
+  resolveSmokeEffectiveConfiguration,
   resultFromBatchJob,
   ultraFastL2Override,
+  vectorAssistOverride,
   summarize as summarizeSmoke,
   summarizePipelineNodeLedgers,
   summarizeV4PipelineContracts,
@@ -337,6 +341,46 @@ assert.throws(
   () => ultraFastL2Override(["node", "smoke", "--ultra-fast-l2", "--no-ultra-fast-l2"]),
   /mutually exclusive/
 );
+assert.equal(catalogAssistOverride(["node", "smoke"]), null);
+assert.equal(catalogAssistOverride(["node", "smoke", "--catalog-assist"]), true);
+assert.equal(catalogAssistOverride(["node", "smoke", "--no-catalog-assist"]), false);
+assert.throws(
+  () => catalogAssistOverride(["node", "smoke", "--catalog-assist", "--no-catalog-assist"]),
+  /mutually exclusive/
+);
+assert.equal(vectorAssistOverride(["node", "smoke"]), null);
+assert.equal(vectorAssistOverride(["node", "smoke", "--vector-assist"]), true);
+assert.equal(vectorAssistOverride(["node", "smoke", "--no-vector-assist"]), false);
+assert.throws(
+  () => vectorAssistOverride(["node", "smoke", "--vector-assist", "--no-vector-assist"]),
+  /mutually exclusive/
+);
+const coldEffectiveConfiguration = resolveSmokeEffectiveConfiguration({
+  disableIdentityCache: true,
+  benchmarkProfile: "production_workload_benchmark",
+  catalogAssist: false,
+  vectorAssist: false
+});
+assert.equal(coldEffectiveConfiguration.benchmark.profile, "cold_algorithm_benchmark");
+assert.equal(coldEffectiveConfiguration.benchmark.identity_cache_read_disabled, true);
+assert.equal(coldEffectiveConfiguration.benchmark.identity_cache_write_disabled, true);
+assert.equal(coldEffectiveConfiguration.benchmark.identity_cache_disabled, true);
+assert.deepEqual(coldEffectiveConfiguration.assists, { catalog: false, vector: false });
+const queuedDirectConfiguration = resolveSmokeEffectiveConfiguration({ queueMode: true, speculative: true, enableL1: false });
+assert.equal(queuedDirectConfiguration.execution.force_l2_direct, true);
+assert.equal(queuedDirectConfiguration.execution.create_l1_job, false);
+assert.throws(
+  () => resolveSmokeEffectiveConfiguration({ queueMode: true, speculative: true, enableL1: true }),
+  /L2-only/
+);
+assert.throws(
+  () => resolveSmokeEffectiveConfiguration({ queueMode: true, speculative: false, enableL1: true }),
+  /L2-only/
+);
+assert.throws(
+  () => resolveSmokeEffectiveConfiguration({ benchmarkProfile: "exact_replay_benchmark" }),
+  /requires phase/
+);
 const inheritedQualityPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: null });
 assert.equal("v4_ultra_fast_l2" in inheritedQualityPayload.provider_options, false);
 const disabledUltraFastPayload = smokePayloadForItem({}, 0, [], { ultraFastL2: false });
@@ -355,6 +399,80 @@ assert.equal(fullPromptPayload.provider_options.enable_fast_initial_provider_pro
 assert.equal(fastInitialProviderPromptEnabled(fullPromptPayload, { ENABLE_FAST_INITIAL_PROVIDER_PROMPT: "true" }), false);
 assert.equal(fastInitialProviderPromptEnabled({}, {}), true, "production path must default to the reviewed fast prompt");
 assert.equal(fastInitialProviderPromptEnabled({}, { ENABLE_FAST_INITIAL_PROVIDER_PROMPT: "true" }), true);
+const coldAblationPayload = smokePayloadForItem({}, 0, [], {
+  disableIdentityCache: true,
+  benchmarkProfile: "production_workload_benchmark",
+  catalogAssist: false,
+  vectorAssist: false
+});
+assert.equal(coldAblationPayload.provider_options.recognition_benchmark_profile, "cold_algorithm_benchmark");
+assert.equal(coldAblationPayload.provider_options.enable_catalog_assist, false);
+assert.equal(coldAblationPayload.provider_options.enable_vector_assist, false);
+assert.equal(coldAblationPayload.provider_options.enable_vector_retrieval, false);
+assert.equal(coldAblationPayload.provider_options.vector_retrieval_mode, "off");
+assert.equal(coldAblationPayload.recognition_profile, "evaluation-v1");
+assert.equal(coldAblationPayload.recognition_benchmark_profile, "cold_algorithm_benchmark");
+assert.equal(coldAblationPayload.evaluation_assist_profile, "none");
+const observedColdConfiguration = resolveSmokeEffectiveConfiguration({
+  disableIdentityCache: true,
+  queueMode: true,
+  catalogAssist: false,
+  vectorAssist: true
+});
+assert.deepEqual(assertSmokeObservedEffectiveConfiguration([{
+  identity_cache_hit: false,
+  provider_call_skipped: false,
+  provider_calls: 1,
+  recognition_effective_configuration: {
+    recognition_profile: "evaluation-v1",
+    benchmark_profile: "cold_algorithm_benchmark",
+    benchmark_phase: null,
+    evaluation_assist_profile: "vector_only",
+    provider_options: {
+      enable_catalog_assist: false,
+      enable_vector_assist: true,
+      enable_vector_retrieval: true,
+      disable_identity_result_cache_read: true,
+      disable_identity_result_cache_write: true,
+      disable_approved_identity_memory: true,
+      disable_writer_final_replay: true,
+      disable_identity_inflight_replay: true,
+      disable_recognition_worker_fast_final: true,
+      exact_anchor_fast_final_shadow_only: true,
+      openai_listing_model_override: "gpt-5-mini",
+      v4_compact_l2_prompt: true,
+      v4_ultra_fast_l2: false,
+      v4_ultra_fast_image_detail: "high",
+      enable_fast_initial_provider_prompt: false,
+      cold_start_blind: false
+    },
+    execution: {
+      force_l2_only: true,
+      create_l1_job: false,
+      create_l2_job: true,
+      v4_force_l2_direct: true
+    }
+  }
+}], observedColdConfiguration), {
+  required: true,
+  verified: true,
+  row_count: 1,
+  verification_scope: "server_observed_effective_configuration"
+});
+assert.throws(
+  () => assertSmokeObservedEffectiveConfiguration([{
+    provider_calls: 1,
+    recognition_effective_configuration: {
+      recognition_profile: "evaluation-v1",
+      benchmark_profile: "cold_algorithm_benchmark",
+      benchmark_phase: null,
+      evaluation_assist_profile: "full",
+      provider_options: {},
+      execution: {}
+    }
+  }], observedColdConfiguration),
+  /benchmark_effective_configuration_mismatch/
+);
 assert.equal(batchStatusResponseDisposition({ ok: true, http_status: 200 }), "ok");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 503, data: { retryable: true } }), "retry");
 assert.equal(batchStatusResponseDisposition({ ok: false, http_status: 400, data: { message: "Unable to read V4 jobs." } }), "retry");
@@ -446,7 +564,8 @@ const hydratedDiagnostic = mergeJobDiagnosticsIntoResult({
         identity_cache_write_saved: false,
         replay_class: "TERMINAL_L2_IDEMPOTENT",
         identity_truth: false,
-        resolver_replay_snapshot: { snapshot_version: "identity-cache-resolver-snapshot-v1", unresolved: [] }
+        resolver_replay_snapshot: { snapshot_version: "identity-cache-resolver-snapshot-v1", unresolved: [] },
+        evaluation_decision_trace_packet: { schema_version: "evaluation-decision-trace-packet-v3" }
       }
     }
   }]
@@ -482,6 +601,7 @@ assert.equal(hydratedDiagnostic.identity_cache_version_fingerprint, "c".repeat(6
 assert.equal(hydratedDiagnostic.replay_class, "TERMINAL_L2_IDEMPOTENT");
 assert.equal(hydratedDiagnostic.identity_truth, false);
 assert.equal(hydratedDiagnostic.resolver_replay_snapshot.snapshot_version, "identity-cache-resolver-snapshot-v1");
+assert.equal(hydratedDiagnostic.evaluation_decision_trace_packet.schema_version, "evaluation-decision-trace-packet-v3");
 assert.equal(hydratedDiagnostic.ok, true);
 assert.equal(hydratedDiagnostic.writer_ready, true);
 assert.equal(hydratedDiagnostic.l2_ready, true);
@@ -1230,6 +1350,16 @@ assert.doesNotMatch(persistPipelineSource, /\breq\b/, "persistence helpers must 
 assert.match(persistPipelineSource, /requestContext/, "request context must be passed explicitly to capacity refill");
 assert.match(v4TitleApiSource, /recognition_clock_source:\s*"gpt_provider_request"/, "GPT requests must persist the per-card recognition clock source");
 assert.match(v4TitleApiSource, /deterministic_anchor_finalize/, "no-GPT exact-anchor titles must persist their own clock source");
+assert.match(
+  v4TitleApiSource,
+  /preL2AnchorProbe\?\.finalized === true && !exactAnchorFastFinalShadowOnly\(payload\)/,
+  "a shadow-only exact-anchor result must never claim the deterministic writer-visible clock"
+);
+assert.match(
+  nativeRecognitionCoreSource,
+  /if \(anchorRouteLateShadowEnabled\(\{ payload: initialPayload, env: process\.env \}\)\)/,
+  "late anchor route diagnostics must remain opt-in evaluation work"
+);
 assert.match(v4TitleApiSource, /ENABLE_V4_DEFER_NONCRITICAL_PERSISTENCE/, "V4 must keep a kill switch for deferred non-critical persistence.");
 assert.match(v4TitleApiSource, /noncritical_persistence_status: deferNonCriticalPersistence \? "DEFERRED" : "SYNC"/, "writer-ready sessions must expose whether non-critical persistence was deferred.");
 assert.match(v4TitleApiSource, /const backgroundPersistence = persistV4NonCriticalArtifacts/, "field evidence, candidate trace, catalog gap, and ledger persistence must be assembled outside the writer-ready response.");
@@ -1258,8 +1388,9 @@ assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSumm
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
 assert.match(v4SmokeSource, /const prewarmResult = await prewarmPromise/, "speculative smoke must finish its cache probe before final telemetry is assembled.");
 assert.match(v4SmokeSource, /prewarmCacheOnly: !hasFlag\(argv, "--paid-prewarm"\)/, "direct smoke prewarm must stay cache-only and avoid a duplicate provider call.");
-assert.match(v4SmokeSource, /create_l1_job: false/, "server-bound smoke must never hide an extra paid L1 stage.");
-assert.match(v4SmokeSource, /create_l2_job: true/, "production smoke must always enqueue the final L2 stage.");
+assert.match(v4SmokeSource, /const queuedL1Enabled = false/, "server-bound smoke must never hide an extra paid L1 stage.");
+assert.match(v4SmokeSource, /create_l1_job: execution\.create_l1_job/, "queue requests must consume the canonical effective L1 flag.");
+assert.match(v4SmokeSource, /create_l2_job: execution\.create_l2_job/, "production smoke must consume the canonical effective L2 flag.");
 assert.doesNotMatch(v4SmokeSource, /l1Payload|l1Outcome|Promise\.allSettled/, "production smoke must not issue a duplicate writer-facing L1 request.");
 assert.match(queueStatusApiSource, /provider_capacity_stage_handoff: summary\.provider_capacity_stage_handoff \|\| null/, "job status must preserve provider-stage handoff telemetry for production capacity audits.");
 assert.match(queueStatusApiSource, /v4_pipeline_contract: summary\.v4_pipeline_contract \|\| null/, "job status must expose the V4 convergence contract to production audits.");
@@ -1430,6 +1561,35 @@ assert.equal(assistedRoute.route, "ASSISTED_FULL");
 assert.ok(assistedRoute.blocking_modules.includes("fast_scout_observation"));
 assert.ok(assistedRoute.background_modules.includes("full_assisted_observation"));
 assert.ok(assistedRoute.background_modules.includes("visual_vector_retrieval"));
+const nestedAssistDisabledRoute = planV4RecognitionRoute({
+  images: [{ role: "image_1" }, { role: "image_2" }],
+  approved_candidate_count: 2,
+  provider_options: {
+    enable_catalog_assist: false,
+    enable_vector_assist: false,
+    enable_vector_retrieval: false,
+    vector_retrieval_mode: "off"
+  },
+  // Legacy top-level values must not override the canonical provider contract.
+  enable_catalog_assist: true,
+  enable_vector_assist: true
+}, {
+  VECTOR_INDEX_READY: "true"
+});
+assert.equal(nestedAssistDisabledRoute.route, "COLD_START_SAFE_DRAFT");
+const nestedVectorOnlyRoute = planV4RecognitionRoute({
+  images: [{ role: "image_1" }, { role: "image_2" }],
+  approved_candidate_count: 2,
+  provider_options: {
+    enable_catalog_assist: false,
+    enable_vector_assist: true,
+    enable_vector_retrieval: true,
+    vector_retrieval_mode: "assist"
+  }
+}, {
+  VECTOR_INDEX_READY: "true"
+});
+assert.equal(nestedVectorOnlyRoute.route, "ASSISTED_FULL");
 const assistedOptions = providerOptionsForV4ProgressiveL1({
   payload: { provider_options: { enable_catalog_assist: true } },
   routePlan: assistedRoute

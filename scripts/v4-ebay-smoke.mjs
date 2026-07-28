@@ -13,9 +13,15 @@ import {
 } from "../lib/listing/evaluation/sample-policy.mjs";
 import {
   applyRecognitionBenchmarkProfile,
+  assertColdAlgorithmBenchmarkResult,
+  assertExactReplayBenchmarkPhaseResult,
   exactReplayPhases,
   recognitionBenchmarkProfileIds
 } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import {
+  recognitionEvaluationAssistProfiles,
+  recognitionProfileIds
+} from "../lib/listing/v4/contracts/recognition-request.mjs";
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -75,6 +81,206 @@ export function recognitionBenchmarkCliOptions(argv = []) {
     throw new Error("--benchmark-phase is only valid for Exact Replay Benchmark.");
   }
   return { profile, phase };
+}
+
+function booleanCliOverride(argv = [], { enabledFlag, disabledFlag, label } = {}) {
+  const enabled = hasFlag(argv, enabledFlag);
+  const disabled = hasFlag(argv, disabledFlag);
+  if (enabled && disabled) throw new Error(`${label} flags are mutually exclusive`);
+  if (enabled) return true;
+  if (disabled) return false;
+  return null;
+}
+
+export function catalogAssistOverride(argv = []) {
+  return booleanCliOverride(argv, {
+    enabledFlag: "--catalog-assist",
+    disabledFlag: "--no-catalog-assist",
+    label: "catalog assist"
+  });
+}
+
+export function vectorAssistOverride(argv = []) {
+  return booleanCliOverride(argv, {
+    enabledFlag: "--vector-assist",
+    disabledFlag: "--no-vector-assist",
+    label: "vector assist"
+  });
+}
+
+export function resolveSmokeEffectiveConfiguration({
+  disableIdentityCache = false,
+  benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
+  benchmarkPhase = null,
+  queueMode = false,
+  speculative = false,
+  enableL1 = false,
+  forceL2Direct = false,
+  catalogAssist = true,
+  vectorAssist = true,
+  coldStartBlind = false
+} = {}) {
+  const profile = disableIdentityCache
+    ? recognitionBenchmarkProfileIds.COLD_ALGORITHM
+    : benchmarkProfile || recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD;
+  const phase = benchmarkPhase || null;
+  if (!Object.values(recognitionBenchmarkProfileIds).includes(profile)) {
+    throw new Error(`Unsupported recognition benchmark profile: ${profile}`);
+  }
+  if (profile === recognitionBenchmarkProfileIds.EXACT_REPLAY
+    && !Object.values(exactReplayPhases).includes(phase)) {
+    throw new Error("Exact Replay Benchmark requires phase=cold or phase=replay.");
+  }
+  if (profile !== recognitionBenchmarkProfileIds.EXACT_REPLAY && phase) {
+    throw new Error("benchmarkPhase is only valid for Exact Replay Benchmark.");
+  }
+  if (queueMode && enableL1 === true) {
+    throw new Error("Server-bound benchmark profiles are L2-only; --enable-l1 is not supported in queue mode.");
+  }
+
+  const benchmarkOptions = applyRecognitionBenchmarkProfile({}, { profile, phase });
+  const productionWorkload = profile === recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD;
+  // Queue runs are rebound to a server-owned profile. Production workload
+  // therefore uses the production assists even if a CLI asks for an ablation;
+  // direct runs retain their explicitly requested options.
+  const effectiveCatalogAssist = productionWorkload && queueMode ? true : catalogAssist !== false;
+  const effectiveVectorAssist = productionWorkload && queueMode ? true : vectorAssist !== false;
+  const evaluationAssistProfile = effectiveCatalogAssist
+    ? effectiveVectorAssist
+      ? recognitionEvaluationAssistProfiles.FULL
+      : recognitionEvaluationAssistProfiles.CATALOG_ONLY
+    : effectiveVectorAssist
+      ? recognitionEvaluationAssistProfiles.VECTOR_ONLY
+      : recognitionEvaluationAssistProfiles.NONE;
+  const queuedL1Enabled = false;
+  const effectiveForceL2Direct = queueMode
+    ? (speculative ? !queuedL1Enabled : true)
+    : forceL2Direct === true;
+
+  return Object.freeze({
+    benchmark: Object.freeze({
+      profile,
+      phase,
+      recognition_profile: productionWorkload && !queueMode
+        ? recognitionProfileIds.WRITER_ASSISTED
+        : recognitionProfileIds.EVALUATION,
+      evaluation_assist_profile: productionWorkload
+        ? null
+        : evaluationAssistProfile,
+      identity_cache_read_disabled: benchmarkOptions.disable_identity_result_cache_read === true,
+      identity_cache_write_disabled: benchmarkOptions.disable_identity_result_cache_write === true,
+      identity_cache_disabled: benchmarkOptions.disable_identity_result_cache_read === true
+        && benchmarkOptions.disable_identity_result_cache_write === true,
+      approved_identity_memory_disabled: benchmarkOptions.disable_approved_identity_memory === true,
+      writer_final_replay_disabled: benchmarkOptions.disable_writer_final_replay === true,
+      identity_inflight_replay_disabled: benchmarkOptions.disable_identity_inflight_replay === true,
+      exact_anchor_fast_final_shadow_only: benchmarkOptions.exact_anchor_fast_final_shadow_only === true,
+      recognition_worker_fast_final_disabled: benchmarkOptions.disable_recognition_worker_fast_final === true
+    }),
+    assists: Object.freeze({
+      catalog: effectiveCatalogAssist,
+      vector: effectiveVectorAssist
+    }),
+    algorithm: profile === recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD
+      ? null
+      : Object.freeze({
+        model_override: "gpt-5-mini",
+        compact_l2: true,
+        ultra_fast_l2: false,
+        image_detail: "high",
+        fast_initial_prompt: false,
+        cold_start_blind: coldStartBlind === true
+      }),
+    execution: Object.freeze({
+      force_l2_only: effectiveForceL2Direct,
+      create_l1_job: queuedL1Enabled,
+      create_l2_job: queueMode,
+      disable_fast_scout_l1: queueMode ? !queuedL1Enabled : effectiveForceL2Direct,
+      force_l2_direct: effectiveForceL2Direct
+    })
+  });
+}
+
+export function assertSmokeObservedEffectiveConfiguration(results = [], effectiveConfiguration = {}) {
+  const profile = effectiveConfiguration?.benchmark?.profile;
+  const rows = Array.isArray(results) ? results : [];
+  if (!rows.length) throw new Error("benchmark_effective_configuration_no_rows");
+  const expected = effectiveConfiguration;
+  for (const [index, row] of rows.entries()) {
+    const observed = row?.recognition_effective_configuration;
+    if (!observed || typeof observed !== "object") {
+      throw new Error(`benchmark_effective_configuration_missing_row_${index}`);
+    }
+    const mismatches = [];
+    const expect = (label, actual, value) => {
+      if (actual !== value) mismatches.push(`${label}:${String(actual)}!=${String(value)}`);
+    };
+    expect("recognition_profile", observed.recognition_profile, expected.benchmark.recognition_profile);
+    expect("benchmark_profile", observed.benchmark_profile, expected.benchmark.profile);
+    expect("benchmark_phase", observed.benchmark_phase || null, expected.benchmark.phase || null);
+    expect("evaluation_assist_profile", observed.evaluation_assist_profile, expected.benchmark.evaluation_assist_profile);
+    expect("catalog_assist", observed.provider_options?.enable_catalog_assist, expected.assists.catalog);
+    expect("vector_assist", observed.provider_options?.enable_vector_assist, expected.assists.vector);
+    expect("vector_retrieval", observed.provider_options?.enable_vector_retrieval, expected.assists.vector);
+    expect("cache_read_disabled", observed.provider_options?.disable_identity_result_cache_read, expected.benchmark.identity_cache_read_disabled);
+    expect("cache_write_disabled", observed.provider_options?.disable_identity_result_cache_write, expected.benchmark.identity_cache_write_disabled);
+    expect("approved_memory_disabled", observed.provider_options?.disable_approved_identity_memory, expected.benchmark.approved_identity_memory_disabled);
+    expect("writer_final_replay_disabled", observed.provider_options?.disable_writer_final_replay, expected.benchmark.writer_final_replay_disabled);
+    expect("inflight_replay_disabled", observed.provider_options?.disable_identity_inflight_replay, expected.benchmark.identity_inflight_replay_disabled);
+    expect("exact_anchor_shadow_only", observed.provider_options?.exact_anchor_fast_final_shadow_only, expected.benchmark.exact_anchor_fast_final_shadow_only);
+    expect("worker_fast_final_disabled", observed.provider_options?.disable_recognition_worker_fast_final, expected.benchmark.recognition_worker_fast_final_disabled);
+    if (expected.algorithm) {
+      expect("model_override", observed.provider_options?.openai_listing_model_override, expected.algorithm.model_override);
+      expect("compact_l2", observed.provider_options?.v4_compact_l2_prompt, expected.algorithm.compact_l2);
+      expect("ultra_fast_l2", observed.provider_options?.v4_ultra_fast_l2, expected.algorithm.ultra_fast_l2);
+      expect("image_detail", observed.provider_options?.v4_ultra_fast_image_detail, expected.algorithm.image_detail);
+      expect("fast_initial_prompt", observed.provider_options?.enable_fast_initial_provider_prompt, expected.algorithm.fast_initial_prompt);
+      expect("cold_start_blind", observed.provider_options?.cold_start_blind, expected.algorithm.cold_start_blind);
+    }
+    expect("force_l2_only", observed.execution?.force_l2_only, expected.execution.force_l2_only);
+    expect("create_l1_job", observed.execution?.create_l1_job, expected.execution.create_l1_job);
+    expect("create_l2_job", observed.execution?.create_l2_job, expected.execution.create_l2_job);
+    expect("force_l2_direct", observed.execution?.v4_force_l2_direct, expected.execution.force_l2_direct);
+    if (mismatches.length) {
+      throw new Error(`benchmark_effective_configuration_mismatch_row_${index}:${mismatches.join(",")}`);
+    }
+    const benchmarkShape = {
+      identity_cache: {
+        cache_hit: row.identity_cache_hit === true,
+        provider_call_skipped: row.provider_call_skipped === true,
+        cached_result_version_match: row.cached_result_version_match ?? null,
+        write_saved: row.identity_cache_write_saved ?? null,
+        cache_key: row.identity_cache_key || null,
+        image_generation_hash: row.identity_cache_image_generation_hash || null,
+        recognition_pipeline_fingerprint: row.recognition_pipeline_fingerprint
+          || row.identity_cache_version_fingerprint
+          || null
+      },
+      usage: { provider_calls: row.provider_calls },
+      final_title: row.final_title || row.title || "",
+      identity_resolution_status: row.identity_resolution_status ?? null,
+      ambiguity_status: row.ambiguity_status ?? null,
+      resolved: row.resolved ?? row.resolved_fields ?? {},
+      field_states: row.field_states ?? null,
+      unresolved: row.unresolved ?? null,
+      conflict_map: row.conflict_map ?? null,
+      confidence_report: row.confidence_report ?? null,
+      resolver_replay_snapshot: row.resolver_replay_snapshot || null
+    };
+    if (profile === recognitionBenchmarkProfileIds.COLD_ALGORITHM) {
+      assertColdAlgorithmBenchmarkResult(benchmarkShape);
+    } else if (profile === recognitionBenchmarkProfileIds.EXACT_REPLAY) {
+      assertExactReplayBenchmarkPhaseResult(benchmarkShape, expected.benchmark.phase);
+    }
+  }
+  const serialized = rows.map((row) => JSON.stringify(row.recognition_effective_configuration));
+  if (new Set(serialized).size !== 1) throw new Error("benchmark_effective_configuration_varied_across_rows");
+  return Object.freeze({
+    required: true,
+    verified: true,
+    row_count: rows.length,
+    verification_scope: "server_observed_effective_configuration"
+  });
 }
 
 export function providerDoneHandoffOverride(argv = []) {
@@ -813,12 +1019,30 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   disableIdentityCache = false,
   benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
   benchmarkPhase = null,
+  catalogAssist = true,
+  vectorAssist = true,
+  effectiveConfiguration = null,
   coldStartBlind = false
 } = {}) {
+  const configuration = effectiveConfiguration || resolveSmokeEffectiveConfiguration({
+    disableIdentityCache,
+    benchmarkProfile,
+    benchmarkPhase,
+    enableL1,
+    forceL2Direct,
+    catalogAssist,
+    vectorAssist,
+    coldStartBlind
+  });
   let providerOptions = {
-    enable_catalog_assist: true,
-    enable_vector_retrieval: true,
-    vector_retrieval_mode: "assist",
+    enable_catalog_assist: configuration.assists.catalog,
+    enable_vector_assist: configuration.assists.vector,
+    enable_stored_visual_features: configuration.assists.vector,
+    enable_query_visual_embeddings: configuration.assists.vector,
+    enable_vector_retrieval: configuration.assists.vector,
+    vector_retrieval_mode: configuration.assists.vector ? "assist" : "off",
+    enable_advanced_retrieval: configuration.assists.vector,
+    enable_hybrid_retrieval: configuration.assists.catalog && configuration.assists.vector,
     vector_query_timeout_ms: 20000,
     enable_v4_progressive_l1: true,
     cloud_eval_blind_to_corrected_title_hint: true,
@@ -845,16 +1069,7 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
   if (typeof providerDoneHandoff === "boolean") {
     providerOptions.v4_provider_done_capacity_handoff = providerDoneHandoff;
   }
-  if (disableIdentityCache) {
-    providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
-      profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
-    });
-  } else if (benchmarkProfile) {
-    providerOptions = applyRecognitionBenchmarkProfile(providerOptions, {
-      profile: benchmarkProfile,
-      phase: benchmarkPhase
-    });
-  }
+  providerOptions = applyRecognitionBenchmarkProfile(providerOptions, configuration.benchmark);
   if (coldStartBlind) {
     providerOptions.cold_start_blind = true;
     providerOptions.enable_cold_start_blind = true;
@@ -867,12 +1082,21 @@ export function payloadForItem(item = {}, index = 0, images = itemImages(item), 
     category: item.category || "collectible_card",
     maxTitleLength: 80,
     captureProfileId: "v4_ebay_blind_smoke",
+    recognition_profile: configuration.benchmark.recognition_profile,
+    ...(configuration.benchmark.recognition_profile === recognitionProfileIds.EVALUATION
+      ? {
+        recognition_benchmark_profile: configuration.benchmark.profile,
+        recognition_benchmark_phase: configuration.benchmark.phase,
+        evaluation_assist_profile: configuration.benchmark.evaluation_assist_profile,
+        evaluation_cold_start_blind: configuration.algorithm?.cold_start_blind === true
+      }
+      : {}),
     provider: "openai_legacy",
     provider_id: "openai_legacy",
     vision_provider: "openai_legacy",
     provider_options: providerOptions,
     ...(enableL1 ? { v4_force_fast_scout_l1: true } : {}),
-    ...(forceL2Direct
+    ...(configuration.execution.force_l2_direct
       ? {
         force_l2_only: true,
         v4_worker_synchronous: true,
@@ -1330,6 +1554,7 @@ function sessionL2Summary(statusPayload = {}) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    recognition_effective_configuration: summary.recognition_effective_configuration || null,
     evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
     provider_capacity_timeline: statusPayload.timing?.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
@@ -1469,6 +1694,7 @@ function jobL2Summary(statusPayload = {}) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    recognition_effective_configuration: summary.recognition_effective_configuration || null,
     evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
     provider_capacity_timeline: job.timing?.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
@@ -1807,6 +2033,13 @@ export function mergeJobDiagnosticsIntoResult(row = {}, statusPayload = {}) {
     resolver_replay_snapshot: summary.resolver_replay_snapshot || row.resolver_replay_snapshot || null,
     replay_class: summary.replay_class || row.replay_class || null,
     identity_truth: summary.identity_truth ?? row.identity_truth ?? null,
+    evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet
+      || row.evaluation_decision_trace_packet
+      || null,
+    recognition_benchmark_profile: summary.recognition_benchmark_profile || row.recognition_benchmark_profile || null,
+    recognition_effective_configuration: summary.recognition_effective_configuration
+      || row.recognition_effective_configuration
+      || null,
     provider_capacity: summary.provider_capacity ?? row.provider_capacity ?? null,
     provider_key_count: summary.provider_key_count ?? row.provider_key_count ?? null,
     provider_key_assignment: summary.provider_key_assignment || row.provider_key_assignment || null,
@@ -2118,6 +2351,7 @@ async function runOne({
   disableIdentityCache = false,
   benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
   benchmarkPhase = null,
+  effectiveConfiguration = null,
   coldStartBlind = false,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
@@ -2156,6 +2390,7 @@ async function runOne({
     disableIdentityCache,
     benchmarkProfile,
     benchmarkPhase,
+    effectiveConfiguration,
     coldStartBlind
   });
   const prewarmPromise = prewarm
@@ -2222,13 +2457,22 @@ async function runOne({
     // preingest 与缓存探针已并行完成，提交受全局容量控制的隐藏 L1 + 最终 L2；
     // 模拟写手思考 thinkMs 后在 T1“点击”，此后测的才是写手感知延迟。
     const batchId = `smoke-v4-spec-${Date.now()}-${index}`;
+    const execution = effectiveConfiguration?.execution || resolveSmokeEffectiveConfiguration({
+      disableIdentityCache,
+      benchmarkProfile,
+      benchmarkPhase,
+      queueMode,
+      speculative,
+      enableL1,
+      forceL2Direct
+    }).execution;
     const queuedPayload = {
       ...payload,
-      force_l2_only: true,
-      create_l1_job: false,
-      create_l2_job: true,
-      disable_fast_scout_l1: true,
-      v4_force_l2_direct: true,
+      force_l2_only: execution.force_l2_only,
+      create_l1_job: execution.create_l1_job,
+      create_l2_job: execution.create_l2_job,
+      disable_fast_scout_l1: execution.disable_fast_scout_l1,
+      v4_force_l2_direct: execution.force_l2_direct,
       client_speculative: true
     };
     const t0 = Date.now();
@@ -2243,9 +2487,9 @@ async function runOne({
         jobs: [{
           asset_id: id,
           image_generation_id: payload.image_generation_id,
-          force_l2_only: true,
-          create_l1_job: false,
-          create_l2_job: true,
+          force_l2_only: execution.force_l2_only,
+          create_l1_job: execution.create_l1_job,
+          create_l2_job: execution.create_l2_job,
           payload: queuedPayload
         }]
       },
@@ -2431,13 +2675,22 @@ async function runOne({
 
   if (queueMode) {
     const batchId = `smoke-v4-${Date.now()}-${index}`;
+    const execution = effectiveConfiguration?.execution || resolveSmokeEffectiveConfiguration({
+      disableIdentityCache,
+      benchmarkProfile,
+      benchmarkPhase,
+      queueMode,
+      speculative,
+      enableL1,
+      forceL2Direct
+    }).execution;
     const queuedPayload = {
       ...payload,
-      force_l2_only: true,
-      create_l1_job: false,
-      create_l2_job: true,
-      disable_fast_scout_l1: true,
-      v4_force_l2_direct: true
+      force_l2_only: execution.force_l2_only,
+      create_l1_job: execution.create_l1_job,
+      create_l2_job: execution.create_l2_job,
+      disable_fast_scout_l1: execution.disable_fast_scout_l1,
+      v4_force_l2_direct: execution.force_l2_direct
     };
     const enqueue = await postJson({
       baseUrl,
@@ -2450,9 +2703,9 @@ async function runOne({
         jobs: [{
           asset_id: id,
           image_generation_id: payload.image_generation_id,
-          force_l2_only: true,
-          create_l1_job: false,
-          create_l2_job: true,
+          force_l2_only: execution.force_l2_only,
+          create_l1_job: execution.create_l1_job,
+          create_l2_job: execution.create_l2_job,
           payload: queuedPayload
         }]
       },
@@ -2572,6 +2825,7 @@ async function runOne({
       provider_call_skipped: l2.summary?.provider_call_skipped === true,
       provider_calls: numberOrNull(l2.summary?.provider_calls),
       recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+      recognition_effective_configuration: l2.summary?.recognition_effective_configuration || null,
       evaluation_decision_trace_packet: l2.summary?.evaluation_decision_trace_packet || null,
       provider_capacity_timeline: l2.summary?.provider_capacity_timeline || null,
       exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
@@ -2827,6 +3081,7 @@ async function runOne({
     provider_call_skipped: l2.summary?.provider_call_skipped === true,
     provider_calls: numberOrNull(l2.summary?.provider_calls),
     recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+    recognition_effective_configuration: l2.summary?.recognition_effective_configuration || null,
     evaluation_decision_trace_packet: l2.summary?.evaluation_decision_trace_packet || null,
     provider_capacity_timeline: l2.summary?.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
@@ -2886,6 +3141,7 @@ async function enqueueSpeculativeItem({
   disableIdentityCache,
   benchmarkProfile,
   benchmarkPhase,
+  effectiveConfiguration,
   coldStartBlind,
   usePreingestion,
   preingestionSource,
@@ -2925,6 +3181,7 @@ async function enqueueSpeculativeItem({
       disableIdentityCache,
       benchmarkProfile,
       benchmarkPhase,
+      effectiveConfiguration,
       coldStartBlind
     });
     const prewarmPromise = prewarm
@@ -2968,13 +3225,21 @@ async function enqueueSpeculativeItem({
       }
     }
     const prewarmResult = await prewarmPromise;
+    const execution = effectiveConfiguration?.execution || resolveSmokeEffectiveConfiguration({
+      disableIdentityCache,
+      benchmarkProfile,
+      benchmarkPhase,
+      queueMode: true,
+      speculative: true,
+      enableL1
+    }).execution;
     const queuedPayload = {
       ...payload,
-      force_l2_only: true,
-      create_l1_job: false,
-      create_l2_job: true,
-      disable_fast_scout_l1: true,
-      v4_force_l2_direct: true,
+      force_l2_only: execution.force_l2_only,
+      create_l1_job: execution.create_l1_job,
+      create_l2_job: execution.create_l2_job,
+      disable_fast_scout_l1: execution.disable_fast_scout_l1,
+      v4_force_l2_direct: execution.force_l2_direct,
       client_speculative: true
     };
     const enqueueStartedAt = Date.now();
@@ -2989,9 +3254,9 @@ async function enqueueSpeculativeItem({
         jobs: [{
           asset_id: id,
           image_generation_id: payload.image_generation_id,
-          force_l2_only: true,
-          create_l1_job: false,
-          create_l2_job: true,
+          force_l2_only: execution.force_l2_only,
+          create_l1_job: execution.create_l1_job,
+          create_l2_job: execution.create_l2_job,
           payload: queuedPayload
         }]
       },
@@ -3418,6 +3683,7 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    recognition_effective_configuration: summary.recognition_effective_configuration || null,
     evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
     provider_capacity_timeline: summary.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
@@ -4718,6 +4984,8 @@ export async function runV4EbaySmoke({
   disableIdentityCache = false,
   benchmarkProfile = recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
   benchmarkPhase = null,
+  catalogAssist = true,
+  vectorAssist = true,
   usePreingestion = false,
   preingestionSource = "v4_ebay_smoke_preingestion",
   speculative = false,
@@ -4745,6 +5013,22 @@ export async function runV4EbaySmoke({
   if (!datasetPath) throw new Error("--dataset is required");
   if (!baseUrl) throw new Error("--base-url is required");
   if (!username || !password) throw new Error("--username and --password are required");
+  const effectiveConfiguration = resolveSmokeEffectiveConfiguration({
+    disableIdentityCache,
+    benchmarkProfile,
+    benchmarkPhase,
+    queueMode,
+    speculative,
+    enableL1,
+    forceL2Direct,
+    catalogAssist,
+    vectorAssist,
+    coldStartBlind
+  });
+  if (effectiveConfiguration.benchmark.profile !== recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD
+    && !queueMode) {
+    throw new Error("Evaluation benchmarks require queueMode so the server can authorize and bind the evaluation profile.");
+  }
   const normalizedSampleMode = normalizeEvaluationSampleMode(evaluationSampleMode);
   const normalizedTenantCount = Math.max(1, Math.min(50, Math.trunc(Number(tenantCount) || 1)));
   const normalizedSubmissionConcurrency = Math.max(
@@ -4891,6 +5175,7 @@ export async function runV4EbaySmoke({
           disableIdentityCache,
           benchmarkProfile,
           benchmarkPhase,
+          effectiveConfiguration,
           coldStartBlind,
           usePreingestion,
           preingestionSource,
@@ -4974,6 +5259,7 @@ export async function runV4EbaySmoke({
           disableIdentityCache,
           benchmarkProfile,
           benchmarkPhase,
+          effectiveConfiguration,
           coldStartBlind,
           usePreingestion,
           preingestionSource,
@@ -5019,6 +5305,21 @@ export async function runV4EbaySmoke({
   const predictionsSha256 = predictionHash(recognitionResults);
   const sealedLabels = await readSealedLabels(sealedLabelsPath);
   const results = attachPostRecognitionScoring(recognitionResults, items, sealedLabels, offset);
+  const effectiveConfigurationVerification = assertSmokeObservedEffectiveConfiguration(
+    results,
+    effectiveConfiguration
+  );
+  const observedEffectiveConfiguration = results[0]?.recognition_effective_configuration || null;
+  const observedProviderOptions = observedEffectiveConfiguration?.provider_options || {};
+  const observedExecution = observedEffectiveConfiguration?.execution || {};
+  const observedAlgorithm = observedEffectiveConfiguration ? {
+    model_override: observedProviderOptions.openai_listing_model_override || null,
+    compact_l2: observedProviderOptions.v4_compact_l2_prompt === true,
+    ultra_fast_l2: observedProviderOptions.v4_ultra_fast_l2 === true,
+    image_detail: observedProviderOptions.v4_ultra_fast_image_detail || null,
+    fast_initial_prompt: observedProviderOptions.enable_fast_initial_provider_prompt === true,
+    cold_start_blind: observedProviderOptions.cold_start_blind === true
+  } : null;
   const allReviewedTitleGroundTruth = results.length > 0
     && results.every((row) => row.reference_title_is_reviewed_ground_truth === true);
   const observedUltraFastL2Count = results.filter((item) => item.provider_prompt_mode === "v4_ultra_fast_l2").length;
@@ -5067,7 +5368,8 @@ export async function runV4EbaySmoke({
     run_wall_ms: recognitionRunWallMs,
     diagnostic_hydration: diagnosticHydration.metrics,
     prewarm_enabled: prewarm,
-    compact_l2_enabled: compactL2,
+    compact_l2_enabled: observedAlgorithm?.compact_l2 ?? null,
+    requested_compact_l2: compactL2,
     ultra_fast_l2_override: ultraFastL2,
     fast_initial_prompt_override: fastInitialPrompt,
     ultra_fast_l2_observed_count: observedUltraFastL2Count,
@@ -5083,22 +5385,41 @@ export async function runV4EbaySmoke({
         : null,
     ultra_sparse_transport_enabled: ultraSparseTransport,
     provider_done_capacity_handoff_override: providerDoneHandoff,
-    ultra_fast_image_detail: ultraFastL2 === true ? ultraFastImageDetail : null,
+    ultra_fast_image_detail: observedAlgorithm?.image_detail ?? null,
     ultra_fast_service_tier: ultraFastL2 === true ? ultraFastServiceTier || null : null,
-    identity_cache_disabled: disableIdentityCache || benchmarkProfile === recognitionBenchmarkProfileIds.COLD_ALGORITHM,
-    recognition_benchmark_profile: benchmarkProfile
-      || (disableIdentityCache ? recognitionBenchmarkProfileIds.COLD_ALGORITHM : recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD),
-    recognition_benchmark_phase: benchmarkPhase,
+    identity_cache_disabled: observedProviderOptions.disable_identity_result_cache_read === true
+      && observedProviderOptions.disable_identity_result_cache_write === true,
+    identity_cache_read_disabled: observedProviderOptions.disable_identity_result_cache_read === true,
+    identity_cache_write_disabled: observedProviderOptions.disable_identity_result_cache_write === true,
+    recognition_benchmark_profile: effectiveConfiguration.benchmark.profile,
+    recognition_benchmark_phase: effectiveConfiguration.benchmark.phase,
+    effective_configuration_verification: effectiveConfigurationVerification,
+    effective_provider_options: observedEffectiveConfiguration ? {
+      enable_catalog_assist: observedProviderOptions.enable_catalog_assist === true,
+      enable_vector_assist: observedProviderOptions.enable_vector_assist === true,
+      enable_vector_retrieval: observedProviderOptions.enable_vector_retrieval === true,
+      vector_retrieval_mode: observedProviderOptions.vector_retrieval_mode || "off"
+    } : null,
+    effective_algorithm: observedAlgorithm,
     prewarm_cache_only: prewarm ? prewarmCacheOnly : null,
     queue_mode: queueMode,
     speculative_mode: speculative,
     think_ms: speculative ? thinkMs : null,
-    force_l2_direct: forceL2Direct,
+    force_l2_direct: observedExecution.v4_force_l2_direct === true,
+    requested_force_l2_direct: forceL2Direct,
+    effective_execution_flags: observedEffectiveConfiguration ? {
+      force_l2_only: observedExecution.force_l2_only === true,
+      create_l1_job: observedExecution.create_l1_job === true,
+      create_l2_job: observedExecution.create_l2_job === true,
+      disable_fast_scout_l1: observedExecution.disable_fast_scout_l1 === true,
+      force_l2_direct: observedExecution.v4_force_l2_direct === true
+    } : null,
     l1_explicitly_enabled: enableL1,
     preingestion_enabled: usePreingestion,
     preingestion_source: usePreingestion ? preingestionSource : null,
-    model_override: modelOverride || null,
-    cold_start_blind: coldStartBlind === true,
+    model_override: observedAlgorithm?.model_override || null,
+    requested_model_override: modelOverride || null,
+    cold_start_blind: observedAlgorithm?.cold_start_blind ?? null,
     predictions_sha256: predictionsSha256,
     evaluation_sample_policy: {
       mode: normalizedSampleMode,
@@ -5176,6 +5497,8 @@ export async function hydrateV4SmokeReport({
 export async function main(argv = process.argv, env = process.env) {
   const stamp = nowStamp();
   const benchmark = recognitionBenchmarkCliOptions(argv);
+  const catalogAssist = catalogAssistOverride(argv);
+  const vectorAssist = vectorAssistOverride(argv);
   if (hasFlag(argv, "--disable-identity-cache") && benchmark.profile) {
     throw new Error("Use either --disable-identity-cache or --benchmark-profile, not both.");
   }
@@ -5203,6 +5526,8 @@ export async function main(argv = process.argv, env = process.env) {
     disableIdentityCache: hasFlag(argv, "--disable-identity-cache"),
     benchmarkProfile: benchmark.profile || recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD,
     benchmarkPhase: benchmark.phase,
+    catalogAssist: catalogAssist ?? true,
+    vectorAssist: vectorAssist ?? true,
     usePreingestion: hasFlag(argv, "--use-preingestion"),
     preingestionSource: cleanText(argValue(argv, "--preingestion-source", "v4_ebay_smoke_preingestion")),
     speculative: hasFlag(argv, "--speculative"),

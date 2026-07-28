@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { runNativeV4Recognition } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
-import { glareRoutes } from "../lib/listing/image-quality/quality-gate.mjs";
+import {
+  glareRoutes,
+  imageQualityPolicyVersion,
+  serverCaptureQualityAuthority
+} from "../lib/listing/image-quality/quality-gate.mjs";
 import { evaluatePreProviderRescanGate } from "../lib/listing/image-quality/pre-provider-rescan-gate.mjs";
 
 process.env.METAVERSE_AUTH_SECRET = "test-secret";
@@ -72,14 +76,20 @@ globalThis.fetch = async (url, options = {}) => {
 
 const response = await callTitleApi({
   assetId: "asset-quality-rescan",
+  image_set_sha256: "a".repeat(64),
   mode: "single",
   maxTitleLength: 80,
+  effective_capture_quality: {
+    ...occludedQuality("year_product"),
+    authority: serverCaptureQualityAuthority,
+    policy_version: imageQualityPolicyVersion,
+    image_generation_hash: "a".repeat(64)
+  },
   images: [
     {
       id: "front",
       role: "front_original",
-      url: "https://example.test/front.jpg",
-      imageQuality: occludedQuality("year_product")
+      url: "https://example.test/front.jpg"
     }
   ],
   resolutionMap: {}

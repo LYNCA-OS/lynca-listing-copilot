@@ -15,6 +15,7 @@ import {
   RecognitionRequestContractError,
   defaultRecognitionProfileId,
   normalizeRecognitionProfileId,
+  recognitionProfileIds,
   recognitionProfileIdFromPayload,
   sanitizeClientRecognitionIntent
 } from "../../lib/listing/v4/contracts/recognition-request.mjs";
@@ -115,6 +116,13 @@ export function buildQueueDecisionFingerprint(payload = {}, env = process.env) {
     catalog: {
       active_snapshot_revision: String(payload.active_catalog_snapshot_revision || "").trim() || null,
       card_code_resolution_map_revision: String(payload.resolution_map_revision || "").trim() || null
+    },
+    evaluation_identity: {
+      benchmark_profile: String(providerOptions.recognition_benchmark_profile || "").trim() || null,
+      benchmark_phase: String(providerOptions.recognition_benchmark_phase || "").trim() || null,
+      source_feedback_id: String(payload.source_feedback_id || "").trim() || null,
+      physical_card_id: String(payload.physical_card_id || "").trim() || null,
+      physical_instance_group_id: String(payload.physical_instance_group_id || "").trim() || null
     },
     provider_options: providerOptions,
     effective_capture_quality: payload.effective_capture_quality || null
@@ -421,6 +429,7 @@ export async function authorizeFreshManualRetryJobs({
 export async function canonicalizeQueueJobs({
   jobs = [],
   tenantId,
+  allowEvaluationProfile = false,
   env = process.env,
   fetchImpl = globalThis.fetch,
   readCanonical = readCanonicalListingImageReferences,
@@ -466,10 +475,19 @@ export async function canonicalizeQueueJobs({
     const requestedProfileId = recognitionProfileIdFromPayload(scopedPayload)
       || recognitionProfileIdFromPayload(scoped)
       || defaultRecognitionProfileId;
+    // Normalize once before authorization and reuse the canonical value for
+    // both persisted surfaces. Otherwise a mixed-case evaluation profile can
+    // miss this comparison and be normalized into the privileged profile by
+    // the downstream adapter.
     const canonicalProfileId = normalizeRecognitionProfileId(requestedProfileId);
+    if (canonicalProfileId === recognitionProfileIds.EVALUATION && !allowEvaluationProfile) {
+      throw new RecognitionRequestContractError("recognition_profile_not_authorized", { statusCode: 403 });
+    }
     // Every queue job is bound to a server-owned profile. Omitting the profile
     // selects the production default; it never re-opens client algorithm knobs.
-    const boundApplicationPayload = bindRecognitionProfileToPayload(sanitizeClientRecognitionIntent(scopedPayload), {
+    const boundApplicationPayload = bindRecognitionProfileToPayload(sanitizeClientRecognitionIntent(scopedPayload, {
+      allowEvaluationIntent: canonicalProfileId === recognitionProfileIds.EVALUATION
+    }), {
       profileId: canonicalProfileId,
       env
     });
@@ -823,6 +841,7 @@ export default async function handler(req, res) {
     const canonicalJobs = await canonicalizeQueueJobs({
       jobs: rawJobs,
       tenantId,
+      allowEvaluationProfile: context.role === TENANT_ROLES.OWNER,
       env: process.env,
       fetchImpl: globalThis.fetch
     });

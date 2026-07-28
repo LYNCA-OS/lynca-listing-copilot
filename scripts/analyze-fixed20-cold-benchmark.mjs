@@ -3,38 +3,24 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  classifyEvaluationMissingField,
+  evaluationMissingFieldCategories
+} from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 import { recognitionBenchmarkProfileIds } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 import { analyzeSemStageLoss } from "./analyze-sem-stage-loss.mjs";
 
 const EXPECTED_COUNT = 20;
-const FIELD_ALIASES = Object.freeze({
-  year: ["year", "printed_year", "release_year", "season", "product_year", "title_year"],
-  manufacturer: ["manufacturer", "brand"],
-  product: ["product", "product_line"],
-  set: ["set", "subset", "insert"],
-  subject: ["subject", "player", "players", "character"],
-  card_name: ["card_name", "official_card_type", "card_type", "insert"],
-  card_number: ["card_number", "checklist_code", "collector_number"],
-  descriptive_rarity: ["descriptive_rarity", "rarity"],
-  numerical_rarity: ["numerical_rarity", "print_run_number", "serial_number"],
-  release_variant: ["release_variant", "variation"],
-  print_finish: ["print_finish", "product_finish", "parallel", "parallel_exact", "parallel_family", "surface_color"],
-  special_stamp: ["special_stamp", "first_bowman"],
-  search_optimization: [
-    "search_optimization",
-    "observable_components",
-    "rc",
-    "auto",
-    "patch",
-    "relic",
-    "jersey",
-    "sketch",
-    "redemption",
-    "team"
-  ]
-});
-
 const DERIVED_SEM_FIELDS = new Set(["search_optimization", "special_stamp"]);
+const REQUIRED_EVALUATION_STAGES = Object.freeze([
+  "provider_observation",
+  "normalization",
+  "retrieval",
+  "selection",
+  "application",
+  "resolver",
+  "renderer"
+]);
 
 function finite(value) {
   if (value === null || value === undefined || value === "") return null;
@@ -75,30 +61,20 @@ function percentile(values, ratio) {
   return rows[Math.min(rows.length - 1, Math.max(0, Math.ceil(rows.length * ratio) - 1))];
 }
 
-function packetFields(packet, pathName) {
-  const value = pathName.split(".").reduce((current, key) => current?.[key], packet);
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function hasAlias(fields, field) {
-  return (FIELD_ALIASES[field] || [field]).some((alias) => Object.hasOwn(fields, alias));
-}
-
 function classifyMissing(row, packet) {
+  if (packet?.trace_level !== "evaluation") return evaluationMissingFieldCategories.TRACE_MISSING;
   // These SEM fields are assembled from several normalized observations. They
   // are not raw Provider contract fields, so absence of a same-named Provider
   // key must never be reported as a Provider observation miss.
   if (DERIVED_SEM_FIELDS.has(row.field)) return "DERIVED_SEM_NOT_EMITTED";
-  const lineage = (Array.isArray(packet.field_lineage) ? packet.field_lineage : [])
-    .find((entry) => entry?.field === row.field);
-  if (lineage) {
-    if (!Array.isArray(lineage.provider?.values) || lineage.provider.values.length === 0) return "PROVIDER_NOT_OBSERVED";
-    if (!Array.isArray(lineage.normalization?.values) || lineage.normalization.values.length === 0) return "NORMALIZATION_DROPPED";
-    return "CATALOG_NOT_RETRIEVED";
-  }
-  if (!hasAlias(packetFields(packet, "provider_observation_fields"), row.field)) return "PROVIDER_NOT_OBSERVED";
-  if (!hasAlias(packetFields(packet, "normalization.output"), row.field)) return "NORMALIZATION_DROPPED";
-  return "CATALOG_NOT_RETRIEVED";
+  return classifyEvaluationMissingField(packet, row.field, row.expected_value);
+}
+
+function completeEvaluationStageTrace(packet = {}) {
+  return packet.trace_level === "evaluation"
+    && REQUIRED_EVALUATION_STAGES.every((stage) => ["RAN", "RAN_EMPTY"].includes(
+      packet.stage_execution?.[stage]?.status
+    ));
 }
 
 export function analyzeFixed20ColdBenchmark(report = {}) {
@@ -108,6 +84,7 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
     || Number(row.provider_calls) !== 1
     || row.recognition_benchmark_profile !== recognitionBenchmarkProfileIds.COLD_ALGORITHM);
   const traceRows = results.filter((row) => row.evaluation_decision_trace_packet?.trace_level === "evaluation");
+  const completeTraceRows = results.filter((row) => completeEvaluationStageTrace(row.evaluation_decision_trace_packet));
   const timelineRows = results.map(reconstructedTimeline);
   const sem = analyzeSemStageLoss(report);
   const resultByJob = new Map(results.map((row) => [row.job_id, row]));
@@ -137,7 +114,8 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
     zero_technical_failures: Number(report.summary?.technical_failure_count || 0) === 0
       && Number(report.summary?.ok_count || 0) === EXPECTED_COUNT,
     cold_cache_contract: cacheViolations.length === 0,
-    evaluation_trace_coverage: traceRows.length === EXPECTED_COUNT
+    evaluation_trace_coverage: traceRows.length === EXPECTED_COUNT,
+    evaluation_stage_trace_coverage: completeTraceRows.length === EXPECTED_COUNT
   };
   return {
     schema_version: "fixed20-cold-algorithm-audit-v1",
@@ -146,6 +124,7 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
     passed: Object.values(integrity).every(Boolean),
     cache_violation_count: cacheViolations.length,
     evaluation_trace_count: traceRows.length,
+    evaluation_stage_trace_complete_count: completeTraceRows.length,
     provider_capacity_timeline_count: timelineRows.length,
     provider_capacity_timing: timing,
     sem_stage_loss: {

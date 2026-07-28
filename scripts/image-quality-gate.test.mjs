@@ -7,6 +7,7 @@ import {
   glareRoutes,
   summarizeAssetImageQuality
 } from "../lib/listing/image-quality/quality-gate.mjs";
+import { captureQualityPromptSummary } from "../lib/listing/pipeline/provider-prompt.mjs";
 
 const width = 200;
 const height = 286;
@@ -109,6 +110,16 @@ assert.equal(metadataOnlyUnknown.image_quality_degraded, null, "missing dimensio
 assert.equal(metadataOnlyUnknown.images[0].resolution_sufficient, null);
 assert.equal(metadataOnlyUnknown.images[0].crop_complete, null);
 assert.equal(metadataOnlyUnknown.images[0].image_quality_degraded, null);
+const metadataOnlyPrompt = captureQualityPromptSummary({
+  image_set_sha256: "a".repeat(64),
+  effective_capture_quality: metadataOnlyUnknown,
+  images: [{}]
+});
+assert.equal(metadataOnlyPrompt.route, null);
+assert.equal(metadataOnlyPrompt.glare_route, null);
+assert.equal(metadataOnlyPrompt.image_quality_degraded, null);
+assert.equal(metadataOnlyPrompt.images.length, 0, "unmeasured images must not become false visual facts in the prompt");
+
 const metadataOnlyMeasured = buildServerCaptureQualityFromCanonicalImages([{
   image_id: "front",
   width: 900,

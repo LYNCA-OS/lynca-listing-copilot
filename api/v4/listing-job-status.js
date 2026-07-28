@@ -321,6 +321,7 @@ function operationalSessionStatus(session = null, job = null) {
           : null,
       recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
       recognition_benchmark_phase: summary.recognition_benchmark_phase || null,
+      recognition_effective_configuration: summary.recognition_effective_configuration || null,
       evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
       provider_call_skipped: summary.provider_call_skipped === true,
       identity_cache_hit: summary.identity_cache_hit === true,

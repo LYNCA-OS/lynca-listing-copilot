@@ -14,8 +14,18 @@ const results = Array.from({ length: 20 }, (_, index) => ({
   final_title: "2025 Topps Chrome Test Player #1 Gold /50",
   evaluation_decision_trace_packet: {
     trace_level: "evaluation",
+    stage_execution: Object.fromEntries([
+      "provider_observation",
+      "normalization",
+      "retrieval",
+      "selection",
+      "application",
+      "resolver",
+      "renderer"
+    ].map((stage) => [stage, { status: "RAN", reason_code: "TEST_TRACE" }])),
     provider_observation_fields: { year: "2025" },
-    normalization: { output: { year: "2025" } }
+    normalization: { output: { year: "2025" } },
+    retrieval: { top_k: [] }
   },
   provider_capacity_timeline: {
     provider_slot_held_before_provider_ms: 100,
@@ -31,6 +41,7 @@ const audit = analyzeFixed20ColdBenchmark({
 });
 assert.equal(audit.passed, true);
 assert.equal(audit.evaluation_trace_count, 20);
+assert.equal(audit.evaluation_stage_trace_complete_count, 20);
 assert.equal(audit.provider_capacity_timing.provider_execution_ms.total_ms, 20000);
 
 const reconstructed = analyzeFixed20ColdBenchmark({
@@ -62,5 +73,40 @@ const invalid = analyzeFixed20ColdBenchmark({
 });
 assert.equal(invalid.passed, false);
 assert.equal(invalid.cache_violation_count, 1);
+
+const missingStage = analyzeFixed20ColdBenchmark({
+  summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
+  results: results.map((row, index) => index === 0
+    ? {
+      ...row,
+      evaluation_decision_trace_packet: {
+        ...row.evaluation_decision_trace_packet,
+        stage_execution: {
+          ...row.evaluation_decision_trace_packet.stage_execution,
+          retrieval: { status: "TRACE_MISSING", reason_code: "RETRIEVAL_TRACE_NOT_PERSISTED" }
+        }
+      }
+    }
+    : row)
+});
+assert.equal(missingStage.passed, false);
+assert.equal(missingStage.evaluation_stage_trace_complete_count, 19);
+
+const ranEmptyRetrieval = analyzeFixed20ColdBenchmark({
+  summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
+  results: results.map((row) => ({
+    ...row,
+    evaluation_decision_trace_packet: {
+      ...row.evaluation_decision_trace_packet,
+      stage_execution: {
+        ...row.evaluation_decision_trace_packet.stage_execution,
+        retrieval: { status: "RAN_EMPTY", reason_code: "RETRIEVAL_EXECUTED_NO_CANDIDATES" }
+      },
+      retrieval: { queries: ["no-match"], top_k: [], execution_status: "RAN_EMPTY" }
+    }
+  }))
+});
+assert.equal(ranEmptyRetrieval.passed, true);
+assert.equal(ranEmptyRetrieval.evaluation_stage_trace_complete_count, 20);
 
 console.log("fixed 20 cold benchmark audit tests passed");

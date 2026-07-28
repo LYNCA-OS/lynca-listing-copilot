@@ -127,6 +127,9 @@ assert.equal(key.result_version.owner_versions.catalog, "catalog-revision-test-1
 assert.equal(key.result_version.fingerprint_contract_version, "recognition-pipeline-fingerprint-v2");
 assert.equal(key.result_version.owner_source_manifest.version, "recognition-owner-source-manifest-v1");
 assert.match(key.result_version.owner_source_manifest.hash, /^[0-9a-f]{64}$/);
+assert.equal(key.result_version.owner_versions.route_planner, "v4-recognition-route-planner-v2-provider-options-owner");
+assert.equal(key.result_version.owner_versions.candidate.application_policy, "candidate-application-policy-v2-subject-alias");
+assert.equal(key.result_version.owner_versions.adapters.serial_tri_state, "serial-tristate-propagation-v2");
 assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
 
 const noTenantKey = buildIdentityResultCacheKey({ ...payload, tenant_id: "" });

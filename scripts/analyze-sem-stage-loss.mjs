@@ -6,6 +6,8 @@ import { canonicalSemPrediction, normalizeGoldenSemValue } from "../lib/listing/
 import { semProjectionFromTitle } from "../lib/listing/evaluation/reviewed-title-sem-projection.mjs";
 
 const LOSS = Object.freeze({
+  TRACE: "TRACE_MISSING",
+  UNKNOWN: "UNKNOWN",
   RETRIEVAL: "EVIDENCE_OR_RETRIEVAL_MISSING",
   SELECTION: "CANDIDATE_NOT_SELECTED",
   APPLICATION: "SAFE_APPLICATION_BLOCKED",
@@ -63,10 +65,55 @@ function anyValueMatches(field, expected, values = []) {
   return (Array.isArray(values) ? values : [values]).some((value) => valuesMatch(field, expected, value));
 }
 
+function reportedValue(field, value) {
+  return normalizeGoldenSemValue(field, value) ? value : null;
+}
+
 function fieldLineage(result, field) {
   return (Array.isArray(result?.evaluation_decision_trace_packet?.field_lineage)
     ? result.evaluation_decision_trace_packet.field_lineage
     : []).find((entry) => entry?.field === field) || null;
+}
+
+function plainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function hasOwnAny(value = {}, keys = []) {
+  const row = plainObject(value);
+  return keys.some((key) => Object.hasOwn(row, key));
+}
+
+function evaluationPacket(result = {}) {
+  const packet = plainObject(result.evaluation_decision_trace_packet);
+  return packet.trace_level === "evaluation" ? packet : null;
+}
+
+function stageAvailable(packet = null, stage = "", legacyPath = []) {
+  if (!packet) return false;
+  const explicitStatus = clean(packet.stage_execution?.[stage]?.status).toUpperCase();
+  if (explicitStatus) return ["RAN", "RAN_EMPTY"].includes(explicitStatus);
+  let current = packet;
+  for (const key of legacyPath) {
+    if (!current || typeof current !== "object" || !Object.hasOwn(current, key)) return false;
+    current = current[key];
+  }
+  return true;
+}
+
+function normalizedEvidence(result = {}, packet = null) {
+  if (stageAvailable(packet, "normalization", ["normalization", "output"])) {
+    return plainObject(packet.normalization?.output);
+  }
+  if (hasOwnAny(result, ["raw_observed_fields"])) return plainObject(result.raw_observed_fields);
+  if (hasOwnAny(result, ["evidence_fields"])) return plainObject(result.evidence_fields);
+  return {};
+}
+
+function missingTraceForField(packet = null) {
+  return !stageAvailable(packet, "provider_observation", ["provider_observation_fields"])
+    || !stageAvailable(packet, "normalization", ["normalization", "output"])
+    || !stageAvailable(packet, "retrieval", ["retrieval"]);
 }
 
 function retrievalMatches(result, field, expected) {
@@ -102,7 +149,8 @@ function retrievalMatches(result, field, expected) {
   });
 }
 
-function classifyField({ expected, observation, resolved, final, retrieval }) {
+function classifyField({ expected, observation, resolved, final, retrieval, traceMissing = false }) {
+  if (!normalizeGoldenSemValue(expected.field, expected.value)) return LOSS.UNKNOWN;
   if (valuesMatch(expected.field, expected.value, final)) return LOSS.PRESERVED;
   if (valuesMatch(expected.field, expected.value, resolved)) return LOSS.RENDERER;
   if (valuesMatch(expected.field, expected.value, observation)) return LOSS.RESOLVER;
@@ -110,6 +158,7 @@ function classifyField({ expected, observation, resolved, final, retrieval }) {
   if (selected.some((entry) => ["APPLY", "SUPPORT"].includes(entry.decision))) return LOSS.RESOLVER;
   if (selected.length) return LOSS.APPLICATION;
   if (retrieval.length) return LOSS.SELECTION;
+  if (traceMissing) return LOSS.TRACE;
   return LOSS.RETRIEVAL;
 }
 
@@ -118,12 +167,13 @@ export function analyzeSemStageLoss(report = {}) {
   const traceLimitations = new Set();
   for (const result of Array.isArray(report.results) ? report.results : []) {
     const expectedProjection = semProjectionFromTitle(result.reference_title || result.reviewed_title || "");
-    const observationSnapshot = result?.l2_candidate_debug?.candidate_observation_snapshot || {};
-    const observationSem = canonicalSemPrediction({ resolved_fields: observationSnapshot });
+    const packet = evaluationPacket(result);
+    const normalizedSnapshot = normalizedEvidence(result, packet);
+    const observationSem = canonicalSemPrediction({ resolved_fields: normalizedSnapshot });
     const resolvedSem = canonicalSemPrediction({ resolved_fields: result.resolved_fields || {} });
     const finalProjection = semProjectionFromTitle(result.final_title || "");
-    if (!result.provider_raw_observation && !result.provider_observation) {
-      traceLimitations.add("Raw Provider observation is absent; Provider miss and normalization drop cannot be separated.");
+    if (!stageAvailable(packet, "provider_observation", ["provider_observation_fields"])) {
+      traceLimitations.add("Evaluation Provider stage trace is absent; missing evidence is TRACE_MISSING, not a guessed Provider miss.");
     }
     for (const [field, status] of Object.entries(expectedProjection.field_statuses || {})) {
       if (status !== "CONFIRMED") continue;
@@ -139,16 +189,19 @@ export function analyzeSemStageLoss(report = {}) {
         observation: anyValueMatches(field, value, lineageObservation) ? value : observationSem[field],
         resolved: anyValueMatches(field, value, lineageResolved) ? value : resolvedSem[field],
         final: anyValueMatches(field, value, lineageFinal) ? value : finalProjection.sem?.[field],
-        retrieval
+        retrieval,
+        traceMissing: missingTraceForField(packet)
       });
       rows.push({
         job_id: result.job_id || null,
         asset_id: result.asset_id || null,
         field,
         expected_value: value,
-        observation_value: observationSem[field] ?? null,
-        resolved_value: resolvedSem[field] ?? null,
-        final_value: finalProjection.sem?.[field] ?? null,
+        observation_value: anyValueMatches(field, value, lineageObservation)
+          ? value
+          : reportedValue(field, observationSem[field]),
+        resolved_value: reportedValue(field, resolvedSem[field]),
+        final_value: reportedValue(field, finalProjection.sem?.[field]),
         retrieval_matches: retrieval,
         classification,
         reference_title: result.reference_title || null,
@@ -162,7 +215,7 @@ export function analyzeSemStageLoss(report = {}) {
   const missingCounts = Object.fromEntries(Object.entries(counts).filter(([key]) => key !== LOSS.PRESERVED));
   const largest = Object.entries(missingCounts).sort((left, right) => right[1] - left[1])[0] || null;
   if ((missingCounts[LOSS.RETRIEVAL] || 0) > 0) {
-    traceLimitations.add("When neither normalized observation nor persisted candidate decisions contain the expected value, the report cannot distinguish an Evidence miss from a Retrieval miss.");
+    traceLimitations.add("Evidence and Retrieval are both present, but this stage report defers their exact split to the GT-aware evaluation decision trace classifier.");
   }
   // Classification totals say which *stage* leaks; they do not say which field,
   // and the field is what you go and fix. On the 2026-07-25 cold-20 the totals

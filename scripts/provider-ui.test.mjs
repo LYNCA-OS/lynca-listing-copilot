@@ -14,12 +14,14 @@ const v4JobStatusApi = await readFile("api/v4/listing-job-status.js", "utf8");
 const providerRegistry = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
 const csmFieldLabels = await readFile("lib/listing/csm/field-labels.mjs", "utf8");
 const recognitionProfileAdapter = await readFile("lib/listing/v4/application/recognition-profile-adapter.mjs", "utf8");
+const cardCodeResolutionMap = await readFile("lib/listing/catalog/card-code-resolution-map.mjs", "utf8");
 
 assert.match(html, /id="providerControl"/, "provider segmented control should exist");
 assert.match(html, /id="providerStatusText"/, "provider status text should exist");
 assert.match(html, /rel="icon"[^>]+href="\/app\/favicon\.svg"/, "main app should provide a favicon to avoid browser 404 noise");
 assert.match(js, /fetchWithBoundedRetry\("\/api\/listing-provider-status"/, "frontend should load provider status with a bounded retry and wait");
-assert.match(js, /fetchWithBoundedRetry\("\/app\/resolution\.json"/, "optional display configuration must use a bounded startup read");
+assert.doesNotMatch(js, /\/app\/resolution\.json/, "the browser must not load a decision-bearing card-code resolution map");
+assert.match(cardCodeResolutionMap, /cardCodeResolutionMapRevision/, "the server-owned resolution map must contribute an immutable content revision");
 assert.match(js, /bindEvents\(\);\s*renderPreviews\(\);\s*renderResults\(\);\s*providerStatusReadyPromise = loadProviderStatus\(\);\s*void Promise\.all/s, "writer controls should become interactive before optional startup reads finish");
 assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
 assert.match(js, /recognitionClockFromServerPayload/, "per-card timer should use the authoritative server recognition clock");

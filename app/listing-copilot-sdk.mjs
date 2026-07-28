@@ -884,9 +884,16 @@ function stripClientImageTransport(value = {}) {
 }
 
 // lib/listing/v4/contracts/recognition-request.mjs
-var recognitionRequestContractVersion = "recognition-request-v2";
+var recognitionRequestContractVersion = "recognition-request-v3";
 var recognitionProfileIds = Object.freeze({
-  WRITER_ASSISTED: "writer-assisted-v1"
+  WRITER_ASSISTED: "writer-assisted-v1",
+  EVALUATION: "evaluation-v1"
+});
+var recognitionEvaluationAssistProfiles = Object.freeze({
+  FULL: "full",
+  CATALOG_ONLY: "catalog_only",
+  VECTOR_ONLY: "vector_only",
+  NONE: "none"
 });
 var defaultRecognitionProfileId = recognitionProfileIds.WRITER_ASSISTED;
 var clientForbiddenAlgorithmControlKeys = Object.freeze([
@@ -984,12 +991,30 @@ var clientRecognitionBusinessIntentKeys = Object.freeze(/* @__PURE__ */ new Set(
   "clientTiming",
   "deferred_image_count",
   "deferredImageCount",
-  "idempotency_key",
-  "idempotencyKey",
   "manual_retry",
   "manualRetry",
   "retry_of_job_id",
   "retryOfJobId"
+]));
+var clientRecognitionEvaluationIntentKeys = Object.freeze(/* @__PURE__ */ new Set([
+  "recognition_benchmark_profile",
+  "recognitionBenchmarkProfile",
+  "benchmark_profile",
+  "benchmarkProfile",
+  "recognition_benchmark_phase",
+  "recognitionBenchmarkPhase",
+  "benchmark_phase",
+  "benchmarkPhase",
+  "evaluation_assist_profile",
+  "evaluationAssistProfile",
+  "evaluation_cold_start_blind",
+  "evaluationColdStartBlind",
+  "physical_card_id",
+  "physicalCardId",
+  "physical_instance_group_id",
+  "physicalInstanceGroupId",
+  "source_feedback_id",
+  "sourceFeedbackId"
 ]));
 var knownRecognitionProfiles = new Set(Object.values(recognitionProfileIds));
 function cleanText2(value) {

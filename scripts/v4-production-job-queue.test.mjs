@@ -136,6 +136,55 @@ assert.equal(repeatedRow.recognition_session_id, row.recognition_session_id);
 assert.notEqual(createV4DeterministicJobId({ batchId: "other-batch", assetId: "asset-1" }), row.id);
 assert.notEqual(createV4DeterministicSessionId({ batchId: "other-batch", assetId: "asset-1" }), row.recognition_session_id);
 
+const selfExclusionFeedbackId = "feedback-current-card";
+const selfExclusionAssetId = "asset_33333333-3333-4333-8333-333333333333";
+const selfExclusionGenerationId = "asset_44444444-4444-4444-8444-444444444444";
+const canonicalizedSelfExclusionJob = await canonicalizeQueueJobs({
+  tenantId: "tenant-stage",
+  allowEvaluationProfile: true,
+  jobs: [{
+    asset_id: selfExclusionAssetId,
+    image_generation_id: selfExclusionGenerationId,
+    payload: {
+      asset_id: selfExclusionAssetId,
+      image_generation_id: selfExclusionGenerationId,
+      recognition_profile: "evaluation-v1",
+      recognition_benchmark_profile: "cold_algorithm_benchmark",
+      recognition_benchmark_phase: "cold",
+      source_feedback_id: selfExclusionFeedbackId,
+      images: [{ url: "data:image/jpeg;base64,client-transport-must-be-replaced" }]
+    }
+  }],
+  readCanonical: async () => ({
+    image_generation_id: selfExclusionGenerationId,
+    image_set_sha256: "canonical-image-set-sha",
+    expected_original_count: 2,
+    images: [
+      { image_id: "front", bucket: "listing-feedback-images", object_path: "feedback/current/front.jpg" },
+      { image_id: "back", bucket: "listing-feedback-images", object_path: "feedback/current/back.jpg" }
+    ],
+    image_references: [],
+    image_paths: {}
+  })
+});
+assert.equal(
+  canonicalizedSelfExclusionJob[0].payload.source_feedback_id,
+  selfExclusionFeedbackId,
+  "canonical image rebinding must preserve the blind-eval self-exclusion identity"
+);
+assert.equal(canonicalizedSelfExclusionJob[0].payload.images.length, 2);
+assert.match(canonicalizedSelfExclusionJob[0].payload.queue_decision_fingerprint, /^[0-9a-f]{64}$/);
+assert.equal(
+  canonicalizedSelfExclusionJob[0].payload.queue_decision_fingerprint,
+  buildQueueDecisionFingerprint({
+    ...canonicalizedSelfExclusionJob[0].payload,
+    queue_decision_fingerprint: undefined,
+    queue_decision_contract_version: undefined,
+    recognition_profile_adapter_version: undefined
+  }).fingerprint,
+  "the persisted queue decision fingerprint must be derived from server-bound effective inputs"
+);
+
 const cacheBoundAssetId = "asset_56565656-5656-4565-8565-565656565656";
 const canonicalizedCacheBoundJob = await canonicalizeQueueJobs({
   tenantId: "tenant-cache-bound",
@@ -438,7 +487,7 @@ assert.equal(
 );
 const immutableRevisionEnv = { OPENAI_LISTING_MODEL: "gpt-5-mini-2025-08-07" };
 const baseDecisionPayload = {
-  recognition_contract_version: "recognition-request-v2",
+  recognition_contract_version: "recognition-request-v3",
   recognition_profile: "writer-assisted-v1",
   mode: "pair",
   max_title_length: 80,

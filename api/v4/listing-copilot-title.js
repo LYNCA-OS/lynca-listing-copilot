@@ -439,16 +439,17 @@ function writerPendingL1Response(response = {}, result = {}) {
   });
 }
 
-// Exact-anchor finalize is the one L1 outcome allowed through the writer
-// barrier: a unique strictest-tier catalog identity (exact printed code +
-// year agreement + zero contradicted anchors) IS the answer, so the writer
-// sees the title in the L1 window (~2-3s) while the background L2 run stays
-// on as verification and overwrites on completion. Every other L1 result
-// stays behind the barrier as internal evidence.
+// Exact-anchor finalize is a designed fast route, not an active production
+// authority. Eligibility remains observable, but every L1 result stays behind
+// the writer barrier until a separate canary proves precision and parity.
 export function exactAnchorFastFinalShadowOnly(payload = {}) {
-  const options = payload.provider_options || payload.providerOptions || {};
-  return payload.exact_anchor_fast_final_shadow_only === true
-    || options.exact_anchor_fast_final_shadow_only === true;
+  // Exact-anchor fast final is designed and traced, but has not cleared its
+  // production canary gate. Keep every transport/profile in shadow mode here;
+  // a client false value or legacy env flag must never activate a paid-call
+  // bypass. A future canary must replace this constant with a server-owned,
+  // separately reviewed release decision.
+  void payload;
+  return true;
 }
 
 function exactAnchorWriterFastLaneEnabled(payload = {}, env = process.env) {
@@ -595,6 +596,7 @@ function providerRuntimeSummary(result = {}, payload = {}) {
     recognition_benchmark_phase: result.recognition_benchmark_phase
       || providerOptions.recognition_benchmark_phase
       || null,
+    recognition_effective_configuration: result.recognition_effective_configuration || null,
     evaluation_decision_trace_packet: result.evaluation_decision_trace_packet || null,
     identity_resolution_status: result.identity_resolution_status || null,
     ambiguity_status: result.ambiguity_status || null,
@@ -1749,6 +1751,11 @@ export default async function handler(req, res) {
     pre_l2_anchor_catalog_candidate_count: null,
     pre_l2_anchor_trusted_candidate_count: null,
     pre_l2_anchor_eligible_candidate_count: null,
+    pre_l2_anchor_input_reason_codes: [],
+    pre_l2_anchor_reason_codes: [],
+    pre_l2_anchor_current_code_patch_count: null,
+    pre_l2_anchor_typed_direct_code_anchor_count: null,
+    pre_l2_anchor_sports_pre_provider_reachability: null,
     pre_l2_full_l2_skipped: false,
     exact_anchor_scout_attempted: false,
     exact_anchor_scout_status: null,
@@ -1804,7 +1811,12 @@ export default async function handler(req, res) {
     l2Timing.pre_l2_anchor_catalog_candidate_count = preL2AnchorProbe?.metrics?.catalog_candidate_count ?? null;
     l2Timing.pre_l2_anchor_trusted_candidate_count = preL2AnchorProbe?.metrics?.trusted_candidate_count ?? null;
     l2Timing.pre_l2_anchor_eligible_candidate_count = preL2AnchorProbe?.metrics?.eligible_candidate_count ?? null;
-    if (preL2AnchorProbe?.finalized === true) {
+    l2Timing.pre_l2_anchor_input_reason_codes = preL2AnchorProbe?.input_trace?.reason_codes || [];
+    l2Timing.pre_l2_anchor_reason_codes = preL2AnchorProbe?.reason_codes || [];
+    l2Timing.pre_l2_anchor_current_code_patch_count = preL2AnchorProbe?.input_trace?.current_code_patch_count ?? null;
+    l2Timing.pre_l2_anchor_typed_direct_code_anchor_count = preL2AnchorProbe?.input_trace?.typed_direct_code_anchor_count ?? null;
+    l2Timing.pre_l2_anchor_sports_pre_provider_reachability = preL2AnchorProbe?.input_trace?.sports_pre_provider_reachability || null;
+    if (preL2AnchorProbe?.finalized === true && !exactAnchorFastFinalShadowOnly(payload)) {
       // The writer-visible timer for a no-GPT path starts only after the
       // router has proved that OCR/catalog evidence is sufficient. Queueing,
       // bundle loading and speculative lookup are reported separately.
@@ -1816,8 +1828,10 @@ export default async function handler(req, res) {
       dossier: preL2AnchorProbe?.dossier || null,
       timing: preL2AnchorProbe?.timing || null,
       metrics: preL2AnchorProbe?.metrics || null,
+      input_trace: preL2AnchorProbe?.input_trace || null,
       finalized: preL2AnchorProbe?.finalized === true,
       reason: preL2AnchorProbe?.reason || null,
+      reason_codes: preL2AnchorProbe?.reason_codes || [],
       shadow_finalize: preL2AnchorProbe?.finalize ? {
         finalized: preL2AnchorProbe.finalize.finalized === true,
         reason: preL2AnchorProbe.finalize.reason || null,
@@ -2133,11 +2147,8 @@ export default async function handler(req, res) {
     return;
   }
 
-  // L2-direct short-circuit: even when the fast-scout L1 response is skipped
-  // (queue workers, forced L2), a unique strict-tier catalog hit lets us skip
-  // the 30-40s full observation entirely - the scout runs from cache/prewarm,
-  // the finalize race is bounded, and anything short of a unique exact-code
-  // agreement falls through to the normal L2 call unchanged.
+  // Designed L2-direct short-circuit. The global shadow policy above keeps
+  // this branch inactive until a separately reviewed canary release.
   if (forceL2Direct && Array.isArray(payload.images) && payload.images.length > 0
     && payload.disable_exact_anchor_finalize !== true
     && !exactAnchorFastFinalShadowOnly(payload)) {

@@ -43,7 +43,6 @@ const PROVIDER_STATUS_RECOVERY_DELAYS_MS = Object.freeze([2000, 5000, 10000, 300
 const PREINGEST_REQUEST_TIMEOUT_MS = 25000;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
 const EXPORT_REQUEST_TIMEOUT_MS = 90000;
-const RESOLUTION_MAP_TIMEOUT_MS = 5000;
 const PROVIDER_STATUS_TIMEOUT_MS = 10000;
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
@@ -88,7 +87,6 @@ const state = {
   results: [],
   modal: null,
   modalReturnFocus: null,
-  resolutionMap: {},
   providerStatus: null,
   selectedProvider: "",
   processing: false,
@@ -967,7 +965,6 @@ function buildAssetQueueIntentBody(asset, options = {}) {
     deferred_image_count: deferredImageCount,
     captureProfileId: defaultCaptureProfileId,
     captureQuality: summarizeAssetImageQuality(providerImages),
-    resolutionMap: state.resolutionMap,
     clientTiming: asset.clientTiming || {}
   }, {
     profileId: options.recognitionProfile || defaultRecognitionProfileId
@@ -5923,25 +5920,6 @@ function bindEvents() {
   });
 }
 
-async function loadResolutionMap() {
-  try {
-    const request = await fetchWithBoundedRetry("/app/resolution.json", {
-      credentials: "same-origin",
-      cache: "no-store"
-    }, {
-      timeoutMs: RESOLUTION_MAP_TIMEOUT_MS,
-      maxAttempts: 2,
-      retryNetworkErrors: true,
-      maxDelayMs: 750
-    });
-    const response = request.response;
-    if (!response.ok) throw new Error(`Resolution map failed: ${response.status}`);
-    state.resolutionMap = await response.json();
-  } catch {
-    state.resolutionMap = {};
-  }
-}
-
 function scheduleProviderStatusRecovery() {
   if (providerStatusRecoveryTimer) return;
   const delayMs = PROVIDER_STATUS_RECOVERY_DELAYS_MS[
@@ -6007,6 +5985,5 @@ renderResults();
 
 providerStatusReadyPromise = loadProviderStatus();
 void Promise.all([
-  loadResolutionMap(),
   providerStatusReadyPromise
 ]);

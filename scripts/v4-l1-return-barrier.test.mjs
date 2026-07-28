@@ -16,7 +16,11 @@ assert.equal(exactAnchorFastFinalShadowOnly({
     exact_anchor_fast_final_shadow_only: true
   }
 }), true);
-assert.equal(exactAnchorFastFinalShadowOnly({ provider_options: {} }), false);
+assert.equal(exactAnchorFastFinalShadowOnly({ provider_options: {} }), true);
+assert.equal(exactAnchorFastFinalShadowOnly({
+  exact_anchor_fast_final_shadow_only: false,
+  provider_options: { exact_anchor_fast_final_shadow_only: false }
+}), true, "client or legacy false values must not activate exact-anchor production finalization");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const apiSource = await fs.readFile(path.join(root, "api/v4/listing-copilot-title.js"), "utf8");

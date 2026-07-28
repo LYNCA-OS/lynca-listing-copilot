@@ -19,8 +19,84 @@ const audit = analyzeSemStageLoss({
 assert.equal(audit.result_count, 1);
 assert.ok(audit.confirmed_field_count >= 6);
 assert.equal(audit.classification_counts.RENDERER_DROPPED, 2);
-assert.match(audit.trace_limitations[0], /Raw Provider observation/);
+assert.match(audit.trace_limitations[0], /Provider stage trace/);
 console.log("SEM stage loss audit tests passed");
+
+{
+  const postResolverSnapshotMustNotCount = analyzeSemStageLoss({
+    results: [{
+      job_id: "job-post-resolver-contamination",
+      reference_title: "2024 Topps Chrome Test Player",
+      final_title: "",
+      resolved_fields: {},
+      l2_candidate_debug: {
+        candidate_observation_snapshot: {
+          year: "2024",
+          manufacturer: "Topps",
+          product: "Topps Chrome",
+          players: ["Test Player"]
+        }
+      }
+    }]
+  });
+  assert.equal(
+    postResolverSnapshotMustNotCount.classification_counts.RESOLVER_DROPPED || 0,
+    0,
+    "post-resolver candidate snapshots must not inflate Evidence Oracle"
+  );
+  assert.ok((postResolverSnapshotMustNotCount.classification_counts.TRACE_MISSING || 0) > 0);
+  assert.ok(postResolverSnapshotMustNotCount.rows.every((row) => row.observation_value === null));
+}
+
+{
+  const legacyTraceStillUsesPersistedNormalization = analyzeSemStageLoss({
+    results: [{
+      job_id: "job-legacy-trace",
+      reference_title: "2024 Topps Chrome Test Player",
+      final_title: "",
+      resolved_fields: {},
+      evaluation_decision_trace_packet: {
+        trace_level: "evaluation",
+        provider_observation_fields: { product: "Prizm" },
+        normalization: { output: { product: "Prizm" } },
+        retrieval: { top_k: [] },
+        field_lineage: []
+      },
+      l2_candidate_debug: {
+        candidate_observation_snapshot: { product: "Topps Chrome" }
+      }
+    }]
+  });
+  const product = legacyTraceStillUsesPersistedNormalization.rows.find((row) => row.field === "product");
+  assert.equal(product.observation_value, "Prizm");
+  assert.equal(product.classification, "EVIDENCE_OR_RETRIEVAL_MISSING");
+}
+
+{
+  const legitimateEmptyRetrieval = analyzeSemStageLoss({
+    results: [{
+      job_id: "job-ran-empty",
+      reference_title: "2024 Topps Chrome Test Player",
+      final_title: "",
+      resolved_fields: {},
+      evaluation_decision_trace_packet: {
+        trace_level: "evaluation",
+        stage_execution: {
+          provider_observation: { status: "RAN" },
+          normalization: { status: "RAN" },
+          retrieval: { status: "RAN_EMPTY", reason_code: "RETRIEVAL_EXECUTED_NO_CANDIDATES" }
+        },
+        provider_observation_fields: { product: "Prizm" },
+        normalization: { output: { product: "Prizm" } },
+        retrieval: { queries: ["Prizm"], top_k: [], execution_status: "RAN_EMPTY" },
+        field_lineage: []
+      }
+    }]
+  });
+  const product = legitimateEmptyRetrieval.rows.find((row) => row.field === "product");
+  assert.equal(product.classification, "EVIDENCE_OR_RETRIEVAL_MISSING");
+  assert.notEqual(product.classification, "TRACE_MISSING", "a persisted empty retrieval is execution evidence, not missing trace");
+}
 
 // Classification totals name the leaking stage but not the field to go and fix.
 // The per-field rollup is what located the real bottleneck on the 2026-07-25
