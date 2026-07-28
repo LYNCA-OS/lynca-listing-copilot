@@ -400,6 +400,7 @@ assert.equal(coldOptions.disable_writer_final_replay, true);
 assert.equal(coldOptions.disable_identity_inflight_replay, true);
 assert.equal(coldOptions.exact_anchor_fast_final_shadow_only, true);
 assert.equal(coldOptions.disable_recognition_worker_fast_final, true);
+assert.equal(coldOptions.recognition_worker_preflight_shadow_only, true);
 
 assert.deepEqual(__listingCopilotTitleTestHooks.exactAnchorFastFinalShadowFromPayload({
   v4_anchor_probe: {

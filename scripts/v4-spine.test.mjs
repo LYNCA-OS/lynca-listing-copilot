@@ -1258,10 +1258,18 @@ assert.ok(
     && fullProviderFallbackCall > knowledgeFirstRefreshPromise,
   "knowledge-first Shadow must refresh from typed preflight evidence without delaying the deployed Provider start"
 );
-assert.doesNotMatch(
-  nativeRecognitionCoreSource.slice(knowledgeFirstRefreshPromise, fullProviderFallbackCall + 2_000),
-  /await knowledgeFirstRouteShadowPromise/,
-  "Shadow route telemetry must never add a terminal critical-path join"
+const evaluationKnowledgeFirstJoin = nativeRecognitionCoreSource.indexOf(
+  "? await completedKnowledgeFirstRouteShadowForEvaluation(",
+  fullProviderFallbackCall
+);
+assert.ok(
+  evaluationKnowledgeFirstJoin > fullProviderFallbackCall,
+  "cold evaluation may join complete Shadow evidence only after the deployed Provider call"
+);
+assert.match(
+  nativeRecognitionCoreSource.slice(fullProviderFallbackCall, evaluationKnowledgeFirstJoin + 200),
+  /const persistedKnowledgeFirstRouteShadow = typedRouteEvaluationEnabled\s*\? await completedKnowledgeFirstRouteShadowForEvaluation\(/,
+  "only an evaluation trace may wait for the complete counterfactual route"
 );
 assert.match(v4TitleApiSource, /noncritical_persistence_summary: persistenceSummary/, "background persistence must report its terminal artifact-level outcome.");
 assert.match(v4SmokeSource, /const prewarmPromise = prewarm/, "production smoke must start the free cache probe independently.");
