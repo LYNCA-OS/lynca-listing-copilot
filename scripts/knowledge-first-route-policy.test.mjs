@@ -136,6 +136,45 @@ const conflictingManufacturerAliases = planKnowledgeFirstRecognition({
 assert.equal(conflictingManufacturerAliases.route, knowledgeFirstRoutes.WRITER_REVIEW);
 assert.ok(conflictingManufacturerAliases.evidence_snapshot.blocked_fields.includes("manufacturer"));
 
+const complementaryLiteralIdentityFields = planKnowledgeFirstRecognition({
+  usableImageCount: 2,
+  forwardEnumerationTrace: teamValueTrace,
+  evidenceDocument: evidence({
+    year: "2025",
+    manufacturer: "Panini",
+    players: ["Victor Wembanyama"],
+    product: "Phoenix",
+    set: "Fade To Black",
+    collector_number: "FTB-12"
+  }, {
+    year: confirmed("2025"),
+    manufacturer: confirmed("Panini"),
+    players: confirmed(["Victor Wembanyama"]),
+    product: confirmed("Phoenix"),
+    set: confirmed("Fade To Black"),
+    collector_number: confirmed("FTB-12")
+  })
+});
+assert.equal(complementaryLiteralIdentityFields.route, knowledgeFirstRoutes.DETERMINISTIC_FINAL);
+assert.equal(complementaryLiteralIdentityFields.evidence_snapshot.field_states.set, "PUBLISHABLE");
+assert.equal(complementaryLiteralIdentityFields.evidence_snapshot.field_states.collector_number, "PUBLISHABLE");
+assert.deepEqual(complementaryLiteralIdentityFields.evidence_snapshot.literal_identity_fields, {
+  set: "Fade To Black",
+  collector_number: "FTB-12"
+});
+assert.equal(complementaryLiteralIdentityFields.evidence_snapshot.blocked_fields.includes("literal_identity"), false);
+
+const literalIdentityConflictKeepsItsRealFieldName = planKnowledgeFirstRecognition({
+  usableImageCount: 2,
+  evidenceDocument: evidence({}, {
+    set: { ...confirmed("Fade To Black"), status: "CONFLICT" },
+    collector_number: confirmed("FTB-12")
+  })
+});
+assert.equal(literalIdentityConflictKeepsItsRealFieldName.route, knowledgeFirstRoutes.WRITER_REVIEW);
+assert.ok(literalIdentityConflictKeepsItsRealFieldName.evidence_snapshot.blocked_fields.includes("set"));
+assert.equal(literalIdentityConflictKeepsItsRealFieldName.evidence_snapshot.blocked_fields.includes("literal_identity"), false);
+
 const conflicted = planKnowledgeFirstRecognition({
   usableImageCount: 2,
   evidenceDocument: evidence({

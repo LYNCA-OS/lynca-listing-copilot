@@ -16,6 +16,7 @@ import {
   exactReplayPhases,
   recognitionBenchmarkProfileIds
 } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import { scoreTitleCriticalGuard } from "../lib/listing/evaluation/title-critical-guard.mjs";
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -59,6 +60,8 @@ export function recognitionBenchmarkCliOptions(argv = []) {
   const aliases = new Map([
     ["cold", recognitionBenchmarkProfileIds.COLD_ALGORITHM],
     ["cold-algorithm", recognitionBenchmarkProfileIds.COLD_ALGORITHM],
+    ["cold-targeted", recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST],
+    ["cold-targeted-assist", recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST],
     ["exact-replay", recognitionBenchmarkProfileIds.EXACT_REPLAY],
     ["production", recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD]
   ]);
@@ -913,6 +916,19 @@ async function readJsonResponse(response) {
   }
 }
 
+export function enqueuePayloadRequestsEvaluationAuthorization(payload = {}) {
+  const jobs = Array.isArray(payload?.jobs) ? payload.jobs : [];
+  const profiles = jobs.map((job) => cleanText(
+    job?.payload?.provider_options?.recognition_benchmark_profile
+    || job?.payload?.providerOptions?.recognition_benchmark_profile
+  ));
+  return profiles.some((profile) => [
+    recognitionBenchmarkProfileIds.COLD_ALGORITHM,
+    recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST,
+    recognitionBenchmarkProfileIds.EXACT_REPLAY
+  ].includes(profile));
+}
+
 export async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch }) {
   const response = await fetchImpl(`${baseUrl}/api/login`, {
     method: "POST",
@@ -947,6 +963,11 @@ async function postJson({
       headers: {
         "content-type": "application/json",
         ...deploymentProtectionHeaders(),
+        ...(path === "/api/v4/listing-job-enqueue"
+          && enqueuePayloadRequestsEvaluationAuthorization(payload)
+          && cleanText(process.env.LAUNCH_GATE_EVAL_SECRET)
+          ? { "x-lynca-launch-gate-secret": cleanText(process.env.LAUNCH_GATE_EVAL_SECRET) }
+          : {}),
         // undici 的 keep-alive 套接字一旦僵死会级联拖垮后续同源请求
         //（表现为成串的 45s request_timeout）；烟测逐请求关闭连接复用。
         connection: "close",
@@ -1350,7 +1371,13 @@ function sessionL2Summary(statusPayload = {}) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    provider_transient_retry_attempted: summary.provider_transient_retry_attempted === true,
+    provider_output_cap_downgrade_attempted: summary.provider_output_cap_downgrade_attempted === true,
+    provider_truncation_retry_attempted: summary.provider_truncation_retry_attempted === true,
+    gpt5_empty_result_retry_attempted: summary.gpt5_empty_result_retry_attempted === true,
     evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
+    targeted_assist_execution: summary.targeted_assist_execution || null,
+    provider_call_ledger: Array.isArray(summary.provider_call_ledger) ? summary.provider_call_ledger : [],
     provider_capacity_timeline: statusPayload.timing?.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
     provider_slot_timing: summary.provider_slot_timing || null,
@@ -1484,7 +1511,13 @@ function jobL2Summary(statusPayload = {}) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    provider_transient_retry_attempted: summary.provider_transient_retry_attempted === true,
+    provider_output_cap_downgrade_attempted: summary.provider_output_cap_downgrade_attempted === true,
+    provider_truncation_retry_attempted: summary.provider_truncation_retry_attempted === true,
+    gpt5_empty_result_retry_attempted: summary.gpt5_empty_result_retry_attempted === true,
     evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
+    targeted_assist_execution: summary.targeted_assist_execution || null,
+    provider_call_ledger: Array.isArray(summary.provider_call_ledger) ? summary.provider_call_ledger : [],
     provider_capacity_timeline: job.timing?.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
     provider_slot_timing: summary.provider_slot_timing || null,
@@ -2026,12 +2059,21 @@ function serialTitleAnalysis(referenceTitle = "", predictionTitle = "") {
   };
 }
 
-function scoreTitles(referenceTitle = "", predictionTitle = "") {
+export function scoreTitles(referenceTitle = "", predictionTitle = "", {
+  reviewedTitleGroundTruth = false,
+  identityGroundTruth = null
+} = {}) {
   return {
     raw_token_recall: rawTokenRecall(referenceTitle, predictionTitle),
     fair_token_recall: fairTokenRecall(referenceTitle, predictionTitle),
     policy_fair_token_recall: policyFairTokenRecall(referenceTitle, predictionTitle),
-    serial_number_title_analysis: serialTitleAnalysis(referenceTitle, predictionTitle)
+    serial_number_title_analysis: serialTitleAnalysis(referenceTitle, predictionTitle),
+    critical_title_guard: scoreTitleCriticalGuard({
+      referenceTitle,
+      finalTitle: predictionTitle,
+      reviewedTitleGroundTruth,
+      identityGroundTruth
+    })
   };
 }
 
@@ -2566,7 +2608,13 @@ async function runOne({
       provider_call_skipped: l2.summary?.provider_call_skipped === true,
       provider_calls: numberOrNull(l2.summary?.provider_calls),
       recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+      provider_transient_retry_attempted: l2.summary?.provider_transient_retry_attempted === true,
+      provider_output_cap_downgrade_attempted: l2.summary?.provider_output_cap_downgrade_attempted === true,
+      provider_truncation_retry_attempted: l2.summary?.provider_truncation_retry_attempted === true,
+      gpt5_empty_result_retry_attempted: l2.summary?.gpt5_empty_result_retry_attempted === true,
       evaluation_decision_trace_packet: l2.summary?.evaluation_decision_trace_packet || null,
+      targeted_assist_execution: l2.summary?.targeted_assist_execution || null,
+      provider_call_ledger: Array.isArray(l2.summary?.provider_call_ledger) ? l2.summary.provider_call_ledger : [],
       provider_capacity_timeline: l2.summary?.provider_capacity_timeline || null,
       exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
       provider_slot_timing: l2.summary?.provider_slot_timing || null,
@@ -2816,7 +2864,13 @@ async function runOne({
     provider_call_skipped: l2.summary?.provider_call_skipped === true,
     provider_calls: numberOrNull(l2.summary?.provider_calls),
     recognition_benchmark_profile: l2.summary?.recognition_benchmark_profile || null,
+    provider_transient_retry_attempted: l2.summary?.provider_transient_retry_attempted === true,
+    provider_output_cap_downgrade_attempted: l2.summary?.provider_output_cap_downgrade_attempted === true,
+    provider_truncation_retry_attempted: l2.summary?.provider_truncation_retry_attempted === true,
+    gpt5_empty_result_retry_attempted: l2.summary?.gpt5_empty_result_retry_attempted === true,
     evaluation_decision_trace_packet: l2.summary?.evaluation_decision_trace_packet || null,
+    targeted_assist_execution: l2.summary?.targeted_assist_execution || null,
+    provider_call_ledger: Array.isArray(l2.summary?.provider_call_ledger) ? l2.summary.provider_call_ledger : [],
     provider_capacity_timeline: l2.summary?.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: l2.summary?.exact_anchor_fast_final_shadow || null,
     provider_slot_timing: l2.summary?.provider_slot_timing || null,
@@ -3243,6 +3297,10 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
   const prewarm = prepared.prewarm || {};
   return compactObject({
     asset_id: prepared.asset_id,
+    source_fingerprint: prepared.preparation_diagnostics?.source_fingerprint || null,
+    image_generation_id: prepared.asset_cache_entry?.image_generation_id || prepared.item?.image_generation_id || null,
+    canonical_image_set_sha256: prepared.asset_cache_entry?.canonical_image_set_sha256 || null,
+    canonical_primary_content_sha256: prepared.asset_cache_entry?.canonical_primary_content_sha256 || null,
     source_asset_id: prepared.source_asset_id || null,
     source_feedback_id: prepared.source_feedback_id || prepared.item?.source_feedback_id || null,
     sealed_label_key: prepared.item?.sealed_eval_label_ref?.key || null,
@@ -3406,7 +3464,13 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     provider_call_skipped: summary.provider_call_skipped === true,
     provider_calls: numberOrNull(summary.provider_calls),
     recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
+    provider_transient_retry_attempted: summary.provider_transient_retry_attempted === true,
+    provider_output_cap_downgrade_attempted: summary.provider_output_cap_downgrade_attempted === true,
+    provider_truncation_retry_attempted: summary.provider_truncation_retry_attempted === true,
+    gpt5_empty_result_retry_attempted: summary.gpt5_empty_result_retry_attempted === true,
     evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
+    targeted_assist_execution: summary.targeted_assist_execution || null,
+    provider_call_ledger: Array.isArray(summary.provider_call_ledger) ? summary.provider_call_ledger : [],
     provider_capacity_timeline: summary.provider_capacity_timeline || null,
     exact_anchor_fast_final_shadow: summary.exact_anchor_fast_final_shadow || null,
     provider_slot_timing: summary.provider_slot_timing || null,
@@ -3428,6 +3492,8 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     provider_key_rotation_attempted: providerDiagnostics.provider_key_rotation_attempted,
     provider_key_rotation_attempts: providerDiagnostics.provider_key_rotation_attempts,
     attempt_count: jobRow?.attempt_count ?? null,
+    retry_attempt_history: summary.retry_attempt_history || [],
+    retry_error_codes: summary.retry_error_codes || [],
     job_status: jobRow?.status || null,
     response_status: providerDiagnostics.response_status,
     incomplete_reason: providerDiagnostics.incomplete_reason,
@@ -3479,6 +3545,12 @@ export function attachPostRecognitionScoring(results = [], items = [], sealedLab
       : sellerTitle
         ? "MARKETPLACE_WEAK_LABEL"
         : "NONE";
+    const scoringOptions = {
+      reviewedTitleGroundTruth,
+      identityGroundTruth: label.policy?.field_ground_truth === true
+        ? label.identity_ground_truth || null
+        : null
+    };
     return {
       ...row,
       sealed_label_key: item.sealed_eval_label_ref?.key || label.key || row.sealed_label_key || null,
@@ -3489,11 +3561,12 @@ export function attachPostRecognitionScoring(results = [], items = [], sealedLab
       reference_title: referenceTitle,
       reference_title_type: referenceTitleType,
       reference_title_is_reviewed_ground_truth: reviewedTitleGroundTruth,
-      l1_scoring: scoreTitles(referenceTitle, row.l1_title || ""),
-      final_scoring: scoreTitles(referenceTitle, row.final_title || ""),
+      l1_scoring: scoreTitles(referenceTitle, row.l1_title || "", scoringOptions),
+      final_scoring: scoreTitles(referenceTitle, row.final_title || "", scoringOptions),
       exact_anchor_shadow_scoring: scoreTitles(
         referenceTitle,
-        row.exact_anchor_fast_final_shadow?.shadow_title || ""
+        row.exact_anchor_fast_final_shadow?.shadow_title || "",
+        scoringOptions
       ),
       item_web_url: label.item_web_url || null
     };
@@ -5077,7 +5150,10 @@ export async function runV4EbaySmoke({
     provider_done_capacity_handoff_override: providerDoneHandoff,
     ultra_fast_image_detail: ultraFastL2 === true ? ultraFastImageDetail : null,
     ultra_fast_service_tier: ultraFastL2 === true ? ultraFastServiceTier || null : null,
-    identity_cache_disabled: disableIdentityCache || benchmarkProfile === recognitionBenchmarkProfileIds.COLD_ALGORITHM,
+    identity_cache_disabled: disableIdentityCache || [
+      recognitionBenchmarkProfileIds.COLD_ALGORITHM,
+      recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST
+    ].includes(benchmarkProfile),
     recognition_benchmark_profile: benchmarkProfile
       || (disableIdentityCache ? recognitionBenchmarkProfileIds.COLD_ALGORITHM : recognitionBenchmarkProfileIds.PRODUCTION_WORKLOAD),
     recognition_benchmark_phase: benchmarkPhase,

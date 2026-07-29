@@ -11,6 +11,7 @@ import { ebayBrowseProvider } from "../lib/listing/retrieval/ebay-browse-provide
 import { officialSourceProvider } from "../lib/listing/retrieval/official-source-provider.mjs";
 import { openAiWebSearchProvider } from "../lib/listing/retrieval/openai-web-search-provider.mjs";
 import { internalMemoryProvider } from "../lib/listing/retrieval/internal-memory-provider.mjs";
+import { postgresHybridProvider } from "../lib/listing/retrieval/postgres-hybrid-provider.mjs";
 import { visualVectorProvider } from "../lib/listing/retrieval/visual-vector-provider.mjs";
 import { runRetrieval } from "../lib/listing/retrieval/retrieval-engine.mjs";
 import { createRetrievalProviderRegistry } from "../lib/listing/retrieval/retrieval-provider-registry.mjs";
@@ -91,6 +92,7 @@ const visualPlanned = planRetrievalQueries({
     }
   ],
   includeExternal: false,
+  includeHybrid: true,
   excludeSourceFeedbackIds: ["feedback-current-card"]
 });
 const visualQuery = visualPlanned.find((query) => query.family === retrievalQueryFamilies.VISUAL_VECTOR);
@@ -100,6 +102,18 @@ assert.equal(visualQuery.cacheable, false);
 assert.equal(visualQuery.embedding.length, 768);
 assert.equal(visualQuery.embedding_role, "front_global");
 assert.deepEqual(visualQuery.exclude_source_feedback_ids, ["feedback-current-card"]);
+assert.deepEqual(
+  visualPlanned.find((query) => query.provider_id === retrievalProviderIds.INTERNAL_MEMORY)?.exclude_source_feedback_ids,
+  ["feedback-current-card"]
+);
+assert.deepEqual(
+  visualPlanned.find((query) => query.provider_id === retrievalProviderIds.CATALOG)?.exclude_source_feedback_ids,
+  ["feedback-current-card"]
+);
+assert.deepEqual(
+  visualPlanned.find((query) => query.provider_id === retrievalProviderIds.POSTGRES_HYBRID)?.exclude_source_feedback_ids,
+  ["feedback-current-card"]
+);
 assert.equal(visualPlanned.some((query) => query.provider_id === retrievalProviderIds.BRAVE_SEARCH), false);
 
 const disabledVisualProvider = await visualVectorProvider({
@@ -453,6 +467,7 @@ const memoryProvider = internalMemoryProvider({
   approvedRecords: [
     {
       id: "legacy-ohtani-gold",
+      source_feedback_id: "legacy-ohtani-gold",
       title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
       final_title: "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
       review_outcome: "TITLE_ONLY_OVERRIDE",
@@ -461,6 +476,7 @@ const memoryProvider = internalMemoryProvider({
     },
     {
       id: "legacy-ohtani-red",
+      source_feedback_id: "legacy-ohtani-red",
       title: "2025 Topps Chrome Sapphire Shohei Ohtani Red 17/50 PSA 9",
       final_title: "2025 Topps Chrome Sapphire Shohei Ohtani Red 17/50 PSA 9",
       review_outcome: "TITLE_ONLY_OVERRIDE",
@@ -480,7 +496,122 @@ assert.equal(memoryResult.candidates[0].fields.product, "Topps Chrome Sapphire")
 assert.equal(memoryResult.candidates[0].fields.surface_color, "Gold");
 assert.equal(memoryResult.candidates[0].fields.parallel, undefined);
 assert.equal(memoryResult.candidates[0].fields.serial_number, "5/50");
+assert.equal(memoryResult.candidates[0].source_feedback_id, "legacy-ohtani-gold");
+assert.equal(memoryResult.candidates[0].reference_metadata.source_feedback_id, "legacy-ohtani-gold");
 assert.match(memoryResult.candidates[0].evidence_excerpt, /legacy corrected feedback title parsed into fields/);
+
+let memoryLoaderQuery = null;
+const selfExcludingMemoryProvider = internalMemoryProvider({
+  approvedRecords: [
+    {
+      id: "review-current-card",
+      source_feedback_id: "feedback-current-card",
+      title: "2025 Test Player Current",
+      fields: { players: ["Test Player"] }
+    },
+    {
+      id: "review-other-card",
+      source_feedback_id: "feedback-other-card",
+      title: "2025 Test Player Other",
+      fields: { players: ["Test Player"] }
+    },
+    { id: "review-unobservable", title: "2025 Test Player Unobservable", fields: { players: ["Test Player"] } }
+  ],
+  loadApprovedRecords: async ({ query }) => {
+    memoryLoaderQuery = query;
+    return [];
+  }
+});
+const selfExcludedMemoryResult = await selfExcludingMemoryProvider.search({
+  query: {
+    query: "Test Player",
+    exclude_source_feedback_ids: ["feedback-current-card"]
+  }
+});
+assert.deepEqual(memoryLoaderQuery.exclude_source_feedback_ids, ["feedback-current-card"]);
+assert.deepEqual(selfExcludedMemoryResult.candidates.map((candidate) => candidate.candidate_id), ["review-other-card"]);
+assert.equal(selfExcludedMemoryResult.candidates[0].source_feedback_id, "feedback-other-card");
+assert.equal(selfExcludedMemoryResult.candidates[0].reference_metadata.source_feedback_id, "feedback-other-card");
+assert.equal(selfExcludedMemoryResult.metadata.source_feedback_exclusion_filter_active, true);
+assert.equal(selfExcludedMemoryResult.metadata.source_feedback_exclusion_count, 1);
+assert.equal(selfExcludedMemoryResult.metadata.source_feedback_self_excluded_count, 2);
+const memoryWithoutExclusion = await selfExcludingMemoryProvider.search({ query: { query: "Test Player" } });
+assert.equal(memoryWithoutExclusion.candidates.length, 3, "ordinary retrieval keeps legacy rows when no source exclusion is requested");
+
+const postgresRows = [
+  {
+    identity_id: "11111111-1111-4111-8111-111111111111",
+    identity_key: "supabase_feedback:feedback-current-card",
+    canonical_title: "2025 Test Player Current",
+    retrieval_status: "reviewed",
+    fields: { year: "2025", players: ["Test Player"] },
+    normalized_score: 0.99
+  },
+  {
+    identity_id: "22222222-2222-4222-8222-222222222222",
+    identity_key: "supabase_feedback:feedback-other-card",
+    canonical_title: "2025 Test Player Other",
+    retrieval_status: "approved",
+    fields: { year: "2025", players: ["Test Player"] },
+    normalized_score: 0.9
+  },
+  {
+    identity_id: "33333333-3333-4333-8333-333333333333",
+    identity_key: "canonical:reviewed-without-source",
+    canonical_title: "2025 Test Player Unobservable Reviewed",
+    retrieval_status: "reviewed",
+    fields: { year: "2025", players: ["Test Player"] },
+    normalized_score: 0.8
+  },
+  {
+    identity_id: "44444444-4444-4444-8444-444444444444",
+    identity_key: "canonical:registry-row",
+    canonical_title: "2025 Test Player Registry",
+    retrieval_status: "registry",
+    fields: { year: "2025", players: ["Test Player"] },
+    normalized_score: 0.7
+  }
+];
+let postgresRpcBody = null;
+const selfExcludingPostgresProvider = postgresHybridProvider({
+  env: {
+    ENABLE_ADVANCED_RETRIEVAL: "true",
+    SUPABASE_URL: "https://supabase.test/",
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
+  },
+  fetchImpl: async (url, options) => {
+    assert.equal(String(url), "https://supabase.test/rest/v1/rpc/search_card_identities_hybrid");
+    postgresRpcBody = JSON.parse(options.body);
+    return new Response(JSON.stringify(postgresRows), { status: 200 });
+  }
+});
+const selfExcludedPostgresResult = await selfExcludingPostgresProvider.search({
+  query: {
+    family: retrievalQueryFamilies.POSTGRES_HYBRID,
+    query: "Test Player",
+    exclude_source_feedback_ids: ["feedback-current-card"]
+  },
+  resolved: { players: ["Test Player"] }
+});
+assert.equal(Object.hasOwn(postgresRpcBody, "exclude_source_feedback_ids"), false, "existing RPC schema stays unchanged");
+assert.deepEqual(
+  selfExcludedPostgresResult.candidates.map((candidate) => candidate.candidate_identity_id),
+  [
+    "22222222-2222-4222-8222-222222222222",
+    "44444444-4444-4444-8444-444444444444"
+  ]
+);
+assert.equal(selfExcludedPostgresResult.candidates[0].source_feedback_id, "feedback-other-card");
+assert.equal(selfExcludedPostgresResult.candidates[0].reference_metadata.source_feedback_id, "feedback-other-card");
+assert.equal(selfExcludedPostgresResult.candidates[1].source_type, "STRUCTURED_DATABASE");
+assert.equal(selfExcludedPostgresResult.metadata.source_feedback_exclusion_filter_active, true);
+assert.equal(selfExcludedPostgresResult.metadata.source_feedback_exclusion_count, 1);
+assert.equal(selfExcludedPostgresResult.metadata.source_feedback_self_excluded_count, 2);
+const postgresWithoutExclusion = await selfExcludingPostgresProvider.search({
+  query: { family: retrievalQueryFamilies.POSTGRES_HYBRID, query: "Test Player" },
+  resolved: { players: ["Test Player"] }
+});
+assert.equal(postgresWithoutExclusion.candidates.length, 4, "ordinary retrieval keeps existing candidates without an exclusion request");
 
 const rankedMemory = rankRetrievalCandidates(memoryResult.candidates, {
   year: "2025",

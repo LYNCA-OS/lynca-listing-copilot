@@ -122,11 +122,52 @@ const productionPayload = {
   }
 };
 assert.equal(terminalEvaluationDecisionTracePacket(result, productionPayload), null);
+const defaultProductionSummary = providerRuntimeSummary({
+  ...result,
+  provider_call_ledger: []
+}, productionPayload);
 assert.equal(
-  providerRuntimeSummary(result, productionPayload).evaluation_decision_trace_packet,
+  defaultProductionSummary.evaluation_decision_trace_packet,
   null,
   "production summary must not persist a stale evaluation packet from the recognition result"
 );
+assert.equal(Object.hasOwn(defaultProductionSummary, "targeted_assist_execution"), false);
+assert.equal(Object.hasOwn(defaultProductionSummary, "provider_call_ledger"), false);
+
+const targetedProductionSummary = providerRuntimeSummary({
+  ...result,
+  provider_transient_retry_attempted: true,
+  provider_transient_retry_attempts: 1,
+  provider_output_cap_downgrade_attempted: true,
+  provider_output_cap_downgrade_attempts: 1,
+  targeted_assist_execution: {
+    enabled: true,
+    final_observation_owner: "TARGETED_VISUAL_OBSERVATION"
+  },
+  provider_call_ledger: [{ logical_stage: "TARGETED_VISUAL_OBSERVATION", provider_calls: 1 }]
+}, productionPayload);
+assert.equal(targetedProductionSummary.targeted_assist_execution.enabled, true);
+assert.equal(targetedProductionSummary.provider_transient_retry_attempted, true);
+assert.equal(targetedProductionSummary.provider_transient_retry_attempts, 1);
+assert.equal(targetedProductionSummary.provider_output_cap_downgrade_attempted, true);
+assert.equal(targetedProductionSummary.provider_output_cap_downgrade_attempts, 1);
+assert.deepEqual(targetedProductionSummary.provider_call_ledger, [{
+  logical_stage: "TARGETED_VISUAL_OBSERVATION",
+  provider_calls: 1
+}]);
+const executionOnlySummary = providerRuntimeSummary({
+  ...result,
+  targeted_assist_execution: { enabled: false },
+  provider_call_ledger: []
+}, productionPayload);
+assert.equal(executionOnlySummary.targeted_assist_execution.enabled, false);
+assert.equal(Object.hasOwn(executionOnlySummary, "provider_call_ledger"), false);
+const ledgerOnlySummary = providerRuntimeSummary({
+  ...result,
+  provider_call_ledger: [{ logical_stage: "FULL_PROVIDER_OBSERVATION", provider_calls: 1 }]
+}, productionPayload);
+assert.equal(Object.hasOwn(ledgerOnlySummary, "targeted_assist_execution"), false);
+assert.equal(ledgerOnlySummary.provider_call_ledger.length, 1);
 assert.equal(
   __listingCopilotTitleTestHooks.withoutEvaluationDecisionTracePacket(result).evaluation_decision_trace_packet,
   undefined,

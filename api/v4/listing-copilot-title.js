@@ -18,6 +18,7 @@ import {
 } from "../../lib/listing/preingestion/preingestion-bundle.mjs";
 import { adaptRecognitionResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
 import { buildEvaluationDecisionTracePacket } from "../../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
+import { recognitionBenchmarkProfileIds } from "../../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 import { classifyV4ResultOutcome } from "../../lib/listing/v4/result-outcome.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
@@ -300,12 +301,17 @@ function rejectAbortedWorkerExecution(req, res, workerAuthorized) {
   return true;
 }
 
-function shouldRetryGpt5EmptyResult({
+export function shouldRetryGpt5EmptyResult({
   payload = {},
   result = {},
   env = process.env
 } = {}) {
   if (!isGpt5ResponsesModel(requestedListingModelFromPayload(payload, env))) return false;
+  const providerOptions = payload.provider_options || payload.providerOptions || {};
+  if ([
+    recognitionBenchmarkProfileIds.COLD_ALGORITHM,
+    recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST
+  ].includes(String(providerOptions.recognition_benchmark_profile || "").trim())) return false;
   if (payload.v4_gpt5_empty_result_retry_attempted === true) return false;
   if (titleFromResult(result)) return false;
   if (isInternalScoutResult(result)) return false;
@@ -603,6 +609,12 @@ export function providerRuntimeSummary(result = {}, payload = {}) {
       || providerOptions.recognition_benchmark_phase
       || null,
     evaluation_decision_trace_packet: terminalEvaluationTrace || null,
+    ...(result.targeted_assist_execution
+      ? { targeted_assist_execution: result.targeted_assist_execution }
+      : {}),
+    ...(Array.isArray(result.provider_call_ledger) && result.provider_call_ledger.length > 0
+      ? { provider_call_ledger: result.provider_call_ledger }
+      : {}),
     identity_resolution_status: result.identity_resolution_status || null,
     ambiguity_status: result.ambiguity_status || null,
     identity_cache_hit: result.identity_cache?.cache_hit === true,
@@ -634,6 +646,10 @@ export function providerRuntimeSummary(result = {}, payload = {}) {
     provider_key_rotation_attempted: result.provider_key_rotation_attempted === true,
     provider_key_rotation_attempts: Number(result.provider_key_rotation_attempts || 0),
     provider_capacity_stage_handoff: result.provider_capacity_stage_handoff || null,
+    provider_transient_retry_attempted: result.provider_transient_retry_attempted === true,
+    provider_transient_retry_attempts: Number(result.provider_transient_retry_attempts || 0),
+    provider_output_cap_downgrade_attempted: result.provider_output_cap_downgrade_attempted === true,
+    provider_output_cap_downgrade_attempts: Number(result.provider_output_cap_downgrade_attempts || 0),
     provider_truncation_retry_attempted: result.provider_truncation_retry_attempted === true,
     provider_truncation_retry_attempts: Number(result.provider_truncation_retry_attempts || 0),
     gpt5_empty_result_retry_attempted: result.gpt5_empty_result_retry_attempted === true,

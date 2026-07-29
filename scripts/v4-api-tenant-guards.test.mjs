@@ -36,6 +36,8 @@ assert.match(enqueueSource, /operatorId = context\.userId/);
 assert.match(enqueueSource, /function withoutClientSessionIdentity\(job = \{\}\)/);
 assert.match(enqueueSource, /"tenant_id", "tenantId",[\s\S]*"operator_id", "operatorId",/);
 assert.match(enqueueSource, /canonicalizeQueueJobs\(\{[\s\S]*jobs: rawJobs,[\s\S]*tenantId,[\s\S]*fetchImpl: globalThis\.fetch/);
+assert.match(enqueueSource, /evaluationAuthorization\.requested && !evaluationAuthorization\.authorized/);
+assert.match(enqueueSource, /error_code: "V4_EVALUATION_AUTH_REQUIRED"/);
 assert.match(enqueueSource, /expandV4RecognitionStageJobs\(\{[\s\S]*jobs: sourceJobs,[\s\S]*operatorId,[\s\S]*tenantId,/);
 assert.match(enqueueSource, /enqueueV4RecognitionJobs\(\{[\s\S]*jobs: stageJobs,[\s\S]*operatorId,[\s\S]*tenantId,/);
 assert.doesNotMatch(enqueueSource, /const tenantId = payload\.(?:tenant_id|tenantId)/);
@@ -123,13 +125,15 @@ const originalEnv = {
   METAVERSE_AUTH_SECRET: process.env.METAVERSE_AUTH_SECRET,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-  API_RATE_LIMIT_DISABLED: process.env.API_RATE_LIMIT_DISABLED
+  API_RATE_LIMIT_DISABLED: process.env.API_RATE_LIMIT_DISABLED,
+  LAUNCH_GATE_EVAL_SECRET: process.env.LAUNCH_GATE_EVAL_SECRET
 };
 const originalFetch = globalThis.fetch;
 process.env.METAVERSE_AUTH_SECRET = "track-c-api-guard-test-secret";
 process.env.SUPABASE_URL = "https://tenant-guard-test.supabase.co";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_track_c_api_guard_test";
 process.env.API_RATE_LIMIT_DISABLED = "true";
+process.env.LAUNCH_GATE_EVAL_SECRET = "evaluation-test-secret";
 
 function membershipRow({ role, userId = "user_writer", tenantId = "tenant_a" }) {
   return {
@@ -402,6 +406,19 @@ try {
     payload: { tenant_id: "tenant_b", operator_id: "owner_b", jobs: [] }
   });
   assert.equal(writerEnqueue.statusCode, 403, "Writer cannot create jobs even with forged tenant/actor fields");
+
+  globalThis.fetch = mockTenantFetch({ role: "MANAGER", userId: "user_manager" });
+  const managerEvaluationOverride = await callPost(enqueueHandler, {
+    headers: {
+      cookie: sessionCookie({ userId: "user_manager" }),
+      "x-request-id": "req-manager-evaluation-override",
+      "x-lynca-launch-gate-secret": "evaluation-test-secret"
+    },
+    payload: { jobs: [] }
+  });
+  assert.equal(managerEvaluationOverride.statusCode, 403);
+  assert.equal(managerEvaluationOverride.body.error_code, "V4_EVALUATION_AUTH_REQUIRED");
+  assert.doesNotMatch(JSON.stringify(managerEvaluationOverride.body), /evaluation-test-secret/);
 
   globalThis.fetch = mockTenantFetch({ role: "MANAGER", userId: "user_manager" });
   const managerDirectRecognition = await callPost(recognitionHandler, {

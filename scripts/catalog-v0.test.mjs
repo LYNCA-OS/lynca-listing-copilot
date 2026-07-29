@@ -1294,14 +1294,24 @@ assert.ok(firstCatalogIndex >= 0);
 assert.ok(visualIndex > firstCatalogIndex);
 assert.equal(planned.some((query) => /paniniamerica\.net/i.test(query.query)), false);
 assert.ok(
-  planned.filter((query) => query.provider_id === retrievalProviderIds.CATALOG)
-    .every((query) => !query.exclude_source_feedback_ids?.length),
-  "official and writer-reviewed catalog memory must remain reusable for previously seen cards"
+  planned.filter((query) => [
+    retrievalProviderIds.INTERNAL_MEMORY,
+    retrievalProviderIds.CATALOG,
+    retrievalProviderIds.VISUAL_VECTOR,
+    retrievalProviderIds.POSTGRES_HYBRID
+  ].includes(query.provider_id))
+    .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card"),
+  "every reviewed-capable retrieval lane must exclude the current evaluation source"
 );
 assert.ok(
-  planned.filter((query) => query.provider_id === retrievalProviderIds.VISUAL_VECTOR)
-    .every((query) => query.exclude_source_feedback_ids?.[0] === "feedback-current-card"),
-  "visual-vector retrieval must still exclude the current source image"
+  planned.filter((query) => ![
+    retrievalProviderIds.INTERNAL_MEMORY,
+    retrievalProviderIds.CATALOG,
+    retrievalProviderIds.VISUAL_VECTOR,
+    retrievalProviderIds.POSTGRES_HYBRID
+  ].includes(query.provider_id))
+    .every((query) => !query.exclude_source_feedback_ids?.length),
+  "official-only and external retrieval lanes must not receive internal source identifiers"
 );
 
 console.log("catalog v0 tests passed");

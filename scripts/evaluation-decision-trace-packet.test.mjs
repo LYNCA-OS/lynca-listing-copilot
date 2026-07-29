@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {
   buildEvaluationDecisionTracePacket,
   classifyEvaluationMissingField,
@@ -75,8 +76,13 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v7");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v9");
 assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
+assert.match(packet.replay_snapshot.versions.targeted_assist_nuisance_fingerprint, /^[0-9a-f]{64}$/);
+assert.equal(
+  packet.replay_snapshot.versions.targeted_assist_nuisance_contract,
+  "targeted-assist-nuisance-fingerprint-v1"
+);
 assert.equal(packet.replay_snapshot.status, "PARTIAL");
 assert.ok(packet.replay_snapshot.missing_components.includes("pipeline_fingerprint"));
 assert.deepEqual(packet.replay_snapshot.provider_fields, { year: "2025", subject: "Test Player", ignored: "UNKNOWN" });
@@ -100,6 +106,65 @@ assert.equal(classifyEvaluationMissingField(packet, "year"), "CATALOG_NOT_RETRIE
 assert.equal(JSON.stringify(packet).includes("complete natural language response"), false);
 assert.equal(JSON.stringify(packet).includes("raw_model_response"), false);
 assert.equal(buildEvaluationDecisionTracePacket({}, {}), null);
+
+const previousGitCommitSha = process.env.GIT_COMMIT_SHA;
+const previousVercelGitCommitSha = process.env.VERCEL_GIT_COMMIT_SHA;
+process.env.GIT_COMMIT_SHA = "d".repeat(40);
+process.env.VERCEL_GIT_COMMIT_SHA = "d".repeat(40);
+const deploymentPacket = buildEvaluationDecisionTracePacket({}, payload);
+if (previousGitCommitSha === undefined) delete process.env.GIT_COMMIT_SHA;
+else process.env.GIT_COMMIT_SHA = previousGitCommitSha;
+if (previousVercelGitCommitSha === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
+else process.env.VERCEL_GIT_COMMIT_SHA = previousVercelGitCommitSha;
+assert.equal(deploymentPacket.deployment_git_sha, "d".repeat(40));
+
+const targetedPayload = {
+  provider_options: applyRecognitionBenchmarkProfile({}, {
+    profile: recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST
+  })
+};
+assert.equal(evaluationTraceEnabled(targetedPayload), true);
+const targetedPacket = buildEvaluationDecisionTracePacket({
+  raw_provider_fields: { year: "2024", players: ["Test Player"], set: "Test Insert" },
+  usage: { provider_calls: 1 },
+  provider_call_skipped: false,
+  provider_call_ledger: [{
+    logical_stage: "TARGETED_VISUAL_OBSERVATION",
+    attempt: 1,
+    started_at: "2026-07-29T00:00:00.000Z",
+    completed_at: "2026-07-29T00:00:01.500Z",
+    provider_calls: 1,
+    output_tokens: 54
+  }],
+  targeted_assist_execution: {
+    enabled: true,
+    final_observation_owner: "TARGETED_VISUAL_OBSERVATION",
+    fallback_reason_code: null,
+    provider_call_ledger: [{
+      logical_stage: "TARGETED_VISUAL_OBSERVATION",
+      attempt: 1,
+      started_at: "2026-07-29T00:00:00.000Z",
+      completed_at: "2026-07-29T00:00:01.500Z",
+      provider_calls: 1,
+      output_tokens: 54
+    }]
+  },
+  knowledge_first_route_shadow: {
+    route: "TARGETED_VISUAL_ASSIST",
+    provider_aux_route_shadow: {
+      schema_version: "provider-aux-route-shadow-v2",
+      route: "TARGETED_MODEL_ASSIST",
+      production_effect: "SHADOW_ONLY",
+      title_effect: "NONE"
+    }
+  }
+}, targetedPayload);
+assert.equal(targetedPacket.benchmark_profile, recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST);
+assert.equal(targetedPacket.targeted_assist_execution.final_observation_owner, "TARGETED_VISUAL_OBSERVATION");
+assert.equal(targetedPacket.provider_aux_route.observed_production_action, "RUN_TARGETED_VISUAL_PROVIDER");
+assert.equal(targetedPacket.provider_aux_route.observed_targeted_visual_provider_calls, 1);
+assert.equal(targetedPacket.provider_aux_route.observed_full_provider_calls, 0);
+assert.equal(JSON.stringify(targetedPacket).includes("raw model prose"), false);
 
 const completeReplayPacket = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025", players: ["Test Player"] },
@@ -171,6 +236,7 @@ assert.ok(missingReplayEvidenceArrays.replay_snapshot.missing_components.include
 assert.ok(missingReplayEvidenceArrays.replay_snapshot.missing_components.includes("derivation_provenance"));
 
 const productionCandidateTrace = buildEvaluationDecisionTracePacket({
+  source_feedback_id: "feedback-current-card",
   raw_provider_fields: { year: "2025" },
   raw_observed_fields: { year: "2025" },
   resolved_fields: { year: "2025" },
@@ -182,7 +248,8 @@ const productionCandidateTrace = buildEvaluationDecisionTracePacket({
       candidate_id: "catalog-1",
       candidate_lane: "catalog",
       source_type: "INTERNAL_APPROVED_HISTORY",
-      source_trust: "APPROVED_REFERENCE"
+      source_trust: "APPROVED_REFERENCE",
+      source_feedback_id_sha256: crypto.createHash("sha256").update("feedback-other-card").digest("hex")
     }],
     retrieval_application: {
       decisions: [{
@@ -197,8 +264,32 @@ const productionCandidateTrace = buildEvaluationDecisionTracePacket({
 }, payload);
 assert.equal(productionCandidateTrace.retrieval.candidate_count, 1);
 assert.equal(productionCandidateTrace.retrieval.top_k[0].selected, true);
+assert.equal(
+  productionCandidateTrace.self_retrieval_exclusion.source_feedback_id_sha256,
+  crypto.createHash("sha256").update("feedback-current-card").digest("hex")
+);
+assert.equal(productionCandidateTrace.self_retrieval_exclusion.top_k_checked_count, 1);
+assert.equal(productionCandidateTrace.self_retrieval_exclusion.all_candidate_count, 1);
+assert.equal(productionCandidateTrace.self_retrieval_exclusion.all_candidates_checked_count, 1);
+assert.equal(productionCandidateTrace.self_retrieval_exclusion.candidate_check_truncated, false);
+assert.equal(productionCandidateTrace.self_retrieval_exclusion.candidate_source_id_observable_count, 1);
+assert.equal(productionCandidateTrace.self_retrieval_exclusion.unobservable_reviewed_candidate_count, 0);
+assert.equal(productionCandidateTrace.self_retrieval_exclusion.same_source_candidate_count, 0);
+assert.equal(JSON.stringify(productionCandidateTrace).includes("feedback-current-card"), false);
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.retrieval.decisions[0].value, "2025");
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, true);
+
+const sameSourceCandidateTrace = buildEvaluationDecisionTracePacket({
+  source_feedback_id: "feedback-current-card",
+  candidate_application_trace: [{
+    candidate_id: "self-row",
+    candidate_lane: "catalog",
+    source_type: "INTERNAL_CORRECTED_TITLE",
+    source_feedback_id_sha256: crypto.createHash("sha256").update("feedback-current-card").digest("hex")
+  }]
+}, payload);
+assert.equal(sameSourceCandidateTrace.self_retrieval_exclusion.same_source_candidate_count, 1);
+assert.deepEqual(sameSourceCandidateTrace.self_retrieval_exclusion.same_source_candidate_ids, ["self-row"]);
 
 const nativeCoreCandidateTrace = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025" },

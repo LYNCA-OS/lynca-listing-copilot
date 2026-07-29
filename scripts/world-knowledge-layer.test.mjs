@@ -62,7 +62,7 @@ assert.equal(
 assert.equal(
   createHash("sha256").update(readOnlyV4RecognitionPrompt(baselinePayload, 80)).digest("hex"),
   "c8824b9c18b493f9ec2de47e1ee46c29ff73967423663cd098e5a8f617911d6f",
-  "read_only_sparse_v3 prompt must remain byte-identical to origin/main@c9921be8"
+  "read_only_sparse_v3 prompt must remain byte-identical to origin/main@c9b962bc"
 );
 assert.deepEqual(providerReadOnlyOutputShape(), {
   r: "CONFIRMED | RESOLVED | ABSTAIN",
@@ -81,7 +81,7 @@ assert.equal(Object.hasOwn(schema.properties, "k"), false);
 assert.equal(
   createHash("sha256").update(JSON.stringify(schema)).digest("hex"),
   "2b4bf18635c199c3b7e59065471daa2746260feed1c231f073d043155d7d0a34",
-  "read_only_sparse_v3 response schema must remain byte-identical to origin/main@c9921be8"
+  "read_only_sparse_v3 response schema must remain byte-identical to origin/main@c9b962bc"
 );
 
 const expanded = expandOpenAiUltraCompactProviderPayload({
@@ -106,7 +106,11 @@ const observationResult = {
     product: "Prizm",
     team: "Celtics"
   },
-  unresolved: ["product"]
+  unresolved: ["product"],
+  forward_enumeration_trace: [
+    { field: "product", status: "UNKNOWN", reason: "set_not_in_model" },
+    { field: "team", status: "VALUE", value: "Los Angeles Lakers", reason: "year_narrows_to_one_team" }
+  ]
 };
 const shadowInput = buildWorldKnowledgeShadowAssistInput(observationResult);
 assert.equal(shadowInput.input.schema_version, worldKnowledgeObservationContract);
@@ -118,6 +122,12 @@ assert.deepEqual(shadowInput.input.fields, {
 });
 assert.equal(Object.hasOwn(shadowInput.input.fields, "product"), false);
 assert.equal(Object.hasOwn(shadowInput.input.fields, "team"), false);
+assert.deepEqual(shadowInput.input.target_fields, ["product"]);
+assert.deepEqual(shadowInput.input.unresolved_targets, [{
+  field: "product",
+  status: "UNKNOWN",
+  reason_code: "set_not_in_model"
+}]);
 assert.equal(shadowInput.execution_status, "NOT_RUN");
 assert.equal(shadowInput.paid_provider_calls, 0);
 assert.equal(shadowInput.output, null);

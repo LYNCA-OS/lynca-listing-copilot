@@ -486,6 +486,10 @@ const batchTraceResult = resultFromBatchJob({
     job_id: "job-batch-trace",
     tenant_id: "tenant-trace",
     status: "L2_READY",
+    attempt_count: 2,
+    error: {
+      attempt_history: [{ code: "QUEUE_LEASE_LOST" }]
+    },
     session: {
       status: "DRAFT_READY",
       l2_status: "READY",
@@ -496,6 +500,9 @@ const batchTraceResult = resultFromBatchJob({
 });
 assert.deepEqual(batchTraceResult.strategy_replay_trace, batchStrategyTrace);
 assert.deepEqual(batchTraceResult.l2_status.strategy_replay_trace, batchStrategyTrace);
+assert.equal(batchTraceResult.attempt_count, 2);
+assert.deepEqual(batchTraceResult.retry_attempt_history, [{ code: "QUEUE_LEASE_LOST" }]);
+assert.deepEqual(batchTraceResult.retry_error_codes, ["QUEUE_LEASE_LOST"]);
 
 const speedSmokeSummary = summarizeSmoke([{
   ok: true,
@@ -1256,7 +1263,10 @@ assert.match(v4TitleApiSource, /scheduleV4Background\(backgroundPersistence/, "n
 assert.match(v4TitleApiSource, /persistV4WriterReadyAndReleaseCapacity/, "writer-ready persistence must be able to release scarce provider capacity in the same transaction.");
 assert.match(v4TitleApiSource, /writer_ready_provider_capacity_release/, "the release boundary must remain observable in the V4 response.");
 const openAiTitleStart = nativeRecognitionCoreSource.indexOf("async function createOpenAiTitle");
-const initialProviderCall = nativeRecognitionCoreSource.indexOf("const providerResult = await runTimedProviderCall", openAiTitleStart);
+const observationExecution = nativeRecognitionCoreSource.indexOf("const observationExecution = targetedEvaluationProfile", openAiTitleStart);
+const targetedObservationCall = nativeRecognitionCoreSource.indexOf("executeTargetedAssistObservationRoute", observationExecution);
+const defaultFullProviderCall = nativeRecognitionCoreSource.indexOf("result: await runTimedProviderCall", observationExecution);
+const initialProviderCall = observationExecution;
 const providerDoneHandoff = nativeRecognitionCoreSource.indexOf(
   "providerCapacityStageHandoffPromise = handoffProviderCapacityAfterStage",
   initialProviderCall
@@ -1265,7 +1275,12 @@ const recognitionPreflightSnapshot = nativeRecognitionCoreSource.indexOf(
   "const recognitionSnapshot = await snapshotRecognitionPreflightAfterProvider",
   initialProviderCall
 );
-assert.ok(initialProviderCall > openAiTitleStart, "the initial GPT provider call must remain visible in the native recognition core.");
+assert.ok(
+  observationExecution > openAiTitleStart
+    && targetedObservationCall > observationExecution
+    && defaultFullProviderCall > targetedObservationCall,
+  "the native core must keep an explicit evaluation-only targeted observation branch and the unchanged default full Provider call."
+);
 assert.ok(providerDoneHandoff > initialProviderCall, "provider capacity must not be released before the GPT call completes.");
 assert.ok(
   providerDoneHandoff < recognitionPreflightSnapshot,
@@ -1761,6 +1776,32 @@ assert.equal(v4.provider_result.provider_slot_timing.execution_ms, 1000);
 assert.equal(v4.provider_result.preingestion_ocr_rendezvous.status, "TERMINAL");
 assert.equal(v4.provider_result.preingestion_evidence_refresh.added_patch_count, 2);
 assert.equal(v4.provider_result.serial_numerator_verified, true);
+assert.equal(Object.hasOwn(v4.provider_result, "targeted_assist_execution"), false);
+assert.equal(Object.hasOwn(v4.provider_result, "provider_call_ledger"), false);
+
+const emptyTargetedLedgerV4 = adaptRecognitionResultToV4({
+  sessionId: "v4sess-empty-targeted-ledger",
+  result: { ...v2Result, provider_call_ledger: [] },
+  payload: { preingestion_bundle_id: "bundle-1" },
+  routePlan: route
+});
+assert.equal(Object.hasOwn(emptyTargetedLedgerV4.provider_result, "provider_call_ledger"), false);
+
+const targetedAssistV4 = adaptRecognitionResultToV4({
+  sessionId: "v4sess-targeted-assist",
+  result: {
+    ...v2Result,
+    targeted_assist_execution: {
+      enabled: true,
+      final_observation_owner: "TARGETED_VISUAL_OBSERVATION"
+    },
+    provider_call_ledger: [{ logical_stage: "TARGETED_VISUAL_OBSERVATION", provider_calls: 1 }]
+  },
+  payload: { preingestion_bundle_id: "bundle-1" },
+  routePlan: route
+});
+assert.equal(targetedAssistV4.provider_result.targeted_assist_execution.enabled, true);
+assert.equal(targetedAssistV4.provider_result.provider_call_ledger.length, 1);
 
 const reconciledSlabTitle = adaptRecognitionResultToV4({
   sessionId: "v4sess-slab-reconcile",

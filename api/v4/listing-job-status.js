@@ -247,7 +247,7 @@ function jobStillActive(job = null) {
   return activeJobStatuses.has(String(job?.status || "").toUpperCase());
 }
 
-function operationalSessionStatus(session = null, job = null) {
+export function operationalSessionStatus(session = null, job = null) {
   if (!session) return null;
   const activeRetry = jobStillActive(job);
   const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
@@ -315,6 +315,12 @@ function operationalSessionStatus(session = null, job = null) {
       recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
       recognition_benchmark_phase: summary.recognition_benchmark_phase || null,
       evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
+      ...(summary.targeted_assist_execution
+        ? { targeted_assist_execution: summary.targeted_assist_execution }
+        : {}),
+      ...(Array.isArray(summary.provider_call_ledger) && summary.provider_call_ledger.length > 0
+        ? { provider_call_ledger: summary.provider_call_ledger }
+        : {}),
       provider_call_skipped: summary.provider_call_skipped === true,
       identity_cache_hit: summary.identity_cache_hit === true,
       identity_cache_read_bypassed: summary.identity_cache_read_bypassed === true,
@@ -339,6 +345,10 @@ function operationalSessionStatus(session = null, job = null) {
       provider_key_source: summary.provider_key_source || summary.key_source || null,
       provider_key_rotation_attempted: summary.provider_key_rotation_attempted === true || summary.key_rotation_attempted === true,
       provider_key_rotation_attempts: Number(summary.provider_key_rotation_attempts || summary.key_rotation_attempts || 0),
+      provider_transient_retry_attempted: summary.provider_transient_retry_attempted === true,
+      provider_transient_retry_attempts: Number(summary.provider_transient_retry_attempts || 0),
+      provider_output_cap_downgrade_attempted: summary.provider_output_cap_downgrade_attempted === true,
+      provider_output_cap_downgrade_attempts: Number(summary.provider_output_cap_downgrade_attempts || 0),
       provider_truncation_retry_attempted: summary.provider_truncation_retry_attempted === true,
       provider_truncation_retry_attempts: Number(summary.provider_truncation_retry_attempts || 0),
       vector_runtime_status: summary.vector_runtime_status || null,

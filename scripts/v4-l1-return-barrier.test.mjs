@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import {
   alternateOpenAiKeySlot,
   backgroundPayloadWithL1ResolvedHint,
-  exactAnchorFastFinalShadowOnly
+  callNativeV4RecognitionWithGpt5EmptyRetry,
+  exactAnchorFastFinalShadowOnly,
+  shouldRetryGpt5EmptyResult
 } from "../api/v4/listing-copilot-title.js";
 
 assert.equal(exactAnchorFastFinalShadowOnly({
@@ -17,6 +19,26 @@ assert.equal(exactAnchorFastFinalShadowOnly({
   }
 }), true);
 assert.equal(exactAnchorFastFinalShadowOnly({ provider_options: {} }), false);
+assert.equal(shouldRetryGpt5EmptyResult({
+  payload: {
+    model_override: "gpt-5-mini",
+    provider_options: { recognition_benchmark_profile: "cold_targeted_assist_benchmark" }
+  },
+  result: { ok: true, final_title: "" }
+}), false, "cold evaluation must never hide a second whole-pipeline Provider attempt");
+let coldEvaluationCalls = 0;
+const coldEvaluationResponse = await callNativeV4RecognitionWithGpt5EmptyRetry({
+  payload: {
+    model_override: "gpt-5-mini",
+    provider_options: { recognition_benchmark_profile: "cold_targeted_assist_benchmark" }
+  },
+  recognitionRunner: async () => {
+    coldEvaluationCalls += 1;
+    return { statusCode: 200, body: { ok: true, final_title: "" } };
+  }
+});
+assert.equal(coldEvaluationCalls, 1);
+assert.equal(coldEvaluationResponse.body.gpt5_empty_result_retry_attempted, undefined);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const apiSource = await fs.readFile(path.join(root, "api/v4/listing-copilot-title.js"), "utf8");

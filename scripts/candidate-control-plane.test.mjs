@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import {
   candidateFieldPermissions,
   fieldPermissions
@@ -14,6 +15,7 @@ import {
   vectorCandidatePacketAssistEligibility
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { buildV4CandidateControlPlaneTrace } from "../lib/listing/v4/candidates/control-plane-adapter.mjs";
+import { buildEvaluationDecisionTracePacket } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 
 function packet(candidates = [], assistFilter = {}) {
   return {
@@ -1397,6 +1399,117 @@ function testUnknownSerialVerificationDoesNotBecomeRejection() {
   assert.doesNotMatch(decision.title_before, /#\/50/);
 }
 
+function testHybridReviewedSourceProvenanceSurvivesSelectionAndTrace() {
+  const sourceFeedbackId = "feedback-other-card";
+  const expectedHash = crypto.createHash("sha256").update(sourceFeedbackId).digest("hex");
+  const observed = {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    collector_number: "136"
+  };
+  const vectorPacket = buildVectorCandidatePacket({
+    hybrid_ranker: { algorithm: "focused-provenance-test" },
+    open_set_decision: "EXACT_CANDIDATE",
+    sources: [{
+      candidate_id: "postgres-reviewed-other",
+      candidate_identity_id: "identity-reviewed-other",
+      provider_id: "postgres_hybrid",
+      source_type: "INTERNAL_APPROVED_HISTORY",
+      source_trust: "APPROVED_REFERENCE",
+      reference_metadata: { source_feedback_id: sourceFeedbackId },
+      rerank_score: 0.9,
+      matched_fields: ["collector_number", "subjects", "product", "year"],
+      supporting_fields: ["collector_number", "subjects", "product", "year"],
+      fields: observed
+    }]
+  }, { queryFields: observed });
+
+  const projected = vectorPacket.vector_retrieval.candidates[0];
+  assert.equal(projected.provider_id, "postgres_hybrid");
+  assert.equal(projected.source_type, "INTERNAL_APPROVED_HISTORY");
+  assert.equal(projected.reference_metadata.source_feedback_id, sourceFeedbackId);
+
+  const eligibility = vectorCandidatePacketAssistEligibility(vectorPacket);
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: observed,
+      vector_candidate_packet: vectorPacket,
+      vector_assist_eligibility: eligibility
+    }
+  });
+  const applicationTrace = selection.candidate_application_trace.find((row) => (
+    row.candidate_id === "postgres-reviewed-other"
+  ));
+  assert.equal(applicationTrace.source_feedback_id_sha256, expectedHash);
+
+  const evaluationTrace = buildEvaluationDecisionTracePacket({
+    source_feedback_id: "feedback-current-card",
+    candidate_application_trace: selection.candidate_application_trace
+  }, {
+    provider_options: {
+      recognition_benchmark_profile: "cold_algorithm_benchmark",
+      trace_level: "evaluation"
+    }
+  });
+  assert.equal(evaluationTrace.retrieval.top_k[0].source, "INTERNAL_APPROVED_HISTORY");
+  assert.equal(evaluationTrace.retrieval.top_k[0].source_feedback_id_sha256, expectedHash);
+  assert.equal(evaluationTrace.self_retrieval_exclusion.unobservable_reviewed_candidate_count, 0);
+  assert.equal(evaluationTrace.self_retrieval_exclusion.same_source_candidate_count, 0);
+}
+
+function testHybridReviewedSourceWithoutIdentityFailsTraceCompleteness() {
+  const observed = {
+    year: "2025",
+    product: "Topps Chrome",
+    players: ["Test Player"],
+    collector_number: "136"
+  };
+  const vectorPacket = buildVectorCandidatePacket({
+    hybrid_ranker: { algorithm: "focused-missing-provenance-test" },
+    open_set_decision: "EXACT_CANDIDATE",
+    sources: [{
+      candidate_id: "postgres-reviewed-missing-source-id",
+      candidate_identity_id: "identity-reviewed-missing-source-id",
+      provider_id: "postgres_hybrid",
+      source_type: "INTERNAL_APPROVED_HISTORY",
+      source_trust: "APPROVED_REFERENCE",
+      rerank_score: 0.9,
+      matched_fields: ["collector_number", "subjects", "product", "year"],
+      supporting_fields: ["collector_number", "subjects", "product", "year"],
+      fields: observed
+    }]
+  }, { queryFields: observed });
+
+  const projected = vectorPacket.vector_retrieval.candidates[0];
+  assert.equal(projected.provider_id, "postgres_hybrid");
+  assert.equal(projected.source_type, "INTERNAL_APPROVED_HISTORY");
+  assert.equal(projected.reference_metadata?.source_feedback_id, undefined);
+
+  const selection = buildCandidateSelectionPass({
+    result: {
+      resolved_fields: observed,
+      vector_candidate_packet: vectorPacket,
+      vector_assist_eligibility: vectorCandidatePacketAssistEligibility(vectorPacket)
+    }
+  });
+  const evaluationTrace = buildEvaluationDecisionTracePacket({
+    source_feedback_id: "feedback-current-card",
+    candidate_application_trace: selection.candidate_application_trace
+  }, {
+    provider_options: {
+      recognition_benchmark_profile: "cold_algorithm_benchmark",
+      trace_level: "evaluation"
+    }
+  });
+
+  assert.equal(evaluationTrace.retrieval.top_k[0].source, "INTERNAL_APPROVED_HISTORY");
+  assert.equal(evaluationTrace.retrieval.top_k[0].source_type, "INTERNAL_APPROVED_HISTORY");
+  assert.equal(evaluationTrace.retrieval.top_k[0].source_feedback_id_sha256, null);
+  assert.equal(evaluationTrace.self_retrieval_exclusion.unobservable_reviewed_candidate_count, 1);
+  assert.equal(evaluationTrace.self_retrieval_exclusion.same_source_candidate_count, 0);
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -1425,5 +1538,7 @@ testObservedSubjectBlocksSubjectlessSameProductCandidate();
 testExactPrintedCodeAllowsSparseSubjectlessChecklistCandidate();
 testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData();
 testUnknownSerialVerificationDoesNotBecomeRejection();
+testHybridReviewedSourceProvenanceSurvivesSelectionAndTrace();
+testHybridReviewedSourceWithoutIdentityFailsTraceCompleteness();
 
 console.log("candidate-control-plane tests passed");
