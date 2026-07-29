@@ -11,6 +11,7 @@ import {
   applyRecognitionBenchmarkProfile,
   recognitionBenchmarkProfileIds
 } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import { providerAuxRouteReplayInputHash } from "../lib/listing/v4/route-planner/provider-aux-route-shadow.mjs";
 
 const payload = {
   provider_options: {
@@ -165,6 +166,31 @@ assert.equal(targetedPacket.provider_aux_route.observed_production_action, "RUN_
 assert.equal(targetedPacket.provider_aux_route.observed_targeted_visual_provider_calls, 1);
 assert.equal(targetedPacket.provider_aux_route.observed_full_provider_calls, 0);
 assert.equal(JSON.stringify(targetedPacket).includes("raw model prose"), false);
+
+const providerAuxReplayInput = {
+  evidence_document: {},
+  forward_enumeration_trace: [],
+  usable_image_count: 2,
+  exact_anchor_shadow: { evaluated: true, eligible: false, reason: "no_lookup_anchor" },
+  higher_authority_route: null,
+  evidence_availability_manifest: []
+};
+const providerAuxReplayPacket = buildEvaluationDecisionTracePacket({
+  knowledge_first_route_shadow: {
+    provider_aux_route_shadow: {
+      schema_version: "provider-aux-route-shadow-v2",
+      route: "TARGETED_MODEL_ASSIST",
+      replay_input: providerAuxReplayInput,
+      preprovider_snapshot_hash: providerAuxRouteReplayInputHash(providerAuxReplayInput)
+    }
+  }
+}, payload);
+assert.equal(providerAuxReplayPacket.provider_aux_route.replay_input.higher_authority_route, null);
+assert.equal(providerAuxReplayPacket.provider_aux_route.replay_input.exact_anchor_shadow.reason, "no_lookup_anchor");
+assert.equal(
+  providerAuxRouteReplayInputHash(providerAuxReplayPacket.provider_aux_route.replay_input),
+  providerAuxReplayPacket.provider_aux_route.preprovider_snapshot_hash
+);
 
 const completeReplayPacket = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025", players: ["Test Player"] },
