@@ -13,7 +13,11 @@ except ImportError:  # pragma: no cover
 
 from .config import load_config
 from .contracts import validate_ocr_field_request
-from .pipelines.google_vision_ocr import MAX_SYNC_IMAGES, run_google_vision_ocr_batch
+from .pipelines.google_vision_ocr import (
+    MAX_SYNC_IMAGES,
+    google_vision_readiness,
+    run_google_vision_ocr_batch,
+)
 from .pipelines.image_loader import ImageLoadError, load_signed_image
 from .security import SecurityError, UrlPolicy, validate_image_url, verify_bearer_token
 
@@ -114,7 +118,15 @@ def _serial_consensus(primary: dict[str, Any], expanded: dict[str, Any]) -> dict
     }
 
 
-def _public_result(request: dict[str, Any], result: dict[str, Any], *, batch_latency_ms: int, unit_count: int) -> dict[str, Any]:
+def _public_result(
+    request: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    batch_latency_ms: int,
+    unit_count: int,
+    auth_mode: str,
+    billing_unknown: bool,
+) -> dict[str, Any]:
     candidates = list(result.get("candidates") or [])
     return {
         "request_id": request.get("request_id"),
@@ -131,8 +143,9 @@ def _public_result(request: dict[str, Any], result: dict[str, Any], *, batch_lat
         "model_id": "google-cloud-vision",
         "model_revision": "document-text-detection",
         "ocr_backend": "google_vision",
+        "auth_mode": auth_mode,
         "vision_unit_count": unit_count,
-        "vision_cost_estimate": result.get("cost_estimate"),
+        "vision_cost_estimate": None if billing_unknown else result.get("cost_estimate"),
         **({"reason": result.get("reason")} if result.get("reason") else {}),
         **({"serial_consensus": result.get("serial_consensus")} if result.get("serial_consensus") else {}),
     }
@@ -184,6 +197,7 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
         raise ValueError({"errors": [{"path": "requests", "message": "expanded Vision batch exceeds 16 image units"}]})
 
     batch = run_google_vision_ocr_batch(arrays, crop_types=crop_types, config=config, client=vision_client)
+    auth_mode = str(batch.get("auth_mode") or "unconfigured")
     raw_results = batch.get("results") or []
     output = []
     for request, (exact_index, expanded_index) in zip(requests, result_slots, strict=False):
@@ -193,17 +207,37 @@ def ocr_fields_batch_payload(payload: dict[str, Any], authorization: str | None 
             expanded = raw_results[expanded_index] if expanded_index < len(raw_results) else {"status": "UNAVAILABLE"}
             primary = {**primary, **_serial_consensus(primary, expanded)}
             unit_count = 2
-        output.append(_public_result(request, primary, batch_latency_ms=int(batch.get("latency_ms") or 0), unit_count=unit_count))
+        output.append(
+            _public_result(
+                request,
+                primary,
+                batch_latency_ms=int(batch.get("latency_ms") or 0),
+                unit_count=unit_count,
+                auth_mode=auth_mode,
+                billing_unknown=bool(batch.get("billing_unknown")),
+            )
+        )
     return {
         "status": "OK" if any(item.get("status") == "OK" for item in output) else batch.get("status", "UNAVAILABLE"),
         "results": output,
         "request_count": len(requests),
         "unique_image_download_count": len(loaded_by_url),
+        # Loading and decoding happen once per unique source URL before local
+        # crop extraction.  Keep this explicit so an OCR batch does not look
+        # like a single decode merely because it is one Vision request.
+        "decode_count": len(loaded_by_url),
         "vision_unit_count": int(batch.get("vision_unit_count") or 0),
-        "vision_cost_estimate": batch.get("cost_estimate") or 0,
+        # A sent request that times out or returns an incomplete batch can
+        # still be billable.  Preserve null rather than coercing it to zero.
+        "vision_cost_estimate": batch.get("cost_estimate"),
+        "vision_http_attempt_count": int(batch.get("vision_http_attempt_count") or 0),
+        "google_annotate_request_count": int(batch.get("google_annotate_request_count") or 0),
+        "attempted_vision_unit_count": int(batch.get("attempted_vision_unit_count") or 0),
+        "confirmed_vision_unit_count": int(batch.get("confirmed_vision_unit_count") or 0),
+        "billing_unknown": bool(batch.get("billing_unknown")),
         "latency_ms": int((time.time() - started) * 1000),
         "backend": "google_vision",
-        "auth_mode": "adc",
+        "auth_mode": auth_mode,
     }
 
 
@@ -222,11 +256,26 @@ if FastAPI is not None:
     @app.get("/readyz")
     def readyz() -> dict[str, Any]:
         config = load_config()
+        vision = google_vision_readiness(config)
+        token_ready = bool(config.token)
+        reasons = []
+        if not token_ready:
+            reasons.append("worker_token_not_configured")
+        if not vision.get("ready"):
+            reasons.append(str(vision.get("reason") or "vision_not_ready"))
         return {
-            "status": "ready" if config.vision_use_adc and bool(config.token) else "not_ready",
+            "status": "ready" if token_ready and vision.get("ready") else "not_ready",
             "service": "vision-ocr",
             "backend": "google_vision",
-            "auth_mode": "adc",
+            "auth_mode": vision.get("auth_mode"),
+            # `ready` only covers local endpoint auth plus credential-source
+            # construction.  An authorized deploy canary owns real Vision/IAM
+            # reachability; this endpoint never spends a Vision unit.
+            "readiness_scope": vision.get("readiness_scope", "credential_source_only"),
+            "external_vision_verified": bool(vision.get("external_vision_verified")),
+            "functional_canary_required": bool(vision.get("functional_canary_required", True)),
+            "vision_ready": bool(vision.get("ready")),
+            **({"reason": ";".join(reasons)} if reasons else {}),
             "max_sync_images": MAX_SYNC_IMAGES,
             "paddle_loaded": False,
             "tesseract_loaded": False,

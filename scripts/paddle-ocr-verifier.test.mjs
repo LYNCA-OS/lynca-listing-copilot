@@ -506,6 +506,18 @@ const batchClient = createPaddleOcrClient({
       ok: true,
       status: 200,
       text: async () => JSON.stringify({
+        request_count: 2,
+        unique_image_download_count: 2,
+        decode_count: 2,
+        vision_unit_count: 3,
+        vision_cost_estimate: 0.0045,
+        vision_http_attempt_count: 1,
+        google_annotate_request_count: 1,
+        attempted_vision_unit_count: 3,
+        confirmed_vision_unit_count: 3,
+        billing_unknown: false,
+        latency_ms: 842,
+        auth_mode: "adc",
         results: [
           {
             request_id: "ocr-serial-1",
@@ -546,6 +558,17 @@ assert.equal(batchResults[0].normalized_fields.serial_number, "24/25");
 assert.equal(batchResults[0].vision_unit_count, 2);
 assert.equal(batchResults[0].serial_consensus.verified, true);
 assert.equal(batchResults[1].normalized_fields.collector_number, "381");
+assert.equal(batchResults[0].batch_request_count, 2);
+assert.equal(batchResults[0].batch_unique_image_download_count, 2);
+assert.equal(batchResults[0].batch_decode_count, 2);
+assert.equal(batchResults[0].batch_vision_unit_count, 3);
+assert.equal(batchResults[0].batch_vision_http_attempt_count, 1);
+assert.equal(batchResults[0].batch_google_annotate_request_count, 1);
+assert.equal(batchResults[0].batch_attempted_vision_unit_count, 3);
+assert.equal(batchResults[0].batch_confirmed_vision_unit_count, 3);
+assert.equal(batchResults[0].batch_billing_unknown, false);
+assert.equal(batchResults[0].batch_latency_ms, 842);
+assert.equal(batchResults[0].batch_auth_mode, "adc");
 
 let compatibilityCalls = 0;
 const compatibilityClient = createPaddleOcrClient({

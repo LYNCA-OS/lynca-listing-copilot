@@ -1,0 +1,846 @@
+{
+  "schema_version": "product-mark-untouched-validation21-result-v1",
+  "run_id": "product-mark-untouched-validation21-20260730-v1",
+  "generated_at": "2026-07-30",
+  "scope": "UNTOUCHED_FROZEN_VALIDATION_PRODUCT_FIELD_SINGLE_SHOT",
+  "gate": {
+    "status": "FIELD_SENSOR_EVIDENCE_ONLY",
+    "title_accuracy_85_proven": false,
+    "production_ready": false
+  },
+  "external_calls": {
+    "provider": 0,
+    "network": 0,
+    "production": 0
+  },
+  "holdout": {
+    "consumed": false,
+    "io_count": 0,
+    "note": "Only the frozen split manifest and Validation packet were opened."
+  },
+  "execution_trace": {
+    "predictor_process_invocations": 1,
+    "prediction_started_at": "2026-07-29T23:06:11.552890+00:00",
+    "prediction_completed_at": "2026-07-29T23:06:13.804014+00:00",
+    "predictor_exit_code": 0,
+    "predictor_input_truth_field_count": 0,
+    "prediction_artifact_sha256": "19aeb2a42abc50c79c7b8414378f79895983943f8580617923d75dab9ab0c25a",
+    "prediction_rows": 21,
+    "truth_unsealed_at": "2026-07-29T23:06:13.804298+00:00",
+    "prediction_generated_before_truth_unsealed": true
+  },
+  "cohort_contract": {
+    "selection_policy": "All frozen Validation items with Product reviewed_status=CONFIRMED and a locally readable front whose bytes match the frozen local index hash; no selection used a sensor prediction.",
+    "frozen_assignment_id": "v4-oracle-dev173-val37-holdout45-20260723",
+    "validation_split_size": 37,
+    "evaluation_item_count": 21,
+    "supported_positive_count": 5,
+    "open_set_count": 16,
+    "item_ids": [
+      "11485f06-22f8-4d96-a6d0-8eefabffda6a",
+      "1eda9455-567b-4bd3-8ca9-aafe61b874f5",
+      "21d7fb3f-5919-4fea-97ab-cf2dd066d31b",
+      "24111f44-cb35-49a2-bcaf-8a354bcddbf6",
+      "34a7f0fc-cc9b-4fb1-ac34-0dd67c4cebd9",
+      "43f2d69f-6ad0-4933-ad4b-65e6c8790ef0",
+      "44738aef-f306-4e60-956b-5babfa10f641",
+      "49c29a1f-3d1a-4b83-a1c3-3195c3da7a29",
+      "4e11e36f-cbff-4e48-a7f2-de29cf6592ca",
+      "50146fbd-2389-4e29-a66a-1157c46b7406",
+      "51f6c758-ff84-486e-9ed1-7f5f0f87cb0c",
+      "5fe1da1e-2f67-4181-9f61-d955e3ac8d82",
+      "61c9f6c6-b59a-4d9a-83c5-a44519462091",
+      "684b864d-52fe-4354-9aab-bd0fbd10077e",
+      "79d1dc14-6d9b-47ff-948d-129c245f8916",
+      "9191a5dc-4fad-4f25-b229-75d480eab72a",
+      "9f58f9b3-9fc8-4b7b-bf3e-64c072a89100",
+      "bcc038ca-a848-40d7-880b-993df6d706ff",
+      "c5e7ef40-557c-4fe8-b0af-4f3150b52f5c",
+      "d7ddef98-7c3c-4f8e-b7f7-f7efc6c94c7c",
+      "fbd2f900-0827-4fc2-937d-1803f56df469"
+    ],
+    "item_front_sha256": [
+      [
+        "11485f06-22f8-4d96-a6d0-8eefabffda6a",
+        "a6d641043adb66885ad98eddb583330c55f6797d3f43703800fe3532ba6127f8"
+      ],
+      [
+        "1eda9455-567b-4bd3-8ca9-aafe61b874f5",
+        "6808dda56cdafb98ae531d8e880a3db41b69328011b848b19186d49c8ebccff5"
+      ],
+      [
+        "21d7fb3f-5919-4fea-97ab-cf2dd066d31b",
+        "2f1c7e754a35fd505c821d82513a45756df629b2090e79d66ab6f683f6b517c4"
+      ],
+      [
+        "24111f44-cb35-49a2-bcaf-8a354bcddbf6",
+        "02d823075d962d6aedc0491e30ef44090c07b95246d0788e7675aa11bd7126ef"
+      ],
+      [
+        "34a7f0fc-cc9b-4fb1-ac34-0dd67c4cebd9",
+        "709dd962f74c598989fba0d298cf228624bce0a4b7615bcb4f9eaabad3f5029a"
+      ],
+      [
+        "43f2d69f-6ad0-4933-ad4b-65e6c8790ef0",
+        "8dce3fa91a9e6c981f4fb3c1682ae4bcf64568040d52d13740735f87e41669e8"
+      ],
+      [
+        "44738aef-f306-4e60-956b-5babfa10f641",
+        "c13985f6b4ca1a1be5ff19c119ebb3087cb5244fc97082296be3153d5eb038b0"
+      ],
+      [
+        "49c29a1f-3d1a-4b83-a1c3-3195c3da7a29",
+        "1820206dcff6746d834f7e40cb999def50e4cdf3ad61a109843c8f5d64e5938e"
+      ],
+      [
+        "4e11e36f-cbff-4e48-a7f2-de29cf6592ca",
+        "3014aef8fe8fcb21f82ac04ed7d0cccb01fd9d623183c9244c3b6e862dc798ee"
+      ],
+      [
+        "50146fbd-2389-4e29-a66a-1157c46b7406",
+        "7c09659bdf5e95bb130cce0e1f16be5c3da1ec9b851923050e42936a50d2ab63"
+      ],
+      [
+        "51f6c758-ff84-486e-9ed1-7f5f0f87cb0c",
+        "beeb0740efd13cb33e1a4ee864bb095150790c9724dbda62f3e59d34d27b18d2"
+      ],
+      [
+        "5fe1da1e-2f67-4181-9f61-d955e3ac8d82",
+        "b8e8932d316cb391fc4ff7c1cad5b6b7290daee8266ce1ffc384e6daccce32fa"
+      ],
+      [
+        "61c9f6c6-b59a-4d9a-83c5-a44519462091",
+        "c3c32028d1d836dede1537e94f7247f5f08c90223f1b4bbc8d1e9272384267fd"
+      ],
+      [
+        "684b864d-52fe-4354-9aab-bd0fbd10077e",
+        "1fac22bb88d1ccf89c3c41d65c8fb2e22298e759fdde378131ccd1132ade45b2"
+      ],
+      [
+        "79d1dc14-6d9b-47ff-948d-129c245f8916",
+        "082c075b5ab56cbf2c25ecf8a94bbe82950ab4c3a0ef8613164f714312cf96fc"
+      ],
+      [
+        "9191a5dc-4fad-4f25-b229-75d480eab72a",
+        "18ee7b47a691a7ed66d59e7e42123dd1965831ae8f4a0475bbb9da452f6fb5a4"
+      ],
+      [
+        "9f58f9b3-9fc8-4b7b-bf3e-64c072a89100",
+        "feda245b7f739cff83faaaa2e987332c87a210a7a04502a6e5e5ecffbe997274"
+      ],
+      [
+        "bcc038ca-a848-40d7-880b-993df6d706ff",
+        "5813e6435b499cc7bbf0f5fefb5da82fe3173c5d1dd0914c4a2818c1b10d4bed"
+      ],
+      [
+        "c5e7ef40-557c-4fe8-b0af-4f3150b52f5c",
+        "8b17b2c32902627c92d16b23290fa5fe7fe97194c357601763c2d0ecb8ccd9d0"
+      ],
+      [
+        "d7ddef98-7c3c-4f8e-b7f7-f7efc6c94c7c",
+        "9ab27f5202a0f69b67c07d1725930c7016a7bdf72e065ebe1b2dd64e6a5a4407"
+      ],
+      [
+        "fbd2f900-0827-4fc2-937d-1803f56df469",
+        "383e059219be2a6acfaad59da8508904a53a5daaf67b8a297f6c665a4c2b2ac8"
+      ]
+    ],
+    "cohort_fingerprint_sha256": "dbdfceb3da4c3c664236e8b3e594b4e5d20102158f6a5fd83cd591c3d0f63213"
+  },
+  "input_fingerprints": {
+    "frozen_split_manifest": {
+      "path": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/manifest.json",
+      "sha256": "715a8f1ec3cf8cff3df59f2ad40e330102810d61f3fc843d9ef99b92f5808df0"
+    },
+    "validation_truth": {
+      "path": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json",
+      "sha256": "fd852f13c3ed4a3bb4df1bec36d213332f4f475b1618e7516bde9cf55e2bec60",
+      "truth_field": "reviewed_ground_truth.fields.product",
+      "required_status": "CONFIRMED"
+    },
+    "local_image_indexes": [
+      {
+        "path": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+        "sha256": "b87c5df2809cb4579293e5398bbb894c3f09b77caf572abe1d6e4f63c247d274"
+      },
+      {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/reviewed-20.json",
+        "sha256": "07321d432ebd93d61857938de7c02f3bb7db3abb7aa69bf6a3135b05e95b3b0c"
+      },
+      {
+        "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/cold20.json",
+        "sha256": "0095f57af744a8e4594b948a22f196d06cc95a894cd5e6dc3175a6406170f9fe"
+      }
+    ],
+    "frozen_evaluator": {
+      "path": "/private/tmp/lynca-overnight-eval-20260730/scripts/audit_product_mark_sensor.py",
+      "sha256": "4237c1fa43f600937e4aebfb626dd343764105f084205590030bb9b05be63b2c"
+    },
+    "official_reference_manifest": {
+      "path": "/private/tmp/lynca-overnight-eval-20260730/data/eval/product-emblem/multi-product-official-reference-v1.json",
+      "sha256": "eb61f4395ec079a3bb356dd444378adf75df91df13583b03c569eec3fd85e286"
+    },
+    "evaluation_driver": {
+      "path": "/private/tmp/lynca-overnight-eval-20260730/scripts/run_product_mark_untouched_validation21.py",
+      "sha256": "a0d9b078156be604a9c9a278022d345baedeb3930b7b1e11e8ea506dfa657ba5"
+    }
+  },
+  "evaluator_contract": {
+    "sensor_version": "official-product-mark-sift-audit-v1",
+    "prediction_profile": "retrospective_precision_candidate",
+    "target_max_dimension": 500,
+    "thresholds": {
+      "PANINI_CONTENDERS": 5,
+      "PANINI_DONRUSS_OPTIC": 5,
+      "PANINI_ELITE": 5,
+      "PANINI_PHOENIX": 5,
+      "PANINI_PRIZM": 7,
+      "PANINI_SPECTRA": 5
+    },
+    "algorithm": "SIFT_RATIO_RANSAC",
+    "ratio_threshold": 0.72,
+    "ransac_reprojection_threshold_px": 5.0
+  },
+  "contamination_boundary": {
+    "untouched_relative_to": "PRODUCT_MARK_SENSOR_THRESHOLD_AND_RESIZE_TUNING",
+    "tuning_report_path": "/private/tmp/lynca-overnight-eval-20260730/docs/reports/no-full-provider-product-mark-sensor-2026-07-30.json",
+    "tuning_report_sha256": "80c287b8056172b42a68e1a3b0afd1360640e3ab83766b95a67ac1369cbae1e8",
+    "tuning_image_count": 17,
+    "tuning_image_sha_overlap_count": 0,
+    "tuning_image_sha_overlap": [],
+    "limitation": "Untouched is specific to product-mark sensor calibration. These Validation images may have appeared in unrelated historical system evaluations."
+  },
+  "metrics": {
+    "denominator": 21,
+    "supported_positive": {
+      "denominator": 5,
+      "correct": 1,
+      "wrong_supported_class": 1,
+      "abstain": 3,
+      "recall": 0.2
+    },
+    "open_set": {
+      "denominator": 16,
+      "correct_rejection": 14,
+      "false_positive": 2,
+      "rejection_accuracy": 0.875
+    },
+    "emission": {
+      "count": 4,
+      "correct_supported_emission": 1,
+      "precision": 0.25
+    },
+    "product_field_joint": {
+      "correct": 15,
+      "incorrect": 6,
+      "accuracy": 0.714286
+    },
+    "latency_ms": {
+      "p50": 84.28,
+      "p95": 119.088,
+      "max": 121.935
+    }
+  },
+  "rows": [
+    {
+      "item_id": "11485f06-22f8-4d96-a6d0-8eefabffda6a",
+      "front_sha256": "a6d641043adb66885ad98eddb583330c55f6797d3f43703800fe3532ba6127f8",
+      "front_object_path": "feedback/2026-06/c55cef2d-b224-4838-be31-5b9602582beb/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Cosmic Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 93.949
+    },
+    {
+      "item_id": "1eda9455-567b-4bd3-8ca9-aafe61b874f5",
+      "front_sha256": "6808dda56cdafb98ae531d8e880a3db41b69328011b848b19186d49c8ebccff5",
+      "front_object_path": "feedback/2026-06/0879d0b7-a40a-4b46-ab14-ff918fab121a/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Panini Donruss Optic",
+        "canonical_product": "PANINI_DONRUSS_OPTIC",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "SUPPORTED_POSITIVE",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 4,
+        "PANINI_ELITE": 4,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 5,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "ABSTAIN",
+      "latency_ms": 68.522
+    },
+    {
+      "item_id": "21d7fb3f-5919-4fea-97ab-cf2dd066d31b",
+      "front_sha256": "2f1c7e754a35fd505c821d82513a45756df629b2090e79d66ab6f683f6b517c4",
+      "front_object_path": "feedback/2026-06/6aeea319-ab1e-4402-bf32-263549bb81eb/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Bowman Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 60.443
+    },
+    {
+      "item_id": "24111f44-cb35-49a2-bcaf-8a354bcddbf6",
+      "front_sha256": "02d823075d962d6aedc0491e30ef44090c07b95246d0788e7675aa11bd7126ef",
+      "front_object_path": "feedback/2026-06/cb22a27e-d7b5-4535-b923-4a3c909b6d2e/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 6,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 88.337
+    },
+    {
+      "item_id": "34a7f0fc-cc9b-4fb1-ac34-0dd67c4cebd9",
+      "front_sha256": "709dd962f74c598989fba0d298cf228624bce0a4b7615bcb4f9eaabad3f5029a",
+      "front_object_path": "feedback/2026-06/41fc0d34-ba68-457f-8bc0-35b52a56a54a/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Bowman Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "PANINI_CONTENDERS",
+      "prediction_reason": "UNIQUE_TOP_SCORE",
+      "scores": {
+        "PANINI_CONTENDERS": 5,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "OPEN_SET_FALSE_POSITIVE",
+      "latency_ms": 72.776
+    },
+    {
+      "item_id": "43f2d69f-6ad0-4933-ad4b-65e6c8790ef0",
+      "front_sha256": "8dce3fa91a9e6c981f4fb3c1682ae4bcf64568040d52d13740735f87e41669e8",
+      "front_object_path": "feedback/2026-06/69ea5db8-9ce1-40ff-b287-3fe15b9dd11a/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Panini Prizm FIFA Soccer",
+        "canonical_product": "PANINI_PRIZM",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "SUPPORTED_POSITIVE",
+      "prediction": "PANINI_PRIZM",
+      "prediction_reason": "UNIQUE_TOP_SCORE",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 13,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT",
+      "latency_ms": 84.28
+    },
+    {
+      "item_id": "44738aef-f306-4e60-956b-5babfa10f641",
+      "front_sha256": "c13985f6b4ca1a1be5ff19c119ebb3087cb5244fc97082296be3153d5eb038b0",
+      "front_object_path": "feedback/2026-06/767bf418-107c-479b-9e32-4ce941edb8b7/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Bowman Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 5,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 87.413
+    },
+    {
+      "item_id": "49c29a1f-3d1a-4b83-a1c3-3195c3da7a29",
+      "front_sha256": "1820206dcff6746d834f7e40cb999def50e4cdf3ad61a109843c8f5d64e5938e",
+      "front_object_path": "feedback/2026-06/711658b8-19cc-4f23-a59e-0888efd11480/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Goodwin Champions",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 45.251
+    },
+    {
+      "item_id": "4e11e36f-cbff-4e48-a7f2-de29cf6592ca",
+      "front_sha256": "3014aef8fe8fcb21f82ac04ed7d0cccb01fd9d623183c9244c3b6e862dc798ee",
+      "front_object_path": "feedback/2026-06/1919b1c9-3a30-41ea-91cc-d44b74f078d9/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome UFC",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 111.637
+    },
+    {
+      "item_id": "50146fbd-2389-4e29-a66a-1157c46b7406",
+      "front_sha256": "7c09659bdf5e95bb130cce0e1f16be5c3da1ec9b851923050e42936a50d2ab63",
+      "front_object_path": "feedback/2026-06/672820fd-6488-4f88-a4f6-fa1eb0081592/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Star Wars Smugglers Outpost",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 4,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 86.566
+    },
+    {
+      "item_id": "51f6c758-ff84-486e-9ed1-7f5f0f87cb0c",
+      "front_sha256": "beeb0740efd13cb33e1a4ee864bb095150790c9724dbda62f3e59d34d27b18d2",
+      "front_object_path": "feedback/2026-06/a6b4b89d-d95c-48ab-a158-beb3d839827e/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/cold20.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome VeeFriends",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 4,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 91.45
+    },
+    {
+      "item_id": "5fe1da1e-2f67-4181-9f61-d955e3ac8d82",
+      "front_sha256": "b8e8932d316cb391fc4ff7c1cad5b6b7290daee8266ce1ffc384e6daccce32fa",
+      "front_object_path": "feedback/2026-06/a239ce49-32aa-4f5d-9064-676fe6ab4a6f/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Panini Prizm",
+        "canonical_product": "PANINI_PRIZM",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "SUPPORTED_POSITIVE",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 6,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "ABSTAIN",
+      "latency_ms": 61.328
+    },
+    {
+      "item_id": "61c9f6c6-b59a-4d9a-83c5-a44519462091",
+      "front_sha256": "c3c32028d1d836dede1537e94f7247f5f08c90223f1b4bbc8d1e9272384267fd",
+      "front_object_path": "feedback/2026-06/94959ffd-f4cf-44ea-8f69-3d2f18624fb9/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome MLS",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 121.935
+    },
+    {
+      "item_id": "684b864d-52fe-4354-9aab-bd0fbd10077e",
+      "front_sha256": "1fac22bb88d1ccf89c3c41d65c8fb2e22298e759fdde378131ccd1132ade45b2",
+      "front_object_path": "feedback/2026-06/37b5f3ac-a128-469e-be42-a2251527544c/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 73.228
+    },
+    {
+      "item_id": "79d1dc14-6d9b-47ff-948d-129c245f8916",
+      "front_sha256": "082c075b5ab56cbf2c25ecf8a94bbe82950ab4c3a0ef8613164f714312cf96fc",
+      "front_object_path": "feedback/2026-06/714887b6-634b-43d6-ac66-f691f2a577cf/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Cosmic Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 89.827
+    },
+    {
+      "item_id": "9191a5dc-4fad-4f25-b229-75d480eab72a",
+      "front_sha256": "18ee7b47a691a7ed66d59e7e42123dd1965831ae8f4a0475bbb9da452f6fb5a4",
+      "front_object_path": "feedback/2026-06/f80a38bb-1108-4b12-bfd9-7027201f0030/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Panini Donruss Optic",
+        "canonical_product": "PANINI_DONRUSS_OPTIC",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "SUPPORTED_POSITIVE",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 4,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "ABSTAIN",
+      "latency_ms": 119.088
+    },
+    {
+      "item_id": "9f58f9b3-9fc8-4b7b-bf3e-64c072a89100",
+      "front_sha256": "feda245b7f739cff83faaaa2e987332c87a210a7a04502a6e5e5ecffbe997274",
+      "front_object_path": "feedback/2026-06/9e187f13-ba83-47c0-995b-02f58b546c13/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome VeeFriends",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 86.908
+    },
+    {
+      "item_id": "bcc038ca-a848-40d7-880b-993df6d706ff",
+      "front_sha256": "5813e6435b499cc7bbf0f5fefb5da82fe3173c5d1dd0914c4a2818c1b10d4bed",
+      "front_object_path": "feedback/2026-06/0c0f8434-9654-41d3-9375-12fc9486bb07/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "PANINI_CONTENDERS",
+      "prediction_reason": "UNIQUE_TOP_SCORE",
+      "scores": {
+        "PANINI_CONTENDERS": 5,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "OPEN_SET_FALSE_POSITIVE",
+      "latency_ms": 67.423
+    },
+    {
+      "item_id": "c5e7ef40-557c-4fe8-b0af-4f3150b52f5c",
+      "front_sha256": "8b17b2c32902627c92d16b23290fa5fe7fe97194c357601763c2d0ecb8ccd9d0",
+      "front_object_path": "feedback/2026-06/feb19d36-e072-4dbc-9855-9e68d7af082e/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 5,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 83.156
+    },
+    {
+      "item_id": "d7ddef98-7c3c-4f8e-b7f7-f7efc6c94c7c",
+      "front_sha256": "9ab27f5202a0f69b67c07d1725930c7016a7bdf72e065ebe1b2dd64e6a5a4407",
+      "front_object_path": "feedback/2026-06/d52c2c6d-593b-4b86-9aa3-cad2e85757d8/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Panini Donruss Optic",
+        "canonical_product": "PANINI_DONRUSS_OPTIC",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "SUPPORTED_POSITIVE",
+      "prediction": "PANINI_CONTENDERS",
+      "prediction_reason": "UNIQUE_TOP_SCORE",
+      "scores": {
+        "PANINI_CONTENDERS": 5,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "WRONG_SUPPORTED_CLASS",
+      "latency_ms": 80.489
+    },
+    {
+      "item_id": "fbd2f900-0827-4fc2-937d-1803f56df469",
+      "front_sha256": "383e059219be2a6acfaad59da8508904a53a5daaf67b8a297f6c665a4c2b2ac8",
+      "front_object_path": "feedback/2026-06/a60e1486-ce38-4c7b-bb84-f957652e128e/front.jpg",
+      "local_image_source_index": "/Users/paidaxin/lynca-listing-copilot/artifacts/smoke/reviewed-200.json",
+      "truth": {
+        "reviewed_value": "Topps Chrome",
+        "canonical_product": "OTHER_PRODUCT",
+        "reviewed_status": "CONFIRMED",
+        "evidence_sources": [
+          "writer-reviewed-title:exact-bounded-span"
+        ],
+        "source_dataset": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/validation.json"
+      },
+      "cohort_class": "OPEN_SET",
+      "prediction": "UNKNOWN",
+      "prediction_reason": "BELOW_THRESHOLD",
+      "scores": {
+        "PANINI_CONTENDERS": 4,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 4,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "outcome": "CORRECT_REJECTION",
+      "latency_ms": 71.728
+    }
+  ],
+  "claim_boundary": {
+    "evaluates": "Product field sensor only",
+    "does_not_evaluate": [
+      "full SEM",
+      "title token recall",
+      "80-character Renderer output",
+      "end-to-end writer-visible latency",
+      "production behavior"
+    ],
+    "title_accuracy_85_claim_allowed": false
+  },
+  "report_sha256": "020eb00436611fd1354c8d3baf36f1cad577cedb16c41a96690bc61394836b28"
+}

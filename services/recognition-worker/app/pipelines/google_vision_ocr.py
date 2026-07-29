@@ -16,10 +16,26 @@ if TYPE_CHECKING:
 
 MAX_SYNC_IMAGES = 16
 _DEFAULT_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate"
+_PROCESS_VISION_CLIENT: Any | None = None
 
 
 def google_vision_configured(config: Any) -> bool:
-    return bool(str(getattr(config, "vision_api_key", "") or "").strip())
+    return vision_auth_mode(config) != "unconfigured"
+
+
+def vision_auth_mode(config: Any) -> str:
+    """Return the single transport authority for this worker revision.
+
+    `VISION_USE_ADC=true` deliberately does not fall through to the API-key
+    transport.  A silent fallback would make `/readyz` claim ADC while the
+    request uses a different credential boundary.  API-key serving remains
+    available by setting `VISION_USE_ADC=false` with `VISION_API_KEY`.
+    """
+    if bool(getattr(config, "vision_use_adc", False)):
+        return "adc"
+    if str(getattr(config, "vision_api_key", "") or "").strip():
+        return "api_key"
+    return "unconfigured"
 
 
 def vision_unavailable(reason: str, *, latency_ms: int = 0) -> dict[str, Any]:
@@ -126,6 +142,60 @@ def _default_client(config: Any) -> Any:
     return vision.ImageAnnotatorClient(client_options=options)
 
 
+def get_google_vision_client(config: Any, *, client_factory: Callable[[Any], Any] | None = None) -> Any:
+    """Get one reusable ADC SDK client for the lifetime of this process.
+
+    Cloud Run's ADC credentials are discovered when the client is constructed.
+    We cache only successful construction so a transient startup failure does
+    not permanently poison the worker process.  A factory stays injectable for
+    focused tests and isolated callers.
+    """
+    if client_factory is not None:
+        return client_factory(config)
+    global _PROCESS_VISION_CLIENT
+    if _PROCESS_VISION_CLIENT is None:
+        _PROCESS_VISION_CLIENT = _default_client(config)
+    return _PROCESS_VISION_CLIENT
+
+
+def reset_google_vision_client_for_tests() -> None:
+    """Clear the process client only for focused unit tests."""
+    global _PROCESS_VISION_CLIENT
+    _PROCESS_VISION_CLIENT = None
+
+
+def google_vision_readiness(config: Any) -> dict[str, Any]:
+    """Check only that the selected auth transport can be constructed locally.
+
+    This intentionally does not perform an OCR request or bill Vision.  For
+    ADC, successful SDK construction verifies that the serving process can
+    resolve a credential source; for API-key mode, possession of the key is the
+    equivalent local preflight available without calling the external service.
+    It does *not* prove Vision API reachability, IAM permission, or launch
+    readiness; those belong to a separately authorized functional canary.
+    """
+    auth_mode = vision_auth_mode(config)
+    base = {
+        "auth_mode": auth_mode,
+        "readiness_scope": "credential_source_only",
+        "external_vision_verified": False,
+        "functional_canary_required": True,
+    }
+    if auth_mode == "api_key":
+        return {"ready": True, **base}
+    if auth_mode != "adc":
+        return {"ready": False, "reason": "vision_auth_not_configured", **base}
+    try:
+        get_google_vision_client(config)
+    except Exception as error:  # noqa: BLE001 - readiness must fail closed.
+        return {
+            "ready": False,
+            "reason": f"adc_client_unavailable:{type(error).__name__}",
+            **base,
+        }
+    return {"ready": True, **base}
+
+
 def _rest_batch_request(
     arrays: list["np.ndarray"],
     *,
@@ -191,15 +261,45 @@ def run_google_vision_ocr_batch(
     urlopen_impl: Callable[[Request, int], Any] | None = None,
 ) -> dict[str, Any]:
     started = time.time()
+    auth_mode = vision_auth_mode(config)
+    telemetry = {
+        "auth_mode": auth_mode,
+        "vision_http_attempt_count": 0,
+        "google_annotate_request_count": 0,
+        "attempted_vision_unit_count": 0,
+        "confirmed_vision_unit_count": 0,
+        "billing_unknown": False,
+    }
     if not google_vision_configured(config):
-        return {"status": "UNAVAILABLE", "reason": "vision_api_key_not_configured", "results": [], "vision_unit_count": 0}
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "vision_auth_not_configured",
+            "results": [],
+            "vision_unit_count": 0,
+            "cost_estimate": 0.0,
+            **telemetry,
+        }
     if not arrays or len(arrays) != len(crop_types):
-        return {"status": "UNAVAILABLE", "reason": "invalid_vision_batch", "results": [], "vision_unit_count": 0}
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "invalid_vision_batch",
+            "results": [],
+            "vision_unit_count": 0,
+            "cost_estimate": 0.0,
+            **telemetry,
+        }
     if len(arrays) > MAX_SYNC_IMAGES:
-        return {"status": "UNAVAILABLE", "reason": "vision_batch_limit_exceeded", "results": [], "vision_unit_count": 0}
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "vision_batch_limit_exceeded",
+            "results": [],
+            "vision_unit_count": 0,
+            "cost_estimate": 0.0,
+            **telemetry,
+        }
 
     try:
-        if client is not None or client_factory is not None:
+        if auth_mode == "adc":
             requests = [
                 {
                     "image": {"content": _array_to_png_bytes(array)},
@@ -208,16 +308,23 @@ def run_google_vision_ocr_batch(
                 }
                 for array in arrays
             ]
-            active_client = client or client_factory(config)
+            active_client = client or get_google_vision_client(config, client_factory=client_factory)
+            telemetry["vision_http_attempt_count"] = 1
+            telemetry["google_annotate_request_count"] = 1
+            telemetry["attempted_vision_unit_count"] = len(arrays)
+            telemetry["billing_unknown"] = True
             response = active_client.batch_annotate_images(
                 request={"requests": requests},
                 timeout=int(getattr(config, "vision_timeout_seconds", 30)),
             )
             payload = _payload_from_response(response)
         else:
-            # Keep the production lane on the API-key REST transport that is
-            # already proven by the serving Google Vision revision. The SDK
-            # adapter remains injectable for unit tests and future ADC trials.
+            # API-key transport stays supported as an explicitly selected
+            # serving lane; it never masquerades as ADC in readiness/telemetry.
+            telemetry["vision_http_attempt_count"] = 1
+            telemetry["google_annotate_request_count"] = 1
+            telemetry["attempted_vision_unit_count"] = len(arrays)
+            telemetry["billing_unknown"] = True
             payload = _rest_batch_request(arrays, config=config, urlopen_impl=urlopen_impl)
     except HTTPError as error:
         error = RuntimeError(f"http_{error.code}")
@@ -228,6 +335,8 @@ def run_google_vision_ocr_batch(
             "results": [vision_unavailable("batch_request_failed", latency_ms=latency_ms) for _ in arrays],
             "latency_ms": latency_ms,
             "vision_unit_count": 0,
+            "cost_estimate": None,
+            **telemetry,
         }
     except Exception as error:  # noqa: BLE001
         latency_ms = int((time.time() - started) * 1000)
@@ -237,25 +346,33 @@ def run_google_vision_ocr_batch(
             "results": [vision_unavailable("batch_request_failed", latency_ms=latency_ms) for _ in arrays],
             "latency_ms": latency_ms,
             "vision_unit_count": 0,
+            "cost_estimate": None,
+            **telemetry,
         }
 
     latency_ms = int((time.time() - started) * 1000)
     responses = payload.get("responses") if isinstance(payload, dict) else None
     if not isinstance(responses, list) or len(responses) != len(arrays):
+        telemetry["confirmed_vision_unit_count"] = min(len(responses), len(arrays)) if isinstance(responses, list) else 0
         return {
             "status": "UNAVAILABLE",
             "reason": "vision_response_count_mismatch",
             "results": [vision_unavailable("vision_response_count_mismatch", latency_ms=latency_ms) for _ in arrays],
             "latency_ms": latency_ms,
             "vision_unit_count": 0,
+            "cost_estimate": None,
+            **telemetry,
         }
     results = [_parsed_result(item or {}, latency_ms=latency_ms, config=config) for item in responses]
+    telemetry["confirmed_vision_unit_count"] = len(arrays)
+    telemetry["billing_unknown"] = False
     return {
         "status": "OK" if any(item["status"] == "OK" for item in results) else "NO_TEXT",
         "results": results,
         "latency_ms": latency_ms,
         "vision_unit_count": len(arrays),
         "cost_estimate": round(len(arrays) * float(getattr(config, "vision_cost_per_image", 0.0)), 6),
+        **telemetry,
     }
 
 
@@ -277,5 +394,21 @@ def run_google_vision_ocr(
         urlopen_impl=urlopen_impl,
     )
     if batch.get("results"):
-        return batch["results"][0]
-    return vision_unavailable(str(batch.get("reason") or "vision_batch_unavailable"), latency_ms=int(batch.get("latency_ms") or 0))
+        return {
+            **batch["results"][0],
+            "auth_mode": batch.get("auth_mode"),
+            "vision_http_attempt_count": int(batch.get("vision_http_attempt_count") or 0),
+            "google_annotate_request_count": int(batch.get("google_annotate_request_count") or 0),
+            "attempted_vision_unit_count": int(batch.get("attempted_vision_unit_count") or 0),
+            "confirmed_vision_unit_count": int(batch.get("confirmed_vision_unit_count") or 0),
+            "billing_unknown": bool(batch.get("billing_unknown")),
+        }
+    return {
+        **vision_unavailable(str(batch.get("reason") or "vision_batch_unavailable"), latency_ms=int(batch.get("latency_ms") or 0)),
+        "auth_mode": batch.get("auth_mode"),
+        "vision_http_attempt_count": int(batch.get("vision_http_attempt_count") or 0),
+        "google_annotate_request_count": int(batch.get("google_annotate_request_count") or 0),
+        "attempted_vision_unit_count": int(batch.get("attempted_vision_unit_count") or 0),
+        "confirmed_vision_unit_count": int(batch.get("confirmed_vision_unit_count") or 0),
+        "billing_unknown": bool(batch.get("billing_unknown")),
+    }

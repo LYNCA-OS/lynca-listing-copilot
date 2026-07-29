@@ -29,6 +29,7 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 - `GET /readyz`
 - `POST /v1/analyze-card-images`
 - `POST /v1/ocr-field`
+- `POST /v1/ocr-fields-batch`
 
 ## Required Environment
 
@@ -38,8 +39,9 @@ This service is the container boundary for computer-vision and OCR work. The Ver
 Optional:
 
 - `OCR_BACKEND=paddle|deepseek|google_vision|hybrid` (production defaults to the measured Google Vision winner)
-- `VISION_API_KEY=` (production deploy stores this in Secret Manager; it is never written as a literal Cloud Run variable)
-- `VISION_API_KEY_SECRET_NAME=lynca-google-vision-api-key`
+- `VISION_USE_ADC=true` (default; the dedicated Vision worker uses its Cloud Run service account and one reusable SDK client)
+- `VISION_API_KEY=` (only used when `VISION_USE_ADC=false`; never write a key as a literal Cloud Run variable)
+- `VISION_API_KEY_SECRET_NAME=lynca-google-vision-api-key` (legacy API-key deployment compatibility)
 - `VISION_FEATURE_TYPE=DOCUMENT_TEXT_DETECTION`
 - `VISION_TIMEOUT_SECONDS=30`
 - `ENABLE_PADDLEOCR=false`
@@ -64,6 +66,11 @@ Optional:
 - `RECOGNITION_MAX_IMAGE_BYTES=26214400`
 - `RECOGNITION_MAX_TOTAL_PIXELS=50000000`
 - `RECOGNITION_REQUEST_TIMEOUT_SECONDS=30`
+
+`/readyz` verifies only the local bearer-token and selected credential source.
+It does not spend a Vision unit and therefore does not prove API enablement,
+IAM permission, billing, or OCR functionality; an authorized deploy canary is
+the separate functional gate.
 
 ## Local Tests
 

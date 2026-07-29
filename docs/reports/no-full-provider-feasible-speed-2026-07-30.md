@@ -2,34 +2,45 @@
 
 Date: 2026-07-30
 
-Decision: `BUILD_COMPILED_RECOGNITION_SHADOW`
+Decision: `BUILD_EXPLICIT_ONE_SHOT_OCR_SHADOW`
 
 Production activation: `NO_GO`
 
 Holdout consumed: `false`
 
+Accuracy gate: `NO_GO` — untouched Product-field Validation rejected the
+current emblem sensor (`15/21` joint, `25%` emission precision). The latency
+numbers below are planning clocks for a replacement sensor route, not a claim
+that the present route reaches 85%.
+
 ## Decision first
 
 The higher-confidence conclusion is the opposite of promising universal
 two-to-three-second naming. With the current software, a first-time card cannot
-honestly receive that SLO: online Catalog retrieval alone has p95 `6.628 s`,
-and the current cold traces contain zero executable Provider-free completions.
+honestly receive that SLO. The retained `3.123 s` OCR p95 was not an executable
+observation: it modelled three independent crop calls as a parallel maximum,
+while the current per-card capacity serializes them. It remains the most
+evidence-grounded proxy for a new one-request batch, but it is not an upper
+bound and must be replaced by a real card-level distribution.
 
-The closest falsifiable architecture target, after replacing the online
-Catalog call with a versioned in-memory Release Pack, is:
+The closest falsifiable architecture target is an explicit one-card batch:
+three role-bound crops, one Cloud Run request, one Google `images:annotate`
+request, three billable image units and one or two unique source decodes. After
+replacing the online Catalog call with a versioned in-memory Release Pack, its
+planning clocks are:
 
 | Clock | p50 | p95 | Evidence class |
 | --- | ---: | ---: | --- |
-| First-time compiled route after admission intent | `1.89–2.64 s` | `4.27–5.62 s` | componentwise planning envelope; not joint E2E measurement |
-| Current software with observed Catalog distribution substituted | `2.59–3.33 s` | `10.90–12.24 s` | componentwise planning envelope; not joint E2E measurement |
+| Evidence-grounded one-shot proxy after admission intent | `1.89–2.64 s` | `4.27–5.62 s` | retained marginal parallel-max proxy; neither observed batch latency nor a strict upper bound |
+| One-shot stretch target after admission intent | `1.55–2.29 s` | `3.00–4.34 s` | design budget only; requires a real batch p50/p95 at or below `1.0/1.85 s` |
+| Current capacity-one crop graph if all three detail crops are enabled | `3.18–3.92 s` | `6.34–7.68 s` | zero-covariance serial Fenton-Wilkinson model; not a tail upper bound; detail jobs remain disabled by default |
 | Same immutable-image terminal replay | `0.19–0.53 s` | `0.40–1.05 s` | architecture target; separate repeat-card route |
 
-The provisional design gate should therefore be frozen as **p50 at most 2.7
-seconds and p95 at most 5.7 seconds after admission intent** for addressable
-first-time cards. This is the closest current-component model, not a production
-SLO or a card-level observation. A universal p95 of three seconds is not
-supported: the modelled parallel maximum of the three required OCR crops is
-already `3.123 s` before Candidate, Resolver, Renderer and commit.
+The closest evidence-grounded planning target is therefore **p50 at most `2.7
+s` and p95 at most `5.7 s` after admission intent** for addressable first-time
+cards. The separate stretch target is p50 `2.3 s` / p95 `4.4 s`; it earns no
+status until the one-card OCR packet itself measures p50/p95 at or below
+`1.0/1.85 s`. Neither line is a production SLO or card-level observation.
 
 For the writer's actual clock, which starts at file selection rather than at
 admission intent, pre-admission UI time and the remaining original upload must
@@ -40,23 +51,26 @@ are not measured workload percentiles:
 
 | Input floor at `20 Mbps` | Modelled writer-visible p50 | Modelled writer-visible p95 |
 | --- | ---: | ---: |
-| one `6 MB` side (`2.4 s` byte floor) | `2.70–3.14 s` | `4.27–5.62 s` |
-| two `6 MB` sides (`4.8 s` aggregate byte floor; optimistic single-evidence-budget lower envelope) | `5.10–5.54 s` | `5.45–6.24 s` |
+| one `6 MB` side (`2.4 s` byte floor) | `NOT_EXECUTABLE` | `NOT_EXECUTABLE` |
+| two `6 MB` sides (`4.8 s` aggregate byte floor; optimistic one-card evidence-budget lower envelope) | `5.10–5.54 s` | `5.45–6.24 s` |
 
-Thus the nearest defensible first implementation target is **front-only
-addressable cards p50 at most `3.2 s`, p95 at most `5.7 s`; two-side cards p50
-at most `5.6 s`, p95 at most `6.3 s`**, under that uplink and file-size
-assumption. The two-side row is not yet an implementation target: it reuses the
-single-side fetch/decode/evidence budget because no paired two-side evidence
-packet exists. Smaller files or a faster uplink improve the upload term;
-software cannot promise those numbers independently of bytes and bandwidth.
+The one-shot contract requires front Subject plus back Year/Product and
+Card-code evidence, so a one-side upload cannot execute this route. The nearest
+defensible writer-visible target is therefore **two-side p50 at most `5.6 s`,
+p95 at most `6.3 s`** under that uplink and file-size assumption. This remains
+an optimistic lower envelope because no real paired two-side evidence packet
+exists. Smaller files or a faster uplink improve the upload term; software
+cannot promise those numbers independently of bytes and bandwidth.
 
 The OCR number is intentionally no longer mislabeled as measured card latency.
 The retained experiment contains 100 marginal timings for each of three crop
-types, but no retained per-card paired timing packet. A lognormal marginal fit
-plus independent parallel-max assumption gives OCR p50/p95 `1.343/3.123 s`.
-The assumption is explicit and replaceable; only a new offline reconstruction
-or one batch-timing trace may promote it to an observation.
+types, but no retained per-card batch packet. Under the actual capacity-one
+call graph, a zero-covariance Fenton-Wilkinson serial-sum approximation gives
+p50/p95 `2.628/5.192 s`; shared network or cold-start correlation can produce a
+heavier tail, so this is not an upper bound. The independent parallel-max proxy
+for the new one-request shape is `1.343/3.123 s`. The one-card p50/p95
+`1.0/1.85 s` is only a stretch acceptance budget. Only a real batch-timing
+packet may promote either model to an observation.
 
 ## Why the optimum is a different route
 
@@ -185,27 +199,28 @@ current query and normalization contract, independent card-level identity
 coverage is not; this audit does not prove that a relevant raw catalog row is
 globally absent.
 
-## Retrospective dev/validation product-mark sensor result
+## Untouched Validation rejects the SIFT product-mark sensor
 
-Six official Panini product-mark references were evaluated locally on 17
-previously used dev/validation images with no Provider or network call. The
-500-pixel resize was selected after observing the full cohort, so every row is
-now retrospective; it is a future-validation candidate, not prospective evidence.
+The optimistic retrospective result (`14/17`, zero wrong emissions) did not
+survive one legal untouched Product-field Validation. The evaluator, six
+official references, 500-pixel resize and thresholds were frozen before a
+prediction child saw 21 image-only inputs. Validation Product truth was opened
+only after predictions were hashed; tuning-image SHA overlap was zero.
 
 | Measurement | Result |
 | --- | ---: |
-| correct product | `14/17 = 82.35%` |
-| critical wrong product | `0/17` |
-| `UNKNOWN` | `3/17` |
-| precision when emitted | `100%` |
-| six-reference compute p50 / p95, retained run | see versioned JSON report |
-| conservative stage budget p50 / p95 | `130–180 / 340–400 ms` |
+| supported product positives | `1/5` correct, `3` abstain, `1` wrong class |
+| open-set products | `14/16` correctly rejected, `2` false positives |
+| precision when emitted | `1/4 = 25%` |
+| Product-field joint accuracy | `15/21 = 71.43%` |
+| local sensor p50 / p95 | `84.280 / 119.088 ms` |
+| Provider / network / production / holdout IO | `0 / 0 / 0 / 0` |
 
-This is the first useful non-Provider visual numerator, but it still fails the
-coverage gate before OCR, Candidate, Resolver or title expression are counted.
-The reported sensor timing excludes image decode and resize. It proves that
-product-mark matching is cheap enough to budget in parallel; it does not prove
-an 85% title route or a prospective Development result.
+The SIFT mark sensor is therefore `NO_GO` despite excellent latency. Its budget
+may remain as a placeholder for a replacement emblem sensor, but its values
+cannot support Retrieval. The 21-card denominator contains only five supported
+positives, so it also cannot estimate six-product recall or title accuracy. See
+`docs/reports/no-full-provider-product-mark-untouched-validation21-v1-2026-07-30.json`.
 
 ## The 85% requirement as a hard coverage equation
 
@@ -275,6 +290,20 @@ rather than replaces the two accuracy scoreboards: familiar and unseen
 10. `shadow-ocr-detail-completion-snapshot-v1` requires one immutable image and
     crop generation across schedule, OCR job and Worker-emitted patch. Missing,
     stale or retroactively unversioned evidence cannot become `COMPLETE`.
+11. `shadow-one-shot-ocr-card-packet-v1` selects one front Subject view and one
+    back Year/Product plus Card-code view, signs each unique source once and
+    requires one proven batch request. Missing batch telemetry, a mixed Worker
+    revision, role leakage or a second attempt fails closed without production
+    effect.
+12. The Lean Vision Worker now has one truthful authentication owner: ADC uses
+    one reusable SDK client; explicit API-key mode uses REST. `/readyz` can no
+    longer report ADC ready while execution requires an absent API key. Its
+    scope is explicitly credential-source-only; Vision/IAM functionality still
+    requires an authorized canary.
+13. The one-shot transport preserves payload-level request, unit, unique
+    download/decode, authentication, external-attempt, confirmed-unit and
+    unknown-billing telemetry in the Node client. One batch can no longer be
+    inferred from three item responses.
 
 ## Local Release Pack result
 
@@ -299,29 +328,41 @@ latency; it proves neither exact-card coverage nor the 85% accuracy target.
 
 ## Next falsifiable gate
 
-The next gate is not another full-Provider run. The immutable card index has
-now been compiled and rejected as the primary route; it remains an exact-code
-secondary lane. What remains is a Development and Validation replay of the
-sensor-first route:
+The next gate is not another full-Provider run. The immutable card index remains
+an exact-code secondary lane, and the SIFT product-mark arm is now rejected.
+The next route is:
 
-1. freeze the 500-pixel six-mark sensor only as a candidate, then evaluate it
-   on untouched Validation images;
-2. in benchmark/Shadow only, schedule product/subject detail crops and wait for
-   the version-matched patch snapshot before probing; keep production defaults
-   unchanged;
-3. retain a per-card batch OCR timing packet so the current crop-max model can
-   be replaced with observed card-level p50/p95;
-4. join direct OCR fields, mark support and existence constraints into the
-   Candidate packet; the mark never owns SEM or a title;
-5. report addressability, Retrieval Recall@1/5/20, Selection, Application,
-   Resolver, Renderer, fabrication and latency on both splits;
-6. proceed to one cold paired 20 only after Development and Validation pass
-   their frozen gates.
+1. run `shadow-one-shot-ocr-card-packet-v1` on Development, then one untouched
+   Validation cohort, retaining real joint card-level timing and exact
+   single-crop non-inferiority;
+2. require the evidence-grounded feasibility gate p50 at most `1.35 s`, p95 at
+   most `3.15 s`, visible-field precision at least `99%`, card-code critical
+   false positives `0`, role leaks `0`, technical errors below `1%`, one Cloud
+   Run request and one Google annotate request per card. Track `1.0/1.85 s`
+   separately as stretch, never as the baseline pass condition;
+3. only after that baseline passes, compare a one-image Evidence Atlas arm;
+   Atlas must be field-noninferior, have zero cross-slot errors and p95 no more
+   than `0.8x` the three-image batch before its lower Vision-unit cost matters;
+4. do not tune SIFT on the consumed Validation-21. Freeze a replacement
+   open-set emblem classifier on Development and evaluate it on the unconsumed
+   official G2 image pack after that pack is materialized;
+5. only after OCR and emblem gates pass, join their evidence into the existing
+   Candidate packet and report addressability, Retrieval Recall@1/5/20,
+   Selection, Application, Resolver, Renderer, fabrication and joint
+   correctness-within-deadline on both splits;
+6. proceed to one cold paired 20 only after Development and Validation satisfy
+   the frozen joint gate. Holdout remains sealed.
 
-No Prompt, OCR provider, Queue, front end, production title or holdout is
-changed by this report or the compiled-route contract.
+No Prompt, OCR model/feature, Queue, front end, production title or holdout is
+changed. The Vision authentication/readiness contract and evaluation telemetry
+are corrected offline; nothing is deployed or enabled by this branch.
 
-## Reproducibility
+## Artifacts and verification boundary
+
+The hashes below make the retained claims auditable. Several truth/image inputs
+remain content-addressed external research artifacts rather than repository
+fixtures, so a clean checkout can verify the committed report but cannot rerun
+the one-shot prediction without separately materializing those exact bytes.
 
 - Independent labels:
   `/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/independent-identity/labeled-devval-current.json`
@@ -351,3 +392,6 @@ changed by this report or the compiled-route contract.
   `docs/reports/card-level-release-pack-audit-2026-07-30.json`
 - Retrospective dev/validation product-mark sensor audit:
   `docs/reports/no-full-provider-product-mark-sensor-2026-07-30.json`
+- Untouched Product-field Validation-21 result:
+  `docs/reports/no-full-provider-product-mark-untouched-validation21-v1-2026-07-30.json`
+  (`report_sha256:020eb00436611fd1354c8d3baf36f1cad577cedb16c41a96690bc61394836b28`)

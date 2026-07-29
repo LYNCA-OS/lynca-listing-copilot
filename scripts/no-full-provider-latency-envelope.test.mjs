@@ -6,8 +6,12 @@ import {
   calculateUploadPhysicalLowerBound,
   latencyEvidenceClasses,
   modelParallelFocusedOcrFromMarginals,
+  modelSerialFocusedOcrFromMarginals,
   NoFullProviderLatencyContractError,
-  noFullProviderReferenceStages
+  noFullProviderCurrentSerialOcrModel,
+  noFullProviderOneShotOcrPlanningProxy,
+  noFullProviderReferenceStages,
+  noFullProviderStretchOneShotStages
 } from "../lib/listing/evaluation/no-full-provider-latency-envelope.mjs";
 
 function expectCode(code, fn) {
@@ -36,6 +40,17 @@ test("reference envelope reproduces the frozen no-full-Provider report", () => {
     lower: 4273.4,
     upper: 5614
   });
+});
+
+test("the one-shot stretch target is reported separately from the evidence-grounded proxy", () => {
+  const result = calculateNoFullProviderLatencyEnvelope({
+    stages: noFullProviderStretchOneShotStages
+  });
+
+  assert.deepEqual(result.critical_path.p50.writer_visible_ms, { lower: 1550.3, upper: 2290.5 });
+  assert.deepEqual(result.critical_path.p95.writer_visible_ms, { lower: 3000.4, upper: 4341 });
+  assert.deepEqual(result.evidence_inventory.modelled_stage_ids, []);
+  assert.ok(result.evidence_inventory.budget_stage_ids.includes("focused_ocr"));
 });
 
 test("original upload and focused evidence use a critical-path max, not a serial sum", () => {
@@ -93,7 +108,7 @@ test("writer-visible file-selection scenarios reproduce the report bounds", () =
   assert.deepEqual(twoSides.critical_path.p95.writer_visible_ms, { lower: 5450.4, upper: 6241 });
 });
 
-test("modelled card OCR, measured compiled lookup, and budgets remain distinct", () => {
+test("one-shot OCR remains a model until one real card-level batch distribution exists", () => {
   const result = calculateNoFullProviderLatencyEnvelope();
 
   assert.deepEqual(result.evidence_inventory.measured_stage_ids, ["compiled_lookup"]);
@@ -122,7 +137,24 @@ test("three marginal crop distributions produce an explicit parallel-max model, 
   });
   assert.equal(model.p50_ms, 1343);
   assert.equal(model.p95_ms, 3123);
+  assert.deepEqual(model, noFullProviderOneShotOcrPlanningProxy);
   assert.equal(model.observed, false);
+  assert.ok(model.assumptions.includes("NOT_A_CARD_LEVEL_OBSERVATION"));
+});
+
+test("the current per-asset capacity-one graph is a serial sum, not the old parallel max", () => {
+  const model = modelSerialFocusedOcrFromMarginals({
+    crops: [
+      { id: "year_product", p50_ms: 655, p95_ms: 2277 },
+      { id: "subject", p50_ms: 983, p95_ms: 2337 },
+      { id: "card_code", p50_ms: 656, p95_ms: 2206 }
+    ]
+  });
+  assert.deepEqual(model, noFullProviderCurrentSerialOcrModel);
+  assert.equal(model.p50_ms, 2628);
+  assert.equal(model.p95_ms, 5192);
+  assert.ok(model.assumptions.includes("ZERO_COVARIANCE_BETWEEN_CROP_LATENCIES"));
+  assert.ok(model.assumptions.includes("CURRENT_PER_ASSET_CAPACITY_ONE_SERIALIZES_CROPS"));
   assert.ok(model.assumptions.includes("NOT_A_CARD_LEVEL_OBSERVATION"));
 });
 
@@ -168,8 +200,14 @@ test("budget stages cannot masquerade as measurements", () => {
   expectCode("BUDGET_CANNOT_BE_OBSERVED", () => calculateNoFullProviderLatencyEnvelope({ stages }));
 });
 
-test("modelled stages cannot masquerade as observations", () => {
+test("one-shot OCR planning proxy cannot masquerade as an observation", () => {
   const stages = structuredClone(noFullProviderReferenceStages);
   stages.focused_ocr.observed = true;
   expectCode("MODEL_CANNOT_BE_OBSERVED", () => calculateNoFullProviderLatencyEnvelope({ stages }));
+});
+
+test("one-shot OCR stretch budget cannot masquerade as an observation", () => {
+  const stages = structuredClone(noFullProviderStretchOneShotStages);
+  stages.focused_ocr.observed = true;
+  expectCode("BUDGET_CANNOT_BE_OBSERVED", () => calculateNoFullProviderLatencyEnvelope({ stages }));
 });

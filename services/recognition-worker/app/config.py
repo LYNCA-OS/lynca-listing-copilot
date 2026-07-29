@@ -98,8 +98,9 @@ class WorkerConfig:
     # measured request latency into a per-call cost estimate for the A/B report.
     deepseek_ocr_gpu_cost_per_second: float = 0.0
     # Google Cloud Vision OCR backend. Reads printed hard keys (serial/card
-    # code/year) that PaddleOCR misses on foil/dense small print. API key only;
-    # no GPU. hybrid runs paddle + any configured VLM/vision lane.
+    # code/year) that PaddleOCR misses on foil/dense small print. ADC is the
+    # default Cloud Run transport; set VISION_USE_ADC=false to use the
+    # API-key REST lane. hybrid runs paddle + any configured VLM/vision lane.
     vision_api_key: str = ""
     vision_endpoint: str = ""
     vision_feature_type: str = "DOCUMENT_TEXT_DETECTION"
