@@ -16,10 +16,6 @@ import { classifyNumberToken, resolveNumberFields, splitCardNumber } from "../li
 import { resolveCardFields } from "../lib/listing/resolver/resolve-card.mjs";
 import { resolveTrustedNameCandidate, trustedNameSimilarity } from "../lib/listing/resolver/trusted-name-candidate-resolver.mjs";
 
-// This suite exercises the underlying per-field wait budgets. The dedicated
-// ocr-rendezvous-wait-ceiling suite owns the new 2s production-default ceiling.
-process.env.PREINGESTION_OCR_MAX_WAIT_MS = "60000";
-
 assert.equal(classifyNumberToken("31/50"), "serial_number");
 assert.equal(classifyNumberToken("130/175"), "serial_number");
 assert.equal(classifyNumberToken("257/208"), "collector_number");
@@ -199,7 +195,8 @@ const entirelyMissingGradeWait = criticalOcrRendezvousDecision({
   unresolved: ["grade_company", "card_grade"],
   latestOcrState: { configured: true, serial_active_count: 0, grade_label_active_count: 2 },
   configuredWaitMs: 0,
-  criticalWaitMs: 2500
+  criticalWaitMs: 2500,
+  maxWaitMs: 8000
 });
 assert.deepEqual(entirelyMissingGradeWait.target_fields, ["grade"]);
 assert.deepEqual(entirelyMissingGradeWait.reasons, ["provider_left_grade_unresolved"]);
@@ -212,7 +209,8 @@ const slabMissingGradeWait = criticalOcrRendezvousDecision({
   latestOcrState: { configured: true, serial_active_count: 0, grade_label_active_count: 2 },
   slabLikely: true,
   configuredWaitMs: 0,
-  criticalWaitMs: 2500
+  criticalWaitMs: 2500,
+  maxWaitMs: 8000
 });
 assert.deepEqual(slabMissingGradeWait.target_fields, ["grade"]);
 assert.deepEqual(slabMissingGradeWait.reasons, ["slab_capture_grade_completely_missing"]);
@@ -257,7 +255,8 @@ const ocrPartialGradeWait = criticalOcrRendezvousDecision({
     grade_label_active_count: 1,
     evidence_patches: [{ field: "grade_company", value: "PSA" }]
   },
-  criticalWaitMs: 2500
+  criticalWaitMs: 2500,
+  maxWaitMs: 8000
 });
 assert.equal(ocrPartialGradeWait.should_wait, true, "partial OCR grade evidence should wait for its active counterpart");
 assert.deepEqual(ocrPartialGradeWait.target_fields, ["grade"]);
@@ -270,7 +269,8 @@ const ocrPartialSerialWait = criticalOcrRendezvousDecision({
     serial_active_count: 1,
     evidence_patches: [{ field: "numerical_rarity", value: "2/3" }]
   },
-  criticalWaitMs: 2500
+  criticalWaitMs: 2500,
+  maxWaitMs: 8000
 });
 assert.equal(ocrPartialSerialWait.should_wait, true, "direct OCR numbering should wait for active serial verification");
 assert.deepEqual(ocrPartialSerialWait.target_fields, ["serial_number"]);
@@ -286,7 +286,8 @@ const serialWaitRespectsOverride = criticalOcrRendezvousDecision({
     evidence_patches: [{ field: "numerical_rarity", value: "2/3" }]
   },
   criticalWaitMs: 2500,
-  serialWaitMs: 11000
+  serialWaitMs: 11000,
+  maxWaitMs: 11000
 });
 assert.equal(serialWaitRespectsOverride.wait_budget_ms, 11000, "serialWaitMs override raises the serial wait budget");
 
@@ -301,7 +302,8 @@ const gradeOnlyKeepsCriticalBudget = criticalOcrRendezvousDecision({
     evidence_patches: [{ field: "card_grade", value: "10" }]
   },
   criticalWaitMs: 2500,
-  serialWaitMs: 8000
+  serialWaitMs: 8000,
+  maxWaitMs: 8000
 });
 assert.ok(!gradeOnlyKeepsCriticalBudget.target_fields.includes("serial_number"));
 assert.equal(gradeOnlyKeepsCriticalBudget.wait_budget_ms, 2500, "a grade-only wait must not inherit the serial budget");
