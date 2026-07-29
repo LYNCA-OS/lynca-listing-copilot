@@ -110,7 +110,8 @@ function registryFetch(rows) {
   assert.equal(missing.saved, false);
 }
 
-// --- end-to-end cert lane inside the L1 finalize entry ---
+// --- compatible cert lookup remains a review signal until Candidate Control
+// owns a versioned cert-registry application contract ---
 {
   const scoutResult = {
     resolved_fields: {
@@ -123,7 +124,15 @@ function registryFetch(rows) {
       serial_number: "04/10",
       print_run_denominator: "10"
     },
-    evidence: {}
+    evidence: {},
+    anchor_dossier: {
+      anchors: [{
+        anchor_type: "cert_number",
+        normalized: "87654321",
+        grader: "PSA",
+        direct: true
+      }]
+    }
   };
   const result = await maybeFinalizeL1FromExactAnchor({
     scoutResult,
@@ -131,14 +140,12 @@ function registryFetch(rows) {
     fetchImpl: registryFetch([registryRow]),
     timeoutMs: 1500
   });
-  assert.equal(result.finalized, true, JSON.stringify(result).slice(0, 300));
-  assert.equal(result.reason, "cert_registry_finalized");
+  assert.equal(result.finalized, false, JSON.stringify(result).slice(0, 300));
+  assert.equal(result.reason, "cert_registry_candidate_application_owner_not_integrated");
   assert.equal(result.anchor_lookup_candidate.source, "INTERNAL_CERT_REGISTRY");
-  assert.equal(result.identity_resolution.status, "CONFIRMED");
-  // identity from registry, instance from current image
-  assert.equal(result.resolved_fields.collector_number, "136");
-  assert.equal(result.resolved_fields.serial_number, "04/10");
-  assert.match(result.title, /Wembanyama/);
+  assert.equal(result.identity_resolution.status, "REVIEW_REQUIRED");
+  assert.equal(result.resolver_input, null);
+  assert.equal(result.title, undefined);
 }
 
 // --- cert conflict: REVIEW_REQUIRED, no finalize through any lane ---
@@ -150,7 +157,15 @@ function registryFetch(rows) {
       cert_number: "87654321",
       grade_company: "PSA"
     },
-    evidence: {}
+    evidence: {},
+    anchor_dossier: {
+      anchors: [{
+        anchor_type: "cert_number",
+        normalized: "87654321",
+        grader: "PSA",
+        direct: true
+      }]
+    }
   };
   const result = await maybeFinalizeL1FromExactAnchor({
     scoutResult,

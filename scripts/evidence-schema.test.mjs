@@ -112,6 +112,16 @@ assert.deepEqual(
   "a middle-name expansion of the same person must not create a multi-subject identity"
 );
 assert.deepEqual(
+  normalizeResolvedFields({ subjects: ["Jaren Jackson"] }).players,
+  ["Jaren Jackson"],
+  "retrieval subjects must normalize into the canonical players field"
+);
+assert.deepEqual(
+  normalizeResolvedFields({ subject: "Shanks" }).players,
+  ["Shanks"],
+  "a singular retrieval subject must normalize into canonical players"
+);
+assert.deepEqual(
   normalizeResolvedFields({ players: ["Ken Griffey", "Ken Griffey Jr."] }).players,
   ["Ken Griffey", "Ken Griffey Jr."],
   "generational suffixes must remain distinct subjects"

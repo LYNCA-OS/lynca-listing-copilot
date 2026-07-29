@@ -10,6 +10,7 @@ import {
 import { runV4FastScoutObservation } from "../../lib/listing/v4/fast-scout/fast-scout-observation.mjs";
 import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/exact-anchor-finalize.mjs";
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
+import { applyIdentityResolutionGate } from "../../lib/identity-resolution/listing-resolution-gate.mjs";
 import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
 import { applyPreIngestionBundleToPayload } from "../../lib/listing/pipeline/preingestion-evidence.mjs";
 import { compactRecognitionCriticalPath } from "../../lib/listing/pipeline/timing.mjs";
@@ -17,7 +18,13 @@ import {
   readLatestPreIngestionBundleByAsset,
   summarizePreIngestionBundle
 } from "../../lib/listing/preingestion/preingestion-bundle.mjs";
-import { adaptRecognitionResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
+import {
+  adaptRecognitionResultToV4,
+  assertV4TerminalTitleWithinLimit,
+  buildV4PersistenceRows,
+  prepareV4PresentationResult,
+  withV4ServerTitleLimit
+} from "../../lib/listing/v4/result-adapter.mjs";
 import {
   buildEvaluationDecisionTracePacket,
   evaluationTraceEnabled
@@ -137,6 +144,10 @@ export async function persistWriterReadySession({
   patch,
   updateSession = updateV4RecognitionSessionWithRetry
 } = {}) {
+  assertV4TerminalTitleWithinLimit({
+    final_title: patch?.final_title,
+    rendered_title: patch?.l2_title
+  });
   const primary = await updateSession({ sessionId, patch, attempts: 3, retryBaseMs: 150 });
   if (primary?.saved === true) return { ...primary, persistence_mode: "writer_ready_full_patch" };
   const fallback = await updateSession({
@@ -371,34 +382,75 @@ function buildInternalScoutSummary(response = {}, result = {}) {
   };
 }
 
+export function resolveExactAnchorCandidate(finalize = {}, baseResult = {}) {
+  if (finalize.finalized !== true || finalize.resolver_ready !== true || !finalize.resolver_input) {
+    return {
+      writer_ready: false,
+      reason: finalize.reason || "exact_anchor_resolver_input_missing",
+      result: null
+    };
+  }
+  const resolverInput = {
+    ...baseResult,
+    ...finalize.resolver_input,
+    evidence: {
+      ...(baseResult.evidence || baseResult.normalized_evidence || {}),
+      ...(finalize.resolver_input.evidence || {})
+    },
+    resolution_trace: [
+      ...(Array.isArray(baseResult.resolution_trace) ? baseResult.resolution_trace : []),
+      ...(Array.isArray(finalize.resolver_input.resolution_trace) ? finalize.resolver_input.resolution_trace : [])
+    ]
+  };
+  const result = applyIdentityResolutionGate(resolverInput, {
+    maxLength: 80,
+    providerId: "v4_exact_anchor"
+  });
+  const title = String(result.final_title || result.title || "").replace(/\s+/g, " ").trim();
+  const terminalIdentity = ["CONFIRMED", "RESOLVED"].includes(String(result.identity_resolution_status || "").toUpperCase());
+  const writerReady = terminalIdentity
+    && title.length > 0
+    && title.length <= 80
+    && result.title_render_source === "identity_resolution_deterministic_renderer";
+  return {
+    writer_ready: writerReady,
+    reason: writerReady
+      ? "exact_anchor_resolver_finalized"
+      : `exact_anchor_resolver_${String(result.identity_resolution_status || "abstain").toLowerCase()}`,
+    result
+  };
+}
+
 function writerFinalizedL2ExactAnchorResponse(response = {}, result = {}, finalize = {}) {
   const scout = buildInternalScoutSummary(response, result);
+  const title = String(result.final_title || result.title || "").replace(/\s+/g, " ").trim();
   return withV4Version({
     ...response,
     ok: true,
     status: v4SessionStatuses.DRAFT_READY,
     title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
-    final_title: finalize.title,
-    title: finalize.title,
-    rendered_title: finalize.title,
-    writer_safe_draft: finalize.title,
-    assisted_draft: finalize.title,
+    final_title: title,
+    title,
+    rendered_title: title,
+    writer_safe_draft: title,
+    assisted_draft: title,
     assisted_draft_status: "READY",
     writer_draft: {
       ...(response.writer_draft || {}),
-      title: finalize.title,
-      display_title: finalize.title,
+      title,
+      display_title: title,
       status: "READY",
       user_edit_mode: "one_line_title_only",
       structured_fields_visible: false
     },
-    title_render_source: "exact_anchor_catalog_finalized",
-    title_stage_reason: "Exact printed-code anchor matched exactly one catalog identity with zero contradictions; the catalog-grounded L2 title is writer-visible.",
-    l1_return_reason: "l2_direct_exact_anchor_catalog_finalized",
+    title_render_source: result.title_render_source,
+    title_stage_reason: "Exact printed-code evidence produced one trusted candidate; Identity Resolver accepted it and the deterministic 80-character Renderer produced the writer-visible title.",
+    l1_return_reason: "l2_direct_exact_anchor_resolver_finalized",
     exact_anchor_finalize: {
       used: true,
       candidate: finalize.candidate || null,
-      query_fields: finalize.query_fields || null
+      query_fields: finalize.query_fields || null,
+      resolver_status: result.identity_resolution_status || null
     },
     title_stage_readiness: {
       ...(response.title_stage_readiness || {}),
@@ -450,12 +502,9 @@ function writerPendingL1Response(response = {}, result = {}) {
   });
 }
 
-// Exact-anchor finalize is the one L1 outcome allowed through the writer
-// barrier: a unique strictest-tier catalog identity (exact printed code +
-// year agreement + zero contradicted anchors) IS the answer, so the writer
-// sees the title in the L1 window (~2-3s) while the background L2 run stays
-// on as verification and overwrites on completion. Every other L1 result
-// stays behind the barrier as internal evidence.
+// Exact Anchor may only cross the writer barrier after the shared Identity
+// Resolver accepts its candidate and the shared 80-character Renderer emits
+// the title. A unique catalog row alone is never a second field/title owner.
 export function exactAnchorFastFinalShadowOnly(payload = {}) {
   const options = payload.provider_options || payload.providerOptions || {};
   return payload.exact_anchor_fast_final_shadow_only === true
@@ -481,7 +530,7 @@ function writerFinalizedL1Response(response = {}, result = {}) {
     writer_safe_draft: title,
     assisted_draft: null,
     assisted_draft_status: "PENDING",
-    title_render_source: "exact_anchor_catalog_finalized",
+    title_render_source: result.title_render_source,
     resolved_fields: result.resolved_fields || result.resolved || {},
     exact_anchor_finalize: result.exact_anchor_finalize || { used: true },
     writer_draft: {
@@ -494,8 +543,8 @@ function writerFinalizedL1Response(response = {}, result = {}) {
       user_edit_mode: "one_line_title_only",
       structured_fields_visible: true
     },
-    title_stage_reason: "Unique exact-anchor catalog identity finalized in the L1 window; background L2 continues as verification and overwrites on completion.",
-    l1_return_reason: "exact_anchor_catalog_internal_scout",
+    title_stage_reason: "Unique exact-anchor candidate was accepted by Identity Resolver in the L1 window; background L2 continues as verification and overwrites on completion.",
+    l1_return_reason: "exact_anchor_resolver_internal_scout",
     title_stage_readiness: {
       ...(response.title_stage_readiness || {}),
       writer_safe_ready: true,
@@ -1076,6 +1125,9 @@ async function persistPipelineResult({
   requestContext = null
 } = {}) {
   result = prepareV4PresentationResult({ result, payload }).result;
+  // This is the final fail-closed fence before either the direct session write
+  // or the atomic writer-ready RPC can persist a terminal V4 title.
+  assertV4TerminalTitleWithinLimit(result, payload);
   result.v4_pipeline_contract = buildV4PipelineContract({
     payload,
     routePlan,
@@ -1653,6 +1705,11 @@ export default async function handler(req, res) {
     }
   }
 
+  // The browser/job request may ask for a stricter limit, but never a looser
+  // one. Persist the bounded value in both spellings so every downstream
+  // provider, Resolver, Renderer and cache fingerprint sees the same contract.
+  payload = withV4ServerTitleLimit(payload);
+
   let sessionId;
   try {
     sessionId = sessionIdForV4Request({
@@ -1778,6 +1835,7 @@ export default async function handler(req, res) {
   };
   const forceL2Direct = payload.v4_worker_synchronous === true || payload.v4_force_l2_direct === true;
   let preL2AnchorProbe = null;
+  let preL2AnchorResolution = null;
   const preL2AnchorRouterEnabled = String(process.env.ENABLE_V4_PRE_L2_ANCHOR_ROUTER || "true").toLowerCase() !== "false";
   const preingestionBundleId = payload.preingestion_bundle_id || payload.preingestionBundleId || "";
   if (forceL2Direct && preL2AnchorRouterEnabled && preingestionBundleId) {
@@ -1820,9 +1878,16 @@ export default async function handler(req, res) {
     l2Timing.pre_l2_anchor_trusted_candidate_count = preL2AnchorProbe?.metrics?.trusted_candidate_count ?? null;
     l2Timing.pre_l2_anchor_eligible_candidate_count = preL2AnchorProbe?.metrics?.eligible_candidate_count ?? null;
     if (preL2AnchorProbe?.finalized === true) {
+      preL2AnchorResolution = resolveExactAnchorCandidate(
+        preL2AnchorProbe.finalize,
+        preL2AnchorProbe.finalize?.resolver_input || {}
+      );
+    }
+    if (preL2AnchorResolution?.writer_ready === true) {
       // The writer-visible timer for a no-GPT path starts only after the
-      // router has proved that OCR/catalog evidence is sufficient. Queueing,
-      // bundle loading and speculative lookup are reported separately.
+      // router has proved that OCR/catalog evidence is sufficient AND the
+      // shared Resolver accepted it. Queueing, bundle loading and speculative
+      // lookup are reported separately.
       startRecognitionClock("deterministic_anchor_finalize");
     }
     payload.v4_anchor_probe = {
@@ -1831,13 +1896,16 @@ export default async function handler(req, res) {
       dossier: preL2AnchorProbe?.dossier || null,
       timing: preL2AnchorProbe?.timing || null,
       metrics: preL2AnchorProbe?.metrics || null,
-      finalized: preL2AnchorProbe?.finalized === true,
+      finalized: preL2AnchorResolution?.writer_ready === true,
+      resolver_candidate_ready: preL2AnchorProbe?.finalized === true,
+      resolver_status: preL2AnchorResolution?.result?.identity_resolution_status || null,
       reason: preL2AnchorProbe?.reason || null,
       shadow_finalize: preL2AnchorProbe?.finalize ? {
         finalized: preL2AnchorProbe.finalize.finalized === true,
+        finalized_semantics: preL2AnchorProbe.finalize.finalized_semantics || null,
+        resolver_ready: preL2AnchorProbe.finalize.resolver_ready === true,
+        resolver_status: preL2AnchorResolution?.result?.identity_resolution_status || null,
         reason: preL2AnchorProbe.finalize.reason || null,
-        title: preL2AnchorProbe.finalize.title || "",
-        resolved_fields: preL2AnchorProbe.finalize.resolved_fields || {},
         candidate: preL2AnchorProbe.finalize.candidate || null,
         query_fields: preL2AnchorProbe.finalize.query_fields || null,
         catalog_candidate_count: Number(preL2AnchorProbe.finalize.catalog_candidate_count || 0),
@@ -1926,8 +1994,8 @@ export default async function handler(req, res) {
       if (fastScoutResult.fast_scout?.cache_hit !== true) {
         startRecognitionClock("gpt_provider_request", fastScoutStartedAtIso);
       }
-      // Exact-anchor finalize: a unique strict-tier catalog hit lets L1 emit
-      // the writer-visible title now (~2-3s); L2 stays on as verification.
+      // Exact Anchor emits only a candidate. The shared Resolver must accept
+      // it before L1 may expose any writer-visible title.
       const finalizeStartedAtIso = new Date().toISOString();
       const finalize = await maybeFinalizeL1FromExactAnchor({
         scoutResult: fastScoutResult,
@@ -1936,29 +2004,30 @@ export default async function handler(req, res) {
         fetchImpl: globalThis.fetch,
         timeoutMs: Number(process.env.V4_EXACT_ANCHOR_FINALIZE_TIMEOUT_MS || 2000)
       }).catch(() => ({ finalized: false, reason: "finalize_error" }));
-      const finalized = finalize?.finalized === true;
+      const anchorResolution = resolveExactAnchorCandidate(finalize, fastScoutResult);
+      const finalized = anchorResolution.writer_ready === true;
       if (finalized) startRecognitionClock("deterministic_anchor_finalize", finalizeStartedAtIso);
       const l1Result = {
         ...fastScoutResult,
         ...(finalized ? {
-          title: finalize.title,
-          final_title: finalize.title,
-          rendered_title: finalize.title,
-          resolved: finalize.resolved_fields,
-          resolved_fields: finalize.resolved_fields,
-          fields: finalize.resolved_fields,
-          title_render_source: "exact_anchor_catalog_finalized",
+          ...anchorResolution.result,
           exact_anchor_finalize: {
             used: true,
             candidate: finalize.candidate || null,
-            query_fields: finalize.query_fields || null
+            query_fields: finalize.query_fields || null,
+            resolver_status: anchorResolution.result?.identity_resolution_status || null
           }
         } : {
-          exact_anchor_finalize: { used: false, reason: finalize?.reason || "not_attempted" }
+          exact_anchor_finalize: {
+            used: false,
+            candidate_ready: finalize?.resolver_ready === true,
+            reason: anchorResolution.reason || finalize?.reason || "not_attempted",
+            resolver_status: anchorResolution.result?.identity_resolution_status || null
+          }
         }),
         title_stage: v4TitleStages.L1_INTERNAL_SCOUT,
         assisted_draft_status: "PENDING",
-        l1_return_reason: finalized ? "exact_anchor_catalog_internal_scout" : "fast_scout_internal_scout_ready",
+        l1_return_reason: finalized ? "exact_anchor_resolver_internal_scout" : "fast_scout_internal_scout_ready",
         full_assist_continued_after_l1: true,
         l1_return_barrier_version: l1ReturnBarrierVersion
       };
@@ -2090,33 +2159,26 @@ export default async function handler(req, res) {
 
   let l2ScoutResult = null;
 
-  if (forceL2Direct && preL2AnchorProbe?.finalized === true
+  if (forceL2Direct && preL2AnchorResolution?.writer_ready === true
     && !exactAnchorFastFinalShadowOnly(payload)) {
     const finalize = preL2AnchorProbe.finalize;
+    const resolvedAnchorResult = preL2AnchorResolution.result;
     startRecognitionClock("deterministic_anchor_finalize");
     l2Timing.pre_l2_full_l2_skipped = true;
     const finalizedResult = {
-      title: finalize.title,
-      final_title: finalize.title,
-      rendered_title: finalize.title,
-      resolved: finalize.resolved_fields,
-      resolved_fields: finalize.resolved_fields,
-      fields: finalize.resolved_fields,
-      raw_provider_fields: finalize.resolved_fields,
-      confidence: "HIGH",
-      recognition_status: "CONFIRMED",
+      ...resolvedAnchorResult,
       provider: "v4_anchor_router",
       model: "deterministic_catalog_lookup",
-      title_render_source: "pre_l2_anchor_catalog_finalized",
       exact_anchor_finalize: {
         used: true,
         candidate: finalize.candidate || null,
-        query_fields: finalize.query_fields || null
+        query_fields: finalize.query_fields || null,
+        resolver_status: resolvedAnchorResult.identity_resolution_status || null
       },
       anchor_probe: payload.v4_anchor_probe,
       title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
       assisted_draft_status: "READY",
-      l1_return_reason: "pre_l2_anchor_catalog_finalized",
+      l1_return_reason: "pre_l2_anchor_resolver_finalized",
       full_assist_continued_after_l1: false,
       module_speed_metrics: {
         v4_l2_timing: l2TimingWithTotal(l2Timing, handlerStartedAt)
@@ -2190,27 +2252,25 @@ export default async function handler(req, res) {
       l2Timing.exact_anchor_finalize_ms = Date.now() - finalizeStartedAt;
       l2Timing.exact_anchor_finalize_reason = finalize?.reason || null;
       l2Timing.exact_anchor_lookup_timing = finalize?.lookup_timing || null;
-      if (finalize?.finalized === true) {
+      const anchorResolution = resolveExactAnchorCandidate(finalize, scoutResult);
+      l2Timing.exact_anchor_resolver_status = anchorResolution.result?.identity_resolution_status || null;
+      if (anchorResolution.writer_ready === true) {
         // A cache-only scout is still speculative until the unique catalog
-        // anchor is confirmed. Start the no-GPT clock at that decision point.
+        // anchor is confirmed and accepted by Resolver. Start the no-GPT clock
+        // at that decision point.
         startRecognitionClock("deterministic_anchor_finalize");
         const finalizedResult = {
           ...scoutResult,
-          title: finalize.title,
-          final_title: finalize.title,
-          rendered_title: finalize.title,
-          resolved: finalize.resolved_fields,
-          resolved_fields: finalize.resolved_fields,
-          fields: finalize.resolved_fields,
-          title_render_source: "exact_anchor_catalog_finalized",
+          ...anchorResolution.result,
           exact_anchor_finalize: {
             used: true,
             candidate: finalize.candidate || null,
-            query_fields: finalize.query_fields || null
+            query_fields: finalize.query_fields || null,
+            resolver_status: anchorResolution.result?.identity_resolution_status || null
           },
           title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
           assisted_draft_status: "READY",
-          l1_return_reason: "exact_anchor_catalog_finalized",
+          l1_return_reason: "exact_anchor_resolver_finalized",
           full_assist_continued_after_l1: false,
           module_speed_metrics: {
             ...(scoutResult.module_speed_metrics || {}),

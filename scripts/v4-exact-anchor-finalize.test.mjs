@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createEvidenceField, createVisionSource } from "../lib/listing/evidence/evidence-schema.mjs";
+import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import {
   exactAnchorQueryFieldsFromScout,
   maybeFinalizeL1FromExactAnchor,
@@ -10,6 +12,27 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: "test-service-role"
 };
 
+function directEvidence(value, side = "front") {
+  const observedText = Array.isArray(value) ? value.join(" / ") : String(value);
+  const source = createVisionSource({
+    sourceType: side === "back" ? "CARD_BACK" : "CARD_FRONT",
+    imageId: `image_${side}`,
+    side,
+    observedText,
+    rawText: observedText,
+    trustTier: 1
+  });
+  return createEvidenceField({
+    value,
+    normalizedValue: value,
+    status: "CONFIRMED",
+    confidence: 0.97,
+    candidates: [{ value, confidence: 0.97, sources: [source] }],
+    sources: [source],
+    conflicts: []
+  });
+}
+
 const scoutResult = {
   resolved_fields: {
     players: ["Jesus Made"],
@@ -20,8 +43,73 @@ const scoutResult = {
     print_run_denominator: "5",
     serial_number: "3/5",
     surface_color: "Red"
+  },
+  evidence: {
+    year: directEvidence("2025", "back"),
+    manufacturer: directEvidence("Topps", "back"),
+    product: directEvidence("Bowman Chrome", "back"),
+    players: directEvidence(["Jesus Made"]),
+    collector_number: directEvidence("BS-4", "back"),
+    serial_number: directEvidence("3/5"),
+    surface_color: directEvidence("Red")
   }
 };
+
+const forbiddenCandidateInstanceFields = new Set([
+  "serial_number",
+  "numerical_rarity",
+  "grade_company",
+  "card_grade",
+  "auto_grade",
+  "cert_number",
+  "condition"
+]);
+
+function resolverDecisionFor(finalize) {
+  assert.equal(finalize.finalized, true);
+  assert.equal(finalize.finalized_semantics, "RESOLVER_READY");
+  assert.equal(finalize.resolver_ready, true);
+  assert.equal(finalize.title, undefined);
+  assert.equal(finalize.presentation, undefined);
+  assert.equal(finalize.resolved_fields, undefined);
+  assert.ok(finalize.resolver_input);
+  const application = finalize.resolver_input.retrieval_application;
+  assert.equal(application?.owner, "retrieval_application_layer");
+  assert.equal(application?.owns_candidate_application, true);
+  assert.equal(
+    application?.selected_candidate_id,
+    finalize.candidate?.candidate_id,
+    "canonical Candidate Selection must select the same exact-anchor winner"
+  );
+  const items = application.identity_evidence_items;
+  assert.ok(items.length > 0);
+  assert.ok(items.every((item) => item.metadata?.candidate_is_evidence_not_truth === true));
+  assert.ok(items.every((item) => ["APPLY", "SUPPORT"].includes(item.metadata?.retrieval_application_decision)));
+  assert.ok(items.every((item) => item.metadata?.field_permission));
+  assert.ok(items.every((item) => !forbiddenCandidateInstanceFields.has(item.field)));
+  assert.ok(finalize.resolver_input.resolution_trace.some((entry) => (
+    entry.output?.candidate_application_owner === "retrieval_application_layer"
+    && entry.output?.exact_anchor_policy_version
+  )));
+
+  const decision = applyIdentityResolutionGate(finalize.resolver_input, {
+    maxLength: 80,
+    providerId: "v4_exact_anchor"
+  });
+  assert.ok(["CONFIRMED", "RESOLVED", "ABSTAIN"].includes(decision.identity_resolution_status));
+  assert.ok(decision.final_title.length <= 80);
+  if (decision.identity_resolution_status === "ABSTAIN") {
+    assert.equal(decision.publication_gate.auto_publish_allowed, false);
+  } else {
+    assert.ok(decision.final_title.length > 0);
+  }
+  return decision;
+}
+
+function applicationValue(finalize, field) {
+  return finalize.resolver_input.retrieval_application.identity_evidence_items
+    .find((item) => item.field === field)?.value;
+}
 
 function catalogRow(overrides = {}) {
   return {
@@ -76,11 +164,12 @@ const finalized = await maybeFinalizeL1FromExactAnchor({
   fetchImpl: fetchReturning([catalogRow()])
 });
 assert.equal(finalized.finalized, true);
-assert.equal(finalized.reason, "exact_anchor_catalog_finalized");
-assert.match(finalized.title, /Bowman Chrome/i);
-assert.match(finalized.title, /Jesus Made/i);
-assert.equal(finalized.resolved_fields.set, "Spotlights");
-assert.equal(finalized.resolved_fields.serial_number, "3/5");
+assert.equal(finalized.reason, "exact_anchor_catalog_resolver_ready");
+const finalizedDecision = resolverDecisionFor(finalized);
+assert.match(finalizedDecision.final_title, /Bowman Chrome/i);
+assert.match(finalizedDecision.final_title, /Jesus Made/i);
+assert.equal(finalizedDecision.resolved.set, "Spotlights");
+assert.equal(finalizedDecision.resolved.serial_number, "3/5");
 assert.equal(finalized.candidate.candidate_identity_id, "11111111-1111-1111-1111-111111111111");
 assert.equal(finalized.catalog_lookup_attempted, true);
 assert.equal(finalized.catalog_candidate_count, 1);
@@ -119,6 +208,7 @@ const secretKeyFinalized = await maybeFinalizeL1FromExactAnchor({
   }
 });
 assert.equal(secretKeyFinalized.finalized, true, "modern Supabase secret keys should support the exact-anchor path");
+resolverDecisionFor(secretKeyFinalized);
 assert.equal(secretKeyAuthorization, "Bearer test-secret-key");
 
 // Candidate/review-required rows can support shadow analysis but can never
@@ -134,8 +224,9 @@ assert.equal(untrusted.catalog_candidate_count, 1);
 assert.equal(untrusted.trusted_candidate_count, 0);
 assert.equal(untrusted.eligible_candidate_count, 0);
 
-// A direct TCG natural key can identify one official/reviewed catalog row
-// without requiring subject/year to be read first.
+// A bare TCG code may retrieve one official/reviewed row, but the shared
+// Candidate Selection owner currently requires independent identity context.
+// The exact route must fall through instead of manufacturing that context.
 const tcgFinalized = await maybeFinalizeL1FromExactAnchor({
   scoutResult: { resolved_fields: { tcg_card_number: "OP01-120" } },
   env,
@@ -154,9 +245,10 @@ const tcgFinalized = await maybeFinalizeL1FromExactAnchor({
   })]),
   policy: { allow_tcg_code_only: true, allow_catalog_finalize: true, allow_cert_lane: false }
 });
-assert.equal(tcgFinalized.finalized, true, JSON.stringify(tcgFinalized));
-assert.equal(tcgFinalized.resolved_fields.players[0], "Shanks");
-assert.equal(tcgFinalized.resolved_fields.serial_number, undefined, "instance fields must never be copied from catalog");
+assert.equal(tcgFinalized.finalized, false, JSON.stringify(tcgFinalized));
+assert.equal(tcgFinalized.reason, "exact_anchor_candidate_not_selected_by_candidate_control");
+assert.equal(tcgFinalized.resolver_ready, false);
+assert.equal(tcgFinalized.resolver_input, undefined);
 
 // Sports checklist natural key: year + product hierarchy + printed card
 // number can identify a unique approved row before the subject OCR settles.
@@ -187,7 +279,8 @@ const sportsProductFinalized = await maybeFinalizeL1FromExactAnchor({
   }
 });
 assert.equal(sportsProductFinalized.finalized, true, JSON.stringify(sportsProductFinalized));
-assert.equal(sportsProductFinalized.resolved_fields.players[0], "Jaren Jackson");
+resolverDecisionFor(sportsProductFinalized);
+assert.equal(applicationValue(sportsProductFinalized, "players")[0], "Jaren Jackson");
 assert.equal(sportsProductFinalized.catalog_lookup_attempted, true);
 
 // Two strict-tier candidates -> ambiguous, no finalize.
