@@ -2,12 +2,14 @@
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { analyzeTargetedAssistPairs } from "./analyze-targeted-assist-paired20.mjs";
 import { recognitionBenchmarkProfileIds } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 import { evaluationItemSetSha256 } from "../lib/listing/evaluation/sample-policy.mjs";
+import { login } from "./v4-ebay-smoke.mjs";
 
 export const TARGETED_ASSIST_PAIRED_COHORT_SIZE = 10;
 export const TARGETED_ASSIST_PAIRED_COHORT_SHA256 = Object.freeze({
@@ -192,8 +194,12 @@ export function targetedPairedSmokeArgs({
   arm,
   model = "gpt-5-mini",
   l2WaitMs = 30_000,
-  verifiedAssetCachePath
+  verifiedAssetCachePath,
+  sessionCookieFile
 } = {}) {
+  if (!cleanText(sessionCookieFile)) {
+    throw new Error("targeted_paired_session_cookie_file_required");
+  }
   const profile = arm === "candidate"
     ? recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST
     : recognitionBenchmarkProfileIds.COLD_ALGORITHM;
@@ -218,8 +224,30 @@ export function targetedPairedSmokeArgs({
     "--submission-concurrency", "1",
     "--verified-asset-cache", verifiedAssetCachePath,
     "--verified-asset-cache-mode", "reuse",
+    "--session-cookie-file", sessionCookieFile,
     "--out", outPath
   ];
+}
+
+export async function createPairedSessionCookieFile({
+  baseUrl,
+  username = process.env.METAVERSE_USERNAME,
+  password = process.env.METAVERSE_PASSWORD,
+  loginImpl = login
+} = {}) {
+  if (!cleanText(username) || !cleanText(password)) {
+    throw new Error("targeted_paired_auth_credentials_missing");
+  }
+  const cookie = cleanText(await loginImpl({ baseUrl, username, password }));
+  if (!/^lynca_metaverse_session=[A-Za-z0-9._~-]+$/.test(cookie)) {
+    throw new Error("targeted_paired_auth_cookie_invalid");
+  }
+  const path = resolve(
+    tmpdir(),
+    `lynca-targeted-paired-${process.pid}-${crypto.randomUUID()}.cookie`
+  );
+  await writeFile(path, `${cookie}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  return path;
 }
 
 function runSmoke(args, { spawnImpl = spawn } = {}) {
@@ -299,6 +327,7 @@ export async function runTargetedCohort({
   model = "gpt-5-mini",
   l2WaitMs = 30_000,
   expectedGitSha = "",
+  sessionCookieFile,
   spawnImpl = spawn
 } = {}) {
   const fixedLimit = assertTargetedAssistPairedCohortSize(limit);
@@ -318,7 +347,8 @@ export async function runTargetedCohort({
         arm,
         model,
         l2WaitMs,
-        verifiedAssetCachePath
+        verifiedAssetCachePath,
+        sessionCookieFile
       });
       process.stderr.write(`${cohort} ${index + 1}/${fixedLimit} ${arm}\n`);
       await runSmoke(args, { spawnImpl });
@@ -374,37 +404,56 @@ export async function main(argv = process.argv.slice(2)) {
     unseenLabels
   });
   await mkdir(outDir, { recursive: true });
-  const familiar = await runTargetedCohort({
-    cohort: "FAMILIAR",
-    dataset: familiarDataset,
-    sealedLabels: familiarLabels,
-    baselineUrl,
-    candidateUrl,
-    outDir,
-    verifiedAssetCachePath,
-    limit,
-    model,
-    l2WaitMs,
-    expectedGitSha
-  });
-  const unseen = await runTargetedCohort({
-    cohort: "UNSEEN",
-    dataset: unseenDataset,
-    sealedLabels: unseenLabels,
-    baselineUrl,
-    candidateUrl,
-    outDir,
-    verifiedAssetCachePath,
-    limit,
-    model,
-    l2WaitMs,
-    expectedGitSha
-  });
+  const sessionCookieFile = await createPairedSessionCookieFile({ baseUrl: baselineUrl });
+  let familiar;
+  let unseen;
+  try {
+    await writeFile(resolve(outDir, "authentication.json"), `${JSON.stringify({
+      schema_version: "targeted-assist-paired-authentication-v1",
+      login_attempt_count: 1,
+      session_reused_across_arm_count: TARGETED_ASSIST_PAIRED_COHORT_SIZE * 2 * 2,
+      session_cookie_persisted_in_artifact: false
+    }, null, 2)}\n`, "utf8");
+    familiar = await runTargetedCohort({
+      cohort: "FAMILIAR",
+      dataset: familiarDataset,
+      sealedLabels: familiarLabels,
+      baselineUrl,
+      candidateUrl,
+      outDir,
+      verifiedAssetCachePath,
+      limit,
+      model,
+      l2WaitMs,
+      expectedGitSha,
+      sessionCookieFile
+    });
+    unseen = await runTargetedCohort({
+      cohort: "UNSEEN",
+      dataset: unseenDataset,
+      sealedLabels: unseenLabels,
+      baselineUrl,
+      candidateUrl,
+      outDir,
+      verifiedAssetCachePath,
+      limit,
+      model,
+      l2WaitMs,
+      expectedGitSha,
+      sessionCookieFile
+    });
+  } finally {
+    await unlink(sessionCookieFile).catch(() => {});
+  }
   const gate = {
     schema_version: "targeted-assist-two-scoreboard-gate-v1",
     provenance: {
       expected_git_sha: expectedGitSha || null,
-      workflow_run_id: workflowRunId || null
+      workflow_run_id: workflowRunId || null,
+      authentication: {
+        login_attempt_count: 1,
+        session_reused_across_arm_count: TARGETED_ASSIST_PAIRED_COHORT_SIZE * 2 * 2
+      }
     },
     familiar,
     unseen,

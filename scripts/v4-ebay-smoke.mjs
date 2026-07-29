@@ -947,6 +947,16 @@ export async function login({ baseUrl, username, password, fetchImpl = globalThi
   return cookie;
 }
 
+export async function readReusableSessionCookie(path = "") {
+  const resolvedPath = cleanText(path);
+  if (!resolvedPath) return "";
+  const cookie = cleanText(await readFile(resolve(resolvedPath), "utf8"));
+  if (!/^lynca_metaverse_session=[A-Za-z0-9._~-]+$/.test(cookie)) {
+    throw new Error("reusable session cookie file is invalid");
+  }
+  return cookie;
+}
+
 async function postJson({
   baseUrl,
   path,
@@ -4756,6 +4766,7 @@ export async function runV4EbaySmoke({
   baseUrl,
   username,
   password,
+  sessionCookie = "",
   limit = 10,
   offset = 0,
   prewarm = false,
@@ -4802,7 +4813,9 @@ export async function runV4EbaySmoke({
 } = {}) {
   if (!datasetPath) throw new Error("--dataset is required");
   if (!baseUrl) throw new Error("--base-url is required");
-  if (!username || !password) throw new Error("--username and --password are required");
+  if (!cleanText(sessionCookie) && (!username || !password)) {
+    throw new Error("--username and --password are required when no reusable session cookie is supplied");
+  }
   const normalizedSampleMode = normalizeEvaluationSampleMode(evaluationSampleMode);
   const normalizedTenantCount = Math.max(1, Math.min(50, Math.trunc(Number(tenantCount) || 1)));
   const normalizedSubmissionConcurrency = Math.max(
@@ -4834,7 +4847,7 @@ export async function runV4EbaySmoke({
     serviceRoleKey: sourceStorageServiceRoleKey,
     outputDirectory: sourceMaterializationDir
   });
-  const cookie = await login({ baseUrl, username, password });
+  const cookie = cleanText(sessionCookie) || await login({ baseUrl, username, password });
   let executionControlSnapshot = null;
   let executionControlError = null;
   try {
@@ -5248,12 +5261,14 @@ export async function main(argv = process.argv, env = process.env) {
     throw new Error("Use either --disable-identity-cache or --benchmark-profile, not both.");
   }
   const outPath = argValue(argv, "--out", `data/eval/workflow-sidecar-smoke/v4-ebay-smoke-${stamp}.json`);
+  const sessionCookie = await readReusableSessionCookie(argValue(argv, "--session-cookie-file", ""));
   const report = await runV4EbaySmoke({
     datasetPath: argValue(argv, "--dataset", env.V4_EBAY_SMOKE_DATASET || "data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json"),
     sealedLabelsPath: argValue(argv, "--sealed-labels", env.V4_EBAY_SMOKE_SEALED_LABELS || "data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl"),
     baseUrl: cleanText(argValue(argv, "--base-url", env.V4_EBAY_SMOKE_BASE_URL || env.API_BASE_URL || "https://listing.lyncafei.team")).replace(/\/+$/, ""),
     username: cleanText(argValue(argv, "--username", env.METAVERSE_USERNAME || "")),
     password: cleanText(argValue(argv, "--password", env.METAVERSE_PASSWORD || "")),
+    sessionCookie,
     limit: Math.max(1, Math.trunc(numberArg(argv, "--limit", 10))),
     offset: Math.max(0, Math.trunc(numberArg(argv, "--offset", 0))),
     prewarm: hasFlag(argv, "--prewarm"),
