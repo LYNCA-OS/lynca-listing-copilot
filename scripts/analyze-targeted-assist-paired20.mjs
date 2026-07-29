@@ -9,6 +9,7 @@ import {
   recognitionBenchmarkProfileIds
 } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 import {
+  candidateSourceRequiresFeedbackIdentity,
   evaluationDecisionTraceSchemaVersion,
   evaluationReplaySnapshotSchemaVersion
 } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
@@ -155,12 +156,6 @@ function sourceFeedbackId(row = {}) {
   return cleanText(row.source_feedback_id || row.sourceFeedbackId);
 }
 
-function reviewedCandidateSourceRequiresIdentity(candidate = {}) {
-  return /internal|reviewed|corrected|writer/i.test(cleanText(
-    candidate.source_type || candidate.source
-  ));
-}
-
 function selfRetrievalExclusionComplete(row = {}, { required = false } = {}) {
   const sourceId = sourceFeedbackId(row);
   if (!sourceId) return required !== true;
@@ -170,7 +165,7 @@ function selfRetrievalExclusionComplete(row = {}, { required = false } = {}) {
   const topK = Array.isArray(packet.retrieval?.top_k) ? packet.retrieval.top_k : [];
   const candidateCount = Number(packet.retrieval?.candidate_count);
   const unobservableReviewedCandidates = topK.filter((candidate) => (
-    reviewedCandidateSourceRequiresIdentity(candidate)
+    candidateSourceRequiresFeedbackIdentity(candidate)
     && !/^[0-9a-f]{64}$/i.test(cleanText(candidate.source_feedback_id_sha256))
   ));
   const vectorUnavailableReasons = (Array.isArray(row.vector_runtime_unavailable_reasons)
