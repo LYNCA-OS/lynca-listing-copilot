@@ -33,6 +33,33 @@ assert.equal(evaluationTraceEnabled({ provider_options: { recognition_benchmark_
 
 const packet = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025", subject: "Test Player", ignored: "UNKNOWN" },
+  raw_provider_field_evidence: [{ field: "year", value: "2025", source_image_id: "image-1" }],
+  raw_provider_unresolved: ["product"],
+  raw_provider_recognition_status: "CONFIRMED",
+  provider_request_identity: {
+    schema_version: "openai-provider-request-identity-v1",
+    status: "COMPLETE",
+    requested_model_id: "gpt-5-mini",
+    response_model_id: "gpt-5-mini",
+    provider_prompt_sha256: "1".repeat(64),
+    provider_prompt_utf8_bytes: 1200,
+    provider_input_image_count: 2,
+    provider_ordered_image_content_sha256: "2".repeat(64),
+    provider_image_manifest_complete: true,
+    provider_image_declared_content_mismatch_count: 0,
+    provider_request_controls_sha256: "3".repeat(64),
+    provider_request_fingerprint: "4".repeat(64),
+    provider_http_request_count: 1,
+    provider_http_request_started_at: "2026-07-29T00:00:00.000Z",
+    provider_http_request_completed_at: "2026-07-29T00:00:01.000Z",
+    response_profile: "standard",
+    image_detail: "high",
+    requested_service_tier: null,
+    max_output_tokens: 128000,
+    reasoning_effort: "minimal",
+    temperature: null,
+    text_verbosity: "medium"
+  },
   raw_observed_fields: { year: "2025", subject: "Test Player" },
   resolved_fields: { year: "2025" },
   rendered_fields: { fields: { year: "2025" } },
@@ -77,6 +104,18 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
+assert.equal(packet.provider_request_identity.provider_prompt_sha256, "1".repeat(64));
+assert.equal(packet.provider_request_identity.provider_http_request_count, 1);
+assert.equal(packet.provider_request_identity.provider_image_declared_content_mismatch_count, 0);
+assert.equal(packet.provider_request_identity.provider_http_request_started_at, "2026-07-29T00:00:00.000Z");
+assert.equal(packet.provider_request_identity.provider_http_request_completed_at, "2026-07-29T00:00:01.000Z");
+assert.equal(packet.provider_request_identity.temperature, null);
+assert.equal(packet.provider_observation.recognition_status, "CONFIRMED");
+assert.deepEqual(packet.provider_observation.unresolved, ["product"]);
+assert.equal(packet.provider_observation.field_evidence[0].source_image_id, "image-1");
+assert.equal(packet.provider_observation.field_evidence_count, 1);
+assert.equal(packet.provider_observation.field_evidence_truncated, false);
+assert.equal(packet.provider_observation.unresolved_truncated, false);
 assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v10");
 assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
 assert.match(packet.replay_snapshot.versions.targeted_assist_nuisance_fingerprint, /^[0-9a-f]{64}$/);

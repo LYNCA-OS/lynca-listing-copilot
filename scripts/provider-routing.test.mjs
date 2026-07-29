@@ -668,6 +668,22 @@ assert.equal(openAiResult.rate_limit_diagnostics["x-ratelimit-reset-tokens"], "4
 assert.equal(openAiResult.provider_request_diagnostics.input_tokens, 11);
 assert.equal(openAiResult.provider_request_diagnostics.output_tokens, 9);
 assert.ok(openAiResult.provider_request_diagnostics.provider_latency_ms >= 0);
+assert.equal(openAiResult.provider_request_identity.schema_version, "openai-provider-request-identity-v1");
+assert.equal(openAiResult.provider_request_identity.status, "COMPLETE");
+assert.equal(openAiResult.provider_request_identity.requested_model_id, "gpt-4.1-mini-2025-04-14");
+assert.equal(openAiResult.provider_request_identity.response_model_id, null);
+assert.equal(openAiResult.provider_request_identity.provider_prompt_utf8_bytes, Buffer.byteLength(openAiBody.input[0].content[0].text));
+assert.match(openAiResult.provider_request_identity.provider_prompt_sha256, /^[0-9a-f]{64}$/);
+assert.match(openAiResult.provider_request_identity.provider_ordered_image_content_sha256, /^[0-9a-f]{64}$/);
+assert.match(openAiResult.provider_request_identity.provider_request_controls_sha256, /^[0-9a-f]{64}$/);
+assert.match(openAiResult.provider_request_identity.provider_request_fingerprint, /^[0-9a-f]{64}$/);
+assert.equal(openAiResult.provider_request_identity.provider_image_manifest_complete, true);
+assert.equal(openAiResult.provider_request_identity.provider_image_declared_content_mismatch_count, 0);
+assert.equal(openAiResult.provider_request_identity.provider_input_image_count, 1);
+assert.equal(openAiResult.provider_request_identity.provider_http_request_count, 1);
+assert.ok(Number.isFinite(Date.parse(openAiResult.provider_request_identity.provider_http_request_started_at)));
+assert.ok(Number.isFinite(Date.parse(openAiResult.provider_request_identity.provider_http_request_completed_at)));
+assert.equal(openAiResult.provider_request_identity.temperature, 0);
 
 const gpt5Controls = openAiResponsesModelControls("gpt-5-mini", { env: {} });
 assert.deepEqual(gpt5Controls, { reasoning: { effort: "minimal" } });
