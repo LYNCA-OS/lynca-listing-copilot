@@ -27,7 +27,7 @@ const evaluationOptions = {
 };
 
 assert.equal(worldKnowledgeShadowAssistContract.mode, "POST_OBSERVATION_SHADOW_ONLY");
-assert.equal(worldKnowledgeShadowAssistContract.observation_contract, "read_only_sparse_v3");
+assert.equal(worldKnowledgeShadowAssistContract.observation_contract, "read_only_sparse_v4");
 assert.equal(worldKnowledgeShadowAssistContract.paid_provider_call_allowed, false);
 assert.equal(worldKnowledgeShadowAssistContract.resolver_access, "DENIED");
 assert.equal(worldKnowledgeShadowAssistContract.title_access, "DENIED");
@@ -61,8 +61,8 @@ assert.equal(
 );
 assert.equal(
   createHash("sha256").update(readOnlyV4RecognitionPrompt(baselinePayload, 80)).digest("hex"),
-  "c8824b9c18b493f9ec2de47e1ee46c29ff73967423663cd098e5a8f617911d6f",
-  "read_only_sparse_v3 prompt must remain byte-identical to origin/main@c9b962bc"
+  "f331e9cc4aea34599587eb5d6a72031828a80df85a18fa4402716cbc9bb5cf4d",
+  "read_only_sparse_v4 prompt must remain byte-identical after Task A"
 );
 assert.deepEqual(providerReadOnlyOutputShape(), {
   r: "CONFIRMED | RESOLVED | ABSTAIN",
@@ -80,8 +80,8 @@ assert.deepEqual(schema.required, ["r", "v", "e", "u"]);
 assert.equal(Object.hasOwn(schema.properties, "k"), false);
 assert.equal(
   createHash("sha256").update(JSON.stringify(schema)).digest("hex"),
-  "2b4bf18635c199c3b7e59065471daa2746260feed1c231f073d043155d7d0a34",
-  "read_only_sparse_v3 response schema must remain byte-identical to origin/main@c9b962bc"
+  "a054b37c7365893a4fd509645c75f5982528e22adf2a26573a07d29bae357192",
+  "read_only_sparse_v4 response schema must remain byte-identical after Task A"
 );
 
 const expanded = expandOpenAiUltraCompactProviderPayload({

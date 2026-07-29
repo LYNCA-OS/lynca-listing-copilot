@@ -6,7 +6,7 @@ Implementation baseline: `origin/main@c9b962bc1ece519bc491e46dd6b6e1b389690962`.
 
 ## Decision
 
-The visual observation contract remains byte-stable `read_only_sparse_v3`.
+The visual observation contract remains byte-stable `read_only_sparse_v4` after the Task A observation-recovery revision.
 World knowledge must be a separate post-observation shadow assist. It has no
 Resolver or title authority. A bounded text-only executor now exists, but it is
 not wired into the production or targeted-visual route. The active shadow
@@ -46,7 +46,7 @@ yielding no admissible knowledge evidence.
 1. The flag may request an evaluation trace packet only under
    `cold_algorithm_benchmark` plus `trace_level=evaluation`.
 2. The full visual provider always receives the baseline prompt and
-   `read_only_sparse_v3` schema, regardless of that request.
+   `read_only_sparse_v4` schema, regardless of that request.
 3. Only after observation completes may code construct a structured shadow input
    from allowlisted `raw_provider_fields`; product and team are targets, never
    copied into the input.

@@ -94,7 +94,7 @@ const result = {
     title_effect: "NONE",
     input_hash: "c".repeat(64),
     input: {
-      schema_version: "read_only_sparse_v3",
+      schema_version: "read_only_sparse_v4",
       fields: { year: "2025", manufacturer: "Panini", players: ["Test Player"] },
       unresolved: []
     },

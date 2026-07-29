@@ -823,6 +823,17 @@ assert.equal(reordered.rows[0].baseline_policy_fair_token_recall, 1);
 assert.equal(reordered.rows[0].candidate_policy_fair_token_recall, 1);
 assert.equal(reordered.gate_passed, false);
 
+assert.equal(replayRowsPassGate([{
+  replayable: true,
+  baseline_policy_fair_token_recall: 0.5,
+  replay_snapshot_terminal_title_match: true,
+  protected_read_parity: true,
+  effective_renderer_parity: true,
+  title_changed: true,
+  derived_title_change_allowed: true,
+  contract_regression: false
+}], 1), true);
+
 const normalizationDropTitle = "2025 Panini Test Player";
 const normalizationDropReplay = await replayProviderOutputContract({
   results: [{

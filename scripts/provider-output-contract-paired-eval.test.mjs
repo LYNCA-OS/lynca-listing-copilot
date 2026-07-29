@@ -7,7 +7,7 @@ assert.deepEqual(expectedProviderContractArm("baseline"), {
   prompt_mode: "v4_ultra_fast_l2"
 });
 assert.deepEqual(expectedProviderContractArm("candidate"), {
-  response_profile: "read_only_sparse_v3",
+  response_profile: "read_only_sparse_v4",
   prompt_mode: "v4_read_only_surface"
 });
 assert.throws(
