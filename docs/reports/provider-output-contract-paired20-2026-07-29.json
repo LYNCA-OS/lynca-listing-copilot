@@ -1,0 +1,45 @@
+{
+  "schema_version": "provider-output-contract-final-decision-v1",
+  "production_sha": "5e6dac61f1ed716d40ccf4e01b97dcc4c570338a",
+  "deployment_run_id": "30438324951",
+  "paired_evaluation_run_id": "30438634081",
+  "decision": "TASK_A_NO_GO",
+  "familiar": {
+    "pair_count": 10,
+    "baseline_policy_fair_token_recall": 0.7870708,
+    "candidate_policy_fair_token_recall": 0.7179799,
+    "recall_delta": -0.069091,
+    "baseline_provider_latency_p50_ms": 8847.5,
+    "candidate_provider_latency_p50_ms": 4265,
+    "candidate_visible_output_tokens_p50": 177.5,
+    "candidate_visible_output_tokens_max": 674,
+    "technical_failure_count": 0
+  },
+  "unseen": {
+    "pair_count": 10,
+    "baseline_policy_fair_token_recall": 0.4829366,
+    "candidate_policy_fair_token_recall": 0.4055555,
+    "recall_delta": -0.077381,
+    "baseline_provider_latency_p50_ms": 5908.5,
+    "candidate_provider_latency_p50_ms": 3648.5,
+    "candidate_visible_output_tokens_p50": 161.5,
+    "candidate_visible_output_tokens_max": 201,
+    "technical_failure_count": 0
+  },
+  "fresh_trace_replay": {
+    "replayable_count": 20,
+    "gate_passed_count": 19,
+    "protected_read_parity_failure_count": 1,
+    "failure_field": "official_card_type",
+    "terminal_title_changed": false
+  },
+  "gate_failures": [
+    "FAMILIAR_ACCURACY_REGRESSION",
+    "UNSEEN_ACCURACY_REGRESSION",
+    "FAMILIAR_VISIBLE_OUTPUT_MAX_GT_150",
+    "UNSEEN_VISIBLE_OUTPUT_MAX_GT_150",
+    "FRESH_TRACE_REPLAY_NOT_COMPLETE"
+  ],
+  "production_default_changed": false,
+  "world_knowledge_executed": false
+}
