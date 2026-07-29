@@ -94,6 +94,12 @@ assert.equal(
 );
 assert.match(workflow, /SUPABASE_URL: \$\{\{ vars\.SUPABASE_URL \}\}/);
 assert.match(workflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
+assert.match(
+  workflow,
+  /diagnostics_deferred === false[\s\S]*vision_provider[\s\S]*paddle_ocr[\s\S]*vector_retrieval/,
+  "production acceptance must retry until the deep OCR and vector readiness contract is present"
+);
+assert.match(workflow, /deep_diagnostics_complete: status\.workflow_readiness\?\.diagnostics_deferred === false/);
 assert.doesNotMatch(
   workflow,
   /echo[^\n]*(?:SUPABASE_SERVICE_ROLE_KEY|\$SUPABASE_SERVICE_ROLE_KEY)/,

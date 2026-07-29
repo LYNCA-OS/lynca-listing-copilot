@@ -149,8 +149,21 @@ jobs:
             -H 'content-type: application/json' \
             --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
             https://listing.lyncafei.team/api/login -o /tmp/login.json
-          curl -fsS --max-time 45 -b /tmp/lynca-cookies.txt \
-            https://listing.lyncafei.team/api/listing-provider-status -o /tmp/provider-status.json
+          # The status route intentionally returns a shallow, usable response
+          # when deep OCR/vector probes time out. Release acceptance needs the
+          # deep contract, so retry that diagnostic snapshot with the same
+          # authenticated session instead of treating omitted components as a
+          # permanent runtime regression.
+          for _attempt in $(seq 1 12); do
+            if curl -fsS --max-time 45 -b /tmp/lynca-cookies.txt \
+              https://listing.lyncafei.team/api/listing-provider-status -o /tmp/provider-status.json \
+              && node -e 'const s=require("/tmp/provider-status.json"); const ids=new Set((s.workflow_readiness?.components||[]).map(x=>x.id)); process.exit(s.workflow_readiness?.diagnostics_deferred === false && ["vision_provider","paddle_ocr","vector_retrieval"].every(id=>ids.has(id)) ? 0 : 1)'; then
+              break
+            fi
+            rm -f /tmp/provider-status.json
+            sleep 10
+          done
+          test -s /tmp/provider-status.json
           node --input-type=module - <<'NODE'
           import fs from 'node:fs';
           import { listingConcurrencyContract as concurrency } from './lib/listing/v4/orchestration/concurrency-contract.mjs';
@@ -164,6 +177,7 @@ jobs:
           const catalogCapacity = status.execution_control?.stage_capacity?.catalog || {};
           const vectorCapacity = status.execution_control?.stage_capacity?.vector || {};
           const checks = {
+            deep_diagnostics_complete: status.workflow_readiness?.diagnostics_deferred === false,
             v4_ready: health.ready === true,
             deployed_commit_matches: health.deployment?.git_commit_sha === process.env.GITHUB_SHA,
             queue_configured: health.production_queue?.configured === true,
