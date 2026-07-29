@@ -1,5 +1,40 @@
 # Task brief: cut the output contract, and let the model use what it knows
 
+> ## SUPERSEDED 2026-07-29. Task A ran and returned NO-GO.
+>
+> Read this before acting on anything below, because the brief's central premise
+> was tested and is false.
+>
+> | | baseline | candidate | delta |
+> |---|---|---|---|
+> | familiar recall | 0.7871 | 0.7180 | **−6.91pp** |
+> | unseen recall | 0.4829 | 0.4056 | **−7.74pp** |
+> | familiar p50 latency | 8,847ms | 4,265ms | −52% |
+> | output tokens p50 | ~825 | 177.5 | −78% |
+>
+> **The latency half of the diagnosis held.** Latency is output length, at
+> roughly 11ms per output token — later confirmed independently over 4,785
+> production calls, where a twelvefold change in *input* moves latency almost
+> not at all (within-band correlations 0.134, 0.076, −0.050, 0.005).
+>
+> **The accuracy half was wrong, and this brief argued for it.** "69.3% of the
+> output is waste" appears below and should not be reasoned from again. The
+> tokens were empty; the *asking* was not. Fields that stayed in the schema got
+> worse when others were removed — `surface_color` absent 12 more times,
+> `manufacturer` 9, `set` 8, `card_name` mismatched 11 — which no
+> derivation-gap explanation covers. The long field list was doing work as a
+> checklist, keeping the model looking.
+>
+> A second, separate cause: `product` went absent 17 times and the engine
+> correctly returned UNKNOWN, because coverage could not determine it. That is
+> "completeness before authority" — boundary 7 below — arriving in a new place.
+> We took the power to state the product away from the model and handed it to an
+> index that does not contain unseen products.
+>
+> **What replaces it:** keep the full checklist in the *request*, where the
+> measurement says it is nearly free, and compress only the *response*. See
+> `docs/composed-recognition-path.md`. Do not re-run the same request-side cut.
+
 For Cola X. Two tasks, in this order. Everything here is measured; where a
 number appears, it is a count taken from production, not an estimate.
 

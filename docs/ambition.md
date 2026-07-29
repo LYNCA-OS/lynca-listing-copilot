@@ -64,9 +64,22 @@ everything it could read and still invented the product line, because that
 information does not exist as text.
 
 So the cheapest path to a product line is not better reading and not a
-card-level catalog — it is: **read the set name, look it up.** 60.4% of 30,602
-harvested set names identify exactly one product-year. `Fade To Black` and
-`Fire Fabrics` each belong to Panini Phoenix and nothing else.
+card-level catalog — it is: **read the set name, look it up.** `Fade To Black`
+and `Fire Fabrics` each belong to Panini Phoenix and nothing else.
+
+> **Corrected 2026-07-29.** This paragraph used to claim that 60.4% of 30,602
+> harvested set names identify exactly one product-year, and to reason from it.
+> That figure was measured on the *harvest's* set names and never transferred to
+> production, where the `set` field mostly holds something else: of the 72
+> highest-volume set values covering 2,372 cards, 74% miss the set table
+> entirely, and the largest misses are `prizm` (190 cards), `topps chrome`
+> (177), `chrome` (81), `bowman chrome` (79), `flawless` (70) — product names in
+> the set field — plus generic headings like `base` (63) that identify nothing.
+>
+> Measured end to end on production, the set-name path resolves **14%**, and
+> **30%** once the set field is also read as a product name. So the path is real
+> but far narrower than stated, and widening the harvest cannot help the 74%:
+> the lookup was asking the wrong table.
 
 Base cards are the blind spot in that path: no set name to read. They need the
 card-number range, the team, or an honest "I don't know".
@@ -146,8 +159,12 @@ all.
 
 - If unseen-product accuracy does not move once the catalog contains those
   products, then completeness is not the bottleneck and the reading layer is.
-- If set-name lookup does not lift the product line, then the 60.4% uniqueness
-  figure does not survive contact with what the model actually reads.
+- ~~If set-name lookup does not lift the product line, then the 60.4% uniqueness
+  figure does not survive contact with what the model actually reads.~~
+  **Answered 2026-07-29, and it did not survive.** It resolves 14% on
+  production, 30% once the set field is also read as a product name. The
+  uniqueness figure was measured on a different population than the one the
+  model actually produces.
 - If constraint refutation cannot get its false-alarm rate on familiar cards
   below single digits once coverage improves, then the approach is wrong rather
   than under-fed. It currently sits at 88%, and the causes measured so far are

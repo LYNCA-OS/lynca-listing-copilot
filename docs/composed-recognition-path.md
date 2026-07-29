@@ -126,6 +126,31 @@ At 11ms per token, generation accounts for ~1,815ms of that. **The remaining
 ~3 seconds is fixed** — prefill, image upload, network, our own pipeline — and
 no amount of output cutting reaches it.
 
+> **Corrected, by measuring it directly instead of inferring it.** The ~3s above
+> came from a regression intercept. Decomposing `recognition_core` on 3,747
+> sessions gives a different and worse picture:
+>
+> ```
+> recognition_core        24,553ms
+>   provider call         10,885ms   44%
+>   vector worker          3,380ms   14%   p90 4,939  max 10,647
+>   ─────────────────────────────
+>   still uninstrumented  10,841ms   44%
+> ```
+>
+> The floor is not a 3-second physical limit. It is **10.8 seconds with no timer
+> on it** — 44% of total latency, invisible. The named sub-timers
+> (`anchor_scout` 629ms, `anchor_finalize` 1,406ms, `bundle_load` 117ms) account
+> for 2.2s of the gap and nothing accounts for the rest.
+>
+> So the first move against the floor is not optimisation, it is
+> **instrumentation**. Tuning what you cannot see is guessing. This is the ninth
+> instance of the pattern `ambition.md` names, and the most expensive one.
+>
+> One part of it is already actionable and cut: the vector worker's 3,380ms
+> returned zero candidates 92.7% of the time against an index of 587 rows last
+> written three weeks earlier.
+
 So: the composed path plausibly takes p50 from 25.5s to 4-5s. **Two to three
 seconds is not reachable without a separate assault on the fixed overhead**,
 which is a work item nobody has opened, and which was invisible until today
@@ -143,3 +168,53 @@ story. It is most of the story, and it is not all of it.
 - If the fixed overhead is not ~3s when measured directly rather than inferred
   from a regression intercept, the floor figure is wrong and the ambition is
   closer or further than this says.
+
+---
+
+## The finding that outranks the cascade
+
+Stage 1 assumed a card has a stable identity to key on. It does not.
+
+The same asset — the same image, not a re-photograph — recognised twice inside
+one hour, by the same deployed code:
+
+```
+630 assets recognised more than once, 2,774 runs
+identity agreed   23.2%
+title agreed      12.4%
+
+controlled for time and deploys:
+  within one hour   3,345 pairs   agreed 50.3%
+  within one day    8,975 pairs   agreed 54.1%
+  within one week   7,153 pairs   agreed 26.3%
+```
+
+Within one hour the code is identical, so this is not deploy drift.
+`temperature: 0` is already set, so it is not sampling temperature. Controlling
+for prompt size as well: among pairs whose prompts were byte-for-byte the same
+length, **53.5% agreed** — identical input, and the output still differs
+almost half the time. Prompt drift adds a second layer on top: 31.5% of pairs
+had prompts differing by 431 tokens on average, and those agreed only 37.6%.
+
+Three consequences, in order of how much they hurt:
+
+1. **Identity caching is a negative asset until this is fixed.** Caching at 50%
+   stability freezes a coin flip and serves it repeatedly. This is why stage 1
+   of the cascade is specified but not built.
+2. **Every paired evaluation carries this as its noise floor.** Task A's
+   −6.91pp and −7.74pp were measured against a system that disagrees with
+   itself on identity 46.5% of the time on identical input. The deltas may be
+   real; the point is that nobody has established the noise floor they must
+   clear.
+3. **The same card gets two names in the shop.** `luka dončić` and
+   `luka donči`, `dan marino` and `dan marino teal dolphins` are not curiosities
+   — they are what a 50% flip rate looks like from the customer's side.
+
+Fuzzy matching does not paper over it. Trigram similarity recovers recall
+(37.2% exact becomes 79.8% at 0.65) and destroys precision: 15,740 pairs of
+*different* cards clear the same bar against 3,345 genuine ones. Recorded as a
+negative result in `lib/listing/catalog/identity-key.mjs`.
+
+**So the ordering is: make identical input produce identical output, then
+cache.** Not the reverse. Stability is the prerequisite for all three of
+caching, trustworthy evaluation, and consistent naming.
