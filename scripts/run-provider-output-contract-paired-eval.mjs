@@ -99,6 +99,24 @@ async function oneRow(path) {
   return rows[0];
 }
 
+export function expectedProviderContractArm(arm = "") {
+  if (arm === "candidate") {
+    return {
+      response_profile: "read_only_sparse_v3",
+      prompt_mode: "v4_read_only_surface"
+    };
+  }
+  if (arm === "baseline") {
+    return {
+      // The control is the exact production contract, not the legacy full
+      // response schema. Production already uses the compact L2 transport.
+      response_profile: "compact_sparse_v1",
+      prompt_mode: "v4_ultra_fast_l2"
+    };
+  }
+  throw new Error(`unknown_provider_contract_arm:${arm || "missing"}`);
+}
+
 function assertColdArm(row = {}, { cohort, index, arm } = {}) {
   const prefix = `${cohort}:${index + 1}:${arm}`;
   if (row.ok !== true || row.l2_ready !== true || row.writer_ready !== true || row.error) {
@@ -110,9 +128,12 @@ function assertColdArm(row = {}, { cohort, index, arm } = {}) {
   if (!Number.isFinite(row.final_scoring?.policy_fair_token_recall)) {
     throw new Error(`provider_contract_score_missing:${prefix}`);
   }
-  const expectedProfile = arm === "candidate" ? "read_only_sparse_v3" : "standard";
-  if (clean(row.provider_response_profile) !== expectedProfile) {
+  const expected = expectedProviderContractArm(arm);
+  if (clean(row.provider_response_profile) !== expected.response_profile) {
     throw new Error(`provider_contract_profile_mismatch:${prefix}:${row.provider_response_profile || "missing"}`);
+  }
+  if (clean(row.provider_prompt_mode) !== expected.prompt_mode) {
+    throw new Error(`provider_contract_prompt_mode_mismatch:${prefix}:${row.provider_prompt_mode || "missing"}`);
   }
 }
 

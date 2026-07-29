@@ -106,7 +106,7 @@ jobs:
           jq -e --arg ref "$consumption_ref" --arg sha "$EXPECTED_GIT_SHA" \
             '.ref == $ref and .object.sha == $sha' \
             /tmp/provider-output-contract-consumption.json >/dev/null
-      - name: Run interleaved standard vs read-only familiar and unseen scoreboards
+      - name: Run interleaved current-production vs read-only familiar and unseen scoreboards
         run: |
           node scripts/run-provider-output-contract-paired-eval.mjs \
             --base-url "$API_BASE_URL" \
