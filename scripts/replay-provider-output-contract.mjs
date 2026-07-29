@@ -21,6 +21,7 @@ import {
   evaluationReplaySnapshotSchemaVersion,
   normalizationProjectionComplete
 } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
+import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
 import { policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 
 const readFields = new Set(providerFieldsByClass(providerOutputFieldClass.READ));
@@ -30,6 +31,7 @@ const canonicalReplayFieldGroups = Object.freeze([
   ["print_run_numerator"],
   ["print_run_denominator", "numbered_to", "serial_denominator", "expected_serial_denominator"],
   ["players", "player", "subjects", "subject", "character"],
+  ["collector_number", "card_number", "checklist_code"],
   ["card_grade", "grade"],
   ["cert_number", "certification_number"]
 ]);
@@ -42,6 +44,7 @@ const independentReplayEvidenceSources = new Set([
   "CARD_FRONT_PRINTED_TEXT",
   "CARD_BACK_PRINTED_TEXT",
   "SLAB_LABEL",
+  "VISION_MODEL",
   "OCR",
   "OCR_ONLY",
   "OPERATOR"
@@ -228,6 +231,53 @@ export function protectedReadParity(baseline = {}, candidate = {}) {
   };
 }
 
+function replayComparableValue(value) {
+  if (Array.isArray(value)) return [...value].map(replayComparableValue).sort();
+  if (typeof value === "string") return clean(value).toLowerCase();
+  return value;
+}
+
+function protectedReadPreservation(baseline = {}, candidate = {}) {
+  const baselineProjection = protectedReadProjection(baseline);
+  const candidateProjection = protectedReadProjection(candidate);
+  const replayEquivalentFields = Object.freeze({
+    card_number: ["collector_number", "checklist_code"],
+    collector_number: ["card_number", "checklist_code"],
+    checklist_code: ["collector_number", "card_number"]
+  });
+  const candidateValueFor = (field) => [field, ...(replayEquivalentFields[field] || [])]
+    .map((name) => candidateProjection[name])
+    .find((value) => present(value));
+  return {
+    matches: Object.entries(baselineProjection).every(([field, value]) => (
+      present(candidateValueFor(field))
+      && JSON.stringify(replayComparableValue(value))
+        === JSON.stringify(replayComparableValue(candidateValueFor(field)))
+    )),
+    baseline: baselineProjection,
+    candidate: candidateProjection
+  };
+}
+
+function effectiveTerminalReadFields(fields = {}, serialNumeratorVerified = null) {
+  const source = object(fields);
+  return {
+    ...Object.fromEntries(Object.entries(source)
+      .filter(([field]) => ![
+        "print_run_number",
+        "print_run_numerator",
+        "print_run_denominator",
+        "one_of_one",
+        "serial_number",
+        "numbered_to",
+        "numerical_rarity",
+        "serial_denominator",
+        "expected_serial_denominator"
+      ].includes(field))),
+    ...validPrintRunProjection(source, { serialNumeratorVerified })
+  };
+}
+
 function rendererParityProjection(inputs = {}) {
   const source = object(inputs);
   return {
@@ -334,6 +384,35 @@ function canonicalObservedValueKeys(fields = {}) {
     values.get(canonicalField).add(replayValueKey(normalizedValue));
   }
   return values;
+}
+
+function recordedReadValueCrossedTerminal(field = "", value = null, snapshot = {}, terminalValueKeys = new Map()) {
+  if (terminalValueKeys.size === 0) return true;
+  const canonicalField = canonicalReplayField(field);
+  const normalized = normalizeReplayFieldValue(canonicalField, value);
+  if (terminalValueKeys.get(canonicalField)?.has(replayValueKey(normalized)) === true) return true;
+  if (canonicalField !== "print_run_number") return false;
+  const observedPrintRun = parsePrintRunValue(normalized);
+  const terminalPrintRun = serialReadProjection(snapshot.resolved_fields);
+  return present(observedPrintRun.print_run_denominator)
+    && Array.isArray(terminalPrintRun.denominator)
+    && terminalPrintRun.denominator.includes(clean(observedPrintRun.print_run_denominator));
+}
+
+function recordedNormalizationDisagrees(field = "", value = null, recordedEvidence = {}) {
+  const state = object(recordedEvidence[field]);
+  const recordedValue = state.normalized_value ?? state.value;
+  if (!present(recordedValue)) return false;
+  return replayValueKey(normalizeReplayFieldValue(canonicalReplayField(field), recordedValue))
+    !== replayValueKey(normalizeReplayFieldValue(canonicalReplayField(field), value));
+}
+
+function terminalResolvedContainsValue(value = null, snapshot = {}) {
+  const needle = replayValueKey(replayComparableValue(sanitizePresentValue(value)));
+  return Object.values(object(snapshot.resolved_fields)).some((candidate) => (
+    present(candidate)
+    && replayValueKey(replayComparableValue(sanitizePresentValue(candidate))) === needle
+  ));
 }
 
 function recordedEvidenceMatchesObservedValue(item = {}, observedValueKeys = new Map()) {
@@ -452,7 +531,7 @@ function recordedCandidateApplication(result = {}, packet = {}) {
   for (const action of decisions) {
     const applicationDecision = clean(action.decision || action.action).toUpperCase();
     const field = clean(action.resolver_field || action.field);
-    const value = action.resolver_value ?? action.candidate_value ?? action.value;
+    const value = action.final_value ?? action.resolver_value ?? action.candidate_value ?? action.value;
     if (!["APPLY", "SUPPORT"].includes(applicationDecision) || !field || !present(value)) continue;
     const key = `${action.candidate_id || ""}:${field}:${JSON.stringify(value)}:${applicationDecision}`;
     if (seen.has(key)) continue;
@@ -542,6 +621,7 @@ export function projectReadOnlyProviderSnapshot(snapshot = {}) {
   };
   const recordedEvidence = object(snapshot.normalized_evidence);
   const observedValueKeys = canonicalObservedValueKeys(observed);
+  const terminalResolvedValueKeys = canonicalObservedValueKeys(snapshot.resolved_fields);
   const recordedEvidenceProjection = Object.entries(recordedEvidence).map(([field, state]) => ({
     field,
     canonical_field: canonicalReplayField(field),
@@ -581,13 +661,21 @@ export function projectReadOnlyProviderSnapshot(snapshot = {}) {
     .filter(([field, value]) => (
       readFields.has(field)
       && !rawBlockedCanonicalFields.has(canonicalReplayField(field))
+      && (
+        recordedReadValueCrossedTerminal(field, value, snapshot, terminalResolvedValueKeys)
+        || terminalResolvedContainsValue(value, snapshot)
+        || recordedNormalizationDisagrees(field, value, recordedEvidence)
+      )
       && present(value)
     )));
-  const providerFieldEvidence = (Array.isArray(snapshot.provider_field_evidence)
+  const recordedProviderFieldEvidence = (Array.isArray(snapshot.provider_field_evidence)
     ? snapshot.provider_field_evidence
     : []).filter((item) => {
       const field = evidenceFieldName(item);
-      return readFields.has(field) && !rawBlockedCanonicalFields.has(canonicalReplayField(field));
+      const value = item.value ?? item.v;
+      return readFields.has(field)
+        && !rawBlockedCanonicalFields.has(canonicalReplayField(field))
+        && recordedReadValueCrossedTerminal(field, value, snapshot, terminalResolvedValueKeys);
     });
   // Terminal normalized evidence also contains independent OCR/focused-reread
   // values that are intentionally absent from `observed_fields`.  Dropping
@@ -600,7 +688,42 @@ export function projectReadOnlyProviderSnapshot(snapshot = {}) {
       const rawValue = evidenceState.normalized_value ?? evidenceState.value;
       return [field, normalizeReplayFieldValue(field, rawValue)];
     })
-    .filter(([field, value]) => readFields.has(field) && present(value)));
+    .filter(([field, value]) => (
+      readFields.has(field)
+      && present(value)
+      // Normalized evidence includes rejected alternatives. Replay only the
+      // current-image values that actually crossed the recorded Resolver
+      // boundary; otherwise a rejected slab/finish observation can be
+      // resurrected as a synthetic title change.
+      && (
+        recordedReadValueCrossedTerminal(field, value, snapshot, terminalResolvedValueKeys)
+      )
+    )));
+  const recordedEvidenceFields = new Set(recordedProviderFieldEvidence.map(evidenceFieldName));
+  const replaySynthesizedFieldEvidence = Object.entries(recordedReadFields)
+    .filter(([field]) => !recordedEvidenceFields.has(field))
+    .flatMap(([field, value]) => {
+      const state = object(admittedRecordedEvidence[field]);
+      const source = (Array.isArray(state.sources) ? state.sources : [])
+        .find((item) => independentReplayEvidenceSource(item));
+      if (!source) return [];
+      return [{
+        field,
+        value,
+        source_type: source.source_type || source.source,
+        source_image_id: source.image_id || null,
+        source_region: source.region || field,
+        visible_text: source.observed_text || source.visible_text || source.raw_text || String(value),
+        raw_text: source.raw_text || source.observed_text || source.visible_text || String(value),
+        directly_observed: source.direct_observation !== false,
+        direct_observation: source.direct_observation !== false,
+        review_required: true
+      }];
+    });
+  const providerFieldEvidence = [
+    ...recordedProviderFieldEvidence,
+    ...replaySynthesizedFieldEvidence
+  ];
   const unguardedProviderFields = {
     ...observedReadFields,
     ...recordedReadFields
@@ -825,10 +948,36 @@ export async function replayProviderOutputContract(report = {}, {
       recognition_status: "RESOLVED"
     };
     const candidateInput = attachForwardEnumerationCandidates(base, constraintModel, { shadow: false });
-    const candidate = applyIdentityResolutionGate(candidateInput, {
+    const resolvedCandidate = applyIdentityResolutionGate(candidateInput, {
       maxLength: snapshotMaxLength,
       providerId: "openai_legacy"
     });
+    // `applyIdentityResolutionGate` has already produced canonical terminal
+    // fields. Running the V4 result adapter here would resolve them a second
+    // time and can promote a REVIEW-only value. Production's final boundary is
+    // the deterministic renderer over the resolved fields and terminal
+    // evidence, so replay that exact boundary once.
+    const candidatePresentation = renderListingPresentation({
+      resolved: resolvedCandidate.resolved_fields,
+      evidence: snapshot.normalized_evidence,
+      maxLength: snapshotMaxLength,
+      serialNumeratorVerified
+    });
+    const candidate = {
+      ...resolvedCandidate,
+      title: candidatePresentation.final_title,
+      final_title: candidatePresentation.final_title,
+      rendered_title: candidatePresentation.rendered_title,
+      renderer_version: candidatePresentation.renderer_version,
+      title_length_policy: candidatePresentation.title_length_policy,
+      rendered_fields: {
+        fields: resolvedCandidate.resolved_fields,
+        title: candidatePresentation.final_title,
+        rendered_title: candidatePresentation.rendered_title,
+        modules: candidatePresentation.modules,
+        module_order: candidatePresentation.module_order
+      }
+    };
     const snapshotTitle = clean(snapshot.final_title);
     const baselineTitle = terminalTitle;
     const candidateTitle = clean(candidate.final_title || candidate.title);
@@ -845,10 +994,19 @@ export async function replayProviderOutputContract(report = {}, {
     // internally even when the effective renderer correctly emits only #/N.
     // Use the sanitized READ transport as the baseline so safe information
     // reduction is not misclassified as a regression.
-    const resolverReadParity = protectedReadParity(projected.fields, candidate.resolved_fields);
-    const rendererReadParity = protectedReadParity(
-      projected.fields,
-      candidate.rendered_fields?.fields || candidate.rendered_fields
+    // Compare terminal-to-terminal. `projected.fields` is intentionally only
+    // the Provider transport and therefore excludes later current-image OCR,
+    // focused rereads, and safely applied catalog fields.
+    const resolverReadParity = protectedReadPreservation(
+      effectiveTerminalReadFields(snapshot.resolved_fields, serialNumeratorVerified),
+      effectiveTerminalReadFields(candidate.resolved_fields, serialNumeratorVerified)
+    );
+    const rendererReadParity = protectedReadPreservation(
+      effectiveTerminalReadFields(snapshot.rendered_fields, serialNumeratorVerified),
+      effectiveTerminalReadFields(
+        candidate.rendered_fields?.fields || candidate.rendered_fields,
+        serialNumeratorVerified
+      )
     );
     const rendererParity = effectiveRendererParity({
       renderer_version: snapshot.versions?.renderer,

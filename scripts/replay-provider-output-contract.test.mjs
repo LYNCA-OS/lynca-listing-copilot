@@ -166,7 +166,13 @@ assert.equal(projected.fields.print_run_number, "03/25");
 assert.equal(projected.fields.ssp, undefined);
 assert.equal(projected.fields.grade_type, undefined);
 assert.equal(projected.normalized_evidence.card_grade.value, "10");
-assert.deepEqual(projected.field_evidence.map((item) => item.field), ["year"]);
+assert.deepEqual(projected.field_evidence.map((item) => item.field), [
+  "year",
+  "card_grade",
+  "print_run_number"
+]);
+assert.equal(projected.field_evidence.find((item) => item.field === "card_grade")?.source_type, "OCR_ONLY");
+assert.equal(projected.field_evidence.find((item) => item.field === "print_run_number")?.directly_observed, true);
 
 const mismatchedNormalizedValueCannotOverrideObserved = projectReadOnlyProviderSnapshot({
   provider_fields: { year: "2025" },
