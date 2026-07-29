@@ -146,6 +146,9 @@ const serialVisibleUncertainParallel = await callApi({
   unresolved: ["exact parallel requires operator review"]
 });
 
+assert.equal(serialVisibleUncertainParallel.recognition_critical_path.path_kind, "FULL_PROVIDER");
+assert.equal(serialVisibleUncertainParallel.recognition_critical_path.status, "COMPLETE");
+assert.equal(serialVisibleUncertainParallel.recognition_critical_path.provider_attempt_count, 1);
 assert.equal(serialVisibleUncertainParallel.confidence, "MEDIUM");
 assert.match(serialVisibleUncertainParallel.title, /\/175/);
 assert.doesNotMatch(serialVisibleUncertainParallel.title, /\bWave\b/i);

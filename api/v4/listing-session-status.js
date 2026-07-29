@@ -4,6 +4,7 @@ import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readV4Rows, isV4SupabaseConfigured } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { readV4SessionStatus } from "../../lib/listing/v4/session/session-store.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
+import { compactRecognitionCriticalPath } from "../../lib/listing/pipeline/timing.mjs";
 import {
   hasTenantPermission,
   publicTenantAuthError,
@@ -42,11 +43,18 @@ function sessionPresentation(session = null) {
   };
 }
 
-function operationalSessionStatus(session = null) {
+export function operationalSessionStatus(session = null) {
   if (!session || typeof session !== "object") return session;
+  const summary = session.provider_result_summary && typeof session.provider_result_summary === "object"
+    ? session.provider_result_summary
+    : {};
   const presentation = sessionPresentation(session);
   return {
     ...session,
+    provider_result_summary: {
+      ...summary,
+      recognition_critical_path: compactRecognitionCriticalPath(summary.recognition_critical_path)
+    },
     l1_title: "",
     final_title: session.l2_status === "READY" ? (session.final_title || session.l2_title || "") : "",
     ...presentation

@@ -12,12 +12,16 @@ import { maybeFinalizeL1FromExactAnchor } from "../../lib/listing/v4/fast-scout/
 import { probePreL2Anchors } from "../../lib/listing/v4/anchors/pre-l2-anchor-probe.mjs";
 import { v4ProductionStrategy } from "../../lib/listing/v4/policy/production-strategy.mjs";
 import { applyPreIngestionBundleToPayload } from "../../lib/listing/pipeline/preingestion-evidence.mjs";
+import { compactRecognitionCriticalPath } from "../../lib/listing/pipeline/timing.mjs";
 import {
   readLatestPreIngestionBundleByAsset,
   summarizePreIngestionBundle
 } from "../../lib/listing/preingestion/preingestion-bundle.mjs";
 import { adaptRecognitionResultToV4, buildV4PersistenceRows, prepareV4PresentationResult } from "../../lib/listing/v4/result-adapter.mjs";
-import { buildEvaluationDecisionTracePacket } from "../../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
+import {
+  buildEvaluationDecisionTracePacket,
+  evaluationTraceEnabled
+} from "../../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 import { recognitionBenchmarkProfileIds } from "../../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 import { classifyV4ResultOutcome } from "../../lib/listing/v4/result-outcome.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
@@ -646,6 +650,9 @@ export function providerRuntimeSummary(result = {}, payload = {}) {
     provider_key_rotation_attempted: result.provider_key_rotation_attempted === true,
     provider_key_rotation_attempts: Number(result.provider_key_rotation_attempts || 0),
     provider_capacity_stage_handoff: result.provider_capacity_stage_handoff || null,
+    recognition_critical_path: evaluationTraceEnabled(payload)
+      ? result.recognition_critical_path || null
+      : compactRecognitionCriticalPath(result.recognition_critical_path),
     provider_transient_retry_attempted: result.provider_transient_retry_attempted === true,
     provider_transient_retry_attempts: Number(result.provider_transient_retry_attempts || 0),
     provider_output_cap_downgrade_attempted: result.provider_output_cap_downgrade_attempted === true,

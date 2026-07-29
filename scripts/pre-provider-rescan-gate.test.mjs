@@ -97,6 +97,9 @@ assert.equal(response.body.pre_provider_rescan_gate.blocked, true);
 assert.deepEqual(response.body.pre_provider_rescan_gate.blocking_regions, ["year_product"]);
 assert.ok(response.body.unresolved.some((item) => /targeted rescan required/i.test(item)));
 assert.ok(response.body.resolution_trace.some((entry) => entry.phase === "pre_provider_rescan_gate"));
+assert.equal(response.body.recognition_critical_path.path_kind, "PRE_PROVIDER_FAST_FINAL");
+assert.equal(response.body.recognition_critical_path.status, "COMPLETE");
+assert.equal(response.body.recognition_critical_path.provider_attempt_count, 0);
 assert.deepEqual(fetchCalls, []);
 
 console.log("pre-provider rescan gate tests passed");

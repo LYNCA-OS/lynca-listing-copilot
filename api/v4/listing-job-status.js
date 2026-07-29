@@ -9,6 +9,7 @@ import { buildWriterViewModel } from "../../lib/listing/v4/presentation/writer-v
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { buildRetrievalParticipationSummary } from "../../lib/listing/retrieval/retrieval-participation.mjs";
+import { compactRecognitionCriticalPath } from "../../lib/listing/pipeline/timing.mjs";
 import {
   hasTenantPermission,
   publicTenantAuthError,
@@ -304,6 +305,7 @@ export function operationalSessionStatus(session = null, job = null) {
       confidence: summary.confidence || null,
       provider_latency_ms: summary.provider_latency_ms ?? null,
       provider_slot_timing: summary.provider_slot_timing || null,
+      recognition_critical_path: compactRecognitionCriticalPath(summary.recognition_critical_path),
       provider_response_profile: summary.provider_response_profile || "standard",
       provider_prompt_mode: summary.provider_prompt_mode || null,
       provider_prompt_chars: Number.isFinite(Number(summary.provider_prompt_chars)) ? Number(summary.provider_prompt_chars) : null,

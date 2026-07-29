@@ -164,7 +164,11 @@ const payload = {
   mode: "single",
   images,
   resolutionMap: {},
-  maxTitleLength: 80
+  maxTitleLength: 80,
+  provider_options: {
+    recognition_benchmark_profile: "cold_targeted_assist",
+    trace_level: "evaluation"
+  }
 };
 
 const [first, second] = await Promise.all([
@@ -190,6 +194,14 @@ assert.equal(reused.usage.provider_calls, 0);
 assert.equal(reused.usage.estimated_cost_usd, 0);
 assert.equal(first.body.final_title, second.body.final_title);
 assert.ok(reused.resolution_trace.some((entry) => entry.decision === "reuse_inflight_identity_request"));
+assert.equal(reused.recognition_critical_path.path_kind, "INFLIGHT_REPLAY");
+assert.equal(reused.recognition_critical_path.status, "COMPLETE");
+assert.equal(reused.recognition_critical_path.provider_attempts.length, 0);
+assert.notDeepEqual(
+  reused.recognition_critical_path.boundaries,
+  owner.recognition_critical_path.boundaries,
+  "an in-flight follower must retain its own timing context"
+);
 assert.equal(inFlightIdentityRequestStats().active, 0);
 
 console.log("in-flight identity request coalescing tests passed");

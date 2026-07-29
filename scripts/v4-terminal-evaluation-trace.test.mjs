@@ -124,9 +124,27 @@ const productionPayload = {
     trace_level: "production"
   }
 };
+const fullCriticalPath = {
+  schema_version: "recognition-critical-path-v1",
+  scope: "NATIVE_RECOGNITION_CORE",
+  path_kind: "FULL_PROVIDER",
+  status: "COMPLETE",
+  total_wall_ms: 1200,
+  unattributed_wall_ms: 5,
+  provider_stage_status: "MEASURED",
+  provider_active_union_ms: 600,
+  provider_internal_gap_ms: 20,
+  missing_boundary_ids: [],
+  missing_contract_fields: [],
+  anomalies: [],
+  boundaries: { core_started: { offset_ms: 0 } },
+  segments: { core_to_full_path: { duration_ms: 10 } },
+  provider_attempts: [{ attempt: 1, execution_ms: 600 }]
+};
 assert.equal(terminalEvaluationDecisionTracePacket(result, productionPayload), null);
 const defaultProductionSummary = providerRuntimeSummary({
   ...result,
+  recognition_critical_path: fullCriticalPath,
   provider_call_ledger: []
 }, productionPayload);
 assert.equal(
@@ -136,6 +154,16 @@ assert.equal(
 );
 assert.equal(Object.hasOwn(defaultProductionSummary, "targeted_assist_execution"), false);
 assert.equal(Object.hasOwn(defaultProductionSummary, "provider_call_ledger"), false);
+assert.equal(defaultProductionSummary.recognition_critical_path.provider_attempt_count, 1);
+assert.equal(Object.hasOwn(defaultProductionSummary.recognition_critical_path, "boundaries"), false);
+assert.equal(Object.hasOwn(defaultProductionSummary.recognition_critical_path, "provider_attempts"), false);
+
+const coldEvaluationSummary = providerRuntimeSummary({
+  ...result,
+  recognition_critical_path: fullCriticalPath
+}, payload);
+assert.deepEqual(coldEvaluationSummary.recognition_critical_path.boundaries, fullCriticalPath.boundaries);
+assert.equal(coldEvaluationSummary.recognition_critical_path.provider_attempts.length, 1);
 
 const targetedProductionSummary = providerRuntimeSummary({
   ...result,

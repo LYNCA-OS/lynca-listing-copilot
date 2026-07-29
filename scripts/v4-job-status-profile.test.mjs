@@ -7,6 +7,7 @@ import {
   v4WriterStatusNeedsSessionProbe,
   v4WriterStatusSessionHeadSelect
 } from "../api/v4/listing-job-status.js";
+import { operationalSessionStatus as operationalSingleSessionStatus } from "../api/v4/listing-session-status.js";
 import {
   shouldPersistV4ObservingTransition
 } from "../api/v4/listing-copilot-title.js";
@@ -82,6 +83,13 @@ const targetedOperationalStatus = operationalSessionStatus({
       enabled: true,
       final_observation_owner: "TARGETED_VISUAL_OBSERVATION"
     },
+    recognition_critical_path: {
+      schema_version: "recognition-critical-path-v1",
+      status: "COMPLETE",
+      total_wall_ms: 1234,
+      boundaries: { core_started: { offset_ms: 0 } },
+      provider_attempts: [{ attempt: 1 }]
+    },
     provider_call_ledger: [{ logical_stage: "TARGETED_VISUAL_OBSERVATION", provider_calls: 1 }]
   }
 });
@@ -91,6 +99,29 @@ assert.equal(targetedOperationalStatus.provider_result_summary.provider_transien
 assert.equal(targetedOperationalStatus.provider_result_summary.provider_transient_retry_attempts, 1);
 assert.equal(targetedOperationalStatus.provider_result_summary.provider_output_cap_downgrade_attempted, true);
 assert.equal(targetedOperationalStatus.provider_result_summary.provider_output_cap_downgrade_attempts, 1);
+assert.equal(targetedOperationalStatus.provider_result_summary.recognition_critical_path.total_wall_ms, 1234);
+assert.equal(targetedOperationalStatus.provider_result_summary.recognition_critical_path.provider_attempt_count, 1);
+assert.equal(
+  Object.hasOwn(targetedOperationalStatus.provider_result_summary.recognition_critical_path, "boundaries"),
+  false
+);
+const singleSessionOperationalStatus = operationalSingleSessionStatus({
+  id: "session_evaluation",
+  provider_result_summary: {
+    recognition_critical_path: {
+      schema_version: "recognition-critical-path-v1",
+      status: "COMPLETE",
+      total_wall_ms: 1234,
+      boundaries: { core_started: { offset_ms: 0 } },
+      provider_attempts: [{ attempt: 1 }]
+    }
+  }
+});
+assert.equal(singleSessionOperationalStatus.provider_result_summary.recognition_critical_path.provider_attempt_count, 1);
+assert.equal(
+  Object.hasOwn(singleSessionOperationalStatus.provider_result_summary.recognition_critical_path, "boundaries"),
+  false
+);
 
 assert.equal(
   shouldPersistV4ObservingTransition({ workerAuthorized: true }),
