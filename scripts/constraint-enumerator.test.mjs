@@ -137,9 +137,29 @@ test("an undated membership does not cover every year", () => {
   // Before this was fixed, a 2000 Tom Brady card came back with the Patriots,
   // Sale Sharks and Geelong together, because two other men of that name have
   // memberships with no dates.
-  const brady = enumerateTeam({ player: "Tom Brady", year: "2000" }, careerModel);
+  const brady = enumerateTeam({ player: "Tom Brady", year: "2000", sport: "American football" }, careerModel);
   assert.equal(brady.status, outcomes.VALUE);
   assert.equal(brady.value, "new england patriots");
+});
+
+test("a shared name is not answered just because only one namesake has dates", () => {
+  // The others may simply have no dated memberships, and absent data about them
+  // is not evidence against them. This put "arizona cardinals" on a 2025-26
+  // Bowman Chrome Caleb Wilson: the NFL tight end has dates, the basketball
+  // prospect does not, so the only dated career won by default.
+  const withoutSport = enumerateTeam({ player: "Tom Brady", year: "2000" }, careerModel);
+  assert.equal(withoutSport.status, outcomes.UNKNOWN);
+  assert.equal(withoutSport.reason, "ambiguous_subject_needs_sport");
+  assert.equal(withoutSport.value, null);
+
+  // The sport separates them -- and it is the field the provider is asked for
+  // on every call and has returned zero times in 4,695.
+  const withSport = enumerateTeam({ player: "Tom Brady", year: "2000", sport: "American football" }, careerModel);
+  assert.equal(withSport.status, outcomes.VALUE);
+
+  // A name only one person holds is unaffected.
+  const kobe = enumerateTeam({ player: "Kobe Bryant", year: "2003-04" }, careerModel);
+  assert.equal(kobe.status, outcomes.VALUE);
 });
 
 test("a teamless product answers EMPTY before consulting a polluted team set", () => {
