@@ -2074,6 +2074,33 @@ assert.equal(semanticAbstainV4.assisted_draft_status, "REVIEW_REQUIRED");
 assert.equal(semanticAbstainV4.title_stage_readiness.writer_can_start, true);
 assert.equal(semanticAbstainV4.failure_reason, null);
 
+const semanticAbstainPartialDraftV4 = adaptRecognitionResultToV4({
+  sessionId: "v4sess-semantic-abstain-partial-draft",
+  result: {
+    confidence: "LOW",
+    title_stage: v4TitleStages.L2_ASSISTED_DRAFT,
+    identity_resolution_status: "ABSTAIN",
+    title_render_source: "identity_resolution_partial_writer_draft",
+    final_title: "2024 Panini Prizm Test Player",
+    resolved_fields: {
+      year: "2024",
+      product: "Panini Prizm",
+      players: ["Test Player"]
+    },
+    route: "COLD_START_SAFE_DRAFT",
+    reason: "Grounded evidence produced a partial draft but did not resolve identity."
+  },
+  payload: { maxTitleLength: 80 },
+  routePlan: assistedRoute
+});
+assert.equal(semanticAbstainPartialDraftV4.ok, true);
+assert.equal(semanticAbstainPartialDraftV4.status, "WRITER_REVIEW");
+assert.equal(semanticAbstainPartialDraftV4.outcome_type, "WRITER_REVIEW_REQUIRED");
+assert.equal(semanticAbstainPartialDraftV4.writer_review_required, true);
+assert.equal(semanticAbstainPartialDraftV4.final_title, "2024 Panini Prizm Test Player");
+assert.equal(semanticAbstainPartialDraftV4.writer_draft.actions.includes("ACCEPT"), false);
+assert.equal(semanticAbstainPartialDraftV4.assisted_draft_status, "REVIEW_REQUIRED");
+
 const recoveredFailedL2V4 = adaptRecognitionResultToV4({
   sessionId: "v4sess-recovered-l2",
   result: {
