@@ -15,6 +15,11 @@ import {
 } from "../lib/listing/cache/identity-result-cache.mjs";
 import { writerFinalReplayRecordToListingResult } from "../lib/listing/cache/writer-final-replay.mjs";
 import {
+  buildRecognitionPipelineFingerprint,
+  buildTargetedAssistEvaluationNuisanceFingerprint,
+  targetedAssistNuisanceFingerprintContractVersion
+} from "../lib/listing/cache/identity-cache-version-contract.mjs";
+import {
   applyRecognitionBenchmarkProfile,
   assertExactReplayBenchmarkPair,
   exactReplayPhases,
@@ -125,6 +130,70 @@ assert.equal(key.result_version.owner_versions.catalog, "catalog-revision-test-1
 assert.equal(Object.hasOwn(key.result_version.owner_versions, "world_knowledge"), false);
 assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
 
+const nuisanceEnv = {
+  ...process.env,
+  VERCEL_GIT_COMMIT_SHA: "deployment-a",
+  OPENAI_LISTING_MODEL: "gpt-5-mini"
+};
+const baselineExperimentPayload = {
+  ...payload,
+  provider_options: applyRecognitionBenchmarkProfile({}, {
+    profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
+  })
+};
+const targetedExperimentPayload = {
+  ...payload,
+  provider_options: applyRecognitionBenchmarkProfile({}, {
+    profile: recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST
+  })
+};
+const baselineFullFingerprint = buildRecognitionPipelineFingerprint(baselineExperimentPayload, nuisanceEnv);
+const targetedFullFingerprint = buildRecognitionPipelineFingerprint(targetedExperimentPayload, nuisanceEnv);
+const baselineNuisance = buildTargetedAssistEvaluationNuisanceFingerprint(baselineExperimentPayload, nuisanceEnv);
+const targetedNuisance = buildTargetedAssistEvaluationNuisanceFingerprint(targetedExperimentPayload, nuisanceEnv);
+assert.notEqual(baselineFullFingerprint.fingerprint, targetedFullFingerprint.fingerprint);
+assert.equal(baselineNuisance.fingerprint, targetedNuisance.fingerprint);
+assert.equal(baselineNuisance.contract_version, targetedAssistNuisanceFingerprintContractVersion);
+assert.notEqual(
+  baselineNuisance.fingerprint,
+  buildTargetedAssistEvaluationNuisanceFingerprint({
+    ...baselineExperimentPayload,
+    provider_options: {
+      ...baselineExperimentPayload.provider_options,
+      unrelated_decision_option: true
+    }
+  }, nuisanceEnv).fingerprint
+);
+for (const [owner, mutation] of [
+  ["provider model", { openai_listing_model_override: "gpt-5.1-mini" }],
+  ["catalog snapshot", { active_catalog_snapshot_revision: "catalog-revision-test-2" }],
+  ["OCR provider", { ocr_backend: "pp-ocr-v6" }],
+  ["recognition worker", { recognition_worker_revision: "worker-revision-b" }]
+]) {
+  assert.notEqual(
+    baselineNuisance.fingerprint,
+    buildTargetedAssistEvaluationNuisanceFingerprint({
+      ...baselineExperimentPayload,
+      ...mutation
+    }, nuisanceEnv).fingerprint,
+    `${owner} drift must change the targeted-assist nuisance fingerprint`
+  );
+}
+assert.notEqual(
+  baselineNuisance.fingerprint,
+  buildTargetedAssistEvaluationNuisanceFingerprint(baselineExperimentPayload, {
+    ...nuisanceEnv,
+    VERCEL_GIT_COMMIT_SHA: "deployment-b"
+  }).fingerprint
+);
+assert.notEqual(
+  baselineNuisance.fingerprint,
+  buildTargetedAssistEvaluationNuisanceFingerprint({
+    ...baselineExperimentPayload,
+    maxTitleLength: 79
+  }, nuisanceEnv).fingerprint
+);
+
 const worldKnowledgeShadowBaselineKey = buildIdentityResultCacheKey({
   ...payload,
   provider_options: {
@@ -181,6 +250,9 @@ const confirmedResult = {
   provider: "openai_legacy",
   identity_resolution_status: "CONFIRMED",
   ambiguity_status: "CONFIRMED",
+  attempt_count: 1,
+  retry_attempt_history: [],
+  retry_error_codes: [],
   resolved: {
     year: "2025",
     manufacturer: "Topps",
@@ -478,6 +550,9 @@ const exactCold = {
   field_states: confirmedResult.field_states,
   identity_resolution_status: "CONFIRMED",
   ambiguity_status: "CONFIRMED",
+  attempt_count: 1,
+  retry_attempt_history: [],
+  retry_error_codes: [],
   identity_cache: { cache_hit: false, provider_call_skipped: false },
   usage: { provider_calls: 1 }
 };

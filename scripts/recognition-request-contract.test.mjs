@@ -2,7 +2,16 @@
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
+import {
+  canonicalizeQueueJobs,
+  listingEvaluationRequestAuthorization,
+  listingEvaluationRequestAuthorized
+} from "../api/v4/listing-job-enqueue.js";
+import {
+  LEGACY_TENANT_ID,
+  LEGACY_USER_ID,
+  TENANT_ROLES
+} from "../lib/tenant/index.mjs";
 import {
   RecognitionRequestContractError,
   defaultRecognitionProfileId,
@@ -107,10 +116,112 @@ assert.equal(canonicalJob.payload.provider_options.enable_vector_assist, true);
 assert.equal(canonicalJob.payload.image_references.length, 1);
 assert.equal(canonicalJob.payload.image_references[0].object_path.includes("legacy/four/segment"), false);
 
+const [legacyUnprofiledJob] = await canonicalizeQueueJobs({
+  jobs: [{
+    asset_id: assetId,
+    image_generation_id: assetId,
+    payload: {
+      asset_id: assetId,
+      image_generation_id: assetId,
+      provider_options: {
+        recognition_benchmark_profile: "cold_targeted_assist_benchmark",
+        enable_targeted_visual_assist_candidate: true
+      }
+    }
+  }],
+  tenantId: "tenant_a",
+  env,
+  readCanonical: async () => ({
+    image_generation_id: assetId,
+    image_set_sha256: "b".repeat(64),
+    expected_original_count: 1,
+    images: [{ image_role: "front_original", object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg` }],
+    image_references: [{ image_role: "front_original", object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg` }],
+    image_paths: {}
+  })
+});
+assert.equal(legacyUnprofiledJob.payload.recognition_profile, defaultRecognitionProfileId);
+assert.notEqual(
+  legacyUnprofiledJob.payload.provider_options.recognition_benchmark_profile,
+  "cold_targeted_assist_benchmark"
+);
+assert.notEqual(legacyUnprofiledJob.payload.provider_options.enable_targeted_visual_assist_candidate, true);
+
+const [authorizedEvaluationJob] = await canonicalizeQueueJobs({
+  jobs: [{
+    asset_id: assetId,
+    image_generation_id: assetId,
+    payload: {
+      asset_id: assetId,
+      image_generation_id: assetId,
+      provider_options: {
+        recognition_benchmark_profile: "cold_targeted_assist_benchmark",
+        enable_targeted_visual_assist_candidate: true
+      }
+    }
+  }],
+  tenantId: "tenant_a",
+  allowAlgorithmOverrides: true,
+  env,
+  readCanonical: async () => ({
+    image_generation_id: assetId,
+    image_set_sha256: "c".repeat(64),
+    expected_original_count: 1,
+    images: [{ image_role: "front_original", object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg` }],
+    image_references: [{ image_role: "front_original", object_path: `tenants/tenant_a/listing-assets/2026-07-19/${assetId}/front.jpg` }],
+    image_paths: {}
+  })
+});
+assert.equal(authorizedEvaluationJob.payload.provider_options.recognition_benchmark_profile, "cold_targeted_assist_benchmark");
+assert.equal(authorizedEvaluationJob.payload.provider_options.enable_targeted_visual_assist_candidate, true);
+const legacyEvaluationOwner = {
+  userId: LEGACY_USER_ID,
+  tenantId: LEGACY_TENANT_ID,
+  role: TENANT_ROLES.OWNER
+};
+assert.equal(listingEvaluationRequestAuthorized({
+  headers: { "x-lynca-launch-gate-secret": "eval-secret" }
+}, legacyEvaluationOwner, { LAUNCH_GATE_EVAL_SECRET: "eval-secret" }), true);
+assert.equal(listingEvaluationRequestAuthorized({
+  headers: { "x-lynca-launch-gate-secret": "wrong" }
+}, legacyEvaluationOwner, { LAUNCH_GATE_EVAL_SECRET: "eval-secret" }), false);
+assert.deepEqual(listingEvaluationRequestAuthorization({ headers: {} }, legacyEvaluationOwner, {
+  LAUNCH_GATE_EVAL_SECRET: "eval-secret"
+}), {
+  requested: false,
+  authorized: false,
+  reason_code: "NOT_REQUESTED"
+});
+assert.equal(listingEvaluationRequestAuthorized({
+  headers: { "x-lynca-launch-gate-secret": "eval-secret" }
+}, { ...legacyEvaluationOwner, role: TENANT_ROLES.MANAGER }, {
+  LAUNCH_GATE_EVAL_SECRET: "eval-secret"
+}), false);
+assert.equal(listingEvaluationRequestAuthorized({
+  headers: { "x-lynca-launch-gate-secret": "eval-secret" }
+}, { ...legacyEvaluationOwner, userId: "user_other" }, {
+  LAUNCH_GATE_EVAL_SECRET: "eval-secret"
+}), false);
+assert.equal(listingEvaluationRequestAuthorized({
+  headers: { "x-lynca-launch-gate-secret": "eval-secret" }
+}, { ...legacyEvaluationOwner, tenantId: "tenant_other" }, {
+  LAUNCH_GATE_EVAL_SECRET: "eval-secret"
+}), false);
+assert.equal(listingEvaluationRequestAuthorized({
+  headers: { "x-lynca-launch-gate-secret": "eval-secret" }
+}, legacyEvaluationOwner, {}), false);
+
 const frontend = readFileSync(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
 assert.match(frontend, /withRecognitionRequestIntent/);
 assert.doesNotMatch(frontend, /const defaultProviderOptions/);
 assert.doesNotMatch(frontend, /provider_options:\s*\{/);
 assert.doesNotMatch(frontend, /enqueueJobPayload\.force_l2_only/);
+
+const nativeCore = readFileSync(
+  new URL("../lib/listing/v4/pipeline/native-recognition-core.mjs", import.meta.url),
+  "utf8"
+);
+assert.match(nativeCore, /const providerExecutionSignal = requestContext\?\.signal \|\| null/);
+assert.match(nativeCore, /requestContext: fullProviderRequestContext,\s+signal: providerExecutionSignal/);
 
 console.log("Recognition request contract tests passed");

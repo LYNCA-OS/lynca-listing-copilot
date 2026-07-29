@@ -2,9 +2,20 @@ name: fixed20-cold-algorithm
 
 on:
   workflow_dispatch:
+    inputs:
+      paired_gate_run_id:
+        description: "Successful targeted-assist paired20 Actions run that unlocked this one fixed20"
+        required: true
+        type: string
+      expected_git_sha:
+        description: "Exact production Git SHA proven by the paired gate"
+        required: true
+        type: string
+
+run-name: fixed20 from paired gate ${{ inputs.paired_gate_run_id }} at ${{ inputs.expected_git_sha }}
 
 concurrency:
-  group: fixed20-cold-algorithm
+  group: fixed20-cold-algorithm-${{ inputs.expected_git_sha }}
   cancel-in-progress: false
 
 jobs:
@@ -12,13 +23,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
+      actions: read
     env:
       API_BASE_URL: https://listing.lyncafei.team
       METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
       METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+      LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+      PAIRED_GATE_RUN_ID: ${{ inputs.paired_gate_run_id }}
       DATASET_PATH: /tmp/reviewed-cold-20.json
       SEALED_LABELS_PATH: /tmp/reviewed-cold-20-sealed-labels.jsonl
       REPORT_PATH: /tmp/reviewed-cold-20-report.json
@@ -27,16 +42,50 @@ jobs:
       SEM_STAGE_PATH: /tmp/reviewed-cold-20-sem-stage-loss.json
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.expected_git_sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Fetch paired workflow run provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -n "$EXPECTED_GIT_SHA"
+          test -n "$PAIRED_GATE_RUN_ID"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_GIT_SHA"
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$PAIRED_GATE_RUN_ID" \
+            > /tmp/targeted-assist-paired-workflow-run.json
+      - name: Download paired gate evidence
+        uses: actions/download-artifact@v5
+        with:
+          name: targeted-assist-paired20-evidence
+          path: /tmp/targeted-assist-paired-gate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.paired_gate_run_id }}
+      - name: Admit the single fixed20 from the paired gate
+        run: |
+          mapfile -t gate_paths < <(find /tmp/targeted-assist-paired-gate -type f -name gate.json -print)
+          test "${#gate_paths[@]}" -eq 1
+          cp "${gate_paths[0]}" /tmp/targeted-assist-paired-gate.json
+          node scripts/verify-targeted-assist-fixed20-gate.mjs \
+            --gate /tmp/targeted-assist-paired-gate.json \
+            --workflow-run /tmp/targeted-assist-paired-workflow-run.json \
+            --expected-git-sha "$EXPECTED_GIT_SHA" \
+            --paired-gate-run-id "$PAIRED_GATE_RUN_ID" \
+            --out /tmp/targeted-assist-fixed20-admission.json
+      - name: Verify exact production revision before paid calls
+        run: |
+          actual_git_sha="$(curl --fail --silent --show-error "$API_BASE_URL/api/v4/health" | jq -r '.deployment.git_commit_sha // empty')"
+          test "$actual_git_sha" = "$EXPECTED_GIT_SHA"
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Verify benchmark credentials
         run: |
           test -n "$METAVERSE_USERNAME"
           test -n "$METAVERSE_PASSWORD"
+          test -n "$LAUNCH_GATE_EVAL_SECRET"
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
       - name: Build the frozen reviewed 20
@@ -66,6 +115,20 @@ jobs:
           console.log(JSON.stringify({ checks, expected, actual }, null, 2));
           if (Object.values(checks).some((value) => value !== true)) process.exit(1);
           NODE
+      - name: Consume this deployment gate exactly once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          consumption_ref="refs/tags/eval-fixed20-targeted-assist-${EXPECTED_GIT_SHA}"
+          gh api --method POST "/repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="$consumption_ref" \
+            -f sha="$EXPECTED_GIT_SHA" \
+            > /tmp/targeted-assist-fixed20-gate-consumption.json
+          jq -e \
+            --arg ref "$consumption_ref" \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            '.ref == $ref and .object.sha == $sha' \
+            /tmp/targeted-assist-fixed20-gate-consumption.json >/dev/null
       - name: Run the one allowed cold 20
         run: |
           node scripts/v4-ebay-smoke.mjs \
@@ -73,7 +136,7 @@ jobs:
             --sealed-labels "$SEALED_LABELS_PATH" \
             --base-url "$API_BASE_URL" \
             --limit 20 \
-            --benchmark-profile cold \
+            --benchmark-profile cold-targeted-assist \
             --concurrency 2 \
             --submission-concurrency 2 \
             --preparation-concurrency 3 \
@@ -89,13 +152,22 @@ jobs:
             --request-timeout-ms 120000 \
             --verified-asset-cache-mode disabled \
             --out "$REPORT_PATH"
+      - name: Verify production revision remained pinned
+        if: always()
+        run: |
+          actual_git_sha="$(curl --fail --silent --show-error "$API_BASE_URL/api/v4/health" | jq -r '.deployment.git_commit_sha // empty')"
+          test "$actual_git_sha" = "$EXPECTED_GIT_SHA"
       - name: Build offline audits
         if: always()
         run: |
           if test -f "$REPORT_PATH"; then
             node scripts/analyze-provider-idle-gap-causes.mjs "$REPORT_PATH" "$IDLE_GAP_PATH"
             node scripts/analyze-sem-stage-loss.mjs "$REPORT_PATH" "$SEM_STAGE_PATH"
-            node scripts/analyze-fixed20-cold-benchmark.mjs "$REPORT_PATH" "$AUDIT_PATH"
+            node scripts/analyze-fixed20-cold-benchmark.mjs \
+              "$REPORT_PATH" \
+              "$AUDIT_PATH" \
+              --expected-profile cold_targeted_assist_benchmark \
+              --expected-git-sha "$EXPECTED_GIT_SHA"
           fi
       - name: Upload sealed evidence
         if: always()
@@ -103,6 +175,7 @@ jobs:
         with:
           name: fixed20-cold-algorithm-evidence
           retention-days: 30
+          overwrite: true
           if-no-files-found: error
           path: |
             /tmp/reviewed-cold-20.json
@@ -112,3 +185,7 @@ jobs:
             /tmp/reviewed-cold-20-audit.json
             /tmp/reviewed-cold-20-idle-gap.json
             /tmp/reviewed-cold-20-sem-stage-loss.json
+            /tmp/targeted-assist-paired-gate.json
+            /tmp/targeted-assist-paired-workflow-run.json
+            /tmp/targeted-assist-fixed20-admission.json
+            /tmp/targeted-assist-fixed20-gate-consumption.json

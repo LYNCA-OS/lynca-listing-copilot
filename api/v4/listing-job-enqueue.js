@@ -1,5 +1,6 @@
 import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
+import { timingSafeStringEqual } from "../../lib/listing-session.mjs";
 import { bindRecognitionProfileToPayload } from "../../lib/listing/v4/application/recognition-profile-adapter.mjs";
 import {
   RecognitionRequestContractError,
@@ -26,6 +27,9 @@ import {
   publicTenantAuthError,
   requirePermission,
   requireTenantAccess,
+  LEGACY_TENANT_ID,
+  LEGACY_USER_ID,
+  TENANT_ROLES,
   TENANT_PERMISSIONS
 } from "../../lib/tenant/index.mjs";
 import {
@@ -56,6 +60,42 @@ class QueueSchedulingIntentError extends Error {
     this.statusCode = statusCode;
     this.retryable = retryable;
   }
+}
+
+function cleanHeaderValue(req, name) {
+  const lower = String(name || "").toLowerCase();
+  const headers = req?.headers;
+  const value = typeof headers?.get === "function"
+    ? headers.get(lower)
+    : headers?.[lower] ?? headers?.[name];
+  return String(Array.isArray(value) ? value[0] : value || "").trim();
+}
+
+export function listingEvaluationRequestAuthorization(req, context = {}, env = process.env) {
+  const expected = String(env.LAUNCH_GATE_EVAL_SECRET || "").trim();
+  const supplied = cleanHeaderValue(req, "x-lynca-launch-gate-secret");
+  const requested = Boolean(supplied);
+  const secretMatches = Boolean(expected && supplied && timingSafeStringEqual(supplied, expected));
+  const dedicatedPrincipal = context?.userId === LEGACY_USER_ID
+    && context?.tenantId === LEGACY_TENANT_ID
+    && context?.role === TENANT_ROLES.OWNER;
+  return Object.freeze({
+    requested,
+    authorized: requested && secretMatches && dedicatedPrincipal,
+    // Internal-only reason code. The HTTP response intentionally collapses all
+    // failure modes so it cannot reveal secret or principal validity.
+    reason_code: !requested
+      ? "NOT_REQUESTED"
+      : !secretMatches
+        ? "SECRET_OR_CONFIGURATION_INVALID"
+        : !dedicatedPrincipal
+          ? "DEDICATED_EVALUATION_PRINCIPAL_REQUIRED"
+          : "AUTHORIZED"
+  });
+}
+
+export function listingEvaluationRequestAuthorized(req, context = {}, env = process.env) {
+  return listingEvaluationRequestAuthorization(req, context, env).authorized;
 }
 
 function isQueueSchemaDependencyFailure(error) {
@@ -280,6 +320,7 @@ export async function authorizeFreshManualRetryJobs({
 export async function canonicalizeQueueJobs({
   jobs = [],
   tenantId,
+  allowAlgorithmOverrides = false,
   env = process.env,
   fetchImpl = globalThis.fetch,
   readCanonical = readCanonicalListingImageReferences
@@ -312,15 +353,18 @@ export async function canonicalizeQueueJobs({
     );
     const requestedProfileId = recognitionProfileIdFromPayload(scopedPayload)
       || recognitionProfileIdFromPayload(scoped);
-    const profiledJob = requestedProfileId
-      ? stripClientAlgorithmControls(scoped)
-      : scoped;
-    const applicationPayload = requestedProfileId
-      ? bindRecognitionProfileToPayload(scopedPayload, {
-        profileId: requestedProfileId,
+    // Public queue requests always receive a server-owned recognition profile,
+    // including legacy callers that omit recognition_profile. Only the scoped
+    // launch-gate secret may preserve benchmark algorithm controls.
+    const profiledJob = allowAlgorithmOverrides === true
+      ? scoped
+      : stripClientAlgorithmControls(scoped);
+    const applicationPayload = allowAlgorithmOverrides === true
+      ? scopedPayload
+      : bindRecognitionProfileToPayload(scopedPayload, {
+        profileId: requestedProfileId || undefined,
         env
-      })
-      : scopedPayload;
+      });
     const images = canonical.images.map((image) => ({ ...image }));
     const imageReferences = canonical.image_references.map((reference) => ({ ...reference }));
     const imagePaths = canonical.image_paths || {};
@@ -544,6 +588,16 @@ export default async function handler(req, res) {
 
   const operatorId = context.userId;
   const tenantId = context.tenantId;
+  const evaluationAuthorization = listingEvaluationRequestAuthorization(req, context, process.env);
+  if (evaluationAuthorization.requested && !evaluationAuthorization.authorized) {
+    sendJson(res, 403, withV4Version({
+      ok: false,
+      retryable: false,
+      error_code: "V4_EVALUATION_AUTH_REQUIRED",
+      message: "Evaluation authorization is required."
+    }));
+    return;
+  }
   // Scheduling and data ownership use the signed principal. The browser's
   // batch id remains a batch id and cannot impersonate another tenant.
   const clientBatchToken = String(payload.batch_id || payload.batchId || "").trim();
@@ -581,6 +635,7 @@ export default async function handler(req, res) {
     const canonicalJobs = await canonicalizeQueueJobs({
       jobs: rawJobs,
       tenantId,
+      allowAlgorithmOverrides: evaluationAuthorization.authorized,
       env: process.env,
       fetchImpl: globalThis.fetch
     });

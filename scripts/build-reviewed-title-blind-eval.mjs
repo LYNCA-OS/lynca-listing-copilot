@@ -118,6 +118,7 @@ export async function buildReviewedTitleBlindEval({
   evaluationSampleMode = "FRESH_GENERALIZATION",
   reuseReason = "",
   reuseScopeId = "",
+  evaluationPartition = "",
   now = new Date()
 } = {}) {
   const source = await readStructuredFile(sourcePath);
@@ -126,6 +127,10 @@ export async function buildReviewedTitleBlindEval({
     collectSourceFeedbackIds(await readStructuredFile(path), excludedIds);
   }
   const mode = normalizeEvaluationSampleMode(evaluationSampleMode);
+  const partition = cleanText(evaluationPartition).toLowerCase();
+  if (partition && !["development", "validation"].includes(partition)) {
+    throw new Error("Reviewed-title reusable evaluations may only declare development or validation partition.");
+  }
   const candidates = loadItems(source).filter(eligibleItem).filter((item) => !excludedIds.has(cleanText(item.source_feedback_id)));
   const requestedCount = allItems ? candidates.length : Math.max(1, limit);
   const selected = candidates
@@ -192,6 +197,12 @@ export async function buildReviewedTitleBlindEval({
     source_schema_version: source.schema_version || null,
     selection_seed: selectionSeed,
     item_count: items.length,
+    evaluation_partition: partition || null,
+    data_policy: partition ? {
+      threshold_tuning_eligible: true,
+      training_eligible: partition === "development",
+      frozen_holdout: false
+    } : null,
     eligible_source_count: candidates.length,
     evaluation_sample_policy: {
       ...evaluationSamplePolicy,
@@ -234,7 +245,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     selectionSeed: argValue(argv, "--selection-seed", env.REVIEWED_TITLE_SELECTION_SEED || `reviewed-${Date.now()}`),
     evaluationSampleMode: argValue(argv, "--sample-mode", env.EVALUATION_SAMPLE_MODE || "FRESH_GENERALIZATION"),
     reuseReason: argValue(argv, "--reuse-reason", env.EVALUATION_REUSE_REASON || ""),
-    reuseScopeId: argValue(argv, "--reuse-scope-id", env.EVALUATION_REUSE_SCOPE_ID || "")
+    reuseScopeId: argValue(argv, "--reuse-scope-id", env.EVALUATION_REUSE_SCOPE_ID || ""),
+    evaluationPartition: argValue(argv, "--evaluation-partition", env.EVALUATION_PARTITION || "")
   });
   process.stdout.write(`${JSON.stringify({
     ok: true,

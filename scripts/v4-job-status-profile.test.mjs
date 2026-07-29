@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  operationalSessionStatus,
   v4WriterStatusJobSelect,
   v4WriterStatusNeedsFullSession,
   v4WriterStatusNeedsSessionProbe,
@@ -56,6 +57,40 @@ assert.equal(v4WriterStatusNeedsFullSession(
   { status: "FAILED" },
   { status: "FAILED", l2_status: "PENDING", failure_reason: "provider_timeout" }
 ), true, "failed jobs need terminal error details");
+
+const defaultOperationalStatus = operationalSessionStatus({
+  id: "session-default-shape",
+  status: "DRAFT_READY",
+  final_title: "2024 Panini Test Player",
+  l2_status: "READY",
+  provider_result_summary: { provider_call_ledger: [] }
+});
+assert.equal(Object.hasOwn(defaultOperationalStatus.provider_result_summary, "targeted_assist_execution"), false);
+assert.equal(Object.hasOwn(defaultOperationalStatus.provider_result_summary, "provider_call_ledger"), false);
+
+const targetedOperationalStatus = operationalSessionStatus({
+  id: "session-targeted-shape",
+  status: "DRAFT_READY",
+  final_title: "2024 Panini Test Player",
+  l2_status: "READY",
+  provider_result_summary: {
+    provider_transient_retry_attempted: true,
+    provider_transient_retry_attempts: 1,
+    provider_output_cap_downgrade_attempted: true,
+    provider_output_cap_downgrade_attempts: 1,
+    targeted_assist_execution: {
+      enabled: true,
+      final_observation_owner: "TARGETED_VISUAL_OBSERVATION"
+    },
+    provider_call_ledger: [{ logical_stage: "TARGETED_VISUAL_OBSERVATION", provider_calls: 1 }]
+  }
+});
+assert.equal(targetedOperationalStatus.provider_result_summary.targeted_assist_execution.enabled, true);
+assert.equal(targetedOperationalStatus.provider_result_summary.provider_call_ledger.length, 1);
+assert.equal(targetedOperationalStatus.provider_result_summary.provider_transient_retry_attempted, true);
+assert.equal(targetedOperationalStatus.provider_result_summary.provider_transient_retry_attempts, 1);
+assert.equal(targetedOperationalStatus.provider_result_summary.provider_output_cap_downgrade_attempted, true);
+assert.equal(targetedOperationalStatus.provider_result_summary.provider_output_cap_downgrade_attempts, 1);
 
 assert.equal(
   shouldPersistV4ObservingTransition({ workerAuthorized: true }),

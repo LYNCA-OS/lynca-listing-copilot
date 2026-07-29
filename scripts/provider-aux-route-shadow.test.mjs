@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 
 import {
+  expandProviderAuxVisualFieldTargets,
   planProviderAuxRouteShadow,
   providerAuxRoutes,
   withObservedProviderAuxRoute
@@ -43,7 +44,7 @@ const targeted = route({
   image_policy: "PRIMARY_PLUS_RELEVANT_CROPS_ONLY"
 });
 assert.equal(targeted.route, providerAuxRoutes.TARGETED_MODEL_ASSIST);
-assert.equal(targeted.targeted_executor_status, "NOT_IMPLEMENTED");
+assert.equal(targeted.targeted_executor_status, "EVALUATION_ONLY");
 assert.equal(targeted.initial_model_call_budget, 1);
 assert.equal(targeted.conditional_model_call_budget, 1);
 assert.equal(targeted.max_model_call_budget, 2);
@@ -52,12 +53,57 @@ assert.deepEqual(targeted.assist_sequence.map((stage) => stage.stage), [
   "RECOMPUTE_CONSTRAINTS",
   "WORLD_KNOWLEDGE_ASSIST"
 ]);
-assert.equal(targeted.assist_sequence[0].image_access, "RELEVANT_CROPS_ONLY");
+assert.equal(targeted.assist_sequence[0].image_access, "PRIMARY_PLUS_RELEVANT_CROPS_ONLY");
 assert.equal(targeted.assist_sequence[2].image_access, "DENIED");
 assert.equal(targeted.assist_sequence[2].resolver_effect, "NONE");
 assert.equal(targeted.assist_sequence[2].title_effect, "NONE");
 assert.equal(targeted.activation_eligible, false);
-assert.ok(targeted.activation_blockers.includes("TARGETED_EXECUTOR_NOT_IMPLEMENTED"));
+assert.ok(targeted.activation_blockers.includes("TARGETED_EXECUTOR_EVALUATION_ONLY"));
+
+const expandedLiteralTargets = [
+  "year",
+  "card_name",
+  "insert",
+  "set",
+  "collector_number",
+  "checklist_code",
+  "tcg_card_number",
+  "card_number"
+];
+assert.deepEqual(
+  expandProviderAuxVisualFieldTargets(["year", "card_name_or_insert_or_code", "year"]),
+  expandedLiteralTargets
+);
+assert.throws(
+  () => expandProviderAuxVisualFieldTargets(["product"]),
+  /provider auxiliary visual target must be READ: product/
+);
+
+const expandedTargeted = route({
+  route: "TARGETED_VISUAL_ASSIST",
+  reason_codes: ["VISIBLE_FIELDS_UNKNOWN"],
+  visual_field_targets: ["year", "card_name_or_insert_or_code"],
+  evidence_snapshot: {
+    year: "2024",
+    manufacturer: "Panini",
+    players: ["Unsafe Subject"],
+    field_states: {
+      year: "PUBLISHABLE",
+      manufacturer: "PUBLISHABLE",
+      players: "UNTRUSTED_PROVENANCE"
+    }
+  },
+  image_policy: "RELEVANT_CROPS_ONLY"
+});
+assert.deepEqual(expandedTargeted.visual_field_targets, expandedLiteralTargets);
+assert.deepEqual(expandedTargeted.visual_requirement_targets, ["year", "card_name_or_insert_or_code"]);
+assert.deepEqual(expandedTargeted.target_fields, expandedLiteralTargets);
+assert.deepEqual(expandedTargeted.assist_sequence[0].target_fields, expandedLiteralTargets);
+assert.deepEqual(expandedTargeted.assist_sequence[0].required_targets, ["year", "card_name_or_insert_or_code"]);
+assert.deepEqual(expandedTargeted.publishable_known_fields, {
+  year: "2024",
+  manufacturer: "Panini"
+});
 
 const enumerationDeferred = route({
   route: "TARGETED_VISUAL_ASSIST",
@@ -124,9 +170,38 @@ const observed = withObservedProviderAuxRoute(targeted, {
 assert.equal(observed.observed_production_action, "RUN_FULL_PROVIDER");
 assert.equal(observed.observed_provider_calls, 1);
 assert.equal(observed.observed_provider_call_skipped, false);
+const targetedObserved = withObservedProviderAuxRoute(targeted, {
+  providerCalls: 1,
+  providerCallSkipped: false,
+  targetedAssistExecution: {
+    final_observation_owner: "TARGETED_VISUAL_OBSERVATION",
+    fallback_reason_code: null,
+    provider_call_ledger: [{
+      logical_stage: "TARGETED_VISUAL_OBSERVATION",
+      provider_calls: 1,
+      started_at: "2026-07-29T00:00:00.002Z"
+    }]
+  }
+});
+assert.equal(targetedObserved.observed_production_action, "RUN_TARGETED_VISUAL_PROVIDER");
+assert.equal(targetedObserved.observed_targeted_visual_provider_calls, 1);
+assert.equal(targetedObserved.observed_full_provider_calls, 0);
+assert.equal(targetedObserved.observed_final_observation_owner, "TARGETED_VISUAL_OBSERVATION");
+assert.equal(targetedObserved.first_provider_call_started_at, "2026-07-29T00:00:00.002Z");
+assert.equal(targetedObserved.decision_frozen_before_provider, true);
+const lateDecisionObserved = withObservedProviderAuxRoute(targeted, {
+  providerCalls: 1,
+  providerCallLedger: [{
+    logical_stage: "TARGETED_VISUAL_OBSERVATION",
+    provider_calls: 1,
+    started_at: cutoff
+  }]
+});
+assert.equal(lateDecisionObserved.decision_frozen_before_provider, false);
 const unobserved = withObservedProviderAuxRoute(targeted);
 assert.equal(unobserved.observed_production_action, "UNKNOWN");
 assert.equal(unobserved.observed_provider_calls, null);
 assert.equal(unobserved.observed_provider_call_skipped, null);
+assert.equal(unobserved.decision_frozen_before_provider, null);
 
 console.log("provider auxiliary route shadow tests passed");

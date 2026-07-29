@@ -2,6 +2,12 @@
 
 import assert from "node:assert/strict";
 import { analyzeFixed20ColdBenchmark } from "./analyze-fixed20-cold-benchmark.mjs";
+import {
+  evaluationDecisionTraceSchemaVersion,
+  evaluationReplaySnapshotSchemaVersion
+} from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
+
+const expectedGitSha = "0123456789abcdef0123456789abcdef01234567";
 
 const results = Array.from({ length: 20 }, (_, index) => ({
   job_id: `job-${index}`,
@@ -9,11 +15,22 @@ const results = Array.from({ length: 20 }, (_, index) => ({
   identity_cache_hit: false,
   provider_call_skipped: false,
   provider_calls: 1,
+  attempt_count: 1,
+  retry_attempt_history: [],
+  retry_error_codes: [],
   recognition_benchmark_profile: "cold_algorithm_benchmark",
   reference_title: "2025 Topps Chrome Test Player #1 Gold /50",
   final_title: "2025 Topps Chrome Test Player #1 Gold /50",
   evaluation_decision_trace_packet: {
+    schema_version: evaluationDecisionTraceSchemaVersion,
     trace_level: "evaluation",
+    benchmark_profile: "cold_algorithm_benchmark",
+    deployment_git_sha: expectedGitSha,
+    replay_snapshot: {
+      schema_version: evaluationReplaySnapshotSchemaVersion,
+      status: "COMPLETE",
+      missing_components: []
+    },
     provider_observation_fields: { year: "2025" },
     normalization: { output: { year: "2025" } },
     knowledge_first_route: {
@@ -42,6 +59,7 @@ assert.equal(audit.passed, true);
 assert.equal(audit.evaluation_trace_count, 20);
 assert.equal(audit.provider_capacity_timing.provider_execution_ms.total_ms, 20000);
 assert.equal(audit.schema_version, "fixed20-cold-algorithm-audit-v2");
+assert.equal(audit.expected_recognition_benchmark_profile, "cold_algorithm_benchmark");
 assert.equal(audit.knowledge_first_route.trace_count, 20);
 assert.equal(audit.knowledge_first_route.route_counts.DETERMINISTIC_FINAL, 10);
 assert.equal(audit.knowledge_first_route.route_counts.KNOWLEDGE_ASSIST, 10);
@@ -79,6 +97,95 @@ const invalid = analyzeFixed20ColdBenchmark({
 });
 assert.equal(invalid.passed, false);
 assert.equal(invalid.cache_violation_count, 1);
+
+const retriedJob = analyzeFixed20ColdBenchmark({
+  summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
+  results: results.map((row, index) => index === 0
+    ? {
+        ...row,
+        attempt_count: 2,
+        retry_attempt_history: [{ code: "PROVIDER_TIMEOUT" }],
+        retry_error_codes: ["PROVIDER_TIMEOUT"]
+      }
+    : row)
+});
+assert.equal(retriedJob.passed, false);
+assert.equal(retriedJob.cache_violation_count, 1);
+
+const targetedAssistResults = results.map((row, index) => {
+  const targeted = {
+    logical_stage: "TARGETED_VISUAL_OBSERVATION",
+    attempt: 1,
+    started_at: "2026-07-29T00:00:00.000Z",
+    completed_at: "2026-07-29T00:00:01.500Z",
+    latency_ms: 1500,
+    provider_calls: 1,
+    status: "COMPLETED",
+    prompt_revision: "targeted-visual-read-only-v2",
+    schema_revision: "targeted-visual-sparse-v2"
+  };
+  const full = {
+    logical_stage: "FULL_PROVIDER_OBSERVATION",
+    attempt: 1,
+    started_at: "2026-07-29T00:00:01.500Z",
+    completed_at: "2026-07-29T00:00:06.000Z",
+    latency_ms: 4500,
+    provider_calls: 1,
+    status: "COMPLETED"
+  };
+  const fallback = index === 0;
+  const providerCallLedger = fallback ? [targeted, full] : [targeted];
+  return {
+    ...row,
+    provider_calls: fallback ? 2 : 1,
+    recognition_benchmark_profile: "cold_targeted_assist_benchmark",
+    evaluation_decision_trace_packet: {
+      ...row.evaluation_decision_trace_packet,
+      benchmark_profile: "cold_targeted_assist_benchmark"
+    },
+    provider_call_ledger: providerCallLedger,
+    targeted_assist_execution: {
+      final_observation_owner: fallback ? "FULL_PROVIDER_OBSERVATION" : "TARGETED_VISUAL_OBSERVATION",
+      fallback_reason_code: fallback ? "TARGETED_REQUESTED_FIELD_MISSING" : null,
+      provider_call_ledger: providerCallLedger
+    }
+  };
+});
+const targetedAssistAudit = analyzeFixed20ColdBenchmark({
+  summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
+  results: targetedAssistResults
+}, {
+  expectedProfile: "cold_targeted_assist_benchmark",
+  expectedGitSha
+});
+assert.equal(targetedAssistAudit.passed, true);
+assert.equal(targetedAssistAudit.expected_recognition_benchmark_profile, "cold_targeted_assist_benchmark");
+assert.equal(targetedAssistAudit.expected_deployment_git_sha, expectedGitSha);
+assert.throws(() => analyzeFixed20ColdBenchmark({
+  summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
+  results: targetedAssistResults
+}, { expectedProfile: "cold_targeted_assist_benchmark" }), /fixed20_expected_git_sha_required_or_invalid/);
+const mixedDeployment = analyzeFixed20ColdBenchmark({
+  summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },
+  results: targetedAssistResults.map((row, index) => index === 0
+    ? {
+        ...row,
+        evaluation_decision_trace_packet: {
+          ...row.evaluation_decision_trace_packet,
+          deployment_git_sha: "f".repeat(40)
+        }
+      }
+    : row)
+}, {
+  expectedProfile: "cold_targeted_assist_benchmark",
+  expectedGitSha
+});
+assert.equal(mixedDeployment.passed, false);
+assert.equal(mixedDeployment.integrity.deployment_git_sha_exact, false);
+assert.throws(
+  () => analyzeFixed20ColdBenchmark({}, { expectedProfile: "production_workload_benchmark" }),
+  /unsupported_fixed20_benchmark_profile/
+);
 
 const unsafeRoute = analyzeFixed20ColdBenchmark({
   summary: { ok_count: 20, l2_ready_count: 20, technical_failure_count: 0 },

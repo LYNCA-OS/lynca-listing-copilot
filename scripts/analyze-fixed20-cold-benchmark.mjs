@@ -3,7 +3,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { recognitionBenchmarkProfileIds } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import {
+  assertColdAlgorithmBenchmarkResult,
+  assertColdTargetedAssistBenchmarkResult,
+  recognitionBenchmarkProfileIds
+} from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import {
+  evaluationDecisionTraceSchemaVersion,
+  evaluationReplaySnapshotSchemaVersion
+} from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 import { analyzeSemStageLoss } from "./analyze-sem-stage-loss.mjs";
 
 const EXPECTED_COUNT = 20;
@@ -143,13 +151,57 @@ function knowledgeFirstRouteAudit(results = []) {
   };
 }
 
-export function analyzeFixed20ColdBenchmark(report = {}) {
+function fixed20ExpectedProfile(value) {
+  const profile = String(value || recognitionBenchmarkProfileIds.COLD_ALGORITHM).trim();
+  if (![recognitionBenchmarkProfileIds.COLD_ALGORITHM, recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST].includes(profile)) {
+    throw new Error(`unsupported_fixed20_benchmark_profile:${profile || "missing"}`);
+  }
+  return profile;
+}
+
+function fixed20ExpectedGitSha(value, { required = false } = {}) {
+  const sha = String(value || "").trim().toLowerCase();
+  if (!sha && !required) return null;
+  if (!/^[0-9a-f]{40}$/.test(sha)) {
+    throw new Error("fixed20_expected_git_sha_required_or_invalid");
+  }
+  return sha;
+}
+
+function evaluationTraceContractValid(row = {}, requiredProfile, expectedGitSha = null) {
+  const packet = row.evaluation_decision_trace_packet || {};
+  const replay = packet.replay_snapshot || {};
+  return packet.schema_version === evaluationDecisionTraceSchemaVersion
+    && packet.trace_level === "evaluation"
+    && packet.benchmark_profile === requiredProfile
+    && replay.schema_version === evaluationReplaySnapshotSchemaVersion
+    && replay.status === "COMPLETE"
+    && Array.isArray(replay.missing_components)
+    && replay.missing_components.length === 0
+    && (!expectedGitSha || String(packet.deployment_git_sha || "").trim().toLowerCase() === expectedGitSha);
+}
+
+function coldProfileContractValid(row = {}, requiredProfile) {
+  try {
+    if (requiredProfile === recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST) {
+      assertColdTargetedAssistBenchmarkResult(row);
+    } else {
+      assertColdAlgorithmBenchmarkResult(row);
+    }
+    return row.recognition_benchmark_profile === requiredProfile;
+  } catch {
+    return false;
+  }
+}
+
+export function analyzeFixed20ColdBenchmark(report = {}, { expectedProfile, expectedGitSha } = {}) {
+  const requiredProfile = fixed20ExpectedProfile(expectedProfile);
+  const requiredGitSha = fixed20ExpectedGitSha(expectedGitSha, {
+    required: requiredProfile === recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST
+  });
   const results = Array.isArray(report.results) ? report.results : [];
-  const cacheViolations = results.filter((row) => row.identity_cache_hit === true
-    || row.provider_call_skipped === true
-    || Number(row.provider_calls) !== 1
-    || row.recognition_benchmark_profile !== recognitionBenchmarkProfileIds.COLD_ALGORITHM);
-  const traceRows = results.filter((row) => row.evaluation_decision_trace_packet?.trace_level === "evaluation");
+  const cacheViolations = results.filter((row) => !coldProfileContractValid(row, requiredProfile));
+  const traceRows = results.filter((row) => evaluationTraceContractValid(row, requiredProfile, requiredGitSha));
   const knowledgeFirstRoute = knowledgeFirstRouteAudit(results);
   const timelineRows = results.map(reconstructedTimeline);
   const sem = analyzeSemStageLoss(report);
@@ -181,12 +233,19 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
       && Number(report.summary?.ok_count || 0) === EXPECTED_COUNT,
     cold_cache_contract: cacheViolations.length === 0,
     evaluation_trace_coverage: traceRows.length === EXPECTED_COUNT,
+    deployment_git_sha_exact: requiredGitSha
+      ? results.every((row) => String(
+          row.evaluation_decision_trace_packet?.deployment_git_sha || ""
+        ).trim().toLowerCase() === requiredGitSha)
+      : true,
     knowledge_first_route_trace_coverage: knowledgeFirstRoute.trace_count === EXPECTED_COUNT,
     knowledge_first_route_shadow_safe: knowledgeFirstRoute.shadow_safety_violation_count === 0
   };
   return {
     schema_version: "fixed20-cold-algorithm-audit-v2",
     generated_at: new Date().toISOString(),
+    expected_recognition_benchmark_profile: requiredProfile,
+    expected_deployment_git_sha: requiredGitSha,
     integrity,
     passed: Object.values(integrity).every(Boolean),
     cache_violation_count: cacheViolations.length,
@@ -218,9 +277,15 @@ export function analyzeFixed20ColdBenchmark(report = {}) {
 
 async function main(argv = process.argv.slice(2)) {
   const [inputPath, outputPath] = argv;
-  if (!inputPath) throw new Error("Usage: analyze-fixed20-cold-benchmark.mjs <report.json> [output.json]");
+  const expectedProfileIndex = argv.indexOf("--expected-profile");
+  const expectedProfile = expectedProfileIndex >= 0 ? argv[expectedProfileIndex + 1] : undefined;
+  const expectedGitShaIndex = argv.indexOf("--expected-git-sha");
+  const expectedGitSha = expectedGitShaIndex >= 0 ? argv[expectedGitShaIndex + 1] : undefined;
+  if (!inputPath) {
+    throw new Error("Usage: analyze-fixed20-cold-benchmark.mjs <report.json> [output.json] [--expected-profile <profile>] [--expected-git-sha <sha>]");
+  }
   const report = JSON.parse(await fs.readFile(inputPath, "utf8"));
-  const analysis = analyzeFixed20ColdBenchmark(report);
+  const analysis = analyzeFixed20ColdBenchmark(report, { expectedProfile, expectedGitSha });
   const serialized = `${JSON.stringify(analysis, null, 2)}\n`;
   if (outputPath) {
     await fs.mkdir(path.dirname(outputPath), { recursive: true });

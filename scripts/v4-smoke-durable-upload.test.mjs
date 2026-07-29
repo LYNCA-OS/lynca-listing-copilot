@@ -7,12 +7,21 @@ import {
   canonicalBatchIdForPoll,
   durableSourceFingerprint,
   durableUploadResilienceContract,
+  enqueuePayloadRequestsEvaluationAuthorization,
   isRecoverablePreparationFailure,
   materializeSmokeSourceImages,
   materializeSmokeSourceImagesForAssetReuse,
-  prepareDurableSmokeItem
+  prepareDurableSmokeItem,
+  resultFromBatchJob
 } from "./v4-ebay-smoke.mjs";
 import { canonicalizeQueueJobs } from "../api/v4/listing-job-enqueue.js";
+
+assert.equal(enqueuePayloadRequestsEvaluationAuthorization({
+  jobs: [{ payload: { provider_options: { recognition_benchmark_profile: "cold_targeted_assist_benchmark" } } }]
+}), true);
+assert.equal(enqueuePayloadRequestsEvaluationAuthorization({
+  jobs: [{ payload: { provider_options: { recognition_benchmark_profile: "production_workload_benchmark" } } }]
+}), false, "ordinary production smoke must not attach the evaluation bearer secret");
 
 const tempDirectory = await mkdtemp(join(tmpdir(), "lynca-v4-smoke-upload-"));
 const firstPath = join(tempDirectory, "image-1.jpg");
@@ -323,6 +332,41 @@ try {
   assert.equal(reused.preparation_diagnostics.asset_cache_hit, true);
   assert.equal(reused.preparation_diagnostics.upload_skipped_due_to_verified_asset_cache, true);
   assert.equal(reuseCalls.length, 0);
+  const immutableBatchResult = resultFromBatchJob({
+    asset_id: durableAssetId,
+    source_asset_id: prepared.source_asset_id,
+    source_feedback_id: prepared.item.source_feedback_id,
+    tenant_id: "tenant_legacy",
+    batch_id: "batch-immutable-image-input",
+    item: prepared.item,
+    job: { job_id: "job-immutable-image-input" },
+    preparation_diagnostics: prepared.preparation_diagnostics,
+    asset_cache_entry: {
+      ...prepared.asset_cache_entry,
+      canonical_image_set_sha256: "b".repeat(64),
+      canonical_primary_content_sha256: [sourceSha256, sourceSha256]
+    },
+    enqueue: { http_status: 202, data: {} }
+  }, {
+    jobsById: new Map([["job-immutable-image-input", {
+      job_id: "job-immutable-image-input",
+      tenant_id: "tenant_legacy",
+      status: "L2_READY",
+      session: {
+        final_title: "Immutable image input test",
+        provider_result_summary: {}
+      }
+    }]]),
+    polls: 1,
+    elapsed_ms: 100,
+    fatal_error: null,
+    last_error: null
+  });
+  assert.equal(immutableBatchResult.asset_id, durableAssetId);
+  assert.equal(immutableBatchResult.source_fingerprint, prepared.preparation_diagnostics.source_fingerprint);
+  assert.equal(immutableBatchResult.image_generation_id, durableAssetId);
+  assert.equal(immutableBatchResult.canonical_image_set_sha256, "b".repeat(64));
+  assert.deepEqual(immutableBatchResult.canonical_primary_content_sha256, [sourceSha256, sourceSha256]);
   assert.deepEqual(durableUploadResilienceContract, {
     verification_timeout_ms: 20_000,
     verification_max_attempts: 3,
