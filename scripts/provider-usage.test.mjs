@@ -8,7 +8,8 @@ const openAiUsage = normalizeProviderUsage({
   modelId: "gpt-4.1-mini",
   rawUsage: {
     input_tokens: 2_000_000,
-    output_tokens: 100_000
+    output_tokens: 100_000,
+    output_tokens_details: { reasoning_tokens: 20_000 }
   },
   latencyMs: 999.2,
   imageCount: 1,
@@ -22,6 +23,8 @@ const openAiUsage = normalizeProviderUsage({
 assert.equal(openAiUsage.provider_calls, 2);
 assert.equal(openAiUsage.input_tokens, 2_000_000);
 assert.equal(openAiUsage.output_tokens, 100_000);
+assert.equal(openAiUsage.reasoning_tokens, 20_000);
+assert.equal(openAiUsage.visible_output_tokens, 80_000);
 assert.equal(openAiUsage.prompt_tokens, null);
 assert.equal(openAiUsage.completion_tokens, null);
 assert.equal(openAiUsage.total_tokens, 2_100_000);
