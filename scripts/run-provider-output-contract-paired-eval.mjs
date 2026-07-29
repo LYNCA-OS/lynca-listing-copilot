@@ -102,7 +102,7 @@ async function oneRow(path) {
 export function expectedProviderContractArm(arm = "") {
   if (arm === "candidate") {
     return {
-      response_profile: "read_only_sparse_v3",
+      response_profile: "read_only_sparse_v4",
       prompt_mode: "v4_read_only_surface"
     };
   }

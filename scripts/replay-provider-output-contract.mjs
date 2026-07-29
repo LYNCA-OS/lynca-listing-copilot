@@ -100,7 +100,7 @@ export function replayRowsPassGate(rows = [], resultCount = rows.length) {
     && replayable.every((row) => row.replay_snapshot_terminal_title_match === true)
     && replayable.every((row) => row.protected_read_parity === true)
     && replayable.every((row) => row.effective_renderer_parity === true)
-    && replayable.every((row) => row.title_changed === false)
+    && replayable.every((row) => row.title_changed === false || row.derived_title_change_allowed === true)
     && replayable.every((row) => row.contract_regression === false);
 }
 
@@ -1029,6 +1029,12 @@ export async function replayProviderOutputContract(report = {}, {
           candidateSem.required_acceptance_failures
         )
       : false;
+    const titleChanged = baselineTitle !== candidateTitle;
+    const forwardValueFields = derived.filter((item) => item.status === "VALUE").map((item) => item.field);
+    const derivedTitleChangeAllowed = titleChanged
+      && forwardValueFields.length > 0
+      && !scoreRegression
+      && !semRegression;
     rows.push({
       asset_id: result.asset_id || null,
       replayable: true,
@@ -1047,7 +1053,8 @@ export async function replayProviderOutputContract(report = {}, {
       effective_renderer_parity: rendererParity.matches,
       effective_renderer_inputs: rendererParity,
       candidate_title: candidateTitle,
-      title_changed: baselineTitle !== candidateTitle,
+      title_changed: titleChanged,
+      derived_title_change_allowed: derivedTitleChangeAllowed,
       reference_title: reference || null,
       baseline_policy_fair_token_recall: baselineRecall,
       candidate_policy_fair_token_recall: candidateRecall,
@@ -1056,7 +1063,7 @@ export async function replayProviderOutputContract(report = {}, {
       baseline_sem_required_acceptance_failures: baselineSem?.required_acceptance_failures ?? null,
       candidate_sem_required_acceptance_failures: candidateSem?.required_acceptance_failures ?? null,
       contract_regression: scoreRegression || semRegression,
-      forward_value_fields: derived.filter((item) => item.status === "VALUE").map((item) => item.field),
+      forward_value_fields: forwardValueFields,
       forward_unknown_fields: derived.filter((item) => item.status === "UNKNOWN").map((item) => item.field),
       derived_values_applied: (candidate.retrieval_application?.actual_applied_fields || []).slice()
     });
