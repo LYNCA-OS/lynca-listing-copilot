@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, stat, unlink, writeFile } from "node:fs/promises";
 
 import {
   TARGETED_ASSIST_PAIRED_COHORT_SHA256,
@@ -11,11 +11,13 @@ import {
   assertTargetedAssistPairedArmDeployment,
   assertTargetedAssistPairedArmPreparation,
   assertTargetedAssistPairedCohortSize,
+  createPairedSessionCookieFile,
   pairedArmOrder,
   targetedAssistPairedGateExitCode,
   targetedPairedSmokeArgs
 } from "./run-targeted-assist-paired-eval.mjs";
 import { recognitionBenchmarkProfileIds } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import { readReusableSessionCookie } from "./v4-ebay-smoke.mjs";
 
 assert.deepEqual(pairedArmOrder(0), ["baseline", "candidate"]);
 assert.deepEqual(pairedArmOrder(1), ["candidate", "baseline"]);
@@ -45,13 +47,15 @@ const baseline = targetedPairedSmokeArgs({
   outPath: "baseline.json",
   offset: 3,
   arm: "baseline",
-  verifiedAssetCachePath: "verified-assets.json"
+  verifiedAssetCachePath: "verified-assets.json",
+  sessionCookieFile: "/tmp/test-session.cookie"
 });
 assert.ok(baseline.includes(recognitionBenchmarkProfileIds.COLD_ALGORITHM));
 assert.ok(baseline.includes("PAIRED_ABLATION"));
 assert.equal(baseline[baseline.indexOf("--offset") + 1], "3");
 assert.equal(baseline[baseline.indexOf("--limit") + 1], "1");
 assert.ok(baseline.includes("--read-only-provider-contract"));
+assert.equal(baseline[baseline.indexOf("--session-cookie-file") + 1], "/tmp/test-session.cookie");
 assert.equal(baseline.includes("--world-knowledge-proposals"), false);
 
 const candidate = targetedPairedSmokeArgs({
@@ -61,11 +65,41 @@ const candidate = targetedPairedSmokeArgs({
   outPath: "candidate.json",
   offset: 4,
   arm: "candidate",
-  verifiedAssetCachePath: "verified-assets.json"
+  verifiedAssetCachePath: "verified-assets.json",
+  sessionCookieFile: "/tmp/test-session.cookie"
 });
 assert.ok(candidate.includes(recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST));
 assert.equal(candidate[candidate.indexOf("--verified-asset-cache-mode") + 1], "reuse");
 assert.equal(candidate[candidate.indexOf("--concurrency") + 1], "1");
+assert.throws(() => targetedPairedSmokeArgs({
+  baseUrl: "https://candidate.test",
+  dataset: "unseen.json",
+  sealedLabels: "unseen-labels.jsonl",
+  outPath: "candidate.json",
+  offset: 4,
+  arm: "candidate",
+  verifiedAssetCachePath: "verified-assets.json"
+}), /session_cookie_file_required/);
+
+let loginCalls = 0;
+const reusableCookiePath = await createPairedSessionCookieFile({
+  baseUrl: "https://production.test",
+  username: "owner",
+  password: "secret",
+  loginImpl: async () => {
+    loginCalls += 1;
+    return "lynca_metaverse_session=header.payload.signature";
+  }
+});
+assert.equal(loginCalls, 1);
+assert.equal((await readFile(reusableCookiePath, "utf8")).trim(), "lynca_metaverse_session=header.payload.signature");
+assert.equal((await stat(reusableCookiePath)).mode & 0o777, 0o600);
+assert.equal(await readReusableSessionCookie(reusableCookiePath), "lynca_metaverse_session=header.payload.signature");
+await unlink(reusableCookiePath);
+const invalidCookiePath = `${reusableCookiePath}.invalid`;
+await writeFile(invalidCookiePath, "untrusted_cookie=value\n", { mode: 0o600 });
+await assert.rejects(() => readReusableSessionCookie(invalidCookiePath), /cookie file is invalid/);
+await unlink(invalidCookiePath);
 
 const preparedArm = {
   preparation_diagnostics: {
