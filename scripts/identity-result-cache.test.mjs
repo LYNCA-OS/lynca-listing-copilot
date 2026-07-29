@@ -133,7 +133,9 @@ assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
 const nuisanceEnv = {
   ...process.env,
   VERCEL_GIT_COMMIT_SHA: "deployment-a",
-  OPENAI_LISTING_MODEL: "gpt-5-mini"
+  OPENAI_LISTING_MODEL: "gpt-5-mini",
+  V4_VECTOR_RETRIEVAL_DISABLED: "true",
+  PREINGESTION_OCR_MAX_WAIT_MS: "2000"
 };
 const baselineExperimentPayload = {
   ...payload,
@@ -154,6 +156,32 @@ const targetedNuisance = buildTargetedAssistEvaluationNuisanceFingerprint(target
 assert.notEqual(baselineFullFingerprint.fingerprint, targetedFullFingerprint.fingerprint);
 assert.equal(baselineNuisance.fingerprint, targetedNuisance.fingerprint);
 assert.equal(baselineNuisance.contract_version, targetedAssistNuisanceFingerprintContractVersion);
+assert.equal(baselineFullFingerprint.vector.owner_versions.vector_retrieval_runtime.disabled, true);
+assert.equal(baselineFullFingerprint.vector.owner_versions.ocr.rendezvous_max_wait_ms, 2_000);
+assert.match(
+  baselineFullFingerprint.vector.owner_versions.vector_retrieval_runtime.policy_version,
+  /^vector-retrieval-runtime-policy-/
+);
+assert.match(
+  baselineFullFingerprint.vector.owner_versions.ocr.rendezvous_policy_version,
+  /^ocr-rendezvous-runtime-policy-/
+);
+assert.notEqual(
+  baselineFullFingerprint.fingerprint,
+  buildRecognitionPipelineFingerprint(baselineExperimentPayload, {
+    ...nuisanceEnv,
+    V4_VECTOR_RETRIEVAL_DISABLED: "false"
+  }).fingerprint,
+  "the effective PR151 vector disable state must change the pipeline fingerprint"
+);
+assert.notEqual(
+  baselineFullFingerprint.fingerprint,
+  buildRecognitionPipelineFingerprint(baselineExperimentPayload, {
+    ...nuisanceEnv,
+    PREINGESTION_OCR_MAX_WAIT_MS: "8000"
+  }).fingerprint,
+  "the effective PR151 OCR rendezvous ceiling must change the pipeline fingerprint"
+);
 assert.notEqual(
   baselineNuisance.fingerprint,
   buildTargetedAssistEvaluationNuisanceFingerprint({

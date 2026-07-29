@@ -19,6 +19,7 @@ import {
 } from "./run-targeted-assist-paired-eval.mjs";
 
 export const sameAssetStabilitySchemaVersion = "same-asset-cold-stability-v1";
+export const sameAssetRuntimePolicyStateSchemaVersion = "same-asset-runtime-policy-state-v1";
 export const SAME_ASSET_STABILITY_EXPECTED_RUNS = 30;
 const sha256Pattern = /^[0-9a-f]{64}$/i;
 const gitShaPattern = /^[0-9a-f]{40}$/i;
@@ -95,6 +96,99 @@ function numericSummary(values = []) {
     min: valid[0] ?? null,
     max: valid.at(-1) ?? null
   };
+}
+
+function durationOrNull(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : null;
+}
+
+function booleanOrNull(value) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function sortedTextList(values = []) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => cleanText(value))
+    .filter(Boolean))].sort();
+}
+
+// This projection is deliberately derived from the persisted smoke result,
+// not from the analyzer's local environment. N=30 runs against a remote
+// immutable deployment, so local env values are not evidence of the policy
+// that actually executed.
+export function buildSameAssetRuntimePolicyState(row = {}) {
+  const rendezvous = object(row.preingestion_ocr_rendezvous);
+  const critical = object(rendezvous.critical_field_wait);
+  const vectorWorkerStatus = cleanText(row.vector_worker_status) || null;
+  const vectorWorkerReason = cleanText(row.vector_worker_reason) || null;
+  const criticalDecision = {
+    should_wait: booleanOrNull(critical.should_wait),
+    target_fields: sortedTextList(critical.target_fields),
+    reasons: sortedTextList(critical.reasons),
+    state_known: booleanOrNull(critical.state_known),
+    state_configured: booleanOrNull(critical.state_configured),
+    serial_active_count: durationOrNull(critical.serial_active_count),
+    grade_label_active_count: durationOrNull(critical.grade_label_active_count),
+    slab_likely: booleanOrNull(critical.slab_likely),
+    grade_incomplete: booleanOrNull(critical.grade_incomplete),
+    grade_completely_missing: booleanOrNull(critical.grade_completely_missing),
+    grade_unresolved: booleanOrNull(critical.grade_unresolved),
+    ocr_signal_fields: sortedTextList(critical.ocr_signal_fields),
+    ocr_signal_conflicting_fields: sortedTextList(critical.ocr_signal_conflicting_fields)
+  };
+  const waitBudgets = {
+    capped_ms: durationOrNull(critical.wait_budget_ms),
+    uncapped_ms: durationOrNull(critical.wait_budget_uncapped_ms),
+    ceiling_ms: durationOrNull(critical.wait_budget_ceiling_ms),
+    base_ms: durationOrNull(critical.base_wait_budget_ms),
+    targeted_ms: durationOrNull(critical.targeted_wait_budget_ms)
+  };
+  const required = {
+    vector_worker_status: Boolean(vectorWorkerStatus),
+    critical_should_wait: typeof criticalDecision.should_wait === "boolean",
+    critical_target_fields: Array.isArray(critical.target_fields),
+    critical_reasons: Array.isArray(critical.reasons),
+    critical_state_known: typeof criticalDecision.state_known === "boolean",
+    critical_state_configured: typeof criticalDecision.state_configured === "boolean",
+    critical_serial_active_count: criticalDecision.serial_active_count !== null,
+    critical_grade_label_active_count: criticalDecision.grade_label_active_count !== null,
+    critical_slab_likely: typeof criticalDecision.slab_likely === "boolean",
+    critical_grade_incomplete: typeof criticalDecision.grade_incomplete === "boolean",
+    critical_grade_completely_missing: typeof criticalDecision.grade_completely_missing === "boolean",
+    critical_grade_unresolved: typeof criticalDecision.grade_unresolved === "boolean",
+    critical_ocr_signal_fields: Array.isArray(critical.ocr_signal_fields),
+    critical_ocr_signal_conflicting_fields: Array.isArray(critical.ocr_signal_conflicting_fields),
+    capped_wait_budget: waitBudgets.capped_ms !== null,
+    uncapped_wait_budget: waitBudgets.uncapped_ms !== null,
+    wait_budget_ceiling: waitBudgets.ceiling_ms !== null,
+    base_wait_budget: waitBudgets.base_ms !== null,
+    targeted_wait_budget: waitBudgets.targeted_ms !== null
+  };
+  const missingComponents = Object.entries(required)
+    .filter(([, present]) => !present)
+    .map(([name]) => name);
+  return {
+    schema_version: sameAssetRuntimePolicyStateSchemaVersion,
+    status: missingComponents.length ? "PARTIAL" : "COMPLETE",
+    missing_components: missingComponents,
+    vector_worker: {
+      status: vectorWorkerStatus,
+      reason: vectorWorkerReason
+    },
+    ocr_rendezvous: {
+      critical_field_decision: criticalDecision,
+      wait_budgets: waitBudgets,
+      post_provider_wait_ms: durationOrNull(rendezvous.post_provider_wait_ms),
+      critical_fields_settled: booleanOrNull(rendezvous.critical_fields_settled),
+      target_fields_settled: booleanOrNull(rendezvous.target_fields_settled)
+    }
+  };
+}
+
+function runtimePolicyState(row = {}) {
+  return buildSameAssetRuntimePolicyState(row);
 }
 
 function pairwiseAgreement(values = []) {
@@ -392,6 +486,17 @@ function validateRun(row = {}, index = 0) {
     || row.canonical_primary_content_sha256.some((value) => !sha256Pattern.test(cleanText(value)))) {
     addError(errors, "CANONICAL_PRIMARY_CONTENT_SHA_INVALID", index);
   }
+  const projectedRuntimePolicy = runtimePolicyState(row);
+  if (projectedRuntimePolicy.status !== "COMPLETE") {
+    addError(errors, "RUNTIME_POLICY_STATE_INCOMPLETE", index, {
+      missing_components: projectedRuntimePolicy.missing_components
+    });
+  }
+  if (row.same_asset_runtime_policy_state !== undefined
+    && JSON.stringify(stableValue(row.same_asset_runtime_policy_state))
+      !== JSON.stringify(stableValue(projectedRuntimePolicy))) {
+    addError(errors, "RUNTIME_POLICY_STATE_PROJECTION_MISMATCH", index);
+  }
   return errors;
 }
 
@@ -480,6 +585,7 @@ function globalInput(rows = []) {
   const packet = object(first.evaluation_decision_trace_packet);
   const replay = object(packet.replay_snapshot);
   const request = object(packet.provider_request_identity);
+  const runtimePolicy = runtimePolicyState(first);
   return {
     asset_id: first.asset_id || null,
     image_generation_id: first.image_generation_id || null,
@@ -502,7 +608,8 @@ function globalInput(rows = []) {
     reasoning_effort: request.reasoning_effort || null,
     temperature: request.temperature ?? null,
     text_verbosity: request.text_verbosity || null,
-    requested_service_tier: request.requested_service_tier || null
+    requested_service_tier: request.requested_service_tier || null,
+    runtime_policy_state: runtimePolicy
   };
 }
 
@@ -583,7 +690,15 @@ export function analyzeSameAssetStability(reports = [], {
     prompt_utf8_bytes: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_prompt_utf8_bytes,
     request_controls_sha256: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_request_controls_sha256,
     ordered_provider_images_sha256: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_ordered_image_content_sha256,
-    provider_request_fingerprint: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_request_fingerprint
+    provider_request_fingerprint: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_request_fingerprint,
+    vector_worker_status: (row) => runtimePolicyState(row).vector_worker.status,
+    vector_worker_reason: (row) => runtimePolicyState(row).vector_worker.reason,
+    ocr_critical_field_decision: (row) => runtimePolicyState(row).ocr_rendezvous.critical_field_decision,
+    ocr_wait_budget_capped_ms: (row) => runtimePolicyState(row).ocr_rendezvous.wait_budgets.capped_ms,
+    ocr_wait_budget_uncapped_ms: (row) => runtimePolicyState(row).ocr_rendezvous.wait_budgets.uncapped_ms,
+    ocr_wait_budget_ceiling_ms: (row) => runtimePolicyState(row).ocr_rendezvous.wait_budgets.ceiling_ms,
+    ocr_wait_budget_base_ms: (row) => runtimePolicyState(row).ocr_rendezvous.wait_budgets.base_ms,
+    ocr_wait_budget_targeted_ms: (row) => runtimePolicyState(row).ocr_rendezvous.wait_budgets.targeted_ms
   };
   for (const [name, project] of Object.entries(globalFields)) {
     const values = uniqueProjection(rows, project);
@@ -657,6 +772,15 @@ export function analyzeSameAssetStability(reports = [], {
       provider_service_tiers: frequency(rows.map((row) => row.provider_service_tier)),
       provider_latency_ms: numericSummary(rows.map((row) => row.provider_latency_ms)),
       worker_processing_ms: numericSummary(rows.map((row) => row.worker_processing_ms)),
+      ocr_post_provider_wait_ms: numericSummary(rows.map((row) => (
+        runtimePolicyState(row).ocr_rendezvous.post_provider_wait_ms
+      ))),
+      ocr_critical_fields_settled: frequency(rows.map((row) => (
+        runtimePolicyState(row).ocr_rendezvous.critical_fields_settled
+      ))),
+      ocr_target_fields_settled: frequency(rows.map((row) => (
+        runtimePolicyState(row).ocr_rendezvous.target_fields_settled
+      ))),
       signed_url_identity_recorded: false
     },
     interpretation: {

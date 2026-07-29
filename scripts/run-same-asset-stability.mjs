@@ -7,6 +7,7 @@ import { basename, resolve } from "node:path";
 import { recognitionBenchmarkProfileIds } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 import {
   analyzeSameAssetStability,
+  buildSameAssetRuntimePolicyState,
   SAME_ASSET_STABILITY_EXPECTED_RUNS,
   sameAssetStabilityPlanSha256
 } from "./analyze-same-asset-stability.mjs";
@@ -122,6 +123,7 @@ function assertCanonicalAssetCacheEntry(entry, { fingerprint, imageCount } = {})
 }
 
 function bindResultToExecutionPlan(row = {}, plan = {}, runnerAttempt = 0) {
+  const runtimePolicyState = buildSameAssetRuntimePolicyState(row);
   return {
     ...row,
     runner_attempt: runnerAttempt,
@@ -129,7 +131,8 @@ function bindResultToExecutionPlan(row = {}, plan = {}, runnerAttempt = 0) {
     same_asset_plan_sha256: sameAssetStabilityPlanSha256(plan),
     same_asset_dataset_sha256: plan.dataset_sha256,
     same_asset_sealed_labels_sha256: plan.sealed_labels_sha256,
-    same_asset_selected_item_id: plan.selected_item_id
+    same_asset_selected_item_id: plan.selected_item_id,
+    same_asset_runtime_policy_state: runtimePolicyState
   };
 }
 
@@ -215,6 +218,9 @@ export async function buildSameAssetStabilityPlan({
       reusable_authenticated_session: true,
       cold_cache_bypass_asserted_per_run: true,
       prompt_and_ordered_image_fingerprints_required: true,
+      runtime_policy_state_required_per_run: true,
+      vector_worker_status_and_reason_frozen: true,
+      ocr_critical_decision_and_wait_budgets_frozen: true,
       no_failed_run_replacement: true,
       server_owned_provider_retry_budget_enforced: false,
       note: "Thirty planned jobs can exceed thirty Provider HTTP requests if server retries occur; retries invalidate the experiment but are not pre-call budgeted."

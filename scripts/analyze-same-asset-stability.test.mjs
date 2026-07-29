@@ -85,6 +85,33 @@ function row(index, overrides = {}) {
     provider_truncation_retry_attempted: false,
     provider_key_rotation_attempted: false,
     gpt5_empty_result_retry_attempted: false,
+    vector_worker_status: "VECTOR_RETRIEVAL_UNAVAILABLE",
+    vector_worker_reason: "vector_retrieval_disabled_empty_index",
+    preingestion_ocr_rendezvous: {
+      post_provider_wait_ms: 1_900,
+      critical_fields_settled: false,
+      target_fields_settled: false,
+      critical_field_wait: {
+        should_wait: true,
+        wait_budget_ms: 2_000,
+        wait_budget_ceiling_ms: 2_000,
+        wait_budget_uncapped_ms: 8_000,
+        target_fields: ["serial_number"],
+        reasons: ["provider_left_print_run_unresolved"],
+        state_known: true,
+        state_configured: true,
+        serial_active_count: 1,
+        grade_label_active_count: 0,
+        grade_incomplete: false,
+        grade_completely_missing: true,
+        grade_unresolved: false,
+        slab_likely: false,
+        ocr_signal_fields: [],
+        ocr_signal_conflicting_fields: [],
+        base_wait_budget_ms: 0,
+        targeted_wait_budget_ms: 8_000
+      }
+    },
     identity_resolution_status: "RESOLVED",
     ambiguity_status: "CLEAR",
     field_states: { year: { state: "VALUE", value: "2025" } },
@@ -196,6 +223,15 @@ assert.equal(stable.first_divergence_classification.NO_SEMANTIC_DIVERGENCE, 435)
 assert.equal(stable.interpretation.model_nondeterminism_claim_permitted, false);
 assert.deepEqual(stable.nuisance_variables.provider_key_slots, { UNKNOWN: 30 });
 assert.equal(stable.nuisance_variables.signed_url_identity_recorded, false);
+assert.equal(stable.frozen_input.runtime_policy_state.status, "COMPLETE");
+assert.equal(stable.frozen_input.runtime_policy_state.vector_worker.status, "VECTOR_RETRIEVAL_UNAVAILABLE");
+assert.deepEqual(stable.frozen_input.runtime_policy_state.ocr_rendezvous.wait_budgets, {
+  capped_ms: 2_000,
+  uncapped_ms: 8_000,
+  ceiling_ms: 2_000,
+  base_ms: 0,
+  targeted_ms: 8_000
+});
 
 const unbound = analyzeSameAssetStabilityRaw(stableReports);
 assert.equal(unbound.validity.status, "INVALID");
@@ -246,6 +282,48 @@ inputDriftRows[29].evaluation_decision_trace_packet.provider_request_identity.pr
 const inputDrift = analyzeSameAssetStability(reportsFor(inputDriftRows));
 assert.equal(inputDrift.validity.status, "INVALID");
 assert.ok(inputDrift.validity.errors.some((error) => error.code === "GLOBAL_PROMPT_SHA256_MISMATCH"));
+
+const vectorRuntimeDriftRows = structuredClone(stableRows);
+vectorRuntimeDriftRows[29].vector_worker_status = "OK";
+vectorRuntimeDriftRows[29].vector_worker_reason = "";
+const vectorRuntimeDrift = analyzeSameAssetStability(reportsFor(vectorRuntimeDriftRows));
+assert.equal(vectorRuntimeDrift.validity.status, "INVALID");
+assert.ok(vectorRuntimeDrift.validity.errors.some((error) => (
+  error.code === "GLOBAL_VECTOR_WORKER_STATUS_MISMATCH"
+)));
+assert.ok(vectorRuntimeDrift.validity.errors.some((error) => (
+  error.code === "GLOBAL_VECTOR_WORKER_REASON_MISMATCH"
+)));
+
+const ocrDecisionDriftRows = structuredClone(stableRows);
+ocrDecisionDriftRows[29].preingestion_ocr_rendezvous.critical_field_wait.target_fields = [];
+ocrDecisionDriftRows[29].preingestion_ocr_rendezvous.critical_field_wait.reasons = [];
+const ocrDecisionDrift = analyzeSameAssetStability(reportsFor(ocrDecisionDriftRows));
+assert.equal(ocrDecisionDrift.validity.status, "INVALID");
+assert.ok(ocrDecisionDrift.validity.errors.some((error) => (
+  error.code === "GLOBAL_OCR_CRITICAL_FIELD_DECISION_MISMATCH"
+)));
+
+const ocrBudgetDriftRows = structuredClone(stableRows);
+ocrBudgetDriftRows[29].preingestion_ocr_rendezvous.critical_field_wait.wait_budget_ms = 1_500;
+ocrBudgetDriftRows[29].preingestion_ocr_rendezvous.critical_field_wait.wait_budget_uncapped_ms = 7_500;
+const ocrBudgetDrift = analyzeSameAssetStability(reportsFor(ocrBudgetDriftRows));
+assert.equal(ocrBudgetDrift.validity.status, "INVALID");
+assert.ok(ocrBudgetDrift.validity.errors.some((error) => (
+  error.code === "GLOBAL_OCR_WAIT_BUDGET_CAPPED_MS_MISMATCH"
+)));
+assert.ok(ocrBudgetDrift.validity.errors.some((error) => (
+  error.code === "GLOBAL_OCR_WAIT_BUDGET_UNCAPPED_MS_MISMATCH"
+)));
+
+const missingPolicyTelemetryRows = structuredClone(stableRows);
+delete missingPolicyTelemetryRows[0].preingestion_ocr_rendezvous.critical_field_wait.wait_budget_ceiling_ms;
+const missingPolicyTelemetry = analyzeSameAssetStability(reportsFor(missingPolicyTelemetryRows));
+assert.equal(missingPolicyTelemetry.validity.status, "INVALID");
+assert.ok(missingPolicyTelemetry.validity.errors.some((error) => (
+  error.code === "RUNTIME_POLICY_STATE_INCOMPLETE"
+  && error.details.missing_components.includes("wait_budget_ceiling")
+)));
 
 const planBindingDriftRows = structuredClone(stableRows);
 planBindingDriftRows[29].same_asset_execution_id = "different-execution";

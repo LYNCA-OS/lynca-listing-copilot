@@ -93,6 +93,9 @@ try {
   assert.equal(plan.base_url, "https://listing.example.test");
   assert.equal(plan.safety_gate.no_failed_run_replacement, true);
   assert.equal(plan.safety_gate.server_owned_provider_retry_budget_enforced, false);
+  assert.equal(plan.safety_gate.runtime_policy_state_required_per_run, true);
+  assert.equal(plan.safety_gate.vector_worker_status_and_reason_frozen, true);
+  assert.equal(plan.safety_gate.ocr_critical_decision_and_wait_budgets_frozen, true);
   assert.equal(plan.provider_concurrency_change, "NONE");
   assert.equal(plan.frozen_cohort, "FAMILIAR");
   assert.equal(plan.frozen_cohort_proof.evaluation_partition, "development");
@@ -161,6 +164,11 @@ try {
   assert.equal(smokeCalls, 1);
   assert.equal(failFast.reports.length, 1);
   assert.equal(failFast.analysis.validity.status, "INVALID");
+  assert.equal(
+    failFast.reports[0].results[0].same_asset_runtime_policy_state.schema_version,
+    "same-asset-runtime-policy-state-v1"
+  );
+  assert.equal(failFast.reports[0].results[0].same_asset_runtime_policy_state.status, "PARTIAL");
   await assert.rejects(executeSameAssetStabilityPlan(failFastPlan, {
     progress: false,
     revalidatePlanImpl: async () => failFastPlan,
