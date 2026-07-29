@@ -1,0 +1,111 @@
+{
+  "schema_version": "release-pack-memory-index-benchmark-v1",
+  "generated_at": "2026-07-29T20:40:35.289Z",
+  "mode": "OFFLINE_SHADOW_ONLY",
+  "production_behavior_changed": false,
+  "holdout_consumed": false,
+  "source": {
+    "path": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/data/catalog/official/panini-mapped-2023-2025.json",
+    "bytes": 14953210,
+    "sha256": "3c6ca3c62038ebbac90f1a622db4c79ec0456e810bf0bdc34eb553176c4dde09",
+    "declared_row_count": 55968,
+    "parsed_row_count": 55968,
+    "rows_with_cards": 0,
+    "nested_card_count": 0,
+    "schema_version": "panini-mapped-v1",
+    "generated_at": "2026-07-26T04:08:13.044Z"
+  },
+  "timing_ms": {
+    "file_read": 2.1459589999999977,
+    "json_parse": 42.910166999999994,
+    "index_build": 327.97291699999994,
+    "queries": {
+      "year_sport_product": {
+        "count": 5000,
+        "p50": 0.3029999999998836,
+        "p95": 0.3550829999999223,
+        "max": 0.5640829999999823,
+        "mean": 0.3031557156000006
+      },
+      "year_sport_product_set": {
+        "count": 5000,
+        "p50": 0.3030830000000151,
+        "p95": 0.35475000000019463,
+        "max": 0.5098750000000791,
+        "mean": 0.3033211761999979
+      },
+      "year_sport_product_set_card_code": {
+        "count": 0,
+        "p50": null,
+        "p95": null,
+        "max": null,
+        "mean": null
+      }
+    }
+  },
+  "candidate_counts": {
+    "year_sport_product": {
+      "count": 5000,
+      "p50": 244,
+      "p95": 641,
+      "max": 1114,
+      "mean": 300.1706
+    },
+    "year_sport_product_set": {
+      "count": 5000,
+      "p50": 1,
+      "p95": 2,
+      "max": 6,
+      "mean": 1.1528
+    },
+    "year_sport_product_set_card_code": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "max": null,
+      "mean": null
+    }
+  },
+  "memory_bytes": {
+    "gc_exposed": true,
+    "measurement_scope": "parsed source retained; incremental values bracket index compilation with forced GC when available",
+    "process_before_read": {
+      "rss": 61243392,
+      "heapTotal": 10371072,
+      "heapUsed": 6921232,
+      "external": 3942402,
+      "arrayBuffers": 146559
+    },
+    "incremental_index_heap_used": 38239592,
+    "incremental_index_heap_total": 107692032,
+    "incremental_index_rss": 125403136,
+    "process_after_build": {
+      "rss": 257474560,
+      "heapTotal": 141328384,
+      "heapUsed": 66522064,
+      "external": 19575884,
+      "arrayBuffers": 15780037
+    }
+  },
+  "index": {
+    "schema_version": "release-pack-memory-index-v1",
+    "pack_version": "panini-mapped-v1@2026-07-26T04:08:13.044Z",
+    "index_fingerprint": "a300bc6a4c0e7e8a20e312ef603667058e8e32b3c2e9e875a73bd8f7e4deab9e",
+    "source_row_count": 55968,
+    "indexed_release_count": 55968,
+    "duplicate_release_count": 0,
+    "key_counts": {
+      "year_or_season": 3,
+      "sport": 6,
+      "product": 161,
+      "set_or_insert": 35103,
+      "card_code": 0
+    }
+  },
+  "limitations": [
+    {
+      "code": "SOURCE_CARD_CODES_ABSENT",
+      "detail": "All source rows contain empty cards arrays; the card-code contract is fixture-tested but has no real-source latency or accuracy denominator."
+    }
+  ]
+}
