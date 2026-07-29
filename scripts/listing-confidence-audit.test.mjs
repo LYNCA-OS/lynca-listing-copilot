@@ -28,7 +28,7 @@ const catalogCacheKeyWithNormalizedSubject = __listingCopilotTitleTestHooks.cata
 });
 assert.match(catalogCacheKeyWithSingleSubject, /^[a-f0-9]{64}$/);
 assert.equal(catalogCacheKeyWithSingleSubject, catalogCacheKeyWithNormalizedSubject);
-assert.equal(
+assert.notEqual(
   catalogCacheKeyWithSingleSubject,
   __listingCopilotTitleTestHooks.catalogCandidateContextCacheKey({
     resolvedForRetrieval: {
@@ -38,7 +38,7 @@ assert.equal(
     },
     excludeSourceFeedbackIds: ["another-seen-card"]
   }),
-  "catalog cache identity must not fragment by source exclusion because reviewed directory memory is reusable"
+  "evaluation source exclusions must partition cached catalog results so the current card cannot leak back through a prior query"
 );
 
 assert.equal(resolveKnowledgeEntry("SE-28")?.label, "Shadow Etch");

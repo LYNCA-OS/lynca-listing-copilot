@@ -261,6 +261,21 @@ function directFullCandidate(index, { score = 0.9, latencyMs = 4_500 } = {}) {
 }
 
 assert.equal(assertTargetedAssistPair(baseline(1), candidate(1)), true);
+const lazyVectorBaseline = baseline(1);
+lazyVectorBaseline.vector_self_exclusion_query_attempted = false;
+lazyVectorBaseline.vector_runtime_status = "UNAVAILABLE";
+lazyVectorBaseline.vector_runtime_unavailable_reasons = ["vector_lazy_provider_catalog_anchor"];
+lazyVectorBaseline.l2_vector_raw_candidate_count = 0;
+const lazyVectorCandidate = candidate(1);
+lazyVectorCandidate.vector_self_exclusion_query_attempted = false;
+lazyVectorCandidate.vector_runtime_status = "UNAVAILABLE";
+lazyVectorCandidate.vector_runtime_unavailable_reasons = "vector_lazy_provider_catalog_anchor";
+lazyVectorCandidate.l2_vector_raw_candidate_count = 0;
+assert.equal(
+  assertTargetedAssistPair(lazyVectorBaseline, lazyVectorCandidate),
+  true,
+  "a reason-coded lazy vector skip with zero vector candidates is a complete self-exclusion proof"
+);
 const staleTraceSchema = candidate(1);
 staleTraceSchema.evaluation_decision_trace_packet.schema_version = "evaluation-decision-trace-packet-v8";
 assert.throws(() => assertTargetedAssistPair(baseline(1), staleTraceSchema), /evaluation_trace_contract_incomplete/);

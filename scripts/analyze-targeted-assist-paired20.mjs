@@ -173,7 +173,20 @@ function selfRetrievalExclusionComplete(row = {}, { required = false } = {}) {
     reviewedCandidateSourceRequiresIdentity(candidate)
     && !/^[0-9a-f]{64}$/i.test(cleanText(candidate.source_feedback_id_sha256))
   ));
-  return row.vector_self_exclusion_query_attempted === true
+  const vectorUnavailableReasons = (Array.isArray(row.vector_runtime_unavailable_reasons)
+    ? row.vector_runtime_unavailable_reasons
+    : [row.vector_runtime_unavailable_reasons])
+    .map(cleanText)
+    .filter(Boolean);
+  const vectorExecutionValid = row.vector_self_exclusion_query_attempted === true
+    || (
+      row.vector_self_exclusion_query_attempted === false
+      && row.vector_runtime_status === "UNAVAILABLE"
+      && vectorUnavailableReasons.length === 1
+      && vectorUnavailableReasons[0] === "vector_lazy_provider_catalog_anchor"
+      && Number(row.l2_vector_raw_candidate_count || 0) === 0
+    );
+  return vectorExecutionValid
     && row.vector_self_exclusion_filter_active === true
     && Number(row.vector_self_exclusion_requested_source_count) === 1
     && cleanText(row.vector_self_exclusion_source_ids_sha256).toLowerCase() === expectedHash
