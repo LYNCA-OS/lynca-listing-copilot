@@ -77,7 +77,7 @@ const packet = buildEvaluationDecisionTracePacket({
 }, payload);
 
 assert.equal(packet.provider_observation_fields.year, "2025");
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v9");
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v10");
 assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
 assert.match(packet.replay_snapshot.versions.targeted_assist_nuisance_fingerprint, /^[0-9a-f]{64}$/);
 assert.equal(
@@ -307,6 +307,24 @@ assert.equal(productionCandidateTrace.self_retrieval_exclusion.same_source_candi
 assert.equal(JSON.stringify(productionCandidateTrace).includes("feedback-current-card"), false);
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.retrieval.decisions[0].value, "2025");
 assert.equal(productionCandidateTrace.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, true);
+
+const staticRegistryTrace = buildEvaluationDecisionTracePacket({
+  source_feedback_id: "feedback-current-card",
+  l2_candidate_debug: {
+    candidate_application_trace: [{
+      candidate_id: "static-registry-row",
+      candidate_lane: "catalog",
+      source_type: "INTERNAL_REGISTRY",
+      source_trust: "REFERENCE_CANDIDATE"
+    }]
+  }
+}, payload);
+assert.equal(staticRegistryTrace.self_retrieval_exclusion.candidate_source_id_observable_count, 0);
+assert.equal(
+  staticRegistryTrace.self_retrieval_exclusion.unobservable_reviewed_candidate_count,
+  0,
+  "the static code-owned registry is not a reviewed feedback source"
+);
 
 const sameSourceCandidateTrace = buildEvaluationDecisionTracePacket({
   source_feedback_id: "feedback-current-card",

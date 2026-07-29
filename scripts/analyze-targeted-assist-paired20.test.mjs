@@ -435,6 +435,25 @@ reviewedCandidateWithoutSourceProof.evaluation_decision_trace_packet.self_retrie
 };
 assert.throws(() => assertTargetedAssistPair(baseline(1), reviewedCandidateWithoutSourceProof), /self_retrieval_exclusion_incomplete/);
 
+const staticInternalRegistryCandidate = candidate(1);
+staticInternalRegistryCandidate.evaluation_decision_trace_packet.retrieval = {
+  top_k: [{ candidate_id: "static-registry-row", source: "INTERNAL_REGISTRY" }],
+  candidate_count: 1
+};
+staticInternalRegistryCandidate.evaluation_decision_trace_packet.self_retrieval_exclusion = {
+  ...staticInternalRegistryCandidate.evaluation_decision_trace_packet.self_retrieval_exclusion,
+  top_k_checked_count: 1,
+  all_candidate_count: 1,
+  all_candidates_checked_count: 1,
+  candidate_source_id_observable_count: 0,
+  unobservable_reviewed_candidate_count: 0
+};
+assert.equal(
+  assertTargetedAssistPair(baseline(1), staticInternalRegistryCandidate),
+  true,
+  "the static code-owned registry is not a reviewed feedback row and must not require a feedback identity"
+);
+
 const truncatedCandidateExclusionAudit = candidate(1);
 truncatedCandidateExclusionAudit.evaluation_decision_trace_packet.self_retrieval_exclusion = {
   ...truncatedCandidateExclusionAudit.evaluation_decision_trace_packet.self_retrieval_exclusion,
