@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { enumerateAll, enumerateProduct, enumerateTeam, outcomes } from "../lib/listing/catalog/constraint-enumerator.mjs";
+import { enumerateAll, enumerateProduct, enumerateTeam, intervalCoversYear, outcomes } from "../lib/listing/catalog/constraint-enumerator.mjs";
 
 const model = {
   player_teams: {
@@ -90,6 +90,66 @@ test("enumerateAll reports every field separately", () => {
   const all = enumerateAll({ player: "Victor Wembanyama", set: "Fade To Black", year: "2025", sport: "basketball" }, model);
   assert.equal(all.team.status, outcomes.VALUE);
   assert.equal(all.product.status, outcomes.VALUE);
+});
+
+// Career intervals are what let a card's own year answer the question. The
+// checklist harvest covers 2024-2026 while 49% of production cards are older,
+// so without these a 2000 Brady or a 2019 Ohtani is unanswerable.
+const careerModel = {
+  player_teams: { "lebron james": ["cleveland cavaliers", "east", "los angeles lakers"] },
+  player_team_intervals: {
+    "kobe bryant": [{ sport: "basketball", teams: [{ team: "Los Angeles Lakers", start: 1996, end: 2016 }] }],
+    "shohei ohtani": [{ sport: "baseball", teams: [
+      { team: "Hokkaido Nippon-Ham Fighters", start: 2013, end: 2017 },
+      { team: "Los Angeles Angels", start: 2018, end: 2023 },
+      { team: "Los Angeles Dodgers", start: 2024, end: null }
+    ] }],
+    "tom brady": [
+      { sport: "American football", teams: [
+        { team: "New England Patriots", start: 2000, end: 2019 },
+        { team: "Tampa Bay Buccaneers", start: 2020, end: 2022 }
+      ] },
+      // Two other men are called Tom Brady and Wikidata never dated their
+      // memberships. An undated membership must not answer for every year.
+      { sport: "rugby", teams: [{ team: "Sale Sharks", start: null, end: null }] }
+    ]
+  }
+};
+
+test("a career interval answers a year the checklist harvest never covered", () => {
+  const kobe = enumerateTeam({ player: "Kobe Bryant", year: "2003-04" }, careerModel);
+  assert.equal(kobe.status, outcomes.VALUE);
+  assert.equal(kobe.value, "los angeles lakers");
+
+  const ohtani2019 = enumerateTeam({ player: "Shohei Ohtani", year: "2019" }, careerModel);
+  assert.equal(ohtani2019.value, "los angeles angels", "2019 is inside the Angels interval, not the Dodgers one");
+
+  const ohtani2025 = enumerateTeam({ player: "Shohei Ohtani", year: "2025" }, careerModel);
+  assert.equal(ohtani2025.value, "los angeles dodgers", "an open end means still there");
+});
+
+test("an undated membership does not cover every year", () => {
+  assert.equal(intervalCoversYear({ start: null, end: null }, 2000), false,
+    "an unknown start is unknown, not the beginning of time");
+  assert.equal(intervalCoversYear({ start: 1996, end: null }, 2000), true);
+  assert.equal(intervalCoversYear({ start: 1996, end: 2016 }, 2020), false);
+
+  // Before this was fixed, a 2000 Tom Brady card came back with the Patriots,
+  // Sale Sharks and Geelong together, because two other men of that name have
+  // memberships with no dates.
+  const brady = enumerateTeam({ player: "Tom Brady", year: "2000" }, careerModel);
+  assert.equal(brady.status, outcomes.VALUE);
+  assert.equal(brady.value, "new england patriots");
+});
+
+test("a teamless product answers EMPTY before consulting a polluted team set", () => {
+  // The checklist-derived team column holds franchise names for entertainment
+  // products, so Mickey Mouse resolved to the "team" mickey & friends.
+  const polluted = { player_teams: { "mickey mouse": ["mickey & friends"] }, player_team_intervals: {} };
+  const mickey = enumerateTeam({ player: "Mickey Mouse", year: "2025", product: "Disney Lorcana" }, polluted);
+  assert.equal(mickey.status, outcomes.EMPTY);
+  assert.equal(mickey.reason, "product_has_no_teams");
+  assert.equal(mickey.value, null, "a confident wrong team is worse than no answer");
 });
 
 console.log("constraint enumerator tests passed");

@@ -126,6 +126,36 @@ function loadAll() {
   return rows;
 }
 
+const WIKIDATA_DIR = "/tmp/wikidata-athletes";
+
+// Career intervals from Wikidata, keyed by the name a card prints.
+//
+// This is the one part of the model that is not derived from checklists, and it
+// is the part that fixes the two things checklists cannot: history and reach.
+// The harvest covers 2024-2026 while 49% of the cards we see are older, and it
+// knows 4,694 players while Kobe, Jordan, Messi and Haaland are not among them.
+export function loadAthleteIntervals(dir = WIKIDATA_DIR) {
+  const byPlayer = {};
+  try {
+    for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
+      const payload = JSON.parse(readFileSync(`${dir}/${file}`, "utf8"));
+      for (const row of payload.rows || []) {
+        const key = norm(row.name);
+        if (!key) continue;
+        // Several people can share a printed name; all of them are kept so the
+        // enumerator can decline rather than pick one.
+        byPlayer[key] = (row.people || []).map((person) => ({
+          sport: person.sport || null,
+          teams: (person.teams || [])
+            .filter((team) => team.team)
+            .map((team) => ({ team: team.team, start: team.start ?? null, end: team.end ?? null }))
+        })).filter((person) => person.teams.length);
+      }
+    }
+  } catch { /* athlete harvest absent */ }
+  return byPlayer;
+}
+
 export function deriveConstraints(rows = []) {
   const playerYears = new Map();
   const playerTeams = new Map();
@@ -208,6 +238,7 @@ export function deriveConstraints(rows = []) {
     player_teams: spread(playerTeams),
     player_team_years: spreadNested(playerTeamYears),
     set_product_years: spread(setProducts),
+    player_team_intervals: loadAthleteIntervals(),
     set_years: spread(setYears),
     product_years: spread(productYears),
     product_sports: spread(productSports),
