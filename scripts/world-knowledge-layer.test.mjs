@@ -61,8 +61,8 @@ assert.equal(
 );
 assert.equal(
   createHash("sha256").update(readOnlyV4RecognitionPrompt(baselinePayload, 80)).digest("hex"),
-  "f331e9cc4aea34599587eb5d6a72031828a80df85a18fa4402716cbc9bb5cf4d",
-  "read_only_sparse_v4 prompt must remain byte-identical after Task A"
+  "c8824b9c18b493f9ec2de47e1ee46c29ff73967423663cd098e5a8f617911d6f",
+  "read_only_sparse_v4 keeps the measured read_only_sparse_v3 prompt while enforcing the v4 schema"
 );
 assert.deepEqual(providerReadOnlyOutputShape(), {
   r: "CONFIRMED | RESOLVED | ABSTAIN",

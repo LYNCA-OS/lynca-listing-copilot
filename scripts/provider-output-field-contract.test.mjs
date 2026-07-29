@@ -55,8 +55,6 @@ assert.equal(readOnlyProviderContractEnabled(payload, {}), true);
 const prompt = await buildInitialProviderPrompt(payload, 80);
 assert.match(prompt, /card-surface reader/);
 assert.match(prompt, /Do not output product line, team/);
-assert.match(prompt, /logo or wordmark printed on the physical card/);
-assert.match(prompt, /Boolean rows are true-only/);
 assert.doesNotMatch(JSON.stringify(providerReadOnlyOutputShape()), /product|team|parallel|serial_number/);
 const schema = openAiReadOnlyProviderResponseSchema();
 assert.deepEqual(schema.required, ["r", "v", "e", "u"]);
