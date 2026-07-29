@@ -1,0 +1,4696 @@
+{
+  "schema_version": "card-level-release-pack-audit-v3",
+  "generated_at": "2026-07-29T22:42:37.262Z",
+  "status": "NO_GO",
+  "route": "NO_FULL_PROVIDER",
+  "scope": "DEVELOPMENT_VALIDATION_ONLY",
+  "holdout_consumed": false,
+  "production_default_changed": false,
+  "evidence_class": "TRUTH_FED_CATALOG_UPPER_BOUND",
+  "warning": "Top-K uses sealed truth fields and is not executable sensor recall. A missing attested/core match under this query contract does not prove that a catalog row is absent.",
+  "manifest_integrity": {
+    "gate_version": "card-level-release-pack-manifest-gate-v2",
+    "frozen_assignment_id": "v4-oracle-dev173-val37-holdout45-20260723",
+    "source_fingerprint_sha256": "ce6ac95beb861164a6cae708228187ae9355dce52f45a837d4ea798e696a9c33",
+    "dataset_binding": {
+      "schema_version": "card-level-release-pack-dataset-binding-v1",
+      "frozen_assignment_id": "v4-oracle-dev173-val37-holdout45-20260723",
+      "manifest_source_fingerprint_sha256": "ce6ac95beb861164a6cae708228187ae9355dce52f45a837d4ea798e696a9c33",
+      "manifest_content_fingerprint_sha256": "d16522a211d4e54a5965f0d1dfc68231666c968a158a8c1bd59fc0bfcde2cf48",
+      "truth_item_count": 152,
+      "truth_item_ids_sha256": "ffb5208473a6e477b51a3bc1a2f42b45eb2b979a44c5baec79e9aa73a1bac049",
+      "truth_dataset_content_fingerprint_sha256": "94e20d273669afdf7ac168bc59b44bc7f08c822a0ab2f741364287c29495951b",
+      "dataset_binding_verified": true
+    },
+    "recomputed_actual_counts": {
+      "development": 173,
+      "validation": 37,
+      "holdout": 45
+    },
+    "recomputed_leakage_check": {
+      "development_validation": 0,
+      "development_holdout": 0,
+      "validation_holdout": 0
+    },
+    "within_partition_duplicate_count": 0
+  },
+  "index": {
+    "schema_version": "card-level-release-pack-index-v1",
+    "pack_version": "v4-trusted-catalog-snapshot-v1:2026-07-27T10:46:04.906Z",
+    "pack_fingerprint": "8df85516429a52e4b8bd4cb50a1eaaa535e0641e7e62d10917801631350f6c35",
+    "pack_content_fingerprint": "46269338715402da1e317e637409f32289f52ff4ea1906a903af42de54990cc6",
+    "source": {
+      "source_id": "trusted-catalog-snapshot",
+      "source_type": "TRUSTED_CATALOG_SNAPSHOT",
+      "source_version": "v4-trusted-catalog-snapshot-v1",
+      "source_sha256": "d29f9ef591677414275e90d8b71691b67a63f32f54cbcc956b29808caa331622"
+    },
+    "source_row_count": 90419,
+    "eligible_source_row_count": 90404,
+    "indexed_identity_count": 81764,
+    "duplicate_identity_row_count": 8640,
+    "source_row_counts": {
+      "official": 75990,
+      "writer": 14056,
+      "reviewed": 358,
+      "ineligible": 15
+    },
+    "key_counts": {
+      "year": 43,
+      "product": 220,
+      "year_product": 553,
+      "subject": 19408,
+      "card_number": 42300
+    }
+  },
+  "denominator": {
+    "identity_groups": 148,
+    "labeled_rows": 152,
+    "frozen_devval_rows": 210
+  },
+  "split": {
+    "development": {
+      "denominator": 118,
+      "accepted_identity_presence": 0,
+      "identity_recall_at_1": 0,
+      "identity_recall_at_5": 0,
+      "identity_recall_at_20": 0,
+      "variant_compatible_presence": 2,
+      "variant_compatible_unique": 2,
+      "core_compatible_presence": 21,
+      "core_compatible_unique": 9,
+      "variant_compatibility_at_1": 0.016949,
+      "variant_compatibility_at_5": 0.016949,
+      "variant_compatibility_at_20": 0.016949,
+      "core_compatibility_at_1": 0.177966,
+      "core_compatibility_at_5": 0.177966,
+      "core_compatibility_at_20": 0.177966,
+      "accepted_identity_presence_rate": 0,
+      "variant_compatible_presence_rate": 0.016949,
+      "variant_compatible_unique_rate": 0.016949,
+      "core_compatible_presence_rate": 0.177966,
+      "core_compatible_unique_rate": 0.076271
+    },
+    "validation": {
+      "denominator": 30,
+      "accepted_identity_presence": 0,
+      "identity_recall_at_1": 0,
+      "identity_recall_at_5": 0,
+      "identity_recall_at_20": 0,
+      "variant_compatible_presence": 0,
+      "variant_compatible_unique": 0,
+      "core_compatible_presence": 8,
+      "core_compatible_unique": 5,
+      "variant_compatibility_at_1": 0,
+      "variant_compatibility_at_5": 0,
+      "variant_compatibility_at_20": 0,
+      "core_compatibility_at_1": 0.2,
+      "core_compatibility_at_5": 0.2,
+      "core_compatibility_at_20": 0.266667,
+      "accepted_identity_presence_rate": 0,
+      "variant_compatible_presence_rate": 0,
+      "variant_compatible_unique_rate": 0,
+      "core_compatible_presence_rate": 0.266667,
+      "core_compatible_unique_rate": 0.166667
+    }
+  },
+  "combined": {
+    "denominator": 148,
+    "accepted_identity_presence": 0,
+    "identity_recall_at_1": 0,
+    "identity_recall_at_5": 0,
+    "identity_recall_at_20": 0,
+    "variant_compatible_presence": 2,
+    "variant_compatible_unique": 2,
+    "core_compatible_presence": 29,
+    "core_compatible_unique": 14,
+    "variant_compatibility_at_1": 0.013514,
+    "variant_compatibility_at_5": 0.013514,
+    "variant_compatibility_at_20": 0.013514,
+    "core_compatibility_at_1": 0.182432,
+    "core_compatibility_at_5": 0.182432,
+    "core_compatibility_at_20": 0.195946,
+    "accepted_identity_presence_rate": 0,
+    "variant_compatible_presence_rate": 0.013514,
+    "variant_compatible_unique_rate": 0.013514,
+    "core_compatible_presence_rate": 0.195946,
+    "core_compatible_unique_rate": 0.094595
+  },
+  "classification_counts": {
+    "INDEPENDENT_IDENTITY_PRESENT": 0,
+    "FIELD_COMPATIBLE_IDENTITY_UNPROVEN": 2,
+    "CORE_COMPATIBLE_VARIANT_UNRESOLVED": 27,
+    "CORRELATED_SOURCE_ONLY": 31,
+    "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT": 88
+  },
+  "best_core_variant_gap_by_field": {
+    "year": {
+      "candidate_empty": 0,
+      "conflict": 0,
+      "query_alias_only": 5
+    },
+    "manufacturer": {
+      "candidate_empty": 0,
+      "conflict": 0,
+      "query_alias_only": 0
+    },
+    "product": {
+      "candidate_empty": 0,
+      "conflict": 0,
+      "query_alias_only": 0
+    },
+    "set": {
+      "candidate_empty": 0,
+      "conflict": 0,
+      "query_alias_only": 0
+    },
+    "subject": {
+      "candidate_empty": 0,
+      "conflict": 0,
+      "query_alias_only": 0
+    },
+    "card_number": {
+      "candidate_empty": 0,
+      "conflict": 0,
+      "query_alias_only": 0
+    },
+    "print_finish": {
+      "candidate_empty": 17,
+      "conflict": 6,
+      "query_alias_only": 0
+    },
+    "serial_denominator": {
+      "candidate_empty": 11,
+      "conflict": 1,
+      "query_alias_only": 0
+    }
+  },
+  "rows": [
+    {
+      "identity_id": "card_identity:4e97c3d7f8519c9b4a69b7a2aa16a6f2cd22d99df7d181ffd2779e4f90630938",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "007edfc1-e52d-4a9e-ab8f-3955e6500620"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:e6df13cf986c6229037abe6ece13f223f943c27b3442f821738be8245e445058",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "02c4a0f9-32c6-4460-a0b8-1d1f67012f09"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 195,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5d14b5bd791dd9c71e5a7171272de6bc5bd18939ec18ba1537dd7f0d1bc08ce2",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "034d647b-bd52-461c-acf7-18ceed94a510"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:9e8255202572c0d2cb14a99af7f5ff0514ce76b607d7013c42c5407f7e94385e",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "04661231-eefd-421c-a7d1-58c5bb86c060"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 10,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 3,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:31269",
+        "identity_fingerprint": "05d24a069b544b780efb0426711a40349bd4ede18f7e24b77397f7c02439ba14",
+        "canonical_identity_ids": [
+          "card_identity:5eef3a5dbd696778d5b8413f925cb7c9ee65a486e7328834426e3d10410ee730"
+        ],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome platinum",
+          "set": null,
+          "subject": [
+            "griffin conine"
+          ],
+          "card_number": "262",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 2,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:4d45c5b9c6836c6d6a6b3f950d9dfa230a683bb0c622c15459f73f6ead518062",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "06ec530c-6a20-4e70-9347-5c8770da261c"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 45,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 17,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:71047",
+        "identity_fingerprint": "0384fd39af91c868205212eb1ff24c52ef80ae5bc5289ed6260d55b5d25b2c83",
+        "canonical_identity_ids": [
+          "card_identity:a1d24926792d0cd4da1d1286035147b12164c9ef27bc7ab64b5bde4fcb295f92"
+        ],
+        "fields": {
+          "year": "2026",
+          "manufacturer": "topps",
+          "product": "series 2",
+          "set": null,
+          "subject": [
+            "trey yesavage"
+          ],
+          "card_number": "20",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 2,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:7ddd14bed34a7a98cf51700898f70bd10dec937d6db0c8a87eab40f8cc43f986",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "0c930fc7-3933-44b1-a892-29fbaac7ee28"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:75f80a6872f0bdb70fd1933cce589e0df9b063fea9839e086654a0128dff71d9",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "0fa17bec-0996-46ea-bc12-4334eebedb3e"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:633c20f5f72b8e2e9577bf97f525ce4fac8eba675eb8c7b5b6f62215a9f50d6e",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "11485f06-22f8-4d96-a6d0-8eefabffda6a"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 17,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:29e5cfd77add388db0873371f0ce8fca354954000d5e19093eb5f0584a9290df",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "1482f7e4-d2ff-4782-baa4-c902dc18fe03"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:c48cd6f190c61c909862df60e97667b0c0dbc21b7c216d5703c2d287f69f6d81",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "16c44d0d-c6eb-4764-8b60-cc898a5569e0"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 70,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5236eecfbcfb31ed9b0a147aa5542507ab144bafb64f64452a02dde8edda9610",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "17235cbb-ace4-4b17-a1bb-56b48b33e743"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:6dfdc46a52903c8291df0c8b9325e0544d5461bcb174398d1ae3dbe3610995bb",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "18cec42b-47d4-4b36-b538-6aa3a974cd6a"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4108,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:f0077f6fd345055ed421613b704f8abaf82dd23759cd89c04a414aa79aaf8148",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "19ed7442-8dfc-4dd1-9ad4-7938fa2ffb54"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 47,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 2,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:31174",
+        "identity_fingerprint": "5b954f6e79f7745e0ab99561829cc5e5288df9016e806c01d8c07c481a621eae",
+        "canonical_identity_ids": [
+          "card_identity:723f7485734403ec44a56ce4c7fd407af8f4005d5c6e5e9e8bb15963ab272f19"
+        ],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome platinum",
+          "set": null,
+          "subject": [
+            "dalton rushing"
+          ],
+          "card_number": "295",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 2,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:d247252d2a6a709d3389a762332c2b8da9b46bd5b399877c09dfbb1d88ae32cc",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "1e8b1806-e8c0-4534-a106-92ab9fa6ca09"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 11,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:20013",
+        "identity_fingerprint": "31ca27ce642fede401f1338ad9eef55ba6fc1ceaaab0d9e7245a742c35472f3e",
+        "canonical_identity_ids": [
+          "card_identity:de55aebcd5356960054b62d8e5e8371de483035e789c1d143c57c4824ecc2ed8"
+        ],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "topps",
+          "product": "finest",
+          "set": null,
+          "subject": [
+            "josh hart"
+          ],
+          "card_number": "28",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:c9fdddab3f5643f6092379bdf01c25544a0b5871fcb1a8234767ddc760ade176",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "1eda9455-567b-4bd3-8ca9-aafe61b874f5"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 18,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:eca78af6ab62a3af874a0aace9b4779138500692d315edee57c73b664213bd51",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "21d7fb3f-5919-4fea-97ab-cf2dd066d31b"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 8,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:299513507dcabe7dcbbfdf58b603afb24a221740fc3691e9ecb21565766baa52",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "24111f44-cb35-49a2-bcaf-8a354bcddbf6"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 194,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 3,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:18271",
+        "identity_fingerprint": "944c55de5093adae0e7632b275d67f8193a1d19fa57ed9e8fb495beeb837f963",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": "chrome rookie auto",
+          "subject": [
+            "cooper flagg"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": "9"
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 1,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CONFLICT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:8748d692d5cbf39d904fcd4a680b2fad2730a07c2aa8a2e79f1653ebc47f9cae",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "30c68ba8-725a-4546-a320-38f9ef1b970e"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:388f8acdf1be434d4df531cc271e96378f091eda8f351962a2d0989088a1cda9",
+      "split": "development",
+      "item_count": 2,
+      "item_ids": [
+        "322d3c93-0197-4ae4-b3e6-e152b0fb9827",
+        "58eb2751-0951-41dc-b055-860e483e6c57"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 126,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 25,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:31999",
+        "identity_fingerprint": "249bb9653de5aefec4ce6569dde5c1c30737bfab9e0b41d35095e0812d243407",
+        "canonical_identity_ids": [
+          "card_identity:a959cfddf3aa4b92f548b2ce5d1faead87c9a913fe26f248a59063abfc75153c"
+        ],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": "future stars",
+          "subject": [
+            "jaxson dart"
+          ],
+          "card_number": "1975",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:0702a8988910b2d8d0391c74e41c8742b161bcf1e749c2cc855f3070f52592bf",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "32cee4d3-f7c1-44ab-8bfc-3e5dc3ddf64f"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:a2fd19d2bc4a11ddcee85085e9a71a988ea357523cbc0e76a41a9b53db16fe40",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "33485dc8-b1e1-4341-ad32-5ccdcf2739a4"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 4,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:819a2a84f8b56284dfb7038a5a7f4191d2dc6787a5707cc032de98f7908529b8",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "345cd57f-204e-440c-a2ab-f293aeb06686"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:3ebb35547e73f5ffabb5d98eb2b5179c545ed9f86e4039e21975372260e1288b",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "34d3f053-b36a-41b5-bcb8-b5fc270e139b"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 3,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:abb15ebf8711d01e5791277368a54baf5b914198e08355c44acdcd6e393720d7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "35d1576e-627a-4a7b-8e3e-d36f46042ecd"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 117,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 9,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:23121",
+        "identity_fingerprint": "085a82e4d835585fd8adce197e0cf66051f2a549e99781cea60b9a239b6453a8",
+        "canonical_identity_ids": [
+          "card_identity:36241018a4be107d14a945c160bc7806e13ea5d5b42fa32ef0db288ed6ffa642"
+        ],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "topps",
+          "product": "three",
+          "set": "architects",
+          "subject": [
+            "victor wembanyama"
+          ],
+          "card_number": "3d-28",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 2,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:4768bfcbbea55bbac3c188ae45e8ac139e61a79e9eb43c2cc71224cf6096d53b",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "3cb93d0f-f5fc-43d3-9abc-8032e479fdbb"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:8d04673c620651add36b809e2db63a28cd978ed45d0897f6c96eaa9ab91eb814",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "416a1822-9f91-4be4-b052-ab3f16d313f6"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:6d6177f8380877e6e155c85fed73a261053dec2ec93d859cdae6e107e13fea82",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "438a463a-7827-48cc-8148-d65b45de7927"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:0b850528646dcbf648593ee750fe1395b4bd05bfc02febe46e928f563c1d14e3",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "43f2d69f-6ad0-4933-ad4b-65e6c8790ef0"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:9260c00320a44b115dc688a7c722c2ccbfeb5064dd7db1ea9969ed054bbcbe71",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "44732de7-fde8-41a0-9260-32e58def84ef"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 27,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:3006271f64fcb7f3cf119946ee4788f09556ceabef2245ae7f524d83635315ca",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "44738aef-f306-4e60-956b-5babfa10f641"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 3,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:23327467b24e3052116e196932beababae3d370ea0a7aef6218732522da8ead7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "472e15f4-ff39-4cf6-886f-645518da36cc"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:96b28c0b8db538ce357649a41101d395a1c59bad27460638332bcec14e747d37",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "4daf04fd-962c-44ba-afbc-588644d89c4b"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 4,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:90f0d138bc702f44aae145425d8522ca6379221fc8f6f44986a6f08c718d155e",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "4e11e36f-cbff-4e48-a7f2-de29cf6592ca"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:57726",
+        "identity_fingerprint": "5193a74c0c06f3eb38d31286ce90bebbf5497d169c9ad209a1c75cfbb4341a41",
+        "canonical_identity_ids": [
+          "card_identity:a568dc2e16947bf0fea00bbd35cf70c446eee24957fb8473a69c9ac7b88ea546"
+        ],
+        "fields": {
+          "year": "2026",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": null,
+          "subject": [
+            "patrick mix"
+          ],
+          "card_number": "9",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:78467124627f5d5461ea4d968575cc473c3f95c8920c12048231ae0b11614aa7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "4fa7153f-46c0-422a-946f-08874260eea8"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": null,
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5f70829fc828a85335e9313d1e998001c1b78c58aa5dd85c0b4e7ddf6515b762",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "51009534-93f5-49fb-927b-f43dab8ae1b0"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 29,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:802d7d99706bd962cb4ee5d2778cb629f32d99a8acdf6d1421a2ba759c8ab3b4",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "517c6c59-0e05-4d15-9857-616f3f289b7f"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 194,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 3,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:18463",
+        "identity_fingerprint": "5e3ded652e5550129ff7cea14407e25d5a0ea6e987d9fc9680b694eda6bda664",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": null,
+          "subject": [
+            "cooper flagg"
+          ],
+          "card_number": null,
+          "print_finish": "gold",
+          "serial_denominator": "50"
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 1,
+          "exact_match_count": 5,
+          "candidate_missing_count": 0,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "QUERY_ALIAS_ONLY",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CONFLICT",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:50f39522038f679ac071ca45a3a5f98ed0499e68274c7ce9f07f735d9679997b",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "51f6c758-ff84-486e-9ed1-7f5f0f87cb0c"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 3,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 3,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:54255",
+        "identity_fingerprint": "4e50f499faa753fe3d20523046bc07d3cb9b2f9edba4a95d4755e293818aceff",
+        "canonical_identity_ids": [
+          "card_identity:eeff25d7c288bb8996d403b4beeb6bd46c29d19d8fbb43efff7f18a3f8a9c92e"
+        ],
+        "fields": {
+          "year": "2026",
+          "manufacturer": "topps",
+          "product": "chrome veefriends",
+          "set": "megaheads",
+          "subject": [
+            "hustling hamster"
+          ],
+          "card_number": "m-13",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 2,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:eee68e93780a27371e3e6ea3584d2aa49d4f0e78b30d1a9da3306d034de3b732",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "5506caf2-af89-4119-9263-a2645fa7b3a2"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 24,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:1a65cec916db693f90b11df8c57b7141cd1d7ebbc9870cc9082bcb2c4d998a92",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "550a77a6-cd18-4aec-a48b-80075b51da32"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 8,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:51e0a1aa91008f58a9ee5a10bf428649b48979fa8fea6889a0ad44b774205f7a",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "56aad651-b913-41b3-9bc7-28940d51e499"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:f57d5d36840004857d49a2a153902edb6eb432292ea84040acedc3c92a35649b",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "57fd6bea-157e-4ebe-be6a-ff7219c06d9b"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 113,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:0a7a5e50953d2472a40625f0972e21f93c841cbeffcbb932c20f960078187f43",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "58d35842-a5e6-4f80-9bc3-103dcbd02f49"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:da81619db0a5fadf71147a99113796147ac67bff257564064cd6b0c2f18aaf91",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "59305b58-e160-49bd-ba65-3676b1e4619a"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:a10621adea9453fb31e25bfb00ad04861bdfaf02e5ac90c0154749ffb5cc4055",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "5ad2ae4b-0eec-4c6d-b596-b3ee2db3f71c"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:267",
+        "identity_fingerprint": "624e012ed42d573e62b3ca60bc079f5b983bbe9df0736974dfcc653e078955d7",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2012 13",
+          "manufacturer": "panini",
+          "product": "prizm",
+          "set": null,
+          "subject": [
+            "kobe bryant"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": "10"
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 5,
+          "candidate_missing_count": 0,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "QUERY_ALIAS_ONLY",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "NOT_IN_TRUTH",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:2817c58f2af416b58641aff3a86d013a872799436d9189c33af986bd16bdeaad",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "5ccec920-f666-4a01-9e7c-94a36acaf3c5"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 161,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:18270",
+        "identity_fingerprint": "9519a1c257d697fbf1e47dde87b8559e3736be12478c922abd2559fd0d55d405",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": "chrome rookie auto",
+          "subject": [
+            "ace bailey"
+          ],
+          "card_number": null,
+          "print_finish": "gold",
+          "serial_denominator": "50"
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 1,
+          "exact_match_count": 4,
+          "candidate_missing_count": 0,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "QUERY_ALIAS_ONLY",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CONFLICT",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:0ed45170e42efcfd7ca960ac14707b35f171674e59099254fa0911da47b964f9",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "5dbec99d-7359-4654-8da9-dc00bd62470a"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:175",
+        "identity_fingerprint": "bee9799feae0ac732d439b84a2adf1e17a06c4d2d34c94cfd71557fab07d3b2f",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2003 04",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": null,
+          "subject": [
+            "dwyane wade"
+          ],
+          "card_number": "115",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 2,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:e39f9da674e95f20fc765174845733243f4da5084fcfc3cfdc158e7015db5d2a",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "5eda43f8-3a16-4159-851e-96653f30ca76"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4108,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:d77271695f1703d26a768412e52ae2419da3e6c983d961097b707e71e9d82250",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "5f2bf58a-cd21-4d1d-9821-79d860a5c025"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 194,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 3,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:33191",
+        "identity_fingerprint": "ca5aa1b2d1f0434834c6fc0ca6451cb8a24e157f5255cb8ece589e08edfe1c41",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": null,
+          "subject": [
+            "cooper flagg"
+          ],
+          "card_number": null,
+          "print_finish": "gold",
+          "serial_denominator": "50"
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 1,
+          "exact_match_count": 5,
+          "candidate_missing_count": 0,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "QUERY_ALIAS_ONLY",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CONFLICT",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:910ecb53d82e4311d03eacdd20374ce61d35a8822ca7dd83f307d0f60de1a00a",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "5f611f25-b1d6-4138-9494-5e44de4b9153"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 71,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 6,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 6,
+        "candidate_id": "card-release:8df85516429a:2855",
+        "identity_fingerprint": "d86a816556e3d93adfc5066d23e136469789a5aecd150b8d90fcf31c79c15834",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2023 24",
+          "manufacturer": "panini",
+          "product": "prizm",
+          "set": null,
+          "subject": [
+            "victor wembanyama"
+          ],
+          "card_number": null,
+          "print_finish": "silver",
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 1,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CONFLICT",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:4ff01adb8c0d68a04ef20642e49c93baf095943a6386b6e604baa7db76d3d176",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "5fe1da1e-2f67-4181-9f61-d955e3ac8d82"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 71,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 7,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 7,
+        "candidate_id": "card-release:8df85516429a:2856",
+        "identity_fingerprint": "fc324b1e368b12e3620d9b82320f3aaf7ff8fa092128b94773b62f90f1751d05",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2023 24",
+          "manufacturer": "panini",
+          "product": "prizm",
+          "set": null,
+          "subject": [
+            "victor wembanyama"
+          ],
+          "card_number": null,
+          "print_finish": "white",
+          "serial_denominator": "175"
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 1,
+          "exact_match_count": 4,
+          "candidate_missing_count": 0,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CONFLICT",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:0fb1d0621234d4968dc54e20c1bfdb61d1a567ed6accdba61842afe79656dc29",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "602f87e7-7372-4c5b-8115-00c0c91a4b08"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:605",
+        "identity_fingerprint": "c44562e8fc6a9b6f359d14168de4021a83fabe3649c6d5edc52a7edd6bd985ef",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2020",
+          "manufacturer": "topps",
+          "product": "chrome sapphire",
+          "set": null,
+          "subject": [
+            "gavin lux"
+          ],
+          "card_number": null,
+          "print_finish": "red",
+          "serial_denominator": "5"
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 1,
+          "exact_match_count": 5,
+          "candidate_missing_count": 0,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CONFLICT",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:84bc479bf93c85218caf3329fbce0acddc161195a1b9c84a190a87833ba2aa1a",
+      "split": "development",
+      "item_count": 2,
+      "item_ids": [
+        "6321c429-4f45-42c6-95c2-a5bdf2596745",
+        "a9f73f47-7b30-41cd-90a9-079de8823c23"
+      ],
+      "classification": "FIELD_COMPATIBLE_IDENTITY_UNPROVEN",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 49,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 1,
+      "strict_exact_unique": true,
+      "strict_exact_ordinal_rank": 1,
+      "query_compatible_core_count": 3,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:31595",
+        "identity_fingerprint": "6a2c0400e6649d2101737137965565941e02913ea71be61df70c9708e28e652e",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome platinum",
+          "set": null,
+          "subject": [
+            "spencer schwellenbach"
+          ],
+          "card_number": null,
+          "print_finish": "blue",
+          "serial_denominator": "99"
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": true,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 6,
+          "candidate_missing_count": 0,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "EXACT",
+            "serial_denominator": "EXACT"
+          }
+        }
+      },
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:31595",
+        "identity_fingerprint": "6a2c0400e6649d2101737137965565941e02913ea71be61df70c9708e28e652e",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome platinum",
+          "set": null,
+          "subject": [
+            "spencer schwellenbach"
+          ],
+          "card_number": null,
+          "print_finish": "blue",
+          "serial_denominator": "99"
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": true,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 6,
+          "candidate_missing_count": 0,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "EXACT",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:4ffe1654057b41ef5f0ef051f2b47c2afb2fbe6769d6f7947e21e181b6645d44",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "6356cb8c-664a-4c9e-b909-63274390f4e1"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": null,
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:6a743a5c1982692d35c4d19fd34bfb94ade51f194ac41009d11e69e19ae8aaed",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "64118562-de3a-4a6e-909c-770396c2241c"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5ef915c7caa80dc9e87466977b23124141934fdcd241ee6552445dd3cb9d204f",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "678db6ae-5a2f-47ec-8b40-13b0136ac253"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:b8d2d71082d64bf796c057a25051c52a654e653c6774e018eff0afceff6ddf4f",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "67d37c3e-3c14-4aa9-a473-bce36465fc45"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5355959ae7076ee93a62a1629e009b0b15998f05ddda56e601723b67d50fbbc1",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "684b864d-52fe-4354-9aab-bd0fbd10077e"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:afab3c48bc914ea646b278c998da03766723eab70081f524187cb9a7c0f12960",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "6911f299-e025-467b-83e3-edb1dc89dcbb"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 8,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:03b2921967ac350179034c33ef26026727b6310a5e8c2d0da19f3b6d89276760",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "691313f2-661f-461e-b001-5272a1722eca"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:17311a30a8c66262768071f40382f083c587a0a30ef4a684aeedf6be696c86d6",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "6dda513e-4ac1-4551-b17a-c8cda17bfd3d"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 117,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5203350ac2925910a0a07c465c742022938fd59a4c180d0aa0754ddf8c401818",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "70559ac4-3c3b-4fba-8095-c893cb041ce2"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:75cfef7966985c48585c397be9c46dbc59482db2af070184768180113b5876c1",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "72d6f937-4d5e-40d3-ab76-612b9ac12511"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:d0de11026d24b8910512701718e7858065fcccfee2605069f3058a5b598f7437",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "750306e2-9fa4-4ee9-b0bc-e98154b316cb"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:c5d50423d620eb16e885a358f3695867157584781c4572a9d57670d818452015",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "756353fc-b8a4-4e73-9b97-d83a7b72895a"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1191,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:f8d3a5bdcd99b5c7469247803c4761bdd7f2c35245645b2c9316056cdb38d997",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "779c2f9d-279b-4e68-96f4-de98b7d4e158"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:269",
+        "identity_fingerprint": "355f5768a347f96216e2cd3caab465ac8be16df5016cc3c9d3338c3dd3fe04e1",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2012",
+          "manufacturer": "panini",
+          "product": "prizm",
+          "set": null,
+          "subject": [
+            "kobe bryant"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "QUERY_ALIAS_ONLY",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "NOT_IN_TRUTH",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:0af3cc881fdf9bbe40f42de53167b6a547c56c810d2fc04d4c25fa126ca90c40",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "7a107473-8173-4496-ba50-9d4f1ba36684"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:da0f323c146698b5ad643c95ee1748f6283714a1d7238a1fca5491af3043f3a2",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "7bcba0b1-56c8-47ef-a9a9-dfde40b4e7a9"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 8,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:fbac4d204667fede3fb668f760cfa620cc0cd2c4556636f8d58fdc7040fb1084",
+      "split": "development",
+      "item_count": 2,
+      "item_ids": [
+        "7e44e985-7103-4e21-a3e0-37aa5f959513",
+        "e71c7818-c0a7-4b8b-9d6f-81889d168e9c"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:467",
+        "identity_fingerprint": "49a038132ba1a8d3f6d4766ac11659cbe08744132301cb6c71cbe47e4276f38a",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2018",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": null,
+          "subject": [
+            "shohei ohtani"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "reviewed"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:98ef2f368988462abf92e1319e5a5acf06e8e0168674cd5b016e066a8bcfb41f",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "82eccccc-7e80-423c-8627-c75138697c43"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 12,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:2750",
+        "identity_fingerprint": "650e4b5e65c681e6262593353d2f8330d5f6ab5b840c58a156a53ce54ea92ad4",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2023 24",
+          "manufacturer": "panini",
+          "product": "donruss optic",
+          "set": "lucky hyper",
+          "subject": [
+            "jonathan kuminga"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": "8"
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 5,
+          "candidate_missing_count": 1,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:c5c9a64ce311e5d2a78fc1b05e084982437613135e1daacc8b4c9df08ad8697c",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "87c11caf-a524-468c-a88d-23c38678287e"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:a33795027abaa962b7f6b57e737d69834d12a5ee58a77db92142237e4ccff931",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "89abef4d-4d49-4d65-aeee-140ab974c76c"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 338,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:6fdc76a8dd482b92659d292f8225cd62bcdc4482653838294148dbbb570b0fd3",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "8d9acd04-13e1-40d1-a448-0bfcafad4656"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 9,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:ea9279b5823da6346387b58f1ace8633608f37739e358f7be2d4d9d63b48b441",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "8f9d6d58-804d-403e-bf30-2e29d1c8680d"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4108,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:544c9d60bdeabd8728d04c875d137b1824786d5d014a743000dfb209196c7bc5",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "8fdd4466-7812-4a25-a951-f9e5527442d4"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 12,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:b18a9d36a8d1e26aac98cbd1cffa29158d2d1cd8e3356682714cf7d0eb7c3124",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "9002f011-ed8d-4190-8f80-2dff1a0e2c94"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:46c7d37c44f93943bb01e8c9b45491fbd6ac57956c67b6cfd0e9464572673ef3",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "91197813-7288-4b77-977a-7a658193d3cb"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:f1d12481c42862571fd49bd1f7201751c6d565c282bcc8c33656c00ec92b749b",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "9191a5dc-4fad-4f25-b229-75d480eab72a"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 9,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:2747",
+        "identity_fingerprint": "e3d4d64d56ecdc904d0b529fc5f7244ba680e7af47898044be9a1f356c544c9d",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2023 24",
+          "manufacturer": "panini",
+          "product": "donruss optic",
+          "set": "lucky hyper",
+          "subject": [
+            "buddy hield"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": "8"
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 5,
+          "candidate_missing_count": 1,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:f44c96e51f30e186c3a62295d3436092ccba33d6c2f2ee406f6109704880de58",
+      "split": "development",
+      "item_count": 2,
+      "item_ids": [
+        "9207e91f-ab2e-4b12-87ab-d4c7df45e0d4",
+        "df1a82a6-8430-418b-8ce5-5bb2c18340a6"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:a7934c45249f43762e5d829e3c1401c315a65d47b76e61d78fe1376d280e15c4",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "928e254c-4df7-469b-a943-6ae7985bd5cd"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 12,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 6,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:34153",
+        "identity_fingerprint": "2fa5978416439a56c1d1545fe53a4aaf83bca08fa97b389c6129bed0f2da861e",
+        "canonical_identity_ids": [
+          "card_identity:a75cf72f7cc33e35cffba761f23246c038d4837aac79f7be4c6dca2d38187508"
+        ],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome",
+          "set": null,
+          "subject": [
+            "tyler booker"
+          ],
+          "card_number": "381",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official",
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:977e08957ac72d094e42d88044574aac31eb1d7283822ecc2d99e33e4aaeedd8",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "96329059-7734-4ea1-981a-22b3b8029236"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 194,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 14,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:19528",
+        "identity_fingerprint": "0db70fb6819704e709639f339b64c54fd0a1e1cc9943a49808a08bfe0071ffd4",
+        "canonical_identity_ids": [
+          "card_identity:eab81525a252d2527a1c61243ff9ae51ada81b340b5104cd19681dc222d4ee4f"
+        ],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "topps",
+          "product": "finest",
+          "set": "colossal shots autographs",
+          "subject": [
+            "cooper flagg"
+          ],
+          "card_number": "cs-cf",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 2,
+          "known_field_count": 6,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:a8006e2eb8ee2323aa41f3aebe8902b425ad54806472182b93bc461888bdf74f",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "97db0f39-6a98-47db-adfe-0c0199e0d640"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:e36eb490ceb954caeab8e16ff757f49efc3163e77d5eb08666378a5e7ce9a10f",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "9895dd59-b14d-4223-9df6-f53b2bbe7800"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "product",
+      "candidate_pool_count": 635,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:d02520d1b16c4185028a7a7535d32e2b044bdc164911f7ba49925ebf499fcf3b",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "990ddae2-9347-4c87-83a6-0f38f5ab71cd"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:f2d5c8a463510e3c65b045dda7d749cc8a436ff82044dfdb0959418ad5ea8adf",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "9cc4263d-ae52-45da-8087-792bfc90e002"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "card_number",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:07640669c23dc2cd1ed087f3f9d4c8352a387a9d64b9d9368084fb02952b7145",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "9ea55f69-1c74-44a5-b8d5-6eb9349a8274"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 8,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:012276a81a9fef14fbb8eba8954e5ef0c8951a101731dea5eec45cfb72fb4f47",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "9f58f9b3-9fc8-4b7b-bf3e-64c072a89100"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 665,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:59987ae500a3978c11c500fc5a51cd7ae08e75d0289e8d87eade0827c961cce7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a2c8f372-28d4-4477-ae1f-3fec6d7dcf7f"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 896,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:c6a8c93377efe6783511223e1e22d4e2c6e0ed669fb571e9523eb4f34f4f64c5",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a330845d-4308-4997-b9ab-9667b8899455"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 77,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:3ecafa4e881feda0cf03b0cea55b1d45f47bfc58dbf26e540e9dc1d0eb388a6b",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a3b3eb3c-c982-4033-ba51-172d561c1a4b"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:691f92d5c184090515ffb09107fb90ed2f96875a548ba35dbe40135d009f95a4",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a4014b6f-cacf-42c0-b1ed-aa58eff1ab90"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:7250a568aa8ce46b25cb72731ddd62a795dd5af63696437ff77946b4bb2359e1",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a4856c4c-4246-47e4-a5f9-368309f2e55f"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:cd44b6ae6f2ab23363b367df27a05dba71ab92315455c8a3808a9abf6d5d3309",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a676c563-5e8c-45a8-bc38-27252e16d1f1"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:c1210ae03fb285fa8dc0eb213bf75314d0ead55fc7d28076373ea87b363c78ab",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a6961988-c711-4a51-aaf3-e640fbb4bbe7"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:81f15357257cd95452ac5710300543a75bbfee9e15bf7710fe347f6c714f5200",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a762d807-5a92-4a59-9271-e62268e28b9d"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:24584ac100d0fddc60cd0ba0d450eb8f1ed061e069a700a0e5e06091ee79e4b9",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "a834ef01-e021-4b68-97d0-d4e889c42352"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:3dfbd99eb10f723de4dcb910c9299d8ec076b8c3b55c32ca2cd4bd629612844c",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "aa0c9e87-5a77-4919-95d3-f523d015deac"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1191,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:e732af55ddbc06d3317033b57527d3040db98c1482255bd6e1163d299fcab95b",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "aa9b83d9-9ee9-4166-9513-469f2fa6d19d"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:cba5f8efff8d190ceda92c9bf20b0284f5acf71c0ddc35895787cc5a959a60c1",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "abd544c9-1667-43aa-9a0f-9ef188e2593a"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:83289f58372a0ccc9dc5fbce4ef0a2e9ecf2b71e4f05bbeab2ad2fea0562abe0",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ac352914-8d9e-4fe4-beec-7a85aa3f55dc"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:68ae7dd590e074089b283ccacccb7e53933f60ce25375b41799d79b47ffe26cf",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ad1fb53b-7c83-4797-b1b4-b394a48c1b64"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:2c7350b53e8e1b75050ed2dccf64623a8da25c966d7184591c0bd9f16487247c",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ad30460f-de2f-46c8-ba05-45959baa8e15"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:b3dca166ec5f57e12bca4b78edb1d7d6ed827c38fb322fcbe8fd317e444968b3",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "b06e661a-729f-4733-99a4-74be67034e22"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 66,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:8a6dea3b91034b824b9cb5bc3712d45cf99a9d281e9828a1fd4b1961134bf5fd",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "b25df3a9-60cc-4ca2-96e7-bd0ea98a98d7"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:24fba33a04da0639dac7170bbb9095fda9237eab9bc68ff8ec405071cf05d35a",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "b291c1b5-ecdc-4e9e-9fd6-1162fa37e8ae"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:f54490bb066882bab52735873ec22390545cc64e5e944dad4fa78405a7ba9926",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "b383a540-0f06-4dcb-8977-2f43ab108cc5"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:4cf88d7ab1b3701a2cf4829dab35e831b7631fcab3db06f6af4067e79c0af210",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "b54554ba-e766-43ab-a0e2-c670ea49ea93"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4109,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:d2b04d8d9afbc766b6b91330f43d96f74df29fad85cb3b344026ac8865226228",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "ba1aa25e-52ed-44bc-89f7-2b6fe56d917f"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 114,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:c8b071ef47fb62bce6063410334514bf42cdb83fb152e9c6f9a91ba60f46b02c",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ba9770d5-f053-4343-aece-1fe1c5d20444"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1458,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:7b34d2da60e2002f47ee757456e36f5d4f64fea86acd49bfdd1ed8b6fb8bdbae",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "bb1a6cd3-f7b3-4467-8a08-e11afb50d49e"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1260,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:41d2cf38f96b665a9a187baeb1ec0632f73e1e61e8da56d9dbdf555972d1b73b",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "bcc038ca-a848-40d7-880b-993df6d706ff"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:6ea66b282afca3109cec4c303e3c152876a05e0b12fd84bd7f8b80c758ed1e75",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "c346d240-597d-4d31-933a-29abea3b23e0"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 195,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:98d618f99885b0219f4aab6e1bdb293577514a18f39ef623e24e31b9a04be2eb",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "c4a75526-485f-4289-8a99-7ff1d449a646"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:161ffa4868b0c699673b97dc240670a832ef149d008b9c2827fbcd2ab0d8d4a0",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "c5e7ef40-557c-4fe8-b0af-4f3150b52f5c"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 106,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:daf9b90c49e36f050519e54110be8e15129acf93fea0f94686a4cb39dd7ea375",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "c6b9348e-b971-4c64-bb96-7b665152fa17"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1669,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:95ed2880051f0b0113b3d1e7f7dc4528643c416253e5da4dfbcfb3a67fb7fd2e",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "c742350e-54a4-4e82-821b-ad3935816857"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 6,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:60d48997d56ffb7612e77ad64ae4515a86866dfd511811cf39f7206e72935947",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "cb4f9553-0a3e-4341-a572-52c229d76315"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1724,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:02eb44b891ba73db1b044764107ce0009841d5b33d03de193c9c324d0c2d24e1",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ce012f76-6812-4ca4-b3b9-0354bdff8401"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:4732237692def21d17dd6718c73b9d3c3506dfdf1f76fce1380cfda4eac7361a",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "d0454a77-abb8-4b7d-9773-77ead97c1ab4"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 18,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:ad957faacd1dad7ac5e4c12b192010af3c224aa0e8cd3bd2137ff620e52b37b5",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "d3212008-62dd-4dd1-bc07-883287c32018"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:7edfa37a3dc0201316529c5fb41a71ca8af99401095709716ce994bece63b005",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "d3d86151-00e2-43fb-a2c4-af9402a9fcfb"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:80d127ed2d0f1aaf9c304f87637eb808ff946aa846bb2383fac8919651701eaf",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "d40bdd96-916c-49e6-9010-ee3c27afb733"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 7,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:afec0995bd906bab419ed096c6ae878f13293ecff4c2894020d6d91860095af7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "d7a8f105-25a0-409c-a3a1-be11e17c66f0"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:b87b8c1a8e5fa3005e542561f9d7a661c060066752fb182bb6942e27f3d0afe2",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "d7ddef98-7c3c-4f8e-b7f7-f7efc6c94c7c"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:946c2ef5b8ed5570de6dc12fd020d7e77e15cbc193cb7b824e23e5e0eeabf73c",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "dbd4923f-1e67-463a-94e5-010858b3d6ea"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 117,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:a457522b88f8c2da5ec6e577326788aae30377f2f192915f73cd923c510b69b7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "dcf62136-6ba5-4160-b620-38b361ab0a96"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:c17ec1c7dc62414018ac87a006afa3430994798ae740c1e70c4b54fee50d1386",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "e30a2b8f-1b6f-4921-9f65-9a96c6b94820"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5e46a5baa705b50a5cb0732fb7c05348143cb24b25a08fbbbd2f697d3b05aa37",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "e460c34a-11fd-427e-9b79-4699e7bc11ac"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 3,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:b6eb8c0e32bec4c3a6452485b21aee2c4db20d54ae5324d03461e21fa6ada11d",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "e5439f71-7f3d-4168-995e-294c1c161de7"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 173,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:2892f0c0baf0b911295a9615eec3aac32f3a04b8fdefb64e3bca3a912260d305",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ea8da68f-2016-4150-944f-c9ce324609f8"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 55,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:31377",
+        "identity_fingerprint": "96bee51194f24ead7aee92b218bc62f93e9a8bd148c1f6882da35f35de4cd3f9",
+        "canonical_identity_ids": [
+          "card_identity:7226fe5c9e89e991243fb3e6a10bec6ace5c8aa41b875027ef138038f66dd07f"
+        ],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "chrome platinum",
+          "set": null,
+          "subject": [
+            "jung hoo lee"
+          ],
+          "card_number": "106",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:be6e76ed8a5a3c3de4965dbcfb483e1e83b25dde83ad16dac76b545842b482ad",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ebb6f765-aaad-4bbe-9001-2fe592d15172"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 3,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:67944cd849b5fe0d7682e685a485b9a01c5ecf2a5b76cf7db1c696940255a2a3",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "ecb723ff-0bca-42c2-93c3-b4a1a4a56eee"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 12,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:b768531781521be3d93f48cb3e46b278540e283354ffecdc0f8b920b5fd201a6",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ee06202a-c4a2-4009-9e7f-c255cd94539c"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 9,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:a3ff2b26105dae14759cca5dc270dae45d2b872e51bb5b05616129f9b880f6f7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "ef6cf6fb-1238-4b50-ac62-834eb27390c7"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 34,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 5,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:8440",
+        "identity_fingerprint": "0fa94026a2170f574bdad45d642f6f2e7eb40f77212658814c8d4d64ad0d5a03",
+        "canonical_identity_ids": [
+          "card_identity:92f62693b6d35487b7f063253742c0cd522bf4a7574b23c94c429d1b7118e0db"
+        ],
+        "fields": {
+          "year": "2024",
+          "manufacturer": "leaf",
+          "product": "eclectic",
+          "set": "exotic",
+          "subject": [
+            "ollie gordon ii"
+          ],
+          "card_number": "e-og1",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "NOT_IN_TRUTH",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:8e641f57becb28cf5194c5285da08f30ada32bd8b5c7b0e5304ae77ee44f40c6",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "eff8bbc3-2581-4718-badb-984fbbfe477f"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:604880e630f756b489996df72e8c41d04af53101bf4776a69bb5efecf43ba7e0",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "f043f338-8230-49e8-aa00-87a0bbf0d20b"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:0fd386e9ad7ae018290e9ce6e5719759752d03ca0d19718d7df8993a4ec823d6",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "f12bc03a-9838-4860-a7e6-aa56fb2966a4"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:4a6055b72aa41b8dcd179156f2cded60f791d1884cc9e0b2201d699dca8cd870",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "f234dd96-bd2f-442b-8dfb-d54b804afe3c"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 1,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:a70486957f0002813a1d4e20a01e57cc25c06f101c1d1a11d97dc35653fbe01b",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "f692a642-4e0a-4a97-ab98-2cc2773739bd"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 4108,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:750cf57398b8c82cc55edbcb0ade0185af812da60cd02d2a339a4f3682bb79c7",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "f6d53f52-a553-48b9-bf2a-0b2c0e417ada"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 7,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:e0dc89b7e8f320a337df8076c29bc6b9aa6379a47abc4a0a56a0a495d89b9d1b",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "f7dace0d-7382-4322-a53d-fd516b6def48"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 2,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:5bb12d55476d7e814a13c3af797c3d31ff34b2e546ba2b0335a72016f4deb25f",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "f89da5eb-7da3-4c18-bccb-2d1b7bab66a3"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 47,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 7,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:44797",
+        "identity_fingerprint": "147dfed494930a34f90745bf87642ecbcdff1424ddcbe92e12f61e2bf3bbfb52",
+        "canonical_identity_ids": [
+          "card_identity:65c8c8d4f2fd8049dd87857853082653320043ec52520b9a60a2e8485f827a19"
+        ],
+        "fields": {
+          "year": "2025",
+          "manufacturer": "topps",
+          "product": "signature class",
+          "set": "veteran class autograph variation",
+          "subject": [
+            "george kittle"
+          ],
+          "card_number": "53",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "NOT_IN_TRUTH",
+            "serial_denominator": "CANDIDATE_EMPTY"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:b1f3ca807fbc45900e9fd599f96ecbed880be26439dbbb344b10addbbb4c6a7a",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "fa1bc798-6b47-483a-a606-9aab6a67021f"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 30,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:81a8547648ab000c54578a1e01075283cb759378d459bcfdbe327de7bcd72a27",
+      "split": "validation",
+      "item_count": 1,
+      "item_ids": [
+        "fbd2f900-0827-4fc2-937d-1803f56df469"
+      ],
+      "classification": "CORRELATED_SOURCE_ONLY",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 116,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:4020c8a57de1a3e59b9979d5d647e53d48166496bd07fad927a53123acf03272",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "fc472362-f2ec-49cd-8c48-4ca2db9b818d"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 7,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:355b45e0094e58d8ea2bfd646256c3cd3c575c56d96c04a32c0c12143a9396db",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "fc49aec3-d7f5-4059-ace9-e076c223056a"
+      ],
+      "classification": "CORE_COMPATIBLE_VARIANT_UNRESOLVED",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 195,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 23,
+      "core_unique": false,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": null,
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:18895",
+        "identity_fingerprint": "00b2fbd591b397a71f556fd146a160b2818df7d2d6e61418cedce9262397456c",
+        "canonical_identity_ids": [
+          "card_identity:4e06fbd297699153f6ffb3eae55c00ab2a52956bc4df9767871be4f259288e83"
+        ],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "topps",
+          "product": "cosmic chrome",
+          "set": "planetary pursuit",
+          "subject": [
+            "cooper flagg"
+          ],
+          "card_number": "ppn-8",
+          "print_finish": null,
+          "serial_denominator": null
+        },
+        "source_classes": [
+          "official"
+        ],
+        "comparison": {
+          "strict_exact": false,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 4,
+          "candidate_missing_count": 1,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "CANDIDATE_EMPTY",
+            "serial_denominator": "NOT_IN_TRUTH"
+          }
+        }
+      }
+    },
+    {
+      "identity_id": "card_identity:9b8b30b65ad44051c9afafde8dfe00e7e332c4f7991df8fa3e3d0133760d5961",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "fc5b5070-5189-4d8b-93a0-6984815fcc60"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "year_product",
+      "candidate_pool_count": 0,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:c80fd94df0844fade57537a9c656235d4587c1c61ed16a90fdd6430681cb4f91",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "fc756816-080b-457a-a484-e860bfede31b"
+      ],
+      "classification": "NO_ATTESTED_OR_CORE_MATCH_UNDER_CURRENT_CONTRACT",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 4,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 0,
+      "strict_exact_unique": false,
+      "strict_exact_ordinal_rank": null,
+      "query_compatible_core_count": 0,
+      "core_unique": false,
+      "core_ordinal_rank": null,
+      "best_strict_candidate": null,
+      "best_core_candidate": null
+    },
+    {
+      "identity_id": "card_identity:94c680245bdf332da63945a96e62e40082f81aa8f9d33fcfb0c7ffa5b2e23a9c",
+      "split": "development",
+      "item_count": 1,
+      "item_ids": [
+        "fe0df369-ae60-4c86-8d43-c330ff137a37"
+      ],
+      "classification": "FIELD_COMPATIBLE_IDENTITY_UNPROVEN",
+      "query_source": "SEALED_TRUTH_UPPER_BOUND",
+      "seed_dimension": "subject",
+      "candidate_pool_count": 7,
+      "accepted_identity_match_count": 0,
+      "accepted_identity_rank": null,
+      "strict_exact_identity_count": 1,
+      "strict_exact_unique": true,
+      "strict_exact_ordinal_rank": 1,
+      "query_compatible_core_count": 1,
+      "core_unique": true,
+      "core_ordinal_rank": 1,
+      "best_strict_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:11623",
+        "identity_fingerprint": "155343aeae228c79e144a31771e745fb34e4986b75d68c3a06a8dc888950596a",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "panini",
+          "product": "signature series",
+          "set": null,
+          "subject": [
+            "karim lopez"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": "49"
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": true,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 5,
+          "candidate_missing_count": 0,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "NOT_IN_TRUTH",
+            "serial_denominator": "EXACT"
+          }
+        }
+      },
+      "best_core_candidate": {
+        "rank": 1,
+        "candidate_id": "card-release:8df85516429a:11623",
+        "identity_fingerprint": "155343aeae228c79e144a31771e745fb34e4986b75d68c3a06a8dc888950596a",
+        "canonical_identity_ids": [],
+        "fields": {
+          "year": "2025 26",
+          "manufacturer": "panini",
+          "product": "signature series",
+          "set": null,
+          "subject": [
+            "karim lopez"
+          ],
+          "card_number": null,
+          "print_finish": null,
+          "serial_denominator": "49"
+        },
+        "source_classes": [
+          "writer"
+        ],
+        "comparison": {
+          "strict_exact": true,
+          "query_compatible_core": true,
+          "conflict_count": 0,
+          "exact_match_count": 5,
+          "candidate_missing_count": 0,
+          "known_field_count": 5,
+          "field_comparison": {
+            "year": "EXACT",
+            "manufacturer": "EXACT",
+            "product": "EXACT",
+            "set": "NOT_IN_TRUTH",
+            "subject": "EXACT",
+            "card_number": "NOT_IN_TRUTH",
+            "print_finish": "NOT_IN_TRUTH",
+            "serial_denominator": "EXACT"
+          }
+        }
+      }
+    }
+  ],
+  "report_sha256": "20af6aa04c83bb823aeea62d842244e0f5e3ce91f6ab850e0cc482a08fec9888",
+  "execution": {
+    "compile_wall_ms": 1651.299,
+    "audit_wall_ms": 794.179,
+    "truth_fed_query_count": 152,
+    "truth_fed_query_p50_ms": 0.028,
+    "truth_fed_query_p95_ms": 4.22,
+    "truth_fed_query_max_ms": 26.836,
+    "paid_provider_calls": 0,
+    "network_calls": 0
+  },
+  "inputs": {
+    "dataset": {
+      "path": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/independent-identity/labeled-devval-current.json",
+      "sha256": "a051e123b5c3987f64836f02c679efabb68e7554389e02d70c5719d501e7a269"
+    },
+    "manifest": {
+      "path": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/reproducible-frozen/manifest.json",
+      "sha256": "715a8f1ec3cf8cff3df59f2ad40e330102810d61f3fc843d9ef99b92f5808df0"
+    },
+    "binding": {
+      "path": "/private/tmp/lynca-overnight-eval-20260730/docs/evaluation/card-level-release-pack-devval-binding-2026-07-30.json",
+      "sha256": "d63d1c4372fe6e47107666917eebcb02f1a5741ab94826a48536d8919ad9df28"
+    },
+    "catalog": {
+      "path": "/private/tmp/lynca-recoverable-mainline.PPqJ7t/.local/oracle/source/trusted-catalog-snapshot.json",
+      "sha256": "d29f9ef591677414275e90d8b71691b67a63f32f54cbcc956b29808caa331622"
+    }
+  },
+  "code_contract": {
+    "module": {
+      "path": "/private/tmp/lynca-overnight-eval-20260730/lib/listing/evaluation/card-level-release-pack-audit.mjs",
+      "sha256": "fd0f337eb0329363365c49fb2acdc53658435edcf0252cbaa67785fc7e207184"
+    },
+    "runner": {
+      "path": "/private/tmp/lynca-overnight-eval-20260730/scripts/audit-card-level-release-pack.mjs",
+      "sha256": "5c71884b8b5c1a2c5db25c2994f8e5d510b3f72e3c1982544b5dff841b3caa6c"
+    }
+  }
+}

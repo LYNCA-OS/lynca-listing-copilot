@@ -20,7 +20,7 @@ function expectCode(code, fn) {
 test("reference envelope reproduces the frozen no-full-Provider report", () => {
   const result = calculateNoFullProviderLatencyEnvelope();
 
-  assert.deepEqual(result.critical_path.p50.evidence_upload_plus_focused_ocr_ms, {
+  assert.deepEqual(result.critical_path.p50.evidence_branch_ms, {
     lower: 1593,
     upper: 1893
   });
@@ -28,7 +28,7 @@ test("reference envelope reproduces the frozen no-full-Provider report", () => {
     lower: 1893.3,
     upper: 2633.5
   });
-  assert.deepEqual(result.critical_path.p95.evidence_upload_plus_focused_ocr_ms, {
+  assert.deepEqual(result.critical_path.p95.evidence_branch_ms, {
     lower: 3623,
     upper: 4173
   });
@@ -100,10 +100,14 @@ test("modelled card OCR, measured compiled lookup, and budgets remain distinct",
   assert.deepEqual(result.evidence_inventory.modelled_stage_ids, ["focused_ocr"]);
   assert.deepEqual(result.evidence_inventory.budget_stage_ids, [
     "evidence_upload",
+    "product_mark",
     "candidate_control",
     "resolver_renderer",
     "commit_status"
   ]);
+  assert.ok(result.evidence_inventory.parallel_sensor_assumptions.includes(
+    "COMPONENTWISE_QUANTILE_MAX_IS_NOT_A_JOINT_DISTRIBUTION"
+  ));
   assert.equal(result.evidence_inventory.joint_end_to_end_observation, false);
   assert.equal(result.claim.evidence_class, latencyEvidenceClasses.MIXED_COMPONENT_ENVELOPE);
 });
@@ -120,6 +124,20 @@ test("three marginal crop distributions produce an explicit parallel-max model, 
   assert.equal(model.p95_ms, 3123);
   assert.equal(model.observed, false);
   assert.ok(model.assumptions.includes("NOT_A_CARD_LEVEL_OBSERVATION"));
+});
+
+test("product mark and focused OCR run in parallel rather than serially", () => {
+  const stages = structuredClone(noFullProviderReferenceStages);
+  stages.product_mark.quantiles_ms = {
+    p50: { lower: 5000, upper: 5000 },
+    p95: { lower: 6000, upper: 6000 }
+  };
+  const result = calculateNoFullProviderLatencyEnvelope({ stages });
+  assert.deepEqual(result.critical_path.p50.evidence_branch_ms, {
+    lower: 5250,
+    upper: 5550
+  });
+  assert.match(result.formula, /max\(focused_ocr, product_mark\)/);
 });
 
 test("an architecture target can never be labeled observed", () => {

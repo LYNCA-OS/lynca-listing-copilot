@@ -240,6 +240,25 @@ assert.equal(serialPatch.source_image_id, "img-front");
 assert.equal(serialPatch.crop_id, "crop-1");
 assert.equal(serialPatch.confidence, 0.94);
 assert.equal(serialPatch.provenance.job_key, "ocr:bundle-1:crop-1");
+assert.equal(Object.hasOwn(serialPatch.provenance, "bundle_generation_fingerprint"), false);
+assert.equal(Object.hasOwn(serialPatch.provenance, "detail_revision"), false);
+
+const shadowEvaluationJob = {
+  ...sampleJob,
+  payload: {
+    ...sampleJob.payload,
+    evaluation_mode: "SHADOW_EVALUATION_ONLY",
+    bundle_generation_fingerprint: "generation-fingerprint-verbatim",
+    detail_revision: "detail-revision-verbatim"
+  }
+};
+const shadowEvaluationPatch = bundlePatchesFromOcrResult(ocrResult, shadowEvaluationJob)[0];
+assert.equal(shadowEvaluationPatch.provenance.evaluation_mode, "SHADOW_EVALUATION_ONLY");
+assert.equal(
+  shadowEvaluationPatch.provenance.bundle_generation_fingerprint,
+  shadowEvaluationJob.payload.bundle_generation_fingerprint
+);
+assert.equal(shadowEvaluationPatch.provenance.detail_revision, shadowEvaluationJob.payload.detail_revision);
 
 const exactLineConfidence = ocrConfidenceForFieldValue({
   confidence: 0.71,

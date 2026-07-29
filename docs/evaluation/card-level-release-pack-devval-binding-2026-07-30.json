@@ -1,0 +1,9 @@
+{
+  "schema_version": "card-level-release-pack-dataset-binding-v1",
+  "frozen_assignment_id": "v4-oracle-dev173-val37-holdout45-20260723",
+  "manifest_source_fingerprint_sha256": "ce6ac95beb861164a6cae708228187ae9355dce52f45a837d4ea798e696a9c33",
+  "manifest_content_fingerprint_sha256": "d16522a211d4e54a5965f0d1dfc68231666c968a158a8c1bd59fc0bfcde2cf48",
+  "truth_item_count": 152,
+  "truth_item_ids_sha256": "ffb5208473a6e477b51a3bc1a2f42b45eb2b979a44c5baec79e9aa73a1bac049",
+  "truth_dataset_content_fingerprint_sha256": "94e20d273669afdf7ac168bc59b44bc7f08c822a0ab2f741364287c29495951b"
+}

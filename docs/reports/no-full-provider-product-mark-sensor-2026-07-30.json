@@ -1,0 +1,597 @@
+{
+  "schema_version": "official-product-mark-sift-audit-v1",
+  "generated_at": "2026-07-30",
+  "scope": "RETROSPECTIVE_DEVVAL_DIAGNOSTIC",
+  "holdout_consumed": false,
+  "provider_calls": 0,
+  "network_calls": 0,
+  "production_effect": false,
+  "warning": "The target resize and the Prizm threshold candidate were selected after observing this previously used dev/validation cohort. All 17 rows are retrospective diagnostics; both settings require a new untouched validation cohort.",
+  "sensor": {
+    "algorithm": "SIFT_RATIO_RANSAC",
+    "sift": {
+      "nfeatures": 4000,
+      "contrast_threshold": 0.015,
+      "edge_threshold": 12
+    },
+    "ratio_threshold": 0.72,
+    "ransac_reprojection_threshold_px": 5.0,
+    "target_max_dimension": 500,
+    "latency_scope": "SIFT_FEATURE_EXTRACTION_AND_SIX_REFERENCE_MATCHES_EXCLUDES_DECODE_AND_RESIZE",
+    "baseline_thresholds": {
+      "PANINI_PHOENIX": 5,
+      "PANINI_CONTENDERS": 5,
+      "PANINI_SPECTRA": 5,
+      "PANINI_ELITE": 5,
+      "PANINI_DONRUSS_OPTIC": 5,
+      "PANINI_PRIZM": 5
+    },
+    "retrospective_candidate_thresholds": {
+      "PANINI_CONTENDERS": 5,
+      "PANINI_DONRUSS_OPTIC": 5,
+      "PANINI_ELITE": 5,
+      "PANINI_PHOENIX": 5,
+      "PANINI_PRIZM": 7,
+      "PANINI_SPECTRA": 5
+    }
+  },
+  "inputs": {
+    "reference_manifest": "/private/tmp/lynca-overnight-eval-20260730/data/eval/product-emblem/multi-product-official-reference-v1.json",
+    "reference_manifest_sha256": "eb61f4395ec079a3bb356dd444378adf75df91df13583b03c569eec3fd85e286",
+    "labels": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+    "labels_sha256": "796590f61486fbf1bacb344b8bbe8f207a1aba50f1f9099b99e4547edb6001ff",
+    "images": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen-images",
+    "image_set_sha256": "d13e399c7409c81121126db8909075074cd289297731d6c9d19a21dfd6165a3a"
+  },
+  "code_contract": {
+    "script": "/private/tmp/lynca-overnight-eval-20260730/scripts/audit_product_mark_sensor.py",
+    "script_sha256": "4237c1fa43f600937e4aebfb626dd343764105f084205590030bb9b05be63b2c"
+  },
+  "metrics": {
+    "frozen_threshold_on_retrospective_scale": {
+      "denominator": 17,
+      "correct": 14,
+      "critical_wrong": 0,
+      "unknown": 3,
+      "ambiguous": 0,
+      "emitted": 14,
+      "joint_correct_rate": 0.823529,
+      "precision_when_emitted": 1.0
+    },
+    "retrospective_precision_candidate": {
+      "denominator": 17,
+      "correct": 14,
+      "critical_wrong": 0,
+      "unknown": 3,
+      "ambiguous": 0,
+      "emitted": 14,
+      "joint_correct_rate": 0.823529,
+      "precision_when_emitted": 1.0
+    },
+    "latency_ms": {
+      "p50": 78.288,
+      "p95": 203.747,
+      "max": 203.747
+    }
+  },
+  "gate": {
+    "operational_joint_target": 0.85,
+    "required_addressable_coverage_at_precision_0_99_deadline_0_95": 0.903775,
+    "minimum_correct_on_17_for_operational_target": 15,
+    "minimum_addressable_on_17_for_joint_gate": 16,
+    "status": "NO_GO"
+  },
+  "rows": [
+    {
+      "item_id": "unseen_09dd62702d9d39ae7da6",
+      "image_sha256": "7cd9d285b36318de43f762eb3d45fc809c351a17e4cbd189e6cf1d472730b985",
+      "ground_truth_product": "PANINI_PRIZM",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 4,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 12,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PRIZM",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PRIZM",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 90.405,
+      "original_dimensions": [
+        900,
+        1200
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_189096ee2adb683d47b0",
+      "image_sha256": "cb30548f9606797290ee3d06644c7f40e7f2e99534b9dba26a8b1249fccb2274",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 4,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "UNKNOWN",
+        "reason": "BELOW_THRESHOLD"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "UNKNOWN",
+        "reason": "BELOW_THRESHOLD"
+      },
+      "latency_ms": 53.405,
+      "original_dimensions": [
+        1204,
+        1600
+      ],
+      "sensor_dimensions": [
+        376,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_265e71d598ed841e4475",
+      "image_sha256": "75bcc10adc5af5348717f6bf3bf04b1868e6073d0877cf9890aefb265b48ccfe",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 8,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 53.289,
+      "original_dimensions": [
+        810,
+        1080
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_302227384e4e19804899",
+      "image_sha256": "ced08e56d54a192ef64ccaa95f6d487af6c0237fee9f4d16c5b0a63b615c48f9",
+      "ground_truth_product": "PANINI_PRIZM",
+      "scores": {
+        "PANINI_CONTENDERS": 3,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 21,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PRIZM",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PRIZM",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 133.952,
+      "original_dimensions": [
+        1200,
+        1600
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_382c09472dc13c325652",
+      "image_sha256": "e9ddca7dd916304755a4cd3d0f5145d6be0ba1a3f3f4938e34527d398bf0bca1",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "UNKNOWN",
+        "reason": "BELOW_THRESHOLD"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "UNKNOWN",
+        "reason": "BELOW_THRESHOLD"
+      },
+      "latency_ms": 65.662,
+      "original_dimensions": [
+        710,
+        1000
+      ],
+      "sensor_dimensions": [
+        355,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_39194858fc5eeec7d09d",
+      "image_sha256": "0d15b43825dcb3de40aad5b31eac6091a5623a5837dc45b288091f3ac9a940f7",
+      "ground_truth_product": "PANINI_PRIZM",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 17,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PRIZM",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PRIZM",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 148.226,
+      "original_dimensions": [
+        1580,
+        1595
+      ],
+      "sensor_dimensions": [
+        495,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_40b6057985f303926690",
+      "image_sha256": "6ccae9adb69bda871646f15497cd67234de644271b3a425ea23adeba57e5ca22",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 4,
+        "PANINI_PHOENIX": 0,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "UNKNOWN",
+        "reason": "BELOW_THRESHOLD"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "UNKNOWN",
+        "reason": "BELOW_THRESHOLD"
+      },
+      "latency_ms": 16.586,
+      "original_dimensions": [
+        153,
+        225
+      ],
+      "sensor_dimensions": [
+        153,
+        225
+      ]
+    },
+    {
+      "item_id": "unseen_4a387a2e25fe69fa7508",
+      "image_sha256": "869fdf891fbc4501eacfc5a088e115fbd5d44363f3d5b8d27783ebe0ff54c0fc",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 4,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 6,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 55.296,
+      "original_dimensions": [
+        1200,
+        1600
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_5aaa54c150b4479171cb",
+      "image_sha256": "cbd783d4c114081337eb0d128ea50df1d7d3266cd14bfc86f50be04e7db79528",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 4,
+        "PANINI_PHOENIX": 12,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 4
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 91.58,
+      "original_dimensions": [
+        1168,
+        1542
+      ],
+      "sensor_dimensions": [
+        379,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_745e2fed2b81fdb80c63",
+      "image_sha256": "dff9fed154c33a0927530577c7c09a011337761cf885c6d878ec577753736b08",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 4,
+        "PANINI_PHOENIX": 11,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 84.355,
+      "original_dimensions": [
+        1200,
+        1600
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_af443b0004240f0107ee",
+      "image_sha256": "0f5d7708419de9875f940260b2321caffa15b2b7881cf820a035532bd3008124",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 4,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 6,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 68.206,
+      "original_dimensions": [
+        1200,
+        1600
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_bbfc75a6ba32ffe48343",
+      "image_sha256": "0f144669f1e9ca980ea2a46c2e22f72dbcb8580d6bd347931220ec0eb2fbfa75",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 16,
+        "PANINI_PRIZM": 4,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 101.602,
+      "original_dimensions": [
+        1060,
+        1600
+      ],
+      "sensor_dimensions": [
+        331,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_c1f30c005617e6986ef1",
+      "image_sha256": "b35ef0ab1d556fcc54634754dcc79d92566dd36629b98a4f521110b1af49ab32",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 9,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 84.168,
+      "original_dimensions": [
+        1199,
+        1599
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_d2014506e773d47e7536",
+      "image_sha256": "b5c2bf10bc3b9d105f48350d6219963e3d40eb124bb787276c8415b78cb30e29",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 10,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 4
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 78.288,
+      "original_dimensions": [
+        1200,
+        1600
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_e2317539ffdb61b4693b",
+      "image_sha256": "d167fb564c8fa36f41de4f3ac88a4fd6a5525894d4c16990c82d5778fcd7a6ff",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 8,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 70.364,
+      "original_dimensions": [
+        1200,
+        1600
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_e90b6054163320bbc04b",
+      "image_sha256": "8e541998648e36f540edff4a318b7a5815cdee486c7f29fa011537c6dfc41b40",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 13,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 66.41,
+      "original_dimensions": [
+        1200,
+        1600
+      ],
+      "sensor_dimensions": [
+        375,
+        500
+      ]
+    },
+    {
+      "item_id": "unseen_e9c74d3fa6e36cc2a779",
+      "image_sha256": "40eb6b6b109212f2bab6c07ec24bfbd6cd7ed36af7bbbecc25db75d852b55bb1",
+      "ground_truth_product": "PANINI_PHOENIX",
+      "scores": {
+        "PANINI_CONTENDERS": 0,
+        "PANINI_DONRUSS_OPTIC": 0,
+        "PANINI_ELITE": 0,
+        "PANINI_PHOENIX": 9,
+        "PANINI_PRIZM": 0,
+        "PANINI_SPECTRA": 0
+      },
+      "baseline_frozen": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "retrospective_precision_candidate": {
+        "prediction": "PANINI_PHOENIX",
+        "reason": "UNIQUE_TOP_SCORE"
+      },
+      "latency_ms": 203.747,
+      "original_dimensions": [
+        763,
+        947
+      ],
+      "sensor_dimensions": [
+        403,
+        500
+      ]
+    }
+  ],
+  "report_sha256": "b27dc0227d8e45300c0cf48ee8fb0c91a280ecd41f34db331d9d6ea49ca1e162"
+}

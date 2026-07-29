@@ -32,19 +32,24 @@ supported: the modelled parallel maximum of the three required OCR crops is
 already `3.123 s` before Candidate, Resolver, Renderer and commit.
 
 For the writer's actual clock, which starts at file selection rather than at
-admission intent, the remaining original upload must be included. The following
-are illustrative physical-bound scenarios, not measured workload percentiles:
+admission intent, pre-admission UI time and the remaining original upload must
+be included. The following table sets pre-admission UI time to zero and starts
+the progressive evidence branch at file selection. Its upload figures are byte
+floors that exclude TLS, signing, PUT verification, retries and scheduling; they
+are not measured workload percentiles:
 
 | Input floor at `20 Mbps` | Modelled writer-visible p50 | Modelled writer-visible p95 |
 | --- | ---: | ---: |
 | one `6 MB` side (`2.4 s` byte floor) | `2.70–3.14 s` | `4.27–5.62 s` |
-| two `6 MB` sides (`4.8 s` aggregate byte floor) | `5.10–5.54 s` | `5.45–6.24 s` |
+| two `6 MB` sides (`4.8 s` aggregate byte floor; optimistic single-evidence-budget lower envelope) | `5.10–5.54 s` | `5.45–6.24 s` |
 
 Thus the nearest defensible first implementation target is **front-only
 addressable cards p50 at most `3.2 s`, p95 at most `5.7 s`; two-side cards p50
 at most `5.6 s`, p95 at most `6.3 s`**, under that uplink and file-size
-assumption. Smaller files or a faster uplink improve the upload term; software
-cannot promise those numbers independently of bytes and bandwidth.
+assumption. The two-side row is not yet an implementation target: it reuses the
+single-side fetch/decode/evidence budget because no paired two-side evidence
+packet exists. Smaller files or a faster uplink improve the upload term;
+software cannot promise those numbers independently of bytes and bandwidth.
 
 The OCR number is intentionally no longer mislabeled as measured card latency.
 The retained experiment contains 100 marginal timings for each of three crop
@@ -86,19 +91,26 @@ upload instead of adding the two durations:
 
 ```text
 T_writer_visible
-  = max(T_original_upload_remaining,
-        T_small_evidence_upload + T_focused_OCR)
+  = T_pre_admission_UI
+    + max(T_original_upload_remaining,
+          T_small_evidence_upload
+            + max(T_focused_OCR, T_product_mark))
     + T_compiled_lookup
     + T_candidate_control
     + T_resolver_renderer
     + T_commit_status
 ```
 
-This equation does not erase the network lower bound. At 20 Mbps, one 6 MB
+This equation is a componentwise planning model, not the quantile of an
+observed joint distribution: in particular, `max(p50_A, p50_B)` is not
+generally `p50(max(A,B))`. Product-mark work is faster than OCR at the reported
+component quantiles, but paired per-card timings are required before promotion.
+The equation also does not erase the network lower bound. At 20 Mbps, one 6 MB
 original needs at least `2.4 s` and two 6 MB originals need at least `4.8 s`
-for bytes alone. Therefore two-to-three seconds from initial file selection is
-physically impossible for the latter input. Progressive preparation can hide
-OCR under that transfer, but cannot transmit bytes faster than the uplink.
+for bytes alone, excluding protocol and retry overhead. Therefore two-to-three
+seconds from initial file selection is physically impossible for the latter
+input. Progressive preparation can hide OCR under that transfer, but cannot
+transmit bytes faster than the uplink.
 
 ## The latest sealed cold-trace numerator is zero
 
@@ -150,6 +162,51 @@ addressability only; they do not prove that current-image sensors can construct
 the query. Exact CardJoin is therefore a useful secondary lane, not the main
 first-day route.
 
+A second, stricter card-level audit compiled all `90,419` trusted rows and
+matched candidates to the independent canonical identity IDs instead of merely
+matching normalized fields. Writer rows whose fields were parser-derived were
+retained as support but were not allowed to attest identity:
+
+| Card-level upper bound | Combined | Development | Validation |
+| --- | ---: | ---: | ---: |
+| independently attested canonical identity present | `0/148` | `0/118` | `0/30` |
+| all known fields compatible, identity unproven | `2/148` | `2/118` | `0/30` |
+| core-compatible candidate present | `29/148` | `21/118` | `8/30` |
+| core-compatible candidate unique | `14/148` | `9/118` | `5/30` |
+
+The two tables' core-compatible counts are not directly comparable: their query
+contracts and field normalization differ. “Stricter” here refers only to
+canonical-identity source attestation, not to a narrower core-field predicate.
+The second audit supersedes the first for the identity gate.
+
+The immutable index compiled in about `3–4 s` once; its 152 truth-fed queries
+ran below p50 `0.1 ms` and p95 `10 ms`. The speed is sufficient. Under the
+current query and normalization contract, independent card-level identity
+coverage is not; this audit does not prove that a relevant raw catalog row is
+globally absent.
+
+## Retrospective dev/validation product-mark sensor result
+
+Six official Panini product-mark references were evaluated locally on 17
+previously used dev/validation images with no Provider or network call. The
+500-pixel resize was selected after observing the full cohort, so every row is
+now retrospective; it is a future-validation candidate, not prospective evidence.
+
+| Measurement | Result |
+| --- | ---: |
+| correct product | `14/17 = 82.35%` |
+| critical wrong product | `0/17` |
+| `UNKNOWN` | `3/17` |
+| precision when emitted | `100%` |
+| six-reference compute p50 / p95, retained run | see versioned JSON report |
+| conservative stage budget p50 / p95 | `130–180 / 340–400 ms` |
+
+This is the first useful non-Provider visual numerator, but it still fails the
+coverage gate before OCR, Candidate, Resolver or title expression are counted.
+The reported sensor timing excludes image decode and resize. It proves that
+product-mark matching is cheap enough to budget in parallel; it does not prove
+an 85% title route or a prospective Development result.
+
 ## The 85% requirement as a hard coverage equation
 
 For an operational goal of 85% correct results within the deadline:
@@ -172,8 +229,8 @@ the component rates alone can never produce `GO`.
 
 On 148 identity groups this requires at least `134/148` addressable groups,
 with split gates of `107/118` Development and `28/30` Validation. The current
-executable cold numerator is `0`; even granting the illegal truth-fed union of
-19 groups would leave 115 groups missing. This operational equation supplements
+executable cold numerator is `0`; even granting the illegal truth-fed
+core-compatible union of 29 groups would leave 105 groups missing. This operational equation supplements
 rather than replaces the two accuracy scoreboards: familiar and unseen
 `policy_fair_token_recall` must each still meet their own gate.
 
@@ -208,6 +265,16 @@ rather than replaces the two accuracy scoreboards: familiar and unseen
    Resolver as pre-resolved fields; the official candidate must cross the
    existing Candidate Application boundary. OCR trust tier `3` is preserved
    across flatten/rebuild instead of being upgraded to tier `1`.
+9. `card-level-release-pack-audit-v3` binds the catalog pack contents and the
+   exact 152-row truth-bearing dev/validation subset independently. The
+   versioned binding pins the frozen manifest content, its original source
+   fingerprint, truth item IDs/count and canonical truth content; it rejects
+   holdout input, truth mutation and correlated self-proof before compilation
+   or query, while separating canonical identity Recall from truth-field
+   compatibility.
+10. `shadow-ocr-detail-completion-snapshot-v1` requires one immutable image and
+    crop generation across schedule, OCR job and Worker-emitted patch. Missing,
+    stale or retroactively unversioned evidence cannot become `COMPLETE`.
 
 ## Local Release Pack result
 
@@ -232,18 +299,20 @@ latency; it proves neither exact-card coverage nor the 85% accuracy target.
 
 ## Next falsifiable gate
 
-The next gate is not another fixed-20 Provider run. The immutable index and
-sub-`10 ms` lookup gates are complete; what remains is a development and
-validation replay of the compiled route:
+The next gate is not another full-Provider run. The immutable card index has
+now been compiled and rejected as the primary route; it remains an exact-code
+secondary lane. What remains is a Development and Validation replay of the
+sensor-first route:
 
-1. add reviewed writer vocabulary and a real checklist/card-code source to the
-   immutable index without changing its owner boundary;
+1. freeze the 500-pixel six-mark sensor only as a candidate, then evaluate it
+   on untouched Validation images;
 2. in benchmark/Shadow only, schedule product/subject detail crops and wait for
    the version-matched patch snapshot before probing; keep production defaults
    unchanged;
 3. retain a per-card batch OCR timing packet so the current crop-max model can
    be replaced with observed card-level p50/p95;
-4. join direct OCR fields and prototype query support to that index;
+4. join direct OCR fields, mark support and existence constraints into the
+   Candidate packet; the mark never owns SEM or a title;
 5. report addressability, Retrieval Recall@1/5/20, Selection, Application,
    Resolver, Renderer, fabrication and latency on both splits;
 6. proceed to one cold paired 20 only after Development and Validation pass
@@ -278,3 +347,7 @@ changed by this report or the compiled-route contract.
 - Release Pack benchmark:
   `docs/reports/release-pack-memory-index-benchmark-2026-07-30.json`
   (`sha256:0864febe24f2a00760272946871f2aacd70e6587ec260a54c789ead141a79a69`)
+- Card-level Release Pack audit:
+  `docs/reports/card-level-release-pack-audit-2026-07-30.json`
+- Retrospective dev/validation product-mark sensor audit:
+  `docs/reports/no-full-provider-product-mark-sensor-2026-07-30.json`
