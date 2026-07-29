@@ -20,6 +20,7 @@ assert.equal(v4ProductionStrategy.profile.job_retry.max_attempts, 4);
 assert.equal(v4ProductionStrategy.profile.shadow_recognition_policy_enabled, true);
 assert.equal(v4ProductionStrategy.profile.shadow_recognition_policy_can_execute, false);
 assert.equal(v4ProductionStrategy.profile.provider_terminal_path_policy_id, "provider-terminal-path-policy");
+assert.equal(v4ProductionStrategy.profile.candidate_control_policy_version, "candidate-heuristic-v5-semantic-identity-dedup-20260719");
 assert.equal(v4ProductionStrategy.shadow_recognition_policy.constraints.shadow_only, true);
 assert.equal(
   v4ProductionStrategy.asset_lifecycle.assert_image_generation({

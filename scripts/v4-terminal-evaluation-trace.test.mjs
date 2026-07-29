@@ -5,6 +5,7 @@ import {
   terminalEvaluationDecisionTracePacket
 } from "../api/v4/listing-copilot-title.js";
 import { identityResolverPolicyVersion } from "../lib/identity-resolution/listing-resolution-gate.mjs";
+import { candidateSelectionHeuristicVersion } from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { buildEvaluationDecisionTracePacket } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
@@ -67,6 +68,7 @@ const result = {
   final_title: "stale pre-adapter title",
   evidence: {},
   normalization_version: "test-normalizer-v1",
+  candidate_policy_version: candidateSelectionHeuristicVersion,
   resolver_version: identityResolverPolicyVersion,
   renderer_version: "test-renderer-v1",
   recognition_pipeline_fingerprint: "a".repeat(64),
@@ -105,6 +107,7 @@ const packet = terminalEvaluationDecisionTracePacket(result, payload);
 assert.equal(packet.replay_snapshot.status, "COMPLETE");
 assert.equal(packet.replay_snapshot.final_title, "2025 Panini Test Player");
 assert.equal(packet.replay_snapshot.versions.resolver, identityResolverPolicyVersion);
+assert.equal(packet.replay_snapshot.versions.candidate_policy, candidateSelectionHeuristicVersion);
 assert.notEqual(packet.replay_snapshot.final_title, result.final_title);
 assert.equal(packet.knowledge_first_route.production_action, "RUN_FULL_PROVIDER");
 assert.equal(packet.knowledge_first_route.counterfactual_action, "KNOWLEDGE_ASSIST");

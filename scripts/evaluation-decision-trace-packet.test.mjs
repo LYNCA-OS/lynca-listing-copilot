@@ -188,6 +188,7 @@ const completeReplayPacket = buildEvaluationDecisionTracePacket({
   final_title: "2025 Test Player",
   renderer_version: "renderer-v1",
   normalization_version: "normalization-v1",
+  candidate_policy_version: "candidate-v1",
   resolver_version: "resolver-v1",
   identity_cache: { recognition_pipeline_fingerprint: "a".repeat(64) },
   effective_terminal_renderer_inputs: {
@@ -205,6 +206,7 @@ const completeReplayPacket = buildEvaluationDecisionTracePacket({
 }, payload);
 assert.equal(completeReplayPacket.replay_snapshot.status, "COMPLETE");
 assert.equal(completeReplayPacket.replay_snapshot.versions.recognition_pipeline_fingerprint, "a".repeat(64));
+assert.equal(completeReplayPacket.replay_snapshot.versions.candidate_policy, "candidate-v1");
 assert.equal(completeReplayPacket.replay_snapshot.derivation_provenance[0].status, "UNKNOWN");
 assert.equal(completeReplayPacket.replay_snapshot.effective_terminal_renderer_inputs.serial_numerator_verified, null);
 assert.equal(
@@ -221,6 +223,7 @@ const missingReplayEvidenceArrays = buildEvaluationDecisionTracePacket({
   final_title: "2025 Test Player",
   renderer_version: "renderer-v1",
   normalization_version: "normalization-v1",
+  candidate_policy_version: "candidate-v1",
   resolver_version: "resolver-v1",
   identity_cache: { recognition_pipeline_fingerprint: "a".repeat(64) },
   effective_terminal_renderer_inputs: {
