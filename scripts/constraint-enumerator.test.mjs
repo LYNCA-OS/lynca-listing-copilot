@@ -172,4 +172,54 @@ test("a teamless product answers EMPTY before consulting a polluted team set", (
   assert.equal(mickey.value, null, "a confident wrong team is worse than no answer");
 });
 
+test("a product name sitting in the set field is read as a product", () => {
+  // 74% of production set lookups miss, and the largest misses are not sets at
+  // all: "topps chrome" (177 cards), "flawless" (70), "chrome" (81). Harvesting
+  // more sets cannot fix those -- the lookup was asking the wrong table.
+  const productModel = {
+    product_years: {
+      "Topps Chrome": [2024, 2025],
+      "Panini Flawless": [2023],
+      // Three products really do end in "prizm" -- that is why 190 production
+      // cards whose set field says "prizm" must stay UNKNOWN. A product merely
+      // containing the word, like "Panini Prizm Draft Picks", is not a match:
+      // a lister writing "Prizm" does not mean Draft Picks.
+      "Panini Prizm": [2023],
+      "Donruss Prizm": [2023],
+      "Panini Prizm Draft Picks": [2023],
+      "Donruss Optic": [2024],
+      "Panini Donruss Optic": [2024]
+    },
+    set_product_years: {}
+  };
+
+  const exact = enumerateProduct({ set: "Topps Chrome", year: "2025" }, productModel);
+  assert.equal(exact.status, outcomes.VALUE);
+  assert.equal(exact.value, "Topps Chrome");
+
+  // "flawless" is a suffix of exactly one product name.
+  const suffix = enumerateProduct({ set: "Flawless", year: "2023" }, productModel);
+  assert.equal(suffix.status, outcomes.VALUE);
+  assert.equal(suffix.value, "Panini Flawless");
+
+  // "prizm" is a suffix of two products published the same year, so it stays
+  // UNKNOWN. A confident wrong product line is worse than a gap.
+  const ambiguous = enumerateProduct({ set: "Prizm", year: "2023" }, productModel);
+  assert.equal(ambiguous.status, outcomes.UNKNOWN);
+  assert.equal(ambiguous.candidates.length, 2);
+
+  // The year separates two products of the same name when only one ran then.
+  const byYear = enumerateProduct({ set: "Optic", year: "2024" }, productModel);
+  assert.equal(byYear.status, outcomes.UNKNOWN, "both Optic products ran in 2024");
+});
+
+test("a genuine set name still wins over the product reading", () => {
+  const both = {
+    product_years: { "Panini Phoenix": [2025], "Fade To Black": [2025] },
+    set_product_years: { "fade to black": ["2025|Panini Phoenix"] }
+  };
+  const r = enumerateProduct({ set: "Fade To Black", year: "2025" }, both);
+  assert.equal(r.value, "Panini Phoenix", "the set table is consulted first");
+});
+
 console.log("constraint enumerator tests passed");
