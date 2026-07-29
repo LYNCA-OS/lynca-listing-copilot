@@ -33,6 +33,7 @@ function eligibilityStableShape(eligibility = {}) {
 }
 
 const baseVectorEnv = {
+  V4_VECTOR_RETRIEVAL_DISABLED: "false",
   ENABLE_VECTOR_RETRIEVAL: "true",
   VECTOR_RETRIEVAL_MODE: "assist",
   SUPABASE_URL: "https://supabase.test",
@@ -1516,7 +1517,9 @@ assert.throws(() => validateProviderEvidencePayload("openai_legacy", {
 
 const workerMissing = await embedImagesWithVectorWorker({
   images: [],
-  env: {},
+  // This case tests the configured-worker failure contract, not the new
+  // production-default short circuit.
+  env: { V4_VECTOR_RETRIEVAL_DISABLED: "false" },
   fetchImpl: async () => {
     throw new Error("should not call network");
   }

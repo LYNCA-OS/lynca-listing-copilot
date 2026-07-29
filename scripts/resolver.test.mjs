@@ -16,6 +16,10 @@ import { classifyNumberToken, resolveNumberFields, splitCardNumber } from "../li
 import { resolveCardFields } from "../lib/listing/resolver/resolve-card.mjs";
 import { resolveTrustedNameCandidate, trustedNameSimilarity } from "../lib/listing/resolver/trusted-name-candidate-resolver.mjs";
 
+// This suite exercises the underlying per-field wait budgets. The dedicated
+// ocr-rendezvous-wait-ceiling suite owns the new 2s production-default ceiling.
+process.env.PREINGESTION_OCR_MAX_WAIT_MS = "60000";
+
 assert.equal(classifyNumberToken("31/50"), "serial_number");
 assert.equal(classifyNumberToken("130/175"), "serial_number");
 assert.equal(classifyNumberToken("257/208"), "collector_number");
@@ -179,7 +183,10 @@ const targetedSerialAndGradeWait = criticalOcrRendezvousDecision({
   unresolved: ["card_grade"],
   latestOcrState: { configured: true, serial_active_count: 2, grade_label_active_count: 1 },
   configuredWaitMs: 0,
-  criticalWaitMs: 2500
+  criticalWaitMs: 2500,
+  // Preserve the historical 8s serial-budget assertion by explicitly opting
+  // out of the new 2s production ceiling in this one policy-unit test.
+  maxWaitMs: 8000
 });
 assert.deepEqual(targetedSerialAndGradeWait.target_fields, ["serial_number", "grade"]);
 // Waiting on the serial numerator raises the budget to the dedicated serial

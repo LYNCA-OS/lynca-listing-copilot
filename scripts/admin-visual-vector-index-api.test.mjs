@@ -34,6 +34,10 @@ process.env.LISTING_IMAGE_BUCKET = "listing-feedback-images";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.test";
 process.env.RECOGNITION_WORKER_TOKEN = "recognition-token";
 process.env.VECTOR_QUERY_TIMEOUT_MS = "1000";
+// This test exercises the explicit index-building/admin path. Production
+// recognition defaults to disabled while the 587-row index is stale, but the
+// admin route must still be testable through the documented opt-in.
+process.env.V4_VECTOR_RETRIEVAL_DISABLED = "false";
 
 const unauthorizedReq = mockReq({
   headers: { authorization: "Bearer wrong" }
