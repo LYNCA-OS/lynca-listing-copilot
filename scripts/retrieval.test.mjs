@@ -1046,6 +1046,39 @@ const mockRegistry = createRetrievalProviderRegistry({
   }
 });
 const cache = createRetrievalCache();
+const exclusionAwareCache = createRetrievalCache();
+const sharedCatalogQuery = {
+  provider_id: retrievalProviderIds.CATALOG,
+  family: retrievalQueryFamilies.CATALOG_SUBJECT_ANCHOR,
+  query: '"Cooper Flagg"'
+};
+exclusionAwareCache.set(sharedCatalogQuery, {
+  candidates: [{ candidate_id: "self-row" }],
+  providers_used: [retrievalProviderIds.CATALOG]
+});
+assert.equal(
+  exclusionAwareCache.get({
+    ...sharedCatalogQuery,
+    exclude_source_feedback_ids: ["feedback-current-card"]
+  }),
+  null,
+  "a self-excluding query must not replay an unfiltered retrieval cache entry"
+);
+exclusionAwareCache.set({
+  ...sharedCatalogQuery,
+  exclude_source_feedback_ids: ["feedback-b", "feedback-a"]
+}, {
+  candidates: [{ candidate_id: "safe-row" }],
+  providers_used: [retrievalProviderIds.CATALOG]
+});
+assert.equal(
+  exclusionAwareCache.get({
+    ...sharedCatalogQuery,
+    exclude_source_feedback_ids: ["feedback-a", "feedback-b"]
+  })?.candidates?.[0]?.candidate_id,
+  "safe-row",
+  "set-like retrieval constraints should have a stable cache identity"
+);
 const firstRun = await runRetrieval({
   resolved,
   missingFields: ["parallel"],
@@ -1818,7 +1851,7 @@ try {
   assert.equal(durableRunOne.sources[0].source_url, "https://www.example.com/cards/tcar-cf");
 
   const persistedCachePayload = JSON.parse(fs.readFileSync(cachePath, "utf8"));
-  assert.equal(persistedCachePayload.version, 1);
+  assert.equal(persistedCachePayload.version, 2);
   assert.equal(persistedCachePayload.entries.length, 1);
 
   const durableCacheTwo = createFileBackedRetrievalCache({
@@ -1885,6 +1918,49 @@ const marketplaceDiscoveryRun = await runRetrieval({
 assert.equal(marketplaceFollowupCalls, 0);
 assert.ok(marketplaceDiscoveryRun.sources.every((candidate) => candidate.source_type === "MARKETPLACE"));
 assert.ok(!marketplaceDiscoveryRun.trace.some((entry) => entry.provider_id === retrievalProviderIds.OFFICIAL_SOURCE));
+
+const selfReferenceRegistry = createRetrievalProviderRegistry({
+  overrides: {
+    [retrievalProviderIds.CATALOG]: {
+      id: retrievalProviderIds.CATALOG,
+      configured: true,
+      enabled: true,
+      async search() {
+        return {
+          provider_id: retrievalProviderIds.CATALOG,
+          candidates: [{
+            candidate_id: "catalog-self-row",
+            source_feedback_id: "feedback-current-card",
+            source_url: "supabase://catalog-cards/self-row",
+            source_type: "INTERNAL_APPROVED_HISTORY",
+            trust_tier: 10,
+            title: "2025 Topps Chrome Cooper Flagg",
+            evidence_excerpt: "deliberately leaked provider row",
+            fields: {
+              year: "2025",
+              product: "Topps Chrome",
+              players: ["Cooper Flagg"]
+            }
+          }]
+        };
+      }
+    }
+  }
+});
+const selfReferenceRun = await runRetrieval({
+  resolved,
+  mode: retrievalModes.INTERNAL_ONLY,
+  allowedFamilies: [retrievalQueryFamilies.CATALOG_EXACT_CODE],
+  excludeSourceFeedbackIds: ["feedback-current-card"],
+  providerRegistry: selfReferenceRegistry,
+  cache: createRetrievalCache()
+});
+assert.equal(selfReferenceRun.sources.length, 0, "Retrieval Engine must reject a same-source candidate even when a provider leaks it");
+assert.deepEqual(selfReferenceRun.self_retrieval_exclusion, {
+  requested_source_count: 1,
+  excluded_candidate_count: 1,
+  active: true
+});
 
 const internalOnly = await runRetrieval({
   resolved,
