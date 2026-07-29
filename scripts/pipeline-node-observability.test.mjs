@@ -450,6 +450,9 @@ const brokenLedger = buildPipelineNodeLedger({
       job_observability: [{
         job_id: "job-1",
         crop_role: "serial_crop",
+        source_image_id: "image-back",
+        source_side: "back",
+        source_region: "card_code",
         status: "FAILED",
         attempts: 2,
         lifecycle_ms: 900,
@@ -466,6 +469,11 @@ assert.equal(failedChecks.has("ocr_patch_version_count_conservation"), true);
 assert.equal(failedChecks.has("critical_field_flow_has_no_silent_drop"), true);
 assert.deepEqual(brokenLedger.field_flow.unexplained_resolution_drop_fields, ["collector_number"]);
 assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability[0].error_code, "OCR_TIMEOUT");
+assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability[0].source_image_id, "image-back");
+assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability[0].source_side, "back");
+assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability[0].source_region, "card_code");
+assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability_count, 1);
+assert.equal(brokenLedger.nodes.find((node) => node.node_id === "preingestion_ocr")?.metrics.job_observability_truncated, false);
 
 const safelyRejectedInitialsLedger = buildPipelineNodeLedger({
   result: {

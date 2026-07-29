@@ -123,6 +123,7 @@ const sampleJob = {
       crop_region: { x: 0.6, y: 0.8, width: 0.35, height: 0.15 },
       crop_metadata: {
         crop_id: "crop-1",
+        source_side: "front",
         source_object_path: "assets/asset-1/front.jpg",
         normalized_bounds: { x: 0.6, y: 0.8, width: 0.35, height: 0.15 },
         pixel_bounds: { x: 1200, y: 1600, width: 700, height: 300 }
@@ -863,6 +864,9 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(calls[0].metadata.inline_full_image_fallback, false);
   assert.equal(result.patches_appended, 0);
   assert.equal(result.succeeded, 1);
+  assert.equal(result.job_observability[0].source_image_id, "img-front");
+  assert.equal(result.job_observability[0].source_side, "front");
+  assert.equal(result.job_observability[0].source_region, "serial_region");
 }
 
 // --- slab-like grade crops fall back to full-image OCR; raw cards do not ---
@@ -1159,7 +1163,13 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
       const target = String(url);
       if (target.includes("preingestion_jobs")) {
         return jsonResponse([
-          { job_id: "a", status: "succeeded", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:a` },
+          {
+            job_id: "a",
+            status: "succeeded",
+            attempts: 1,
+            job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:a`,
+            payload: sampleJob.payload
+          },
           { job_id: "b", status: "failed", attempts: 1, job_key: `ocr:${preingestionOcrJobVersion}:bundle-1:b`, last_error: "no text" },
           { job_id: "historical", status: "failed", attempts: 1, job_key: "ocr:ocr-crop-v3:bundle-1:old", last_error: "old timeout" }
         ]);
@@ -1178,6 +1188,9 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.deepEqual(state.evidence_patches.map((patch) => patch.value), ["30/99"]);
   assert.equal(state.historical_job_count, 1);
   assert.equal(state.verified_serial_ready, true);
+  assert.equal(state.job_observability[0].source_image_id, "img-front");
+  assert.equal(state.job_observability[0].source_side, "front");
+  assert.equal(state.job_observability[0].source_region, "serial_region");
 }
 
 // --- rendezvous waits through a running state and returns the completed patch state ---

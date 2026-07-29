@@ -11,6 +11,7 @@ import {
   applyRecognitionBenchmarkProfile,
   recognitionBenchmarkProfileIds
 } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
+import { buildPipelineNodeLedger } from "../lib/listing/pipeline/node-observability.mjs";
 import { providerAuxRouteReplayInputHash } from "../lib/listing/v4/route-planner/provider-aux-route-shadow.mjs";
 
 const payload = {
@@ -100,6 +101,23 @@ const packet = buildEvaluationDecisionTracePacket({
     join_wait_ms: 12,
     worker_finished_before_provider: true,
     worker_error_code: null
+  },
+  pipeline_node_ledger: {
+    nodes: [{
+      node_id: "preingestion_ocr",
+      metrics: {
+        job_observability_count: 1,
+        job_observability_truncated: false,
+        job_observability: [{
+          job_id: "ocr-job-1",
+          crop_role: "card_code_crop",
+          source_image_id: "image-back",
+          source_side: "back",
+          source_region: "card_code",
+          status: "SUCCEEDED"
+        }]
+      }
+    }]
   }
 }, payload);
 
@@ -116,7 +134,40 @@ assert.equal(packet.provider_observation.field_evidence[0].source_image_id, "ima
 assert.equal(packet.provider_observation.field_evidence_count, 1);
 assert.equal(packet.provider_observation.field_evidence_truncated, false);
 assert.equal(packet.provider_observation.unresolved_truncated, false);
+assert.equal(packet.preingestion_ocr.schema_version, "preingestion-ocr-lineage-trace-v1");
+assert.equal(packet.preingestion_ocr.job_observability[0].source_image_id, "image-back");
+assert.equal(packet.preingestion_ocr.job_observability[0].source_side, "back");
+assert.equal(packet.preingestion_ocr.job_observability[0].source_region, "card_code");
+assert.equal(packet.preingestion_ocr.job_observability_count, 1);
+assert.equal(packet.preingestion_ocr.job_observability_truncated, false);
 assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v10");
+
+const oversizedOcrJobObservability = Array.from({ length: 33 }, (_, index) => ({
+  job_id: `ocr-job-${index + 1}`,
+  crop_role: "card_code_crop",
+  source_image_id: `image-${index + 1}`,
+  source_side: index % 2 === 0 ? "front" : "back",
+  source_region: "card_code",
+  status: "SUCCEEDED"
+}));
+const oversizedOcrLedger = buildPipelineNodeLedger({
+  result: {
+    bundle_used: true,
+    preingestion_ocr_rendezvous: {
+      status: "TERMINAL",
+      job_count: oversizedOcrJobObservability.length,
+      job_observability: oversizedOcrJobObservability
+    }
+  },
+  payload: { preingestion_bundle_used: true }
+});
+const oversizedOcrPacket = buildEvaluationDecisionTracePacket({
+  pipeline_node_ledger: oversizedOcrLedger
+}, payload);
+assert.equal(oversizedOcrPacket.preingestion_ocr.job_observability.length, 32);
+assert.equal(oversizedOcrPacket.preingestion_ocr.job_observability_count, 33);
+assert.equal(oversizedOcrPacket.preingestion_ocr.job_observability_truncated, true);
+
 assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
 assert.match(packet.replay_snapshot.versions.targeted_assist_nuisance_fingerprint, /^[0-9a-f]{64}$/);
 assert.equal(
