@@ -79,6 +79,29 @@ assert.equal(expandedCompactPayload.field_evidence[0].evidence_kind, "PRINTED_LI
 assert.equal(expandedCompactPayload.field_evidence[0].direct_observation, true);
 assert.equal(validateProviderEvidencePayload("openai_legacy", expandedCompactPayload).fields.product, "Topps Chrome");
 
+const idempotentDuplicateCompactPayload = expandOpenAiCompactProviderPayload({
+  recognition_status: "CONFIRMED",
+  field_values: {
+    strings: [
+      { field: "card_name", value: "Downtown" },
+      { field: "card_name", value: "Downtown" }
+    ],
+    booleans: [],
+    numbers: [],
+    lists: []
+  },
+  field_evidence: [],
+  unresolved: [],
+  vector_candidate_decision: {
+    selected_candidate_id: null,
+    decision: "NOT_AVAILABLE",
+    supported_fields: [],
+    rejected_fields: [],
+    conflicts: []
+  }
+});
+assert.equal(idempotentDuplicateCompactPayload.fields.card_name, "Downtown");
+
 const ultraCompactSchema = openAiUltraCompactProviderResponseSchema();
 assert.deepEqual(ultraCompactSchema.required, ["r", "v", "e", "u"]);
 assert.equal(ultraCompactSchema.properties.c, undefined, "cold-path transport must omit unused candidate scaffolding");
