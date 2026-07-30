@@ -29,8 +29,11 @@ external gate has run.
 | B8 | Second-look planning/execution is connected in shadow with a typed, scrubbed trace. | No paid second-look evaluation has run. |
 | B9 | Durable batch intent, 100-position recovery, canonical Queue reconciliation, two clocks, rate gates, and fail-closed schema checkers are implemented. PostgreSQL 17.10 passes the Writer Intake contract plus 14 tamper cases and the admin-test replay-isolation contract plus 7 tamper cases. | Both ordered production migrations, PostgREST reload, and the exact-release real Writer Journey remain release gates. |
 
-The integrated source is therefore **candidate code, not an exact release
-candidate or production proof** until it is committed, reviewed, and merged.
+The integrated source is now published as implementation commit
+`28b903118923a948e9a734b731e6e31e42d9a176` in Draft PR
+[#154](https://github.com/LYNCA-OS/lynca-listing-copilot/pull/154). It remains
+**candidate code, not an exact release candidate or production proof** until it
+is reviewed, merged, deployed as exact `main`, and externally verified.
 `launch_ready` stays false unless the exact external SHA/deployment,
 schema, accuracy, reliability, throughput, and Writer Journey artifacts all
 pass their independent owners.

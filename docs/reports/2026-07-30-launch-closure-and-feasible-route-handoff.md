@@ -845,9 +845,13 @@ deferred. Its deterministic 1,000-job scheduler model did run and pass, but it
 is not a substitute for the hosted database test. No production database,
 Provider, Google Vision, fixed 20, N30, or deployment was touched.
 
-The final integration commit and Draft PR are recorded by the follow-up
-metadata commit after GitHub accepts the branch. Until that record exists, this
-section describes a validated working tree, not a published candidate.
+The validated implementation is commit
+`28b903118923a948e9a734b731e6e31e42d9a176` in Draft PR
+[#154](https://github.com/LYNCA-OS/lynca-listing-copilot/pull/154), targeting
+the exact `main` base above. The PR is a published review candidate, not a
+production release. At creation, required `offline-tests` and `contract` CI
+were still running; skipped production Writer Journey/attestation jobs were
+expected because the PR is Draft and the external gates remain closed.
 
 ## 10. Evidence index
 
