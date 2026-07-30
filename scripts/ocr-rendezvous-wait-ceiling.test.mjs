@@ -40,3 +40,33 @@ test("no budget still means no wait", () => {
 });
 
 console.log("ocr rendezvous wait ceiling tests passed");
+
+test("a listener is not held for workers that provably cannot answer", () => {
+  // Five consecutive days on production -- 1,128 sessions -- applied zero
+  // patches while still waiting hundreds of milliseconds each, because the OCR
+  // workers sit on a Cloud Run project with a closed billing account.
+  const dead = decide({
+    configuredWaitMs: 22_000,
+    latestOcrState: { configured: true, failed_reasons: ["ocr_worker_unavailable"] }
+  });
+  assert.equal(dead.wait_budget_ms, 0);
+  assert.equal(dead.should_wait, false);
+  assert.equal(dead.wait_budget_uncapped_ms, 22_000, "what was asked for stays visible");
+});
+
+test("the refusal is narrow: only unavailability counts", () => {
+  // A job that failed on the image says nothing about whether waiting pays --
+  // the next crop might still succeed. Widening this would turn a targeted
+  // refusal into a general opt-out.
+  const decodeFailure = decide({
+    configuredWaitMs: 1_000,
+    latestOcrState: { configured: true, failed_reasons: ["image_decode_failed"] }
+  });
+  assert.equal(decodeFailure.wait_budget_ms, 1_000);
+
+  const mixed = decide({
+    configuredWaitMs: 1_000,
+    latestOcrState: { configured: true, failed_reasons: ["ocr_worker_unavailable", "image_decode_failed"] }
+  });
+  assert.equal(mixed.wait_budget_ms, 1_000, "some jobs are reaching a worker, so a wait can still pay");
+});
