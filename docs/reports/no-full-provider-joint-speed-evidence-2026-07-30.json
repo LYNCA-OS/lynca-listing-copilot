@@ -1,0 +1,248 @@
+{
+  "schema_version": "no-full-provider-joint-speed-evidence-v1",
+  "generated_at": "2026-07-30T08:20:00+08:00",
+  "decision": {
+    "production": "NO_GO",
+    "universal_85_percent_within_3_seconds": "NOT_PROVEN",
+    "closest_current_web_target": {
+      "clock": "after_admission_intent",
+      "latency_p50_ms_upper": 2700,
+      "latency_p95_ms_upper": 5700,
+      "evidence_class": "PLANNING_ENVELOPE_NOT_OBSERVED_CARD_LEVEL"
+    },
+    "closest_current_writer_visible_target": {
+      "assumption": "two 6 MB originals over a 20 Mbps uplink",
+      "latency_p50_ms_upper": 5600,
+      "latency_p95_ms_upper": 6300,
+      "evidence_class": "OPTIMISTIC_LOWER_ENVELOPE_NOT_SLO"
+    }
+  },
+  "joint_gate": {
+    "contract": "no-full-provider-joint-title-gate-v1",
+    "maximum_title_characters": 80,
+    "minimum_card_policy_fair_token_recall": 0.72,
+    "minimum_split_policy_fair_token_recall_average": 0.85,
+    "maximum_writer_visible_ms": 3000,
+    "development": {
+      "denominator": 173,
+      "required_joint_success_count": 148
+    },
+    "validation": {
+      "denominator": 37,
+      "required_joint_success_count": 32
+    },
+    "holdout_consumed": false,
+    "latest_evaluation_status": "NOT_RUN",
+    "reason": "No candidate completed the legal Sensor to Selection to Application to Resolver to Renderer pipeline with the required Google and cache telemetry."
+  },
+  "cloud_worker_blocker": {
+    "service": "lynca-vision-ocr-worker",
+    "service_ready_condition": true,
+    "traffic_latest_revision_percent": 100,
+    "external_readyz_observed_at": "2026-07-30T08:32:38+08:00",
+    "external_readyz_http_status": 500,
+    "container_readyz_executed": false,
+    "cloud_log_reason": "billing is disabled for this project",
+    "billing_account_open": false,
+    "google_vision_units_spent_in_this_run": 0
+  },
+  "google_two_side_sensor_runner": {
+    "contract": "two-side-vision-sensor-v2",
+    "route_class": "TWO_FULL_IMAGE_SENSOR",
+    "real_worker_crop_types": [
+      "player_name",
+      "product_text"
+    ],
+    "one_card_cloud_run_requests": 1,
+    "one_card_google_annotate_requests": 1,
+    "one_card_vision_units": 2,
+    "full_title_provider_calls": 0,
+    "raw_ocr_persisted_by_default": false,
+    "unknown_call_ledger_policy": "FAIL_CLOSED_AS_NULL",
+    "execution_status": "NOT_RUN_CLOUD_BILLING_CLOSED",
+    "speed_model_compatibility": "SEPARATE_FROM_THREE_ROLE_CROP_PLANNING_PROXY",
+    "field_gate_required": "CARD_CODE_NOT_PRODUCED_BY_THIS_CONTRACT"
+  },
+  "apple_vision_development": {
+    "evaluation_partition": "development",
+    "selected_population": "all development rows with verified local front and back bytes",
+    "input_rows": 142,
+    "completed_rows": 142,
+    "technical_errors": 0,
+    "full_title_provider_calls": 0,
+    "paid_ocr_calls": 0,
+    "machine": "Apple M3 16GB",
+    "engine": "Apple Vision VNRecognizeTextRequest",
+    "configuration": {
+      "recognition_level": "accurate",
+      "recognition_languages": [
+        "en-US"
+      ],
+      "language_correction": false,
+      "front_back_execution": "parallel",
+      "card_execution": "serial"
+    },
+    "input_sha256": "ec6b2e263f7f0705875253c701efd7dda0f88593cbfe63d51529420ec39c3f0f",
+    "sealed_v1_prediction_file_sha256": "485344be5c6b1cff0ce235308ff9f38156eff4f16a184c95ee1fc1e745b85559",
+    "sealed_v1_local_file_retained": false,
+    "sensor_latency_ms": {
+      "p50": 205.6235,
+      "p95": 293.798375,
+      "p99": 418.116042,
+      "max": 420.113542
+    },
+    "strict_all_token_evidence": {
+      "year": {
+        "hit": 100,
+        "denominator": 118,
+        "recall": 0.847458
+      },
+      "product": {
+        "hit": 102,
+        "denominator": 118,
+        "recall": 0.864407
+      },
+      "subject": {
+        "hit": 91,
+        "denominator": 109,
+        "recall": 0.834862
+      },
+      "overall": {
+        "hit": 293,
+        "denominator": 345,
+        "recall": 0.849275
+      },
+      "cards_with_all_confirmed_fields_observed": 79
+    },
+    "raw_evidence_title_proxy": {
+      "policy_fair_token_recall_average": 0.765929,
+      "cards_at_or_above_0_72": 91,
+      "cards_at_or_above_0_85": 51,
+      "denominator": 142,
+      "warning": "Raw OCR text is evidence only, not a legal rendered title. Extra OCR tokens do not reduce recall."
+    },
+    "reproduction_v2": {
+      "script_sha256": "fbf1a15a75b12e3e8e508448fa7d8aa872015e84bdb90b68a2c05058ec353732",
+      "prediction_file_sha256": "471b294bb380021b7a2a49dff3b70725f2952f5c8760edbe058fecce4b184103",
+      "completed_rows": 142,
+      "technical_errors": 0,
+      "front_text_exact_against_frozen_v1": 142,
+      "back_text_exact_against_frozen_v1": 142,
+      "sensor_latency_ms": {
+        "p50": 203.609208,
+        "p95": 286.880458,
+        "p99": 414.535792,
+        "max": 433.97425
+      },
+      "full_title_provider_calls": 0,
+      "paid_ocr_calls": 0,
+      "source_id_or_local_path_in_output": false
+    },
+    "evidence_class": "LOCAL_MACOS_SENSOR_ONLY_NOT_WEB_OR_PRODUCTION"
+  },
+  "tesseract_development20": {
+    "requested": 20,
+    "completed": 20,
+    "technical_errors": 0,
+    "full_title_provider_calls": 0,
+    "paid_ocr_calls": 0,
+    "download_plus_sensor_latency_ms": {
+      "p50": 1605.529,
+      "p95": 2028.903
+    },
+    "sensor_only_latency_ms": {
+      "p50": 524.122,
+      "p95": 783.003
+    },
+    "strict_confirmed_field_evidence": {
+      "hit": 27,
+      "denominator": 50,
+      "recall": 0.54
+    },
+    "catalog_route_offline_title_semantic_deadline_proxy_pass": {
+      "hit": 0,
+      "denominator": 20
+    },
+    "joint_gate_status": "NOT_EVALUATED",
+    "legal_pipeline": false,
+    "decision": "REJECT"
+  },
+  "development_catalog_connection_contaminated_diagnostics": [
+    {
+      "route": "OCR_EXTRACTED_CODE_TO_TRUSTED_CATALOG",
+      "denominator": 142,
+      "l2_ready": 37,
+      "offline_title_semantic_deadline_proxy_pass": 1,
+      "catastrophic": 22,
+      "critical_fabrication": 19,
+      "joint_gate_status": "NOT_EVALUATED",
+      "legal_pipeline": false,
+      "independence_status": "CONTAMINATED_CURRENT_SOURCE_ROW_NOT_EXCLUDED",
+      "decision": "REJECT"
+    },
+    {
+      "route": "OCR_EXACT_TEXT_CATALOG_CONSENSUS",
+      "denominator": 142,
+      "l2_ready": 41,
+      "offline_title_semantic_deadline_proxy_pass": 4,
+      "catastrophic": 20,
+      "critical_fabrication": 20,
+      "joint_gate_status": "NOT_EVALUATED",
+      "legal_pipeline": false,
+      "independence_status": "NOT_ESTABLISHED",
+      "decision": "REJECT"
+    }
+  ],
+  "latency_options": [
+    {
+      "route": "SAME_IMMUTABLE_IMAGE_TERMINAL_REPLAY",
+      "p50_ms_lower": 190,
+      "p50_ms_upper": 530,
+      "p95_ms_lower": 400,
+      "p95_ms_upper": 1050,
+      "accuracy_status": "SEPARATE_EXACT_REPLAY_CONTRACT",
+      "evidence_class": "ARCHITECTURE_TARGET"
+    },
+    {
+      "route": "MACOS_LOCAL_SENSOR_PLUS_EXISTING_DECISION_BUDGETS",
+      "p50_ms_lower": 506,
+      "p50_ms_upper": 946,
+      "p95_ms_lower": 944,
+      "p95_ms_upper": 1735,
+      "accuracy_status": "NO_GO",
+      "evidence_class": "MEASURED_SENSOR_PLUS_DESIGN_BUDGETS"
+    },
+    {
+      "route": "WEB_ONE_SHOT_GOOGLE_VISION_AFTER_ADMISSION",
+      "p50_ms_lower": 1890,
+      "p50_ms_upper": 2640,
+      "p95_ms_lower": 4270,
+      "p95_ms_upper": 5620,
+      "accuracy_status": "NO_GO",
+      "evidence_class": "PLANNING_PROXY_WORKER_CURRENTLY_BLOCKED"
+    },
+    {
+      "route": "WEB_TWO_SIDE_WRITER_VISIBLE_AT_20_MBPS",
+      "p50_ms_lower": 5100,
+      "p50_ms_upper": 5540,
+      "p95_ms_lower": 5450,
+      "p95_ms_upper": 6240,
+      "accuracy_status": "NO_GO",
+      "evidence_class": "OPTIMISTIC_INPUT_FLOOR_PLUS_PLANNING_PROXY"
+    }
+  ],
+  "next_architecture_boundary": {
+    "retain": [
+      "region-aware OCR observations with side, line, bounding box, confidence and image hash",
+      "single immutable evidence snapshot",
+      "versioned in-memory official and reviewed catalog",
+      "Candidate Selection, Candidate Application, Identity Resolver and deterministic Renderer ownership"
+    ],
+    "reject": [
+      "flattening OCR into an unordered bag of text before Retrieval",
+      "direct title generation from catalog rows",
+      "claiming sensor evidence recall as title accuracy",
+      "reopening Full Provider as the main route"
+    ]
+  }
+}

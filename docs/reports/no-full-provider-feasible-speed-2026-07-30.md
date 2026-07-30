@@ -13,6 +13,38 @@ current emblem sensor (`15/21` joint, `25%` emission precision). The latency
 numbers below are planning clocks for a replacement sensor route, not a claim
 that the present route reaches 85%.
 
+Latest joint follow-up: [no-full-provider-joint-speed-evidence-2026-07-30.json](./no-full-provider-joint-speed-evidence-2026-07-30.json)
+
+The follow-up separates sensor feasibility from final-title feasibility. On
+Development rows with verified local front and back bytes, Apple Vision read
+`142/142` cards at p50/p95 `205.624/293.798 ms`, with strict confirmed-field
+evidence recall `293/345 = 84.93%`. This proves that local two-side visual
+reading is not the physical reason a two-to-three-second route fails. It does
+not prove title accuracy: raw OCR title-token recall averaged only `76.59%`,
+and two Development-only direct-render diagnostics produced only `1/142` and
+`4/142` semantic-plus-deadline proxy passes, with `22` and `20` catastrophic
+titles respectively. They bypassed the legal Candidate Application and
+Resolver path, lacked the required Google/cache telemetry, and one did not
+exclude the current source row. They are contaminated counterexamples, not
+`no-full-provider-joint-title-gate-v1` evaluations. The legal joint Gate remains
+`NOT_RUN`.
+
+The higher-confidence boundary is therefore:
+
+- current Web planning target after admission intent: p50 at most `2.7 s`, p95
+  at most `5.7 s`;
+- optimistic writer-visible target for two `6 MB` originals over `20 Mbps`:
+  p50 at most `5.6 s`, p95 at most `6.3 s`;
+- a managed-Mac or native companion can plausibly fit the sensor plus existing
+  decision budgets inside p50 `0.51–0.95 s`, p95 `0.94–1.74 s`, but final-title
+  accuracy is `NO_GO` and this is not a Web or production SLO.
+
+The failed prototypes also freeze the next architecture boundary: retain OCR
+side, line, bounding box, confidence and image hash through Retrieval; do not
+flatten OCR into an unordered text bag, and do not render a Catalog row
+directly. Candidate Selection, Candidate Application, Identity Resolver and
+the deterministic Renderer remain the only legal downstream owners.
+
 ## Decision first
 
 The higher-confidence conclusion is the opposite of promising universal
