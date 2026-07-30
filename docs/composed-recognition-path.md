@@ -126,30 +126,26 @@ At 11ms per token, generation accounts for ~1,815ms of that. **The remaining
 ~3 seconds is fixed** — prefill, image upload, network, our own pipeline — and
 no amount of output cutting reaches it.
 
-> **Corrected, by measuring it directly instead of inferring it.** The ~3s above
-> came from a regression intercept. Decomposing `recognition_core` on 3,747
-> sessions gives a different and worse picture:
+> **RETRACTED 2026-07-30. This block was wrong, and it was mine.**
 >
-> ```
-> recognition_core        24,553ms
->   provider call         10,885ms   44%
->   vector worker          3,380ms   14%   p90 4,939  max 10,647
->   ─────────────────────────────
->   still uninstrumented  10,841ms   44%
-> ```
+> It claimed 10,841ms of latency had no timer on it, computed as
+> `recognition_core − provider − vector`. Codex caught the method; verifying it
+> myself found the precise defect, which is worse than a subtraction error.
 >
-> The floor is not a 3-second physical limit. It is **10.8 seconds with no timer
-> on it** — 44% of total latency, invisible. The named sub-timers
-> (`anchor_scout` 629ms, `anchor_finalize` 1,406ms, `bundle_load` 117ms) account
-> for 2.2s of the gap and nothing accounts for the rest.
+> On 3,295 rows carrying all three spans, **29.5% have a negative residual** --
+> provider plus vector exceeds recognition_core. That is impossible for nested
+> sequential spans, so the spans overlap or are measured against different
+> clocks, and a residual over them is not interpretable at all. Mean or median
+> makes no difference; the quantity itself was meaningless.
 >
-> So the first move against the floor is not optimisation, it is
-> **instrumentation**. Tuning what you cannot see is guessing. This is the ninth
-> instance of the pattern `ambition.md` names, and the most expensive one.
+> Done correctly, with per-row interval union rather than subtraction, the
+> latency not covered by any existing span is **p50 0.111s, p95 0.629s**.
 >
-> One part of it is already actionable and cut: the vector worker's 3,380ms
-> returned zero candidates 92.7% of the time against an index of 587 rows last
-> written three weeks earlier.
+> So there is no hidden 10.8-second budget to reclaim. The real distribution,
+> from the same work: total L2 p50 27.896s, of which provider 10.857s and
+> post-provider 14.898s. The post-provider stretch is where the time is, and it
+> is instrumented -- which makes it a different and more tractable problem than
+> the one this block invented.
 
 So: the composed path plausibly takes p50 from 25.5s to 4-5s. **Two to three
 seconds is not reachable without a separate assault on the fixed overhead**,

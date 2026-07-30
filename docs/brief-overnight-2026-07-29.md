@@ -40,7 +40,8 @@ touched. `constraint-enumerator` (team 65%, product 30%), `subject-normalizer`,
 |---|---|
 | `ambition.md`: 60.4% of set names uniquely identify a product-year | **false on production.** Measured on the harvest, never transferred. 14%, or 30% with the product-name reading |
 | the output brief: 69.3% of output is waste | **falsified by your Task A.** Marked SUPERSEDED |
-| "~3s of fixed overhead" | **wrong, and I made it.** A regression intercept. Directly decomposed: 10,841ms uninstrumented |
+| "~3s of fixed overhead" | **wrong, and I made it.** A regression intercept |
+| "10,841ms uninstrumented" | **also wrong, also mine. RETRACTED 2026-07-30** — see below |
 
 **Infrastructure fact you will need:** the GCP billing account is **closed**
 (`open: False`). Cloud Run cannot be modified, OCR workers return
@@ -60,10 +61,14 @@ verdict.
    my "the 266 are not rescuing hard cards" reasoning is wrong and I want to
    know.
 
-2. **Instrument the 10.8 seconds.** 44% of `recognition_core` has no timer:
-   provider 10,885ms, vector 3,380ms, named sub-timers 2.2s, and 10,841ms
-   unaccounted. Nothing can be optimised until it can be seen. This is the
-   single highest-value thing on the list and it is blocked on your file.
+2. ~~**Instrument the 10.8 seconds.**~~ **WITHDRAWN. The premise was false.**
+   I computed `recognition_core − provider − vector` and called the remainder
+   uninstrumented. On 3,295 rows carrying all three spans, **29.5% have a
+   negative residual** — provider plus vector exceeds core — so the spans
+   overlap or use different clocks and the residual is not interpretable at all.
+   Per-row interval union gives **p50 0.111s / p95 0.629s** genuinely uncovered.
+   There is no hidden budget. The time is in the instrumented post-provider
+   stretch (p50 14.898s), which is a different and more tractable problem.
 
 3. **Attribute the unseen failure by SEM module.** 0.4056 against a target of
    0.85 is a 44-point gap, and nobody has established whether it is lost in
