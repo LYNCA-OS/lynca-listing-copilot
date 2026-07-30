@@ -50,10 +50,13 @@ one-shot role-bound literal OCR       open-set product-mark sensor
 
 This architecture is not production-ready today. The fast sensor path is
 physically plausible and the ownership contracts are now much stronger, but
-the legal end-to-end joint accuracy gate has not run. The latest executable
-cold exact-anchor numerator is `0/93`, and the current SIFT emblem sensor failed
-its untouched Validation. Shipping it now would exchange a slow answer for an
-unproven or wrong one.
+the legal end-to-end joint accuracy gate has not run. The one-shot packet and
+joint-gate evaluator are libraries with tests, not yet an executable cohort
+path: neither has a non-test caller that binds frozen splits, canonical images,
+the one-request/one-annotate ledger, the complete no-Provider pipeline, and the
+final gate. The latest executable cold exact-anchor numerator is `0/93`, and
+the current SIFT emblem sensor failed its untouched Validation. Shipping it now
+would exchange a slow answer for an unproven or wrong one.
 
 ## 2. Facts, inference, and judgement
 
@@ -97,9 +100,13 @@ unproven or wrong one.
   verification rows. Every FINALIZED asset has a source-complete current
   generation; 21 have one original and 2,663 have two. No invalid or missing
   durability clock source was found in the read-only audit.
-- GCP billing account `01836C-EC055E-6FDAF1` is closed. Cloud Run writes fail,
-  the OCR service is unavailable, the Vector index is frozen, and a true Google
-  Vision release canary cannot legally run.
+- The earlier GCP billing block has cleared. Read-only control-plane
+  verification at `2026-07-30T13:25:49Z` found project
+  `gen-lang-client-0465339486` billing enabled, account
+  `01836C-EC055E-6FDAF1` open, Vision API enabled, and
+  `lynca-vision-ocr-worker-00061-np6` Ready. Its `/readyz` returned HTTP 200 with
+  `google_vision` / `adc`. This proves runnable cloud capability, not a
+  successful frozen-cohort payload or Accuracy PASS.
 - The live release is not source-aligned: `main` is
   `b27d6775a5335ad004b099d3969e01e5ada87e09`, while production reports
   `9be84ea45a79eb9377ca63d0a3d6dc64896a465d` on deployment
@@ -688,11 +695,12 @@ an algorithm/provider choice cannot silently gate transport in the browser.
 
 ## 7. What remains before launch
 
-### External hard block
+### External capability status
 
-GCP billing must be restored or the all-cloud OCR service must be migrated to a
-legally runnable account. No more Google Vision calls should be attempted while
-the account is closed.
+The former GCP billing hard block is closed. The next proof is the exact
+one-shot Development/Validation sensor gate: one Cloud Run request and one
+Google annotate request per card, complete telemetry, required precision, and
+observed latency. `/readyz` alone cannot satisfy that gate.
 
 ### Source/release gates
 
@@ -717,8 +725,9 @@ the account is closed.
    itself, and sign the raw manifest, predictions, and report. It must never
    sign arbitrary uploaded JSON. Until then, attested release evidence is
    structurally `INCONCLUSIVE`.
-6. Resolve the current `main` / production SHA mismatch. Deploy the exact
-   `main` SHA only after the cloud OCR block is resolved.
+6. Resolve the current `main` / production SHA mismatch. Deploy only an exact
+   `main` SHA after its sensor/algorithm and schema gates pass; current Cloud
+   Run readiness does not authorize an application deployment by itself.
 7. Pass the repository-owned production Writer Journey with real login Cookie,
    real images, upload, enqueue, Queue, Worker, L2, accept/edit, and persistence.
    The source contract now requires a distinct `EDIT`, a completed Worker node,
@@ -746,28 +755,31 @@ wording; it trades raw request-level debugging detail for credential safety.
 
 ### Algorithm gates
 
-1. Run Development one-shot OCR, then exactly one untouched Validation cohort.
-2. Replace the rejected SIFT Product sensor and evaluate on independent G2.
-3. Join sensor evidence through Retrieval, Selection, Application, Resolver,
+1. Build and fixture-prove the repository-owned one-shot/joint cohort runner;
+   it must fail closed before any external call if its split, provenance,
+   stage trace, or one-request/one-annotate ledger is incomplete.
+2. Run Development one-shot OCR, then exactly one untouched Validation cohort.
+3. Replace the rejected SIFT Product sensor and evaluate on independent G2.
+4. Join sensor evidence through Retrieval, Selection, Application, Resolver,
    and Renderer; report both familiar and unseen scoreboards plus abstention.
-4. Require addressability `>=134/148`, split `>=107/118` Development and
+5. Require addressability `>=134/148`, split `>=107/118` Development and
    `>=28/30` Validation, with the stated precision/deadline conditions. This is
    a route-viability gate, not the final launch accuracy denominator.
-5. Only after the joint gate passes, run one cold paired 20 with cache bypass.
-6. Use Development/Validation, cold-20, and exact-replay observations to freeze
+6. Only after the joint gate passes, run one cold paired 20 with cache bypass.
+7. Use Development/Validation, cold-20, and exact-replay observations to freeze
    first-time and repeat writer-visible SLO thresholds in the fail-closed launch
    benchmark. This contract must land in the activation tree; adding it after
    deployment would change the SHA and invalidate later evidence.
-7. Freeze the output-affecting activation tree, land it through protected
+8. Freeze the output-affecting activation tree, land it through protected
    `main`, deploy that exact `main` SHA, then run the sealed final holdout once
    through the independent accuracy producer: at least 45 cards, SEM card-exact
    `>=0.87`, reviewed field truth, and leakage validation. Do not tune on it.
-8. After pressure testing is reopened, the exact release must pass throughput
+9. After pressure testing is reopened, the exact release must pass throughput
    checkpoints `100/500/1000` at `>=6 cards/min` and availability `>=0.999`,
    plus reliability on at least 1,000 cards and three tenants with full tenant
    isolation measurement and zero lost, duplicate, missing, nonterminal, or
    isolation violations.
-9. Run N30 only when its exact-SHA paid gate is authorized and the external
+10. Run N30 only when its exact-SHA paid gate is authorized and the external
    Provider is available. Do not turn it into a recurring benchmark.
 
 Pressure testing remains intentionally deferred until the recognition and
@@ -781,18 +793,16 @@ P0/P1 source review
   -> local PostgreSQL 17.10 migration/schema tests
   -> full offline CI/security audit
   -> protected PR and exact-main merge
-  -> production writer-intake migration + PostgREST schema reload
-  -> restore/migrate cloud OCR capability
-  -> milestone A: exact-main shadow/infrastructure deploy
-  -> engineering Writer Journey on that exact SHA
-  -> one-shot OCR Development/Validation
+  -> build and fixture-prove the repository-owned one-shot/joint cohort runner
+  -> one-shot OCR Development/Validation on the exact runner SHA
   -> replacement emblem sensor G2
   -> legal joint accuracy gate
   -> one cold paired 20
   -> freeze fail-closed first-time/replay latency gates from observed data
-  -> freeze the output-affecting activation tree
-  -> land it through protected main
-  -> milestone B: deploy that exact activation SHA
+  -> build, review, and land the output-affecting activation tree through protected main
+  -> production writer-intake migration + PostgREST schema reload
+  -> deploy that exact activation main SHA
+  -> engineering Writer Journey on that exact SHA
   -> run the one sealed >=45-card final holdout on that exact release
   -> reopen and pass exact-release throughput/reliability gates
   -> rerun the real production Writer Journey on the activation SHA

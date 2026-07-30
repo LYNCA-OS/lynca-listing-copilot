@@ -20,8 +20,8 @@ external gate has run.
 | Blocker | Source closure in this branch | Remaining proof |
 |---|---|---|
 | B1 | Exact-SHA, one-attempt N30 authorization workflow and fail-closed analyzer are complete. | `NOT_RUN`; N30 is now a conditional same-card diagnostic, not a launch dimension or the next run. |
-| B2 | No bypass was added. OCR unavailability remains explicit and fails closed. | Restore or migrate GCP billing before any Google Vision or production deploy attempt. |
-| B3 | Live same-process RegionEvidence, process-private replay authority, Decision Trace, and Writer Journey launch evidence are connected and fail closed. | Persisted authenticated Candidate replay has no independent envelope owner; one-shot OCR Development/Validation, replacement product-mark G2, the legal joint gate, final cold 20, sealed holdout, latency/throughput/reliability gates, and exact-release production Journey remain unrun. |
+| B2 | `CLOSED_EXTERNAL_CAPABILITY`: billing is enabled/open again, Vision API is enabled, and the Google Vision OCR Cloud Run revision is Ready with `/readyz` HTTP 200. No bypass was added. | Run the exact one-shot Development/Validation sensor gate; service readiness alone is not accuracy, payload, latency, or release evidence. |
+| B3 | Live same-process RegionEvidence, process-private replay authority, Decision Trace, and Writer Journey launch evidence are connected and fail closed. | Persisted authenticated Candidate replay has no independent envelope owner. The one-shot packet and joint-gate libraries have no non-test cohort runner yet; build that fail-closed runner before spending Development/Validation. Replacement product-mark G2, the legal joint gate, final cold 20, sealed holdout, latency/throughput/reliability gates, and exact-release production Journey remain unrun. |
 | B4 | Unseen-10 SEM attribution is complete: 30 missing fields = card number 10, product 9, year 5, set 4, subject 1, manufacturer 1. | The deployed unseen baseline remains `0.4829366`; attribution explains the gap but does not close it. |
 | B5 | Useful #151/#152 changes are integrated behind their existing safe defaults; the stale PRs are superseded by this branch. | Exact merged-SHA offline and legal cloud gates, not the old PRs, decide promotion. |
 | B6 | `3,022 / 3,090` rows are accounted for with a reversible disposition; automatic truth/catalog writes remain zero. | 68 remain unaccounted and fail closed; reviewed-internal confirmation is still required for the 762 absent-product observations. |
@@ -96,25 +96,33 @@ step and it cannot repair a mismatched deployment or an unproven new-card path.
 
 ---
 
-## B2. GCP billing account is closed — USER ACTION
+## B2. GCP billing and OCR runtime — CLOSED_EXTERNAL_CAPABILITY
+
+Historical state that originally created this blocker:
 
 ```
 billing account 01836C-EC055E-6FDAF1   open: False
 ```
 
-Consequences, all verified: Cloud Run rejects every write (`BILLING_DISABLED`),
-OCR workers return `ocr_worker_unavailable`, the vector index is frozen at 587
-rows last written 2026-07-06, and `/readyz` on the Vision worker returns 500
-without reaching the container.
+At that time Cloud Run rejected writes with `BILLING_DISABLED`, OCR workers
+returned `ocr_worker_unavailable`, and `/readyz` returned 500. That evidence
+remains historically valid but is no longer the current control-plane state.
 
-Nothing is accruing cost. Several things are quietly not running, and on an
-all-cloud route the OCR lane is one of them.
+Current read-only verification at `2026-07-30T13:25:49Z`:
 
-**Closes with:** restoring or migrating billing. **Owner: Fei.** Not
-recoverable by either of us.
+```text
+project gen-lang-client-0465339486       billingEnabled: true
+billing account 01836C-EC055E-6FDAF1    open: true
+vision.googleapis.com                    enabled
+lynca-vision-ocr-worker revision         00061-np6 Ready
+/readyz                                   HTTP 200
+backend / auth                            google_vision / adc
+```
 
-**Do not** re-test Google Vision until this is closed — that was already agreed
-and it still holds.
+This closes only cloud capability. It does not prove a successful Vision
+payload for the frozen cohort, the one-request/one-annotate ledger, field
+precision, latency, or title accuracy. Those remain B3 evidence and must be run
+without consuming holdout.
 
 ---
 
@@ -128,8 +136,11 @@ evidence".
 pre-application process-private replay capability are source-complete. Persisted
 JSON cannot authorize a Candidate; it remains UNKNOWN/Shadow until an
 independent authenticated envelope owner verifies detached evidence and mints
-authority. Next run one-shot OCR on Development and exactly one untouched
-Validation; replace the rejected SIFT Product-mark sensor and
+authority. The one-shot packet and joint-gate evaluator currently have no
+non-test caller, so first build and fixture-prove a repository-owned runner that
+binds the frozen split, canonical images, one-request/one-annotate ledger, and
+the complete no-Provider stage trace. Only then run one-shot OCR on Development
+and exactly one untouched Validation; replace the rejected SIFT Product-mark sensor and
 test it on independent G2; then join both through Retrieval → Selection → Safe
 Application → Resolver → Renderer. The joint gate requires addressability
 `>=134/148`, split `>=107/118` Development and `>=28/30` Validation, under the
