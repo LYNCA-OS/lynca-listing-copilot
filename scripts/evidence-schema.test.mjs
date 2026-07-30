@@ -259,30 +259,54 @@ const cropBoundEvidenceDocument = providerPayloadToEvidenceDocument({
   unresolved: []
 }, {
   images: [
-    { id: "front-original", side: "front" },
+    {
+      id: "front-original",
+      side: "front",
+      tenant_id: "tenant_evidence_test",
+      asset_id: "asset-1",
+      image_generation_id: "asset-1",
+      object_path: "tenants/tenant_evidence_test/listing-assets/2026-07-30/asset-1/front.jpg",
+      content_sha256: "1".repeat(64),
+      width: 1000,
+      height: 1400,
+      storage_verified: true
+    },
     {
       id: "serial-crop",
       derived: true,
+      tenant_id: "tenant_evidence_test",
+      asset_id: "asset-1",
+      image_generation_id: "asset-1",
+      content_sha256: "2".repeat(64),
+      storage_verified: true,
       sourceRegion: "serial_number",
       storageRole: "serial_crop",
-      objectPath: "listing-assets/serial-crop.jpg",
+      objectPath: "tenants/tenant_evidence_test/listing-assets/2026-07-30/asset-1/serial-crop.jpg",
       cropMetadata: {
-        crop_id: "asset-1__front-original__serial_number__field-crop-v1",
+        crop_id: "serial-crop",
+        asset_id: "asset-1",
+        generation_id: "asset-1",
         source_image_id: "front-original",
-        source_object_path: "listing-assets/front.jpg",
+        source_object_path: "tenants/tenant_evidence_test/listing-assets/2026-07-30/asset-1/front.jpg",
+        source_content_sha256: "1".repeat(64),
         source_side: "front",
+        source_width: 1000,
+        source_height: 1400,
         source_region: "serial_number",
         crop_role: "serial_crop",
-        derived_object_path: "listing-assets/serial-crop.jpg"
+        derived_object_path: "tenants/tenant_evidence_test/listing-assets/2026-07-30/asset-1/serial-crop.jpg",
+        transform_version: "field-crop-v1",
+        normalized_bounds: { x: 0.2, y: 0.7, width: 0.6, height: 0.2 },
+        pixel_bounds: { left: 200, top: 979, width: 600, height: 280 }
       }
     }
   ]
 });
 assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].image_id, "serial-crop");
-assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_crop_id, "asset-1__front-original__serial_number__field-crop-v1");
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_crop_id, "serial-crop");
 assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_inference_method, "field_crop_vision");
-assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_object_path, "listing-assets/front.jpg");
-assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].derived_object_path, "listing-assets/serial-crop.jpg");
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].source_object_path, "tenants/tenant_evidence_test/listing-assets/2026-07-30/asset-1/front.jpg");
+assert.equal(cropBoundEvidenceDocument.evidence.serial_number.sources[0].derived_object_path, "tenants/tenant_evidence_test/listing-assets/2026-07-30/asset-1/serial-crop.jpg");
 assert.doesNotThrow(() => assertValidEvidenceDocument(cropBoundEvidenceDocument));
 
 const structuredHighRiskFieldDocument = providerPayloadToEvidenceDocument({

@@ -55,3 +55,27 @@ export function nextWriterOutstandingIndex({
   if (!outstanding.length) return null;
   return (outstanding.find((asset) => Number(asset.index) > Number(currentIndex)) || outstanding[0]).index;
 }
+
+export function preferredWriterOutstandingIndex({
+  assets = [],
+  results = [],
+  currentIndex = null,
+  isTitlePending = (result) => result?.writerTitlePending === true
+} = {}) {
+  const resultsByIndex = new Map(results.map((result) => [Number(result.index), result]));
+  const outstanding = assets
+    .filter((asset) => !writerFeedbackPersisted(resultsByIndex.get(Number(asset.index))))
+    .sort((left, right) => Number(left.index) - Number(right.index));
+  if (!outstanding.length) return null;
+
+  const ready = outstanding.filter((asset) => {
+    const result = resultsByIndex.get(Number(asset.index));
+    return Boolean(result && !isTitlePending(result) && result.feedbackStatus !== "saving");
+  });
+  const current = ready.find((asset) => Number(asset.index) === Number(currentIndex));
+  if (current) return current.index;
+  const nextReady = ready.find((asset) => Number(asset.index) > Number(currentIndex)) || ready[0];
+  if (nextReady) return nextReady.index;
+
+  return (outstanding.find((asset) => Number(asset.index) > Number(currentIndex)) || outstanding[0]).index;
+}

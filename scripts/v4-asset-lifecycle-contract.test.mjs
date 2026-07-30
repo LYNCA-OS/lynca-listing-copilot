@@ -91,7 +91,21 @@ assert.match(
   /v4ProductionStrategy\.asset_lifecycle\.assert_image_generation/,
   "server must delegate stale-generation policy to the versioned strategy"
 );
-assert.match(enqueueSource, /stripClientImageTransport\(withoutClientSessionIdentity\(job\)\)/);
+assert.match(
+  enqueueSource,
+  /const identityScoped = withoutClientSessionIdentity\(job\)/,
+  "server must remove browser-owned session identity before any queue-control decision"
+);
+assert.match(
+  enqueueSource,
+  /allowQueueControls === true \? identityScoped : withoutClientQueueControls\(identityScoped\)/,
+  "public enqueue must remove queue controls while an explicit trusted path may retain them"
+);
+assert.match(
+  enqueueSource,
+  /stripClientImageTransport\([\s\S]*allowQueueControls === true[\s\S]*withoutClientQueueControls\(identityScoped\)[\s\S]*\)/,
+  "canonical image reconstruction must run after the queue-control trust boundary"
+);
 
 const smokeSource = readFileSync(new URL("./v4-ebay-smoke.mjs", import.meta.url), "utf8");
 assert.match(smokeSource, /image_generation_id:\s*asset\.image_generation_id/);

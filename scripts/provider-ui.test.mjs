@@ -15,13 +15,13 @@ const providerRegistry = await readFile("lib/listing/providers/provider-registry
 const csmFieldLabels = await readFile("lib/listing/csm/field-labels.mjs", "utf8");
 const recognitionProfileAdapter = await readFile("lib/listing/v4/application/recognition-profile-adapter.mjs", "utf8");
 
-assert.match(html, /id="providerControl"/, "provider segmented control should exist");
+assert.doesNotMatch(html, /id="providerControl"/, "writer UI must not expose an algorithm provider selector");
 assert.match(html, /id="providerStatusText"/, "provider status text should exist");
 assert.match(html, /rel="icon"[^>]+href="\/app\/favicon\.svg"/, "main app should provide a favicon to avoid browser 404 noise");
 assert.match(js, /fetchWithBoundedRetry\("\/api\/listing-provider-status"/, "frontend should load provider status with a bounded retry and wait");
 assert.match(js, /fetchWithBoundedRetry\("\/app\/resolution\.json"/, "optional display configuration must use a bounded startup read");
-assert.match(js, /bindEvents\(\);\s*renderPreviews\(\);\s*renderResults\(\);\s*providerStatusReadyPromise = loadProviderStatus\(\);\s*void Promise\.all/s, "writer controls should become interactive before optional startup reads finish");
-assert.match(js, /state\.selectedProvider/, "frontend should keep selected provider in state");
+assert.match(js, /bindEvents\(\);\s*renderPreviews\(\);\s*renderResults\(\);\s*providerStatusReadyPromise = loadProviderStatus\(\);\s*writerIntakePrincipalReadyPromise = loadWriterIntakePrincipalNamespace\(\);\s*void Promise\.all/s, "writer controls should become interactive before optional startup reads finish");
+assert.doesNotMatch(js, /state\.selectedProvider|selectProvider|providerById/, "frontend must not own provider selection state or handlers");
 assert.match(js, /recognitionClockFromServerPayload/, "per-card timer should use the authoritative server recognition clock");
 assert.match(js, /recognition_clock_started_at/, "frontend should read the provider-stage start timestamp");
 assert.match(js, /deterministic_anchor_finalize/, "frontend timer should understand the OCR/catalog no-GPT fast path");
@@ -30,10 +30,10 @@ assert.match(js, /value:\s*formatGenerationElapsed\(snapshot\.active_ms\)/, "vis
 const processTitlesSource = js.slice(js.indexOf("async function processTitles"), js.indexOf("async function retryFailedAssetInPriorityQueue"));
 const priorityRetrySource = js.slice(js.indexOf("async function retryFailedAssetInPriorityQueue"), js.indexOf("async function copyTitle"));
 assert.doesNotMatch(processTitlesSource, /markAssetStarted\(asset\)/, "batch workers must not start a card timer before provider capacity reaches it");
-assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
-assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
+assert.match(js, /loaded = workflowAllowsGeneration\(\)/, "provider status bootstrap should resolve from server workflow readiness");
 assert.match(js, /workflowReadinessText/, "frontend should render server workflow readiness in the provider status area");
 assert.match(js, /workflowAllowsGeneration/, "frontend should gate generation on the cloud workflow readiness preflight");
+assert.match(js, /readiness\?\.can_run_cloud_recognition === true/, "generation must fail closed unless server workflow readiness is explicitly true");
 assert.match(js, /workflow_readiness/, "frontend should read integrated workflow readiness from provider status");
 assert.match(
   js,
@@ -42,7 +42,7 @@ assert.match(
 );
 assert.match(js, /scheduleProviderStatusRecovery/, "a transient provider bootstrap failure must heal without reloading the page");
 assert.match(js, /PROVIDER_STATUS_RECOVERY_DELAYS_MS/, "provider bootstrap recovery must use bounded backoff");
-assert.doesNotMatch(js, /state\.selectedProvider \|\| state\.providerStatus\?\.fallback_available/, "frontend must not allow local fallback to bypass cloud readiness");
+assert.doesNotMatch(js, /fallback_available[\s\S]{0,120}canGenerateTitles|selectedProvider/, "frontend must not allow provider or fallback state to bypass cloud readiness");
 assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to two-image paired recognition");
 assert.match(html, /name="assetMode" value="pair" checked/, "two-image paired recognition should be the checked default control");
 assert.match(html, /两图配对/, "paired upload mode should be labeled without front/back judgment");
@@ -60,8 +60,7 @@ assert.doesNotMatch(js, /vectorCandidateNotice/, "writer UI should not expose ra
 assert.doesNotMatch(js, /vector_prompt_assist_used/, "writer UI should not surface technical prompt-assist status");
 assert.doesNotMatch(js, /provider_options:\s*{/, "queue intents must not include provider options");
 assert.doesNotMatch(js, /intent\.explicitEmergency = Boolean/, "frontend must not select an emergency algorithm path");
-assert.match(js, /providerCascadeText/, "frontend should render concise provider role text");
-assert.match(js, /provider\.model_id \|\| provider\.display_name/, "provider role text should use the server-reported active model");
+assert.doesNotMatch(js, /data-provider-id|providerCascadeText|providerSmokeText/, "writer UI must not render provider choices or provider diagnostics");
 assert.doesNotMatch(js, /GPT-4\.1 mini 生产主路径/, "provider role text must not hard-code a stale model");
 assert.doesNotMatch(js, /cascade_fast|格式失败兜底/, "frontend must not expose mixed-model cascade controls");
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-upload-url"/, "frontend should request server-signed upload URLs with bounded transient recovery");
@@ -136,8 +135,13 @@ assert.match(js, /processAssetViaQueue\(asset, \{ batchId: recognitionBatchId \}
 assert.doesNotMatch(js, /create_l1_job|create_l2_job/, "frontend must not own recognition stage selection");
 assert.match(recognitionProfileAdapter, /create_l1_job:\s*false/, "server profile should skip hidden L1 after it showed no stable L2 or writer benefit");
 assert.match(recognitionProfileAdapter, /create_l2_job:\s*true/, "server profile should always enqueue the writer-visible final L2");
-assert.match(js, /const bundle = await ensurePreingestionBundle\(asset\)/, "production should enqueue L2 as soon as the durable evidence bundle exists");
-assert.doesNotMatch(js, /const \[bundle\] = await Promise\.all/, "a cache-only scout miss must not delay the speculative L2 enqueue");
+assert.match(js, /const bundle = await ensurePreingestionBundle\(asset, \{ authorizePaidSensors: false \}\)/, "background preparation should compile the durable evidence bundle without paid sensors");
+assert.match(js, /await ensurePreingestionBundle\(asset, \{ authorizePaidSensors: true \}\)/, "the committed writer batch should authorize OCR scheduling before recognition enqueue");
+const preingestionSource = js.slice(js.indexOf("async function ensurePreingestionBundle"), js.indexOf("async function prepareAssetInBackground"));
+assert.match(preingestionSource, /enqueue_workers: authorizePaidSensors/, "pre-click preparation must not enqueue paid workers");
+assert.match(preingestionSource, /enqueue_ocr: authorizePaidSensors/, "pre-click preparation must not enqueue paid OCR");
+assert.match(js, /runSerializedAssetPreingestion/, "pre-click bundle compilation and post-click sensor authorization must not race on one asset");
+assert.doesNotMatch(js, /ensureSpeculativeRecognition|client_speculative = true/, "image selection alone must never authorize a paid recognition job");
 assert.doesNotMatch(js, /ensureFastScoutPrewarm|settleFastScoutPrewarm/, "discarded L1 helpers must not remain wired into the writer path");
 assert.doesNotMatch(js, /l1Body|l1Outcome|applySpeculativeL1ToPendingResult/, "writer flow must not issue or display a duplicate speculative L1 request");
 assert.match(js, /function pollV4QueuedJobsBatch/, "queued writer titles should use one batch status aggregator");
@@ -322,7 +326,7 @@ assert.match(
 );
 assert.match(js, /manual_retry:\s*options\.manualRetry === true/, "the queue job must carry the manual retry intent to stage expansion");
 assert.match(js, /retry_of_job_id:\s*options\.retryOfJobId \|\| null/, "priority scheduling must be bound to a verifiable failed job");
-assert.match(js, /batchId:\s*createClientBatchId\(\)/, "writer retries should create a fresh durable job identity");
+assert.match(js, /batchId:\s*retriesFailedDurableJob[\s\S]*\? createClientBatchId\(\)[\s\S]*asset\.recognitionBatchId/, "only a proven terminal job should receive a fresh identity; an uncertain response must replay idempotently");
 assert.match(js, /旧任务仅保留审计记录/, "writer retries should make the old-job audit boundary explicit");
 assert.doesNotMatch(
   js,
@@ -339,8 +343,8 @@ assert.equal(
   "both successful and failed priority retries must discard stale lifecycle completions"
 );
 assert.doesNotMatch(js, /data-emergency-retry/, "the obsolete direct long-request retry path must be removed");
-assert.match(js, /renderProviderControl/, "provider controls should be rendered from server status");
-assert.match(js, /function renderProviderControl\(\)[\s\S]*elements\.processButton\.disabled = !canGenerateTitles\(\)/, "provider status rendering should refresh the generate button state");
+assert.match(js, /renderWorkflowReadiness/, "server workflow readiness should be rendered without provider controls");
+assert.match(js, /function renderWorkflowReadiness\(\)[\s\S]*elements\.processButton\.disabled = !canGenerateTitles\(\)/, "workflow readiness rendering should refresh the generate button state");
 assert.match(js, /processingCompletionStatus/, "batch completion should summarize success and failure counts");
 assert.match(js, /已完成：\$\{succeeded\} 个成功，\$\{failed\} 个失败/, "partial failures should produce an actionable completion status");
 assert.match(js, /activeAssetIndexes/, "frontend should track active assets for visible processing state");
@@ -349,7 +353,11 @@ assert.match(js, /displayFraction/, "asset progress should smooth displayed perc
 assert.match(js, /startProgressTicker/, "progress should advance gradually while provider work is pending");
 assert.match(js, /function hasLiveAssetProgress\(\)[\s\S]*v4WriterTitlePending/, "progress should remain alive after queue submission while final L2 titles are pending");
 assert.doesNotMatch(js, /state\.assetProgress = new Map\(\);\n\s*stopProgressTicker\(\);\n\s*state\.completedAssetCount/, "queue submission must not erase per-card progress before final titles arrive");
-assert.match(js, /已提交全部 \$\{state\.assets\.length\} 张/, "queue submission copy must not claim the batch is complete while L2 titles are pending");
+assert.match(
+  js,
+  /已提交批次 \$\{state\.processingTotal \|\| state\.writerIntakeExpectedItemCount\} 张/,
+  "queue submission copy must retain the frozen denominator while L2 titles are pending"
+);
 assert.match(js, /progressStepForTarget/, "progress should move slowly and wait near later stages");
 assert.doesNotMatch(js, /moduleRevealCount/, "title-only UI should not stage module reveal state");
 assert.doesNotMatch(js, /revealResultModules/, "title-only UI should not animate structured module reveal");
@@ -373,8 +381,7 @@ assert.doesNotMatch(js, /flushActiveModuleEditForResult/, "saving should no long
 assert.doesNotMatch(js, /moduleInput\.dataset\.dirty = "true"/, "title-only UI should not keep module dirty state");
 assert.match(retiredApi, /requireTenantAccess\(req\)/, "retired title route must still authenticate the current tenant before responding");
 assert.match(retiredApi, /sendJson\(res, 410,[\s\S]*v4_tenant_route_required/, "direct title execution must stay retired in favor of the durable tenant-scoped V4 route");
-assert.match(css, /\.provider-option\.active/, "selected provider should have a visible active state");
-assert.match(css, /\.provider-option:disabled/, "disabled providers should render as unavailable");
+assert.doesNotMatch(css, /\.provider-(?:panel|head|control|option|smoke)/, "legacy provider selector styles should be removed");
 assert.match(css, /\.title-output/, "title card output should keep a stable card layout");
 assert.match(css, /\.reject-button/, "reject action should have a stable UI hook");
 assert.doesNotMatch(css, /\.side-decision-panel/, "front/back decision panels should be removed from the title-only UI");
@@ -491,6 +498,70 @@ globalThis.fetch = async (url) => {
 };
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
+const principalNamespace = await __listingCopilotAppTestHooks.writerIntakePrincipalNamespace({
+  authenticated: true,
+  tenant_id: "tenant_alpha",
+  user_id: "user_writer_1"
+});
+assert.match(principalNamespace, /^[0-9a-f]{24}$/);
+assert.equal(
+  principalNamespace,
+  await __listingCopilotAppTestHooks.writerIntakePrincipalNamespace({
+    authenticated: true,
+    tenant_id: "tenant_alpha",
+    user_id: "user_writer_1"
+  }),
+  "the active intake pointer namespace must be stable for one signed principal"
+);
+assert.notEqual(
+  principalNamespace,
+  await __listingCopilotAppTestHooks.writerIntakePrincipalNamespace({
+    authenticated: true,
+    tenant_id: "tenant_alpha",
+    user_id: "user_writer_2"
+  }),
+  "one writer's local recovery pointer must never block another account"
+);
+assert.deepEqual(
+  __listingCopilotAppTestHooks.interactionLocksForState({ preparingFiles: true }),
+  { preparation: true, writer_mutation: false, destructive_transition: true },
+  "later image preparation must block destructive regrouping without disabling an already-ready title editor"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.imageGroupCompleteForMode({ mode: "pair", fileCount: 2, preparedCount: 1 }),
+  false,
+  "a damaged half of a paired card must not be reinterpreted as a legitimate single-image card"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.imageGroupCompleteForMode({ mode: "single", fileCount: 1, preparedCount: 1 }),
+  true,
+  "explicit single-image mode must remain supported"
+);
+
+let abortedRead = false;
+globalThis.FileReader = class {
+  readAsDataURL() {}
+  abort() { abortedRead = true; }
+};
+await assert.rejects(
+  __listingCopilotAppTestHooks.readFileAsDataUrl(new Blob(["image"]), { timeoutMs: 15 }),
+  (error) => error?.code === "IMAGE_FILE_READ_TIMEOUT"
+);
+assert.equal(abortedRead, true, "a stalled FileReader must be actively aborted at its deadline");
+let clearedDecodeSource = false;
+globalThis.Image = class {
+  set src(value) { if (value === "") clearedDecodeSource = true; }
+};
+await assert.rejects(
+  __listingCopilotAppTestHooks.loadImage("blob:stalled-image", { timeoutMs: 15 }),
+  (error) => error?.code === "IMAGE_DECODE_TIMEOUT"
+);
+assert.equal(clearedDecodeSource, true, "a stalled image decoder must release its source handler at its deadline");
+assert.match(
+  js,
+  /catch\(\(error\) => \{[\s\S]{0,420}image\.localMetadataPromise = null;[\s\S]{0,240}图片无法读取或预览/,
+  "a bounded metadata timeout must release its rejected coalescing promise so an immutable upload can retry"
+);
 assert.deepEqual(
   __listingCopilotAppTestHooks.retryStateForResult({
     confidence: "MEDIUM",
@@ -679,7 +750,6 @@ assert.equal(
 assert.equal(
   __listingCopilotAppTestHooks.generationSubmissionAllowed({
     assetCount: 10,
-    providerId: "openai_legacy",
     workflowReady: true,
     processing: false,
     resultCount: 0
@@ -690,7 +760,6 @@ assert.equal(
 assert.equal(
   __listingCopilotAppTestHooks.generationSubmissionAllowed({
     assetCount: 10,
-    providerId: "openai_legacy",
     workflowReady: true,
     processing: false,
     resultCount: 1
@@ -699,31 +768,7 @@ assert.equal(
   "the batch submit button must stay locked after any durable job/result exists"
 );
 assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: true, pending: true }),
-  false,
-  "an in-flight speculative enqueue must not be duplicated"
-);
-assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({
-    used: true,
-    job: { job_id: "job-1", recognition_session_id: "session-1" }
-  }),
-  false,
-  "a trackable speculative job must be reused"
-);
-assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: true, ok: false, job: null }),
-  true,
-  "a completed speculative request without a trackable job must be idempotently re-enqueued"
-);
-assert.equal(
-  __listingCopilotAppTestHooks.speculativeNeedsFreshEnqueue({ used: false }),
-  true,
-  "a fresh enqueue is allowed only when no speculative submission existed"
-);
-assert.equal(
   __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({
-    providerConfig: { recommended_concurrency: 2 },
     executionControl: { queue_submission_concurrency: 4 },
     maxWorkers: 6
   }),
@@ -732,16 +777,14 @@ assert.equal(
 );
 assert.equal(
   __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({
-    providerConfig: { recommended_concurrency: 2 },
     executionControl: {},
     maxWorkers: 6
   }),
-  2,
-  "missing control-plane guidance should preserve the measured provider-safe submission pool"
+  1,
+  "missing control-plane guidance should fail safe to one submission worker without deriving provider capacity"
 );
 assert.equal(
   __listingCopilotAppTestHooks.queueSubmissionConcurrencyLimit({
-    providerConfig: { recommended_concurrency: 4 },
     executionControl: { queue_submission_concurrency: 20 },
     maxWorkers: 6
   }),

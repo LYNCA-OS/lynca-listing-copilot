@@ -1,3 +1,4 @@
+import { waitUntil } from "@vercel/functions";
 import { enforceApiRateLimit } from "../../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../../lib/observability/production-events.mjs";
 import { readV4RecognitionJobs, v4JobStatuses } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
@@ -10,6 +11,10 @@ import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
 import { sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { buildRetrievalParticipationSummary } from "../../lib/listing/retrieval/retrieval-participation.mjs";
 import { compactRecognitionCriticalPath } from "../../lib/listing/pipeline/timing.mjs";
+import {
+  isWriterIntakeCanonicalJob,
+  reconcileWriterIntakeCanonicalJobRowsBestEffort
+} from "../../lib/listing/intake/writer-intake-store.mjs";
 import {
   hasTenantPermission,
   publicTenantAuthError,
@@ -314,6 +319,18 @@ export function operationalSessionStatus(session = null, job = null) {
       provider_requested_service_tier: summary.provider_requested_service_tier || null,
       provider_service_tier: summary.provider_service_tier || null,
       provider_calls: Number.isFinite(Number(summary.provider_calls)) ? Number(summary.provider_calls) : null,
+      baseline_provider_calls: Number.isFinite(Number(summary.baseline_provider_calls))
+        ? Number(summary.baseline_provider_calls)
+        : null,
+      shadow_provider_calls: Number.isFinite(Number(summary.shadow_provider_calls))
+        ? Number(summary.shadow_provider_calls)
+        : null,
+      total_provider_calls: Number.isFinite(Number(summary.total_provider_calls))
+        ? Number(summary.total_provider_calls)
+        : null,
+      provider_accounting_complete: summary.provider_accounting_complete ?? null,
+      second_look_shadow_usage: summary.second_look_shadow_usage || null,
+      second_look_shadow: summary.second_look_shadow || null,
       recognition_benchmark_profile: summary.recognition_benchmark_profile || null,
       recognition_benchmark_phase: summary.recognition_benchmark_phase || null,
       evaluation_decision_trace_packet: summary.evaluation_decision_trace_packet || null,
@@ -756,6 +773,15 @@ export default async function handler(req, res) {
     return;
   }
   triggerStatusPollQueueSelfHeal(ownedJobs);
+  // Status reads are also a bounded repair channel for the operational intake
+  // projection. Canonical queue rows remain truth; no title or queue state is
+  // inferred from the ledger.
+  const writerIntakeJobIds = ownedJobs
+    .filter(isWriterIntakeCanonicalJob)
+    .map((job) => job.id);
+  if (writerIntakeJobIds.length) {
+    waitUntil(reconcileWriterIntakeCanonicalJobRowsBestEffort({ jobIds: writerIntakeJobIds }));
+  }
   res.setHeader("cache-control", "no-store");
   res.setHeader("x-lynca-status-profile", responseProfile);
   res.setHeader("server-timing", [

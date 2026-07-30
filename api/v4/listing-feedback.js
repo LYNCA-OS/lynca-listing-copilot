@@ -8,10 +8,14 @@ import {
   normalizeFeedbackSubmissionId
 } from "../../lib/listing/feedback/feedback-capture.mjs";
 import { buildV4FeedbackArtifacts } from "../../lib/listing/v4/feedback/feedback-loop.mjs";
+import {
+  reconcileWriterIntakeCanonicalFeedbackEvent
+} from "../../lib/listing/intake/writer-intake-projection.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import {
   persistV4WriterFeedbackTransaction,
   readV4SessionStatus,
+  verifyV4AdminTestFeedbackIsolation,
 } from "../../lib/listing/v4/session/session-store.mjs";
 import { readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import {
@@ -178,13 +182,49 @@ export default async function handler(req, res) {
   }
   const committed = transaction.transaction || {};
   const supersededRetry = committed.superseded_retry === true;
+  const committedFeedbackEventId = committed.feedback_event_id || artifacts.feedbackEvent.id;
+  const requiresAdminTestIsolationProof = context.role === TENANT_ROLES.OWNER
+    && ["ACCEPT", "EDIT"].includes(action);
+  const isolationVerification = requiresAdminTestIsolationProof
+    ? await verifyV4AdminTestFeedbackIsolation({
+        sessionId,
+        tenantId,
+        feedbackEventId: committedFeedbackEventId
+      })
+    : null;
+  const persistedProof = isolationVerification?.proof || {};
+  const adminTestPersistenceProof = requiresAdminTestIsolationProof
+    ? {
+        proof_version: persistedProof.proof_version || "admin-test-feedback-isolation-proof-v1",
+        verified: isolationVerification?.verified === true,
+        feedback_event_verified: persistedProof.feedback_event_verified === true,
+        learning_event_verified: persistedProof.learning_event_verified === true,
+        session_projection_verified: persistedProof.session_projection_verified === true,
+        image_generation_hash_verified: persistedProof.image_generation_hash_verified === true,
+        writer_final_replay_excluded: persistedProof.writer_final_replay_excluded === true,
+        replay_source_count: Number(persistedProof.replay_source_count || 0),
+        active_writer_final_replay_source_count: Number(
+          persistedProof.active_writer_final_replay_source_count || 0
+        ),
+        active_admin_test_replay_for_image_count: Number(
+          persistedProof.active_admin_test_replay_for_image_count || 0
+        )
+      }
+    : null;
+  if (requiresAdminTestIsolationProof && adminTestPersistenceProof.verified !== true) {
+    console.warn("[admin_test_feedback_isolation]", JSON.stringify({
+      recognition_session_id: sessionId,
+      feedback_event_id: committedFeedbackEventId,
+      reason_code: "ADMIN_TEST_FEEDBACK_ISOLATION_NOT_PROVEN"
+    }));
+  }
 
   sendJson(res, 200, withV4Version({
     ok: true,
     recognition_session_id: sessionId,
     status: committed.status || artifacts.status,
     feedback_submission_id: submissionId,
-    feedback_event_id: committed.feedback_event_id || artifacts.feedbackEvent.id,
+    feedback_event_id: committedFeedbackEventId,
     learning_event_id: committed.learning_event_id || artifacts.learningEvent.id,
     feedback_revision: committed.feedback_revision || null,
     writer_final_title: committed.writer_final_title ?? artifacts.feedbackEvent.writer_final_title,
@@ -197,6 +237,21 @@ export default async function handler(req, res) {
     sem_extraction_status: supersededRetry ? "CURRENT_STATE_UNCHANGED" : artifacts.semExtraction.status,
     superseded_retry: supersededRetry,
     production_promotion_eligible: false,
+    admin_test_persistence_proof: adminTestPersistenceProof,
     v4_persistence: { transaction }
   }));
+  if (["ACCEPT", "EDIT"].includes(action)) {
+    const projection = await reconcileWriterIntakeCanonicalFeedbackEvent({
+      tenantId,
+      recognitionSessionId: sessionId,
+      feedbackEventId: committedFeedbackEventId
+    });
+    if (projection.ok !== true) {
+      console.warn("[writer_intake_feedback_reconciliation]", JSON.stringify({
+        recognition_session_id: sessionId,
+        feedback_event_id: committedFeedbackEventId,
+        reason_code: projection.reason_code || "WRITER_INTAKE_FEEDBACK_RECONCILIATION_FAILED"
+      }));
+    }
+  }
 }

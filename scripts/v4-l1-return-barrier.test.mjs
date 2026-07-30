@@ -26,6 +26,13 @@ assert.equal(shouldRetryGpt5EmptyResult({
   },
   result: { ok: true, final_title: "" }
 }), false, "cold evaluation must never hide a second whole-pipeline Provider attempt");
+assert.equal(shouldRetryGpt5EmptyResult({
+  payload: {
+    model_override: "gpt-5-mini",
+    provider_options: { recognition_benchmark_profile: "cold_second_look_shadow_benchmark" }
+  },
+  result: { ok: true, final_title: "" }
+}), false, "second-look shadow evaluation must never hide a second whole-pipeline Provider attempt");
 let coldEvaluationCalls = 0;
 const coldEvaluationResponse = await callNativeV4RecognitionWithGpt5EmptyRetry({
   payload: {

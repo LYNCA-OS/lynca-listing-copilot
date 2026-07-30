@@ -3,6 +3,22 @@ import {
   buildRetrievalApplicationReplay,
   retrievalApplicationReplaySchemaVersion
 } from "../lib/listing/evaluation/retrieval-application-replay.mjs";
+import { buildCandidatePreApplicationEvidenceSnapshot } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+
+const replayImageContext = {
+  tenant_id: "tenant_replay_test",
+  asset_id: "asset-replay-test",
+  image_generation_id: "asset-replay-test",
+  images: [{
+    image_id: "front",
+    object_path: "tenants/tenant_replay_test/listing-assets/2026-07-30/asset-replay-test/front.jpg",
+    content_sha256: "7".repeat(64),
+    tenant_id: "tenant_replay_test",
+    asset_id: "asset-replay-test",
+    image_generation_id: "asset-replay-test",
+    storage_verified: true
+  }]
+};
 
 function packet(candidates = [], promptCandidateIds = []) {
   return {
@@ -84,6 +100,14 @@ function directResult() {
     },
     resolved_fields: resolved,
     raw_provider_fields: resolved,
+    current_image_context: replayImageContext,
+    candidate_pre_application_evidence_snapshot: buildCandidatePreApplicationEvidenceSnapshot({
+      evidence_schema_version: "listing-evidence-v1",
+      raw_observed_fields: resolved,
+      raw_provider_fields: resolved,
+      normalized_evidence: {},
+      raw_provider_field_evidence: []
+    }, replayImageContext),
     evidence: {
       product: {
         value: "Topps Sapphire",
@@ -227,5 +251,36 @@ const repeated = await buildRetrievalApplicationReplay({ result: timingVariant }
 assert.deepEqual(repeated, replay);
 assert.equal(repeated.arms.off.semantic_fingerprint, replay.arms.off.semantic_fingerprint);
 assert.equal(repeated.arms.on.semantic_fingerprint, replay.arms.on.semantic_fingerprint);
+
+const selfProofAttempt = directResult();
+delete selfProofAttempt.candidate_pre_application_evidence_snapshot;
+selfProofAttempt.catalog_candidate_packet.vector_retrieval.candidates[0].anchor_agreement = {
+  exact_code_match: false,
+  prompt_hard_filter_pass: true,
+  agreed: [],
+  contradicted: []
+};
+const selfProofReplay = await buildRetrievalApplicationReplay({ result: selfProofAttempt });
+assert.equal(
+  selfProofReplay.shared.projection.direct_observation.observation_status,
+  "UNKNOWN"
+);
+assert.equal(
+  selfProofReplay.shared.projection.direct_observation.observation_reason,
+  "PRE_APPLICATION_EVIDENCE_SNAPSHOT_MISSING"
+);
+assert.deepEqual(
+  selfProofReplay.shared.projection.direct_observation.candidate_observation_snapshot,
+  {}
+);
+assert.deepEqual(
+  selfProofReplay.shared.projection.candidate_selection.application_trace[0].direct_conflicts,
+  []
+);
+assert.equal(
+  selfProofReplay.shared.projection.candidate_selection.application_trace[0].match_level,
+  "NO_MATCH",
+  "terminal resolved fields must not manufacture catalog agreement during replay"
+);
 
 console.log("retrieval application replay tests passed");

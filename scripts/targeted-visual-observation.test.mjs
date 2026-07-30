@@ -246,6 +246,21 @@ assert.notEqual(
   "same-call model value plus model evidence text must never self-certify exact publication"
 );
 
+const modelOnlyTcgCode = expandTargetedVisualPacket({
+  r: "CONFIRMED",
+  v: { s: [{ f: "tcg_card_number", v: "OP01-120" }], b: [], n: [], l: [] },
+  e: [{ f: "tcg_card_number", s: "PRINTED_TEXT", i: "image_1", t: "OP01-120" }],
+  u: []
+}, ["card_number_or_code"], { selectedImages: selected });
+const productionCodeDocument = providerPayloadToEvidenceDocument(modelOnlyTcgCode);
+assert.equal(productionCodeDocument.evidence.tcg_card_number, undefined, "production/default normalization must stay unchanged");
+const shadowCodeDocument = providerPayloadToEvidenceDocument(modelOnlyTcgCode, {
+  preserveReviewOnlyCodeProposals: true
+});
+assert.equal(shadowCodeDocument.evidence.tcg_card_number.status, "REVIEW");
+assert.equal(shadowCodeDocument.evidence.tcg_card_number.sources[0].source_type, "VISION_MODEL");
+assert.notEqual(shadowCodeDocument.evidence.tcg_card_number.sources[0].direct_observation, true);
+
 let requestBody = null;
 const executed = await runTargetedVisualObservation({
   images,

@@ -210,8 +210,13 @@ test("the real OCR worker preserves shadow schedule lineage and can complete the
     }, job);
   });
 
-  assert.equal(patches.length, 2);
-  for (const patch of patches) {
+  assert.equal(patches.filter((patch) => patch.field !== "region_observation").length, 2);
+  assert.equal(
+    patches.filter((patch) => patch.field === "region_observation").length,
+    2,
+    "additive RegionEvidence telemetry must preserve one typed observation per OCR detail job"
+  );
+  for (const patch of patches.filter((item) => item.field !== "region_observation")) {
     assert.equal(patch.provenance.evaluation_mode, "SHADOW_EVALUATION_ONLY");
     assert.equal(
       patch.provenance.bundle_generation_fingerprint,

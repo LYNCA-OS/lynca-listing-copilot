@@ -5,6 +5,7 @@ import {
   defaultRecognitionProfileId,
   fetchWithBoundedRetry,
   groupClientResultsByJobId,
+  groupIntakeFileSlots,
   INTAKE_PREVIEW_CARD_WINDOW,
   isClientStatusNotFound,
   labelForCsmField,
@@ -22,7 +23,7 @@ import {
   withRecognitionRequestIntent
 } from "./listing-copilot-sdk.mjs";
 import {
-  nextWriterOutstandingIndex,
+  preferredWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,
   writerExportRowsReady,
   writerExportWithinLimit,
@@ -58,6 +59,7 @@ const FIELD_MAX_CROPS_PER_ASSET = 8;
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const JOB_RECOVERY_API_ENDPOINT = "/api/v4/listing-job-retry";
+const WRITER_INTAKE_API_ENDPOINT = "/api/v4/listing-intake";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
 const PREINGEST_API_ENDPOINT = "/api/v4/listing-preingest";
 const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
@@ -73,12 +75,15 @@ const STATUS_POLL_TIMEOUT_MS = 15000;
 const STATUS_ORPHAN_MIN_FAILURES = 3;
 const STATUS_ORPHAN_MIN_ELAPSED_MS = 20000;
 const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
-// 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
-// L1 scout 与预处理并行，缓存就绪后只启动一次 L2；L1 永不直接展示给写手。
-// 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
-const ENABLE_SPECULATIVE_RECOGNITION = true;
-const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
+// 图片准备可以前移，但付费识别只能由写手点击“开始识别”授权。
+// 点击会先持久化整批意图；后续仍在本地解析的卡片继承该意图，逐张安全入队。
 const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
+const WRITER_INTAKE_TIMEOUT_MS = 12000;
+const WRITER_INTAKE_RETRY_DELAYS_MS = Object.freeze([300, 900]);
+const WRITER_INTAKE_POINTER_STORAGE_KEY = "lynca.writer-intake.active.v1";
+const WRITER_INTAKE_RECOVERY_STORAGE_KEY = "lynca.writer-intake.recovery.v1";
+const IMAGE_FILE_READ_TIMEOUT_MS = 15000;
+const IMAGE_DECODE_TIMEOUT_MS = 15000;
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
 const supportedImageTypes = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const storageFirstImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -93,7 +98,6 @@ const state = {
   modalReturnFocus: null,
   resolutionMap: {},
   providerStatus: null,
-  selectedProvider: "",
   processing: false,
   activeAssetIndexes: new Set(),
   assetProgress: new Map(),
@@ -124,11 +128,20 @@ const state = {
   activeWorkbenchTransition: null,
   backgroundPreparationRunId: 0,
   backgroundRecognitionBatchId: "",
+  writerIntakeBatchId: "",
+  writerIntakeIdempotencyKey: "",
+  writerIntakeExpectedItemCount: 0,
+  writerIntakeCommitInFlight: false,
+  writerIntakeStatus: "",
+  writerIntakeItemsByPosition: new Map(),
+  writerIntakeUnusablePositions: new Map(),
+  writerIntakePrincipalNamespace: "",
   assetLifecycleGeneration: 0
 };
 let backgroundPreparationQueue = [];
 let backgroundPreparationActiveCount = 0;
 let providerStatusReadyPromise = null;
+let writerIntakePrincipalReadyPromise = null;
 let providerStatusRecoveryTimer = null;
 let providerStatusRecoveryAttempt = 0;
 
@@ -143,7 +156,6 @@ const elements = {
   copyAllButton: document.querySelector("#copyAllButton"),
   exportWorkbookButton: document.querySelector("#exportWorkbookButton"),
   exportWorkbookStatus: document.querySelector("#exportWorkbookStatus"),
-  providerControl: document.querySelector("#providerControl"),
   providerStatusText: document.querySelector("#providerStatusText"),
   batchTitleList: document.querySelector("#batchTitleList"),
   imageModal: document.querySelector("#imageModal"),
@@ -170,11 +182,35 @@ const elements = {
   }
 };
 
-function readFileAsDataUrl(file) {
+function readFileAsDataUrl(file, { timeoutMs = IMAGE_FILE_READ_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      reader.onload = null;
+      reader.onerror = null;
+      reader.onabort = null;
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const timer = setTimeout(() => {
+      const error = new Error("图片文件读取超时");
+      error.code = "IMAGE_FILE_READ_TIMEOUT";
+      finish(reject, error);
+      try { reader.abort(); } catch {}
+    }, Math.max(10, Number(timeoutMs) || IMAGE_FILE_READ_TIMEOUT_MS));
+    reader.onload = () => finish(resolve, reader.result);
+    reader.onerror = () => finish(reject, reader.error || new Error("图片文件读取失败"));
+    reader.onabort = () => {
+      const error = new Error("图片文件读取已取消");
+      error.code = "IMAGE_FILE_READ_ABORTED";
+      finish(reject, error);
+    };
     reader.readAsDataURL(file);
   });
 }
@@ -323,6 +359,454 @@ async function fetchJsonWithRetry(url, options = {}, {
   return { ...request, payload, error: requestError };
 }
 
+function retryableWriterIntakeResponse(response, payload = {}) {
+  if (payload?.retryable === true) return true;
+  return [408, 425, 429, 500, 502, 503, 504].includes(Number(response?.status || 0));
+}
+
+async function fetchWriterIntakeMutation(action, body = {}, {
+  asset = null,
+  maxAttempts = WRITER_INTAKE_RETRY_DELAYS_MS.length + 1
+} = {}) {
+  const attempts = Math.max(1, Math.min(3, Math.trunc(Number(maxAttempts) || 1)));
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const request = await fetchJsonWithRetry(WRITER_INTAKE_API_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ action, ...body })
+      }, {
+        timeoutMs: WRITER_INTAKE_TIMEOUT_MS,
+        maxAttempts: 1,
+        retryNetworkErrors: true,
+        asset,
+        stage: `writer_intake_${String(action || "mutation").toLowerCase()}`
+      });
+      if (!request.error) return request.payload;
+      const error = request.error;
+      error.code = String(request.payload?.code || "writer_intake_request_failed").trim();
+      error.retryable = retryableWriterIntakeResponse(request.response, request.payload);
+      lastError = error;
+      if (!error.retryable || attempt === attempts) throw error;
+    } catch (error) {
+      lastError = error;
+      if (error?.retryable === false || attempt === attempts) throw error;
+    }
+    await wait(WRITER_INTAKE_RETRY_DELAYS_MS[attempt - 1] || 0);
+  }
+  throw lastError || new Error("writer_intake_request_failed");
+}
+
+function writerIntakeStorage() {
+  try {
+    return globalThis.localStorage || globalThis.window?.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function writerIntakePointerStorageKey(kind = "active") {
+  const namespace = String(state.writerIntakePrincipalNamespace || "").trim();
+  if (!/^[0-9a-f]{24}$/.test(namespace)) return "";
+  const prefix = kind === "recovery" ? WRITER_INTAKE_RECOVERY_STORAGE_KEY : WRITER_INTAKE_POINTER_STORAGE_KEY;
+  return `${prefix}.${namespace}`;
+}
+
+function normalizedWriterIntakePointer(value = null) {
+  const batch_id = String(value?.batch_id || "").trim();
+  const idempotency_key = String(value?.idempotency_key || "").trim();
+  if ((batch_id && !/^intake_[0-9a-f]{32}$/.test(batch_id)) || !idempotency_key) return null;
+  return { batch_id, idempotency_key };
+}
+
+async function writerIntakePrincipalNamespace(session = {}) {
+  const tenantId = String(session?.tenant_id || "").trim();
+  const userId = String(session?.user_id || "").trim();
+  if (session?.authenticated !== true || !tenantId || !userId || !globalThis.crypto?.subtle) return "";
+  const bytes = new TextEncoder().encode(`${tenantId}\u001f${userId}`);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 24);
+}
+
+async function loadWriterIntakePrincipalNamespace() {
+  try {
+    const request = await fetchJsonWithTimeout(
+      "/api/session",
+      { method: "GET", credentials: "same-origin", cache: "no-store" },
+      WRITER_INTAKE_TIMEOUT_MS,
+      "会话恢复超时。"
+    );
+    state.writerIntakePrincipalNamespace = await writerIntakePrincipalNamespace(request.payload);
+    if (!state.writerIntakePrincipalNamespace) return false;
+    // v1 originally used one global browser key. It is never safe to infer its
+    // owner after login, so discard it instead of allowing one account to block
+    // another account's intake.
+    writerIntakeStorage()?.removeItem(WRITER_INTAKE_POINTER_STORAGE_KEY);
+    writerIntakeStorage()?.removeItem(WRITER_INTAKE_RECOVERY_STORAGE_KEY);
+    return true;
+  } catch {
+    state.writerIntakePrincipalNamespace = "";
+    return false;
+  }
+}
+
+function readWriterIntakeRecoveryPointers() {
+  const key = writerIntakePointerStorageKey("recovery");
+  if (!key) return [];
+  try {
+    const parsed = JSON.parse(writerIntakeStorage()?.getItem(key) || "[]");
+    return (Array.isArray(parsed) ? parsed : [])
+      .map(normalizedWriterIntakePointer)
+      .filter(Boolean)
+      .slice(-8);
+  } catch {
+    return [];
+  }
+}
+
+function writeWriterIntakeRecoveryPointers(pointers = []) {
+  const key = writerIntakePointerStorageKey("recovery");
+  if (!key) return false;
+  try {
+    const normalized = (Array.isArray(pointers) ? pointers : [])
+      .map(normalizedWriterIntakePointer)
+      .filter(Boolean)
+      .filter((pointer, index, source) => source.findIndex((candidate) => (
+        candidate.batch_id === pointer.batch_id && candidate.idempotency_key === pointer.idempotency_key
+      )) === index)
+      .slice(-8);
+    if (normalized.length) writerIntakeStorage()?.setItem(key, JSON.stringify(normalized));
+    else writerIntakeStorage()?.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function preserveWriterIntakeRecoveryPointer(pointer = null) {
+  const normalized = normalizedWriterIntakePointer(pointer);
+  if (!normalized) return false;
+  return writeWriterIntakeRecoveryPointers([...readWriterIntakeRecoveryPointers(), normalized]);
+}
+
+function removeWriterIntakeRecoveryPointer(pointer = null) {
+  const normalized = normalizedWriterIntakePointer(pointer);
+  if (!normalized) return false;
+  return writeWriterIntakeRecoveryPointers(readWriterIntakeRecoveryPointers().filter((candidate) => (
+    candidate.batch_id !== normalized.batch_id || candidate.idempotency_key !== normalized.idempotency_key
+  )));
+}
+
+function persistWriterIntakePointer({ batchId, idempotencyKey } = {}) {
+  const batch_id = String(batchId || "").trim();
+  const idempotency_key = String(idempotencyKey || "").trim();
+  if ((batch_id && !/^intake_[0-9a-f]{32}$/.test(batch_id)) || !idempotency_key) return false;
+  const key = writerIntakePointerStorageKey();
+  if (!key) return false;
+  try {
+    writerIntakeStorage()?.setItem(
+      key,
+      JSON.stringify({ batch_id, idempotency_key })
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readWriterIntakePointer() {
+  const key = writerIntakePointerStorageKey();
+  if (!key) return null;
+  try {
+    const raw = writerIntakeStorage()?.getItem(key) || "";
+    const active = normalizedWriterIntakePointer(JSON.parse(raw || "null"));
+    if (active) return { ...active, recovery: false };
+    if (raw) writerIntakeStorage()?.removeItem(key);
+    const recovery = readWriterIntakeRecoveryPointers().at(-1) || null;
+    return recovery ? { ...recovery, recovery: true } : null;
+  } catch {
+    try { writerIntakeStorage()?.removeItem(key); } catch {}
+    return null;
+  }
+}
+
+function clearWriterIntakePointer(pointer = null) {
+  const key = writerIntakePointerStorageKey();
+  try {
+    if (key) writerIntakeStorage()?.removeItem(key);
+    if (pointer?.recovery === true) removeWriterIntakeRecoveryPointer(pointer);
+  } catch {
+    // Browser privacy modes may disable storage. Server-side idempotency still applies.
+  }
+}
+
+function createWriterIntakeIdempotencyKey() {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `writer-intake-${random}`;
+}
+
+function expectedCardGroupCount(fileCount, mode = state.mode) {
+  const count = Math.max(0, Math.trunc(Number(fileCount) || 0));
+  const groupSize = mode === "single" ? 1 : 2;
+  return Math.ceil(count / groupSize);
+}
+
+function imageGroupCompleteForMode({ mode = state.mode, fileCount = 0, preparedCount = 0 } = {}) {
+  if (mode === "single") return Number(fileCount) === 1 && Number(preparedCount) === 1;
+  return Number(fileCount) === 2 && Number(preparedCount) === 2;
+}
+
+function beginWriterIntakeSelection(expectedItemCount) {
+  clearWriterIntakePointer();
+  state.writerIntakeBatchId = "";
+  state.writerIntakeIdempotencyKey = createWriterIntakeIdempotencyKey();
+  state.writerIntakeExpectedItemCount = Math.max(0, Math.trunc(Number(expectedItemCount) || 0));
+  state.writerIntakeCommitInFlight = false;
+  state.writerIntakeStatus = "SELECTED";
+  state.writerIntakeItemsByPosition = new Map();
+  state.writerIntakeUnusablePositions = new Map();
+}
+
+async function restoreWriterIntakeStatusFromPointer() {
+  const pointer = readWriterIntakePointer();
+  if (!pointer || state.assets.length || state.preparingFiles || state.processing) return false;
+  try {
+    const request = await fetchJsonWithTimeout(
+      `${WRITER_INTAKE_API_ENDPOINT}?${pointer.batch_id
+        ? `batch_id=${encodeURIComponent(pointer.batch_id)}`
+        : `idempotency_key=${encodeURIComponent(pointer.idempotency_key)}`}`,
+      { method: "GET", credentials: "same-origin", cache: "no-store" },
+      WRITER_INTAKE_TIMEOUT_MS,
+      "上次批次状态查询超时。"
+    );
+    if (request.response.status === 404) {
+      clearWriterIntakePointer(pointer);
+      return false;
+    }
+    if (!request.response.ok || request.payload?.ok === false) return false;
+    if (request.payload?.batch_terminal === true) {
+      clearWriterIntakePointer(pointer);
+      return false;
+    }
+    const expected = Math.max(0, Number(request.payload?.expected_item_count || 0));
+    const queued = Math.max(0, Number(request.payload?.queue_admitted_item_count || 0));
+    state.writerIntakeBatchId = String(request.payload?.batch_id || pointer.batch_id || "").trim();
+    state.writerIntakeIdempotencyKey = pointer.idempotency_key;
+    state.writerIntakeStatus = "RESUME_READ_ONLY";
+    persistWriterIntakePointer({
+      batchId: state.writerIntakeBatchId,
+      idempotencyKey: state.writerIntakeIdempotencyKey
+    });
+    if (pointer.recovery === true) removeWriterIntakeRecoveryPointer(pointer);
+    setStatus(`上次批次的云端记录仍在：${queued} / ${expected} 张已入队。浏览器不会保存本地原图；需要补传时请重新选择图片。`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function abandonPreviousWriterIntakeBeforeSelection() {
+  if (!state.writerIntakePrincipalNamespace) {
+    writerIntakePrincipalReadyPromise = loadWriterIntakePrincipalNamespace();
+    await writerIntakePrincipalReadyPromise;
+  }
+  const pointer = readWriterIntakePointer();
+  let batchId = String(state.writerIntakeBatchId || pointer?.batch_id || "").trim();
+  const idempotencyKey = String(state.writerIntakeIdempotencyKey || pointer?.idempotency_key || "").trim();
+  if (!batchId && !idempotencyKey) return false;
+  if (!batchId) {
+    const recovered = await fetchJsonWithTimeout(
+      `${WRITER_INTAKE_API_ENDPOINT}?idempotency_key=${encodeURIComponent(idempotencyKey)}`,
+      { method: "GET", credentials: "same-origin", cache: "no-store" },
+      WRITER_INTAKE_TIMEOUT_MS,
+      "上次批次恢复超时。"
+    );
+    if (recovered.response.status === 404) {
+      clearWriterIntakePointer(pointer);
+      return false;
+    }
+    if (!recovered.response.ok || recovered.payload?.ok === false) {
+      const error = new Error("writer_intake_previous_batch_recovery_failed");
+      error.retryable = true;
+      throw error;
+    }
+    batchId = String(recovered.payload?.batch_id || "").trim();
+  }
+  if (!/^intake_[0-9a-f]{32}$/.test(batchId)) {
+    const error = new Error("writer_intake_previous_batch_identity_invalid");
+    error.retryable = false;
+    throw error;
+  }
+  let abandoned;
+  try {
+    abandoned = await fetchWriterIntakeMutation("ABANDON_BATCH", {
+      batch_id: batchId
+    });
+  } catch (error) {
+    if (Number(error?.http_status || 0) === 404 || String(error?.code || "") === "writer_intake_batch_not_found") {
+      clearWriterIntakePointer(pointer);
+      return false;
+    }
+    throw error;
+  }
+  if (String(abandoned?.batch_id || "") !== batchId) {
+    const error = new Error("writer_intake_abandon_response_invalid");
+    error.retryable = false;
+    throw error;
+  }
+  // Keep the canonical identity even when the visible results are failed or
+  // already saved. Those states may still contain a server-side retry/action
+  // boundary, and replacing local files must never make the old batch
+  // unaddressable merely because no confirmation dialog was necessary.
+  if (idempotencyKey) {
+    const recoveryPersisted = preserveWriterIntakeRecoveryPointer({
+      batch_id: batchId,
+      idempotency_key: idempotencyKey || state.writerIntakeIdempotencyKey
+    });
+    if (!recoveryPersisted) {
+      const error = new Error("writer_intake_recovery_pointer_persist_failed");
+      error.retryable = true;
+      throw error;
+    }
+  }
+  return true;
+}
+
+async function commitWriterIntakeSelection() {
+  if (!state.writerIntakePrincipalNamespace) {
+    writerIntakePrincipalReadyPromise = loadWriterIntakePrincipalNamespace();
+    const ready = await writerIntakePrincipalReadyPromise;
+    if (!ready) throw new Error("writer_intake_principal_namespace_unavailable");
+  }
+  const expectedItemCount = state.writerIntakeExpectedItemCount;
+  if (!expectedItemCount) throw new Error("writer_intake_expected_item_count_missing");
+  if (state.writerIntakeBatchId) return state.writerIntakeBatchId;
+  if (!state.writerIntakeIdempotencyKey) {
+    state.writerIntakeIdempotencyKey = createWriterIntakeIdempotencyKey();
+  }
+  // Persist the idempotency key before the request. If the server commits but
+  // the response or tab is lost, GET-by-key deterministically recovers it.
+  persistWriterIntakePointer({
+    batchId: state.writerIntakeBatchId,
+    idempotencyKey: state.writerIntakeIdempotencyKey
+  });
+  const payload = await fetchWriterIntakeMutation("COMMIT_BATCH", {
+    idempotency_key: state.writerIntakeIdempotencyKey,
+    expected_item_count: expectedItemCount
+  });
+  const batchId = String(payload?.batch_id || "").trim();
+  if (
+    !/^intake_[0-9a-f]{32}$/.test(batchId)
+    || Number(payload?.expected_item_count) !== expectedItemCount
+    || Number(payload?.item_count) !== expectedItemCount
+  ) {
+    const error = new Error("writer_intake_commit_response_invalid");
+    error.retryable = false;
+    throw error;
+  }
+  state.writerIntakeBatchId = batchId;
+  state.writerIntakeStatus = "COMMITTED";
+  state.writerIntakeItemsByPosition = new Map(
+    (Array.isArray(payload.items) ? payload.items : [])
+      .map((item) => [Number(item?.item_position), item])
+      .filter(([position, item]) => Number.isInteger(position) && position > 0 && item?.id)
+  );
+  if (state.writerIntakeItemsByPosition.size !== expectedItemCount) {
+    const error = new Error("writer_intake_commit_item_set_invalid");
+    error.retryable = false;
+    throw error;
+  }
+  persistWriterIntakePointer({ batchId, idempotencyKey: state.writerIntakeIdempotencyKey });
+  return batchId;
+}
+
+function writerIntakeItemFromPayload(payload = {}, position) {
+  const direct = payload?.item && typeof payload.item === "object" ? [payload.item] : [];
+  return [...direct, ...(Array.isArray(payload.items) ? payload.items : [])]
+    .find((item) => Number(item?.item_position) === Number(position)) || null;
+}
+
+async function ensureWriterIntakeItemAppended(asset) {
+  const batchId = String(asset?.writerIntakeBatchId || state.writerIntakeBatchId || "").trim();
+  if (!batchId) throw new Error("writer_intake_batch_not_committed");
+  if (asset.writerIntakeItemId) return asset.writerIntakeItemId;
+  const predeclared = state.writerIntakeItemsByPosition.get(Number(asset.index)) || null;
+  if (/^intake_item_[0-9a-f]{32}$/.test(String(predeclared?.id || ""))) {
+    asset.writerIntakeBatchId = batchId;
+    asset.writerIntakeItemId = predeclared.id;
+    asset.writerIntakeState = predeclared.status || "DECLARED";
+    asset.writerIntakeLastErrorCode = "";
+    return predeclared.id;
+  }
+  const payload = await fetchWriterIntakeMutation("APPEND_ITEM", {
+    batch_id: batchId,
+    client_item_ref: `card-${asset.index}`,
+    item_position: asset.index
+  }, { asset });
+  const item = writerIntakeItemFromPayload(payload, asset.index);
+  if (!/^intake_item_[0-9a-f]{32}$/.test(String(item?.id || ""))) {
+    const error = new Error("writer_intake_append_response_invalid");
+    error.retryable = false;
+    throw error;
+  }
+  asset.writerIntakeBatchId = batchId;
+  asset.writerIntakeItemId = item.id;
+  asset.writerIntakeState = item.status || "DECLARED";
+  asset.writerIntakeLastErrorCode = "";
+  state.writerIntakeItemsByPosition.set(Number(asset.index), item);
+  return item.id;
+}
+
+async function settleWriterIntakePosition(position, action, { asset = null } = {}) {
+  const normalizedPosition = Number(position);
+  const item = state.writerIntakeItemsByPosition.get(normalizedPosition) || null;
+  const itemId = String(asset?.writerIntakeItemId || item?.id || "").trim();
+  const batchId = String(asset?.writerIntakeBatchId || state.writerIntakeBatchId || "").trim();
+  if (!/^intake_[0-9a-f]{32}$/.test(batchId) || !/^intake_item_[0-9a-f]{32}$/.test(itemId)) {
+    const error = new Error("writer_intake_settlement_identity_missing");
+    error.retryable = false;
+    throw error;
+  }
+  const payload = await fetchWriterIntakeMutation(action, {
+    batch_id: batchId,
+    item_id: itemId
+  }, { asset });
+  const settled = writerIntakeItemFromPayload(payload, normalizedPosition);
+  const expectedStatus = action === "CANCEL_ITEM" ? "CANCELLED" : "FAILED_TERMINAL";
+  if (settled?.id !== itemId || settled?.status !== expectedStatus) {
+    const error = new Error("writer_intake_settlement_response_invalid");
+    error.retryable = false;
+    throw error;
+  }
+  state.writerIntakeItemsByPosition.set(normalizedPosition, settled);
+  if (asset) {
+    asset.writerIntakeState = settled.status;
+    asset.writerIntakeLastErrorCode = settled.last_error_code || "";
+  }
+  return settled;
+}
+
+async function settleUnusableWriterIntakePositions() {
+  const positions = [...state.writerIntakeUnusablePositions.keys()]
+    .filter((position) => Number.isInteger(position) && position > 0);
+  if (!positions.length) return [];
+  return mapWithConcurrency(positions, 4, async (position) => {
+    const settled = await settleWriterIntakePosition(position, "CANCEL_ITEM");
+    state.writerIntakeUnusablePositions.delete(position);
+    return settled;
+  });
+}
+
+async function recordWriterIntakeAssetFailure(asset) {
+  if (!asset?.writerIntakeItemId || asset?.writerIntakeQueueJobId) return null;
+  return settleWriterIntakePosition(asset.index, "FAIL_ITEM", { asset });
+}
+
 function fileExtension(name) {
   const match = String(name || "").toLowerCase().match(/\.[^.]+$/);
   return match ? match[0] : "";
@@ -360,11 +844,29 @@ function isSupportedImageFile(file) {
   return supportedImageTypes.includes(type) || supportedImageExtensions.includes(extension);
 }
 
-function loadImage(dataUrl) {
+function loadImage(dataUrl, { timeoutMs = IMAGE_DECODE_TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+    };
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback(value);
+    };
+    const timer = setTimeout(() => {
+      const error = new Error("图片解码超时");
+      error.code = "IMAGE_DECODE_TIMEOUT";
+      finish(reject, error);
+      try { image.src = ""; } catch {}
+    }, Math.max(10, Number(timeoutMs) || IMAGE_DECODE_TIMEOUT_MS));
+    image.onload = () => finish(resolve, image);
+    image.onerror = () => finish(reject, new Error("图片解码失败"));
     image.src = dataUrl;
   });
 }
@@ -477,7 +979,7 @@ function renderInstantIntakePreviews(records = []) {
     </article>
   `).join("") + (previewWindow.remaining > 0 ? `
     <div class="empty-state intake-preview-overflow" role="status">
-      其余 ${previewWindow.remaining} 张卡已接收，正在后台进入同一识别批次。
+      其余 ${previewWindow.remaining} 张卡已接收，正在后台准备；点击后会进入同一识别批次。
     </div>
   ` : "");
 }
@@ -706,6 +1208,11 @@ async function ensureImageUploadMetadata(image = {}) {
         return { width, height };
       })
       .catch((error) => {
+        // A decoder timeout is not durable evidence that the file is bad.
+        // Release the rejected coalescing promise so the bounded upload retry
+        // path can try the same immutable File again instead of being poisoned
+        // for the lifetime of the page.
+        image.localMetadataPromise = null;
         throw new Error(`图片无法读取或预览：${error?.message || "浏览器解码失败"}`);
       });
   }
@@ -989,7 +1496,6 @@ function v4SchemaVersionFromPayload(payload = {}) {
 }
 
 function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) {
-  const providerId = state.selectedProvider || null;
   return attachGenerationTimingToResult({
     index: asset.index,
     lifecycleGeneration: asset.lifecycleGeneration,
@@ -1003,8 +1509,8 @@ function queuedPendingResult(asset, enqueuePayload = {}, job = {}, timing = {}) 
     correctedTitle: "",
     writerTitlePending: true,
     confidence: "MEDIUM",
-    provider: providerId,
-    provider_label: providerById(providerId)?.label || providerId || "",
+    provider: null,
+    provider_label: "",
     model_id: "",
     reason: "",
     fields: {},
@@ -1671,7 +2177,7 @@ function syncBackgroundPreparationStatus() {
   const failed = Number(counts.failed || 0);
   const total = state.assets.length;
   if (state.preparingFiles) {
-    setStatus(`已读取 ${total} 张卡；已就绪的卡正在后台上传和识别，其余图片继续读取中…`, { busy: true });
+    setStatus(`已读取 ${total} 张卡；已就绪的卡正在后台上传，其余图片继续读取中…`, { busy: true });
     return;
   }
   if (ready === total) {
@@ -1685,73 +2191,107 @@ function syncBackgroundPreparationStatus() {
   setStatus(`${state.files.length} 张图片已读取；云端准备中 ${ready} / ${total}。`, { busy: true });
 }
 
-async function ensurePreingestionBundle(asset) {
-  if (asset.preingestionBundleId) {
+async function runSerializedAssetPreingestion(asset, operation) {
+  const previous = asset.preingestionRequestLock || Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const current = previous.catch(() => {}).then(() => gate);
+  asset.preingestionRequestLock = current;
+  await previous.catch(() => {});
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (asset.preingestionRequestLock === current) asset.preingestionRequestLock = null;
+  }
+}
+
+async function ensurePreingestionBundle(asset, { authorizePaidSensors = false } = {}) {
+  if (asset.preingestionBundleId && (!authorizePaidSensors || asset.preingestionPaidSensorsAuthorized)) {
     return {
       bundleId: asset.preingestionBundleId,
       reused: true
     };
   }
 
-  const images = preingestionImagesForAsset(asset);
-  if (!images.length) {
-    throw new Error("no_verified_storage_images");
-  }
+  return runSerializedAssetPreingestion(asset, async () => {
+    if (asset.preingestionBundleId && (!authorizePaidSensors || asset.preingestionPaidSensorsAuthorized)) {
+      return {
+        bundleId: asset.preingestionBundleId,
+        reused: true
+      };
+    }
 
-  const request = await fetchJsonWithRetry(PREINGEST_API_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      asset_id: canonicalAssetId(asset),
-      assetId: canonicalAssetId(asset),
-      client_asset_ref: asset.clientAssetRef || asset.id,
-      images,
-      captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
-      requested_fields: [
-        "serial_number",
-        "collector_number",
-        "checklist_code",
-        "grade_label",
-        "year_product",
-        "subject",
-        "surface"
-      ],
-      source: "listing_copilot_background_prepare",
-      enqueue_workers: true,
-      enqueue_ocr: true,
-      // Only OCR currently has a production consumer. Query embeddings still
-      // run concurrently inside recognition; do not create durable dead jobs.
-      enqueue_embeddings: false,
-      enqueue_surface: false,
-      enqueue_quality: false,
-      // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
-      // 签名只增加 L2 起跑等待，不增加证据强度。
-      verify_signed_read_urls: false
-    })
-  }, {
-    timeoutMs: PREINGEST_REQUEST_TIMEOUT_MS,
-    maxAttempts: 3,
-    retryNetworkErrors: true,
-    asset,
-    stage: "preingestion_request"
+    const images = preingestionImagesForAsset(asset);
+    if (!images.length) {
+      throw new Error("no_verified_storage_images");
+    }
+
+    const request = await fetchJsonWithRetry(PREINGEST_API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        asset_id: canonicalAssetId(asset),
+        assetId: canonicalAssetId(asset),
+        client_asset_ref: asset.clientAssetRef || asset.id,
+        images,
+        captureQuality: summarizeAssetImageQuality(asset.providerImages || asset.images),
+        requested_fields: [
+          "serial_number",
+          "collector_number",
+          "checklist_code",
+          "grade_label",
+          "year_product",
+          "subject",
+          "surface"
+        ],
+        source: "listing_copilot_background_prepare",
+        ...(authorizePaidSensors ? {
+          writer_intake_batch_id: asset.writerIntakeBatchId,
+          writer_intake_item_id: asset.writerIntakeItemId,
+          writer_intake_previous_queue_job_id: asset.writerIntakeQueueJobId || null
+        } : {}),
+        // Before the writer clicks, this endpoint may only compile the durable
+        // bundle. Any paid OCR/worker work is authorized by the committed batch.
+        enqueue_workers: authorizePaidSensors,
+        enqueue_ocr: authorizePaidSensors,
+        // Only OCR currently has a production consumer. Query embeddings still
+        // run concurrently inside recognition; do not create durable dead jobs.
+        enqueue_embeddings: false,
+        enqueue_surface: false,
+        enqueue_quality: false,
+        // 上传端已经完成对象校验，Provider 读取时还会独立签名。这里重复
+        // 签名只增加 L2 起跑等待，不增加证据强度。
+        verify_signed_read_urls: false
+      })
+    }, {
+      timeoutMs: PREINGEST_REQUEST_TIMEOUT_MS,
+      maxAttempts: 3,
+      retryNetworkErrors: true,
+      asset,
+      stage: authorizePaidSensors ? "preingestion_authorized" : "preingestion_prepare"
+    });
+
+    const payload = request.payload;
+    if (request.error) {
+      throw new Error(payload.message || payload.code || `preingestion_failed_${request.response.status}`);
+    }
+
+    asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
+    asset.preingestionBundleStatus = payload.bundle_status || "";
+    asset.preingestionSummary = payload.preprocessing_summary || null;
+    if (authorizePaidSensors) asset.preingestionPaidSensorsAuthorized = true;
+    return {
+      bundleId: asset.preingestionBundleId,
+      status: asset.preingestionBundleStatus,
+      summary: asset.preingestionSummary
+    };
   });
-
-  const payload = request.payload;
-  if (request.error) {
-    throw new Error(payload.message || payload.code || `preingestion_failed_${request.response.status}`);
-  }
-
-  asset.preingestionBundleId = payload.v4_preingestion_bundle_id || payload.bundle_id || "";
-  asset.preingestionBundleStatus = payload.bundle_status || "";
-  asset.preingestionSummary = payload.preprocessing_summary || null;
-  return {
-    bundleId: asset.preingestionBundleId,
-    status: asset.preingestionBundleStatus,
-    summary: asset.preingestionSummary
-  };
 }
 
 async function prepareAssetInBackground(asset, runId) {
@@ -1777,12 +2317,7 @@ async function prepareAssetInBackground(asset, runId) {
           if (runId !== state.backgroundPreparationRunId) return { stale: true };
           asset.backgroundPrepareStatus = "preingesting";
           syncBackgroundPreparationStatus();
-          const bundle = await ensurePreingestionBundle(asset);
-
-          if (runId === state.backgroundPreparationRunId) {
-            // 证据包持久化后立即提交最终 L2。L1 继续保持写手不可见。
-            void ensureSpeculativeRecognition(asset, runId);
-          }
+          const bundle = await ensurePreingestionBundle(asset, { authorizePaidSensors: false });
 
           asset.backgroundPrepareStatus = "ready";
           asset.backgroundPrepareError = "";
@@ -1846,98 +2381,6 @@ async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
       error: String(error.message || "background_prepare_failed").slice(0, 160)
     };
   }
-}
-
-async function ensureSpeculativeRecognition(asset, runId) {
-  if (!ENABLE_SPECULATIVE_RECOGNITION || !asset) return null;
-  if (asset.speculativeRunId === runId && asset.speculativePromise) return asset.speculativePromise;
-  asset.speculativeRunId = runId;
-  asset.speculativePromise = (async () => {
-    const startedAt = performance.now();
-    try {
-      const requestBody = buildAssetQueueIntentBody(asset);
-      if (runId !== state.backgroundPreparationRunId) return { stale: true, run_id: runId };
-
-      const enqueueJobPayload = JSON.parse(requestBody);
-      enqueueJobPayload.client_speculative = true;
-
-      const batchId = state.backgroundRecognitionBatchId || createClientBatchId();
-      const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          batch_id: batchId,
-          priority: 100,
-          jobs: [{
-            asset_id: canonicalAssetId(asset),
-            image_generation_id: asset.imageGenerationId,
-            payload: enqueueJobPayload
-          }]
-        })
-      }, {
-        timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS,
-        maxAttempts: 3,
-        retryNetworkErrors: true,
-        asset,
-        stage: "speculative_enqueue"
-      });
-      if (enqueueRequest.error) throw enqueueRequest.error;
-      const enqueuePayload = enqueueRequest.payload;
-      const job = enqueuePayload
-        ? ((enqueuePayload.jobs || []).find((entry) => entry?.ok && entry.job_type === "FINAL_ASSISTED_TITLE")
-          || (enqueuePayload.jobs || []).find((entry) => entry?.ok)
-          || null)
-        : null;
-      return {
-        ok: Boolean(job && job.job_id && job.recognition_session_id),
-        run_id: runId,
-        request_body: requestBody,
-        enqueue_payload: enqueuePayload,
-        job: job && job.job_id && job.recognition_session_id ? job : null,
-        speculative_ms: Math.round(performance.now() - startedAt)
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        run_id: runId,
-        error: String(error?.message || "speculative_failed").slice(0, 160),
-        speculative_ms: Math.round(performance.now() - startedAt)
-      };
-    }
-  })();
-  return asset.speculativePromise;
-}
-
-async function settleSpeculativeRecognition(asset, maxWaitMs = SPECULATIVE_SETTLE_MAX_WAIT_MS) {
-  if (!ENABLE_SPECULATIVE_RECOGNITION) return { used: false };
-  if (!asset?.speculativePromise || asset.speculativeRunId !== state.backgroundPreparationRunId) {
-    return { used: false };
-  }
-  const startedAt = performance.now();
-  const timedOut = Symbol("speculative_timeout");
-  // 完整等待（有上限）而不是短超时后另起一路：投机流程里已经包含一次 L2 入队，
-  // 若这里超时改走常规入队，会给同一张卡排两个 L2 任务。
-  const result = await Promise.race([
-    asset.speculativePromise,
-    wait(maxWaitMs).then(() => timedOut)
-  ]).catch(() => null);
-  if (result === timedOut) {
-    return {
-      used: true,
-      pending: true,
-      timed_out: true,
-      wait_ms: Math.round(performance.now() - startedAt)
-    };
-  }
-  if (!result || result.stale || result.run_id !== state.backgroundPreparationRunId) {
-    return {
-      used: false,
-      timed_out: false,
-      wait_ms: Math.round(performance.now() - startedAt)
-    };
-  }
-  return { used: true, wait_ms: Math.round(performance.now() - startedAt), ...result };
 }
 
 function backgroundPreparationAvailable() {
@@ -2006,63 +2449,6 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function providerById(providerId) {
-  return (state.providerStatus?.providers || []).find((provider) => provider.id === providerId) || null;
-}
-
-function providerDisabledText(provider) {
-  const reason = provider.disabled_reason || "";
-  if (reason === "storage_not_configured") return "Storage 未配置";
-  if (reason.includes("api_key")) return "未配置";
-  if (reason === "disabled_by_env") return "已禁用";
-  if (reason === "emergency_retry_disabled") return "手动关闭";
-  if (reason) return "不可用";
-  return provider.requires_explicit_retry ? "手动直跑" : "可用";
-}
-
-function providerSmokeText(provider) {
-  const smoke = provider.smoke;
-  if (!smoke) return "";
-
-  if (smoke.status === "not_run") return "Smoke 未验证";
-  if (smoke.status === "unreadable") return "Smoke 报告不可读";
-  if (smoke.status === "skipped") return "Smoke 已跳过";
-
-  const verified = [];
-  if (smoke.json_baseline_verified) verified.push("JSON");
-  if (smoke.multi_image_verified) verified.push("多图");
-  if (smoke.error_response_verified) verified.push("错误响应");
-  if (smoke.tool_call_verified) verified.push("工具调用");
-
-  const prefix = smoke.status === "passed"
-    ? "Smoke 已验证"
-    : smoke.status === "passed_with_limitations"
-      ? "Smoke 部分验证"
-      : "Smoke 未通过";
-
-  return verified.length ? `${prefix}: ${verified.join(" / ")}` : prefix;
-}
-
-function providerCascadeText(provider) {
-  const roles = new Set(provider.roles || [provider.role].filter(Boolean));
-  if (provider.id === "openai_legacy" || roles.has("primary")) {
-    const model = String(provider.model_id || provider.display_name || "GPT").trim();
-    return `${model} 生产主路径，不参与自动混合`;
-  }
-  if (roles.has("diagnostic")) {
-    return "离线/管理员诊断";
-  }
-  return "";
-}
-
-function providerStatusText(provider) {
-  return [
-    `${provider.label} · ${providerDisabledText(provider)}`,
-    providerCascadeText(provider),
-    providerSmokeText(provider)
-  ].filter(Boolean).join(" · ");
-}
-
 function workflowReadinessText(readiness) {
   if (!readiness) return "";
   const summary = readiness.summary || {};
@@ -2079,71 +2465,20 @@ function workflowReadinessText(readiness) {
 
 function workflowAllowsGeneration() {
   const readiness = state.providerStatus?.workflow_readiness;
-  if (!readiness) return false;
-  return readiness.can_run_cloud_recognition !== false;
+  return readiness?.can_run_cloud_recognition === true;
 }
 
-function renderProviderControl() {
-  const providers = state.providerStatus?.providers || [];
+function renderWorkflowReadiness() {
   const readinessText = workflowReadinessText(state.providerStatus?.workflow_readiness);
-
-  if (!providers.length) {
-    elements.providerControl.innerHTML = "";
-    elements.providerStatusText.textContent = state.providerStatus?.provider_status_recovering
-      ? "云端状态正在自动恢复；图片仍会保留，恢复后自动开始识别。"
-      : state.providerStatus?.fallback_available
-        ? "未配置服务端 Provider，当前使用本地 fallback。"
-        : readinessText || "未读取到可用 Provider。";
-    elements.processButton.disabled = !canGenerateTitles();
-    return;
-  }
-
-  elements.providerControl.innerHTML = providers.map((provider) => `
-    <button
-      class="provider-option ${state.selectedProvider === provider.id ? "active" : ""}"
-      type="button"
-      data-provider-id="${escapeHtml(provider.id)}"
-      ${provider.selectable ? "" : "disabled"}
-    >
-      <strong>${escapeHtml(provider.label)}</strong>
-      <small>${escapeHtml(provider.model_id)} · ${escapeHtml(providerDisabledText(provider))}</small>
-      ${providerCascadeText(provider) ? `<small>${escapeHtml(providerCascadeText(provider))}</small>` : ""}
-      ${providerSmokeText(provider) ? `<small class="provider-smoke">${escapeHtml(providerSmokeText(provider))}</small>` : ""}
-    </button>
-  `).join("");
-
-  const selected = providerById(state.selectedProvider);
-  if (selected) {
-    elements.providerStatusText.textContent = [
-      providerStatusText(selected),
-      readinessText
-    ].filter(Boolean).join(" · ");
-    elements.processButton.disabled = !canGenerateTitles();
-    return;
-  }
-
-  elements.providerStatusText.textContent = state.providerStatus?.fallback_available
-    ? "未配置服务端 Provider，当前使用本地 fallback。"
-    : readinessText || "请选择可用 Provider。";
+  elements.providerStatusText.textContent = state.providerStatus?.provider_status_recovering
+    ? "云端状态正在自动恢复；图片仍会保留，恢复后可点击开始识别。"
+    : readinessText || "未读取到云端识别链路状态。";
   elements.processButton.disabled = !canGenerateTitles();
-}
-
-function selectProvider(providerId) {
-  const provider = providerById(providerId);
-  if (!provider?.selectable) return;
-
-  state.selectedProvider = provider.id;
-  state.results = [];
-  resetGenerationTimings();
-  renderProviderControl();
-  elements.processButton.disabled = !canGenerateTitles();
-  renderResults();
 }
 
 function canGenerateTitles() {
   return generationSubmissionAllowed({
     assetCount: state.assets.length,
-    providerId: state.selectedProvider,
     workflowReady: workflowAllowsGeneration(),
     processing: state.processing,
     resultCount: state.results.length
@@ -2152,21 +2487,11 @@ function canGenerateTitles() {
 
 function generationSubmissionAllowed({
   assetCount = 0,
-  providerId = "",
   workflowReady = false,
   processing = false,
   resultCount = 0
 } = {}) {
-  return Boolean(assetCount && providerId && workflowReady && !processing && Number(resultCount) === 0);
-}
-
-function speculativeNeedsFreshEnqueue(speculative = {}) {
-  if (speculative.pending === true) return false;
-  if (speculative.job?.job_id && speculative.job?.recognition_session_id) return false;
-  // The speculative POST uses the same deterministic batch/asset identity as
-  // the fallback enqueue. Replaying a request that returned no trackable job
-  // is therefore idempotent and must not strand the card permanently.
-  return true;
+  return Boolean(assetCount && workflowReady && !processing && Number(resultCount) === 0);
 }
 
 function syncProcessButtonState() {
@@ -2175,17 +2500,13 @@ function syncProcessButtonState() {
   // represented in state, one click commits the whole still-arriving batch.
   // Later cards inherit that intent and are claimed by the same worker pool.
   elements.processButton.disabled = !canGenerateTitles()
+    || state.writerIntakeCommitInFlight
     || state.writerSaveInFlight
     || state.exportingWorkbook;
   setProcessButtonBusy(busy);
 }
 
-function selectedProviderConfig() {
-  return (state.providerStatus?.providers || []).find((provider) => provider.id === state.selectedProvider) || null;
-}
-
 function queueSubmissionConcurrencyLimit({
-  providerConfig = selectedProviderConfig(),
   executionControl = state.providerStatus?.execution_control,
   maxWorkers = MAX_CONCURRENT_WORKERS
 } = {}) {
@@ -2195,11 +2516,7 @@ function queueSubmissionConcurrencyLimit({
     return Math.max(1, Math.min(Math.trunc(explicitSubmission), boundedMax));
   }
 
-  const providerConcurrency = Number(providerConfig?.recommended_concurrency);
-  const derived = Number.isFinite(providerConcurrency) && providerConcurrency > 0
-    ? Math.trunc(providerConcurrency)
-    : 2;
-  return Math.max(1, Math.min(derived, boundedMax));
+  return 1;
 }
 
 function confidenceClass(confidence) {
@@ -2656,16 +2973,20 @@ export const __listingCopilotAppTestHooks = {
   generationTimingView,
   generationSubmissionAllowed,
   imageHasVerifiedStorageReference,
+  imageGroupCompleteForMode,
   imagesForProvider,
+  interactionLocksForState,
+  loadImage,
   queueSubmissionConcurrencyLimit,
+  readFileAsDataUrl,
   recognitionClockFromServerPayload,
   resetAssetPreparationForRetry,
   retryStateForResult,
-  speculativeNeedsFreshEnqueue,
   shouldUseStorageFirstImage,
   storageDimensionsForImage,
   storageSourceForImage,
-  syncAssetGenerationTimingFromServer
+  syncAssetGenerationTimingFromServer,
+  writerIntakePrincipalNamespace
 };
 
 function createClientAsset(images, index) {
@@ -2677,7 +2998,12 @@ function createClientAsset(images, index) {
     lifecycleGeneration: state.assetLifecycleGeneration,
     index,
     images,
-    providerImages: imagesForProvider(images)
+    providerImages: imagesForProvider(images),
+    writerIntakeBatchId: "",
+    writerIntakeItemId: "",
+    writerIntakeQueueJobId: "",
+    writerIntakeState: "SELECTED",
+    writerIntakeLastErrorCode: ""
   };
 }
 
@@ -2702,14 +3028,44 @@ function writerModeActive() {
   return state.workspaceMode === "writer";
 }
 
-function workspaceInteractionLocked() {
-  return state.writerSaveInFlight
-    || state.exportingWorkbook
-    || state.preparingFiles;
+function preparationInteractionLocked() {
+  return state.preparingFiles;
 }
 
-function destructiveWorkspaceInteractionLocked() {
-  return workspaceInteractionLocked() || state.priorityRetryInFlight > 0;
+function interactionLocksForState(snapshot = {}) {
+  const preparation = snapshot.preparingFiles === true;
+  const writerMutation = snapshot.writerSaveInFlight === true || snapshot.exportingWorkbook === true;
+  return Object.freeze({
+    preparation,
+    writer_mutation: writerMutation,
+    destructive_transition: preparation
+      || writerMutation
+      || snapshot.writerIntakeCommitInFlight === true
+      || Number(snapshot.priorityRetryInFlight || 0) > 0
+  });
+}
+
+function writerMutationInteractionLocked() {
+  return interactionLocksForState(state).writer_mutation;
+}
+
+function destructiveTransitionInteractionLocked() {
+  return preparationInteractionLocked()
+    || writerMutationInteractionLocked()
+    || state.writerIntakeCommitInFlight
+    || state.priorityRetryInFlight > 0;
+}
+
+function pendingWorkspaceTransitionRequiresConfirmation() {
+  return state.results.some((result) => (
+    v4WriterTitlePending(result)
+    || (finalTitleForResult(result) && !writerFeedbackPersisted(result))
+  ));
+}
+
+function confirmPendingWorkspaceTransition(message = "仍有生成中或未入库的卡片。确定离开本轮内容吗？") {
+  if (!pendingWorkspaceTransitionRequiresConfirmation()) return true;
+  return typeof globalThis.confirm !== "function" || globalThis.confirm(message);
 }
 
 function writerSavedAssets() {
@@ -2740,8 +3096,13 @@ function syncWriterActiveIndex() {
 
   const current = state.assets.find((asset) => asset.index === Number(state.writerActiveIndex));
   if (state.writerReviewComplete && writerProcessedCount() === state.assets.length && current) return current;
-  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
-  const next = outstanding[0] || state.assets[0];
+  const nextIndex = preferredWriterOutstandingIndex({
+    assets: state.assets,
+    results: state.results,
+    currentIndex: state.writerActiveIndex,
+    isTitlePending: v4WriterTitlePending
+  });
+  const next = state.assets.find((asset) => asset.index === Number(nextIndex)) || state.assets[0];
   state.writerActiveIndex = next?.index ?? null;
   return next || null;
 }
@@ -2776,7 +3137,7 @@ function scheduleWriterCompletionFocus() {
 }
 
 function setWriterActiveIndex(index, { focus = true, animate = false, direction = "" } = {}) {
-  if (workspaceInteractionLocked()) return;
+  if (writerMutationInteractionLocked()) return;
   const asset = state.assets.find((candidate) => candidate.index === Number(index));
   if (!asset) return;
   state.writerActiveIndex = asset.index;
@@ -2882,8 +3243,8 @@ function runWorkbenchViewTransition({ kind, enabled = true, prepareSharedElement
 }
 
 function updateWorkspaceModeUi() {
-  const interactionLocked = workspaceInteractionLocked();
-  const destructiveInteractionLocked = destructiveWorkspaceInteractionLocked() || state.processing;
+  const interactionLocked = writerMutationInteractionLocked();
+  const destructiveInteractionLocked = destructiveTransitionInteractionLocked() || state.processing;
   elements.workspace?.setAttribute("data-workspace-mode", state.workspaceMode);
   elements.workspace?.setAttribute("data-batch-state", state.assets.length ? "ready" : "empty");
   elements.workspaceModeButtons.forEach((button) => {
@@ -2895,6 +3256,10 @@ function updateWorkspaceModeUi() {
   elements.imageInput.disabled = destructiveInteractionLocked;
   elements.resetButton.disabled = destructiveInteractionLocked;
   elements.dropZone.setAttribute("aria-disabled", destructiveInteractionLocked ? "true" : "false");
+  document.querySelectorAll("input[name='assetMode']").forEach((input) => {
+    input.checked = input.value === state.mode;
+    input.disabled = destructiveInteractionLocked;
+  });
   if (elements.workspaceModeHint) {
     elements.workspaceModeHint.textContent = writerModeActive()
       ? "只看当前卡片；Enter 确认入库并推进到下一张。"
@@ -2904,7 +3269,7 @@ function updateWorkspaceModeUi() {
 }
 
 function setWorkspaceMode(mode, { animate = false } = {}) {
-  if (workspaceInteractionLocked()) return;
+  if (writerMutationInteractionLocked()) return;
   const nextMode = mode === "writer" ? "writer" : "standard";
   if (state.workspaceMode === nextMode) return;
   let transitionIndexes = writerWheelVisibleAssetIndexes();
@@ -2940,7 +3305,7 @@ function updatePreviewSummary() {
     return;
   }
   const orphanNote = state.mode === "pair" && state.files.length % 2 === 1
-    ? "最后 1 张图会作为单图资产处理。"
+    ? "最后 1 张图缺少配对，不会作为合法卡片入队。"
     : "";
   elements.previewSummary.textContent = `${state.files.length} 张图片，${state.assets.length} 张卡。${orphanNote}`;
 }
@@ -2984,7 +3349,7 @@ function renderPreviews({ rebuildAssets = true } = {}) {
 
 function renderResults({ forceWriterRender = false } = {}) {
   const preserveFocusedTitleInput = !forceWriterRender
-    && !workspaceInteractionLocked()
+    && !writerMutationInteractionLocked()
     && document.activeElement?.matches?.("[data-title-input]")
     && elements.assetPreviewList.contains(document.activeElement);
   renderResultControls();
@@ -3321,7 +3686,7 @@ function pendingBox(asset) {
     ? "正在识别这张卡，完成后会直接显示最终标题。"
     : isQueued
       ? "已经进入队列，不需要重复点击。"
-      : "识别已在后台开始；点击生成标题后显示进度与最终结果。";
+      : "图片正在准备；点击开始识别后会安全进入同一批队列。";
   return `
     <div class="title-output title-output-pending ${isWorking ? "is-working" : "is-idle"}">
       <div class="title-output-head">
@@ -3725,7 +4090,7 @@ function TitleCardComponent(result, asset = null) {
   const failed = confidence === "FAILED" || retryState.terminal_failure;
   const displayConfidence = failed ? "FAILED" : confidence;
   const retrySubmitting = retryState.submitting;
-  const interactionLocked = workspaceInteractionLocked();
+  const interactionLocked = writerMutationInteractionLocked();
   const saveDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving" || feedbackCommitted;
   const editorDisabled = titlePending || interactionLocked || retrySubmitting || result.feedbackStatus === "saving";
   const canPriorityRetry = retryState.retryable;
@@ -4044,13 +4409,15 @@ function writerTitleOmissionNotice(result = {}) {
 }
 
 async function handleFiles(fileList, { animateIntake = false } = {}) {
-  if (destructiveWorkspaceInteractionLocked() || state.processing) {
+  if (destructiveTransitionInteractionLocked() || state.processing) {
     setStatus(state.processing
       ? "当前批次正在识别，请等待完成后再更换图片。"
       : state.exportingWorkbook
         ? "Excel 正在生成，请等待导出完成后再更换图片。"
         : state.preparingFiles
           ? "图片正在准备，请等待当前选择完成。"
+          : state.writerIntakeCommitInFlight
+            ? "正在固定批次，请等待提交完成后再更换图片。"
           : state.priorityRetryInFlight
             ? "优先重试正在提交，请等待完成后再更换图片。"
             : "当前卡片正在入库，请等待保存完成后再更换图片。", { busy: true });
@@ -4058,8 +4425,20 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
   }
 
   const candidates = [...fileList];
-  const imageFiles = candidates.filter(isSupportedImageFile);
-  if (!imageFiles.length) return;
+  // Pair positions are frozen from the original browser selection. Filtering
+  // first would collapse a rejected slot and could pair two different cards.
+  // Single-image mode keeps its historical behavior because no adjacent slot
+  // can shift into a different card.
+  const imageFiles = state.mode === "pair" ? candidates : candidates.filter(isSupportedImageFile);
+  if (!imageFiles.length || !imageFiles.some(isSupportedImageFile)) return;
+  if (!confirmPendingWorkspaceTransition("仍有生成中或未入库的卡片。确定更换为新图片吗？旧批次仍会保留云端恢复记录。")) return;
+  try {
+    await abandonPreviousWriterIntakeBeforeSelection();
+  } catch {
+    setStatus("上次批次尚未安全收口，请重试选择图片；原批次恢复指针仍已保留。");
+    return;
+  }
+  beginWriterIntakeSelection(expectedCardGroupCount(imageFiles.length));
 
   const batchWasEmpty = state.assets.length === 0;
   const lifecycleGeneration = ++state.assetLifecycleGeneration;
@@ -4074,7 +4453,7 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
 
   try {
     stopAllV4AssistedDraftPolling();
-    setStatus("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…", { busy: true });
+    setStatus("本地预览已显示；正在校验并上传原图，点击开始识别后整批会持续入队。", { busy: true });
     closeImageModal();
     releaseImagePreviewUrls(state.files);
     state.files = [];
@@ -4096,17 +4475,14 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
 
     const failures = [];
     const prepareStartedAt = performance.now();
-    const groupSize = state.mode === "single" ? 1 : 2;
-    const fileGroups = [];
-    for (let index = 0; index < imageFiles.length; index += groupSize) {
-      fileGroups.push({ index: Math.floor(index / groupSize) + 1, files: imageFiles.slice(index, index + groupSize) });
-    }
+    const fileGroups = groupIntakeFileSlots(imageFiles, state.mode);
     const backgroundRunId = beginBackgroundPreparationRun();
     const groupPreparationConcurrency = state.mode === "single"
       ? IMAGE_PREPROCESS_CONCURRENCY
       : Math.max(1, Math.floor(IMAGE_PREPROCESS_CONCURRENCY / 2));
     await mapWithConcurrency(fileGroups, groupPreparationConcurrency, async (group) => {
       const outcomes = await Promise.all(group.files.map(async (file) => {
+        if (!isSupportedImageFile(file)) return { unsupported: true };
         try {
           return { image: await prepareFileForIntake(file) };
         } catch (error) {
@@ -4125,7 +4501,43 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
         releaseImagePreviewUrls(images);
         return null;
       }
-      if (!images.length) return null;
+      const pairedGroupIncomplete = state.mode === "pair" && (
+        outcomes.some((item) => item.unsupported === true)
+        || !imageGroupCompleteForMode({
+          mode: state.mode,
+          fileCount: group.files.length,
+          preparedCount: images.length
+        })
+      );
+      if (pairedGroupIncomplete) {
+        releaseImagePreviewUrls(images);
+        failures.push(`卡片 ${group.index}: 两图配对不完整，已取消该卡且未进入识别队列`);
+        state.writerIntakeUnusablePositions.set(group.index, "PAIRED_IMAGE_GROUP_INCOMPLETE");
+        if (state.writerIntakeBatchId) {
+          try {
+            await settleWriterIntakePosition(group.index, "CANCEL_ITEM");
+            state.writerIntakeUnusablePositions.delete(group.index);
+          } catch {
+            // The immutable denominator keeps this position visible. The
+            // processing coordinator retries cancellation after preparation.
+          }
+        }
+        return null;
+      }
+      if (!images.length) {
+        state.writerIntakeUnusablePositions.set(group.index, "LOCAL_IMAGE_GROUP_UNAVAILABLE");
+        if (state.writerIntakeBatchId) {
+          try {
+            await settleWriterIntakePosition(group.index, "CANCEL_ITEM");
+            state.writerIntakeUnusablePositions.delete(group.index);
+          } catch {
+            // The processing coordinator retries every unresolved position
+            // after progressive preparation closes. Keep the local marker;
+            // never pretend that a failed mutation reached the server.
+          }
+        }
+        return null;
+      }
 
       // A card starts upload/pre-ingestion as soon as its own image group is
       // readable. Slow files later in the batch no longer hold earlier cards at
@@ -4135,7 +4547,6 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
       state.assets.sort((left, right) => left.index - right.index);
       state.files = state.assets.flatMap((entry) => entry.images);
       scheduleAssetBackgroundPreparation(asset, backgroundRunId);
-      if (state.processing) state.processingTotal = state.assets.length;
       syncProcessButtonState();
       syncBackgroundPreparationStatus();
       return asset;
@@ -4160,8 +4571,8 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
     } else {
       const previewOptimizedCount = images.filter((image) => image.originalSize && image.size < image.originalSize).length;
       setStatus(previewOptimizedCount
-        ? `${images.length} 张图片已读取，正在自动上传原图并启动内部识别；本地预览已优化。`
-        : `${images.length} 张图片已读取，正在自动上传原图并启动内部识别。`, { busy: true });
+        ? `${images.length} 张图片已读取，正在自动上传原图；本地预览已优化。`
+        : `${images.length} 张图片已读取，正在自动上传原图。`, { busy: true });
     }
 
     const intakeTransition = runWorkbenchViewTransition({
@@ -4207,6 +4618,8 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
 async function processAssetViaQueue(asset, options = {}) {
   assertCurrentAssetLifecycle(asset);
   const processStartedAt = performance.now();
+  setAssetProgress(asset.index, "固定批次卡片", 0.03);
+  await ensureWriterIntakeItemAppended(asset);
   setAssetProgress(asset.index, "检查云端准备", 0.05);
   const backgroundPrepareResult = await settleBackgroundPreparation(asset, QUEUED_BACKGROUND_PREP_WAIT_MS);
   setAssetProgress(
@@ -4226,14 +4639,16 @@ async function processAssetViaQueue(asset, options = {}) {
     error: ""
   };
   if (
-    !asset.preingestionBundleId
-    && (options.repairPreingestion === true || backgroundPrepareResult?.ok === false)
+    !asset.preingestionPaidSensorsAuthorized
+    || !asset.preingestionBundleId
+    || options.repairPreingestion === true
+    || backgroundPrepareResult?.ok === false
   ) {
     const preingestionRetryStartedAt = performance.now();
     queuePreingestionRetry.attempted = true;
     setAssetProgress(asset.index, "重新建立图片证据", 0.24);
     try {
-      await ensurePreingestionBundle(asset);
+      await ensurePreingestionBundle(asset, { authorizePaidSensors: true });
       queuePreingestionRetry.recovered = Boolean(asset.preingestionBundleId);
     } catch (error) {
       // The verified originals remain sufficient for the GPT lane. OCR and
@@ -4243,12 +4658,6 @@ async function processAssetViaQueue(asset, options = {}) {
     queuePreingestionRetry.elapsed_ms = Math.round(performance.now() - preingestionRetryStartedAt);
   }
 
-  const fastScoutPrewarm = asset.fastScoutPrewarmResult || {
-    used: Boolean(asset.fastScoutPrewarmStatus),
-    wait_ms: 0,
-    cache_status: asset.fastScoutPrewarmStatus || "",
-    timed_out: false
-  };
   asset.clientTiming = {
     client_image_prepare_ms: Math.round(Number(state.clientImagePrepareMs || 0)),
     client_upload_ms: uploadMs,
@@ -4260,47 +4669,8 @@ async function processAssetViaQueue(asset, options = {}) {
     client_preingestion_retry_ms: queuePreingestionRetry.elapsed_ms,
     client_preingestion_retry_error: queuePreingestionRetry.error,
     client_derived_upload_status: asset.derivedStorageUploadStatus || "not_started",
-    client_derived_upload_failure_count: Math.max(0, Number(asset.derivedStorageUploadFailureCount || 0)),
-    client_fast_scout_prewarm_used: Boolean(fastScoutPrewarm.used),
-    client_fast_scout_prewarm_wait_ms: Math.round(Number(fastScoutPrewarm.wait_ms || 0)),
-    client_fast_scout_prewarm_cache_status: fastScoutPrewarm.cache_status || "",
-    client_fast_scout_prewarm_timed_out: fastScoutPrewarm.timed_out === true
+    client_derived_upload_failure_count: Math.max(0, Number(asset.derivedStorageUploadFailureCount || 0))
   };
-
-  let speculative = options.skipSpeculative === true
-    ? { used: false }
-    : await settleSpeculativeRecognition(asset);
-  if (speculative.used && speculative.pending) {
-    setAssetProgress(asset.index, "等待已提交的预识别任务", 0.46);
-    const settled = await asset.speculativePromise;
-    speculative = {
-      used: true,
-      wait_ms: Math.round(Number(speculative.wait_ms || 0)),
-      ...settled
-    };
-  }
-  if (speculative.used && speculative.job) {
-    // 识别在图片就绪时已经开始：直接挂到已在跑的 L2 job 上。
-    // L1 始终隐藏，只作为 L2 可选的同图证据缓存。
-    asset.clientTiming.client_speculative_used = true;
-    asset.clientTiming.client_speculative_ms = Math.round(Number(speculative.speculative_ms || 0));
-    asset.clientTiming.client_speculative_wait_ms = Math.round(Number(speculative.wait_ms || 0));
-    setAssetProgress(asset.index, "复用预识别结果", 0.5);
-    const clientTotalMs = Math.round(performance.now() - processStartedAt);
-    const pending = queuedPendingResult(asset, speculative.enqueue_payload || {}, speculative.job, {
-      client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
-      client_upload_ms: uploadMs,
-      client_background_prepare_wait_ms: asset.clientTiming.client_background_prepare_wait_ms,
-      client_speculative_used: true,
-      client_speculative_ms: asset.clientTiming.client_speculative_ms,
-      client_speculative_wait_ms: asset.clientTiming.client_speculative_wait_ms,
-      client_total_ms: clientTotalMs
-    });
-    return pending;
-  }
-  if (!speculativeNeedsFreshEnqueue(speculative)) {
-    throw new Error(speculative.error || "预识别任务未返回可追踪 ID；为避免重复付费，系统没有自动提交第二个任务。请稍后重试。");
-  }
 
   const requestPrepareStartedAt = performance.now();
   setAssetProgress(asset.index, "准备生产队列请求", 0.3);
@@ -4316,6 +4686,10 @@ async function processAssetViaQueue(asset, options = {}) {
   };
 
   const batchId = options.batchId || createClientBatchId();
+  // Keep the first client token on the asset. If the browser loses the HTTP
+  // response after the server accepted the job, a UI retry replays this same
+  // deterministic queue identity instead of creating a second paid job.
+  asset.recognitionBatchId = batchId;
   const enqueueStartedAt = performance.now();
   setAssetProgress(asset.index, "提交云端生产队列", 0.42);
   const enqueueRequest = await fetchJsonWithRetry(JOB_ENQUEUE_API_ENDPOINT, {
@@ -4330,6 +4704,9 @@ async function processAssetViaQueue(asset, options = {}) {
       jobs: [{
         asset_id: canonicalAssetId(asset),
         image_generation_id: asset.imageGenerationId,
+        writer_intake_batch_id: asset.writerIntakeBatchId,
+        writer_intake_item_id: asset.writerIntakeItemId,
+        writer_intake_previous_queue_job_id: asset.writerIntakeQueueJobId || null,
         manual_retry: options.manualRetry === true,
         retry_of_job_id: options.retryOfJobId || null,
         payload: {
@@ -4367,7 +4744,7 @@ async function processAssetViaQueue(asset, options = {}) {
 
   setAssetProgress(asset.index, "队列已提交，等待云端生成", 0.5);
   const clientTotalMs = Math.round(performance.now() - processStartedAt);
-  return queuedPendingResult(asset, enqueuePayload, job, {
+  const pendingResult = queuedPendingResult(asset, enqueuePayload, job, {
     client_image_prepare_ms: asset.clientTiming.client_image_prepare_ms,
     client_upload_ms: uploadMs,
     client_request_prepare_ms: requestPrepareMs,
@@ -4375,6 +4752,17 @@ async function processAssetViaQueue(asset, options = {}) {
     client_enqueue_roundtrip_ms: enqueueRoundtripMs,
     client_total_ms: clientTotalMs
   });
+  pendingResult.writer_intake_batch_id = asset.writerIntakeBatchId;
+  pendingResult.writer_intake_item_id = asset.writerIntakeItemId;
+  // The canonical queue row already contains the durable intake reference.
+  // Worker/status repair owns the materialized ledger link; the browser never
+  // waits for or retries that projection on the writer critical path.
+  asset.writerIntakeQueueJobId = job.job_id;
+  asset.writerIntakeState = "QUEUE_PROJECTION_PENDING";
+  asset.writerIntakeLastErrorCode = "";
+  pendingResult.writer_intake_state = "QUEUE_PROJECTION_PENDING";
+  pendingResult.writer_intake_recovery_required = false;
+  return pendingResult;
 }
 
 function failedResult(asset, error) {
@@ -4391,33 +4779,57 @@ function failedResult(asset, error) {
     reason: error.message,
     v4RecoveryAction: String(error?.recovery_action || error?.recoveryAction || "").trim().toUpperCase(),
     error_code: String(error?.code || error?.error_code || "").trim(),
+    recognition_batch_id: asset.recognitionBatchId || "",
+    queue_submission_replay_safe: Boolean(asset.recognitionBatchId),
     fields: {},
     unresolved: ["request"],
-    provider: state.selectedProvider || null
+    provider: null
   });
 }
 
 function processingCompletionStatus() {
-  const total = state.assets.length;
+  const total = Math.max(0, Number(state.processingTotal || state.writerIntakeExpectedItemCount || state.assets.length));
   const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
   const succeeded = Math.max(0, state.results.length - failed);
+  const cancelled = Math.max(0, total - state.results.length);
 
   if (!total) return "";
+  if (cancelled) return `100% · 已完成：${succeeded} 个成功，${failed} 个识别失败，${cancelled} 个输入已取消。`;
   if (failed && succeeded) return `100% · 已完成：${succeeded} 个成功，${failed} 个失败。失败项可查看错误后重试。`;
   if (failed) return `100% · 已完成：${failed} 个失败。请查看每张卡错误信息后重试。`;
   return "100% · 已完成，结果保持上传顺序。";
 }
 
 function processingProgressStatus(completedCount) {
-  const total = state.assets.length;
+  const total = Math.max(0, Number(state.processingTotal || state.writerIntakeExpectedItemCount || state.assets.length));
   const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
   const suffix = failed ? `，失败 ${failed}` : "";
   return `识别中 ${currentProcessingPercent()}%：已完成 ${completedCount} / ${total}${suffix}...`;
 }
 
 async function processTitles() {
-  if (!canGenerateTitles()) return;
+  if (!canGenerateTitles() || state.writerIntakeCommitInFlight) return;
   const lifecycleGeneration = state.assetLifecycleGeneration;
+
+  state.writerIntakeCommitInFlight = true;
+  syncProcessButtonState();
+  setStatus("正在固定整批识别意图；尚未调用付费识别…", { busy: true });
+  try {
+    await commitWriterIntakeSelection();
+    // Positions whose complete file group could not be decoded have no
+    // canonical asset to admit. Persist an operator cancellation before any
+    // paid work starts so the frozen denominator cannot retain ghost DECLARED
+    // rows. The browser sends no status, timestamp, or diagnostic truth.
+    await settleUnusableWriterIntakePositions();
+  } catch (error) {
+    state.writerIntakeStatus = "COMMIT_FAILED";
+    setStatus("批次暂未提交，尚未创建识别任务。点击开始识别可按同一幂等批次安全重试。");
+    return;
+  } finally {
+    state.writerIntakeCommitInFlight = false;
+    syncProcessButtonState();
+  }
+  if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
 
   state.results = [];
   state.processing = true;
@@ -4426,7 +4838,10 @@ async function processTitles() {
   state.assetProgress = new Map();
   resetGenerationTimings();
   state.completedAssetCount = 0;
-  state.processingTotal = state.assets.length;
+  // This denominator was frozen by COMMIT_BATCH before any paid work. New
+  // assets arriving from progressive preparation may change the numerator but
+  // can never silently change batch completion semantics.
+  state.processingTotal = state.writerIntakeExpectedItemCount;
   const generationQueuedAt = Date.now();
   renderResults();
   elements.processButton.disabled = true;
@@ -4453,7 +4868,7 @@ async function processTitles() {
         }
         return;
       }
-      state.processingTotal = state.assets.length;
+      asset.writerIntakeBatchId = state.writerIntakeBatchId;
       markAssetQueued(asset, generationQueuedAt);
       state.activeAssetIndexes.add(asset.index);
       setAssetProgress(asset.index, "进入识别队列", 0.03);
@@ -4473,6 +4888,15 @@ async function processTitles() {
         startV4AssistedDraftPolling(result);
       } catch (error) {
         if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
+        try {
+          // Exhausted pre-queue asset preparation is persisted as an
+          // operational failure. The server owns the resulting status/error
+          // code and refuses to overwrite a canonical admission that won a
+          // response-loss race.
+          await recordWriterIntakeAssetFailure(asset);
+        } catch (settlementError) {
+          error.intake_settlement_error = String(settlementError?.code || settlementError?.message || "writer_intake_settlement_failed");
+        }
         markAssetFinished(asset.index, { failed: true });
         clearAssetProgress(asset.index);
         state.results.push(failedResult(asset, error));
@@ -4484,12 +4908,21 @@ async function processTitles() {
       state.results.sort((a, b) => a.index - b.index);
       renderResultControls();
       if (!renderAssetRowInPlace(asset)) renderResults();
-      setStatus(processingProgressStatus(completedCount), { busy: completedCount < state.assets.length });
+      setStatus(processingProgressStatus(completedCount), { busy: completedCount < state.processingTotal });
     }
   }
 
   await Promise.all(Array.from({ length: workerCount }, worker));
   if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
+  let unsettledInputCount = 0;
+  try {
+    // The writer may click after the first card while later groups are still
+    // decoding. Reconcile failures discovered after click once preparation is
+    // closed; the mutation is idempotent if the group-level attempt succeeded.
+    await settleUnusableWriterIntakePositions();
+  } catch {
+    unsettledInputCount = state.writerIntakeUnusablePositions.size;
+  }
   state.processing = false;
   state.activeAssetIndexes = new Set();
   for (const assetIndex of state.assetProgress.keys()) {
@@ -4505,7 +4938,10 @@ async function processTitles() {
   syncProcessButtonState();
   const pendingL2 = pendingAssistedDraftCount();
   if (pendingL2) startGenerationTicker();
-  setStatus(pendingL2 ? `已提交全部 ${state.assets.length} 张，${pendingL2} 张最终标题生成中…` : processingCompletionStatus(), {
+  const completionCopy = unsettledInputCount
+    ? `${processingCompletionStatus()} 另有 ${unsettledInputCount} 张未读取卡片的云端终态尚未同步，请稍后重试本批次。`
+    : processingCompletionStatus();
+  setStatus(pendingL2 ? `已提交批次 ${state.processingTotal || state.writerIntakeExpectedItemCount} 张，${pendingL2} 张最终标题生成中…` : completionCopy, {
     busy: pendingL2 > 0
   });
 }
@@ -4520,8 +4956,6 @@ function successorClientAssetRef(asset = {}) {
 }
 
 function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {}) {
-  asset.speculativePromise = null;
-  asset.speculativeRunId = null;
   asset.backgroundPrepareError = "";
 
   if (inputRebind) {
@@ -4652,9 +5086,10 @@ async function retryFailedAssetInPriorityQueue(button) {
       inputRebind: retryState.input_rebind_required
     });
     const result = await processAssetViaQueue(asset, {
-      batchId: createClientBatchId(),
+      batchId: retriesFailedDurableJob
+        ? createClientBatchId()
+        : (asset.recognitionBatchId || createClientBatchId()),
       priority: 0,
-      skipSpeculative: true,
       repairPreingestion: true,
       // A durable failed job must be authorized against its old id. A client
       // preparation failure has no old job, so it creates a fresh priority-zero
@@ -5591,10 +6026,11 @@ async function saveTitleFeedback(button, { animate = true } = {}) {
 }
 
 function advanceWriterAfterPersistence(index) {
-  const nextIndex = nextWriterOutstandingIndex({
+  const nextIndex = preferredWriterOutstandingIndex({
     assets: state.assets,
     results: state.results,
-    currentIndex: index
+    currentIndex: index,
+    isTitlePending: v4WriterTitlePending
   });
   state.writerReviewComplete = false;
   state.writerTransition = "";
@@ -5604,7 +6040,7 @@ function advanceWriterAfterPersistence(index) {
 }
 
 async function saveWriterTitleAndAdvance(resultIndex, { animate = true } = {}) {
-  if (workspaceInteractionLocked()) return false;
+  if (writerMutationInteractionLocked()) return false;
   const index = Number(resultIndex);
   const result = state.results.find((item) => item.index === index);
   const asset = state.assets.find((item) => item.index === index);
@@ -5645,7 +6081,7 @@ async function saveWriterTitleAndAdvance(resultIndex, { animate = true } = {}) {
 }
 
 async function rejectWriterTitleAndAdvance(resultIndex, { animate = true } = {}) {
-  if (workspaceInteractionLocked()) return false;
+  if (writerMutationInteractionLocked()) return false;
   const index = Number(resultIndex);
   const result = state.results.find((item) => item.index === index);
   const asset = state.assets.find((item) => item.index === index);
@@ -5740,7 +6176,7 @@ function buildWriterExportRows(
 }
 
 async function exportWriterWorkbook() {
-  if (workspaceInteractionLocked()) return;
+  if (writerMutationInteractionLocked()) return;
   if (!completedExportRowsReady()) {
     setExportWorkbookStatus(writerModeActive()
       ? "至少有一张卡片成功入库后才能导出。"
@@ -5813,32 +6249,41 @@ async function exportWriterWorkbook() {
   }
 }
 
-function resetTool() {
+async function resetTool() {
   if (state.processing) {
     setStatus("当前批次正在识别，请等待完成后再清空。", { busy: true });
     return;
   }
-  if (destructiveWorkspaceInteractionLocked()) {
+  if (destructiveTransitionInteractionLocked()) {
     setStatus(state.exportingWorkbook
       ? "Excel 正在生成，请等待导出完成后再清空。"
       : state.preparingFiles
         ? "图片正在准备，请等待完成后再清空。"
+        : state.writerIntakeCommitInFlight
+          ? "正在固定批次，请等待提交完成后再清空。"
         : state.priorityRetryInFlight
           ? "优先重试正在提交，请等待完成后再清空。"
           : "当前卡片正在入库，请等待保存完成后再清空。", { busy: true });
     return;
   }
-  const hasPendingWork = state.results.some((result) => {
-    return v4WriterTitlePending(result)
-      || (finalTitleForResult(result) && !writerFeedbackPersisted(result));
-  });
-  if (hasPendingWork && typeof globalThis.confirm === "function") {
-    const confirmed = globalThis.confirm("仍有生成中或未入库的卡片。确定清空本轮内容吗？");
-    if (!confirmed) return;
+  if (!confirmPendingWorkspaceTransition("仍有生成中或未入库的卡片。确定清空本轮内容吗？旧批次仍会保留云端恢复记录。")) return;
+  try {
+    await abandonPreviousWriterIntakeBeforeSelection();
+  } catch {
+    setStatus("当前批次尚未安全收口，请重试清空；恢复指针仍已保留。");
+    return;
   }
   state.assetLifecycleGeneration += 1;
   state.backgroundPreparationRunId += 1;
   state.backgroundRecognitionBatchId = "";
+  state.writerIntakeBatchId = "";
+  state.writerIntakeIdempotencyKey = "";
+  state.writerIntakeExpectedItemCount = 0;
+  state.writerIntakeCommitInFlight = false;
+  state.writerIntakeStatus = "";
+  state.writerIntakeItemsByPosition = new Map();
+  state.writerIntakeUnusablePositions = new Map();
+  clearWriterIntakePointer();
   stopAllV4AssistedDraftPolling();
   releaseIntakePreviewRecords();
   releaseImagePreviewUrls(state.files);
@@ -5899,13 +6344,35 @@ function bindEvents() {
   });
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
-    input.addEventListener("change", () => {
-      if (destructiveWorkspaceInteractionLocked() || state.processing) return;
+    input.addEventListener("change", async () => {
+      if (destructiveTransitionInteractionLocked() || state.processing) {
+        updateWorkspaceModeUi();
+        setStatus(state.processing
+          ? "当前批次正在识别，完成后才能切换图片配对模式。"
+          : "当前图片或写手操作尚未完成，稍后再切换图片配对模式。", { busy: true });
+        return;
+      }
+      if (!confirmPendingWorkspaceTransition("仍有生成中或未入库的卡片。确定切换图片配对模式吗？旧批次仍会保留云端恢复记录。")) {
+        document.querySelectorAll("input[name='assetMode']").forEach((option) => {
+          option.checked = option.value === state.mode;
+        });
+        return;
+      }
+      try {
+        await abandonPreviousWriterIntakeBeforeSelection();
+      } catch {
+        document.querySelectorAll("input[name='assetMode']").forEach((option) => {
+          option.checked = option.value === state.mode;
+        });
+        setStatus("当前批次尚未安全收口，请重试切换模式；恢复指针仍已保留。");
+        return;
+      }
       state.assetLifecycleGeneration += 1;
       state.backgroundPreparationRunId += 1;
       state.backgroundRecognitionBatchId = "";
       stopAllV4AssistedDraftPolling();
       state.mode = input.value;
+      beginWriterIntakeSelection(expectedCardGroupCount(state.files.length, state.mode));
       state.results = [];
       state.writerActiveIndex = null;
       state.writerReviewComplete = false;
@@ -5942,11 +6409,6 @@ function bindEvents() {
   elements.resetButton.addEventListener("click", resetTool);
   elements.copyAllButton.addEventListener("click", copyAllTitles);
   elements.exportWorkbookButton.addEventListener("click", exportWriterWorkbook);
-  elements.providerControl.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-provider-id]");
-    if (button) selectProvider(button.dataset.providerId);
-  });
-
   elements.assetPreviewList.addEventListener("click", (event) => {
     const writerGoButton = event.target.closest("[data-writer-go]");
     if (writerGoButton) {
@@ -6150,8 +6612,7 @@ async function loadProviderStatus() {
 
     const payload = await response.json();
     state.providerStatus = payload;
-    state.selectedProvider = payload.default_provider || "";
-    loaded = Boolean(state.selectedProvider);
+    loaded = workflowAllowsGeneration();
     providerStatusRecoveryAttempt = 0;
     if (providerStatusRecoveryTimer) clearTimeout(providerStatusRecoveryTimer);
     providerStatusRecoveryTimer = null;
@@ -6162,12 +6623,11 @@ async function loadProviderStatus() {
         provider_status_recovering: true,
         providers: []
       };
-      state.selectedProvider = "";
     }
     scheduleProviderStatusRecovery();
   }
 
-  renderProviderControl();
+  renderWorkflowReadiness();
   if (
     storageReady()
     && state.assets.some((asset) => (
@@ -6186,7 +6646,9 @@ renderPreviews();
 renderResults();
 
 providerStatusReadyPromise = loadProviderStatus();
+writerIntakePrincipalReadyPromise = loadWriterIntakePrincipalNamespace();
 void Promise.all([
   loadResolutionMap(),
-  providerStatusReadyPromise
-]);
+  providerStatusReadyPromise,
+  writerIntakePrincipalReadyPromise
+]).then(() => restoreWriterIntakeStatusFromPointer());

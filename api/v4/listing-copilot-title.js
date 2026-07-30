@@ -325,7 +325,8 @@ export function shouldRetryGpt5EmptyResult({
   const providerOptions = payload.provider_options || payload.providerOptions || {};
   if ([
     recognitionBenchmarkProfileIds.COLD_ALGORITHM,
-    recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST
+    recognitionBenchmarkProfileIds.COLD_TARGETED_ASSIST,
+    recognitionBenchmarkProfileIds.COLD_SECOND_LOOK_SHADOW
   ].includes(String(providerOptions.recognition_benchmark_profile || "").trim())) return false;
   if (payload.v4_gpt5_empty_result_retry_attempted === true) return false;
   if (titleFromResult(result)) return false;
@@ -615,6 +616,93 @@ function catalogGapTypeFromTrace(trace = {}) {
   return "NO_PROMPT_SAFE_CANDIDATE_GAP";
 }
 
+function boundedStrings(values = [], limit = 40) {
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))].slice(0, limit);
+}
+
+function catalogGapConflictRows(trace = {}, limit = 80) {
+  const applicationRows = Array.isArray(trace.candidate_application_trace_rows)
+    ? trace.candidate_application_trace_rows
+    : [];
+  const rejectionRows = Array.isArray(trace.selected_candidate_decision?.rejected_candidate_reasons)
+    ? trace.selected_candidate_decision.rejected_candidate_reasons
+    : [];
+  const rows = [];
+  const seen = new Set();
+  const push = ({ lane, candidateId, field = null, reason }) => {
+    const normalizedLane = ["catalog", "vector"].includes(String(lane || "").trim().toLowerCase())
+      ? String(lane).trim().toLowerCase()
+      : "unknown";
+    const normalizedCandidateId = String(candidateId || "").trim() || null;
+    const normalizedField = String(field || "").trim() || null;
+    const normalizedReason = String(reason || "").trim() || "BLOCKED";
+    const key = JSON.stringify([normalizedLane, normalizedCandidateId, normalizedField, normalizedReason]);
+    if (seen.has(key) || rows.length >= limit) return;
+    seen.add(key);
+    rows.push({
+      lane: normalizedLane,
+      candidate_id: normalizedCandidateId,
+      field: normalizedField,
+      reason: normalizedReason
+    });
+  };
+  for (const application of applicationRows) {
+    const candidateId = String(application?.candidate_id || "").trim();
+    const lane = application?.candidate_lane;
+    const directConflicts = new Set(boundedStrings(application?.direct_conflicts, 40));
+    const anchorContradictions = new Set(boundedStrings(application?.anchor_agreement?.contradicted, 40));
+    for (const field of boundedStrings(application?.blocked_fields, 40)) {
+      const reason = directConflicts.has(field)
+        ? "DIRECT_CONFLICT"
+        : anchorContradictions.has(field)
+          ? "ANCHOR_CONTRADICTION"
+          : application?.reason_per_field?.[field]
+            || application?.shadow_only_reason
+            || "BLOCKED";
+      push({ lane, candidateId, field, reason });
+    }
+    const candidateRejections = rejectionRows.find((row) => (
+      String(row?.candidate_id || "").trim() === candidateId
+    ));
+    for (const rawReason of boundedStrings(candidateRejections?.reasons, 20)) {
+      const [code, fieldList = ""] = rawReason.split(":", 2);
+      const fields = boundedStrings(fieldList.split(","), 20);
+      if (fields.length) {
+        for (const field of fields) push({ lane, candidateId, field, reason: code.toUpperCase() });
+      } else {
+        push({ lane, candidateId, reason: code.toUpperCase() });
+      }
+    }
+  }
+  return rows;
+}
+
+export function catalogGapCandidateSnapshot(trace = {}) {
+  const catalog = trace.catalog_activation_funnel || {};
+  const vector = trace.vector_activation_funnel || {};
+  return {
+    candidate_activation_funnel: trace.candidate_activation_funnel || null,
+    catalog_activation_funnel: catalog,
+    vector_activation_funnel: vector,
+    low_margin_safe_field_application: trace.low_margin_safe_field_application || null,
+    selected_candidate_safe_field_application: trace.selected_candidate_safe_field_application || null,
+    selected_candidate_verifier: trace.selected_candidate_verifier || null,
+    conflict_rows: catalogGapConflictRows(trace),
+    conflict_details: {
+      catalog: {
+        blocked_fields: boundedStrings(catalog.blocked_fields),
+        blocked_reasons: boundedStrings(catalog.blocked_reasons)
+      },
+      vector: {
+        blocked_fields: boundedStrings(vector.blocked_fields),
+        blocked_reasons: boundedStrings(vector.blocked_reasons)
+      }
+    }
+  };
+}
+
 export function terminalEvaluationDecisionTracePacket(result = {}, payload = {}) {
   if (!result.evaluation_decision_trace_packet) return null;
   return buildEvaluationDecisionTracePacket(
@@ -655,6 +743,21 @@ export function providerRuntimeSummary(result = {}, payload = {}) {
     provider_calls: Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
       ? Math.trunc(reportedProviderCalls)
       : inferredProviderCalls,
+    baseline_provider_calls: result.baseline_provider_calls ?? (
+      Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
+        ? Math.trunc(reportedProviderCalls)
+        : inferredProviderCalls
+    ),
+    shadow_provider_calls: result.shadow_provider_calls ?? null,
+    total_provider_calls: result.total_provider_calls ?? (
+      Number.isFinite(reportedProviderCalls) && reportedProviderCalls >= 0
+        ? Math.trunc(reportedProviderCalls)
+        : inferredProviderCalls
+    ),
+    provider_accounting_complete: result.provider_accounting_complete ?? null,
+    provider_usage_scope: result.second_look_shadow ? "BASELINE_ONLY" : "COMPLETE",
+    second_look_shadow_usage: result.second_look_shadow_usage || null,
+    second_look_shadow: result.second_look_shadow || null,
     recognition_benchmark_profile: result.recognition_benchmark_profile
       || providerOptions.recognition_benchmark_profile
       || null,
@@ -836,14 +939,7 @@ async function persistCatalogGapForRows({
       asset_id: payload.asset_id || payload.assetId || null,
       gap_type: catalogGapTypeFromTrace(rows.candidateTrace),
       observed_fields: resolvedFromResult(result),
-      candidate_snapshot: {
-        candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
-        catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
-        vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
-        low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
-        selected_candidate_safe_field_application: rows.candidateTrace.selected_candidate_safe_field_application || null,
-        selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
-      },
+      candidate_snapshot: catalogGapCandidateSnapshot(rows.candidateTrace),
       draft_title: titleFromResult(result)
     }
   });
@@ -868,14 +964,7 @@ async function persistV4NonCriticalArtifacts({
       asset_id: payload.asset_id || payload.assetId || null,
       gap_type: catalogGapTypeFromTrace(rows.candidateTrace),
       observed_fields: resolvedFromResult(result),
-      candidate_snapshot: {
-        candidate_activation_funnel: rows.candidateTrace.candidate_activation_funnel,
-        catalog_activation_funnel: rows.candidateTrace.catalog_activation_funnel,
-        vector_activation_funnel: rows.candidateTrace.vector_activation_funnel,
-        low_margin_safe_field_application: rows.candidateTrace.low_margin_safe_field_application || null,
-        selected_candidate_safe_field_application: rows.candidateTrace.selected_candidate_safe_field_application || null,
-        selected_candidate_verifier: rows.candidateTrace.selected_candidate_verifier || null
-      },
+      candidate_snapshot: catalogGapCandidateSnapshot(rows.candidateTrace),
       draft_title: titleFromResult(result)
     };
   const atomicPersistencePlan = {

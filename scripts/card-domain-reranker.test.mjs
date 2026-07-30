@@ -5,8 +5,53 @@ import {
   cardDomainRerankerContract,
   rankCardDomainCandidates
 } from "../lib/listing/retrieval/card-domain-reranker.mjs";
-import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import {
+  buildCandidatePreApplicationEvidenceSnapshot,
+  buildCandidateSelectionPass as buildCandidateSelectionPassImpl
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { buildV4CandidateControlPlaneTrace } from "../lib/listing/v4/candidates/control-plane-adapter.mjs";
+
+const candidateTestImageContext = Object.freeze({
+  tenant_id: "tenant_candidate_test",
+  asset_id: "asset-candidate-test",
+  image_generation_id: "asset-candidate-test",
+  images: [{
+    image_id: "front",
+    object_path: "tenants/tenant_candidate_test/listing-assets/2026-07-30/asset-candidate-test/front.jpg",
+    content_sha256: "1".repeat(64),
+    tenant_id: "tenant_candidate_test",
+    asset_id: "asset-candidate-test",
+    image_generation_id: "asset-candidate-test",
+    storage_verified: true
+  }]
+});
+
+function buildCandidateSelectionPass(args = {}) {
+  const result = args.result || {};
+  const current = result.raw_observed_fields
+    || result.raw_provider_fields
+    || result.resolved_fields
+    || result.resolved
+    || result.fields
+    || {};
+  const prepared = {
+    ...result,
+    current_image_context: result.current_image_context || candidateTestImageContext,
+    evidence_schema_version: result.evidence_schema_version || "candidate-test-evidence-v1",
+    raw_observed_fields: result.raw_observed_fields || current,
+    raw_provider_fields: result.raw_provider_fields || {},
+    raw_provider_field_evidence: result.raw_provider_field_evidence || []
+  };
+  return buildCandidateSelectionPassImpl({
+    ...args,
+    result: {
+      ...prepared,
+      candidate_pre_application_evidence_snapshot:
+        result.candidate_pre_application_evidence_snapshot
+        || buildCandidatePreApplicationEvidenceSnapshot(prepared, prepared.current_image_context)
+    }
+  });
+}
 
 const observed = {
   year: "2024",

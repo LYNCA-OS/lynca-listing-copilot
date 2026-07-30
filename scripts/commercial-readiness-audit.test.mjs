@@ -184,8 +184,8 @@ assert.equal(byId.provider_default_policy.details.gpt_primary_fast_vision, true)
 assert.equal(byId.provider_default_policy.details.gpt_provider_present, true);
 assert.equal(byId.provider_default_policy.details.mixed_model_cascade, "removed");
 assert.equal(byId.provider_default_policy.details.gpt_implicit_default, "production_primary");
-assert.equal(byId.provider_default_policy.details.standalone_gpt_default, "server_default");
-assert.equal(byId.provider_default_policy.details.gpt_visible_button, true);
+assert.equal(byId.provider_default_policy.details.standalone_gpt_default, "server_profile");
+assert.equal(byId.provider_default_policy.details.gpt_visible_button, false);
 assert.equal(byId.provider_default_policy.details.recognition_profile_server_owned, true);
 assert.equal(byId.provider_default_policy.details.client_algorithm_controls_absent, true);
 assert.equal(byId.publishing_approval_gate.status, "passed");
@@ -245,7 +245,7 @@ assert.match(text, /commercial_review_packet: passed tasks 248, reviewed-title-g
 assert.match(text, /commercial_review_worklist: passed tasks 248, P0 23, P1 97, uses-ground-truth no/);
 assert.match(text, /identity_result_cache: passed read yes, write no, training no/);
 assert.match(text, /gpt_implicit_default: production_primary/);
-assert.match(text, /standalone_gpt_default: server_default/);
+assert.match(text, /standalone_gpt_default: server_profile/);
 assert.match(text, /publishing_destination: blocked/);
 
 console.log("commercial readiness audit tests passed");

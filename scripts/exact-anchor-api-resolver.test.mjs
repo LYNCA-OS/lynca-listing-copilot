@@ -51,8 +51,24 @@ const officialRow = {
   }
 };
 
+const exactAnchorApiCurrentImageContext = Object.freeze({
+  tenant_id: "tenant_exact_anchor_api_test",
+  asset_id: "asset-exact-anchor-api-test",
+  image_generation_id: "asset-exact-anchor-api-test",
+  images: ["front", "back"].map((side, index) => Object.freeze({
+    image_id: side,
+    object_path: `tenants/tenant_exact_anchor_api_test/listing-assets/2026-07-30/asset-exact-anchor-api-test/${side}.jpg`,
+    content_sha256: String(index + 3).repeat(64),
+    tenant_id: "tenant_exact_anchor_api_test",
+    asset_id: "asset-exact-anchor-api-test",
+    image_generation_id: "asset-exact-anchor-api-test",
+    storage_verified: true
+  }))
+});
+
 test("API exposes an Exact Anchor title only after Resolver accepts the candidate", async () => {
   const scoutResult = {
+    current_image_context: exactAnchorApiCurrentImageContext,
     resolved_fields: {
       year: "2022",
       product: "Romance Dawn",

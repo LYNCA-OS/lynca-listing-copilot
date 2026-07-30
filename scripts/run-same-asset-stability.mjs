@@ -26,6 +26,8 @@ import {
 } from "./run-targeted-assist-paired-eval.mjs";
 
 const sha256Pattern = /^[0-9a-f]{64}$/i;
+const gitShaPattern = /^[0-9a-f]{40}$/i;
+const deploymentIdPattern = /^dpl_[A-Za-z0-9]+$/;
 const frozenCohorts = Object.freeze(["FAMILIAR", "UNSEEN"]);
 
 export const sameAssetStabilityExecutionContract = Object.freeze({
@@ -40,6 +42,8 @@ export const sameAssetStabilityExecutionContract = Object.freeze({
   default_execution_mode: "DRY_RUN"
 });
 
+export const sameAssetTrustedReleaseProofBaseUrl = "https://listing.lyncafei.team";
+
 function cleanText(value) {
   return String(value ?? "").trim();
 }
@@ -53,6 +57,141 @@ function argValue(argv, name, fallback = "") {
 
 function hasFlag(argv, name) {
   return argv.includes(name);
+}
+
+export function assertSameAssetCandidateTarget({ baseUrl = "", expectedGitSha = "", expectedDeploymentId = "" } = {}) {
+  const normalizedBaseUrl = cleanText(baseUrl).replace(/\/+$/, "");
+  const url = new URL(normalizedBaseUrl);
+  if (url.protocol !== "https:" || !url.hostname.endsWith(".vercel.app")) {
+    throw new Error("same-asset stability requires an immutable *.vercel.app candidate URL");
+  }
+  if (url.username || url.password || url.port || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("same-asset stability candidate URL must be a bare immutable deployment origin");
+  }
+  if (!gitShaPattern.test(cleanText(expectedGitSha))) {
+    throw new Error("--expected-git-sha must be a full 40-character Git SHA");
+  }
+  if (!deploymentIdPattern.test(cleanText(expectedDeploymentId))) {
+    throw new Error("--expected-deployment-id must be a pinned dpl_* deployment ID");
+  }
+  return Object.freeze({
+    base_url: url.origin,
+    expected_git_sha: cleanText(expectedGitSha).toLowerCase(),
+    expected_deployment_id: cleanText(expectedDeploymentId)
+  });
+}
+
+export function sameAssetCandidateProtectionHeaders({
+  target,
+  requestUrl,
+  trustedPublicBinding,
+  env = process.env
+} = {}) {
+  const candidate = assertSameAssetCandidateTarget({
+    baseUrl: target?.base_url,
+    expectedGitSha: target?.expected_git_sha,
+    expectedDeploymentId: target?.expected_deployment_id
+  });
+  if (cleanText(trustedPublicBinding?.observed_git_sha).toLowerCase() !== candidate.expected_git_sha
+    || cleanText(trustedPublicBinding?.observed_deployment_id) !== candidate.expected_deployment_id
+    || cleanText(trustedPublicBinding?.observed_deployment_url).toLowerCase()
+      !== new URL(candidate.base_url).hostname.toLowerCase()) {
+    throw new Error("same-asset candidate is not bound by the trusted public release proof");
+  }
+  const request = new URL(cleanText(requestUrl));
+  if (request.origin !== candidate.base_url) {
+    throw new Error("same-asset protection bypass is scoped to the immutable candidate origin");
+  }
+  const bypass = cleanText(env.VERCEL_AUTOMATION_BYPASS_SECRET || "");
+  if (!bypass) throw new Error("same-asset candidate protection bypass is missing");
+  return Object.freeze({ "x-vercel-protection-bypass": bypass });
+}
+
+export async function verifySameAssetPublicReleaseBinding({
+  baseUrl,
+  expectedGitSha,
+  expectedDeploymentId,
+  fetchImpl = globalThis.fetch,
+  requestTimeoutMs = 30_000
+} = {}) {
+  const target = assertSameAssetCandidateTarget({ baseUrl, expectedGitSha, expectedDeploymentId });
+  if (typeof fetchImpl !== "function") throw new Error("same-asset public release verification requires fetch");
+  const proofUrl = `${sameAssetTrustedReleaseProofBaseUrl}/api/v4/health`;
+  const response = await fetchImpl(proofUrl, {
+    redirect: "error",
+    signal: AbortSignal.timeout(Math.max(10_000, Number(requestTimeoutMs) || 30_000))
+  });
+  if (!response.ok) throw new Error(`same-asset public release health failed with HTTP ${response.status}`);
+  const health = await response.json();
+  const observedGitSha = cleanText(health?.deployment?.git_commit_sha).toLowerCase();
+  const observedDeploymentId = cleanText(health?.deployment?.deployment_id);
+  const observedDeploymentUrl = cleanText(health?.deployment?.deployment_url).toLowerCase();
+  const expectedDeploymentHost = new URL(target.base_url).hostname.toLowerCase();
+  if (health?.ready !== true
+    || observedGitSha !== target.expected_git_sha
+    || observedDeploymentId !== target.expected_deployment_id
+    || observedDeploymentUrl !== expectedDeploymentHost) {
+    throw new Error("same-asset immutable candidate is not the trusted current production release");
+  }
+  return Object.freeze({
+    schema_version: "same-asset-public-release-binding-v1",
+    verified_at: new Date().toISOString(),
+    proof_url: proofUrl,
+    observed_git_sha: observedGitSha,
+    observed_deployment_id: observedDeploymentId,
+    observed_deployment_url: observedDeploymentUrl
+  });
+}
+
+export async function verifySameAssetCandidateDeployment({
+  baseUrl,
+  expectedGitSha,
+  expectedDeploymentId,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  trustedPublicBinding,
+  requestTimeoutMs = 30_000
+} = {}) {
+  const target = assertSameAssetCandidateTarget({ baseUrl, expectedGitSha, expectedDeploymentId });
+  if (typeof fetchImpl !== "function") throw new Error("same-asset deployment verification requires fetch");
+  const healthUrl = `${target.base_url}/api/v4/health`;
+  const response = await fetchImpl(healthUrl, {
+    headers: sameAssetCandidateProtectionHeaders({
+      target,
+      requestUrl: healthUrl,
+      trustedPublicBinding,
+      env
+    }),
+    redirect: "error",
+    signal: AbortSignal.timeout(Math.max(10_000, Number(requestTimeoutMs) || 30_000))
+  });
+  if (!response.ok) throw new Error(`same-asset candidate health failed with HTTP ${response.status}`);
+  const health = await response.json();
+  if (health?.ready !== true) throw new Error("same-asset candidate health is not ready");
+  const observedGitSha = cleanText(health?.deployment?.git_commit_sha).toLowerCase();
+  const observedDeploymentId = cleanText(health?.deployment?.deployment_id);
+  const observedDeploymentUrl = cleanText(health?.deployment?.deployment_url).toLowerCase();
+  const expectedDeploymentHost = new URL(target.base_url).hostname.toLowerCase();
+  if (observedGitSha !== target.expected_git_sha) {
+    throw new Error(`same-asset candidate Git SHA mismatch: expected ${target.expected_git_sha}, received ${observedGitSha || "missing"}`);
+  }
+  if (observedDeploymentId !== target.expected_deployment_id) {
+    throw new Error(`same-asset candidate deployment mismatch: expected ${target.expected_deployment_id}, received ${observedDeploymentId || "missing"}`);
+  }
+  if (observedDeploymentUrl !== expectedDeploymentHost) {
+    throw new Error(`same-asset candidate URL is not the deployment URL: expected ${expectedDeploymentHost}, received ${observedDeploymentUrl || "missing"}`);
+  }
+  return Object.freeze({
+    schema_version: "same-asset-candidate-deployment-proof-v1",
+    verified_at: new Date().toISOString(),
+    base_url: target.base_url,
+    expected_git_sha: target.expected_git_sha,
+    expected_deployment_id: target.expected_deployment_id,
+    observed_git_sha: observedGitSha,
+    observed_deployment_id: observedDeploymentId,
+    observed_deployment_url: observedDeploymentUrl,
+    ready: health?.ready === true
+  });
 }
 
 function datasetItems(payload) {
@@ -122,7 +261,7 @@ function assertCanonicalAssetCacheEntry(entry, { fingerprint, imageCount } = {})
   });
 }
 
-function bindResultToExecutionPlan(row = {}, plan = {}, runnerAttempt = 0) {
+function bindResultToExecutionPlan(row = {}, plan = {}, runnerAttempt = 0, deploymentProof = {}) {
   const runtimePolicyState = buildSameAssetRuntimePolicyState(row);
   return {
     ...row,
@@ -132,6 +271,10 @@ function bindResultToExecutionPlan(row = {}, plan = {}, runnerAttempt = 0) {
     same_asset_dataset_sha256: plan.dataset_sha256,
     same_asset_sealed_labels_sha256: plan.sealed_labels_sha256,
     same_asset_selected_item_id: plan.selected_item_id,
+    same_asset_expected_git_sha: plan.expected_git_sha,
+    same_asset_expected_deployment_id: plan.expected_deployment_id,
+    same_asset_observed_deployment_id: deploymentProof.observed_deployment_id || null,
+    same_asset_observed_deployment_url: deploymentProof.observed_deployment_url || null,
     same_asset_runtime_policy_state: runtimePolicyState
   };
 }
@@ -146,8 +289,11 @@ export async function buildSameAssetStabilityPlan({
   plannedRuns = SAME_ASSET_STABILITY_EXPECTED_RUNS,
   frozenCohort,
   itemId,
+  expectedGitSha,
+  expectedDeploymentId,
   assertFrozenCohortImpl = assertFrozenTargetedAssistCohort
 }) {
+  const candidateTarget = assertSameAssetCandidateTarget({ baseUrl, expectedGitSha, expectedDeploymentId });
   const datasetBytes = await readFile(resolve(datasetPath));
   const dataset = JSON.parse(datasetBytes.toString("utf8"));
   const items = datasetItems(dataset);
@@ -181,6 +327,11 @@ export async function buildSameAssetStabilityPlan({
   const sealedBytes = await readFile(resolve(sealedLabelsPath));
   const fingerprint = await durableSourceFingerprint(selectedItem, selectedIndex);
   const cacheEntries = await readVerifiedAssetCache(verifiedAssetCachePath);
+  if (cacheEntries.size === 0) throw new Error("same-asset canonical verified cache entry is missing");
+  if (cacheEntries.size !== 1) {
+    throw new Error(`same-asset verified cache must contain exactly one entry; received ${cacheEntries.size}`);
+  }
+  const assetCacheBytes = await readFile(resolve(verifiedAssetCachePath));
   const imageCount = (Array.isArray(selectedItem.images) ? selectedItem.images : []).slice(0, 2).length;
   const assetCacheProof = assertCanonicalAssetCacheEntry(cacheEntries.get(fingerprint), {
     fingerprint,
@@ -203,15 +354,18 @@ export async function buildSameAssetStabilityPlan({
     selected_item_sha256: sha256(JSON.stringify(stableValue(selectedItem))),
     dataset_item_count: items.length,
     asset_cache_proof: assetCacheProof,
-    base_url: cleanText(baseUrl).replace(/\/+$/, ""),
+    base_url: candidateTarget.base_url,
+    expected_git_sha: candidateTarget.expected_git_sha,
+    expected_deployment_id: candidateTarget.expected_deployment_id,
     model,
     out_dir: resolve(outDir),
     evidence_dir: resolve(outDir, `same-asset-${executionId}`),
     runtime_dataset_snapshot_name: "frozen-development-dataset.json",
     runtime_asset_cache_snapshot_name: "frozen-canonical-asset-cache.json",
     verified_asset_cache_path: resolve(verifiedAssetCachePath),
+    verified_asset_cache_sha256: sha256(assetCacheBytes),
     planned_job_runs: plannedRuns,
-    provider_http_call_hard_budget: null,
+    provider_http_call_hard_budget: plannedRuns,
     safety_gate: {
       execute_flag_required: true,
       exact_confirmation_required: `--confirm-planned-runs ${plannedRuns}`,
@@ -222,8 +376,8 @@ export async function buildSameAssetStabilityPlan({
       vector_worker_status_and_reason_frozen: true,
       ocr_critical_decision_and_wait_budgets_frozen: true,
       no_failed_run_replacement: true,
-      server_owned_provider_retry_budget_enforced: false,
-      note: "Thirty planned jobs can exceed thirty Provider HTTP requests if server retries occur; retries invalidate the experiment but are not pre-call budgeted."
+      server_owned_provider_retry_budget_enforced: true,
+      note: "The cold-algorithm profile enforces one Provider HTTP request before the call; any retry path fails closed."
     }
   };
 }
@@ -235,6 +389,10 @@ export async function executeSameAssetStabilityPlan(plan, {
   requestTimeoutMs = 90_000,
   l2WaitMs = 90_000,
   progress = true,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  verifyPublicBindingImpl = verifySameAssetPublicReleaseBinding,
+  verifyDeploymentImpl = verifySameAssetCandidateDeployment,
   revalidatePlanImpl = async (candidate) => buildSameAssetStabilityPlan({
     datasetPath: candidate.dataset_path,
     sealedLabelsPath: candidate.sealed_labels_path,
@@ -244,7 +402,9 @@ export async function executeSameAssetStabilityPlan(plan, {
     verifiedAssetCachePath: candidate.verified_asset_cache_path,
     plannedRuns: candidate.planned_runs,
     frozenCohort: candidate.frozen_cohort,
-    itemId: candidate.selected_item_id
+    itemId: candidate.selected_item_id,
+    expectedGitSha: candidate.expected_git_sha,
+    expectedDeploymentId: candidate.expected_deployment_id
   }),
   readSessionCookieImpl = readReusableSessionCookie,
   loginImpl = login,
@@ -255,7 +415,10 @@ export async function executeSameAssetStabilityPlan(plan, {
     "dataset_sha256",
     "sealed_labels_sha256",
     "selected_item_sha256",
-    "selected_item_index"
+    "selected_item_index",
+    "verified_asset_cache_sha256",
+    "expected_git_sha",
+    "expected_deployment_id"
   ]) {
     if (revalidatedPlan[key] !== plan[key]) throw new Error(`same-asset plan drifted at ${key}`);
   }
@@ -274,6 +437,32 @@ export async function executeSameAssetStabilityPlan(plan, {
   if (unexpectedEvidence.length) {
     throw new Error(`same-asset evidence directory is not fresh: ${unexpectedEvidence.join(",")}`);
   }
+  const publicReleaseBinding = await verifyPublicBindingImpl({
+    baseUrl: plan.base_url,
+    expectedGitSha: plan.expected_git_sha,
+    expectedDeploymentId: plan.expected_deployment_id,
+    fetchImpl,
+    requestTimeoutMs: Math.min(requestTimeoutMs, 30_000)
+  });
+  await writeFile(resolve(plan.evidence_dir, "same-asset-public-release-binding.json"), `${JSON.stringify(publicReleaseBinding, null, 2)}\n`, {
+    encoding: "utf8",
+    flag: "wx",
+    mode: 0o400
+  });
+  const deploymentPreflight = await verifyDeploymentImpl({
+    baseUrl: plan.base_url,
+    expectedGitSha: plan.expected_git_sha,
+    expectedDeploymentId: plan.expected_deployment_id,
+    env,
+    fetchImpl,
+    trustedPublicBinding: publicReleaseBinding,
+    requestTimeoutMs: Math.min(requestTimeoutMs, 30_000)
+  });
+  await writeFile(resolve(plan.evidence_dir, "same-asset-deployment-preflight.json"), `${JSON.stringify(deploymentPreflight, null, 2)}\n`, {
+    encoding: "utf8",
+    flag: "wx",
+    mode: 0o400
+  });
   const [datasetBytes, sealedLabelBytes, assetCacheBytes] = await Promise.all([
     readFile(plan.dataset_path),
     readFile(plan.sealed_labels_path),
@@ -281,6 +470,9 @@ export async function executeSameAssetStabilityPlan(plan, {
   ]);
   if (sha256(datasetBytes) !== plan.dataset_sha256 || sha256(sealedLabelBytes) !== plan.sealed_labels_sha256) {
     throw new Error("same-asset frozen dataset or label bytes changed after authorization");
+  }
+  if (sha256(assetCacheBytes) !== plan.verified_asset_cache_sha256) {
+    throw new Error("same-asset verified asset cache changed after authorization");
   }
   const runtimeDatasetPath = resolve(plan.evidence_dir, plan.runtime_dataset_snapshot_name);
   const runtimeAssetCachePath = resolve(plan.evidence_dir, plan.runtime_asset_cache_snapshot_name);
@@ -318,8 +510,11 @@ export async function executeSameAssetStabilityPlan(plan, {
         offset: plan.selected_item_index,
         queueMode: true,
         speculative: true,
-        usePreingestion: true,
-        preingestionSource: "same_asset_stability_n30",
+        // N30 isolates Provider nondeterminism. Re-enqueuing OCR here would
+        // add unbudgeted paid work and let later runs observe evidence created
+        // by earlier runs, so the frozen canonical images are the only sensor
+        // input admitted by this experiment.
+        usePreingestion: false,
         modelOverride: plan.model,
         benchmarkProfile: recognitionBenchmarkProfileIds.COLD_ALGORITHM,
         evaluationSampleMode: "PAIRED_ABLATION",
@@ -333,13 +528,17 @@ export async function executeSameAssetStabilityPlan(plan, {
         batchId: `same-asset-${Date.now()}-${label}`,
         verifiedAssetCachePath: runtimeAssetCachePath,
         verifiedAssetCacheMode: "reuse",
+        verifiedAssetCacheReadOnly: true,
         outPath: "",
         progress
       });
       if (!Array.isArray(report?.results) || report.results.length !== 1) {
         throw new Error(`same_asset_runner_expected_one_result_received_${report?.results?.length ?? "missing"}`);
       }
-      report.results[0] = bindResultToExecutionPlan(report.results[0], plan, run);
+      if (sha256(await readFile(runtimeAssetCachePath)) !== plan.verified_asset_cache_sha256) {
+        throw new Error("same-asset immutable runtime asset cache changed during execution");
+      }
+      report.results[0] = bindResultToExecutionPlan(report.results[0], plan, run, deploymentPreflight);
       await writeFile(outPath, `${JSON.stringify(report, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       reports.push(report);
       const prefixAnalysis = analyzeSameAssetStability(reports, {
@@ -357,14 +556,49 @@ export async function executeSameAssetStabilityPlan(plan, {
           writer_ready: false,
           l2_ready: false,
           error: cleanText(error?.message || error || "same_asset_runner_failed").slice(0, 500)
-        }, plan, run)]
+        }, plan, run, deploymentPreflight)]
       };
       await writeFile(outPath, `${JSON.stringify(failed, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       reports.push(failed);
       break;
     }
   }
+  let deploymentPostflight = null;
+  let deploymentPostflightError = null;
+  try {
+    deploymentPostflight = await verifyDeploymentImpl({
+      baseUrl: plan.base_url,
+      expectedGitSha: plan.expected_git_sha,
+      expectedDeploymentId: plan.expected_deployment_id,
+      env,
+      fetchImpl,
+      trustedPublicBinding: publicReleaseBinding,
+      requestTimeoutMs: Math.min(requestTimeoutMs, 30_000)
+    });
+    await writeFile(resolve(plan.evidence_dir, "same-asset-deployment-postflight.json"), `${JSON.stringify(deploymentPostflight, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o400
+    });
+  } catch (error) {
+    deploymentPostflightError = cleanText(error?.message || error || "same_asset_deployment_postflight_failed").slice(0, 500);
+    await writeFile(resolve(plan.evidence_dir, "same-asset-deployment-postflight.json"), `${JSON.stringify({
+      schema_version: "same-asset-candidate-deployment-proof-v1",
+      verified_at: new Date().toISOString(),
+      status: "FAILED",
+      error: deploymentPostflightError
+    }, null, 2)}\n`, { encoding: "utf8", flag: "wx", mode: 0o400 });
+  }
   const analysis = analyzeSameAssetStability(reports, { plan, expectedRuns: plan.planned_runs });
+  analysis.deployment_proof = { preflight: deploymentPreflight, postflight: deploymentPostflight };
+  if (deploymentPostflightError) {
+    analysis.validity.status = "INVALID";
+    analysis.validity.errors.push({
+      code: "DEPLOYMENT_POSTFLIGHT_FAILED",
+      run_index: null,
+      details: { error: deploymentPostflightError }
+    });
+  }
   const analysisPath = resolve(plan.evidence_dir, "same-asset-stability-analysis.json");
   await writeFile(analysisPath, `${JSON.stringify(analysis, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   return { reports, analysis, analysis_path: analysisPath };
@@ -384,7 +618,9 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     verifiedAssetCachePath: argValue(argv, "--verified-asset-cache", ""),
     plannedRuns,
     frozenCohort: argValue(argv, "--frozen-cohort", ""),
-    itemId: argValue(argv, "--item-id", "")
+    itemId: argValue(argv, "--item-id", ""),
+    expectedGitSha: argValue(argv, "--expected-git-sha", ""),
+    expectedDeploymentId: argValue(argv, "--expected-deployment-id", "")
   });
   const execute = hasFlag(argv, "--execute");
   if (execute) {

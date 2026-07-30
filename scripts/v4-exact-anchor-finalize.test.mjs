@@ -33,7 +33,23 @@ function directEvidence(value, side = "front") {
   });
 }
 
+const exactAnchorCurrentImageContext = Object.freeze({
+  tenant_id: "tenant_exact_anchor_test",
+  asset_id: "asset-exact-anchor-test",
+  image_generation_id: "asset-exact-anchor-test",
+  images: ["front", "back"].map((side, index) => Object.freeze({
+    image_id: side,
+    object_path: `tenants/tenant_exact_anchor_test/listing-assets/2026-07-30/asset-exact-anchor-test/${side}.jpg`,
+    content_sha256: String(index + 1).repeat(64),
+    tenant_id: "tenant_exact_anchor_test",
+    asset_id: "asset-exact-anchor-test",
+    image_generation_id: "asset-exact-anchor-test",
+    storage_verified: true
+  }))
+});
+
 const scoutResult = {
+  current_image_context: exactAnchorCurrentImageContext,
   resolved_fields: {
     players: ["Jesus Made"],
     year: "2025",
@@ -254,6 +270,7 @@ assert.equal(tcgFinalized.resolver_input, undefined);
 // number can identify a unique approved row before the subject OCR settles.
 const sportsProductFinalized = await maybeFinalizeL1FromExactAnchor({
   scoutResult: {
+    current_image_context: exactAnchorCurrentImageContext,
     resolved_fields: {
       year: "2024",
       product: "Panini Contenders",

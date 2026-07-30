@@ -25,6 +25,10 @@ import { isV4WorkerRequest, workerSecretHeader } from "../../lib/listing/v4/jobs
 import { scheduleTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { v4EventRefillContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
 import { buildProviderCapacityTimeline } from "../../lib/listing/v4/jobs/provider-capacity-timeline.mjs";
+import {
+  isWriterIntakeCanonicalJob,
+  reconcileWriterIntakeCanonicalJobRowsBestEffort
+} from "../../lib/listing/intake/writer-intake-store.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -101,9 +105,14 @@ export function v4ResponseUsage(response = {}) {
   ];
   const providerCalls = firstNumber(
     [summary, ...usageSources, responseObject],
-    ["provider_calls", "provider_call_count"]
+    ["total_provider_calls", "provider_calls", "provider_call_count"]
   );
   const providerCallsKnown = providerCalls !== null;
+  const providerAccountingComplete = typeof summary.provider_accounting_complete === "boolean"
+    ? summary.provider_accounting_complete
+    : typeof responseObject.provider_accounting_complete === "boolean"
+      ? responseObject.provider_accounting_complete
+      : null;
   const provider = summary.provider || responseObject.provider || null;
   const modelVersion = summary.model || summary.model_id || responseObject.model || responseObject.model_id || null;
   const inferredProviderCall = !providerCallsKnown
@@ -140,6 +149,10 @@ export function v4ResponseUsage(response = {}) {
     providerCalls: resolvedProviderCalls,
     providerCallsKnown,
     providerCallsSource: providerCallsKnown ? "reported" : inferredProviderCall ? "inferred" : "none",
+    providerCallsScope: providerAccountingComplete === false ? "LOWER_BOUND" : "COMPLETE",
+    providerAccountingComplete,
+    baselineProviderCalls: firstNumber([summary, responseObject], ["baseline_provider_calls"]),
+    shadowProviderCalls: firstNumber([summary, responseObject], ["shadow_provider_calls"]),
     inputTokens,
     outputTokens,
     estimatedCostUsd,
@@ -161,6 +174,10 @@ function providerEventMetadata(usage = {}, metadata = {}) {
   return {
     provider: usage.provider || null,
     provider_calls_source: usage.providerCallsSource || "none",
+    provider_calls_scope: usage.providerCallsScope || "COMPLETE",
+    provider_accounting_complete: usage.providerAccountingComplete,
+    baseline_provider_calls: usage.baselineProviderCalls,
+    shadow_provider_calls: usage.shadowProviderCalls,
     cost_configured: usage.costConfigured,
     pricing_coverage: usage.pricingCoverage || "UNPRICED",
     ...metadata
@@ -774,6 +791,11 @@ export default async function handler(req, res) {
               latency_ms: result.latency_ms
             });
           }
+          if (jobStatus === v4JobStatuses.L2_READY && isWriterIntakeCanonicalJob(job)) {
+            waitUntil(reconcileWriterIntakeCanonicalJobRowsBestEffort({
+              jobIds: [job.id]
+            }));
+          }
           await recordJobProductionEvent(job, "recognition_completed", {
             ...attemptUsage,
             durationMs: result.latency_ms,
@@ -845,6 +867,13 @@ export default async function handler(req, res) {
             },
             forceFinalFailure: hiddenL1Job
           });
+          if (
+            failure.saved === true
+            && job.job_type === v4JobTypes.FINAL_ASSISTED_TITLE
+            && isWriterIntakeCanonicalJob(job)
+          ) {
+            waitUntil(reconcileWriterIntakeCanonicalJobRowsBestEffort({ jobIds: [job.id] }));
+          }
           await recordJobProductionEvent(job, "recognition_failed", {
             ...attemptUsage,
             durationMs: error?.latency_ms || null,

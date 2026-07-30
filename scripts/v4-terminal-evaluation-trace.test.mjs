@@ -5,17 +5,34 @@ import {
   terminalEvaluationDecisionTracePacket
 } from "../api/v4/listing-copilot-title.js";
 import { identityResolverPolicyVersion } from "../lib/identity-resolution/listing-resolution-gate.mjs";
-import { candidateSelectionHeuristicVersion } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import {
+  buildCandidatePreApplicationEvidenceSnapshot,
+  candidateSelectionHeuristicVersion
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import { buildVerifiedCurrentImageManifest } from "../lib/listing/evidence/current-image-manifest.mjs";
 import { buildEvaluationDecisionTracePacket } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 const payload = {
   maxTitleLength: 80,
+  tenant_id: "tenant_trace",
+  asset_id: "asset_11111111-1111-4111-8111-111111111111",
+  image_generation_id: "generation_trace_v1",
+  images: [{
+    image_id: "front",
+    object_path: "tenants/tenant_trace/listing-assets/2026-07-30/asset_11111111-1111-4111-8111-111111111111/front.jpg",
+    content_sha256: "d".repeat(64),
+    tenant_id: "tenant_trace",
+    asset_id: "asset_11111111-1111-4111-8111-111111111111",
+    image_generation_id: "generation_trace_v1",
+    storage_verified: true
+  }],
   provider_options: {
     recognition_benchmark_profile: "cold_algorithm",
     trace_level: "evaluation"
   }
 };
+const currentImageContext = buildVerifiedCurrentImageManifest(payload);
 const result = {
   provider: "openai_legacy",
   raw_provider_fields: {
@@ -24,6 +41,7 @@ const result = {
     players: ["Test Player"]
   },
   raw_provider_field_evidence: [],
+  current_image_context: currentImageContext,
   forward_enumeration_trace: [],
   forward_enumeration_candidate_packet: {
     enumerator_version: "constraint-enumerator-v3",
@@ -35,6 +53,27 @@ const result = {
     manufacturer: "Panini",
     players: ["Test Player"]
   },
+  candidate_pre_application_evidence_snapshot: buildCandidatePreApplicationEvidenceSnapshot({
+    evidence_schema_version: "listing-evidence-v1",
+    raw_observed_fields: {
+      year: "2025",
+      manufacturer: "Panini",
+      players: ["Test Player"]
+    },
+    raw_provider_fields: {
+      year: "2025",
+      manufacturer: "Panini",
+      players: ["Test Player"]
+    },
+    normalized_evidence: {
+      year: {
+        value: "2025",
+        normalized_value: "2025",
+        status: "CONFIRMED"
+      }
+    },
+    raw_provider_field_evidence: []
+  }, currentImageContext),
   normalized_evidence: {
     year: {
       value: "2025",

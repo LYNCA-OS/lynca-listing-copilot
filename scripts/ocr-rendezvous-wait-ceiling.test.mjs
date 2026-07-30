@@ -39,4 +39,101 @@ test("no budget still means no wait", () => {
   assert.equal(none.should_wait, false, "the cap must never manufacture a wait that was not asked for");
 });
 
+test("a listener is not held for workers that provably cannot answer", () => {
+  const dead = decide({
+    configuredWaitMs: 22_000,
+    latestOcrState: {
+      configured: true,
+      active_count: 0,
+      job_count: 1,
+      job_observability: [{
+        crop_role: "serial_crop",
+        status: "FAILED",
+        error_code: "OCR_WORKER_UNAVAILABLE"
+      }]
+    }
+  });
+  assert.equal(dead.wait_budget_ms, 0);
+  assert.equal(dead.should_wait, false);
+  assert.equal(dead.wait_budget_uncapped_ms, 22_000);
+  assert.equal(dead.workers_unavailable, true);
+});
+
+test("only terminal task-level worker unavailability disables the wait", () => {
+  const decodeFailure = decide({
+    configuredWaitMs: 1_000,
+    latestOcrState: {
+      configured: true,
+      active_count: 0,
+      job_count: 1,
+      job_observability: [{
+        crop_role: "serial_crop",
+        status: "FAILED",
+        error_code: "OCR_FIELD_JOB_FAILED"
+      }]
+    }
+  });
+  assert.equal(decodeFailure.wait_budget_ms, 1_000);
+
+  const mixedFailedAndRunning = decide({
+    configuredWaitMs: 1_000,
+    latestOcrState: {
+      configured: true,
+      active_count: 1,
+      job_count: 2,
+      job_observability: [
+        { crop_role: "serial_crop", status: "FAILED", error_code: "OCR_WORKER_UNAVAILABLE" },
+        { crop_role: "grade_label_crop", status: "RUNNING", error_code: null }
+      ]
+    }
+  });
+  assert.equal(mixedFailedAndRunning.wait_budget_ms, 1_000,
+    "one unavailable job cannot zero the wait while any related OCR task remains active");
+  assert.equal(mixedFailedAndRunning.workers_unavailable, false);
+
+  const incompleteAggregateOnly = decide({
+    configuredWaitMs: 1_000,
+    latestOcrState: {
+      configured: true,
+      active_count: 0,
+      failed_reasons: ["ocr_worker_unavailable"]
+    }
+  });
+  assert.equal(incompleteAggregateOnly.wait_budget_ms, 1_000,
+    "aggregate failure strings are insufficient without complete task-level observability");
+
+  const truncatedTaskEvidence = decide({
+    configuredWaitMs: 1_000,
+    latestOcrState: {
+      configured: true,
+      active_count: 0,
+      job_count: 2,
+      job_observability: [
+        { crop_role: "serial_crop", status: "FAILED", error_code: "OCR_WORKER_UNAVAILABLE" }
+      ]
+    }
+  });
+  assert.equal(truncatedTaskEvidence.wait_budget_ms, 1_000,
+    "a partial job ledger cannot prove that all related work is terminal-unavailable");
+
+  const relevantSerialUnavailable = decide({
+    configuredWaitMs: 1_000,
+    unresolved: ["serial_number"],
+    latestOcrState: {
+      configured: true,
+      active_count: 0,
+      job_count: 2,
+      serial_active_count: 0,
+      grade_label_active_count: 0,
+      job_observability: [
+        { crop_role: "serial_crop", status: "FAILED", error_code: "OCR_WORKER_UNAVAILABLE" },
+        { crop_role: "grade_label_crop", status: "SUCCEEDED", error_code: null }
+      ]
+    }
+  });
+  assert.equal(relevantSerialUnavailable.wait_budget_ms, 0,
+    "a successful unrelated crop must not hide terminal unavailability of the requested serial crop");
+  assert.deepEqual(relevantSerialUnavailable.unavailable_target_fields, ["serial_number"]);
+});
+
 console.log("ocr rendezvous wait ceiling tests passed");

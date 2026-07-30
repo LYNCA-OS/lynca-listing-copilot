@@ -203,4 +203,42 @@ const configuredZeroCost = v4ResponseUsage({
 assert.equal(configuredZeroCost.estimatedCostUsd, 0, "a configured measured zero remains a real zero");
 assert.equal(configuredZeroCost.pricingCoverage, "PRICED");
 
+const secondLookShadowUsage = v4ResponseUsage({
+  provider_result: {
+    provider: "openai_legacy",
+    usage: { provider_calls: 1, input_tokens: 100, output_tokens: 20 },
+    baseline_provider_calls: 1,
+    shadow_provider_calls: 1,
+    total_provider_calls: 2,
+    provider_accounting_complete: true,
+    second_look_shadow_usage: {
+      provider_calls: 1,
+      input_tokens: 30,
+      output_tokens: 5,
+      estimated_cost_usd: 0.001,
+      cost_configured: true
+    }
+  }
+});
+assert.equal(secondLookShadowUsage.providerCalls, 2, "worker telemetry must count the paid shadow call");
+assert.equal(secondLookShadowUsage.providerCallsSource, "reported");
+assert.equal(secondLookShadowUsage.providerCallsScope, "COMPLETE");
+assert.equal(secondLookShadowUsage.providerAccountingComplete, true);
+assert.equal(secondLookShadowUsage.baselineProviderCalls, 1);
+assert.equal(secondLookShadowUsage.shadowProviderCalls, 1);
+
+const incompleteSecondLookAccounting = v4ResponseUsage({
+  provider_result: {
+    provider: "openai_legacy",
+    provider_calls: 1,
+    baseline_provider_calls: 1,
+    shadow_provider_calls: null,
+    total_provider_calls: null,
+    provider_accounting_complete: false
+  }
+});
+assert.equal(incompleteSecondLookAccounting.providerCalls, 1);
+assert.equal(incompleteSecondLookAccounting.providerCallsScope, "LOWER_BOUND");
+assert.equal(incompleteSecondLookAccounting.providerAccountingComplete, false);
+
 console.log("production event tests passed");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   __listingCopilotTitleTestHooks,
@@ -15,10 +16,12 @@ import {
 } from "../lib/listing/cache/identity-result-cache.mjs";
 import { writerFinalReplayRecordToListingResult } from "../lib/listing/cache/writer-final-replay.mjs";
 import {
+  __identityCacheVersionContractTestHooks,
   buildRecognitionPipelineFingerprint,
   buildTargetedAssistEvaluationNuisanceFingerprint,
   targetedAssistNuisanceFingerprintContractVersion
 } from "../lib/listing/cache/identity-cache-version-contract.mjs";
+import { evidenceSchemaOwnerVersion } from "../lib/listing/evidence/evidence-schema.mjs";
 import {
   applyRecognitionBenchmarkProfile,
   assertExactReplayBenchmarkPair,
@@ -127,8 +130,20 @@ assert.equal(key.result_version.owner_versions.provider.model_revision, "gpt-4.1
 assert.equal(key.result_version.owner_versions.sem, "linear-cos-10-23-v25");
 assert.equal(key.result_version.owner_versions.renderer, "renderer-v3-scg");
 assert.equal(key.result_version.owner_versions.catalog, "catalog-revision-test-1");
+assert.equal(key.result_version.owner_versions.evidence.owner_version, evidenceSchemaOwnerVersion);
 assert.equal(Object.hasOwn(key.result_version.owner_versions, "world_knowledge"), false);
 assert.match(key.recognition_pipeline_fingerprint, /^[0-9a-f]{64}$/);
+
+const preSubjectAliasVector = structuredClone(key.result_version);
+delete preSubjectAliasVector.owner_versions.evidence.owner_version;
+const preSubjectAliasFingerprint = crypto.createHash("sha256")
+  .update(__identityCacheVersionContractTestHooks.stableJson(preSubjectAliasVector))
+  .digest("hex");
+assert.notEqual(
+  key.recognition_pipeline_fingerprint,
+  preSubjectAliasFingerprint,
+  "subjects -> players normalization must invalidate cache entries from the previous evidence owner"
+);
 
 const nuisanceEnv = {
   ...process.env,

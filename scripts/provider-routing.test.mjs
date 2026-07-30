@@ -23,6 +23,7 @@ import {
   ultraFastServiceTier,
   vectorEmbeddingWarmupOptions
 } from "../lib/listing/pipeline/provider-options.mjs";
+import { openAiRequestContextFromPayload } from "../lib/listing/pipeline/provider-stage.mjs";
 import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
 
 const providerRegistrySource = await readFile("lib/listing/providers/provider-registry.mjs", "utf8");
@@ -273,6 +274,10 @@ assert.equal(__listingCopilotTitleTestHooks.canOverlapProviderCapacityHandoffAft
 assert.equal(__listingCopilotTitleTestHooks.canOverlapProviderCapacityHandoffAfterInitialCall({
   assistShadowOnly: false
 }), false, "paths that may still invoke a focused verifier must retain their provider lease");
+assert.equal(__listingCopilotTitleTestHooks.canOverlapProviderCapacityHandoffAfterInitialCall({
+  assistShadowOnly: true,
+  additionalProviderCallPending: true
+}), false, "evaluation second-look calls must retain the provider lease until their single bounded call ends");
 
 const ultraFastPayloadOverrideOptions = __listingCopilotTitleTestHooks.providerOptionsFromPayload({
   provider_options: {
@@ -1111,6 +1116,61 @@ assert.equal(rotatedOpenAiResult.transient_retry_attempted, true);
 assert.equal(rotatedOpenAiResult.transient_retry_attempts, 1);
 assert.equal(rotatedOpenAiResult.provider_request_diagnostics.provider_key_slot, rotatedOpenAiResult.provider_key_slot);
 
+const coldAlgorithmRequestContext = openAiRequestContextFromPayload({
+  provider_options: { recognition_benchmark_profile: "cold_algorithm_benchmark" }
+});
+assert.equal(coldAlgorithmRequestContext.provider_http_request_budget, null);
+assert.equal(coldAlgorithmRequestContext.provider_http_retry_policy, "PRODUCTION_DEFAULT");
+const secondLookRequestContext = openAiRequestContextFromPayload({
+  provider_options: { recognition_benchmark_profile: "cold_second_look_shadow_benchmark" }
+});
+assert.equal(secondLookRequestContext.provider_http_request_budget, 1);
+assert.equal(secondLookRequestContext.provider_http_retry_policy, "FORBIDDEN");
+let secondLookHttpCalls = 0;
+await assert.rejects(analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  shardKey: "asset-second-look-single-http-test",
+  requestContext: secondLookRequestContext,
+  env: {
+    ...env,
+    OPENAI_API_KEY: "",
+    OPENAI_API_KEY_POOL: "sk-cold-a,sk-cold-b",
+    OPENAI_LISTING_TRANSIENT_RETRIES: "3",
+    OPENAI_LISTING_TRANSIENT_RETRY_DELAY_MS: "0"
+  },
+  fetchImpl: async () => {
+    secondLookHttpCalls += 1;
+    return {
+      ok: false,
+      status: 429,
+      headers: new Headers(),
+      text: async () => "{\"error\":\"rate_limited\"}"
+    };
+  }
+}), (error) => error.code === "rate_limited");
+assert.equal(secondLookHttpCalls, 1, "second-look evaluation must fail closed before any Provider retry");
+const secondLookSuccess = await analyzeCardEvidenceWithOpenAiEmergency({
+  images: dataUrlImages,
+  prompt: "Return JSON.",
+  requestContext: secondLookRequestContext,
+  env,
+  fetchImpl: async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    json: async () => ({
+      id: "resp_cold_single_http",
+      output_text: "{\"title\":\"Cold Single HTTP\",\"fields\":{\"player\":\"Cold\"},\"unresolved\":[]}",
+      usage: { input_tokens: 5, output_tokens: 5, total_tokens: 10 }
+    })
+  })
+});
+assert.equal(secondLookSuccess.provider_request_identity.provider_http_request_budget, 1);
+assert.equal(secondLookSuccess.provider_request_identity.provider_http_request_budget_enforced, true);
+assert.equal(secondLookSuccess.provider_request_identity.provider_http_retry_policy, "FORBIDDEN");
+assert.equal(secondLookSuccess.provider_request_identity.provider_http_request_count, 1);
+
 let emptyResponseCalls = 0;
 const emptyResponseAuthorizations = [];
 const emptyResponseRecovered = await analyzeCardEvidenceWithOpenAiEmergency({
@@ -1233,6 +1293,35 @@ await Promise.all(Array.from({ length: 4 }, (_, index) => runWithProviderConcurr
   }
 })));
 assert.equal(maxActiveProviderWork, 2);
+clearProviderConcurrencyForTests();
+
+let releaseBusySlots;
+const busySlotsReleased = new Promise((resolve) => { releaseBusySlots = resolve; });
+let busySlotsStarted = 0;
+let markBusySlotsStarted;
+const bothBusySlotsStarted = new Promise((resolve) => { markBusySlotsStarted = resolve; });
+const busyHolders = Array.from({ length: 2 }, () => runWithProviderConcurrency({
+  providerId: "openai_legacy",
+  env: { OPENAI_PROVIDER_SERVER_CONCURRENCY: "2" },
+  work: async () => {
+    busySlotsStarted += 1;
+    if (busySlotsStarted === 2) markBusySlotsStarted();
+    await busySlotsReleased;
+  }
+}));
+await bothBusySlotsStarted;
+await assert.rejects(runWithProviderConcurrency({
+  providerId: "openai_legacy",
+  env: { OPENAI_PROVIDER_SERVER_CONCURRENCY: "2" },
+  failIfBusy: true,
+  work: async () => assert.fail("fail-if-busy work must never start")
+}), (error) => (
+  error?.code === "PROVIDER_LOCAL_CAPACITY_BUSY"
+  && error?.provider_call_attempted === false
+  && error?.retryable === false
+));
+releaseBusySlots();
+await Promise.all(busyHolders);
 clearProviderConcurrencyForTests();
 
 console.log("provider routing tests passed");

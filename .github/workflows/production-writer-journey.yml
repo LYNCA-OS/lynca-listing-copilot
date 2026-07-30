@@ -4,13 +4,23 @@ on:
   pull_request:
     paths:
       - "app/**"
+      - "api/v4/listing-feedback.js"
       - "e2e/**"
+      - "lib/listing/v4/session/session-store.mjs"
+      - "scripts/admin-test-writer-final-replay-contract.test.mjs"
+      - "scripts/admin-test-writer-final-replay.pg17.test.mjs"
       - "scripts/production-writer-journey-contract.test.mjs"
+      - "supabase/migrations/20260730120000_admin_test_writer_final_replay_isolation_v1.sql"
       - "playwright.config.mjs"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/production-writer-journey.yml"
   workflow_dispatch:
+    inputs:
+      expected_git_sha:
+        description: Exact 40-character production Git SHA to verify
+        required: true
+        type: string
   workflow_run:
     workflows: ["deploy-production"]
     types: [completed]
@@ -28,8 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -42,36 +54,153 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
+    outputs:
+      expected_git_sha: ${{ steps.release_target.outputs.expected_git_sha }}
     env:
       WRITER_JOURNEY_BASE_URL: https://listing.lyncafei.team
-      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
-      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
-      LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
+      EXPECTED_GIT_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.expected_git_sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Validate the immutable production target
+        id: release_target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          TRIGGER_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TRIGGER_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$(printf '%s' "$EXPECTED_GIT_SHA" | wc -c | tr -d ' ')" -eq 40
+          test -z "$(printf '%s' "$EXPECTED_GIT_SHA" | tr -d '0123456789abcdef')"
+          test "$EVENT_REF" = "refs/heads/main"
+          live_main_sha="$(gh api "/repos/$CURRENT_REPOSITORY/commits/main" --jq .sha)"
+          test "$EXPECTED_GIT_SHA" = "$live_main_sha"
+          if test "$EVENT_NAME" = "workflow_run"; then
+            test "$TRIGGER_HEAD_BRANCH" = "main"
+            test "$TRIGGER_HEAD_REPOSITORY" = "$CURRENT_REPOSITORY"
+          else
+            test "$EVENT_NAME" = "workflow_dispatch"
+            test "$EXPECTED_GIT_SHA" = "$EVENT_SHA"
+          fi
+          printf 'expected_git_sha=%s\n' "$EXPECTED_GIT_SHA" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ env.EXPECTED_GIT_SHA }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Assert the checked-out release is the requested production SHA
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/main:refs/remotes/origin/main
+          test "$(git rev-parse HEAD)" = "$EXPECTED_GIT_SHA"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_GIT_SHA"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Assert scoped production credentials
-        run: test -n "$METAVERSE_USERNAME" && test -n "$METAVERSE_PASSWORD" && test -n "$LAUNCH_GATE_EVAL_SECRET"
       - run: npx playwright install --with-deps chromium
       - name: Run real production Writer Journey
+        id: writer_journey
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+          LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
+          WRITER_JOURNEY_EXPECTED_GIT_SHA: ${{ env.EXPECTED_GIT_SHA }}
+          WRITER_JOURNEY_SOURCE_REF: refs/heads/main
         run: npm run test:e2e:production-writer-journey
+      - name: Prove the Journey artifact is safe to upload
+        id: artifact_safety
+        if: always()
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const directory = path.resolve('artifacts/production-writer-journey');
+          const evidencePath = path.join(directory, 'evidence.json');
+          if (!fs.existsSync(evidencePath)) process.exit(0);
+          const allowed = new Set(['evidence.json', 'failure.png']);
+          const files = fs.readdirSync(directory, { recursive: true })
+            .filter((entry) => fs.statSync(path.join(directory, entry)).isFile());
+          if (files.some((entry) => !allowed.has(entry))) {
+            throw new Error(`unsafe Writer Journey artifact: ${files.filter((entry) => !allowed.has(entry)).join(',')}`);
+          }
+          const raw = fs.readFileSync(evidencePath, 'utf8');
+          if (/lynca_metaverse_session|\bbearer\s+[a-z0-9._~+/=-]+|"(?:authorization|cookie|set-cookie)"\s*:/i.test(raw)) {
+            throw new Error('Writer Journey evidence contains forbidden authentication material');
+          }
+          const evidence = JSON.parse(raw);
+          const safety = evidence.artifact_safety || {};
+          const expectedStrings = {
+            repository: process.env.GITHUB_REPOSITORY,
+            workflow_ref: process.env.GITHUB_WORKFLOW_REF,
+            run_id: process.env.GITHUB_RUN_ID,
+            run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+            event: process.env.GITHUB_EVENT_NAME,
+            source_ref: 'refs/heads/main',
+            production_base_url: process.env.WRITER_JOURNEY_BASE_URL
+          };
+          if (evidence.schema_version !== 'production-writer-journey-evidence-v3'
+              || Object.entries(expectedStrings).some(([field, value]) => (
+                typeof evidence[field] !== 'string'
+                || evidence[field] !== value
+                || /[^\x20-\x7e]/.test(evidence[field])
+              ))) {
+            throw new Error('Writer Journey workflow provenance is incomplete');
+          }
+          if (safety.safe_to_upload !== true
+              || safety.har_uploaded !== false
+              || safety.trace_uploaded !== false
+              || safety.sensitive_value_scan_passed !== true) {
+            throw new Error('Writer Journey artifact safety attestation is incomplete');
+          }
+          if (evidence.passed === true) {
+            if (evidence.expected_git_commit_sha !== process.env.EXPECTED_GIT_SHA
+                || evidence.deployment_git_commit_sha !== process.env.EXPECTED_GIT_SHA
+                || evidence.exact_sha_match !== true
+                || evidence.all_required_stages_passed !== true) {
+              throw new Error('passing Writer Journey evidence is not bound to the exact production SHA');
+            }
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, 'safe=true\n');
+          NODE
       - name: Upload passing evidence
-        if: success()
-        uses: actions/upload-artifact@v4
+        if: always() && steps.writer_journey.outcome == 'success' && steps.artifact_safety.outputs.safe == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: production-writer-journey-evidence
+          name: production-writer-journey-evidence-${{ env.EXPECTED_GIT_SHA }}
           path: artifacts/production-writer-journey/evidence.json
           retention-days: 14
-      - name: Upload failure screenshot trace and HAR
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Upload sanitized failure screenshot and metadata
+        if: always() && steps.writer_journey.outcome == 'failure' && steps.artifact_safety.outputs.safe == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: production-writer-journey-failure
+          name: production-writer-journey-failure-${{ env.EXPECTED_GIT_SHA }}
           path: |
-            artifacts/production-writer-journey/
-            test-results/production-writer-journey/
+            artifacts/production-writer-journey/evidence.json
+            artifacts/production-writer-journey/failure.png
+          if-no-files-found: error
           retention-days: 14
+
+  attest-passing-evidence:
+    needs: writer-journey
+    if: needs.writer-journey.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: launch-attestation
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download the safe passing evidence
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: production-writer-journey-evidence-${{ needs.writer-journey.outputs.expected_git_sha }}
+          path: attestation-subject
+      - name: Attest the exact evidence bytes
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4
+        with:
+          subject-path: attestation-subject/evidence.json

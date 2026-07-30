@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import {
   nextWriterOutstandingIndex,
+  preferredWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,
   writerExportRowsReady,
   writerExportWithinLimit,
@@ -67,7 +68,7 @@ const priorityRetrySource = js.slice(
 );
 assert.match(priorityRetrySource, /const retriesFailedDurableJob = Boolean\(retryOfJobId\)/, "priority retry must distinguish a durable failed job from a pre-enqueue failure");
 assert.match(priorityRetrySource, /\["FAILED",\s*"CANCELLED"\]\.includes\(retryOfJobStatus\)/, "only an explicitly terminal durable job may use retry authorization");
-assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*priority: 0,[\s\S]*skipSpeculative: true,[\s\S]*manualRetry: retriesFailedDurableJob && !retryState\.input_rebind_required,[\s\S]*retryOfJobId: retryState\.input_rebind_required \? null : \(retryOfJobId \|\| null\)/, "priority retry must support authorized durable retries, fresh pre-enqueue retries, and safe input rebinds");
+assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*priority: 0,[\s\S]*manualRetry: retriesFailedDurableJob && !retryState\.input_rebind_required,[\s\S]*retryOfJobId: retryState\.input_rebind_required \? null : \(retryOfJobId \|\| null\)/, "priority retry must support authorized durable retries, fresh pre-enqueue retries, and safe input rebinds");
 assert.doesNotMatch(priorityRetrySource, /不能提升到优先队列；请重新上传/, "a pre-enqueue failure must remain retryable without re-uploading images");
 assert.match(priorityRetrySource, /旧任务仅保留审计记录/, "priority retry must preserve the old job only as audit history");
 assert.match(priorityRetrySource, /assetLifecycleMatches\(asset, lifecycleGeneration\)/, "a stale retry response must not overwrite a newer upload generation");
@@ -134,6 +135,19 @@ assert.equal(
   }),
   2,
   "successful persistence should advance to the next outstanding card"
+);
+assert.equal(
+  preferredWriterOutstandingIndex({
+    assets,
+    results: [
+      { index: 1, writerTitlePending: true },
+      { index: 2, writerTitlePending: false, correctedTitle: "Ready second" },
+      { index: 3, writerTitlePending: true }
+    ],
+    currentIndex: 1
+  }),
+  2,
+  "a slow head card must not block the earliest writer-ready outstanding card"
 );
 assert.equal(
   nextWriterOutstandingIndex({

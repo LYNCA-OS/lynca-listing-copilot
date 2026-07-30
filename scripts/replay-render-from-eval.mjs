@@ -35,8 +35,16 @@ function hydrateFromEvaluationReplaySnapshot(result = {}) {
     result: {
       ...result,
       raw_provider_fields: result.raw_provider_fields || snapshot.provider_fields || {},
+      raw_provider_field_evidence:
+        result.raw_provider_field_evidence || snapshot.provider_field_evidence || [],
       raw_observed_fields: result.raw_observed_fields || snapshot.observed_fields || {},
       normalized_evidence: result.normalized_evidence || snapshot.normalized_evidence || {},
+      current_image_context:
+        result.current_image_context || snapshot.current_image_context || null,
+      candidate_pre_application_evidence_snapshot:
+        result.candidate_pre_application_evidence_snapshot
+        || snapshot.candidate_pre_application_evidence_snapshot
+        || null,
       resolved_fields: result.resolved_fields || snapshot.resolved_fields || {},
       resolved: result.resolved || snapshot.resolved_fields || {},
       rendered_fields: result.rendered_fields || { fields: snapshot.rendered_fields || {} },

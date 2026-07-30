@@ -213,7 +213,8 @@ function mockTenantFetch({
   userId,
   assignedUserId = userId,
   observedDataUrls = [],
-  observedPersistenceCalls = []
+  observedPersistenceCalls = [],
+  observedAdminIsolationCalls = []
 }) {
   return async (input, init = {}) => {
     const url = new URL(String(input));
@@ -240,6 +241,24 @@ function mockTenantFetch({
         feedback_event_id: body.p_feedback_event.id,
         learning_event_id: body.p_learning_event.id,
         writer_final_title: body.p_feedback_event.writer_final_title
+      }]);
+    }
+    if (url.pathname === "/rest/v1/rpc/verify_v4_admin_test_feedback_isolation") {
+      const body = JSON.parse(init.body || "{}");
+      observedAdminIsolationCalls.push(body);
+      assert.equal(body.p_tenant_id, "tenant_a");
+      assert.equal(body.p_session_id, "session_target");
+      return jsonResponse([{
+        proof_version: "admin-test-feedback-isolation-proof-v1",
+        verified: true,
+        feedback_event_verified: true,
+        learning_event_verified: true,
+        session_projection_verified: true,
+        image_generation_hash_verified: true,
+        writer_final_replay_excluded: true,
+        replay_source_count: 0,
+        active_writer_final_replay_source_count: 0,
+        active_admin_test_replay_for_image_count: 0
       }]);
     }
     observedDataUrls.push(url);
@@ -363,11 +382,13 @@ try {
   assert.equal(managerCrossAssignmentFeedback.statusCode, 404, "Manager cannot edit another writer's assignment");
 
   const ownerPersistenceCalls = [];
+  const ownerAdminIsolationCalls = [];
   globalThis.fetch = mockTenantFetch({
     role: "OWNER",
     userId: "user_owner",
     assignedUserId: "user_writer",
-    observedPersistenceCalls: ownerPersistenceCalls
+    observedPersistenceCalls: ownerPersistenceCalls,
+    observedAdminIsolationCalls: ownerAdminIsolationCalls
   });
   const ownerTestFeedback = await callPost(feedbackHandler, {
     headers: { cookie: sessionCookie({ userId: "user_owner" }), "x-request-id": "req-owner-test-feedback" },
@@ -387,6 +408,12 @@ try {
   assert.equal(ownerPersistenceCalls[0].p_learning_event.dataset_disposition, "OBSERVE_ONLY");
   assert.equal(ownerPersistenceCalls[0].p_learning_event.feedback_training_event.dataset_disposition, "ADMIN_TEST_ONLY");
   assert.equal(ownerPersistenceCalls[0].p_learning_event.training_eligible, false);
+  assert.equal(ownerAdminIsolationCalls.length, 1, "administrator feedback must be proven against persisted database state");
+  assert.equal(ownerAdminIsolationCalls[0].p_feedback_event_id, ownerTestFeedback.body.feedback_event_id);
+  assert.equal(ownerTestFeedback.body.admin_test_persistence_proof.verified, true);
+  assert.equal(ownerTestFeedback.body.admin_test_persistence_proof.image_generation_hash_verified, true);
+  assert.equal(ownerTestFeedback.body.admin_test_persistence_proof.writer_final_replay_excluded, true);
+  assert.equal(ownerTestFeedback.body.admin_test_persistence_proof.active_writer_final_replay_source_count, 0);
 
   globalThis.fetch = mockTenantFetch({
     role: "WRITER",

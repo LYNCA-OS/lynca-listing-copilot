@@ -6,6 +6,8 @@ import { visionProviderIds } from "../../lib/listing/providers/provider-contract
 import { openAiProviderPoolStatus } from "../../lib/listing/providers/openai-key-pool.mjs";
 import { providerCatalog } from "../../lib/listing/providers/provider-registry.mjs";
 import { vectorIndexReady, vectorRetrievalConfig } from "../../lib/listing/retrieval/vector-feature-flags.mjs";
+import { readActiveCatalogSnapshotRevision } from "../../lib/listing/catalog/active-catalog-snapshot.mjs";
+import { buildRecognitionPipelineFingerprint } from "../../lib/listing/cache/identity-cache-version-contract.mjs";
 import {
   v4JobLeaseHeartbeatEnabled,
   v4JobLeaseHeartbeatIntervalMs,
@@ -16,12 +18,49 @@ import {
 } from "../../lib/listing/v4/jobs/production-job-queue.mjs";
 import { isV4WorkerSecretConfigured } from "../../lib/listing/v4/jobs/worker-auth.mjs";
 
+export async function activeRecognitionContract({
+  env = process.env,
+  fetchImpl = globalThis.fetch
+} = {}) {
+  let catalog;
+  try {
+    catalog = await readActiveCatalogSnapshotRevision({ env, fetchImpl });
+  } catch (error) {
+    catalog = {
+      ok: false,
+      revision: "",
+      reason: `catalog_revision_read_failed:${String(error?.message || error).slice(0, 120)}`
+    };
+  }
+  if (catalog?.ok !== true || !String(catalog.revision || "").trim()) {
+    return {
+      available: false,
+      recognition_pipeline_fingerprint: null,
+      active_catalog_snapshot_revision: null,
+      reason: catalog?.reason || "catalog_revision_unavailable"
+    };
+  }
+  const revision = String(catalog.revision).trim();
+  const fingerprint = buildRecognitionPipelineFingerprint({
+    active_catalog_snapshot_revision: revision
+  }, env).recognition_pipeline_fingerprint;
+  return {
+    available: true,
+    recognition_pipeline_fingerprint: fingerprint,
+    active_catalog_snapshot_revision: revision,
+    reason: null
+  };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     sendJson(res, 405, withV4Version({ ok: false, message: "Method not allowed" }));
     return;
   }
-  const tables = await checkV4Tables();
+  const [tables, activeRecognition] = await Promise.all([
+    checkV4Tables(),
+    activeRecognitionContract()
+  ]);
   const assetLifecycleTableNames = new Set(["listing_assets", "listing_image_verifications"]);
   const coreTablesOk = tables.configured && Object.entries(tables.tables || {})
     .filter(([table]) => !assetLifecycleTableNames.has(table))
@@ -61,6 +100,9 @@ export default async function handler(req, res) {
     service: "lynca-listing-copilot-v4",
     branch_target: "main",
     deployment: v4DeploymentInfo(),
+    recognition_pipeline_fingerprint: activeRecognition.recognition_pipeline_fingerprint,
+    active_catalog_snapshot_revision: activeRecognition.active_catalog_snapshot_revision,
+    active_recognition_contract: activeRecognition,
     default_provider: visionProviderIds.OPENAI_LEGACY,
     default_model: provider.model_id || null,
     provider_runtime: {

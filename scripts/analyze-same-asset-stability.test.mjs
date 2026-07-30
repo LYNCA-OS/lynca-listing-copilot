@@ -32,8 +32,14 @@ const planFixture = {
   selected_item_id: "development-card-fixed",
   selected_item_index: 0,
   selected_item_sha256: hex("8"),
+  base_url: "https://candidate-fixed.vercel.app",
+  expected_git_sha: hex("e", 40),
+  expected_deployment_id: "dpl_FixedCandidate123",
+  verified_asset_cache_sha256: hex("9"),
   planned_runs: 30,
   planned_job_runs: 30,
+  provider_http_call_hard_budget: 30,
+  safety_gate: { server_owned_provider_retry_budget_enforced: true },
   asset_cache_proof: {
     fingerprint: hex("d"),
     asset_id: "asset-fixed",
@@ -59,6 +65,10 @@ function row(index, overrides = {}) {
     same_asset_dataset_sha256: planFixture.dataset_sha256,
     same_asset_sealed_labels_sha256: planFixture.sealed_labels_sha256,
     same_asset_selected_item_id: planFixture.selected_item_id,
+    same_asset_expected_git_sha: planFixture.expected_git_sha,
+    same_asset_expected_deployment_id: planFixture.expected_deployment_id,
+    same_asset_observed_deployment_id: planFixture.expected_deployment_id,
+    same_asset_observed_deployment_url: "candidate-fixed.vercel.app",
     asset_id: "asset-fixed",
     image_generation_id: "asset-fixed",
     canonical_image_set_sha256: hex("a"),
@@ -78,6 +88,7 @@ function row(index, overrides = {}) {
     provider_call_skipped: false,
     provider_calls: 1,
     attempt_count: 1,
+    max_attempts: 1,
     retry_attempt_history: [],
     retry_error_codes: [],
     provider_transient_retry_attempted: false,
@@ -116,8 +127,10 @@ function row(index, overrides = {}) {
     ambiguity_status: "CLEAR",
     field_states: { year: { state: "VALUE", value: "2025" } },
     evaluation_decision_trace_packet: {
-      schema_version: "evaluation-decision-trace-packet-v10",
+      schema_version: "evaluation-decision-trace-packet-v12",
       deployment_git_sha: hex("e", 40),
+      deployment_id: planFixture.expected_deployment_id,
+      deployment_url: "candidate-fixed.vercel.app",
       benchmark_profile: "cold_algorithm_benchmark",
       trace_level: "evaluation",
       provider_request_identity: {
@@ -133,6 +146,9 @@ function row(index, overrides = {}) {
         provider_image_declared_content_mismatch_count: 0,
         provider_request_controls_sha256: hex("3"),
         provider_request_fingerprint: hex("4"),
+        provider_http_request_budget: 1,
+        provider_http_request_budget_enforced: true,
+        provider_http_retry_policy: "FORBIDDEN",
         provider_http_request_count: 1,
         provider_http_request_started_at: new Date(Date.UTC(2026, 6, 29, 0, 0, index)).toISOString(),
         provider_http_request_completed_at: new Date(Date.UTC(2026, 6, 29, 0, 0, index, 500)).toISOString(),
@@ -145,7 +161,7 @@ function row(index, overrides = {}) {
         text_verbosity: "medium"
       },
       replay_snapshot: {
-        schema_version: "evaluation-replay-snapshot-v4",
+        schema_version: "evaluation-replay-snapshot-v6",
         status: "COMPLETE",
         missing_components: [],
         provider_fields: { year: "2025", players: ["Test Player"] },
@@ -340,6 +356,36 @@ const retry = analyzeSameAssetStability(reportsFor(retryRows));
 assert.equal(retry.validity.status, "INVALID");
 assert.ok(retry.validity.errors.some((error) => error.code === "cold_algorithm_implicit_provider_retry_forbidden"));
 assert.ok(retry.validity.errors.some((error) => error.code === "PROVIDER_HTTP_REQUEST_COUNT_NOT_ONE"));
+
+const unenforcedBudgetRows = structuredClone(stableRows);
+unenforcedBudgetRows[0].evaluation_decision_trace_packet.provider_request_identity.provider_http_request_budget_enforced = false;
+const unenforcedBudget = analyzeSameAssetStability(reportsFor(unenforcedBudgetRows));
+assert.equal(unenforcedBudget.validity.status, "INVALID");
+assert.ok(unenforcedBudget.validity.errors.some((error) => error.code === "PROVIDER_HTTP_REQUEST_BUDGET_NOT_ENFORCED"));
+
+const wholeJobRetryBudgetRows = structuredClone(stableRows);
+wholeJobRetryBudgetRows[0].max_attempts = 4;
+const wholeJobRetryBudget = analyzeSameAssetStability(reportsFor(wholeJobRetryBudgetRows));
+assert.equal(wholeJobRetryBudget.validity.status, "INVALID");
+assert.ok(wholeJobRetryBudget.validity.errors.some((error) => error.code === "WHOLE_JOB_RETRY_BUDGET_NOT_ONE"));
+
+const deploymentBindingRows = structuredClone(stableRows);
+deploymentBindingRows[0].evaluation_decision_trace_packet.deployment_git_sha = hex("f", 40);
+const deploymentBinding = analyzeSameAssetStability(reportsFor(deploymentBindingRows));
+assert.equal(deploymentBinding.validity.status, "INVALID");
+assert.ok(deploymentBinding.validity.errors.some((error) => error.code === "PLAN_BINDING_DEPLOYMENT_GIT_SHA_MISMATCH"));
+
+const deploymentIdBindingRows = structuredClone(stableRows);
+deploymentIdBindingRows[0].evaluation_decision_trace_packet.deployment_id = "dpl_DifferentCandidate";
+const deploymentIdBinding = analyzeSameAssetStability(reportsFor(deploymentIdBindingRows));
+assert.equal(deploymentIdBinding.validity.status, "INVALID");
+assert.ok(deploymentIdBinding.validity.errors.some((error) => error.code === "PLAN_BINDING_RESULT_DEPLOYMENT_ID_MISMATCH"));
+
+const deploymentUrlBindingRows = structuredClone(stableRows);
+deploymentUrlBindingRows[0].evaluation_decision_trace_packet.deployment_url = "moving-alias.vercel.app";
+const deploymentUrlBinding = analyzeSameAssetStability(reportsFor(deploymentUrlBindingRows));
+assert.equal(deploymentUrlBinding.validity.status, "INVALID");
+assert.ok(deploymentUrlBinding.validity.errors.some((error) => error.code === "PLAN_BINDING_RESULT_DEPLOYMENT_URL_MISMATCH"));
 
 const duplicateSessionRows = structuredClone(stableRows);
 duplicateSessionRows[1].recognition_session_id = duplicateSessionRows[0].recognition_session_id;

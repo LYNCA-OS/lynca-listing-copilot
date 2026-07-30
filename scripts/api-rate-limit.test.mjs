@@ -84,6 +84,32 @@ assert.equal(result.allowed, true);
 assert.equal(result.remaining, 1);
 
 resetApiRateLimitBuckets();
+result = checkApiRateLimit({
+  req: makeRequest(),
+  scope: "writer_intake_commit_batch_rows",
+  limit: 2000,
+  cost: 1000,
+  windowMs: 60_000,
+  env,
+  now: 1_000,
+  identifier: "writer-a"
+});
+assert.equal(result.allowed, true);
+assert.equal(result.cost, 1000);
+assert.equal(result.remaining, 1000);
+result = checkApiRateLimit({
+  req: makeRequest(),
+  scope: "writer_intake_commit_batch_rows",
+  limit: 2000,
+  cost: 1001,
+  windowMs: 60_000,
+  env,
+  now: 2_000,
+  identifier: "writer-a"
+});
+assert.equal(result.allowed, false, "weighted cost must cap one-to-many database amplification");
+
+resetApiRateLimitBuckets();
 const overrideEnv = {
   ...env,
   LISTING_TITLE_RATE_LIMIT: "1"

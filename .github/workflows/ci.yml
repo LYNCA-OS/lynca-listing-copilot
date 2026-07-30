@@ -9,9 +9,25 @@ jobs:
   offline-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres17:
+        image: postgres:17@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      WRITER_INTAKE_PG17_TEST_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           package-manager-cache: false
@@ -28,6 +44,9 @@ jobs:
           set -u
           pass=0; fail=0; failed_list=""
           for t in scripts/*.test.mjs scripts/data-loop/*.test.mjs; do
+            case "$t" in
+              *.pg17.test.mjs) continue ;;
+            esac
             if node "$t" >/tmp/test-out.log 2>&1; then
               pass=$((pass+1))
             else
@@ -38,6 +57,14 @@ jobs:
           done
           echo "PASS=$pass FAIL=$fail"
           [ "$fail" -eq 0 ]
+      - name: Run required PostgreSQL 17 integration suites
+        env:
+          REQUIRE_POSTGRES17: "1"
+        run: |
+          set -euo pipefail
+          test -n "$WRITER_INTAKE_PG17_TEST_URL"
+          node scripts/admin-test-writer-final-replay.pg17.test.mjs
+          node scripts/check-writer-intake-production-schema.pg17.test.mjs
       - name: Syntax-check API handlers and app bundle
         run: |
           set -e

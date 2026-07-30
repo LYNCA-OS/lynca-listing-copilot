@@ -125,7 +125,8 @@ const requiredFunctions = Object.freeze([
   "track_c_storage_boundary_snapshot()",
   "fail_v4_recognition_job(text,text,jsonb,boolean,boolean)",
   "bump_active_catalog_snapshot_revision()",
-  "sync_writer_final_replay_from_session()"
+  "sync_writer_final_replay_from_session()",
+  "verify_v4_admin_test_feedback_isolation(text,text,text)"
 ]);
 
 // Trigger functions are part of the PostgreSQL catalog contract but PostgREST
@@ -150,7 +151,8 @@ const serviceOnlyFunctions = Object.freeze([
   "track_c_production_schema_catalog_snapshot()",
   "track_c_storage_boundary_snapshot()",
   "bump_active_catalog_snapshot_revision()",
-  "sync_writer_final_replay_from_session()"
+  "sync_writer_final_replay_from_session()",
+  "verify_v4_admin_test_feedback_isolation(text,text,text)"
 ]);
 
 const browserDeniedTables = requiredTables;
@@ -452,7 +454,8 @@ const requiredIndexes = Object.freeze([
   ["v4_writer_feedback_events", "v4_writer_feedback_submission_uidx"],
   ["v4_writer_feedback_events", "v4_writer_feedback_revision_uidx"],
   ["v4_learning_events", "v4_learning_feedback_event_uidx"],
-  ["v4_sem_validation_events", "v4_sem_validation_status_idx"]
+  ["v4_sem_validation_events", "v4_sem_validation_status_idx"],
+  ["listing_writer_final_replay", "listing_writer_final_replay_source_feedback_idx"]
 ]);
 
 function triggerContract(

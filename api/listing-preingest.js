@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { bindProductionRequestContext, instrumentProductionRequest } from "../lib/observability/production-events.mjs";
 import {
@@ -6,7 +8,13 @@ import {
 } from "../lib/listing/storage/canonical-image-references.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { assertTenantListingAssetObjectPath } from "../lib/listing/storage/storage-verification-store.mjs";
-import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
+import {
+  isTenantAuthError,
+  publicTenantAuthError,
+  requirePermission,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../lib/tenant/index.mjs";
 import { normalizeDurableListingAssetId } from "../lib/tenant/assets.mjs";
 import {
   buildPreingestionCropPlan,
@@ -25,6 +33,8 @@ import {
 } from "../lib/listing/preingestion/preingestion-bundle.mjs";
 import { paddleOcrConfig } from "../lib/listing/ocr/paddle-ocr-client.mjs";
 import { scheduleTrustedPreingestionOcrWake } from "../lib/listing/preingestion/internal-ocr-wake.mjs";
+import { workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
+import { admitWriterIntakeItem } from "../lib/listing/intake/writer-intake-store.mjs";
 
 const allowedBrowserSources = new Set([
   "listing_preingest_api",
@@ -52,9 +62,60 @@ function safeString(value) {
   return String(value || "").trim();
 }
 
+function requestHeader(req, name) {
+  const value = req?.headers?.[name] ?? req?.headers?.[String(name).toLowerCase()] ?? "";
+  return String(Array.isArray(value) ? value[0] || "" : value).trim();
+}
+
+export function isDedicatedPaidPreingestionWorkerRequest(req, env = process.env) {
+  const expected = safeString(env.V4_JOB_WORKER_SECRET);
+  const actual = requestHeader(req, workerSecretHeader);
+  const left = Buffer.from(actual);
+  const right = Buffer.from(expected);
+  return Boolean(expected)
+    && left.length === right.length
+    && crypto.timingSafeEqual(left, right);
+}
+
 function allowedBrowserSource(value) {
   const source = safeString(value);
   return allowedBrowserSources.has(source) ? source : "listing_preingest_api";
+}
+
+export function paidPreingestionRequested(payload = {}, { trustedInternal = false } = {}) {
+  return trustedInternal
+    ? payload?.enqueue_workers !== false
+    : payload?.enqueue_workers === true;
+}
+
+export async function authorizePaidPreingestion({
+  req,
+  payload = {},
+  context = {},
+  assetId = ""
+} = {}, {
+  isInternalRequest = isDedicatedPaidPreingestionWorkerRequest,
+  requirePermissionImpl = requirePermission,
+  admitItem = admitWriterIntakeItem,
+  env = process.env
+} = {}) {
+  const trustedInternal = isInternalRequest(req, env) === true;
+  if (!paidPreingestionRequested(payload, { trustedInternal })) {
+    return { authorized: false, trusted_internal: trustedInternal, reason: "no_paid_work_requested" };
+  }
+  if (trustedInternal) {
+    return { authorized: true, trusted_internal: true, reason: "internal_signed_request" };
+  }
+  requirePermissionImpl(context, TENANT_PERMISSIONS.CREATE_JOB);
+  await admitItem({
+    tenantId: context.tenantId,
+    operatorId: context.userId,
+    batchId: payload.writer_intake_batch_id,
+    itemId: payload.writer_intake_item_id,
+    assetId,
+    previousQueueJobId: payload.writer_intake_previous_queue_job_id
+  });
+  return { authorized: true, trusted_internal: false, reason: "committed_writer_intake" };
 }
 
 function normalizeCanonicalImages(canonical = {}, assetId = "", tenantId = "") {
@@ -120,7 +181,8 @@ function trustedExistingEvidencePatches(bundle = {}, images = []) {
     const provenance = patch?.provenance && typeof patch.provenance === "object"
       ? patch.provenance
       : {};
-    return safeString(patch?.source_type).toUpperCase() === "OCR"
+    const sourceType = safeString(patch?.source_type).toUpperCase();
+    return ["OCR", "OCR_TRACE"].includes(sourceType)
       && safeString(provenance.generated_by) === "preingestion_ocr_worker"
       && safeString(provenance.job_key).startsWith(jobPrefix)
       && sourceImageIds.has(safeString(patch?.source_image_id));
@@ -198,6 +260,27 @@ export default async function handler(req, res) {
       ok: false,
       code: "invalid_durable_listing_asset_id",
       message: "asset_id must be a server-created durable listing asset id."
+    });
+    return;
+  }
+
+  let paidAuthorization;
+  try {
+    paidAuthorization = await authorizePaidPreingestion({
+      req,
+      payload,
+      context,
+      assetId
+    });
+  } catch (error) {
+    const status = isTenantAuthError(error)
+      ? Number(error.statusCode || 403)
+      : Number(error?.statusCode || 409);
+    sendJson(res, status, {
+      ok: false,
+      retryable: error?.retryable === true,
+      code: String(error?.code || "writer_intake_paid_sensor_authorization_failed"),
+      message: "Paid pre-ingestion requires an internal signature or a committed writer-intake item bound to this canonical asset."
     });
     return;
   }
@@ -281,7 +364,7 @@ export default async function handler(req, res) {
       fetchImpl: globalThis.fetch
     });
     const durableBundle = writeResult.bundle || bundle;
-    const enqueueWorkers = payload.enqueue_workers !== false;
+    const enqueueWorkers = paidAuthorization.authorized === true;
     const paddleOcr = paddleOcrConfig(process.env);
     // Never create durable OCR work that the current runtime cannot consume.
     // A disabled verifier used to leave six queued rows per two-image card,

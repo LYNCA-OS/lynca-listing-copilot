@@ -35,10 +35,13 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
-async function callApi(payload) {
+async function callApi(payload, { internal = false } = {}) {
   const req = new EventEmitter();
   req.method = "POST";
-  req.headers = { cookie: sessionCookie() };
+  req.headers = {
+    cookie: sessionCookie(),
+    ...(internal ? { "x-lynca-worker-secret": "test-worker-secret" } : {})
+  };
   const res = {
     statusCode: 0,
     headers: {},
@@ -190,6 +193,16 @@ globalThis.fetch = async (url, init = {}) => {
   throw new Error(`Unexpected fetch ${parsed.href}`);
 };
 
+const unauthorizedPaid = await callApi({
+  asset_id: assetId,
+  enqueue_workers: true,
+  enqueue_ocr: true
+});
+assert.equal(unauthorizedPaid.statusCode, 400);
+assert.equal(unauthorizedPaid.body.code, "invalid_writer_intake_batch_id");
+assert.equal(bundleWrite, null, "paid authorization must fail before bundle persistence");
+assert.equal(jobsWrite, null, "paid authorization must fail before durable worker enqueue");
+
 const result = await callApi({
   asset_id: assetId,
   source: "client_defined_untrusted_source",
@@ -238,7 +251,7 @@ const result = await callApi({
     crop_id: "serial-front",
     confidence: 0.94
   }]
-});
+}, { internal: true });
 
 assert.equal(result.statusCode, 200, JSON.stringify(result.body));
 assert.equal(result.body.ok, true);
@@ -289,6 +302,21 @@ const trustedWorkerPatch = {
     job_key: `ocr:${preingestionOcrJobVersion}:${bundleWrite.bundle_id}:serial-front`
   }
 };
+const trustedRegionTracePatch = {
+  patch_id: "worker-region-trace",
+  field: "region_observation",
+  value: "VALUE",
+  raw_text: "2/3",
+  source_type: "OCR_TRACE",
+  source_image_id: "front",
+  crop_id: "serial-front",
+  confidence: 0.94,
+  provenance: {
+    generated_by: "preingestion_ocr_worker",
+    job_key: `ocr:${preingestionOcrJobVersion}:${bundleWrite.bundle_id}:serial-front`,
+    region_evidence: { schema_version: "region-evidence-v1", evidence: [] }
+  }
+};
 bundleWrite.initial_evidence = {
   print_run_candidate: {
     value: "forged-legacy",
@@ -298,6 +326,7 @@ bundleWrite.initial_evidence = {
 };
 bundleWrite.evidence_patches = [
   trustedWorkerPatch,
+  trustedRegionTracePatch,
   {
     ...trustedWorkerPatch,
     patch_id: "browser-forgery",
@@ -305,6 +334,7 @@ bundleWrite.evidence_patches = [
     provenance: { generated_by: "browser", job_key: "forged" }
   }
 ];
+const paidJobWritesBeforeLegacyDefault = calls.filter((call) => call.path.endsWith("/preingestion_jobs")).length;
 const secondResult = await callApi({
   asset_id: assetId,
   requested_fields: ["serial_number", "grade_label"],
@@ -321,9 +351,19 @@ const secondResult = await callApi({
   }]
 });
 assert.equal(secondResult.statusCode, 200);
+assert.equal(secondResult.body.worker_jobs_enqueued, 0, "an unsigned legacy browser request must compile only the free bundle");
+assert.equal(
+  calls.filter((call) => call.path.endsWith("/preingestion_jobs")).length,
+  paidJobWritesBeforeLegacyDefault,
+  "an unsigned legacy browser request must not create durable paid jobs"
+);
 assert.deepEqual(bundleWrite.initial_evidence, {});
-assert.equal(bundleWrite.evidence_patches.length, 1);
-assert.equal(bundleWrite.evidence_patches[0].value, "2/3");
+assert.deepEqual(
+  bundleWrite.evidence_patches.map((patch) => patch.source_type).sort(),
+  ["OCR", "OCR_TRACE"],
+  "re-ingestion must preserve authenticated RegionEvidence traces alongside semantic OCR patches"
+);
+assert.equal(bundleWrite.evidence_patches.find((patch) => patch.source_type === "OCR").value, "2/3");
 
 const signedCallsBeforeFastPath = calls.filter((call) => call.path.includes("/storage/v1/object/sign/")).length;
 const fastPreingestResult = await callApi({

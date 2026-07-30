@@ -68,6 +68,18 @@ for (const route of retiredVisualReviewRoutes) {
 }
 
 const workflow = readFileSync(".github/workflows/deploy-production.yml", "utf8");
+for (const action of [
+  "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+  "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444",
+  "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f"
+]) {
+  assert.match(workflow, new RegExp(action));
+}
+assert.doesNotMatch(
+  workflow,
+  /uses:\s*actions\/(?:checkout|setup-node|upload-artifact)@v\d+/,
+  "production release actions must be pinned to reviewed immutable SHAs"
+);
 const dispatchGate = workflow.indexOf("Fail closed unless this dispatch targets the current main commit");
 const setupNode = workflow.indexOf("actions/setup-node");
 const schemaPreflight = workflow.indexOf("Fail closed unless the Track C production schema is ready");
@@ -92,6 +104,23 @@ assert.equal(
   2,
   "direct Postgres catalog verification must remain the preferred production gate"
 );
+assert.equal(
+  [...workflow.matchAll(/node scripts\/check-writer-intake-production-schema\.mjs/g)].length,
+  2,
+  "writer intake schema must fail closed before and after the application deployment"
+);
+assert.equal(
+  [...workflow.matchAll(/test -n "\$POSTGRES_URL_NON_POOLING"\n\s+node scripts\/check-writer-intake-production-schema\.mjs/g)].length,
+  2,
+  "writer intake schema checks require the authoritative direct Postgres connection"
+);
+for (const evidence of [
+  "/tmp/writer-intake-production-schema-preflight.json",
+  "/tmp/writer-intake-production-schema-postdeploy.json"
+]) {
+  assert.match(workflow, new RegExp(evidence.replaceAll("/", "\\/")));
+}
+assert.match(workflow, /npm run check:writer-intake-ledger[\s\S]*npm run test:writer-intake-ledger/);
 assert.match(workflow, /SUPABASE_URL: \$\{\{ vars\.SUPABASE_URL \}\}/);
 assert.match(workflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
 assert.match(

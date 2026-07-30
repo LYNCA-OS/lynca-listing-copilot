@@ -4,7 +4,10 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { releaseSetItemSetSha256 } from "../lib/listing/evaluation/release-set-contract.mjs";
+import {
+  releaseSetItemDigestSchemaVersion,
+  releaseSetItemSetSha256
+} from "../lib/listing/evaluation/release-set-contract.mjs";
 import {
   goldenSemLaunchFields,
   goldenSemPartitionSchemaVersion,
@@ -54,7 +57,8 @@ function normalizedImages(item = {}) {
     bucket: cleanText(image.bucket) || null,
     object_path: cleanText(image.object_path || image.path) || null,
     url: cleanText(image.url || image.image_url) || null,
-    image_role: cleanText(image.image_role || image.role) || null
+    image_role: cleanText(image.image_role || image.role) || null,
+    content_sha256: cleanText(image.content_sha256) || null
   })).filter((image) => image.url || (image.bucket && image.object_path));
 }
 
@@ -102,25 +106,31 @@ export function buildReviewedTitleSemProxy({
       }
     };
   });
+  const evaluationTruthPolicy = {
+    field_ground_truth_class: "REVIEWED_TITLE_DERIVED_SEM_PROXY",
+    formal_golden_sem: false,
+    launch_gate_eligible: false,
+    writer_title_used_as_field_ground_truth: true,
+    title_visible_to_recognition: false,
+    missing_title_fields_are_unknown: true,
+    limitations: [
+      "Writer-reviewed title is authoritative at title level but was not manually reviewed field by field.",
+      "Parser omissions and field-boundary errors can affect this diagnostic proxy.",
+      "Use only for retrieval ON/OFF relative comparison, never for the formal SEM launch gate."
+    ]
+  };
   return {
     schema_version: goldenSemPartitionSchemaVersion,
     dataset_id: datasetId,
     partition: "diagnostic_proxy",
     generated_at: now().toISOString(),
     sem_standard_version: SEM_STANDARD_VERSION,
-    item_set_sha256: releaseSetItemSetSha256(items),
-    evaluation_truth_policy: {
-      field_ground_truth_class: "REVIEWED_TITLE_DERIVED_SEM_PROXY",
-      formal_golden_sem: false,
-      launch_gate_eligible: false,
-      title_visible_to_recognition: false,
-      missing_title_fields_are_unknown: true,
-      limitations: [
-        "Writer-reviewed title is authoritative at title level but was not manually reviewed field by field.",
-        "Parser omissions and field-boundary errors can affect this diagnostic proxy.",
-        "Use only for retrieval ON/OFF relative comparison, never for the formal SEM launch gate."
-      ]
-    },
+    item_set_digest_schema_version: releaseSetItemDigestSchemaVersion,
+    item_set_sha256: releaseSetItemSetSha256(items, {
+      split: "diagnostic_proxy",
+      evaluationTruthPolicy
+    }),
+    evaluation_truth_policy: evaluationTruthPolicy,
     data_policy: {
       training_eligible: false,
       threshold_tuning_eligible: false,

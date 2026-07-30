@@ -16,6 +16,7 @@ import {
   releaseV4ProviderCapacityForJob,
   releasePairedV4FinalJob,
   tryAcquireV4QueueKick,
+  v4CanonicalJobIdentitySha256,
   v4JobLeaseHeartbeatEnabled,
   v4JobLeaseHeartbeatIntervalMs,
   v4JobLanes,
@@ -33,10 +34,16 @@ import {
   authorizeFreshManualRetryJobs,
   canonicalizeQueueJobs,
   createQueueRequestBatchId,
+  queueRequestPriority,
   queueJobsRequireCreatePermission,
   queueJobsRequireRetryPermission
 } from "../api/v4/listing-job-enqueue.js";
-import { isV4CronRequest, isV4WorkerRequest, workerSecretHeader } from "../lib/listing/v4/jobs/worker-auth.mjs";
+import {
+  configuredWorkerSecret,
+  isV4CronRequest,
+  isV4WorkerRequest,
+  workerSecretHeader
+} from "../lib/listing/v4/jobs/worker-auth.mjs";
 import { persistV4WriterReadyAndReleaseCapacity } from "../lib/listing/v4/session/session-store.mjs";
 
 const originalDefaultCreateL1 = process.env.V4_QUEUE_DEFAULT_CREATE_L1;
@@ -89,6 +96,32 @@ assert.equal(row.payload.recognition_session_id, row.recognition_session_id);
 assert.ok(row.id.startsWith("v4job_"));
 assert.ok(row.recognition_session_id.startsWith("v4sess_"));
 
+const coldAlgorithmRow = normalizeV4JobInput({
+  batchId: "batch-cold-algorithm",
+  operatorId: "operator-1",
+  job: {
+    asset_id: "asset-cold-algorithm",
+    max_attempts: 9,
+    payload: {
+      provider_options: { recognition_benchmark_profile: "cold_algorithm_benchmark" }
+    }
+  }
+});
+assert.equal(coldAlgorithmRow.max_attempts, 9, "cold algorithm jobs retain their existing queue retry budget");
+
+const secondLookShadowRow = normalizeV4JobInput({
+  batchId: "batch-second-look-shadow",
+  operatorId: "operator-1",
+  job: {
+    asset_id: "asset-second-look-shadow",
+    max_attempts: 9,
+    payload: {
+      provider_options: { recognition_benchmark_profile: "cold_second_look_shadow_benchmark" }
+    }
+  }
+});
+assert.equal(secondLookShadowRow.max_attempts, 1, "second-look shadow jobs must forbid whole-job retry before execution");
+
 const repeatedRow = normalizeV4JobInput({
   batchId: "batch-test",
   operatorId: "operator-1",
@@ -109,9 +142,18 @@ const canonicalizedSelfExclusionJob = await canonicalizeQueueJobs({
   tenantId: "tenant-stage",
   jobs: [{
     asset_id: selfExclusionAssetId,
+    idempotency_key: "attacker-top-level-key",
+    priority: 0,
+    not_before: "2000-01-01T00:00:00.000Z",
+    max_attempts: 10,
     image_generation_id: selfExclusionGenerationId,
     payload: {
       asset_id: selfExclusionAssetId,
+      idempotencyKey: "attacker-nested-key",
+      l1Priority: 0,
+      l2_priority: 0,
+      notBefore: "2000-01-01T00:00:00.000Z",
+      maxAttempts: 10,
       image_generation_id: selfExclusionGenerationId,
       source_feedback_id: selfExclusionFeedbackId,
       images: [{ url: "data:image/jpeg;base64,client-transport-must-be-replaced" }]
@@ -135,6 +177,54 @@ assert.equal(
   "canonical image rebinding must preserve the blind-eval self-exclusion identity"
 );
 assert.equal(canonicalizedSelfExclusionJob[0].payload.images.length, 2);
+assert.equal(canonicalizedSelfExclusionJob[0].idempotency_key, undefined, "public callers cannot fork queue identity with a top-level idempotency key");
+assert.equal(canonicalizedSelfExclusionJob[0].payload.idempotencyKey, undefined, "public callers cannot fork queue identity with a nested idempotency key");
+assert.equal(canonicalizedSelfExclusionJob[0].max_attempts, undefined, "public callers cannot select a queue retry budget");
+assert.equal(canonicalizedSelfExclusionJob[0].payload.maxAttempts, undefined, "nested retry-count controls are server-owned");
+assert.equal(canonicalizedSelfExclusionJob[0].priority, undefined, "public callers cannot self-promote a background job");
+assert.equal(canonicalizedSelfExclusionJob[0].not_before, undefined, "public callers cannot select queue scheduling time");
+assert.equal(canonicalizedSelfExclusionJob[0].payload.l1Priority, undefined);
+assert.equal(canonicalizedSelfExclusionJob[0].payload.l2_priority, undefined);
+assert.equal(canonicalizedSelfExclusionJob[0].payload.notBefore, undefined);
+assert.equal(queueRequestPriority({ priority: 0 }), 100, "ordinary writer jobs have one server-owned priority");
+assert.equal(
+  queueRequestPriority({ priority: 0 }, { trustedQueueControls: true }),
+  0,
+  "only an explicitly trusted evaluation or internal request may retain request priority"
+);
+
+const replayIdentityBase = normalizeV4JobInput({
+  batchId: "batch-response-lost-replay",
+  tenantId: "tenant-response-lost-replay",
+  operatorId: "operator-response-lost-replay",
+  job: {
+    asset_id: "asset_aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    payload: {
+      client_asset_ref: "response-lost-card",
+      image_generation_id: "generation-response-lost",
+      clientTiming: { client_request_prepare_ms: 100 }
+    }
+  }
+});
+const replayIdentityRetry = normalizeV4JobInput({
+  batchId: "batch-response-lost-replay",
+  tenantId: "tenant-response-lost-replay",
+  operatorId: "operator-response-lost-replay",
+  job: {
+    asset_id: "asset_aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    payload: {
+      client_asset_ref: "response-lost-card",
+      image_generation_id: "generation-response-lost",
+      clientTiming: { client_request_prepare_ms: 101 }
+    }
+  }
+});
+assert.equal(replayIdentityRetry.id, replayIdentityBase.id);
+assert.equal(
+  v4CanonicalJobIdentitySha256(replayIdentityRetry),
+  v4CanonicalJobIdentitySha256(replayIdentityBase),
+  "response-loss replay telemetry must not change immutable queue identity"
+);
 
 const stageJobs = expandV4RecognitionStageJobs({
   batchId: "batch-staged",
@@ -1255,6 +1345,12 @@ assert.equal(missingReadTenant.error, "tenant_id_required");
 
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, { V4_JOB_WORKER_SECRET: "secret" }), true);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "wrong" } }, { V4_JOB_WORKER_SECRET: "secret" }), false);
+assert.equal(configuredWorkerSecret({ LYNCA_WORKER_SECRET: "legacy-secret" }), "");
+assert.equal(configuredWorkerSecret({ VERCEL_AUTOMATION_BYPASS_SECRET: "deployment-bypass" }), "");
+assert.equal(isV4WorkerRequest(
+  { headers: { [workerSecretHeader]: "deployment-bypass" } },
+  { VERCEL_AUTOMATION_BYPASS_SECRET: "deployment-bypass" }
+), false);
 assert.equal(isV4WorkerRequest({ headers: { [workerSecretHeader]: "secret" } }, {}), false);
 assert.equal(isV4CronRequest({ headers: { authorization: "Bearer cron-secret" } }, { CRON_SECRET: "cron-secret" }), true);
 assert.equal(isV4CronRequest({ headers: { authorization: "Bearer wrong" } }, { CRON_SECRET: "cron-secret" }), false);

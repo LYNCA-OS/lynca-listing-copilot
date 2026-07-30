@@ -3,7 +3,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { launchGateThresholds } from "../lib/listing/evaluation/launch-benchmark.mjs";
+import {
+  launchGateThresholds,
+  launchThroughputCheckpointSchemaVersion
+} from "../lib/listing/evaluation/launch-benchmark.mjs";
 import { datasetItems, runV4MultiTenantSoak } from "./run-v4-multi-tenant-soak.mjs";
 import { summarize } from "./v4-ebay-smoke.mjs";
 
@@ -108,7 +111,7 @@ export function deriveLaunchThroughputCheckpoint(fullReport = {}, level) {
     throw new Error(`No exact elapsed-time boundary exists for ${target}-card checkpoint.`);
   }
   return {
-    schema_version: "launch-throughput-checkpoint-v1",
+    schema_version: launchThroughputCheckpointSchemaVersion,
     generated_at: new Date().toISOString(),
     benchmark_level: target,
     benchmark_purpose: "LAUNCH_THROUGHPUT",

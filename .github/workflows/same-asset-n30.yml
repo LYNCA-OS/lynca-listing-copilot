@@ -1,0 +1,612 @@
+name: same-asset-n30
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_git_sha:
+        description: "Full Git SHA deployed to the immutable candidate"
+        required: true
+        type: string
+      expected_deployment_id:
+        description: "Pinned Vercel dpl_* deployment ID"
+        required: true
+        type: string
+      candidate_base_url:
+        description: "Immutable protected *.vercel.app candidate URL"
+        required: true
+        type: string
+      asset_preparation_run_id:
+        description: "Provider-output-contract run whose asset-preparation step passed"
+        required: true
+        default: "30438634081"
+        type: string
+
+run-name: same-asset N30 at ${{ inputs.expected_git_sha }} / ${{ inputs.expected_deployment_id }}
+
+concurrency:
+  group: same-asset-n30-${{ inputs.expected_git_sha }}
+  cancel-in-progress: false
+
+jobs:
+  bind-public-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      candidate_base_url: ${{ steps.bind.outputs.candidate_base_url }}
+      candidate_host: ${{ steps.bind.outputs.candidate_host }}
+    steps:
+      - name: Verify immutable N30 consumption-tag protection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N30_CONSUMPTION_RULESET_ID: "20036840"
+        run: |
+          gh api "/repos/$GITHUB_REPOSITORY/rulesets/$N30_CONSUMPTION_RULESET_ID" \
+            > /tmp/same-asset-n30-ruleset.json
+          jq -e \
+            '.name == "N30 immutable consumption tags"
+             and .target == "tag"
+             and .enforcement == "active"
+             and .bypass_actors == []
+             and .conditions.ref_name.include == ["refs/tags/eval-same-asset-n30-*"]
+             and .conditions.ref_name.exclude == []
+             and ([.rules[].type] | sort) == ["deletion", "update"]' \
+            /tmp/same-asset-n30-ruleset.json >/dev/null
+      - name: Validate inputs and bind the public production release without credentials
+        id: bind
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_SHA: ${{ github.sha }}
+          EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+          EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+          INPUT_CANDIDATE_BASE_URL: ${{ inputs.candidate_base_url }}
+        run: |
+          test "$DISPATCH_REF" = "refs/heads/main"
+          test "$EXPECTED_GIT_SHA" = "$DISPATCH_SHA"
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          const sha = String(process.env.EXPECTED_GIT_SHA || '').trim();
+          const deployment = String(process.env.EXPECTED_DEPLOYMENT_ID || '').trim();
+          if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('expected_git_sha must be a full lowercase Git SHA');
+          if (!/^dpl_[A-Za-z0-9]+$/.test(deployment)) throw new Error('expected_deployment_id is invalid');
+          const url = new URL(String(process.env.INPUT_CANDIDATE_BASE_URL || '').trim());
+          if (
+            url.protocol !== 'https:'
+            || !url.hostname.endsWith('.vercel.app')
+            || url.username
+            || url.password
+            || url.port
+            || (url.pathname !== '/' && url.pathname !== '')
+            || url.search
+            || url.hash
+          ) throw new Error('candidate_base_url must be a bare immutable https *.vercel.app origin');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, [
+            `candidate_base_url=${url.origin}`,
+            `candidate_host=${url.hostname}`,
+            ''
+          ].join('\n'));
+          NODE
+          curl -fsS --max-time 30 --max-redirs 0 --proto '=https' \
+            "https://listing.lyncafei.team/api/v4/health" \
+            -o /tmp/same-asset-public-release-binding.json
+          jq -e \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            --arg deployment "$EXPECTED_DEPLOYMENT_ID" \
+            --arg host "$(node -p "new URL(process.env.INPUT_CANDIDATE_BASE_URL).hostname")" \
+            '.ready == true and .deployment.vercel_env == "production" and .deployment.git_commit_sha == $sha and .deployment.deployment_id == $deployment and .deployment.deployment_url == $host' \
+            /tmp/same-asset-public-release-binding.json >/dev/null
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.expected_git_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install exact candidate test revision
+        run: npm ci --no-audit --no-fund
+      - name: Prove the N30 contract without production credentials
+        run: |
+          node scripts/run-same-asset-stability.test.mjs
+          node scripts/analyze-same-asset-stability.test.mjs
+          node scripts/evaluation-decision-trace-packet.test.mjs
+          node scripts/v4-spine.test.mjs
+
+  preflight:
+    needs: bind-public-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: Production
+    permissions:
+      actions: read
+      contents: read
+    env:
+      EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+      EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+      ASSET_PREPARATION_RUN_ID: ${{ inputs.asset_preparation_run_id }}
+      N30_CANDIDATE_BASE_URL: ${{ needs.bind-public-release.outputs.candidate_base_url }}
+      N30_CANDIDATE_HOST: ${{ needs.bind-public-release.outputs.candidate_host }}
+      FROZEN_ITEM_ID: 8b9d5803-a130-41ae-8042-22c9e92e4ea9
+      FROZEN_SOURCE_FINGERPRINT: 5f5335171b5c05bb6dcb0ef05372c481f93c468813063b3137166ad2df7bdca4
+      FROZEN_ASSET_ID: asset_e43b179e-f62a-4b54-b382-80eda5b702d7
+      FROZEN_CANONICAL_IMAGE_SET_SHA256: 913b5adccbb917fa11846598a9bbe03794d34246c11e4cdbed44f6f68314cd45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.expected_git_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install exact candidate test revision
+        run: npm ci --no-audit --no-fund
+      - name: Rebind the immutable candidate through the public production release
+        run: |
+          curl -fsS --max-time 30 --max-redirs 0 --proto '=https' \
+            "https://listing.lyncafei.team/api/v4/health" \
+            -o /tmp/same-asset-public-release-binding.json
+          jq -e \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            --arg deployment "$EXPECTED_DEPLOYMENT_ID" \
+            --arg host "$N30_CANDIDATE_HOST" \
+            '.ready == true and .deployment.vercel_env == "production" and .deployment.git_commit_sha == $sha and .deployment.deployment_id == $deployment and .deployment.deployment_url == $host' \
+            /tmp/same-asset-public-release-binding.json >/dev/null
+      - name: Fail closed on revision drift before zero-paid preflight
+        run: |
+          test -n "$N30_CANDIDATE_BASE_URL"
+          test -n "$N30_CANDIDATE_HOST"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_GIT_SHA"
+      - name: Verify immutable candidate SHA and deployment before any paid call
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          test -n "$VERCEL_AUTOMATION_BYPASS_SECRET"
+          curl -fsS --max-time 30 \
+            -H "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+            "$N30_CANDIDATE_BASE_URL/api/v4/health" \
+            -o /tmp/same-asset-candidate-preflight.json
+          jq -e \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            --arg deployment "$EXPECTED_DEPLOYMENT_ID" \
+            --arg host "$N30_CANDIDATE_HOST" \
+            '.ready == true and .deployment.git_commit_sha == $sha and .deployment.deployment_id == $deployment and .deployment.deployment_url == $host' \
+            /tmp/same-asset-candidate-preflight.json >/dev/null
+      - name: Verify the cloud preparation provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$ASSET_PREPARATION_RUN_ID" \
+            > /tmp/same-asset-preparation-run.json
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$ASSET_PREPARATION_RUN_ID/jobs?per_page=100" \
+            > /tmp/same-asset-preparation-jobs.json
+          jq -e '.event == "workflow_dispatch" and .name == "provider-output-contract-paired20"' \
+            /tmp/same-asset-preparation-run.json >/dev/null
+          jq -e '[.jobs[].steps[] | select(.name == "Prepare and canonically verify all 20 assets without Provider calls" and .conclusion == "success")] | length == 1' \
+            /tmp/same-asset-preparation-jobs.json >/dev/null
+      - name: Download the zero-Provider durable-asset proof
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: provider-output-contract-paired20-evidence
+          path: /tmp/same-asset-preparation
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.asset_preparation_run_id }}
+      - name: Freeze exactly one predeclared familiar Development asset
+        run: |
+          find /tmp/same-asset-preparation -type f -name familiar10.json \
+            -exec cp '{}' /tmp/familiar10.json \; -quit
+          find /tmp/same-asset-preparation -type f -name familiar10-labels.jsonl \
+            -exec cp '{}' /tmp/familiar10-labels.jsonl \; -quit
+          find /tmp/same-asset-preparation -type f -name provider-output-contract-assets.json \
+            -exec cp '{}' /tmp/provider-output-contract-assets.json \; -quit
+          find /tmp/same-asset-preparation -type f -name provider-output-contract-asset-preparation.json \
+            -exec cp '{}' /tmp/provider-output-contract-asset-preparation.json \; -quit
+          test -s /tmp/familiar10.json
+          test -s /tmp/familiar10-labels.jsonl
+          test -s /tmp/provider-output-contract-assets.json
+          test -s /tmp/provider-output-contract-asset-preparation.json
+          jq -e '.zero_enqueue_or_provider_calls == true and .all_assets_uploaded_and_canonically_verified == true' \
+            /tmp/provider-output-contract-asset-preparation.json >/dev/null
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { assertFrozenTargetedAssistCohort, TARGETED_ASSIST_PAIRED_COHORT_SHA256, TARGETED_ASSIST_PAIRED_LABEL_SHA256, TARGETED_ASSIST_PAIRED_PARTITION } from './scripts/run-targeted-assist-paired-eval.mjs';
+          import { durableSourceFingerprint } from './scripts/v4-ebay-smoke.mjs';
+          await assertFrozenTargetedAssistCohort({
+            cohort: 'FAMILIAR',
+            datasetPath: '/tmp/familiar10.json',
+            sealedLabelsPath: '/tmp/familiar10-labels.jsonl',
+            expectedSha256: TARGETED_ASSIST_PAIRED_COHORT_SHA256.FAMILIAR,
+            expectedLabelsSha256: TARGETED_ASSIST_PAIRED_LABEL_SHA256.FAMILIAR,
+            expectedPartition: TARGETED_ASSIST_PAIRED_PARTITION
+          });
+          const dataset = JSON.parse(fs.readFileSync('/tmp/familiar10.json', 'utf8'));
+          const items = dataset.items || [];
+          const index = items.findIndex((item) => item.source_feedback_id === process.env.FROZEN_ITEM_ID);
+          if (index < 0) throw new Error('predeclared familiar item is missing');
+          const fingerprint = await durableSourceFingerprint(items[index], index);
+          if (fingerprint !== process.env.FROZEN_SOURCE_FINGERPRINT) throw new Error('predeclared source fingerprint drifted');
+          const source = JSON.parse(fs.readFileSync('/tmp/provider-output-contract-assets.json', 'utf8'));
+          const entry = source.entries?.[fingerprint];
+          if (!entry || entry.asset_id !== process.env.FROZEN_ASSET_ID) throw new Error('predeclared durable asset is missing');
+          if (entry.canonical_image_set_sha256 !== process.env.FROZEN_CANONICAL_IMAGE_SET_SHA256) {
+            throw new Error('predeclared canonical image set drifted');
+          }
+          fs.writeFileSync('/tmp/same-asset-one-verified-asset.json', `${JSON.stringify({
+            schema_version: 'listing-verified-asset-cache-v1',
+            updated_at: source.updated_at,
+            entries: { [fingerprint]: entry }
+          }, null, 2)}\n`, { mode: 0o400 });
+          NODE
+          jq -e '(.entries | length) == 1' /tmp/same-asset-one-verified-asset.json >/dev/null
+      - name: Reverify canonical storage without enqueue, OCR, or Provider
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { createPreparationOnlyFetch, verifyCanonicalPreparedAsset } from './scripts/materialize-targeted-assist-verified-assets.mjs';
+          const dataset = JSON.parse(fs.readFileSync('/tmp/familiar10.json', 'utf8'));
+          const item = dataset.items.find((row) => row.source_feedback_id === process.env.FROZEN_ITEM_ID);
+          const cache = JSON.parse(fs.readFileSync('/tmp/same-asset-one-verified-asset.json', 'utf8'));
+          const entry = cache.entries[process.env.FROZEN_SOURCE_FINGERPRINT];
+          const guardedFetch = createPreparationOnlyFetch(globalThis.fetch);
+          const verified = await verifyCanonicalPreparedAsset({
+            entry,
+            fingerprint: process.env.FROZEN_SOURCE_FINGERPRINT,
+            item,
+            env: process.env,
+            fetchImpl: guardedFetch
+          });
+          const report = {
+            schema_version: 'same-asset-one-asset-reverification-v1',
+            zero_enqueue_ocr_or_provider_calls: true,
+            guarded_network_request_count: guardedFetch.requestCount,
+            asset_id: entry.asset_id,
+            canonical_image_set_sha256: verified.contract.canonical_image_set_sha256,
+            canonical_primary_content_sha256: verified.contract.canonical_primary_content_sha256,
+            verification_attempts: verified.attempts
+          };
+          fs.writeFileSync('/tmp/same-asset-one-asset-reverification.json', `${JSON.stringify(report, null, 2)}\n`);
+          NODE
+      - name: Prove the production session before consuming authorization
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          test -n "$VERCEL_AUTOMATION_BYPASS_SECRET"
+          test -n "$METAVERSE_USERNAME"
+          test -n "$METAVERSE_PASSWORD"
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { login, readReusableSessionCookie } from './scripts/v4-ebay-smoke.mjs';
+          const cookie = await login({
+            baseUrl: process.env.N30_CANDIDATE_BASE_URL,
+            username: process.env.METAVERSE_USERNAME,
+            password: process.env.METAVERSE_PASSWORD
+          });
+          fs.writeFileSync('/tmp/same-asset-session-cookie.txt', cookie, { mode: 0o400 });
+          const verifiedCookie = await readReusableSessionCookie('/tmp/same-asset-session-cookie.txt');
+          const response = await fetch(`${process.env.N30_CANDIDATE_BASE_URL}/api/session`, {
+            redirect: 'error',
+            headers: {
+              cookie: verifiedCookie,
+              'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+            },
+            signal: AbortSignal.timeout(30000)
+          });
+          const session = await response.json();
+          if (!response.ok || session?.authenticated !== true) {
+            throw new Error('candidate session proof failed');
+          }
+          NODE
+      - name: Seal the completed zero-paid preflight packet
+        run: |
+          rm -f /tmp/same-asset-session-cookie.txt
+          mkdir -p /tmp/same-asset-n30-zero-paid-preflight
+          cp \
+            /tmp/same-asset-candidate-preflight.json \
+            /tmp/same-asset-public-release-binding.json \
+            /tmp/same-asset-preparation-run.json \
+            /tmp/same-asset-preparation-jobs.json \
+            /tmp/provider-output-contract-asset-preparation.json \
+            /tmp/familiar10.json \
+            /tmp/familiar10-labels.jsonl \
+            /tmp/same-asset-one-verified-asset.json \
+            /tmp/same-asset-one-asset-reverification.json \
+            /tmp/same-asset-n30-zero-paid-preflight/
+      - name: Upload the zero-paid preflight packet
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: same-asset-n30-zero-paid-preflight-${{ inputs.expected_git_sha }}
+          retention-days: 1
+          if-no-files-found: error
+          path: /tmp/same-asset-n30-zero-paid-preflight
+
+  consume-authorization:
+    needs: [bind-public-release, preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: write
+    env:
+      AUTHORIZATION_RECEIPT_ARTIFACT: same-asset-n30-authorization-${{ inputs.expected_git_sha }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+    steps:
+      - name: Consume this exact production SHA only after the paid-ready handshake
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+          EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+          PAID_READY_ARTIFACT: same-asset-n30-paid-ready-${{ inputs.expected_git_sha }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+        run: |
+          test "${#EXPECTED_GIT_SHA}" = 40
+          ready=false
+          for _ in $(seq 1 180); do
+            gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+              > /tmp/same-asset-n30-artifacts.json
+            if jq -e --arg name "$PAID_READY_ARTIFACT" \
+              '[.artifacts[] | select(.name == $name and .expired == false)] | length == 1' \
+              /tmp/same-asset-n30-artifacts.json >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 5
+          done
+          test "$ready" = true
+          artifact_id="$(jq -r --arg name "$PAID_READY_ARTIFACT" \
+            '.artifacts[] | select(.name == $name and .expired == false) | .id' \
+            /tmp/same-asset-n30-artifacts.json)"
+          test "$artifact_id" -gt 0
+          mkdir -p /tmp/same-asset-n30-paid-ready
+          gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+            > /tmp/same-asset-n30-paid-ready.zip
+          unzip -q /tmp/same-asset-n30-paid-ready.zip -d /tmp/same-asset-n30-paid-ready
+          jq -e \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            --arg deployment "$EXPECTED_DEPLOYMENT_ID" \
+            --arg run "$GITHUB_RUN_ID" \
+            --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            '.schema_version == "same-asset-n30-paid-ready-v2" and .git_sha == $sha and .deployment_id == $deployment and .run_id == $run and .run_attempt == $attempt and .provider_calls == 0' \
+            /tmp/same-asset-n30-paid-ready/same-asset-n30-paid-ready.json >/dev/null
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            > /tmp/same-asset-n30-jobs.json
+          jq -e '[.jobs[] | select(.name == "n30" and .status == "in_progress")] | length == 1' \
+            /tmp/same-asset-n30-jobs.json >/dev/null
+          PERMANENT_CONSUMPTION_REF="refs/tags/eval-same-asset-n30-${EXPECTED_GIT_SHA}"
+          CURRENT_RUN_AUTHORIZATION_REF="refs/tags/eval-same-asset-n30-${EXPECTED_GIT_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          gh api --method POST "/repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="$PERMANENT_CONSUMPTION_REF" \
+            -f sha="$EXPECTED_GIT_SHA" \
+            > /tmp/same-asset-n30-consumption.json
+          jq -e --arg ref "$PERMANENT_CONSUMPTION_REF" --arg sha "$EXPECTED_GIT_SHA" \
+            '.ref == $ref and .object.sha == $sha' /tmp/same-asset-n30-consumption.json >/dev/null
+          gh api --method POST "/repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="$CURRENT_RUN_AUTHORIZATION_REF" \
+            -f sha="$EXPECTED_GIT_SHA" \
+            > /tmp/same-asset-n30-current-run-authorization.json
+          jq -e --arg ref "$CURRENT_RUN_AUTHORIZATION_REF" --arg sha "$EXPECTED_GIT_SHA" \
+            '.ref == $ref and .object.sha == $sha' /tmp/same-asset-n30-current-run-authorization.json >/dev/null
+          jq -n \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            --arg deployment "$EXPECTED_DEPLOYMENT_ID" \
+            --arg run "$GITHUB_RUN_ID" \
+            --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg actor "$GITHUB_ACTOR" \
+            --arg actor_id "$GITHUB_ACTOR_ID" \
+            --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --slurpfile permanent /tmp/same-asset-n30-consumption.json \
+            --slurpfile current /tmp/same-asset-n30-current-run-authorization.json \
+            '{schema_version:"same-asset-n30-authorization-receipt-v1",git_sha:$sha,deployment_id:$deployment,run_id:$run,run_attempt:$attempt,actor:$actor,actor_id:$actor_id,created_at:$created_at,permanent_ref:$permanent[0],attempt_ref:$current[0]}' \
+            > /tmp/same-asset-n30-authorization-receipt.json
+      - name: Persist the exact successful-consume receipt
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ env.AUTHORIZATION_RECEIPT_ARTIFACT }}
+          retention-days: 30
+          if-no-files-found: error
+          path: /tmp/same-asset-n30-authorization-receipt.json
+
+  n30:
+    needs: [bind-public-release, preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: Production
+    permissions:
+      actions: read
+      contents: read
+    env:
+      EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+      EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+      N30_CANDIDATE_BASE_URL: ${{ needs.bind-public-release.outputs.candidate_base_url }}
+      FROZEN_ITEM_ID: 8b9d5803-a130-41ae-8042-22c9e92e4ea9
+      PAID_READY_ARTIFACT: same-asset-n30-paid-ready-${{ inputs.expected_git_sha }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+      RUN_AUTHORIZATION_TAG: eval-same-asset-n30-${{ inputs.expected_git_sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+      PERMANENT_CONSUMPTION_TAG: eval-same-asset-n30-${{ inputs.expected_git_sha }}
+      AUTHORIZATION_RECEIPT_ARTIFACT: same-asset-n30-authorization-${{ inputs.expected_git_sha }}-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.expected_git_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - name: Install exact candidate execution revision
+        run: npm ci --no-audit --no-fund
+      - name: Download the completed zero-paid preflight packet
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: same-asset-n30-zero-paid-preflight-${{ inputs.expected_git_sha }}
+          path: /tmp/same-asset-n30-zero-paid-preflight
+      - name: Reauthenticate immediately before the authorized paid run
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          test -n "$VERCEL_AUTOMATION_BYPASS_SECRET"
+          test -n "$METAVERSE_USERNAME"
+          test -n "$METAVERSE_PASSWORD"
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          import { login, readReusableSessionCookie } from './scripts/v4-ebay-smoke.mjs';
+          const cookie = await login({
+            baseUrl: process.env.N30_CANDIDATE_BASE_URL,
+            username: process.env.METAVERSE_USERNAME,
+            password: process.env.METAVERSE_PASSWORD
+          });
+          fs.writeFileSync('/tmp/same-asset-session-cookie.txt', cookie, { mode: 0o400 });
+          const verifiedCookie = await readReusableSessionCookie('/tmp/same-asset-session-cookie.txt');
+          const response = await fetch(`${process.env.N30_CANDIDATE_BASE_URL}/api/session`, {
+            redirect: 'error',
+            headers: {
+              cookie: verifiedCookie,
+              'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+            },
+            signal: AbortSignal.timeout(30000)
+          });
+          const session = await response.json();
+          if (!response.ok || session?.authenticated !== true) {
+            throw new Error('candidate session proof failed before paid-ready handshake');
+          }
+          NODE
+      - name: Validate the exact N30 plan without Provider calls
+        run: |
+          node scripts/run-same-asset-stability.mjs \
+            --dataset /tmp/same-asset-n30-zero-paid-preflight/familiar10.json \
+            --sealed-labels /tmp/same-asset-n30-zero-paid-preflight/familiar10-labels.jsonl \
+            --frozen-cohort FAMILIAR \
+            --item-id "$FROZEN_ITEM_ID" \
+            --verified-asset-cache /tmp/same-asset-n30-zero-paid-preflight/same-asset-one-verified-asset.json \
+            --base-url "$N30_CANDIDATE_BASE_URL" \
+            --expected-git-sha "$EXPECTED_GIT_SHA" \
+            --expected-deployment-id "$EXPECTED_DEPLOYMENT_ID" \
+            --model gpt-5-mini \
+            --runs 30 \
+            --out-dir /tmp/same-asset-n30-paid-ready-plan \
+            > /tmp/same-asset-n30-paid-ready-plan.json
+          jq -e \
+            '.execution_mode == "DRY_RUN" and .planned_runs == 30 and .provider_http_call_hard_budget == 30' \
+            /tmp/same-asset-n30-paid-ready-plan.json >/dev/null
+      - name: Verify the paid-call authorization secret before paid-ready
+        env:
+          LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
+        run: test -n "$LAUNCH_GATE_EVAL_SECRET"
+      - name: Publish the paid-ready handshake after every zero-paid check
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_GIT_SHA"
+          test -s /tmp/same-asset-n30-zero-paid-preflight/familiar10.json
+          test -s /tmp/same-asset-n30-zero-paid-preflight/familiar10-labels.jsonl
+          test -s /tmp/same-asset-n30-zero-paid-preflight/same-asset-one-verified-asset.json
+          jq -n \
+            --arg git_sha "$EXPECTED_GIT_SHA" \
+            --arg deployment_id "$EXPECTED_DEPLOYMENT_ID" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            '{schema_version:"same-asset-n30-paid-ready-v2",git_sha:$git_sha,deployment_id:$deployment_id,run_id:$run_id,run_attempt:$run_attempt,provider_calls:0}' \
+            > /tmp/same-asset-n30-paid-ready.json
+      - name: Expose only the non-secret paid-ready handshake
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ${{ env.PAID_READY_ARTIFACT }}
+          retention-days: 1
+          if-no-files-found: error
+          path: /tmp/same-asset-n30-paid-ready.json
+      - name: Wait for and verify the late-bound exact-SHA authorization
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          authorized=false
+          for _ in $(seq 1 1800); do
+            gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+              > /tmp/same-asset-n30-current-attempt-jobs.json
+            consume_status="$(jq -r '[.jobs[] | select(.name == "consume-authorization")] | if length == 1 then .[0].status else "missing" end' /tmp/same-asset-n30-current-attempt-jobs.json)"
+            consume_conclusion="$(jq -r '[.jobs[] | select(.name == "consume-authorization")] | if length == 1 then (.[0].conclusion // "") else "" end' /tmp/same-asset-n30-current-attempt-jobs.json)"
+            if [ "$consume_status" = "completed" ]; then
+              test "$consume_conclusion" = "success"
+              gh api "/repos/$GITHUB_REPOSITORY/git/ref/tags/$PERMANENT_CONSUMPTION_TAG" \
+                > /tmp/same-asset-n30-permanent-consumption.json
+              gh api "/repos/$GITHUB_REPOSITORY/git/ref/tags/$RUN_AUTHORIZATION_TAG" \
+                > /tmp/same-asset-n30-consumption.json
+              authorized=true
+              break
+            fi
+            sleep 2
+          done
+          test "$authorized" = true
+          jq -e \
+            --arg ref "refs/tags/$PERMANENT_CONSUMPTION_TAG" \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            '.ref == $ref and .object.sha == $sha' \
+            /tmp/same-asset-n30-permanent-consumption.json >/dev/null
+          jq -e \
+            --arg ref "refs/tags/$RUN_AUTHORIZATION_TAG" \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            '.ref == $ref and .object.sha == $sha' \
+            /tmp/same-asset-n30-consumption.json >/dev/null
+      - name: Download and validate the successful-consume receipt
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: ${{ env.AUTHORIZATION_RECEIPT_ARTIFACT }}
+          path: /tmp/same-asset-n30-authorization
+      - name: Bind the authorization receipt to this run attempt
+        run: |
+          jq -e \
+            --arg sha "$EXPECTED_GIT_SHA" \
+            --arg deployment "$EXPECTED_DEPLOYMENT_ID" \
+            --arg run "$GITHUB_RUN_ID" \
+            --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            '.schema_version == "same-asset-n30-authorization-receipt-v1"
+             and .git_sha == $sha
+             and .deployment_id == $deployment
+             and .run_id == $run
+             and .run_attempt == $attempt
+             and (.actor | type == "string" and length > 0)
+             and (.actor_id | type == "string" and length > 0)
+             and (.created_at | fromdateiso8601 > 0)
+             and .permanent_ref.object.sha == $sha
+             and .attempt_ref.object.sha == $sha' \
+            /tmp/same-asset-n30-authorization/same-asset-n30-authorization-receipt.json >/dev/null
+      - name: Run the predeclared sequential N30
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          LAUNCH_GATE_EVAL_SECRET: ${{ secrets.LAUNCH_GATE_EVAL_SECRET }}
+        run: |
+          test -n "$VERCEL_AUTOMATION_BYPASS_SECRET"
+          test -n "$LAUNCH_GATE_EVAL_SECRET"
+          node scripts/run-same-asset-stability.mjs \
+            --dataset /tmp/same-asset-n30-zero-paid-preflight/familiar10.json \
+            --sealed-labels /tmp/same-asset-n30-zero-paid-preflight/familiar10-labels.jsonl \
+            --frozen-cohort FAMILIAR \
+            --item-id "$FROZEN_ITEM_ID" \
+            --verified-asset-cache /tmp/same-asset-n30-zero-paid-preflight/same-asset-one-verified-asset.json \
+            --base-url "$N30_CANDIDATE_BASE_URL" \
+            --expected-git-sha "$EXPECTED_GIT_SHA" \
+            --expected-deployment-id "$EXPECTED_DEPLOYMENT_ID" \
+            --model gpt-5-mini \
+            --runs 30 \
+            --out-dir /tmp/same-asset-n30 \
+            --request-timeout-ms 90000 \
+            --l2-wait-ms 90000 \
+            --session-cookie-file /tmp/same-asset-session-cookie.txt \
+            --execute \
+            --confirm-planned-runs 30
+      - name: Upload immutable N30 evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: same-asset-n30-evidence-${{ inputs.expected_git_sha }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            /tmp/same-asset-n30-zero-paid-preflight
+            /tmp/same-asset-n30-authorization
+            /tmp/same-asset-n30-permanent-consumption.json
+            /tmp/same-asset-n30-consumption.json
+            /tmp/same-asset-n30

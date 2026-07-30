@@ -80,6 +80,110 @@ The second list must show all four versions in remote history. Stop on the first
 
 ## 3. Run the read-only schema preflight
 
+### Writer Intake v1 maintenance addendum
+
+Writer Intake is a later, separately reviewed expansion at migration
+`20260730065921_v4_writer_intake_ledger_v1.sql`. It is not applied by the
+application deploy. Before deploying application code that imports
+`lib/listing/intake/*`, use the same approved migration-history-aware runner and
+apply this migration in its own maintenance window.
+
+The gate is exact, not “apply everything pending”:
+
+1. pin the reviewed `main` SHA and record the migration SHA-256;
+2. verify the production history through the immediately preceding expected
+   migration for that SHA;
+3. require the dry-run pending set to contain exactly `20260730065921`, with no
+   missing, duplicate, earlier, or later migration;
+4. verify the read-only source audit still accounts for every existing
+   `FINALIZED` asset before allowing the write;
+5. run `supabase migration up` without `--include-all` or history repair;
+6. re-list history and require `20260730065921` present exactly once;
+7. run the Writer Intake schema checker below before reopening application
+   deployment.
+
+```bash
+shasum -a 256 supabase/migrations/20260730065921_v4_writer_intake_ledger_v1.sql
+
+export PGOPTIONS='-c lock_timeout=5s -c statement_timeout=15min'
+supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"
+supabase db push --dry-run --db-url "$POSTGRES_URL_NON_POOLING"
+# Human/automation approval: the only pending version is 20260730065921.
+supabase migration up --db-url "$POSTGRES_URL_NON_POOLING"
+supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"
+
+node scripts/check-writer-intake-production-schema.mjs \
+  --out /tmp/writer-intake-production-schema-maintenance.json
+
+unset PGOPTIONS
+```
+
+This migration takes locks on `listing_assets`, creates two operational ledger
+tables, installs two service-only RPCs, and may backfill 2,684 known FINALIZED
+rows from the maximum verified clock of their complete current canonical
+original set. The checked-in read-only audit found zero rows without that
+source, but the migration itself still fails closed if production changed.
+Do not substitute migration-time `now()` for a missing historical clock.
+
+The deployment workflow now requires a direct `POSTGRES_URL_NON_POOLING` Writer
+Intake preflight both before and after the code deploy. REST/OpenAPI is not an
+acceptable fallback for this contract because it cannot prove trigger, function
+body, exact index/constraint, ACL, or canonical queue-link semantics.
+
+### Administrator Journey replay-isolation maintenance addendum
+
+Administrator Production Writer Journeys deliberately exercise real ACCEPT and
+EDIT persistence with a synthetic title. That event is audit evidence only; it
+must never become `listing_writer_final_replay` authority. The database boundary
+for this rule is migration
+`20260730120000_admin_test_writer_final_replay_isolation_v1.sql`, applied only
+after Writer Intake migration `20260730065921` is present exactly once.
+
+The reviewed migration checksum is:
+
+```text
+ff0a401eedb97f6ecbd1a9df21aa4ced66921920b7222c68f2dd5544f8d6934f  supabase/migrations/20260730120000_admin_test_writer_final_replay_isolation_v1.sql
+```
+
+Apply it in its own approved maintenance window. Before any write, migration
+history must be complete through `20260730065921`; the dry-run pending set must
+be exactly `{20260730120000}`. A missing predecessor, duplicate history row, or
+any additional pending version blocks the operation.
+
+```bash
+shasum -a 256 \
+  supabase/migrations/20260730120000_admin_test_writer_final_replay_isolation_v1.sql
+# Require the exact checksum recorded above.
+
+export PGOPTIONS='-c lock_timeout=5s -c statement_timeout=15min'
+supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"
+supabase db push --dry-run --db-url "$POSTGRES_URL_NON_POOLING"
+# Human/automation approval: pending set is exactly {20260730120000}.
+supabase migration up --db-url "$POSTGRES_URL_NON_POOLING"
+supabase migration list --db-url "$POSTGRES_URL_NON_POOLING"
+
+node scripts/check-admin-test-replay-production-schema.mjs \
+  --out /tmp/admin-test-replay-production-schema-maintenance.json
+
+unset PGOPTIONS
+```
+
+The migration preserves audit facts. Its only data repair tombstones active
+replay rows whose current `source_feedback_event_id` still points to an
+immutable `ADMIN_TEST_ONLY` feedback event; a row already superseded by normal
+writer feedback is not changed. It also makes the trigger fail closed unless
+the linked feedback explicitly says `OBSERVE_ONLY`, installs a service-only
+bounded proof RPC, and adds the exact remediation lookup index.
+
+The checker is mandatory before and after application deployment and requires
+the direct PostgreSQL URL. It opens a repeatable-read, read-only transaction and
+attests the migration history and checksum, function owner/security/search path
+and ACL, trigger timing/events/update columns/WHEN/body ordering, exact partial
+index, and zero active `ADMIN_TEST_ONLY` replay rows. REST/OpenAPI is not an
+acceptable fallback. On failure, keep application deployment closed and use a
+reviewed forward-fix migration; never edit migration history or run a broad
+pending migration set to make the gate green.
+
 The preflight opens `BEGIN READ ONLY` and checks the tenant/RBAC foundation, tenant-scoped core tables, RLS policies, immutable-tenant triggers, retry projection, settings, OCR durable lease columns/index, key RPCs, and validated constraints. It also fails closed unless browser roles have no direct `storage.objects` ACL and the paid-execution heartbeat is service-only with `RUNNING` + owner + unexpired guards.
 
 ```bash

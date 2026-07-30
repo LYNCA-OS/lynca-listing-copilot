@@ -8,7 +8,11 @@ import {
   applyCandidateDecisionStage,
   candidateDecisionHeuristicVersion
 } from "../lib/listing/candidates/candidate-decision-stage.mjs";
-import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import {
+  buildCandidatePreApplicationReplayManifest,
+  buildCandidatePreApplicationEvidenceSnapshot,
+  buildCandidateSelectionPass as buildCandidateSelectionPassImpl
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import {
   buildVectorCandidatePacket,
   rebindCandidateToObservedFields,
@@ -16,6 +20,48 @@ import {
 } from "../lib/listing/retrieval/vector-candidate-packet.mjs";
 import { buildV4CandidateControlPlaneTrace } from "../lib/listing/v4/candidates/control-plane-adapter.mjs";
 import { buildEvaluationDecisionTracePacket } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
+
+const candidateTestImageContext = Object.freeze({
+  tenant_id: "tenant_candidate_test",
+  asset_id: "asset-candidate-test",
+  image_generation_id: "asset-candidate-test",
+  images: [Object.freeze({
+    image_id: "front",
+    object_path: "tenants/tenant_candidate_test/listing-assets/2026-07-30/asset-candidate-test/front.jpg",
+    content_sha256: "1".repeat(64),
+    tenant_id: "tenant_candidate_test",
+    asset_id: "asset-candidate-test",
+    image_generation_id: "asset-candidate-test",
+    storage_verified: true
+  })]
+});
+
+function buildCandidateSelectionPass(args = {}) {
+  const result = args.result || {};
+  const observed = result.raw_observed_fields
+    || result.raw_provider_fields
+    || result.resolved_fields
+    || result.resolved
+    || result.fields
+    || {};
+  const prepared = {
+    ...result,
+    current_image_context: result.current_image_context || candidateTestImageContext,
+    evidence_schema_version: result.evidence_schema_version || "candidate-test-evidence-v1",
+    raw_observed_fields: result.raw_observed_fields || observed,
+    raw_provider_fields: result.raw_provider_fields || {},
+    raw_provider_field_evidence: result.raw_provider_field_evidence || []
+  };
+  return buildCandidateSelectionPassImpl({
+    ...args,
+    result: {
+      ...prepared,
+      candidate_pre_application_evidence_snapshot:
+        result.candidate_pre_application_evidence_snapshot
+        || buildCandidatePreApplicationEvidenceSnapshot(prepared, prepared.current_image_context)
+    }
+  });
+}
 
 function packet(candidates = [], assistFilter = {}) {
   return {
@@ -1510,6 +1556,176 @@ function testHybridReviewedSourceWithoutIdentityFailsTraceCompleteness() {
   assert.equal(evaluationTrace.self_retrieval_exclusion.same_source_candidate_count, 0);
 }
 
+function testPreApplicationEvidenceSnapshotIsDetachedAndDeeplyImmutable() {
+  const source = {
+    evidence_schema_version: "candidate-test-evidence-v1",
+    raw_observed_fields: { year: "2025", players: ["Test Player"] },
+    raw_provider_fields: { product: "Topps Chrome" },
+    normalized_evidence: {
+      year: { value: "2025", sources: [{ source_type: "OCR" }] }
+    },
+    raw_provider_field_evidence: [{ field: "year", value: "2025" }]
+  };
+  const snapshot = buildCandidatePreApplicationEvidenceSnapshot(source, candidateTestImageContext);
+  source.raw_observed_fields.year = "1999";
+  source.raw_observed_fields.players[0] = "Mutated Player";
+  source.normalized_evidence.year.value = "1999";
+  assert.equal(snapshot.raw_observed_fields.year, "2025");
+  assert.deepEqual(snapshot.raw_observed_fields.players, ["Test Player"]);
+  assert.equal(snapshot.normalized_evidence.year.value, "2025");
+  assert.equal(Object.isFrozen(snapshot.normalized_evidence.year.sources[0]), true);
+  assert.throws(() => {
+    snapshot.raw_observed_fields.players.push("Injected Player");
+  }, TypeError);
+}
+
+function testPreApplicationEvidenceSnapshotRejectsGenerationMismatch() {
+  const source = {
+    evidence_schema_version: "candidate-test-evidence-v1",
+    raw_observed_fields: { year: "2025", product: "Topps Chrome" },
+    raw_provider_fields: {},
+    normalized_evidence: {},
+    raw_provider_field_evidence: []
+  };
+  const snapshot = buildCandidatePreApplicationEvidenceSnapshot(source, candidateTestImageContext);
+  const nextGeneration = {
+    ...candidateTestImageContext,
+    image_generation_id: "asset-candidate-test-next",
+    images: candidateTestImageContext.images.map((image) => ({
+      ...image,
+      image_generation_id: "asset-candidate-test-next"
+    }))
+  };
+  const selection = buildCandidateSelectionPass({
+    result: {
+      ...source,
+      current_image_context: nextGeneration,
+      candidate_pre_application_evidence_snapshot: snapshot,
+      catalog_candidate_packet: packet([])
+    }
+  });
+  assert.deepEqual(selection.candidate_observation_snapshot, {});
+}
+
+function testPreApplicationEvidenceSnapshotRejectsContentMutationAndOutOfBandContextMismatch() {
+  const source = {
+    evidence_schema_version: "candidate-test-evidence-v1",
+    raw_observed_fields: { year: "2025", product: "Topps Chrome" },
+    raw_provider_fields: {},
+    normalized_evidence: {},
+    raw_provider_field_evidence: []
+  };
+  const snapshot = buildCandidatePreApplicationEvidenceSnapshot(source, candidateTestImageContext);
+  assert.match(snapshot.snapshot_content_sha256, /^sha256:[0-9a-f]{64}$/);
+  const replayManifest = buildCandidatePreApplicationReplayManifest(snapshot, candidateTestImageContext);
+  assert.equal(replayManifest.snapshot_content_sha256, snapshot.snapshot_content_sha256);
+
+  const tampered = structuredClone(snapshot);
+  tampered.raw_observed_fields.year = "1999";
+  const tamperedSelection = buildCandidateSelectionPass({
+    result: {
+      ...source,
+      current_image_context: candidateTestImageContext,
+      candidate_pre_application_evidence_snapshot: tampered,
+      catalog_candidate_packet: packet([])
+    },
+    authoritativeCurrentImageContext: candidateTestImageContext
+  });
+  assert.equal(tamperedSelection.candidate_observation_snapshot_status, "UNKNOWN");
+  assert.equal(
+    tamperedSelection.candidate_observation_snapshot_reason,
+    "PRE_APPLICATION_EVIDENCE_SNAPSHOT_CONTENT_INVALID"
+  );
+  assert.deepEqual(tamperedSelection.candidate_observation_snapshot, {});
+
+  const selfSigned = structuredClone(snapshot);
+  selfSigned.raw_observed_fields.year = "1999";
+  const { snapshot_content_sha256: ignoredDigest, ...digestPayload } = selfSigned;
+  const canonical = (value) => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+    }
+    return value ?? null;
+  };
+  const forgedDigest = `sha256:${crypto.createHash("sha256")
+    .update(JSON.stringify(canonical(digestPayload))).digest("hex")}`;
+  selfSigned.snapshot_content_sha256 = forgedDigest;
+  const forgedReplayManifest = {
+    ...structuredClone(replayManifest),
+    snapshot_content_sha256: forgedDigest
+  };
+  const forgedExactCandidate = {
+    candidate_id: "forged-exact",
+    candidate_identity_id: "forged-identity",
+    source_type: "OFFICIAL_CHECKLIST",
+    source_trust: "REVIEWED_INTERNAL",
+    anchor_agreement: {
+      exact_code_match: true,
+      prompt_hard_filter_pass: true,
+      agreed: ["year", "product_hierarchy"],
+      contradicted: []
+    },
+    fields: { year: "1999", product: "Topps Chrome" }
+  };
+  const selfSignedSelection = buildCandidateSelectionPass({
+    result: {
+      ...source,
+      current_image_context: candidateTestImageContext,
+      candidate_pre_application_evidence_snapshot: selfSigned,
+      catalog_candidate_packet: packet([forgedExactCandidate], {
+        raw_candidate_count: 1,
+        approved_candidate_count: 1,
+        prompt_candidate_count: 1,
+        prompt_candidate_ids: ["forged-exact"]
+      })
+    },
+    authoritativeCurrentImageContext: candidateTestImageContext,
+    trustedCandidateReplayManifest: forgedReplayManifest
+  });
+  assert.equal(selfSignedSelection.candidate_observation_snapshot_status, "UNKNOWN");
+  assert.equal(
+    selfSignedSelection.candidate_observation_snapshot_reason,
+    "PRE_APPLICATION_EVIDENCE_AUTHORITY_UNAVAILABLE"
+  );
+  assert.deepEqual(selfSignedSelection.candidate_observation_snapshot, {});
+  assert.equal(selfSignedSelection.selected_candidate_decision.match_level, "NO_MATCH");
+  assert.equal(selfSignedSelection.selected_candidate_decision.selected_candidate_id, "");
+
+  const trustedReplaySelection = buildCandidateSelectionPass({
+    result: {
+      ...source,
+      current_image_context: candidateTestImageContext,
+      candidate_pre_application_evidence_snapshot: structuredClone(snapshot),
+      catalog_candidate_packet: packet([])
+    },
+    authoritativeCurrentImageContext: candidateTestImageContext,
+    trustedCandidateReplayManifest: replayManifest
+  });
+  assert.equal(trustedReplaySelection.candidate_observation_snapshot_status, "COMPLETE");
+  assert.equal(trustedReplaySelection.candidate_observation_snapshot.year, "2025");
+
+  const otherContext = {
+    ...candidateTestImageContext,
+    image_generation_id: "asset-candidate-test-other",
+    images: candidateTestImageContext.images.map((image) => ({
+      ...image,
+      image_generation_id: "asset-candidate-test-other"
+    }))
+  };
+  const mismatchedSelection = buildCandidateSelectionPass({
+    result: {
+      ...source,
+      current_image_context: candidateTestImageContext,
+      candidate_pre_application_evidence_snapshot: snapshot,
+      catalog_candidate_packet: packet([])
+    },
+    authoritativeCurrentImageContext: otherContext
+  });
+  assert.equal(mismatchedSelection.candidate_observation_snapshot_status, "UNKNOWN");
+  assert.deepEqual(mismatchedSelection.candidate_observation_snapshot, {});
+}
+
 testVectorOnlyCannotApplyIdentityOrInstanceFields();
 testExactCodeCatalogCandidateBeatsVectorSimilarity();
 testDuplicateRowsForSameIdentityDoNotCreateFalseLowMargin();
@@ -1540,5 +1756,8 @@ testReviewedCompositeIdentityCanCorrectVariantWithoutCopyingInstanceData();
 testUnknownSerialVerificationDoesNotBecomeRejection();
 testHybridReviewedSourceProvenanceSurvivesSelectionAndTrace();
 testHybridReviewedSourceWithoutIdentityFailsTraceCompleteness();
+testPreApplicationEvidenceSnapshotIsDetachedAndDeeplyImmutable();
+testPreApplicationEvidenceSnapshotRejectsGenerationMismatch();
+testPreApplicationEvidenceSnapshotRejectsContentMutationAndOutOfBandContextMismatch();
 
 console.log("candidate-control-plane tests passed");

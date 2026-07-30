@@ -310,6 +310,18 @@ assert.ok(
   "the Storage RLS boundary helper must remain service-role-only"
 );
 assert.ok(
+  TRACK_C_REST_SCHEMA_CONTRACT.requiredFunctions.includes(
+    "verify_v4_admin_test_feedback_isolation(text,text,text)"
+  ),
+  "the administrator replay-isolation proof must block code-first releases"
+);
+assert.ok(
+  TRACK_C_REST_SCHEMA_CONTRACT.serviceOnlyFunctions.includes(
+    "verify_v4_admin_test_feedback_isolation(text,text,text)"
+  ),
+  "the administrator replay-isolation proof must remain service-role-only"
+);
+assert.ok(
   !TRACK_C_REST_SCHEMA_CONTRACT.requiredFunctions.includes(
     "bump_active_catalog_snapshot_revision()"
   ),

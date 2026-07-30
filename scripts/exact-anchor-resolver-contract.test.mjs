@@ -194,6 +194,20 @@ test("sports card code plus two canonical OCR context fields reaches composite l
 });
 
 test("the real OCR normalizer and bundle adapter can reach the sports composite route", async () => {
+  const currentImagePayload = {
+    tenant_id: "tenant_anchor_test",
+    asset_id: "asset-anchor-test",
+    image_generation_id: "asset-anchor-test",
+    images: ["front", "back"].map((imageId, index) => ({
+      image_id: imageId,
+      object_path: `tenants/tenant_anchor_test/listing-assets/2026-07-30/asset-anchor-test/${imageId}.jpg`,
+      content_sha256: String(index + 1).repeat(64),
+      tenant_id: "tenant_anchor_test",
+      asset_id: "asset-anchor-test",
+      image_generation_id: "asset-anchor-test",
+      storage_verified: true
+    }))
+  };
   const patches = [
     ...flatPatchFromCanonicalOcr({
       cropType: "card_code_crop",
@@ -211,8 +225,10 @@ test("the real OCR normalizer and bundle adapter can reach the sports composite 
       imageId: "front"
     })
   ];
+  const fieldPatches = patches.filter((patch) => patch.field !== "region_observation");
+  const regionPatches = patches.filter((patch) => patch.field === "region_observation");
   assert.deepEqual(
-    patches.map((patch) => [patch.field, patch.value, patch.provenance.crop_type]),
+    fieldPatches.map((patch) => [patch.field, patch.value, patch.provenance.crop_type]),
     [
       ["collector_number", "24", "collector_number"],
       ["product", "Panini Phoenix", "product_text"],
@@ -220,11 +236,14 @@ test("the real OCR normalizer and bundle adapter can reach the sports composite 
     ]
   );
   assert.ok(
-    patches.every((patch) => patch.provenance.source_trust_tier === 3),
+    fieldPatches.every((patch) => patch.provenance.source_trust_tier === 3),
     "flattening the OCR packet must preserve, not upgrade, its tier-3 trust"
   );
+  assert.equal(regionPatches.length, 3);
+  assert.ok(regionPatches.every((patch) => patch.provenance.region_evidence));
 
   const document = preingestionEvidenceDocumentFromPayload({
+    ...currentImagePayload,
     preingestion_evidence_patches: patches
   });
   assert.deepEqual(document?.resolved, { collector_number: "24" });
@@ -240,7 +259,7 @@ test("the real OCR normalizer and bundle adapter can reach the sports composite 
   assert.equal(plan.direct_context_dimensions, 2);
 
   const probe = await probePreL2Anchors({
-    payload: { preingestion_evidence_patches: patches },
+    payload: { ...currentImagePayload, preingestion_evidence_patches: patches },
     env,
     fetchImpl: async () => ({
       ok: true,
@@ -451,6 +470,20 @@ test("bare code retrieval falls through when Candidate Selection lacks independe
 
 test("one trusted context-bound exact candidate enters through the shared Candidate owner", async () => {
   const calls = { count: 0 };
+  const observationContext = {
+    tenant_id: "tenant_anchor_test",
+    asset_id: "asset-anchor-test",
+    image_generation_id: "asset-anchor-test",
+    images: ["front", "back"].map((imageId, index) => ({
+      image_id: imageId,
+      object_path: `tenants/tenant_anchor_test/listing-assets/2026-07-30/asset-anchor-test/${imageId}.jpg`,
+      content_sha256: String(index + 1).repeat(64),
+      tenant_id: "tenant_anchor_test",
+      asset_id: "asset-anchor-test",
+      image_generation_id: "asset-anchor-test",
+      storage_verified: true
+    }))
+  };
   const finalized = await maybeFinalizeL1FromExactAnchor({
     scoutResult: {
       resolved_fields: {
@@ -459,7 +492,8 @@ test("one trusted context-bound exact candidate enters through the shared Candid
         players: ["Shanks"],
         tcg_card_number: "OP01-120"
       },
-      evidence: {}
+      evidence: {},
+      current_image_context: observationContext
     },
     env,
     fetchImpl: catalogFetch([officialCatalogRow()], calls),

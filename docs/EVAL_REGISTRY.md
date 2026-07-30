@@ -22,18 +22,25 @@ baseline or a dataset version changes.
 
 The only launch verdict is produced by
 `lib/listing/evaluation/launch-benchmark.mjs` and
-`scripts/assess-launch-gate.mjs`. It requires all three dimensions:
+`scripts/assess-launch-gate.mjs`. It requires all four dimensions:
 
 | Dimension | Threshold | Required evidence |
 |---|---:|---|
 | Golden SEM Card-Exact | >= 0.87 | Frozen reviewed holdout, at least 45 cards |
 | Throughput | >= 6 cards/min | Separate 100, 500, and 1000-card cloud runs |
 | Reliability | >= 0.999 | 1000-card, at least 3-tenant soak with full isolation accounting |
+| Production Writer Journey | PASS | Attested safe evidence, live `main`/deployment identity, exact production health, and all required UI stages |
 
 Missing evidence is `INCONCLUSIVE`; it never passes. Legacy
 `assess-v4-production-balance` output and eBay seller-title recall remain useful
 diagnostics but have no authority to declare launch readiness. The full
 procedure is in `docs/LAUNCH_ENGINEERING_LOOP.md`.
+
+All four rows must also be covered by one attested release packet containing
+their exact byte digests and exact producer-run/release provenance. The packet
+producer is deliberately not implemented as a generic upload signer: until a
+trusted aggregator independently verifies the source workflows, the
+authoritative result remains `INCONCLUSIVE`.
 
 ## Datasets
 
@@ -51,6 +58,10 @@ identity accuracy.
 Release claims now require manifests validated by
 `lib/listing/evaluation/release-set-contract.mjs`:
 
+Formal sets use `release-set-content-digest-v2`, a canonical digest of the full
+sample/truth/provenance content plus split and truth policy. An item-ID-only
+hash or legacy Golden partition is diagnostic and cannot authorize launch.
+
 | Set | Purpose | Leakage rule |
 |---|---|---|
 | `CORE_HOLDOUT` | Fixed reviewed in-scope identity quality | Never train, index query images, or promote rows |
@@ -59,7 +70,7 @@ Release claims now require manifests validated by
 
 Writer first-pass acceptance, critical identity error, field-level exactness,
 active recognition latency, and cost remain required diagnostic metrics. The
-three hard launch dimensions above determine the final release verdict. Missing
+four hard launch dimensions above determine the final release verdict. Missing
 token, timing, cost, or reviewed-field data remains null; it is never converted
 to a successful zero.
 
@@ -78,7 +89,10 @@ node scripts/v4-ebay-smoke.mjs --limit 10 --queue --speculative \
 
 Credentials come from `METAVERSE_USERNAME` / `METAVERSE_PASSWORD` env (no
 defaults in code; local values in `.secrets/local.env`, gitignored).
-`--model X` overrides the production default per request.
+`--model X` is an evaluation-only override. The server honors it only when the
+request carries the scoped launch-gate secret and is authenticated as the
+dedicated evaluation principal; public and writer traffic always uses the
+server-owned recognition profile.
 
 ## Operational quirk: post-deploy propagation window
 

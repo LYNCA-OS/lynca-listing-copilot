@@ -155,11 +155,11 @@ async function auditProviderPolicy() {
   if (!/openai\?\.selectable/.test(statusApi.text)) {
     failures.push("provider status API does not default to selectable OpenAI");
   }
-  if (!/state\.selectedProvider = payload\.default_provider \|\| ""/.test(appJs.text)) {
-    failures.push("frontend does not use the server default provider");
+  if (/selectedProvider|providerControl|data-provider-id|selectProvider/.test(appJs.text)) {
+    failures.push("frontend still contains provider selection state or controls");
   }
-  if (/state\.selectedProvider\s*=\s*["']openai_legacy["']/.test(appJs.text)) {
-    failures.push("frontend hard-codes GPT instead of using the server default provider");
+  if (!/workflowAllowsGeneration/.test(appJs.text) || !/renderWorkflowReadiness/.test(appJs.text)) {
+    failures.push("frontend does not gate generation on server workflow readiness");
   }
   if (!/defaultProviderOptionsFromEnv/.test(profileAdapter.text) || !/writerAssistedProviderOverrides/.test(profileAdapter.text)) {
     failures.push("server recognition profile does not own production provider defaults");
@@ -178,8 +178,8 @@ async function auditProviderPolicy() {
     gpt_provider_present: /\[visionProviderIds\.OPENAI_LEGACY\]/.test(registry.text),
     mixed_model_cascade: /cascade_fast|secondary_provider_id/i.test(registry.text) ? "present" : "removed",
     gpt_implicit_default: failures.length === 0 ? "production_primary" : "unknown",
-    standalone_gpt_default: failures.length === 0 ? "server_default" : "unknown",
-    gpt_visible_button: /providerControl/.test(appJs.text),
+    standalone_gpt_default: failures.length === 0 ? "server_profile" : "unknown",
+    gpt_visible_button: /providerControl|data-provider-id/.test(appJs.text),
     gpt_emergency_retry_action: /data-priority-retry/.test(appJs.text),
     recognition_profile_server_owned: /defaultProviderOptionsFromEnv/.test(profileAdapter.text),
     client_algorithm_controls_absent: !/provider_options\s*:|provider === "openai_legacy"/.test(appJs.text),

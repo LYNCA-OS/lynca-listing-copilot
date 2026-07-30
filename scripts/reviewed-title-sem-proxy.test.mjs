@@ -28,7 +28,7 @@ assert.equal(proxy.evaluation_truth_policy.launch_gate_eligible, false);
 assert.equal(proxy.items[0].reviewed_ground_truth.field_statuses.year, "CONFIRMED");
 assert.equal(proxy.items[0].reviewed_ground_truth.field_statuses.language, "UNKNOWN");
 assert.equal(proxy.items[0].recognition_input.corrected_title, undefined);
-assert.equal(normalizeGoldenSemValue("numerical_rarity", "03/10"), "#/10");
+assert.equal(normalizeGoldenSemValue("numerical_rarity", "03/10"), "3/10");
 assert.equal(normalizeGoldenSemValue("numerical_rarity", "#/10"), "#/10");
 
 const accuracy = evaluateGoldenSemAccuracy({

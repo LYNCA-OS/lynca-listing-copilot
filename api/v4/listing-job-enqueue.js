@@ -46,7 +46,12 @@ import {
 import { trustedInternalServiceOrigin } from "../../lib/listing/v4/jobs/internal-service-origin.mjs";
 import { invokeTrustedV4QueuePump } from "../../lib/listing/v4/jobs/internal-queue-wake.mjs";
 import { v4DurableQueueDrainContract } from "../../lib/listing/v4/jobs/queue-drain-contract.mjs";
-import { configuredWorkerSecret } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { configuredWorkerSecret, workerSecretHeader } from "../../lib/listing/v4/jobs/worker-auth.mjs";
+import { admitWriterIntakeItem } from "../../lib/listing/intake/writer-intake-store.mjs";
+import {
+  normalizeWriterIntakeBatchId,
+  normalizeWriterIntakeItemId
+} from "../../lib/listing/intake/writer-intake-contract.mjs";
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { readJsonPayload, requestPayloadErrorStatus, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
 import { readV4Rows } from "../../lib/listing/v4/session/supabase-rest.mjs";
@@ -96,6 +101,12 @@ export function listingEvaluationRequestAuthorization(req, context = {}, env = p
 
 export function listingEvaluationRequestAuthorized(req, context = {}, env = process.env) {
   return listingEvaluationRequestAuthorization(req, context, env).authorized;
+}
+
+export function listingInternalQueueRequestAuthorized(req, env = process.env) {
+  const expected = configuredWorkerSecret(env);
+  const supplied = cleanHeaderValue(req, workerSecretHeader);
+  return Boolean(expected && supplied && timingSafeStringEqual(supplied, expected));
 }
 
 function isQueueSchemaDependencyFailure(error) {
@@ -160,6 +171,9 @@ function withoutClientSessionIdentity(job = {}) {
     "preingestion_summary", "preingestionSummary",
     "preingestion_initial_evidence", "preingestionInitialEvidence",
     "preingestion_evidence_patches", "preingestionEvidencePatches",
+    "writer_intake_batch_id", "writerIntakeBatchId",
+    "writer_intake_item_id", "writerIntakeItemId",
+    "writer_intake_previous_queue_job_id", "writerIntakePreviousQueueJobId",
     "trusted_manual_retry",
     "manual_retry_requested_by_user_id", "manualRetryRequestedByUserId",
     "manual_retry_original_operator_id", "manualRetryOriginalOperatorId",
@@ -172,6 +186,289 @@ function withoutClientSessionIdentity(job = {}) {
     for (const key of serverOwnedKeys) delete scoped.payload[key];
   }
   return scoped;
+}
+
+function withoutClientQueueControls(job = {}) {
+  const serverOwnedKeys = [
+    "idempotency_key", "idempotencyKey",
+    "priority", "l1_priority", "l1Priority", "l2_priority", "l2Priority",
+    "not_before", "notBefore",
+    "max_attempts", "maxAttempts",
+    "attempt_count", "attemptCount",
+    "retry_count", "retryCount"
+  ];
+  const scoped = { ...job };
+  for (const key of serverOwnedKeys) delete scoped[key];
+  if (scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)) {
+    scoped.payload = { ...scoped.payload };
+    for (const key of serverOwnedKeys) delete scoped.payload[key];
+  }
+  return scoped;
+}
+
+function normalizedQueueReferenceId(value) {
+  const id = String(value || "").trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,159}$/.test(id)) {
+    throw new TypeError("invalid_writer_intake_previous_queue_job_id");
+  }
+  return id;
+}
+
+export function writerIntakeReference(job = {}) {
+  const payload = job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+    ? job.payload
+    : {};
+  const rawBatchId = String(
+    job.writer_intake_batch_id || job.writerIntakeBatchId
+    || payload.writer_intake_batch_id || payload.writerIntakeBatchId
+    || ""
+  ).trim();
+  const rawItemId = String(
+    job.writer_intake_item_id || job.writerIntakeItemId
+    || payload.writer_intake_item_id || payload.writerIntakeItemId
+    || ""
+  ).trim();
+  const previousQueueJobId = String(
+    job.writer_intake_previous_queue_job_id || job.writerIntakePreviousQueueJobId
+    || payload.writer_intake_previous_queue_job_id || payload.writerIntakePreviousQueueJobId
+    || ""
+  ).trim();
+  if (!rawBatchId && !rawItemId) return null;
+  if (!rawBatchId || !rawItemId) {
+    throw new QueueSchedulingIntentError("writer_intake_reference_incomplete", { statusCode: 400 });
+  }
+  try {
+    return Object.freeze({
+      batch_id: normalizeWriterIntakeBatchId(rawBatchId),
+      item_id: normalizeWriterIntakeItemId(rawItemId),
+      asset_id: String(job.asset_id || job.assetId || payload.asset_id || payload.assetId || "").trim(),
+      previous_queue_job_id: previousQueueJobId
+        ? normalizedQueueReferenceId(previousQueueJobId)
+        : null
+    });
+  } catch {
+    throw new QueueSchedulingIntentError("writer_intake_reference_invalid", { statusCode: 400 });
+  }
+}
+
+export function indexWriterIntakeReferences(references = []) {
+  const byAsset = new Map();
+  const itemIds = new Set();
+  for (const reference of Array.isArray(references) ? references : []) {
+    if (byAsset.has(reference.asset_id) || itemIds.has(reference.item_id)) {
+      throw new QueueSchedulingIntentError("writer_intake_reference_ambiguous", { statusCode: 400 });
+    }
+    byAsset.set(reference.asset_id, reference);
+    itemIds.add(reference.item_id);
+  }
+  return byAsset;
+}
+
+export function writerIntakeQueueBatchToken(references = []) {
+  const normalized = (Array.isArray(references) ? references : [])
+    .map((reference) => [
+      String(reference?.batch_id || "").trim(),
+      String(reference?.item_id || "").trim(),
+      String(reference?.previous_queue_job_id || "initial").trim()
+    ].join(":"))
+    .sort();
+  if (!normalized.length) return "";
+  return `writer-intake-queue-v1:${normalized.join("|")}`;
+}
+
+export async function authorizeWriterIntakeQueueReferences({
+  rawJobCount = 0,
+  references = [],
+  jobs = [],
+  reservedJobs = [],
+  tenantId,
+  operatorId,
+  explicitBypass = false,
+  admitItem = admitWriterIntakeItem
+} = {}) {
+  if (explicitBypass === true) {
+    return Object.freeze({ authorized: true, bypassed: true, reason: "explicit_internal_or_evaluation_bypass" });
+  }
+  const sourceReferences = Array.isArray(references) ? references : [];
+  const sourceJobs = Array.isArray(jobs) ? jobs : [];
+  const reservedFinalByAsset = new Map((Array.isArray(reservedJobs) ? reservedJobs : [])
+    .filter((job) => job?.job_type === "FINAL_ASSISTED_TITLE")
+    .map((job) => [String(job?.asset_id || "").trim(), String(job?.id || "").trim()]));
+  // One public request owns one immutable intake position. A multi-item HTTP
+  // replay can otherwise return with only a subset known to the caller; retrying
+  // that subset would create a different batch identity and could pay twice for
+  // a position. The browser already streams cards independently and in parallel.
+  if (Number(rawJobCount) !== 1) {
+    throw new QueueSchedulingIntentError("writer_intake_single_job_request_required", {
+      statusCode: 409,
+      retryable: false
+    });
+  }
+  if (
+    !Number.isInteger(Number(rawJobCount))
+    || sourceReferences.length !== Number(rawJobCount)
+    || sourceJobs.length !== Number(rawJobCount)
+  ) {
+    throw new QueueSchedulingIntentError("writer_intake_reference_required", {
+      statusCode: 409,
+      retryable: false
+    });
+  }
+
+  const byAsset = indexWriterIntakeReferences(sourceReferences);
+  for (const job of sourceJobs) {
+    const assetId = String(job?.asset_id || job?.payload?.asset_id || "").trim();
+    const reference = byAsset.get(assetId);
+    if (!reference || reference.asset_id !== assetId) {
+      throw new QueueSchedulingIntentError("writer_intake_reference_asset_mismatch", {
+        statusCode: 409,
+        retryable: false
+      });
+    }
+    const reservedQueueJobId = reservedFinalByAsset.get(assetId) || "";
+    if (!reservedQueueJobId) {
+      throw new QueueSchedulingIntentError("writer_intake_queue_reservation_required", {
+        statusCode: 409,
+        retryable: false
+      });
+    }
+    try {
+      // This is deliberately synchronous and before the canonical queue RPC.
+      // The store verifies the signed tenant/operator, frozen batch, declared
+      // item and FINALIZED asset, then CAS-admits the immutable asset. Once the
+      // asset wins, ABANDON_BATCH cannot cancel the position underneath this
+      // enqueue. Replaying the same response-lost request remains idempotent.
+      await admitItem({
+        tenantId,
+        operatorId,
+        batchId: reference.batch_id,
+        itemId: reference.item_id,
+        assetId,
+        previousQueueJobId: reference.previous_queue_job_id,
+        reservedQueueJobId
+      }, {
+        requireQueueSuccessorAuthorization: true,
+        requireQueueReservation: true
+      });
+    } catch (error) {
+      throw new QueueSchedulingIntentError(
+        String(error?.code || error?.message || "writer_intake_authorization_failed"),
+        {
+          statusCode: Number(error?.statusCode || 409),
+          retryable: error?.retryable === true
+        }
+      );
+    }
+  }
+  return Object.freeze({ authorized: true, bypassed: false, reason: "committed_writer_intake" });
+}
+
+export async function reconcileWriterIntakeAdmissions({
+  references = [],
+  result = {},
+  tenantId,
+  operatorId,
+  admitItem = admitWriterIntakeItem
+} = {}) {
+  const admissions = [];
+  for (const reference of references) {
+    const finalJob = (Array.isArray(result.jobs) ? result.jobs : []).find((entry) => (
+      entry?.saved === true
+      && entry?.row?.job_type === "FINAL_ASSISTED_TITLE"
+      && entry?.row?.asset_id === reference.asset_id
+    ));
+    if (!finalJob?.row?.id) {
+      admissions.push({ ...reference, ok: false, retryable: true, code: "writer_intake_final_job_not_persisted" });
+      continue;
+    }
+    try {
+      await admitItem({
+        tenantId,
+        operatorId,
+        batchId: reference.batch_id,
+        itemId: reference.item_id,
+        assetId: reference.asset_id,
+        queueJobId: finalJob.row.id,
+        previousQueueJobId: reference.previous_queue_job_id
+      });
+      admissions.push({
+        batch_id: reference.batch_id,
+        item_id: reference.item_id,
+        asset_id: reference.asset_id,
+        queue_job_id: finalJob.row.id,
+        ok: true,
+        retryable: false,
+        code: null
+      });
+    } catch (error) {
+      const admission = {
+        batch_id: reference.batch_id,
+        item_id: reference.item_id,
+        asset_id: reference.asset_id,
+        queue_job_id: finalJob.row.id,
+        ok: false,
+        retryable: error?.retryable !== false,
+        code: String(error?.code || error?.message || "writer_intake_admission_failed").slice(0, 160)
+      };
+      admissions.push(admission);
+      console.warn(JSON.stringify({ event: "writer_intake_enqueue_reconciliation", ...admission }));
+    }
+  }
+  return admissions;
+}
+
+export function scheduleWriterIntakeAdmissions({
+  references = [],
+  result = {},
+  tenantId,
+  operatorId,
+  defer = waitUntil,
+  reconcileAdmissions = reconcileWriterIntakeAdmissions,
+  logger = console
+} = {}) {
+  const planned = (Array.isArray(references) ? references : []).map((reference) => {
+    const finalJob = (Array.isArray(result.jobs) ? result.jobs : []).find((entry) => (
+      entry?.saved === true
+      && entry?.row?.job_type === "FINAL_ASSISTED_TITLE"
+      && entry?.row?.asset_id === reference.asset_id
+    ));
+    return {
+      batch_id: reference.batch_id,
+      item_id: reference.item_id,
+      asset_id: reference.asset_id,
+      queue_job_id: finalJob?.row?.id || null,
+      ok: null,
+      retryable: false,
+      code: finalJob?.row?.id
+        ? "writer_intake_projection_scheduled"
+        : "writer_intake_final_job_not_persisted"
+    };
+  });
+  if (!planned.some((entry) => entry.queue_job_id)) return planned;
+
+  const completion = Promise.resolve().then(() => reconcileAdmissions({
+    references,
+    result,
+    tenantId,
+    operatorId
+  })).catch((error) => {
+    logger?.warn?.(JSON.stringify({
+      event: "writer_intake_enqueue_projection",
+      outcome: "FAILED",
+      batch_id: result.batchId || null,
+      code: String(error?.code || error?.message || "writer_intake_projection_failed").slice(0, 160)
+    }));
+    return [];
+  });
+  try {
+    defer(completion);
+  } catch {
+    // The canonical queue commit is already durable. Local harnesses without a
+    // request lifetime still let the repair promise run; Worker/status are the
+    // permanent recovery owners if this process exits first.
+    completion.catch(() => {});
+  }
+  return planned;
 }
 
 function freshManualRetryIntent(job = {}) {
@@ -321,6 +618,7 @@ export async function canonicalizeQueueJobs({
   jobs = [],
   tenantId,
   allowAlgorithmOverrides = false,
+  allowQueueControls = false,
   env = process.env,
   fetchImpl = globalThis.fetch,
   readCanonical = readCanonicalListingImageReferences
@@ -345,7 +643,10 @@ export async function canonicalizeQueueJobs({
       requestedGenerationId,
       canonicalGenerationId: canonical.image_generation_id
     });
-    const scoped = stripClientImageTransport(withoutClientSessionIdentity(job));
+    const identityScoped = withoutClientSessionIdentity(job);
+    const scoped = stripClientImageTransport(
+      allowQueueControls === true ? identityScoped : withoutClientQueueControls(identityScoped)
+    );
     const scopedPayload = stripClientImageTransport(
       scoped.payload && typeof scoped.payload === "object" && !Array.isArray(scoped.payload)
         ? scoped.payload
@@ -403,6 +704,12 @@ function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEG
   const parsed = Number.parseInt(String(value ?? ""), 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
+}
+
+export function queueRequestPriority(payload = {}, { trustedQueueControls = false } = {}) {
+  return trustedQueueControls === true
+    ? positiveInteger(payload.priority, 100, { min: 0, max: 10_000 })
+    : 100;
 }
 
 function envFlag(env, key, fallback = true) {
@@ -589,6 +896,7 @@ export default async function handler(req, res) {
   const operatorId = context.userId;
   const tenantId = context.tenantId;
   const evaluationAuthorization = listingEvaluationRequestAuthorization(req, context, process.env);
+  const internalQueueAuthorization = listingInternalQueueRequestAuthorized(req, process.env);
   if (evaluationAuthorization.requested && !evaluationAuthorization.authorized) {
     sendJson(res, 403, withV4Version({
       ok: false,
@@ -628,14 +936,22 @@ export default async function handler(req, res) {
     }));
     return;
   }
-  // Session IDs are ownership-bearing server identifiers. A browser may
-  // provide an idempotency key, but it cannot select an existing session.
+  // Session and queue identities are server-owned. Public callers may request
+  // a verified terminal retry, but cannot choose its job id, schedule clock,
+  // retry budget or priority.
   let sourceJobs;
+  let writerIntakeReferences;
+  let queueBatchToken;
+  let batchId;
+  let requestPriority;
+  let stageJobs;
   try {
+    writerIntakeReferences = rawJobs.map(writerIntakeReference).filter(Boolean);
     const canonicalJobs = await canonicalizeQueueJobs({
       jobs: rawJobs,
       tenantId,
       allowAlgorithmOverrides: evaluationAuthorization.authorized,
+      allowQueueControls: evaluationAuthorization.authorized || internalQueueAuthorization,
       env: process.env,
       fetchImpl: globalThis.fetch
     });
@@ -646,6 +962,48 @@ export default async function handler(req, res) {
       permissionContext: context,
       env: process.env,
       fetchImpl: globalThis.fetch
+    });
+    const intakeByAsset = indexWriterIntakeReferences(writerIntakeReferences);
+    sourceJobs = sourceJobs.map((job) => {
+      const reference = intakeByAsset.get(String(job.asset_id || job.payload?.asset_id || "").trim());
+      if (!reference) return job;
+      return {
+        ...job,
+        queue_tags: {
+          ...(job.queue_tags || {}),
+          writer_intake_batch_id: reference.batch_id,
+          writer_intake_item_id: reference.item_id,
+          writer_intake_previous_queue_job_id: reference.previous_queue_job_id || null
+        }
+      };
+    });
+    queueBatchToken = evaluationAuthorization.authorized || internalQueueAuthorization
+      ? clientBatchToken
+      : writerIntakeQueueBatchToken(writerIntakeReferences);
+    batchId = createQueueRequestBatchId({
+      clientBatchToken: queueBatchToken,
+      jobs: sourceJobs,
+      tenantId,
+      operatorId
+    });
+    requestPriority = queueRequestPriority(payload, {
+      trustedQueueControls: evaluationAuthorization.authorized || internalQueueAuthorization
+    });
+    stageJobs = expandV4RecognitionStageJobs({
+      jobs: sourceJobs,
+      batchId,
+      operatorId,
+      tenantId,
+      priority: requestPriority
+    });
+    await authorizeWriterIntakeQueueReferences({
+      rawJobCount: rawJobs.length,
+      references: writerIntakeReferences,
+      jobs: sourceJobs,
+      reservedJobs: stageJobs,
+      tenantId,
+      operatorId,
+      explicitBypass: evaluationAuthorization.authorized || internalQueueAuthorization
     });
   } catch (error) {
     const recognitionProfileError = error instanceof RecognitionRequestContractError;
@@ -695,7 +1053,9 @@ export default async function handler(req, res) {
       message: recognitionProfileError
         ? "The requested recognition profile is not supported."
         : schedulingError
-          ? "The referenced failed job could not be authorized for a priority retry."
+          ? String(error.code || "").startsWith("writer_intake_")
+            ? "The recognition request is not bound to a committed writer intake item."
+            : "The referenced failed job could not be authorized for a priority retry."
         : lifecycleError
         ? "The requested image generation is stale or missing; rebind the current verified images before enqueueing."
         : invalidAsset
@@ -708,20 +1068,6 @@ export default async function handler(req, res) {
     }));
     return;
   }
-  const batchId = createQueueRequestBatchId({
-    clientBatchToken,
-    jobs: sourceJobs,
-    tenantId,
-    operatorId
-  });
-  const requestPriority = positiveInteger(payload.priority, 100, { min: 0, max: 10_000 });
-  const stageJobs = expandV4RecognitionStageJobs({
-    jobs: sourceJobs,
-    batchId,
-    operatorId,
-    tenantId,
-    priority: requestPriority
-  });
   const result = await enqueueV4RecognitionJobs({
     jobs: stageJobs,
     batchId,
@@ -729,10 +1075,19 @@ export default async function handler(req, res) {
     tenantId,
     priority: requestPriority
   });
+  // Queue truth is committed first and can begin running immediately. Intake
+  // is a reconstructible projection from durable queue_tags, never an enqueue
+  // dependency or a reason to delay the writer-visible response.
   const pump = triggerV4QueuePumpAfterEnqueue(req, {
     tenantId,
     batchId: result.batchId,
     queuedCount: result.queued_count
+  });
+  const writerIntakeAdmissions = scheduleWriterIntakeAdmissions({
+    references: writerIntakeReferences,
+    result,
+    tenantId,
+    operatorId
   });
 
   const failedEntries = result.jobs.filter((entry) => !entry.saved);
@@ -778,6 +1133,7 @@ export default async function handler(req, res) {
     pump_triggered: pump.triggered,
     pump_reason: pump.reason,
     pump_global_drain: pump.global_drain === true,
+    writer_intake_admissions: writerIntakeAdmissions,
     jobs: result.jobs.map((entry) => ({
       ok: entry.saved,
       job_id: entry.row?.id || null,

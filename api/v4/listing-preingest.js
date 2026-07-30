@@ -3,7 +3,12 @@ import { bindProductionRequestContext, instrumentProductionRequest } from "../..
 import { withV4Version } from "../../lib/listing/v4/schema/version.mjs";
 import { persistV4PreingestionBundle } from "../../lib/listing/v4/session/session-store.mjs";
 import { callJsonHandler, readJsonPayload, sendJson } from "../../lib/listing/v4/session/http-handler-utils.mjs";
-import { isTenantAuthError, publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../../lib/tenant/index.mjs";
+import {
+  isTenantAuthError,
+  publicTenantAuthError,
+  requireTenantAccess,
+  TENANT_PERMISSIONS
+} from "../../lib/tenant/index.mjs";
 
 export default async function handler(req, res) {
   instrumentProductionRequest(req, res, { api: "/api/v4/listing-preingest" });

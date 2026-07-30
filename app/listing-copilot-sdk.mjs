@@ -761,6 +761,18 @@ async function fetchWithBoundedRetry(url, init = {}, {
 
 // lib/listing/client/batch-recognition-intent.mjs
 var INTAKE_PREVIEW_CARD_WINDOW = 8;
+function groupIntakeFileSlots(files = [], mode = "pair") {
+  const source = Array.isArray(files) ? files : Array.from(files || []);
+  const groupSize = mode === "single" ? 1 : 2;
+  const groups = [];
+  for (let index = 0; index < source.length; index += groupSize) {
+    groups.push({
+      index: Math.floor(index / groupSize) + 1,
+      files: source.slice(index, index + groupSize)
+    });
+  }
+  return groups;
+}
 function claimNextBatchAsset(assets = [], claimedAssetIndexes = /* @__PURE__ */ new Set()) {
   for (const asset of Array.isArray(assets) ? assets : []) {
     const index = Number(asset?.index);
@@ -965,6 +977,7 @@ export {
   defaultRecognitionProfileId,
   fetchWithBoundedRetry,
   groupClientResultsByJobId,
+  groupIntakeFileSlots,
   isClientStatusNotFound,
   labelForCsmField,
   observeClientJobPoll,

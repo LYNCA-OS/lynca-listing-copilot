@@ -116,6 +116,9 @@ const sampleJob = {
   bundle_id: "bundle-1",
   attempts: 0,
   payload: {
+    image_generation_id: "asset-1",
+    source_image_sha256: "a".repeat(64),
+    producer_revision: preingestionOcrJobVersion,
     crop: {
       source_image_id: "img-front",
       source_region: "serial_region",
@@ -219,7 +222,13 @@ const ocrResult = {
   confidence: 0.94,
   model_id: "paddleocr",
   model_revision: "v1",
-  text_candidates: [{ text: "09/50", normalized_text: "09/50", confidence: 0.94 }],
+  text_candidates: [{
+    text: "09/50",
+    normalized_text: "09/50",
+    confidence: 0.94,
+    line_id: "line-serial-1",
+    box: [10, 20, 30, 40]
+  }],
   evidence_patch: {
     schema_version: "ocr-evidence-patch-v1",
     crop_type: "serial_number",
@@ -232,7 +241,7 @@ const ocrResult = {
   }
 };
 const flatPatches = bundlePatchesFromOcrResult(ocrResult, sampleJob);
-assert.equal(flatPatches.length, 2);
+assert.equal(flatPatches.length, 3);
 const serialPatch = flatPatches.find((patch) => patch.field === "serial_number");
 assert.equal(serialPatch.value, "09/50");
 assert.equal(serialPatch.source_type, "OCR");
@@ -240,6 +249,18 @@ assert.equal(serialPatch.source_image_id, "img-front");
 assert.equal(serialPatch.crop_id, "crop-1");
 assert.equal(serialPatch.confidence, 0.94);
 assert.equal(serialPatch.provenance.job_key, "ocr:bundle-1:crop-1");
+assert.equal(serialPatch.text_candidates[0].line_id, "line-serial-1");
+assert.deepEqual(serialPatch.text_candidates[0].bbox, [10, 20, 30, 40]);
+assert.equal(serialPatch.provenance.image_sha256, "a".repeat(64));
+assert.equal(serialPatch.provenance.image_generation_id, "asset-1");
+const regionTracePatch = flatPatches.find((patch) => patch.field === "region_observation");
+assert.equal(regionTracePatch.source_type, "OCR_TRACE");
+assert.equal(regionTracePatch.provenance.region_evidence.source_kind, "OCR");
+assert.equal(regionTracePatch.provenance.region_evidence.evidence[0].line_id, "line-serial-1");
+assert.deepEqual(regionTracePatch.provenance.region_evidence.evidence[0].bbox, [10, 20, 30, 40]);
+assert.equal(regionTracePatch.provenance.region_evidence.evidence[0].image_generation_id, "asset-1");
+assert.equal(regionTracePatch.provenance.region_evidence.evidence[0].provenance.complete, false);
+assert.ok(regionTracePatch.provenance.region_evidence.evidence[0].provenance.missing.includes("provider_revision"));
 assert.equal(Object.hasOwn(serialPatch.provenance, "bundle_generation_fingerprint"), false);
 assert.equal(Object.hasOwn(serialPatch.provenance, "detail_revision"), false);
 
@@ -881,7 +902,9 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].crop_box, sampleJob.payload.crop.crop_metadata.pixel_bounds);
   assert.equal(calls[0].metadata.inline_full_image_fallback, false);
-  assert.equal(result.patches_appended, 0);
+  // No semantic field is published, but the typed EMPTY/UNKNOWN region trace
+  // remains durable so evaluation can distinguish OCR misses from no crop.
+  assert.equal(result.patches_appended, 1);
   assert.equal(result.succeeded, 1);
   assert.equal(result.job_observability[0].source_image_id, "img-front");
   assert.equal(result.job_observability[0].source_side, "front");
@@ -959,7 +982,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(calls.length, 2);
   assert.equal(calls[1].crop_box, null);
   assert.match(calls[1].request_id, /full-image-grade$/);
-  assert.equal(result.patches_appended, 2);
+  assert.equal(result.patches_appended, 3);
   assert.equal(result.job_observability[0].full_image_fallback_used, true);
   assert.equal(result.job_observability[0].full_image_fallback_kind, "grade");
   assert.equal(result.execution_summary.full_image_fallback_count, 1);
@@ -1034,7 +1057,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(calls.length, 1);
   assert.equal(calls[0].metadata.inline_full_image_fallback, true);
   assert.equal(calls[0].metadata.grade_source_looks_like_slab, true);
-  assert.equal(result.patches_appended, 2);
+  assert.equal(result.patches_appended, 3);
   assert.equal(result.job_observability[0].full_image_fallback_used, true);
   assert.equal(result.job_observability[0].full_image_fallback_inline_count, 1);
   assert.equal(result.job_observability[0].full_image_fallback_network_request_count, 0);
@@ -1168,7 +1191,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(calls.length, 2);
   assert.equal(calls[1].crop_box, null);
   assert.match(calls[1].request_id, /full-image-grade$/);
-  assert.equal(result.patches_appended, 0);
+  assert.equal(result.patches_appended, 1);
   assert.equal(result.job_observability[0].full_image_fallback_used, true);
 }
 
@@ -1482,9 +1505,10 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
     }
   });
   assert.equal(result.updated, true);
-  assert.equal(result.appended, 1);
-  assert.equal(written.evidence_patches.length, 2);
+  assert.equal(result.appended, 2);
+  assert.equal(written.evidence_patches.length, 3);
   assert.equal(written.evidence_patches[1].field, "print_run_denominator");
+  assert.equal(written.evidence_patches[2].field, "region_observation");
 }
 
 // --- fail-closed when PaddleOCR is not configured: jobs stay queued ---
@@ -1547,11 +1571,11 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   assert.equal(result.claimed, 1);
   assert.equal(result.succeeded, 1);
   assert.equal(result.failed, 0);
-  assert.equal(result.patches_appended, 2);
+  assert.equal(result.patches_appended, 3);
   assert.equal(result.bundles_updated, 1);
 
   const bundleWrite = supabaseWrites.find((write) => write.target.includes("preingestion_bundles"));
-  assert.equal(bundleWrite.body.evidence_patches.length, 2);
+  assert.equal(bundleWrite.body.evidence_patches.length, 3);
   const completion = supabaseWrites.filter((write) => write.target.includes("preingestion_jobs")).at(-1);
   assert.equal(completion.body.status, "succeeded");
 }
@@ -1679,7 +1703,7 @@ assert.equal(lineWeightedPatches.find((patch) => patch.field === "serial_number"
   const result = await processing;
   assert.equal(result.succeeded, 2);
   assert.equal(result.failed, 0);
-  assert.equal(result.patches_appended, 4);
+  assert.equal(result.patches_appended, 6);
 }
 
 // --- all crop jobs are drained with bounded parallel OCR ---

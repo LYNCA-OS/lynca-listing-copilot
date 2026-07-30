@@ -105,6 +105,29 @@ assert.equal(
   Object.hasOwn(targetedOperationalStatus.provider_result_summary.recognition_critical_path, "boundaries"),
   false
 );
+
+const secondLookOperationalStatus = operationalSessionStatus({
+  id: "session-second-look-shape",
+  status: "DRAFT_READY",
+  final_title: "Baseline Title",
+  l2_status: "READY",
+  provider_result_summary: {
+    provider_calls: 1,
+    baseline_provider_calls: 1,
+    shadow_provider_calls: 1,
+    total_provider_calls: 2,
+    provider_accounting_complete: true,
+    second_look_shadow_usage: { provider_calls: 1, input_tokens: 30 },
+    second_look_shadow: {
+      baseline_title: "Baseline Title",
+      natural_language_model_response_persisted: false,
+      provider_call_ledger: [{ provider_calls: 1 }]
+    }
+  }
+});
+assert.equal(secondLookOperationalStatus.provider_result_summary.provider_calls, 1);
+assert.equal(secondLookOperationalStatus.provider_result_summary.total_provider_calls, 2);
+assert.equal(secondLookOperationalStatus.provider_result_summary.second_look_shadow.provider_call_ledger[0].provider_calls, 1);
 const singleSessionOperationalStatus = operationalSingleSessionStatus({
   id: "session_evaluation",
   provider_result_summary: {

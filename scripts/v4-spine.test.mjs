@@ -1309,6 +1309,38 @@ assert.match(
   /const typedRouteEvaluationEnabled = evaluationTraceEnabled\(payload\);[\s\S]*const constraintModelPromise = \(typedRouteEvaluationEnabled[\s\S]*\? loadConstraintModelSnapshot\(\)[\s\S]*: Promise\.resolve\(null\)/,
   "normal production must not read and parse the Shadow constraint snapshot"
 );
+assert.match(
+  nativeRecognitionCoreSource,
+  /const forwardEnumerationConsumesRetrieval = evaluationTraceEnabled\(initialPayload\)[\s\S]*&& forwardEnumerationExperimentArm\(providerOptions\) === forwardEnumerationExperimentArms\.CONSUME;[\s\S]*shadow: !forwardEnumerationConsumesRetrieval,[\s\S]*observationContext: initialPayload/,
+  "forward enumeration may enter formal retrieval only through the explicit evaluation CONSUME arm"
+);
+const currentImageEvidenceMerge = nativeRecognitionCoreSource.indexOf(
+  "providerResultWithEvidence = withRecognitionEvidence("
+);
+const candidateObservationSnapshotCapture = nativeRecognitionCoreSource.indexOf(
+  "candidate_pre_application_evidence_snapshot:",
+  currentImageEvidenceMerge
+);
+const forwardEnumerationAfterSnapshot = nativeRecognitionCoreSource.indexOf(
+  "const forwardEnumerationConsumesRetrieval",
+  currentImageEvidenceMerge
+);
+assert.ok(
+  currentImageEvidenceMerge >= 0
+    && candidateObservationSnapshotCapture > currentImageEvidenceMerge
+    && candidateObservationSnapshotCapture < forwardEnumerationAfterSnapshot,
+  "candidate observation must be frozen after current-image evidence and before enumeration or retrieval can add candidate evidence"
+);
+assert.match(
+  nativeRecognitionCoreSource,
+  /const persistedObservationSnapshot = controlledInput\.candidate_pre_application_evidence_snapshot;[\s\S]*Object\.isFrozen\(persistedObservationSnapshot\)[\s\S]*LIVE_PRE_APPLICATION_CURRENT_IMAGE_EVIDENCE/,
+  "native Candidate Control must not trust a provider-supplied serialized snapshot"
+);
+assert.doesNotMatch(
+  nativeRecognitionCoreSource,
+  /attachForwardEnumerationCandidates\([\s\S]{0,500}\{ shadow: !readOnlyProviderContract \}/,
+  "the read-only Provider contract must not implicitly activate derived candidates"
+);
 const knowledgeFirstRefreshDetached = nativeRecognitionCoreSource.indexOf(
   "void knowledgeFirstRouteShadowPromise",
   knowledgeFirstRefreshPromise
@@ -2555,7 +2587,8 @@ assert.deepEqual(v4DeploymentInfo({
   git_commit_ref: "deployed-vercel-ref",
   vercel_env: "",
   vercel_region: "",
-  deployment_id: ""
+  deployment_id: "",
+  deployment_url: ""
 });
 assert.deepEqual(v4DeploymentInfo({
   LYNCA_RELEASE_GIT_SHA: "release-sha",
@@ -2567,7 +2600,8 @@ assert.deepEqual(v4DeploymentInfo({
   git_commit_ref: "main",
   vercel_env: "",
   vercel_region: "",
-  deployment_id: ""
+  deployment_id: "",
+  deployment_url: ""
 });
 
 console.log("v4 spine tests passed");

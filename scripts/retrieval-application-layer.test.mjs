@@ -3,12 +3,57 @@ import {
   applyIdentityResolutionGate,
   applyIdentityResolutionGateWithConvergence
 } from "../lib/identity-resolution/listing-resolution-gate.mjs";
-import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import {
+  buildCandidatePreApplicationEvidenceSnapshot,
+  buildCandidateSelectionPass as buildCandidateSelectionPassImpl
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import {
   buildRetrievalApplicationLayer,
   finalizeRetrievalApplicationOutcome
 } from "../lib/listing/candidates/retrieval-application-layer.mjs";
 import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
+
+const candidateTestImageContext = Object.freeze({
+  tenant_id: "tenant_candidate_test",
+  asset_id: "asset-candidate-test",
+  image_generation_id: "asset-candidate-test",
+  images: [{
+    image_id: "front",
+    object_path: "tenants/tenant_candidate_test/listing-assets/2026-07-30/asset-candidate-test/front.jpg",
+    content_sha256: "1".repeat(64),
+    tenant_id: "tenant_candidate_test",
+    asset_id: "asset-candidate-test",
+    image_generation_id: "asset-candidate-test",
+    storage_verified: true
+  }]
+});
+
+function buildCandidateSelectionPass(args = {}) {
+  const result = args.result || {};
+  const observed = result.raw_observed_fields
+    || result.raw_provider_fields
+    || result.resolved_fields
+    || result.resolved
+    || result.fields
+    || {};
+  const prepared = {
+    ...result,
+    current_image_context: result.current_image_context || candidateTestImageContext,
+    evidence_schema_version: result.evidence_schema_version || "candidate-test-evidence-v1",
+    raw_observed_fields: result.raw_observed_fields || observed,
+    raw_provider_fields: result.raw_provider_fields || {},
+    raw_provider_field_evidence: result.raw_provider_field_evidence || []
+  };
+  return buildCandidateSelectionPassImpl({
+    ...args,
+    result: {
+      ...prepared,
+      candidate_pre_application_evidence_snapshot:
+        result.candidate_pre_application_evidence_snapshot
+        || buildCandidatePreApplicationEvidenceSnapshot(prepared, prepared.current_image_context)
+    }
+  });
+}
 
 function packet(candidates = [], promptCandidateIds = []) {
   return {
@@ -64,6 +109,22 @@ function resultWithCandidate(candidate = trustedCatalogCandidate()) {
       collector_number: "CPA-TP"
     },
     catalog_candidate_packet: packet([candidate], [candidate.candidate_id])
+  };
+}
+
+function withCurrentObservationSnapshot(result = {}) {
+  const prepared = {
+    ...result,
+    current_image_context: candidateTestImageContext,
+    evidence_schema_version: "candidate-test-evidence-v1",
+    raw_observed_fields: result.raw_observed_fields || result.resolved_fields || {},
+    raw_provider_fields: result.raw_provider_fields || {},
+    raw_provider_field_evidence: result.raw_provider_field_evidence || []
+  };
+  return {
+    ...prepared,
+    candidate_pre_application_evidence_snapshot:
+      buildCandidatePreApplicationEvidenceSnapshot(prepared, candidateTestImageContext)
   };
 }
 
@@ -240,7 +301,7 @@ function testIdentityResolutionConsumesRetrievalFieldEvidence() {
 }
 
 function testSingleModelFastPathConsumesAlreadyRetrievedFieldEvidence() {
-  const result = resultWithCandidate();
+  const result = withCurrentObservationSnapshot(resultWithCandidate());
   const gated = __listingCopilotTitleTestHooks.singleModelDraftPath(result, {
     maxTitleLength: 80,
     provider_options: {
@@ -260,13 +321,13 @@ function testSingleModelFastPathConsumesAlreadyRetrievedFieldEvidence() {
 
 async function testAssistShadowPathKeepsRetrievedContextForFieldApplication() {
   const candidate = trustedCatalogCandidate();
-  const result = {
+  const result = withCurrentObservationSnapshot({
     resolved_fields: {
       year: "2024",
       players: ["Test Player"],
       collector_number: "CPA-TP"
     }
-  };
+  });
   const gated = await __listingCopilotTitleTestHooks.withEvidenceCompletionShadow(result, {
     maxTitleLength: 80,
     provider_options: {

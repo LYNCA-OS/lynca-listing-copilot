@@ -13,12 +13,51 @@ import {
 } from "../lib/listing/evaluation/recognition-benchmark-profile.mjs";
 import { buildPipelineNodeLedger } from "../lib/listing/pipeline/node-observability.mjs";
 import { providerAuxRouteReplayInputHash } from "../lib/listing/v4/route-planner/provider-aux-route-shadow.mjs";
+import { buildCandidatePreApplicationEvidenceSnapshot } from "../lib/listing/candidates/candidate-selection-pass.mjs";
 
 const payload = {
+  tenant_id: "tenant_a",
+  asset_id: "asset-test",
+  image_generation_id: "asset-test",
+  images: [{
+    image_id: "front",
+    object_path: "tenants/tenant_a/listing-assets/2026-07-30/asset-test/front.jpg",
+    content_sha256: "a".repeat(64),
+    tenant_id: "tenant_a",
+    asset_id: "asset-test",
+    image_generation_id: "asset-test",
+    storage_verified: true
+  }],
   provider_options: {
     recognition_benchmark_profile: "cold_algorithm_benchmark",
     trace_level: "evaluation"
-  }
+  },
+  preingestion_evidence_patches: [{
+    field: "region_observation",
+    source_type: "OCR_TRACE",
+    provenance: {
+      region_evidence: {
+        schema_version: "region-evidence-v1",
+        adapter_version: "region-evidence-adapter-v1",
+        source_kind: "PREINGESTION",
+        evidence: [{
+          evidence_id: "region_evidence_test",
+          state: "VALUE",
+          text: "RS-2",
+          value: "RS-2",
+          line_id: "line-1",
+          bbox: [1, 2, 3, 4],
+          image_sha256: "a".repeat(64),
+          image_generation_id: "asset-test"
+        }],
+        policy: {
+          can_generate_title: false,
+          can_resolve_identity: false,
+          can_override_resolver: false
+        }
+      }
+    }
+  }]
 };
 const constraintSnapshotHash = "b".repeat(64);
 const forwardEnumerationCandidatePacket = {
@@ -27,14 +66,71 @@ const forwardEnumerationCandidatePacket = {
   constraint_snapshot_source_sha256: constraintSnapshotHash
 };
 assert.equal(evaluationTraceEnabled(payload), true);
+const secondLookPayload = {
+  provider_options: {
+    recognition_benchmark_profile: recognitionBenchmarkProfileIds.COLD_SECOND_LOOK_SHADOW,
+    trace_level: "evaluation"
+  }
+};
+assert.equal(evaluationTraceEnabled(secondLookPayload), true);
+const secondLookTrace = buildEvaluationDecisionTracePacket({
+  second_look_shadow: {
+    schema_version: "second-look-card-code-evaluation-v1",
+    baseline_title: "Baseline",
+    provider_call_ledger: [{ logical_stage: "TARGETED_SECOND_LOOK_CARD_CODE", provider_calls: 1 }],
+    natural_language_response: "SENSITIVE FULL MODEL RESPONSE",
+    evidence_document: {
+      evidence: {
+        card_number: {
+          value: "RS-2",
+          status: "REVIEW",
+          raw_text: "SENSITIVE FULL MODEL RESPONSE",
+          sources: [{
+            source_type: "VISION_MODEL",
+            source_image_id: "front",
+            natural_language_response: "SENSITIVE FULL MODEL RESPONSE",
+            provider_response: { content: "SENSITIVE FULL MODEL RESPONSE" },
+            completion: "SENSITIVE FULL MODEL RESPONSE",
+            assistant_message: "SENSITIVE FULL MODEL RESPONSE"
+          }]
+        }
+      }
+    }
+  }
+}, secondLookPayload);
+assert.equal(secondLookTrace.second_look_shadow.baseline_title, "Baseline");
+assert.equal(secondLookTrace.second_look_shadow.provider_call_ledger[0].provider_calls, 1);
+assert.equal(
+  JSON.stringify(secondLookTrace.second_look_shadow).includes("SENSITIVE FULL MODEL RESPONSE"),
+  false
+);
+assert.equal(
+  Object.hasOwn(secondLookTrace.second_look_shadow, "natural_language_response"),
+  false
+);
+assert.equal(
+  Object.hasOwn(
+    secondLookTrace.second_look_shadow.evidence_document.evidence.card_number,
+    "raw_text"
+  ),
+  false
+);
 assert.equal(applyRecognitionBenchmarkProfile({}, {
   profile: recognitionBenchmarkProfileIds.COLD_ALGORITHM
 }).trace_level, "evaluation");
 assert.equal(evaluationTraceEnabled({ provider_options: { recognition_benchmark_profile: "production_workload_benchmark", trace_level: "evaluation" } }), false);
 
 const packet = buildEvaluationDecisionTracePacket({
-  raw_provider_fields: { year: "2025", subject: "Test Player", ignored: "UNKNOWN" },
-  raw_provider_field_evidence: [{ field: "year", value: "2025", source_image_id: "image-1" }],
+  raw_provider_fields: { year: "2025", subject: "Test Player", product: "UNKNOWN" },
+  raw_provider_field_evidence: [{
+    field: "year",
+    value: "2025",
+    source_image_id: "image-1",
+    naturalLanguageResponse: "complete natural language response",
+    provider_response: { content: "complete natural language response" },
+    completion: "complete natural language response"
+  }],
+  raw_model_response: "complete natural language response",
   raw_provider_unresolved: ["product"],
   raw_provider_recognition_status: "CONFIRMED",
   provider_request_identity: {
@@ -50,6 +146,9 @@ const packet = buildEvaluationDecisionTracePacket({
     provider_image_declared_content_mismatch_count: 0,
     provider_request_controls_sha256: "3".repeat(64),
     provider_request_fingerprint: "4".repeat(64),
+    provider_http_request_budget: 1,
+    provider_http_request_budget_enforced: true,
+    provider_http_retry_policy: "FORBIDDEN",
     provider_http_request_count: 1,
     provider_http_request_started_at: "2026-07-29T00:00:00.000Z",
     provider_http_request_completed_at: "2026-07-29T00:00:01.000Z",
@@ -124,6 +223,9 @@ const packet = buildEvaluationDecisionTracePacket({
 assert.equal(packet.provider_observation_fields.year, "2025");
 assert.equal(packet.provider_request_identity.provider_prompt_sha256, "1".repeat(64));
 assert.equal(packet.provider_request_identity.provider_http_request_count, 1);
+assert.equal(packet.provider_request_identity.provider_http_request_budget, 1);
+assert.equal(packet.provider_request_identity.provider_http_request_budget_enforced, true);
+assert.equal(packet.provider_request_identity.provider_http_retry_policy, "FORBIDDEN");
 assert.equal(packet.provider_request_identity.provider_image_declared_content_mismatch_count, 0);
 assert.equal(packet.provider_request_identity.provider_http_request_started_at, "2026-07-29T00:00:00.000Z");
 assert.equal(packet.provider_request_identity.provider_http_request_completed_at, "2026-07-29T00:00:01.000Z");
@@ -140,7 +242,11 @@ assert.equal(packet.preingestion_ocr.job_observability[0].source_side, "back");
 assert.equal(packet.preingestion_ocr.job_observability[0].source_region, "card_code");
 assert.equal(packet.preingestion_ocr.job_observability_count, 1);
 assert.equal(packet.preingestion_ocr.job_observability_truncated, false);
-assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v10");
+assert.equal(packet.region_evidence.evidence_count, 1);
+assert.equal(packet.region_evidence.evidence[0].line_id, "line-1");
+assert.deepEqual(packet.region_evidence.evidence[0].bbox, [1, 2, 3, 4]);
+assert.equal(packet.region_evidence.policy.can_generate_title, false);
+assert.equal(packet.schema_version, "evaluation-decision-trace-packet-v12");
 
 const oversizedOcrJobObservability = Array.from({ length: 33 }, (_, index) => ({
   job_id: `ocr-job-${index + 1}`,
@@ -168,16 +274,18 @@ assert.equal(oversizedOcrPacket.preingestion_ocr.job_observability.length, 32);
 assert.equal(oversizedOcrPacket.preingestion_ocr.job_observability_count, 33);
 assert.equal(oversizedOcrPacket.preingestion_ocr.job_observability_truncated, true);
 
-assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v4");
+assert.equal(packet.replay_snapshot.schema_version, "evaluation-replay-snapshot-v6");
 assert.match(packet.replay_snapshot.versions.targeted_assist_nuisance_fingerprint, /^[0-9a-f]{64}$/);
 assert.equal(
   packet.replay_snapshot.versions.targeted_assist_nuisance_contract,
   "targeted-assist-nuisance-fingerprint-v1"
 );
 assert.equal(packet.replay_snapshot.status, "PARTIAL");
+assert.equal(packet.replay_snapshot.region_evidence.evidence[0].image_generation_id, "asset-test");
+assert.equal(packet.replay_snapshot.versions.region_evidence_adapter, "region-evidence-adapter-v1");
 assert.ok(packet.replay_snapshot.missing_components.includes("pipeline_fingerprint"));
-assert.deepEqual(packet.replay_snapshot.provider_fields, { year: "2025", subject: "Test Player", ignored: "UNKNOWN" });
-assert.equal(packet.replay_snapshot.normalization.decisions.find((row) => row.field === "ignored")?.decision, "DROP");
+assert.deepEqual(packet.replay_snapshot.provider_fields, { year: "2025", subject: "Test Player", product: "UNKNOWN" });
+assert.equal(packet.replay_snapshot.normalization.decisions.find((row) => row.field === "product")?.decision, "DROP");
 assert.deepEqual(packet.field_lineage.find((row) => row.field === "year")?.provider.values, ["2025"]);
 assert.equal(packet.field_lineage.find((row) => row.field === "year")?.final_title_span.matched, false);
 assert.equal(packet.retrieval.top_k[0].source_trust, "OFFICIAL");
@@ -198,16 +306,63 @@ assert.equal(JSON.stringify(packet).includes("complete natural language response
 assert.equal(JSON.stringify(packet).includes("raw_model_response"), false);
 assert.equal(buildEvaluationDecisionTracePacket({}, {}), null);
 
+const traceTunnelSecret = "SENSITIVE NATURAL LANGUAGE RESPONSE HIDDEN IN GENERIC TRACE VALUES";
+const tunneledTrace = buildEvaluationDecisionTracePacket({
+  raw_provider_fields: { year: "2025" },
+  raw_provider_field_evidence: [{
+    field: "year",
+    value: "2025",
+    source_type: "OCR",
+    metadata: {
+      reason: traceTunnelSecret,
+      value: traceTunnelSecret,
+      unresolved: [traceTunnelSecret]
+    }
+  }],
+  raw_provider_unresolved: [
+    "product",
+    traceTunnelSecret,
+    {
+      field: "product",
+      reason_code: "not_observed",
+      metadata: {
+        reason: traceTunnelSecret,
+        value: traceTunnelSecret,
+        unresolved: [traceTunnelSecret]
+      }
+    }
+  ]
+}, payload);
+assert.equal(JSON.stringify(tunneledTrace).includes(traceTunnelSecret), false);
+assert.equal(tunneledTrace.provider_observation.field_evidence[0].value, "2025");
+assert.equal(tunneledTrace.provider_observation.unresolved.includes("product"), true);
+assert.equal(tunneledTrace.provider_observation.unresolved.includes(traceTunnelSecret), false);
+const typedUnresolved = tunneledTrace.provider_observation.unresolved
+  .find((item) => item && typeof item === "object");
+assert.equal(typedUnresolved.field, "product");
+assert.equal(typedUnresolved.reason_code, "not_observed");
+assert.equal(Object.hasOwn(typedUnresolved, "value"), false);
+
 const previousGitCommitSha = process.env.GIT_COMMIT_SHA;
 const previousVercelGitCommitSha = process.env.VERCEL_GIT_COMMIT_SHA;
+const previousVercelDeploymentId = process.env.VERCEL_DEPLOYMENT_ID;
+const previousVercelUrl = process.env.VERCEL_URL;
 process.env.GIT_COMMIT_SHA = "d".repeat(40);
 process.env.VERCEL_GIT_COMMIT_SHA = "d".repeat(40);
+process.env.VERCEL_DEPLOYMENT_ID = "dpl_ExactCandidate123";
+process.env.VERCEL_URL = "candidate-fixed.vercel.app";
 const deploymentPacket = buildEvaluationDecisionTracePacket({}, payload);
 if (previousGitCommitSha === undefined) delete process.env.GIT_COMMIT_SHA;
 else process.env.GIT_COMMIT_SHA = previousGitCommitSha;
 if (previousVercelGitCommitSha === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
 else process.env.VERCEL_GIT_COMMIT_SHA = previousVercelGitCommitSha;
+if (previousVercelDeploymentId === undefined) delete process.env.VERCEL_DEPLOYMENT_ID;
+else process.env.VERCEL_DEPLOYMENT_ID = previousVercelDeploymentId;
+if (previousVercelUrl === undefined) delete process.env.VERCEL_URL;
+else process.env.VERCEL_URL = previousVercelUrl;
 assert.equal(deploymentPacket.deployment_git_sha, "d".repeat(40));
+assert.equal(deploymentPacket.deployment_id, "dpl_ExactCandidate123");
+assert.equal(deploymentPacket.deployment_url, "candidate-fixed.vercel.app");
 
 const targetedPayload = {
   provider_options: applyRecognitionBenchmarkProfile({}, {
@@ -231,6 +386,9 @@ const targetedPacket = buildEvaluationDecisionTracePacket({
     enabled: true,
     final_observation_owner: "TARGETED_VISUAL_OBSERVATION",
     fallback_reason_code: null,
+    naturalLanguageResponse: "SENSITIVE FULL MODEL RESPONSE",
+    provider_response: { content: "SENSITIVE FULL MODEL RESPONSE" },
+    output_text: "SENSITIVE FULL MODEL RESPONSE",
     provider_call_ledger: [{
       logical_stage: "TARGETED_VISUAL_OBSERVATION",
       attempt: 1,
@@ -256,6 +414,7 @@ assert.equal(targetedPacket.provider_aux_route.observed_production_action, "RUN_
 assert.equal(targetedPacket.provider_aux_route.observed_targeted_visual_provider_calls, 1);
 assert.equal(targetedPacket.provider_aux_route.observed_full_provider_calls, 0);
 assert.equal(JSON.stringify(targetedPacket).includes("raw model prose"), false);
+assert.equal(JSON.stringify(targetedPacket).includes("SENSITIVE FULL MODEL RESPONSE"), false);
 
 const providerAuxReplayInput = {
   evidence_document: {},
@@ -282,10 +441,27 @@ assert.equal(
   providerAuxReplayPacket.provider_aux_route.preprovider_snapshot_hash
 );
 
+const completeReplayCandidateSnapshot = buildCandidatePreApplicationEvidenceSnapshot({
+  evidence_schema_version: "listing-evidence-v1",
+  raw_observed_fields: { year: "2025", players: ["Test Player"] },
+  raw_provider_fields: { year: "2025", players: ["Test Player"] },
+  normalized_evidence: {},
+  raw_provider_field_evidence: [{
+    field: "year",
+    value: "2025",
+    responseText: "SENSITIVE REPLAY MODEL RESPONSE",
+    assistant_message: "SENSITIVE REPLAY MODEL RESPONSE"
+  }]
+}, payload);
 const completeReplayPacket = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025", players: ["Test Player"] },
-  raw_provider_field_evidence: [],
+  raw_provider_field_evidence: [{
+    field: "year",
+    value: "2025",
+    providerResponse: { content: "SENSITIVE REPLAY MODEL RESPONSE" }
+  }],
   raw_observed_fields: { year: "2025", players: ["Test Player"] },
+  candidate_pre_application_evidence_snapshot: completeReplayCandidateSnapshot,
   normalized_evidence: {
     year: {
       value: "2025",
@@ -321,6 +497,14 @@ const completeReplayPacket = buildEvaluationDecisionTracePacket({
   forward_enumeration_candidate_packet: forwardEnumerationCandidatePacket
 }, payload);
 assert.equal(completeReplayPacket.replay_snapshot.status, "COMPLETE");
+assert.equal(
+  completeReplayPacket.replay_snapshot.candidate_pre_application_replay_manifest.snapshot_content_sha256,
+  completeReplayPacket.replay_snapshot.candidate_pre_application_evidence_snapshot.snapshot_content_sha256
+);
+assert.equal(
+  completeReplayPacket.replay_snapshot.candidate_pre_application_replay_manifest.authority_scope,
+  "PROCESS_PRIVATE_VERIFIED_REPLAY_CAPABILITY"
+);
 assert.equal(completeReplayPacket.replay_snapshot.versions.recognition_pipeline_fingerprint, "a".repeat(64));
 assert.equal(completeReplayPacket.replay_snapshot.versions.candidate_policy, "candidate-v1");
 assert.equal(completeReplayPacket.replay_snapshot.derivation_provenance[0].status, "UNKNOWN");
@@ -329,6 +513,7 @@ assert.equal(
   completeReplayPacket.replay_snapshot.normalized_evidence.year.candidates[0].sources[0].source_type,
   "OCR"
 );
+assert.equal(JSON.stringify(completeReplayPacket).includes("SENSITIVE REPLAY MODEL RESPONSE"), false);
 
 const missingReplayEvidenceArrays = buildEvaluationDecisionTracePacket({
   raw_provider_fields: { year: "2025", players: ["Test Player"] },

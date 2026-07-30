@@ -1,14 +1,55 @@
 import assert from "node:assert/strict";
 
-import { buildCandidateSelectionPass } from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import {
+  buildCandidatePreApplicationEvidenceSnapshot,
+  buildCandidateSelectionPass as buildCandidateSelectionPassImpl
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import { applyCandidateDecisionStage } from "../lib/listing/candidates/candidate-decision-stage.mjs";
 
-// Layer B: a high-trust OFFICIAL_CHECKLIST catalog candidate may CORRECT a
-// mis-identified product ("Chrome Black" for Star Wars Smugglers Outpost), but
-// only under bounded conditions that anchor agreement alone cannot
-// provide (two genuinely different products can share subject + year + serial):
-//   (1) the observed product has no catalog support, and
-//   (2) the anchored high-trust candidates map to a single product family.
+const candidateTestImageContext = Object.freeze({
+  tenant_id: "tenant_candidate_test",
+  asset_id: "asset-candidate-test",
+  image_generation_id: "asset-candidate-test",
+  images: [{
+    image_id: "front",
+    object_path: "tenants/tenant_candidate_test/listing-assets/2026-07-30/asset-candidate-test/front.jpg",
+    content_sha256: "1".repeat(64),
+    tenant_id: "tenant_candidate_test",
+    asset_id: "asset-candidate-test",
+    image_generation_id: "asset-candidate-test",
+    storage_verified: true
+  }]
+});
+
+function buildCandidateSelectionPass(args = {}) {
+  const result = args.result || {};
+  const observed = result.raw_observed_fields
+    || result.raw_provider_fields
+    || result.resolved_fields
+    || result.resolved
+    || result.fields
+    || {};
+  const prepared = {
+    ...result,
+    current_image_context: result.current_image_context || candidateTestImageContext,
+    evidence_schema_version: result.evidence_schema_version || "candidate-test-evidence-v1",
+    raw_observed_fields: result.raw_observed_fields || observed,
+    raw_provider_fields: result.raw_provider_fields || {},
+    raw_provider_field_evidence: result.raw_provider_field_evidence || []
+  };
+  return buildCandidateSelectionPassImpl({
+    ...args,
+    result: {
+      ...prepared,
+      candidate_pre_application_evidence_snapshot:
+        result.candidate_pre_application_evidence_snapshot
+        || buildCandidatePreApplicationEvidenceSnapshot(prepared, prepared.current_image_context)
+    }
+  });
+}
+
+// Product correction is downstream field application. A catalog row retained
+// only for trace/shadow must never bypass Candidate decision eligibility.
 
 function packet(candidates = []) {
   return {
@@ -42,8 +83,8 @@ function correctionFor(observed, candidates) {
   }).selected_candidate_product_correction;
 }
 
-// 1. Positive: provider mis-reads the product but reads player + serial + year
-//    correctly; the official Smugglers row is anchored and unique → correct it.
+// 1. A generic official row that conflicts with the current-image product is
+// retained for diagnosis, but cannot correct the product through a side door.
 const observedMisread = { year: "2025", manufacturer: "Topps", product: "Topps Chrome Black Star Wars", players: ["Paul Kasey"], serial_number: "12/25" };
 const smugglers = officialCandidate("smugglers", {
   year: "2025",
@@ -55,20 +96,17 @@ const smugglers = officialCandidate("smugglers", {
   expected_serial_denominator: "25"
 });
 const positive = correctionFor(observedMisread, [smugglers]);
-assert.equal(positive.status, "ready_product_correction", "an unsupported observed product with a single anchored family must be corrected");
-assert.equal(positive.candidate_id, "smugglers");
-assert.equal(positive.product_fields.product, "Topps Star Wars Smugglers Outpost");
+assert.equal(positive.status, "not_applicable", "a decision-ineligible conflicting candidate must not correct Product");
 
 const decided = applyCandidateDecisionStage({
   result: { resolved_fields: observedMisread, catalog_candidate_packet: packet([smugglers]), ...buildCandidateSelectionPass({ result: { resolved_fields: observedMisread, catalog_candidate_packet: packet([smugglers]) } }) },
   resolvedBefore: observedMisread
 });
-assert.equal(decided.resolved_after.product, "Topps Star Wars Smugglers Outpost", "the mis-identified product must be overwritten in the resolved fields");
+assert.equal(decided.resolved_after.product, "Topps Chrome Black Star Wars", "a rejected catalog row must not overwrite the observed product");
 assert.equal(decided.resolved_after.manufacturer, "Topps");
 assert.equal(decided.resolved_after.set, null, "product correction must not copy an arbitrary set from the first same-product row");
 assert.equal(decided.resolved_after.insert, null, "product correction must not copy an arbitrary insert from the first same-product row");
-assert.ok(decided.field_application.product_correction_fields.includes("product"));
-assert.equal(decided.field_application.reason_per_field.product, "trusted_official_checklist_product_correction_replace");
+assert.deepEqual(decided.field_application.product_correction_fields, []);
 
 // 2. Safety — observed product IS real (supported) and two families exist. A
 //    player can own both a Topps Chrome /50 and a Bowman Chrome Sapphire /50 in
@@ -143,5 +181,48 @@ assert.equal(
   "not_applicable",
   "subject + year + exact checklist code must not independently authorise Product replacement"
 );
+
+// 8. Regression: an exact-code candidate can remain visible in trace while
+// manufacturer/product conflicts make it ineligible. Product Correction must
+// consume the same eligibility decision and Resolver must preserve observation.
+const conflictingObserved = {
+  year: "2025",
+  manufacturer: "Topps",
+  product: "Topps Chrome",
+  players: ["Jane Doe"],
+  serial_number: "12/25",
+  checklist_code: "JD-12"
+};
+const conflictingOfficial = officialCandidate("upper-deck-conflict", {
+  year: "2025",
+  manufacturer: "Upper Deck",
+  product: "Series 1",
+  players: ["Jane Doe"],
+  expected_serial_denominator: "25",
+  checklist_code: "JD-12"
+});
+const conflictingPass = buildCandidateSelectionPass({
+  result: {
+    resolved_fields: conflictingObserved,
+    catalog_candidate_packet: packet([conflictingOfficial])
+  }
+});
+assert.equal(conflictingPass.selected_candidate_decision.match_level, "NO_MATCH");
+assert.equal(conflictingPass.selected_candidate_decision.selected_candidate_id, "");
+assert.equal(conflictingPass.candidate_application_trace[0].decision_eligible, false);
+assert.ok(conflictingPass.candidate_application_trace[0].blocked_fields.includes("manufacturer"));
+assert.ok(conflictingPass.candidate_application_trace[0].blocked_fields.includes("product"));
+assert.equal(conflictingPass.selected_candidate_product_correction.status, "not_applicable");
+const conflictingDecision = applyCandidateDecisionStage({
+  result: {
+    resolved_fields: conflictingObserved,
+    catalog_candidate_packet: packet([conflictingOfficial]),
+    ...conflictingPass
+  },
+  resolvedBefore: conflictingObserved
+});
+assert.equal(conflictingDecision.resolved_after.manufacturer, "Topps");
+assert.equal(conflictingDecision.resolved_after.product, "Topps Chrome");
+assert.deepEqual(conflictingDecision.field_application.product_correction_fields, []);
 
 console.log("product correction tests passed");

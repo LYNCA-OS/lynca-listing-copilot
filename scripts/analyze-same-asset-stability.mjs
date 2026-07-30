@@ -32,6 +32,14 @@ function object(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function deploymentHost(baseUrl = "") {
+  try {
+    return new URL(cleanText(baseUrl)).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 function stableValue(value, { semantic = false } = {}) {
   if (value === null || value === undefined) return null;
   if (typeof value === "string") return semantic ? cleanText(value) : value;
@@ -454,6 +462,13 @@ function validateRun(row = {}, index = 0) {
     addError(errors, "PROVIDER_IMAGE_DECLARED_CONTENT_MISMATCH", index);
   }
   if (Number(request.provider_http_request_count) !== 1) addError(errors, "PROVIDER_HTTP_REQUEST_COUNT_NOT_ONE", index);
+  if (Number(request.provider_http_request_budget) !== 1) addError(errors, "PROVIDER_HTTP_REQUEST_BUDGET_NOT_ONE", index);
+  if (request.provider_http_request_budget_enforced !== true) {
+    addError(errors, "PROVIDER_HTTP_REQUEST_BUDGET_NOT_ENFORCED", index);
+  }
+  if (cleanText(request.provider_http_retry_policy) !== "FORBIDDEN") {
+    addError(errors, "PROVIDER_HTTP_RETRY_POLICY_NOT_FORBIDDEN", index);
+  }
   const providerStartedAt = Date.parse(request.provider_http_request_started_at || "");
   const providerCompletedAt = Date.parse(request.provider_http_request_completed_at || "");
   if (!Number.isFinite(providerStartedAt) || !Number.isFinite(providerCompletedAt)
@@ -478,6 +493,7 @@ function validateRun(row = {}, index = 0) {
     addError(errors, "CATALOG_SNAPSHOT_REVISION_UNAVAILABLE", index);
   }
   if (!cleanText(row.job_id) || !cleanText(row.recognition_session_id)) addError(errors, "JOB_OR_SESSION_ID_MISSING", index);
+  if (Number(row.max_attempts) !== 1) addError(errors, "WHOLE_JOB_RETRY_BUDGET_NOT_ONE", index);
   if (!cleanText(row.asset_id) || !cleanText(row.image_generation_id)) addError(errors, "ASSET_IDENTITY_MISSING", index);
   if (!sha256Pattern.test(cleanText(row.canonical_image_set_sha256))) addError(errors, "CANONICAL_IMAGE_SET_SHA_INVALID", index);
   if (!sha256Pattern.test(cleanText(row.source_fingerprint))) addError(errors, "SOURCE_FINGERPRINT_INVALID", index);
@@ -526,6 +542,7 @@ function validateExecutionPlan(plan = {}) {
     ["dataset_sha256", plan.dataset_sha256],
     ["sealed_labels_sha256", plan.sealed_labels_sha256],
     ["selected_item_sha256", plan.selected_item_sha256],
+    ["verified_asset_cache_sha256", plan.verified_asset_cache_sha256],
     ["asset_source_fingerprint", asset.fingerprint],
     ["asset_canonical_image_set_sha256", asset.canonical_image_set_sha256]
   ]) {
@@ -547,18 +564,39 @@ function validateExecutionPlan(plan = {}) {
     || Number(plan.planned_job_runs) !== SAME_ASSET_STABILITY_EXPECTED_RUNS) {
     addError(errors, "PLAN_RUN_COUNT_INVALID");
   }
+  if (Number(plan.provider_http_call_hard_budget) !== SAME_ASSET_STABILITY_EXPECTED_RUNS
+    || plan.safety_gate?.server_owned_provider_retry_budget_enforced !== true) {
+    addError(errors, "PLAN_PROVIDER_HTTP_HARD_BUDGET_INVALID");
+  }
+  if (!gitShaPattern.test(cleanText(plan.expected_git_sha))) addError(errors, "PLAN_EXPECTED_GIT_SHA_INVALID");
+  if (!/^dpl_[A-Za-z0-9]+$/.test(cleanText(plan.expected_deployment_id))) {
+    addError(errors, "PLAN_EXPECTED_DEPLOYMENT_ID_INVALID");
+  }
+  try {
+    const target = new URL(cleanText(plan.base_url));
+    if (target.protocol !== "https:" || !target.hostname.endsWith(".vercel.app")) {
+      addError(errors, "PLAN_IMMUTABLE_CANDIDATE_URL_INVALID");
+    }
+  } catch {
+    addError(errors, "PLAN_IMMUTABLE_CANDIDATE_URL_INVALID");
+  }
   return errors;
 }
 
 function validateRunPlanBinding(row = {}, plan = {}, planSha256 = "", index = 0) {
   const errors = [];
   const asset = object(plan.asset_cache_proof);
+  const expectedDeploymentHost = deploymentHost(plan.base_url);
   const exactFields = [
     ["same_asset_execution_id", plan.execution_id],
     ["same_asset_plan_sha256", planSha256],
     ["same_asset_dataset_sha256", plan.dataset_sha256],
     ["same_asset_sealed_labels_sha256", plan.sealed_labels_sha256],
     ["same_asset_selected_item_id", plan.selected_item_id],
+    ["same_asset_expected_git_sha", plan.expected_git_sha],
+    ["same_asset_expected_deployment_id", plan.expected_deployment_id],
+    ["same_asset_observed_deployment_id", plan.expected_deployment_id],
+    ["same_asset_observed_deployment_url", expectedDeploymentHost],
     ["asset_id", asset.asset_id],
     ["image_generation_id", asset.image_generation_id],
     ["source_fingerprint", asset.fingerprint],
@@ -568,6 +606,18 @@ function validateRunPlanBinding(row = {}, plan = {}, planSha256 = "", index = 0)
     if (cleanText(row[field]) !== cleanText(expected)) {
       addError(errors, `PLAN_BINDING_${field.toUpperCase()}_MISMATCH`, index);
     }
+  }
+  if (cleanText(row.evaluation_decision_trace_packet?.deployment_git_sha).toLowerCase()
+    !== cleanText(plan.expected_git_sha).toLowerCase()) {
+    addError(errors, "PLAN_BINDING_DEPLOYMENT_GIT_SHA_MISMATCH", index);
+  }
+  if (cleanText(row.evaluation_decision_trace_packet?.deployment_id)
+    !== cleanText(plan.expected_deployment_id)) {
+    addError(errors, "PLAN_BINDING_RESULT_DEPLOYMENT_ID_MISMATCH", index);
+  }
+  if (cleanText(row.evaluation_decision_trace_packet?.deployment_url).toLowerCase()
+    !== expectedDeploymentHost) {
+    addError(errors, "PLAN_BINDING_RESULT_DEPLOYMENT_URL_MISMATCH", index);
   }
   if (JSON.stringify(row.canonical_primary_content_sha256 || null)
     !== JSON.stringify(asset.canonical_primary_content_sha256 || null)) {
@@ -602,6 +652,9 @@ function globalInput(rows = []) {
     request_controls_sha256: request.provider_request_controls_sha256 || null,
     ordered_provider_images_sha256: request.provider_ordered_image_content_sha256 || null,
     provider_request_fingerprint: request.provider_request_fingerprint || null,
+    provider_http_request_budget: request.provider_http_request_budget ?? null,
+    provider_http_request_budget_enforced: request.provider_http_request_budget_enforced === true,
+    provider_http_retry_policy: request.provider_http_retry_policy || null,
     response_profile: request.response_profile || null,
     image_detail: request.image_detail || null,
     max_output_tokens: request.max_output_tokens ?? null,
@@ -682,6 +735,8 @@ export function analyzeSameAssetStability(reports = [], {
     source_fingerprint: (row) => row.source_fingerprint,
     canonical_primary_content: (row) => row.canonical_primary_content_sha256,
     deployment_git_sha: (row) => row.evaluation_decision_trace_packet?.deployment_git_sha,
+    deployment_id: (row) => row.evaluation_decision_trace_packet?.deployment_id,
+    deployment_url: (row) => row.evaluation_decision_trace_packet?.deployment_url,
     recognition_pipeline_fingerprint: (row) => row.evaluation_decision_trace_packet?.replay_snapshot?.versions?.recognition_pipeline_fingerprint,
     catalog_snapshot_revision: (row) => row.evaluation_decision_trace_packet?.replay_snapshot?.versions?.catalog_snapshot,
     requested_model_id: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.requested_model_id,
@@ -691,6 +746,9 @@ export function analyzeSameAssetStability(reports = [], {
     request_controls_sha256: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_request_controls_sha256,
     ordered_provider_images_sha256: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_ordered_image_content_sha256,
     provider_request_fingerprint: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_request_fingerprint,
+    provider_http_request_budget: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_http_request_budget,
+    provider_http_request_budget_enforced: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_http_request_budget_enforced,
+    provider_http_retry_policy: (row) => row.evaluation_decision_trace_packet?.provider_request_identity?.provider_http_retry_policy,
     vector_worker_status: (row) => runtimePolicyState(row).vector_worker.status,
     vector_worker_reason: (row) => runtimePolicyState(row).vector_worker.reason,
     ocr_critical_field_decision: (row) => runtimePolicyState(row).ocr_rendezvous.critical_field_decision,

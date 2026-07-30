@@ -7,6 +7,11 @@ import { attachForwardEnumerationCandidates } from "../lib/listing/catalog/forwa
 import { constraintEnumerationVersion } from "../lib/listing/catalog/constraint-enumerator.mjs";
 import { loadConstraintModelSnapshot } from "../lib/listing/catalog/constraint-model-store.mjs";
 import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
+import { currentImageManifestMatches } from "../lib/listing/evidence/current-image-manifest.mjs";
+import {
+  candidateObservationEvidenceSnapshotSchemaVersion,
+  candidatePreApplicationEvidenceSnapshotMatches
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
 import {
   providerFieldsByClass,
   providerOutputFieldClass
@@ -22,6 +27,7 @@ import {
   normalizationProjectionComplete
 } from "../lib/listing/evaluation/evaluation-decision-trace-packet.mjs";
 import { renderListingPresentation } from "../lib/listing/renderer/listing-renderer.mjs";
+import { classifyV4ResultOutcome } from "../lib/listing/v4/result-outcome.mjs";
 import { policyFairTokenRecall } from "./evaluate-cloud-listing-api.mjs";
 
 const readFields = new Set(providerFieldsByClass(providerOutputFieldClass.READ));
@@ -304,9 +310,29 @@ function missingRequiredReplaySnapshotComponents(snapshot = {}) {
   const versions = object(snapshot.versions);
   const rendererInputs = object(snapshot.effective_terminal_renderer_inputs);
   const semanticApplication = object(snapshot.semantic_retrieval_application);
+  const candidateSnapshot = object(snapshot.candidate_pre_application_evidence_snapshot);
+  const currentImageBinding = currentImageManifestMatches(
+    object(candidateSnapshot.current_image_context),
+    object(snapshot.current_image_context)
+  );
+  const candidateSnapshotBinding = candidatePreApplicationEvidenceSnapshotMatches(
+    candidateSnapshot,
+    object(snapshot.current_image_context)
+  );
   const required = {
     provider_fields: Object.keys(object(snapshot.provider_fields)).length > 0,
     provider_field_evidence: Array.isArray(snapshot.provider_field_evidence),
+    candidate_pre_application_evidence_snapshot:
+      clean(candidateSnapshot.schema_version) === candidateObservationEvidenceSnapshotSchemaVersion
+      && candidateSnapshot.status === "COMPLETE"
+      && candidateSnapshotBinding.valid === true
+      && currentImageBinding.valid === true
+      && clean(candidateSnapshot.tenant_id) === currentImageBinding.manifest?.tenant_id
+      && clean(candidateSnapshot.asset_id) === currentImageBinding.manifest?.asset_id
+      && clean(candidateSnapshot.image_generation_id) === currentImageBinding.manifest?.image_generation_id
+      && clean(candidateSnapshot.current_image_set_fingerprint)
+        === currentImageBinding.manifest?.image_set_fingerprint,
+    current_image_context: currentImageBinding.valid === true,
     observed_fields: Object.keys(object(snapshot.observed_fields)).length > 0,
     normalized_evidence: Object.keys(object(snapshot.normalized_evidence)).length > 0,
     resolved_fields: Object.keys(object(snapshot.resolved_fields)).length > 0,
@@ -923,11 +949,22 @@ export async function replayProviderOutputContract(report = {}, {
     const evidenceDocument = providerPayloadToEvidenceDocument({
       fields: projected.fields,
       field_evidence: projected.field_evidence,
-      unresolved: projected.unresolved
+      unresolved: projected.unresolved,
+      // Every projected value already crossed the recorded terminal
+      // normalization/Resolver boundary. Replay keeps that confidence class
+      // while the normalizer rebinds source identity to the verified manifest.
+      confidence: "HIGH"
+    }, {
+      images: Array.isArray(snapshot.current_image_context?.images)
+        ? snapshot.current_image_context.images
+        : []
     });
     const replayEvidence = {
-      ...evidenceDocument.evidence,
-      ...projected.normalized_evidence
+      ...projected.normalized_evidence,
+      // Rehydration is a server-side normalization boundary. Its evidence
+      // sources are stamped against the verified replay manifest and must win
+      // over the historical, unbound trace projection.
+      ...evidenceDocument.evidence
     };
     const replayApplication = recordedCandidateApplication(result, packet);
     const base = {
@@ -947,7 +984,10 @@ export async function replayProviderOutputContract(report = {}, {
       resolution_trace: replaySerialVerificationTrace(serialNumeratorVerified),
       recognition_status: "RESOLVED"
     };
-    const candidateInput = attachForwardEnumerationCandidates(base, constraintModel, { shadow: false });
+    const candidateInput = attachForwardEnumerationCandidates(base, constraintModel, {
+      shadow: false,
+      observationContext: snapshot.current_image_context || {}
+    });
     const resolvedCandidate = applyIdentityResolutionGate(candidateInput, {
       maxLength: snapshotMaxLength,
       providerId: "openai_legacy"
@@ -978,6 +1018,7 @@ export async function replayProviderOutputContract(report = {}, {
         module_order: candidatePresentation.module_order
       }
     };
+    const candidateOutcome = classifyV4ResultOutcome(candidate);
     const snapshotTitle = clean(snapshot.final_title);
     const baselineTitle = terminalTitle;
     const candidateTitle = clean(candidate.final_title || candidate.title);
@@ -1053,6 +1094,10 @@ export async function replayProviderOutputContract(report = {}, {
       effective_renderer_parity: rendererParity.matches,
       effective_renderer_inputs: rendererParity,
       candidate_title: candidateTitle,
+      candidate_identity_resolution_status: clean(candidate.identity_resolution_status) || null,
+      candidate_workflow_route: clean(candidate.workflow_route || candidate.route) || null,
+      candidate_outcome_type: candidateOutcome.outcome,
+      candidate_writer_review_required: candidateOutcome.writer_review_required,
       title_changed: titleChanged,
       derived_title_change_allowed: derivedTitleChangeAllowed,
       reference_title: reference || null,
@@ -1063,6 +1108,11 @@ export async function replayProviderOutputContract(report = {}, {
       baseline_sem_required_acceptance_failures: baselineSem?.required_acceptance_failures ?? null,
       candidate_sem_required_acceptance_failures: candidateSem?.required_acceptance_failures ?? null,
       contract_regression: scoreRegression || semRegression,
+      forward_observation_context_status: candidate.forward_enumeration_shadow?.observation_context_status || null,
+      forward_observation_provenance_count:
+        candidate.forward_enumeration_shadow?.observation_provenance_count ?? null,
+      forward_unproven_observation_fields:
+        candidate.forward_enumeration_unproven_observation_fields || [],
       forward_value_fields: forwardValueFields,
       forward_unknown_fields: derived.filter((item) => item.status === "UNKNOWN").map((item) => item.field),
       derived_values_applied: (candidate.retrieval_application?.actual_applied_fields || []).slice()
@@ -1090,6 +1140,10 @@ export async function replayProviderOutputContract(report = {}, {
     effective_renderer_parity_failure_count: replayable.filter((row) => !row.effective_renderer_parity).length,
     forward_value_count: replayable.reduce((sum, row) => sum + row.forward_value_fields.length, 0),
     derived_application_count: replayable.reduce((sum, row) => sum + row.derived_values_applied.length, 0),
+    candidate_writer_review_required_count: replayable.filter((row) => row.candidate_writer_review_required === true).length,
+    candidate_writer_review_required_rate: replayable.length
+      ? Number((replayable.filter((row) => row.candidate_writer_review_required === true).length / replayable.length).toFixed(6))
+      : null,
     baseline_policy_fair_token_recall: average(scored.map((row) => row.baseline_policy_fair_token_recall)),
     candidate_policy_fair_token_recall: average(scored.map((row) => row.candidate_policy_fair_token_recall)),
     gate_passed: replayRowsPassGate(rows, results.length),
@@ -1114,6 +1168,7 @@ export async function main(argv = process.argv) {
     `provider contract replay: ${replay.replayable_count}/${replay.result_count} replayable`,
     `policy recall: ${replay.baseline_policy_fair_token_recall} -> ${replay.candidate_policy_fair_token_recall}`,
     `title changed=${replay.title_changed_count} regressions=${replay.contract_regression_count}`,
+    `writer review required=${replay.candidate_writer_review_required_count}/${replay.replayable_count}`,
     `forward values=${replay.forward_value_count} applied=${replay.derived_application_count}`,
     `gate=${replay.gate_passed}`
   ].join("\n") + "\n");

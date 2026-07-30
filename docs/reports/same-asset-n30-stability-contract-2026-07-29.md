@@ -45,7 +45,13 @@ The runner defaults to dry-run and refuses execution unless all of the following
 
 The authorized execution plan is a required analysis input. Every result is bound to the plan SHA, execution ID, frozen dataset and labels hashes, selected Development item, and canonical asset proof. The runner also copies the exact dataset and verified-asset-cache bytes used at execution into the immutable evidence directory. Reports without this binding are invalid and cannot be presented as the predeclared N=30 experiment.
 
-The confirmation authorizes 30 planned jobs, not a 30-request hard cost cap. The current server may perform an internal retry before the client can stop it. Such a run is invalid and stops the remaining schedule immediately, but the exact paid HTTP upper bound is not enforced in advance. The contract therefore does not call `30` a Provider-call budget.
+The confirmation authorizes exactly 30 planned jobs and a hard upper bound of 30 Provider HTTP requests. For `cold_algorithm_benchmark`, the server now owns both retry boundaries: the Queue persists `max_attempts=1`, and the Provider request context enforces `provider_http_request_budget=1` with retry policy `FORBIDDEN` before the call. Trace must preserve those values; a missing or relaxed budget invalidates the run. The client still stops at the first invalid result, so the realized request count may be lower than 30 but cannot legitimately exceed 30.
+
+The verified-asset input is also immutable. The plan accepts exactly one canonical cache entry, hashes the source bytes, copies those bytes into the evidence directory read-only, disables cache writes in the smoke runner, and checks the snapshot hash after every run. Any byte drift fails closed.
+
+Paid execution is allowed only against an immutable protected `*.vercel.app` candidate. Before any credential is exposed, the workflow parses the input as a bare HTTPS deployment origin and rejects paths, queries, fragments, credentials and custom ports. It then reads the public production domain without a bypass and requires that response to bind the exact Git SHA, pinned `dpl_*` deployment ID and immutable deployment host supplied to the run. Only after that trusted public proof may a request carry the project-scoped `VERCEL_AUTOMATION_BYPASS_SECRET` to the normalized immutable origin. The protected deployment repeats the same three-way binding before login, authorization consumption or paid work. Every result is bound to all three values, and both the public and protected health proofs are persisted.
+
+The N30 workflow does not require or receive a Vercel account token and does not install the Vercel CLI. The automation bypass is stored only as a GitHub `Production` environment secret and is injected only into the immutable-host preflight, authenticated-session proof and N30 execution steps. The HTTP client refuses to attach that header to an origin other than its configured application origin; signed Storage requests never receive it. A missing bypass secret fails in the protected preflight before login, enqueue or Provider work.
 
 Every run must satisfy:
 
@@ -100,6 +106,9 @@ node scripts/run-same-asset-stability.mjs \
   --frozen-cohort <FAMILIAR-or-UNSEEN> \
   --item-id <predeclared-member-id> \
   --verified-asset-cache <verified-assets.json> \
+  --base-url https://<immutable-candidate>.vercel.app \
+  --expected-git-sha <40-character-git-sha> \
+  --expected-deployment-id dpl_<pinned-deployment-id> \
   --out-dir <output-directory>
 ```
 
@@ -113,4 +122,4 @@ node scripts/analyze-same-asset-stability.mjs \
   --out <analysis.json>
 ```
 
-Execution is intentionally omitted: these trace additions are not deployed, no Provider call was authorized, and the server does not yet enforce a pre-call no-retry HTTP budget.
+The cloud execution path is `.github/workflows/same-asset-n30.yml`. It validates the prior zero-Provider asset-preparation artifact, narrows it to the one predeclared familiar Development asset, reverifies canonical Storage without enqueue/OCR/Provider calls, consumes the exact SHA once, then invokes the runner. This workflow has not been triggered by this change: the implementation and tests are offline-only until an immutable candidate exists and the GitHub `Production` environment contains its dedicated `VERCEL_AUTOMATION_BYPASS_SECRET` together with the other required credentials.

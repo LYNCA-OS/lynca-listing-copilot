@@ -16,6 +16,7 @@ import {
 import { applyPreIngestionEvidencePatchesToPayload } from "../lib/listing/pipeline/preingestion-evidence.mjs";
 import { applyIdentityResolutionGate } from "../lib/identity-resolution/listing-resolution-gate.mjs";
 import { __listingCopilotTitleTestHooks } from "../lib/listing/v4/pipeline/native-recognition-core.mjs";
+import { sourceIdentityForVerifiedImage } from "../lib/listing/evidence/current-image-manifest.mjs";
 
 const env = {
   SUPABASE_URL: "https://supabase.test",
@@ -25,9 +26,15 @@ const tenantId = "tenant_a";
 const assetId = "asset_11111111-1111-4111-8111-111111111111";
 process.env.SUPABASE_URL = env.SUPABASE_URL;
 process.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+assert.equal(
+  preingestionOcrJobVersion,
+  "ocr-crop-v21",
+  "additive RegionEvidence telemetry must not invalidate the OCR semantic job contract"
+);
 
 const front = {
   id: "front",
+  tenantId,
   assetId,
   storageRole: "front_original",
   objectPath: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/front.jpg`,
@@ -42,6 +49,7 @@ const front = {
 };
 const back = {
   id: "back",
+  tenantId,
   assetId,
   storageRole: "back_original",
   objectPath: `tenants/tenant_a/listing-assets/2026-07-06/${assetId}/back.jpg`,
@@ -197,6 +205,10 @@ assert.deepEqual(summaryWithOcrExecution.ocr_stage_execution, {
 const jobs = buildPreingestionWorkerJobs({ bundle });
 assert.ok(jobs.every((job) => job.job_type === "ocr_crop_verification"));
 assert.ok(jobs.every((job) => job.job_key.startsWith(`ocr:${preingestionOcrJobVersion}:`)));
+assert.ok(jobs.every((job) => job.payload.image_generation_id === assetId));
+assert.ok(jobs.every((job) => /^[0-9a-f]{64}$/.test(job.payload.source_image_sha256)));
+assert.ok(jobs.every((job) => job.payload.producer_revision === preingestionOcrJobVersion));
+assert.ok(jobs.every((job) => job.payload.bundle_version === bundle.bundle_version));
 assert.deepEqual(
   jobs.map((job) => `${job.payload.crop.crop_metadata.source_side}:${job.payload.crop.role}`).sort(),
   ["back:card_code_crop", "front:serial_crop"],
@@ -447,12 +459,28 @@ assert.equal(
   "late preflight evidence must be merged into the Shadow snapshot instead of being lost after the 50 ms race"
 );
 
-const directCardEvidence = (value) => ({
+const directCardEvidence = (value, imageId = "front") => ({
   value,
   normalized_value: value,
   status: "CONFIRMED",
-  sources: [{ source_type: "CARD_FRONT", observed_text: Array.isArray(value) ? value.join(" / ") : String(value) }]
+  sources: [{
+    source_type: "CARD_FRONT",
+    ...sourceIdentityForVerifiedImage(
+      knowledgeFirstObservationContext.images,
+      knowledgeFirstObservationContext.images.find((image) => image.id === imageId)
+    ),
+    observed_text: Array.isArray(value) ? value.join(" / ") : String(value)
+  }]
 });
+const knowledgeFirstObservationContext = {
+  tenant_id: tenantId,
+  asset_id: assetId,
+  image_generation_id: assetId,
+  images: [
+    { ...front, imageGenerationId: assetId },
+    { ...back, imageGenerationId: assetId }
+  ]
+};
 const typedKnowledgeFirstRoute = __listingCopilotTitleTestHooks.knowledgeFirstRouteFromPreProviderEvidence({
   usableImageCount: 2,
   evidenceDocument: {
@@ -471,6 +499,7 @@ const typedKnowledgeFirstRoute = __listingCopilotTitleTestHooks.knowledgeFirstRo
       sport: directCardEvidence("basketball")
     }
   },
+  observationContext: knowledgeFirstObservationContext,
   constraintModel: {
     schema_version: "test-constraint-model-v1",
     snapshot_version: "test-constraint-model-v1",
@@ -509,6 +538,7 @@ const untrustedPremiseCannotBecomeDecisiveFact = __listingCopilotTitleTestHooks.
       card_number: directCardEvidence("FTB-1")
     }
   },
+  observationContext: knowledgeFirstObservationContext,
   constraintModel: {
     schema_version: "test-constraint-model-v1",
     snapshot_version: "test-constraint-model-v1",

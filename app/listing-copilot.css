@@ -134,7 +134,6 @@ a {
 }
 
 .hero-panel,
-.provider-panel,
 .control-panel,
 .stats-grid article,
 .batch-titles-board,
@@ -230,7 +229,6 @@ h3 {
 
 .principle-grid p,
 .section-head p,
-.provider-head p,
 .empty-state,
 .result-meta,
 .field-list,
@@ -248,76 +246,6 @@ h3 {
   align-items: center;
   margin-top: 22px;
   padding: 20px;
-}
-
-.provider-panel {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr);
-  gap: 16px;
-  align-items: center;
-  margin-top: 22px;
-  padding: 18px;
-}
-
-.provider-head {
-  min-width: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.provider-control {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.provider-option {
-  min-height: 58px;
-  display: grid;
-  align-content: center;
-  gap: 4px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.045);
-  color: var(--muted);
-  text-align: left;
-}
-
-.provider-option strong,
-.provider-option small:not(.provider-smoke) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.provider-option strong {
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.provider-option small {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.provider-smoke {
-  color: var(--cyan);
-  font-size: 10px;
-  line-height: 1.35;
-  white-space: normal;
-}
-
-.provider-option.active {
-  border-color: rgba(88, 199, 245, 0.76);
-  background: rgba(88, 199, 245, 0.13);
-}
-
-.provider-option:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
 }
 
 .mode-control {
@@ -1953,7 +1881,6 @@ summary {
 
 @media (max-width: 1180px) {
   .control-panel,
-  .provider-panel,
   .asset-row-card {
     grid-template-columns: 1fr;
   }
@@ -1999,8 +1926,7 @@ summary {
 
   .stats-grid,
   .principle-grid,
-  .mode-control,
-  .provider-control {
+  .mode-control {
     grid-template-columns: 1fr;
   }
 
@@ -2697,7 +2623,6 @@ h2 {
 }
 
 .hero-panel,
-.provider-panel,
 .control-panel,
 .stats-grid article,
 .batch-titles-board,

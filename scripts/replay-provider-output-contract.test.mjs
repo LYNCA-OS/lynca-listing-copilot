@@ -8,6 +8,12 @@ import {
   replayRowsPassGate,
   requiredAcceptanceFailureRegression
 } from "./replay-provider-output-contract.mjs";
+import { buildVerifiedCurrentImageManifest } from "../lib/listing/evidence/current-image-manifest.mjs";
+import {
+  buildCandidatePreApplicationEvidenceSnapshot,
+  buildCandidatePreApplicationReplayManifest
+} from "../lib/listing/candidates/candidate-selection-pass.mjs";
+import { providerPayloadToEvidenceDocument } from "../lib/listing/evidence/provider-evidence-normalizer.mjs";
 
 assert.equal(requiredAcceptanceFailureRegression(["print_finish"], ["lot_quantity"]), true);
 assert.equal(requiredAcceptanceFailureRegression(["print_finish"], []), false);
@@ -51,9 +57,50 @@ function normalizationProjection(input = {}, output = {}) {
   };
 }
 
+const replayCurrentImageContext = buildVerifiedCurrentImageManifest({
+  tenant_id: "tenant_a",
+  asset_id: "asset-replay",
+  image_generation_id: "asset-replay",
+  images: ["front", "back"].map((id, index) => ({
+    image_id: id,
+    object_path: "tenants/tenant_a/listing-assets/2026-07-30/asset-replay/" + id + ".jpg",
+    content_sha256: String(index + 1).repeat(64),
+    tenant_id: "tenant_a",
+    asset_id: "asset-replay",
+    image_generation_id: "asset-replay",
+    storage_verified: true,
+    derived: false,
+    crop_metadata: {}
+  }))
+});
+
+const replayCandidateObservationSnapshot = buildCandidatePreApplicationEvidenceSnapshot({
+  evidence_schema_version: "listing-evidence-v1",
+  raw_observed_fields: {
+    year: "2025",
+    manufacturer: "Panini",
+    set: "Fade To Black",
+    players: ["Victor Wembanyama"]
+  },
+  raw_provider_fields: {
+    year: "2025",
+    manufacturer: "Panini",
+    set: "Fade To Black",
+    players: ["Victor Wembanyama"]
+  },
+  normalized_evidence: {},
+  raw_provider_field_evidence: []
+}, replayCurrentImageContext);
+
 const snapshot = {
-  schema_version: "evaluation-replay-snapshot-v4",
+  schema_version: "evaluation-replay-snapshot-v6",
   status: "COMPLETE",
+  current_image_context: replayCurrentImageContext,
+  candidate_pre_application_evidence_snapshot: replayCandidateObservationSnapshot,
+  candidate_pre_application_replay_manifest: buildCandidatePreApplicationReplayManifest(
+    replayCandidateObservationSnapshot,
+    replayCurrentImageContext
+  ),
   provider_fields: {
     year: "2025",
     manufacturer: "Panini",
@@ -71,21 +118,45 @@ const snapshot = {
     grade_type: "UNKNOWN"
   },
   normalized_evidence: {
+    year: {
+      value: "2025",
+      normalized_value: "2025",
+      status: "CONFIRMED",
+      sources: [{ source_type: "CARD_BACK", image_id: "back", observed_text: "2025" }]
+    },
+    manufacturer: {
+      value: "Panini",
+      normalized_value: "Panini",
+      status: "CONFIRMED",
+      sources: [{ source_type: "CARD_FRONT", image_id: "front", observed_text: "Panini" }]
+    },
+    set: {
+      value: "Fade To Black",
+      normalized_value: "Fade To Black",
+      status: "CONFIRMED",
+      sources: [{ source_type: "CARD_FRONT", image_id: "front", observed_text: "Fade To Black" }]
+    },
+    players: {
+      value: ["Victor Wembanyama"],
+      normalized_value: ["Victor Wembanyama"],
+      status: "CONFIRMED",
+      sources: [{ source_type: "CARD_FRONT", image_id: "front", observed_text: "Victor Wembanyama" }]
+    },
     card_grade: {
       value: "10",
       status: "CONFIRMED",
-      sources: [{ source_type: "OCR_ONLY", observed_text: "10" }]
+      sources: [{ source_type: "OCR_ONLY", image_id: "slab", observed_text: "10" }]
     },
     print_run_number: {
       value: "03/25",
       normalized_value: "03/25",
       status: "CONFIRMED",
-      sources: [{ source_type: "OCR_ONLY", observed_text: "03/25" }]
+      sources: [{ source_type: "OCR_ONLY", image_id: "back", observed_text: "03/25" }]
     }
   },
   provider_field_evidence: [
-    { field: "year", value: "2025", source_type: "CARD_BACK_PRINTED_TEXT", visible_text: "2025" },
-    { field: "product", value: "Panini Phoenix", source_type: "VISION_ONLY", visible_text: "" }
+    { field: "year", value: "2025", source_type: "CARD_BACK_PRINTED_TEXT", source_image_id: "back", visible_text: "2025" },
+    { field: "product", value: "Panini Phoenix", source_type: "VISION_ONLY", source_image_id: "front", visible_text: "" }
   ],
   derivation_provenance: [],
   normalization: {
@@ -168,6 +239,9 @@ assert.equal(projected.fields.grade_type, undefined);
 assert.equal(projected.normalized_evidence.card_grade.value, "10");
 assert.deepEqual(projected.field_evidence.map((item) => item.field), [
   "year",
+  "manufacturer",
+  "set",
+  "players",
   "card_grade",
   "print_run_number"
 ]);
@@ -532,6 +606,22 @@ for (const serialNumeratorVerified of [true, false, null]) {
   }).matches, false);
 }
 
+const forwardReplayProjection = projectReadOnlyProviderSnapshot(snapshot);
+const forwardReplayEvidenceDocument = providerPayloadToEvidenceDocument({
+  fields: forwardReplayProjection.fields,
+  field_evidence: forwardReplayProjection.field_evidence,
+  unresolved: forwardReplayProjection.unresolved
+}, { images: replayCurrentImageContext.images });
+for (const field of ["year", "manufacturer", "set", "players"]) {
+  const source = forwardReplayEvidenceDocument.evidence?.[field]?.sources?.[0];
+  assert.equal(
+    source?.current_image_manifest_fingerprint,
+    replayCurrentImageContext.image_set_fingerprint,
+    `${field}:${JSON.stringify({ projection: forwardReplayProjection, source })}`
+  );
+  assert.equal(source?.direct_observation, true, `${field}:${JSON.stringify(source)}`);
+}
+
 const report = {
   results: [{
     asset_id: "asset-1",
@@ -577,7 +667,10 @@ const report = {
 };
 const replay = await replayProviderOutputContract(report, { model });
 assert.equal(replay.replayable_count, 1);
-assert.equal(replay.forward_value_count, 1);
+assert.equal(replay.candidate_writer_review_required_count, 1);
+assert.equal(replay.candidate_writer_review_required_rate, 1);
+assert.equal(replay.rows[0].candidate_writer_review_required, true);
+assert.equal(replay.forward_value_count, 1, JSON.stringify(replay.rows[0]));
 assert.ok(replay.rows[0].forward_value_fields.includes("product"));
 assert.equal(replay.rows[0].forward_unknown_fields.includes("team"), true);
 assert.equal(replay.rows[0].replay_snapshot_terminal_title_match, true);
@@ -609,7 +702,7 @@ const incomplete = await replayProviderOutputContract({
   results: [{
     asset_id: "asset-2",
     evaluation_decision_trace_packet: {
-      replay_snapshot: { schema_version: "evaluation-replay-snapshot-v4", status: "PARTIAL" }
+      replay_snapshot: { schema_version: "evaluation-replay-snapshot-v6", status: "PARTIAL" }
     }
   }]
 }, { model });

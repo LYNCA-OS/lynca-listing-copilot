@@ -34,9 +34,19 @@ export const verifiedAssetCacheContract = Object.freeze({
   modes: ["disabled", "reuse", "refresh"]
 });
 
-function deploymentProtectionHeaders(env = process.env) {
+export function deploymentProtectionHeaders({
+  baseUrl = "",
+  requestUrl = "",
+  env = process.env
+} = {}) {
   const bypassSecret = cleanText(env.VERCEL_AUTOMATION_BYPASS_SECRET);
-  return bypassSecret ? { "x-vercel-protection-bypass": bypassSecret } : {};
+  if (!bypassSecret) return {};
+  const base = new URL(cleanText(baseUrl));
+  const request = new URL(cleanText(requestUrl));
+  if (request.origin !== base.origin) {
+    throw new Error("deployment protection bypass cannot leave the configured application origin");
+  }
+  return { "x-vercel-protection-bypass": bypassSecret };
 }
 
 function argValue(argv, name, fallback = "") {
@@ -930,11 +940,13 @@ export function enqueuePayloadRequestsEvaluationAuthorization(payload = {}) {
 }
 
 export async function login({ baseUrl, username, password, fetchImpl = globalThis.fetch }) {
-  const response = await fetchImpl(`${baseUrl}/api/login`, {
+  const requestUrl = `${baseUrl}/api/login`;
+  const response = await fetchImpl(requestUrl, {
     method: "POST",
+    redirect: "error",
     headers: {
       "content-type": "application/json",
-      ...deploymentProtectionHeaders()
+      ...deploymentProtectionHeaders({ baseUrl, requestUrl })
     },
     body: JSON.stringify({ username, password })
   });
@@ -967,16 +979,26 @@ async function postJson({
   maxAttempts = 1
 }) {
   const started = Date.now();
+  const requestUrl = `${baseUrl}${path}`;
   try {
-    const request = await fetchWithBoundedRetry(`${baseUrl}${path}`, {
+    const request = await fetchWithBoundedRetry(requestUrl, {
       method: "POST",
+      redirect: "error",
       headers: {
         "content-type": "application/json",
-        ...deploymentProtectionHeaders(),
+        ...deploymentProtectionHeaders({ baseUrl, requestUrl }),
         ...(path === "/api/v4/listing-job-enqueue"
           && enqueuePayloadRequestsEvaluationAuthorization(payload)
           && cleanText(process.env.LAUNCH_GATE_EVAL_SECRET)
           ? { "x-lynca-launch-gate-secret": cleanText(process.env.LAUNCH_GATE_EVAL_SECRET) }
+          : {}),
+        ...(path === "/api/v4/listing-preingest"
+          && cleanText(process.env.V4_JOB_WORKER_SECRET || process.env.LYNCA_WORKER_SECRET)
+          ? {
+            "x-lynca-worker-secret": cleanText(
+              process.env.V4_JOB_WORKER_SECRET || process.env.LYNCA_WORKER_SECRET
+            )
+          }
           : {}),
         // undici 的 keep-alive 套接字一旦僵死会级联拖垮后续同源请求
         //（表现为成串的 45s request_timeout）；烟测逐请求关闭连接复用。
@@ -1013,13 +1035,15 @@ async function getJson({ baseUrl, path, cookie, requestTimeoutMs, fetchImpl = gl
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error(`request_timeout:${path.split("?")[0]}`)), requestTimeoutMs);
   const started = Date.now();
+  const requestUrl = `${baseUrl}${path}`;
   try {
-    const response = await fetchImpl(`${baseUrl}${path}`, {
+    const response = await fetchImpl(requestUrl, {
       method: "GET",
+      redirect: "error",
       headers: {
         connection: "close",
         cookie,
-        ...deploymentProtectionHeaders()
+        ...deploymentProtectionHeaders({ baseUrl, requestUrl })
       },
       signal: controller.signal
     });
@@ -3348,6 +3372,7 @@ export function resultFromBatchJob(prepared = {}, batchPoll = {}, thinkMs = 0) {
     tenant_isolation_measured: tenantIsolationMeasured,
     tenant_isolation_valid: tenantIsolationMeasured ? expectedTenantId === observedTenantId : null,
     job_id: prepared.job.job_id,
+    max_attempts: Number(jobRow?.max_attempts ?? prepared.job?.max_attempts ?? 0) || null,
     recognition_session_id: prepared.job.recognition_session_id || summary.recognition_session_id || null,
     job_created_at: summary.job_created_at || null,
     job_started_at: summary.job_started_at || null,
@@ -4819,6 +4844,7 @@ export async function runV4EbaySmoke({
   coldStartBlind = false,
   verifiedAssetCachePath = "",
   verifiedAssetCacheMode = "disabled",
+  verifiedAssetCacheReadOnly = false,
   sourceStorageUrl = "",
   sourceStorageServiceRoleKey = "",
   sourceMaterializationDir = "/tmp/lynca-v4-smoke-source",
@@ -4843,6 +4869,9 @@ export async function runV4EbaySmoke({
   const normalizedVerifiedAssetCacheMode = normalizeVerifiedAssetCacheMode(verifiedAssetCacheMode);
   if (normalizedVerifiedAssetCacheMode !== "disabled" && !cleanText(verifiedAssetCachePath)) {
     throw new Error("verifiedAssetCachePath is required when verified asset cache is enabled");
+  }
+  if (verifiedAssetCacheReadOnly === true && normalizedVerifiedAssetCacheMode !== "reuse") {
+    throw new Error("verifiedAssetCacheReadOnly requires verified asset cache mode reuse");
   }
   const dataset = await readDataset(datasetPath);
   const datasetSamplePolicy = Array.isArray(dataset) ? null : dataset.evaluation_sample_policy || null;
@@ -5014,7 +5043,7 @@ export async function runV4EbaySmoke({
           prepared[localIndex] = recoveredRows[recoveryIndex];
         });
       }
-      if (normalizedVerifiedAssetCacheMode !== "disabled") {
+      if (normalizedVerifiedAssetCacheMode !== "disabled" && verifiedAssetCacheReadOnly !== true) {
         for (const row of prepared) {
           const entry = row?.asset_cache_entry;
           if (entry?.fingerprint && entry?.asset_id) assetCacheEntries.set(entry.fingerprint, entry);
@@ -5125,6 +5154,7 @@ export async function runV4EbaySmoke({
     preparation_concurrency: normalizedPreparationConcurrency,
     verified_asset_cache: {
       mode: normalizedVerifiedAssetCacheMode,
+      read_only: verifiedAssetCacheReadOnly === true,
       path: cleanText(verifiedAssetCachePath) ? resolve(verifiedAssetCachePath) : null,
       hit_count: results.filter((item) => item.preparation_cache_hit === true).length,
       miss_count: results.filter((item) => item.preparation_cache_hit !== true).length,

@@ -37,7 +37,7 @@ function staticChecks() {
     check("writer_one_line_surface", /function TitleCardComponent/.test(app)
       && !/\$\{workflowSummaryNotice\(result\)\}/.test(app)
       && !/\$\{publicationGateNotice\(result\)\}/.test(app), "Writer UI exposes one editable title instead of internal control-plane panels."),
-    check("duplicate_paid_enqueue_guard", /speculativeNeedsFreshEnqueue/.test(app)
+    check("duplicate_paid_enqueue_guard", !/ensureSpeculativeRecognition|client_speculative = true/.test(app)
       && /Number\(resultCount\) === 0/.test(app)
       && /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT,[\s\S]*timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS/.test(app), "The browser blocks duplicate submissions and bounds enqueue waits."),
     check("durable_queue", /enqueueV4RecognitionJobs/.test(enqueue)
