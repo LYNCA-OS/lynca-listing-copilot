@@ -120,3 +120,23 @@ thin_canonical  150  0.7731  0.7432  0.8186   0.7805   61       97
 ### 联网搜索可用（已验证）
 
 provider 支持 `tools: [{type:"web_search"}]`，实测会真去检索并返回带 url_citation 的答案。注意：**有 web_search_call 时 `body.output_text` 为空**，文本在 `output[].content[].text`。
+
+### 联网知识补充：实测等于零（2026-08-01）
+
+40 张失败子集（`print_finish` 与参考不符或为空），每张一次带 `web_search` 的文本调用，只允许补全平行名：
+
+```
+改善 13 / 变差 5 / 拒答 17 / 无变化 5      补对 15 词次，多加 7 词次
+```
+
+搜索确实能干活——`/50 → Gold Refractor` 补对、`Prizm → Green Pulsar` 两个词都补上、甚至**纠正了模型看错的颜色**（Yellow→Gold）。但换算成 F1：
+
+```
+基线      F1=0.7731  r=0.7432  p=0.8186
+加知识后  F1=0.7744  r=0.7474  p=0.8157
+逐卡配对  delta=+0.0013  胜 11 : 负 9 : 平 130   p=0.82
+```
+
+**+0.0013，不显著，等于零。** 补对的词和加错的词互相抵消（`Purple Refractor → Purple Geometric Refractor`，而答案是 Raywave）。
+
+判定范围要说清楚：**这否掉的是「用 web_search 补 print_finish」这一个实现**，不是「补充信息」这个方向。它只覆盖 23/150 张（搜索 42% 拒答）、只改一个字段、用的是通用搜索而不是卡牌目录数据库。真正的卡牌世界引擎（结构化 checklist 数据，按 product + 印量直接查平行）没有被测过。
