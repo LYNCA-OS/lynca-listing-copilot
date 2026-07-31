@@ -224,4 +224,50 @@ const nativeCore = readFileSync(
 assert.match(nativeCore, /const providerExecutionSignal = requestContext\?\.signal \|\| null/);
 assert.match(nativeCore, /requestContext: fullProviderRequestContext,\s+signal: providerExecutionSignal/);
 
+// The strip must report what it took. Silence here is what let a paired run
+// vary --model against an unauthorized deployment, measure the env-pinned model
+// on both arms, and look like a clean comparison.
+{
+  const { stripClientAlgorithmControlsReporting } = await import(
+    "../lib/listing/v4/contracts/recognition-request.mjs"
+  );
+
+  const stripped = stripClientAlgorithmControlsReporting({
+    asset_id: "asset-1",
+    provider_options: { openai_listing_model_override: "gpt-5.6-luna" },
+    model: "gpt-5.6-luna"
+  });
+  assert.deepEqual(stripped.removed.sort(), ["model", "provider_options"]);
+  assert.equal(stripped.value.provider_options, undefined);
+  assert.equal(stripped.value.asset_id, "asset-1", "non-control keys survive");
+
+  // A caller that sent nothing forbidden must not be told anything was taken --
+  // otherwise the signal is noise and gets ignored when it matters.
+  assert.deepEqual(stripClientAlgorithmControlsReporting({ asset_id: "asset-1" }).removed, []);
+}
+
+// An env-pinned model silently outranks the source default. Readiness has to be
+// able to say so, or "we switched the model" stays unfalsifiable.
+{
+  const { providerModelPinning, visionProviderIds: ids, defaultProviderModels: defaults } = await import(
+    "../lib/listing/providers/provider-contract.mjs"
+  );
+  const provider = ids.OPENAI_LEGACY;
+
+  const pinned = providerModelPinning(provider, { OPENAI_LISTING_MODEL: "gpt-5-mini-2025-08-07" });
+  assert.equal(pinned.effective_model, "gpt-5-mini-2025-08-07");
+  assert.equal(pinned.code_default, defaults[provider]);
+  assert.equal(pinned.code_default_is_inert, true);
+  assert.match(pinned.remedy, /overrides the source default/);
+
+  const unpinned = providerModelPinning(provider, {});
+  assert.equal(unpinned.effective_model, defaults[provider]);
+  assert.equal(unpinned.code_default_is_inert, false);
+  assert.equal(unpinned.remedy, null);
+
+  // Agreement is not a conflict.
+  const agreeing = providerModelPinning(provider, { OPENAI_LISTING_MODEL: defaults[provider] });
+  assert.equal(agreeing.code_default_is_inert, false);
+}
+
 console.log("Recognition request contract tests passed");
