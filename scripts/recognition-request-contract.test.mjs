@@ -270,4 +270,27 @@ assert.match(nativeCore, /requestContext: fullProviderRequestContext,\s+signal: 
   assert.equal(agreeing.code_default_is_inert, false);
 }
 
+// Dotted gpt-5 minor versions belong to the gpt-5 family. Classifying one as
+// legacy sends it `temperature`, which OpenAI rejects with a 400 -- the whole
+// provider call fails rather than degrading, so this is not cosmetic.
+{
+  const { isGpt5ResponsesModel, openAiResponsesModelControls } = await import(
+    "../lib/listing/providers/openai-responses-request.mjs"
+  );
+
+  for (const model of ["gpt-5", "gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5.6-luna"]) {
+    assert.equal(isGpt5ResponsesModel(model), true, `${model} is a gpt-5 model`);
+    const controls = openAiResponsesModelControls(model, { env: {} });
+    assert.equal(controls.temperature, undefined, `${model} must not be sent temperature`);
+    assert.ok(controls.reasoning?.effort, `${model} carries a reasoning effort`);
+  }
+
+  // The separator class must not swallow models that merely start with the same
+  // digits. "gpt-50" is not a gpt-5.
+  for (const model of ["gpt-4.1", "gpt-4.1-mini", "gpt-50-fake", ""]) {
+    assert.equal(isGpt5ResponsesModel(model), false, `${model || "(empty)"} is not a gpt-5 model`);
+  }
+  assert.equal(openAiResponsesModelControls("gpt-4.1-mini", { env: {} }).temperature, 0);
+}
+
 console.log("Recognition request contract tests passed");
