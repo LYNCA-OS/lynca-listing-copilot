@@ -13,18 +13,40 @@ MEMORY="${RECOGNITION_WORKER_MEMORY:-4Gi}"
 CPU="${RECOGNITION_WORKER_CPU:-2}"
 CONCURRENCY="${RECOGNITION_WORKER_CONCURRENCY:-1}"
 TIMEOUT="${RECOGNITION_WORKER_TIMEOUT_SECONDS:-300}"
-MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-1}"
-MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-8}"
-ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-1}"
+# Warm instances bill around the clock regardless of traffic. This default was
+# 8 -- four times the vector worker's 2, which alone ran 117x over the free tier
+# before it was deleted. The live service currently runs at min=0 and is not
+# suffering for it.
+#
+# Scale-to-zero costs a cold start on the first request after idle; warm
+# instances cost money every hour of every day. Which trade is right is an
+# owner's decision, so the default is the one that cannot surprise anyone.
+#
+# DO NOT RAISE THIS WITHOUT AN EXPLICIT INSTRUCTION FROM THE OWNER.
+MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-0}"
+if [ "${MIN_INSTANCES}" != "0" ] && [ "${RECOGNITION_WORKER_ALLOW_WARM_INSTANCES:-}" != "I_ACCEPT_ALWAYS_ON_BILLING" ]; then
+  echo "refusing to deploy with min-instances=${MIN_INSTANCES}: warm instances bill 24/7." >&2
+  echo "set RECOGNITION_WORKER_ALLOW_WARM_INSTANCES=I_ACCEPT_ALWAYS_ON_BILLING to override." >&2
+  exit 1
+fi
+MAX_INSTANCES="${RECOGNITION_WORKER_MAX_INSTANCES:-10}"
+# The rollout path is a second way back to warm instances, so it gets the same
+# default and the same gate as MIN_INSTANCES above.
+ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-0}"
+if [ "${ROLLOUT_MIN_INSTANCES}" != "0" ] && [ "${RECOGNITION_WORKER_ALLOW_WARM_INSTANCES:-}" != "I_ACCEPT_ALWAYS_ON_BILLING" ]; then
+  echo "refusing rollout with min-instances=${ROLLOUT_MIN_INSTANCES}: warm instances bill 24/7." >&2
+  exit 1
+fi
 STARTUP_PROBE_TIMEOUT_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_TIMEOUT_SECONDS:-240}"
 STARTUP_PROBE_PERIOD_SECONDS="${RECOGNITION_WORKER_STARTUP_PROBE_PERIOD_SECONDS:-240}"
 STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRESHOLD:-2}"
-# Paddle predictors are serialized inside each process, so container
-# concurrency stays at one. The writer-critical OCR route is the independent
-# lean Google Vision service; this combined worker remains a warm standby and
-# isolated PP-OCR shadow. One warm replica preserves a recoverable fallback
-# without reclaiming the regional capacity reserved by the primary service.
-# The revision-level minimum is removed so it cannot deadlock a rollout; the
+# Paddle predictors are serialized inside each process. Cloud Run concurrency
+# therefore stays at one while replicas provide parallelism. With two vCPUs per
+# instance and eight warm instances serving the old revision, a rollout floor
+# of two is the largest zero-downtime overlap that fits the 20-vCPU regional
+# quota: (8 + 2) * 2 = 20. Once traffic has moved and the old revision releases
+# capacity, raise the service-level floor to eight. The
+# revision-level minimum is removed so it cannot deadlock a rollout; the
 # revision-level maximum remains aligned with the service cap because Cloud Run
 # may otherwise restore a lower platform default.
 # Model preload can
@@ -191,16 +213,6 @@ DEPLOYED_URL="$(gcloud run deploy "$SERVICE_NAME" \
   --set-secrets "RECOGNITION_WORKER_TOKEN=${TOKEN_SECRET_NAME}:latest${VISION_SECRET_BINDING}" \
   --set-env-vars "RECOGNITION_ALLOWED_IMAGE_HOSTS=${ALLOWED_HOSTS},RECOGNITION_MAX_IMAGE_BYTES=26214400,RECOGNITION_MAX_TOTAL_PIXELS=50000000,ENABLE_IMAGE_DOWNLOAD=true,ENABLE_TESSERACT_OCR=${ENABLE_TESSERACT_OCR},TESSERACT_IMAGE_CONCURRENCY=${TESSERACT_IMAGE_CONCURRENCY},ENABLE_OPENCV_RECTIFICATION=true,ENABLE_VISUAL_EMBEDDINGS=false,VISUAL_EMBEDDING_PRELOAD=false,VISUAL_EMBEDDING_MODEL_ID=google/siglip2-base-patch16-384,VISUAL_EMBEDDING_MODEL_REVISION=f775b65a79762255128c981547af89addcfe0f88,VISUAL_EMBEDDING_PREPROCESSING_VERSION=card-rectification-v1,VISUAL_EMBEDDING_DIMENSIONS=768,ENABLE_CANDIDATE_VERIFICATION=false,ENABLE_PADDLEOCR=${ENABLE_PADDLEOCR},PADDLEOCR_PRELOAD=${PADDLEOCR_PRELOAD},PADDLEOCR_WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},WORKER_PROCESSES=${PADDLEOCR_WORKER_PROCESSES},PADDLEOCR_MODEL_ID=${PADDLEOCR_MODEL_ID},PADDLEOCR_MODEL_REVISION=${PADDLEOCR_MODEL_REVISION},PADDLEOCR_ROLE=${PADDLEOCR_ROLE},PADDLEOCR_ENABLE_HPI=${PADDLEOCR_ENABLE_HPI},PADDLEOCR_DETECTION_MODEL_NAME=${PADDLEOCR_DETECTION_MODEL_NAME},PADDLEOCR_RECOGNITION_MODEL_NAME=${PADDLEOCR_RECOGNITION_MODEL_NAME},PADDLEOCR_CPU_THREADS=${PADDLEOCR_CPU_THREADS},OCR_BACKEND=${OCR_BACKEND},VISION_FEATURE_TYPE=${VISION_FEATURE_TYPE},VISION_TIMEOUT_SECONDS=${VISION_TIMEOUT_SECONDS},RECOGNITION_REQUEST_TIMEOUT_SECONDS=${TIMEOUT}" \
   --format='value(status.url)')"
-
-# A service that once used explicit revision traffic keeps that pin across
-# later deploys. `gcloud run deploy` can then report success while the old
-# revision still serves 100%. Make the release boundary explicit before
-# restoring the warm floor; existing tagged revisions remain rollback targets.
-gcloud run services update-traffic "$SERVICE_NAME" \
-  --project "$GCP_PROJECT_ID" \
-  --region "$GCP_REGION" \
-  --to-latest \
-  --format='none'
 
 gcloud run services update "$SERVICE_NAME" \
   --project "$GCP_PROJECT_ID" \
