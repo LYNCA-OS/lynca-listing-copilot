@@ -293,4 +293,34 @@ assert.match(nativeCore, /requestContext: fullProviderRequestContext,\s+signal: 
   assert.equal(openAiResponsesModelControls("gpt-4.1-mini", { env: {} }).temperature, 0);
 }
 
+// Reasoning-effort names are not uniform across the gpt-5 family, and the API
+// rejects an unsupported one instead of ignoring it. "minimal" and "none" are
+// the same intent under two names, so the configured value has to translate
+// rather than be passed through and fail.
+{
+  const { openAiResponsesModelControls, supportedReasoningEfforts } = await import(
+    "../lib/listing/providers/openai-responses-request.mjs"
+  );
+  const effortFor = (model, env = {}) => openAiResponsesModelControls(model, { env }).reasoning.effort;
+
+  assert.equal(effortFor("gpt-5-mini"), "minimal");
+  assert.equal(effortFor("gpt-5.6-luna"), "none", "dotted models have no 'minimal'");
+  assert.equal(effortFor("gpt-5.6-luna", { OPENAI_GPT5_REASONING_EFFORT: "minimal" }), "none");
+  assert.equal(effortFor("gpt-5-mini", { OPENAI_GPT5_REASONING_EFFORT: "none" }), "minimal");
+
+  // A value both models understand passes through untranslated.
+  assert.equal(effortFor("gpt-5.6-luna", { OPENAI_GPT5_REASONING_EFFORT: "medium" }), "medium");
+  assert.equal(effortFor("gpt-5-mini", { OPENAI_GPT5_REASONING_EFFORT: "medium" }), "medium");
+
+  // Nonsense must land on something the model accepts, never be forwarded.
+  for (const model of ["gpt-5-mini", "gpt-5.6-luna"]) {
+    const effort = effortFor(model, { OPENAI_GPT5_REASONING_EFFORT: "garbage" });
+    assert.ok(supportedReasoningEfforts(model).includes(effort), `${model} got ${effort}`);
+  }
+
+  // Efforts only the dotted models offer must not leak onto the older ones.
+  assert.equal(effortFor("gpt-5-mini", { OPENAI_GPT5_REASONING_EFFORT: "xhigh" }), "minimal");
+  assert.equal(effortFor("gpt-5.6-luna", { OPENAI_GPT5_REASONING_EFFORT: "xhigh" }), "xhigh");
+}
+
 console.log("Recognition request contract tests passed");
