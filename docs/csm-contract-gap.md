@@ -64,7 +64,24 @@
 | COS-27 决策 4 的「备选」 | ❌ | 只有 empty / unreadable / low_confidence 三态，没有 alternatives |
 | Lot canonical 结构完整重排 | ⚠️ | 用了 CSM 的 lot 顺序，但 subjects 上限与共享字段的判定仍简化 |
 
-## 五、识别缺口不是契约问题（2026-08-01 审计）
+## 五、v3 实测：CSM 贯彻后 canonical 决定性获胜
+
+```
+arm              n      F1  recall  precis  tok_rec  len  out_tok
+thin_budgeted   150  0.7132  0.7604  0.6818   0.8098   71       24
+thin_canonical  150  0.7731  0.7432  0.8186   0.7805   61       97
+配对 delta_F1 = +0.0599   canonical 99 : budgeted 46 : 平 5   p=1.28e-5
+```
+
+**两把尺子结论相反**：token recall 仍偏袒 budgeted，因为它只算 recall。参考标题是**我们想要的输出**，多写的词占了 80 字符预算，所以 precision 必须算——F1 下 canonical 领先 6pp。
+
+字段拆分的效果：`print_finish` 111/150（合并成 `variant` 时支持率 0.50，是最差字段）、`card_name` 67、`release_variant` 4、`descriptive_rarity` 8。**`low_confidence` 用在 23 张**，上一版 `unreadable` 只有 3 张——给模型第三态，它会用。
+
+### 「Composer 消费 confidence」这条的实测答案：保留，不是丢弃
+
+离线试了按 `low_confidence` 丢字段：丢全部 −0.0039（9:13），只丢 print_finish +0.0014（11:7 不显著）。**模型标为不确定的值仍然是净有用的。** CSM 写的是 review_required（保留 + 标记），不是移除——契约是对的，我想丢掉是错的。
+
+## 六、识别缺口不是契约问题（2026-08-01 审计）
 
 `scripts/audit-pipeline-suppression.mjs` 逐词次归因，150 张：
 
@@ -80,4 +97,26 @@
 
 没读到的那批词是 `ssp / sapphire / hyper / geometric / lucky / wave`——**目录知识，不印在卡面上**。用两条链路互为对照估天花板：64.6% 两条都写出、15.7% 只有一条写出（可改进拿到）、**19.6% 两条都拿不到**，recall 上界约 80.4%。
 
-**结论：剩下的缺口要靠补充信息，不是靠减少束缚。** 仓库里已有 `lib/listing/knowledge/world-knowledge-layer.mjs`，契约是 `POST_OBSERVATION_SHADOW_ONLY`（先观察后知识，顺序正确），但 `target_fields` 只有 team/product、`paid_provider_call_allowed: false`，是脚手架不是能力——而缺的正好是 print_finish 和 descriptive_rarity。
+**结论：剩下的缺口要靠补充信息，不是靠减少束缚。**
+
+### 缺口的新形态（v3 后）
+
+字段拆分把「字段为空」这个形态基本消掉了（`print_finish` 空且参考有工艺词的卡：v2 的 50 张 → 3 张）。剩下的是**名字不完整或写错**：参考有工艺/颜色词的 96 张里，完全命中 28 / 部分命中 34 / 完全不中 21 / 空 13；另有 22 张参考没有工艺词而我们写了。
+
+样例暴露了它由两种成因混合：
+
+```
+观察 "Yellow Refractor"  参考 "Gold Refractor"    ← 颜色看错，视觉问题
+观察 "Prizm"             参考 "Lucky Hyper"       ← 平行名需要目录
+观察 "Gold Refractor"    参考 "Yellow Geometric"  ← 连 serial 都读错(1/25 vs 01/35)
+```
+
+### 模型自身知识补不了（实测 0/8）
+
+`lib/listing/thin/knowledge-fill.mjs` 实现了 `POST_OBSERVATION_SHADOW_ONLY` 的活体版本：只填空字段、只填 print_finish/descriptive_rarity、只在模型说 certain 时写入、写入即标 low_confidence。
+
+8 张部分命中的卡上探路，**模型全部拒答**。给它 product + serial + 球员名，它无法判定是哪个平行版本。这否掉的是「模型 prior」，不是知识补充这个方向本身。
+
+### 联网搜索可用（已验证）
+
+provider 支持 `tools: [{type:"web_search"}]`，实测会真去检索并返回带 url_citation 的答案。注意：**有 web_search_call 时 `body.output_text` 为空**，文本在 `output[].content[].text`。
