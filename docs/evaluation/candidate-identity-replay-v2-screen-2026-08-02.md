@@ -23,25 +23,27 @@ This is not a vision failure. It is a field-role error after expression.
 `candidate-identity-replay-v2.mjs` makes two minimal changes while preserving
 the v1 boundary:
 
-1. only `identity` + `logo_or_symbol` observations can propose an empty set;
+1. `identity` and `affiliation` + `logo_or_symbol` observations may propose an
+   empty set, except for a small world-knowledge denylist of teams, graders,
+   and rights/union marks;
 2. a candidate sharing a meaningful token with the existing manufacturer or
    product is rejected as a product fragment.
 
-Affiliation facts remain evidence-only. No canonical field is changed in the
-production path.
+Affiliation facts that are not on that denylist can still be useful IP/project
+signals (for example Disney or VeeFriends). No canonical field is changed in
+the production path.
 
 ## Free replay evidence
 
 Using the same canonical-v3 baseline and the same 102 candidate-expression-v4
-rows as the v1 comparison:
+rows as the v1 comparison, after allowing non-team affiliation signals:
 
 | population | baseline F1 | v2 replay F1 | delta | wins | losses | ties |
 |---|---:|---:|---:|---:|---:|---:|
-| 102-card development overlap | 0.7610423595 | 0.7618353238 | +0.0007929642 | 1 | 0 | 101 |
+| 102-card development overlap | 0.7610423595 | 0.7636219358 | +0.0025795763 | 3 | 0 | 99 |
 
-The sole changed card is VeeFriends Adaptable Alien: the replay adds
-`VeeFriends` to the empty set slot and improves that card by `+0.0808823529`.
-No team, rights mark, or product fragment is admitted.
+The three changed cards are two Disney cards and one VeeFriends card. No team,
+rights mark, or product fragment is admitted.
 
 ## Gate
 

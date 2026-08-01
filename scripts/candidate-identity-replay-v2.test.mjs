@@ -8,6 +8,8 @@ const fact = (value, kind = "identity") => ({
 
 assert.equal(replayCandidateIdentityV2(empty, [fact("Disney")]).fields.set, "Disney");
 assert.equal(replayCandidateIdentityV2(empty, [fact("VeeFriends")]).fields.set, "VeeFriends");
+assert.equal(replayCandidateIdentityV2(empty, [fact("Disney", "affiliation")]).fields.set, "Disney");
+assert.equal(replayCandidateIdentityV2(empty, [fact("VeeFriends", "affiliation")]).fields.set, "VeeFriends");
 assert.equal(replayCandidateIdentityV2(empty, [fact("Chrome")]).changes.length, 0);
 assert.equal(replayCandidateIdentityV2({ ...empty, product: "Donruss Optic" }, [fact("Optic O")]).changes.length, 0);
 assert.equal(replayCandidateIdentityV2(empty, [fact("Golden State Warriors", "affiliation")]).changes.length, 0);
