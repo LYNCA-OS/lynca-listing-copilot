@@ -45,6 +45,25 @@ Changed positive cards:
 | VeeFriends Cow | `…Chrome Common Sense Cow…` → `…Chrome VeeFriends Common Sense Cow…` | +0.1364 |
 | Disney Mufasa | `…Chrome Mufasa…` → `…Chrome Disney Mufasa…` | +0.0809 |
 
+## Same-call candidate-expression v4 replay
+
+The same v3 resolver was also applied to the standalone `candidate_facts`
+channel emitted by candidate-expression v4. This is a separate expression
+source from the exhaustive observation arm, but it covers only 102 completed
+development rows. It requires no new provider call:
+
+| Replay | Cards | Changed | Wins | Losses | Ties | Δ macro F1 |
+|---|---:|---:|---:|---:|---:|---:|
+| v4 candidate facts → identity v3 | 102 | 3 | 3 | 0 | 99 | **+0.002580** |
+
+The three additions are Disney Elsa, Disney Mufasa, and VeeFriends Adaptable
+Alien. The resolver rejected a copyright/company line as non-set evidence and
+did not admit the earlier v4 false identities. This is the first direct sign
+that a more open same-call expression channel can produce recoverable signal;
+it is still development-overlap evidence, not a 150-card confirmation.
+
+Artifact: `artifacts/candidate-expression-v4/development-150/identity-replay-v3.json`.
+
 ## Orthogonal three-mechanism bundle
 
 The bundle applies, in order: identity v3, the already-screened
