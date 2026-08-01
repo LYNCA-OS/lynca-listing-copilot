@@ -393,6 +393,34 @@ assert.throws(
   assert.equal(calls, 1, "manual retry must look up the prior ambiguous operation before resubmitting");
 }
 
+// A transient result-lookup transport failure may retry the lookup itself,
+// but it must never spend another provider call until the lookup says not_found.
+{
+  let calls = 0;
+  let lookups = 0;
+  const sleeps = [];
+  const dispatcher = createTestDispatcher({
+    csmDirectConcurrency: 1,
+    maxAttempts: 2,
+    jitterRatio: 0,
+    sleep: async (delayMs) => sleeps.push(delayMs),
+    lookupOperationResult: async () => {
+      lookups += 1;
+      if (lookups === 1) throw new Error("temporary lookup transport failure");
+      return { status: "not_found" };
+    },
+    executeTask: async () => {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error("gateway timeout"), { status: 504 });
+      return { title: "lookup recovered" };
+    }
+  });
+  assert.deepEqual(await dispatcher.enqueue(task("ambiguous-lookup-retry")), { title: "lookup recovered" });
+  assert.equal(calls, 2);
+  assert.equal(lookups, 2);
+  assert.deepEqual(sleeps, [150, 250]);
+}
+
 // A definitive not_found lookup permits resubmission; a found lookup returns
 // the durable result without spending a second provider call.
 {
