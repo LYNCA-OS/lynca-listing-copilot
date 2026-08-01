@@ -17,9 +17,21 @@ the accuracy work. Therefore the largest available non-overlapping slice is 105
 cards, not 150. A mixed 150 can be replayed (105 outside-development plus 45
 development cards), but it cannot establish an independent-card confirmation.
 
+## Additional observe-only source
+
+The 30 rows in `v4_writer_feedback_events` were also checked by their embedded
+`recognition_result.data_identity.image_references`, not only by the
+`listing_assets` foreign key. All 30 rows contain two original image references
+(60 image objects total), but every row is `OBSERVE_ONLY`; the associated
+recognition payload marks the journey `ADMIN_TEST_ONLY`, and the writer action
+is `ACCEPT` rather than a sealed reviewed correction. This is enough for a
+small out-of-cohort diagnostic screen, not an independent accuracy label set.
+It does not change the 105-card non-overlapping bound above.
+
 ## Decision
 
 The independent-150 gate is correctly blocked by source-data capacity, not by a
 missing local script. Do not spend provider calls trying to manufacture an
-independent 150 from the same 255 rows. Acquire at least 150 new image-backed,
-label-blind cards with sealed references before promoting any accuracy overlay.
+independent 150 from the same 255 rows or by treating the 30 observe-only
+events as ground truth. Acquire at least 150 new image-backed, label-blind cards
+with sealed references before promoting any accuracy overlay.
