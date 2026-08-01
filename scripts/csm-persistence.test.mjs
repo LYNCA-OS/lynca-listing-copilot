@@ -132,3 +132,32 @@ assert.ok(Array.isArray(rows.output.dropped_trace.dropped_for_budget));
 assert.ok(rows.output.dropped_trace.suppressed_by_profile.includes("card_number"));
 
 process.stdout.write("csm persistence: ok\n");
+
+// ------------------------------------------------------------------- replay
+
+// COS-25: "every downstream layer can be replayed from stored evidence and
+// version references". Rebuilt from the ROWS alone -- no provider payload, no
+// in-memory fields object.
+{
+  const { verifyReplay } = await import("../lib/listing/thin/csm-replay.mjs");
+  const check = verifyReplay(rows, composed.title);
+  assert.ok(check.ok, `replay must reproduce the shipped title: ${JSON.stringify(check.problems)}`);
+
+  // The two empties survive the round trip as different things. A replay that
+  // collapsed them would claim the card lacks a field the record says was
+  // merely unreadable.
+  assert.ok(check.replayed.fields.unreadable.includes("card_name"));
+}
+
+// Idempotency: row ids are content-derived, so re-emitting the same run
+// produces the same ids rather than duplicate rows on retry.
+{
+  const again = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "s1", fields, composed,
+    title: composed.title, createdAt: "2026-08-01T00:00:00Z"
+  });
+  assert.deepEqual(again.evidence.map((row) => row.id), rows.evidence.map((row) => row.id));
+  assert.equal(again.resolution.id, rows.resolution.id);
+  assert.equal(again.output.id, rows.output.id);
+  assert.equal(again.resolution.recognition_packet_sha256, rows.resolution.recognition_packet_sha256);
+}

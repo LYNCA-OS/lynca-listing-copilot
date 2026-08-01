@@ -144,7 +144,12 @@ for (const name of CANONICAL_FIELDS_SCHEMA.properties.unreadable.items.enum) {
 // SSP is [Descriptive Rarity], a CSM bracket of its own, not a component.
 {
   const parsed = fields({ attributes: ["Auto", "RC", "SSP"] });
-  assert.deepEqual(parsed.components, ["Auto", "RC"]);
+  // Canonical order, not the model's. resolvedFieldsToSemSuggestion builds
+  // search_optimization as [RC, Auto, Patch, Relic], and rendering components
+  // in the model's arbitrary order made the composed title unreplayable from
+  // stored rows on 33 of 148 cards. The scorer ignores word order, so adopting
+  // the contract's costs nothing.
+  assert.deepEqual(parsed.components, ["RC", "Auto"]);
   assert.equal(parsed.descriptive_rarity, "SSP");
 }
 
