@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import {
   replayCandidateIdentityV1,
   replayLanguageObservationV1,
-  replaySerialObservationV1
+  replaySerialObservationV1,
+  replaySerialObservationSingleDigitV1
 } from "../lib/listing/thin/candidate-identity-replay-v1.mjs";
 
 const fields = {
@@ -33,6 +34,17 @@ const serial = replaySerialObservationV1({ serial: "27/150" }, [
 ]);
 assert.equal(serial.fields.serial, "027/150");
 assert.equal(serial.changes.length, 1);
+
+const singleDigitSerial = replaySerialObservationSingleDigitV1({ serial: "8/25" }, [
+  { label: "serial_number", evidence: "08/25" }
+]);
+assert.equal(singleDigitSerial.fields.serial, "08/25");
+assert.equal(singleDigitSerial.changes.length, 1);
+const wideNumerator = replaySerialObservationSingleDigitV1({ serial: "29/199" }, [
+  { label: "serial_number", evidence: "029/199" }
+]);
+assert.equal(wideNumerator.fields.serial, "29/199");
+assert.equal(wideNumerator.changes.length, 0);
 
 const noSerialInference = replaySerialObservationV1({ serial: "" }, [
   { label: "serial_form", evidence: "027/150" }
