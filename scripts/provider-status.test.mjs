@@ -274,6 +274,7 @@ assert.equal(openai.requires_explicit_retry, false);
 delete process.env.ENABLE_EXPERIMENTAL_PROVIDER_UI;
 
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+delete process.env.SUPABASE_SECRET_KEY;
 response = await callStatus();
 openai = response.body.providers.find((provider) => provider.id === "openai_legacy");
 assert.equal(response.body.default_provider, "openai_legacy");
@@ -283,6 +284,7 @@ assert.equal(response.body.workflow_readiness.can_run_cloud_recognition, false);
 assert.equal(response.body.workflow_readiness.blockers.includes("image_storage"), true);
 
 process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
+process.env.SUPABASE_SECRET_KEY = "test-auth-secret-key";
 process.env.ENABLE_OPENAI_PROVIDER = "false";
 response = await callStatus();
 assert.deepEqual(response.body.providers.map((provider) => provider.id), []);

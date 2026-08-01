@@ -138,6 +138,46 @@ async function auditProviderPolicy() {
   const statusApi = await readTextFile("api/listing-provider-status.js");
   const appJs = await readTextFile("app/listing-copilot.js");
   const profileAdapter = await readTextFile("lib/listing/v4/application/recognition-profile-adapter.mjs");
+  const thinRuntime = await readTextFile("lib/listing/thin/csm-runtime-contract.mjs");
+  const thinApi = await readTextFile("api/csm-listing-title.js");
+  const thinHealth = await readTextFile("api/health.js");
+
+  // The old provider-registry/profile checks describe the retired V4
+  // execution path. Keep this audit useful after the production cutover by
+  // evaluating the active CSM contract first, rather than reporting a false
+  // regression merely because the old files no longer own recognition.
+  const thinContract = {
+    active_path: /route:\s*["']CSM_THIN_DIRECT["']/.test(thinRuntime.text),
+    endpoint: /endpoint:\s*["']\/api\/csm-listing-title["']/.test(thinRuntime.text)
+      && /CSM_THIN_API_ENDPOINT\s*=\s*["']\/api\/csm-listing-title["']/.test(appJs.text),
+    model: /model:\s*["']gpt-5\.6-luna["']/.test(thinRuntime.text),
+    reasoning_effort: /reasoningEffort:\s*["']none["']/.test(thinRuntime.text),
+    direct_handler: /CSM_THIN_DIRECT/.test(thinApi.text)
+      && /prepareCanonicalListingPath/.test(thinApi.text),
+    no_legacy_queue: !/JOB_ENQUEUE_API_ENDPOINT|listing-job-enqueue/.test(appJs.text),
+    no_retired_runtime: /cloud_run_calls:\s*0/.test(thinHealth.text)
+      && /vector_calls:\s*0/.test(thinHealth.text)
+      && /generic_ocr_calls:\s*0/.test(thinHealth.text)
+  };
+  if (Object.values(thinContract).every(Boolean)) {
+    const details = {
+      active_path: "CSM_THIN_DIRECT",
+      endpoint: "/api/csm-listing-title",
+      model: "gpt-5.6-luna",
+      reasoning_effort: "none",
+      direct_api_boundary: true,
+      retired_execution_paths: "disabled",
+      cloud_run_calls: 0,
+      vector_calls: 0,
+      generic_ocr_calls: 0,
+      checked_files: [thinRuntime.path, thinApi.path, thinHealth.path, appJs.path]
+    };
+    return passed(
+      "provider_default_policy",
+      "The active CSM thin path owns provider admission; legacy V4 provider selection is retired.",
+      details
+    );
+  }
   const failures = [];
 
   if (/allowLegacyDefault/.test(registry.text)) {
@@ -728,8 +768,9 @@ export function formatCommercialReadinessReport(report) {
     `commercial_review_packet: ${reviewPacketSummary}`,
     `commercial_review_worklist: ${reviewWorklistSummary}`,
     `identity_result_cache: ${identityCacheSummary}`,
-    `gpt_implicit_default: ${providerPolicy?.details?.gpt_implicit_default || "unknown"}`,
-    `standalone_gpt_default: ${providerPolicy?.details?.standalone_gpt_default || "unknown"}`,
+    `active_path: ${providerPolicy?.details?.active_path || "unknown"}`,
+    `model: ${providerPolicy?.details?.model || "unknown"}`,
+    `reasoning_effort: ${providerPolicy?.details?.reasoning_effort || "unknown"}`,
     "",
     "checks:"
   ];

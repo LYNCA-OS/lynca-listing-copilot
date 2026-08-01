@@ -526,8 +526,8 @@ for (const required of [
 assert.equal(/on conflict[\s\S]{0,80}do update/i.test(migration), false, "new feedback transaction must never overwrite facts");
 
 const writerUi = await readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
-assert.match(writerUi, /feedback_submission_id:\s*v4Submission\.id/);
+assert.match(writerUi, /feedback_submission_id:\s*submission\.id/);
 assert.match(writerUi, /pendingFeedbackSubmissionSignature/);
-assert.match(writerUi, /clearPendingV4FeedbackSubmission\(result, v4Submission\)/);
+assert.match(writerUi, /clearPendingFeedbackSubmission\(result, submission\)/);
 
 console.log("V4 feedback data-assets tests passed.");

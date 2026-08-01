@@ -38,10 +38,15 @@ assert.match(js, /IMAGE_INITIAL_QUALITY\s*=\s*0\.9/, "initial adaptive quality s
 assert.match(js, /IMAGE_MIN_QUALITY\s*=\s*0\.78/, "normal adaptive quality should avoid low-quality recompression");
 assert.match(js, /heicUnsupportedMessage\s*=/, "HEIC unsupported fallback message should be defined");
 assert.match(js, /当前浏览器暂不支持 HEIC\/HEIF 预览/, "HEIC fallback should be clear Chinese copy");
-assert.match(js, /buildAssetQueueIntentBody/, "queue requests should use the asset-intent contract");
-assert.match(js, /stripClientImageTransport/, "queue intent must strip browser-owned image transport fields");
-assert.match(js, /image_generation_id:\s*asset\.imageGenerationId/, "queue intent must bind the immutable image generation");
-assert.doesNotMatch(js, /MAX_ASSET_REQUEST_BYTES|ensureSafeAssetPayload/, "queue requests must not revive the legacy Base64 JSON transport path");
+const directRecognitionSource = js.slice(
+  js.indexOf("async function processAssetViaCsmThinPath"),
+  js.indexOf("function backgroundPreparationAvailable")
+);
+assert.match(directRecognitionSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "recognition must wait for verified originals");
+assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/, "the direct request must bind the durable asset identity");
+assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/, "the direct request must retain the upload intent identity");
+assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobject_path\s*:|\bdata_url\s*:/, "the browser must not send image bytes or storage paths to recognition");
+assert.doesNotMatch(js, /MAX_ASSET_REQUEST_BYTES|ensureSafeAssetPayload/, "recognition must not revive the legacy Base64 JSON transport path");
 assert.match(enqueue, /canonicalizeQueueJobs/, "the server must own canonical queue input reconstruction");
 assert.match(enqueue, /readCanonicalListingImageReferences/, "the server must reconstruct canonical image input from durable storage state");
 assert.match(enqueue, /stripClientImageTransport/, "the server must fail closed against browser-owned image transport fields");
@@ -53,28 +58,28 @@ assert.match(js, /fileSignatureHex/, "storage uploads should read first-byte fil
 assert.match(js, /signatureHex/, "signed upload requests should include file signature metadata");
 assert.match(js, /listing-image-verify-upload/, "storage uploads should be server-verified after the direct PUT");
 assert.match(js, /Storage upload verification failed/, "storage verification failures should block provider requests");
-assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并启动内部识别/, "status copy should explain immediate preview and upload-triggered recognition");
+assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并识别/, "status copy should explain immediate preview and upload-triggered recognition");
 assert.match(js, /URL\.createObjectURL/, "selected images should receive an immediate local object-URL preview");
-assert.match(js, /PREINGEST_API_ENDPOINT/, "background pre-ingestion endpoint should be wired for prepared assets");
+assert.doesNotMatch(js, /PREINGEST_API_ENDPOINT|listing-preingest/, "retired pre-ingestion must not remain in the production browser");
 assert.match(js, /backgroundPreparationRunId/, "background preparation should be guarded against stale file batches");
-assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并启动内部识别…/, "local preview preparation should announce the automatic recognition handoff");
-assert.match(js, /卡片已进入识别队列；后续图片准备完成后会自动加入。/, "recognition intent should cover the still-arriving batch");
-assert.match(js, /setStatus\("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…",\s*\{\s*busy:\s*true\s*\}\)/, "preview preparation should render as an active waiting state");
-assert.match(js, /setStatus\("卡片已进入识别队列；后续图片准备完成后会自动加入。",\s*\{\s*busy:\s*true\s*\}\)/, "recognition intent should render as an active waiting state");
+assert.match(js, /本地预览已显示；正在校验原图，随后自动上传并识别…/, "local preview preparation should announce the automatic recognition handoff");
+assert.match(js, /function requestRecognitionContinuation\([\s\S]{0,500}queueMicrotask\(\(\) => \{[\s\S]{0,300}canStartRecognitionRun\(\)[\s\S]{0,120}processTitles\(\)/, "the upload intent must automatically start or continue recognition");
+assert.match(js, /setStatus\(batchWasEmpty[\s\S]{0,260}busy:\s*true/, "initial and appended preview preparation should render as an active waiting state");
+assert.match(js, /setStatus\("图片已上传，正在自动识别卡片名称。", \{ busy: true \}\)/, "recognition intent should render as an active waiting state");
 assert.match(js, /const IMAGE_PREPROCESS_CONCURRENCY\s*=\s*4/, "image preprocessing should use a bounded concurrency pool");
 assert.match(js, /const STORAGE_UPLOAD_CONCURRENCY\s*=\s*3/, "storage upload should use a bounded per-asset concurrency pool");
 assert.match(js, /const MAX_BACKGROUND_PREP_WORKERS\s*=\s*4/, "background preparation should use its own bounded worker pool");
 assert.match(js, /backgroundPreparationActiveCount\s*<\s*MAX_BACKGROUND_PREP_WORKERS/, "background preparation must remain bounded independently of provider capacity");
 assert.match(js, /backgroundPreparationActiveCount\s*=\s*Math\.max\(0,\s*backgroundPreparationActiveCount\s*-\s*1\)/, "completed background work should release its preparation slot");
 assert.match(js, /drainBackgroundPreparationQueue\(\)/, "released preparation capacity should continue draining the bounded queue");
-assert.match(js, /const MAX_CONCURRENT_WORKERS\s*=\s*6/, "queue submission workers must have a browser-side safety cap");
+assert.match(js, /const MAX_DIRECT_RECOGNITION_WORKERS\s*=\s*6/, "direct recognition workers must have a browser-side safety cap");
 assert.match(js, /async function mapWithConcurrency/, "bounded image preprocessing helper should exist");
 assert.match(js, /results\[index\]\s*=\s*await worker\(source\[index\], index\)/, "concurrent preprocessing should preserve input order in results");
 assert.match(js, /const groupPreparationConcurrency\s*=\s*state\.mode\s*===\s*"single"/, "file preprocessing should bound card-pair preparation independently of single-image mode");
 assert.match(js, /mapWithConcurrency\(fileGroups,\s*groupPreparationConcurrency/, "file-group preprocessing should use bounded concurrency");
-assert.match(js, /prepareFileForIntake\(file\)/, "production intake should select the storage-first path before legacy canvas preprocessing");
+assert.match(js, /prepareFileForIntake:\s*prepareFile\s*=\s*prepareFileForIntake/, "production intake should default to the storage-first path before legacy canvas preprocessing");
 assert.match(js, /storageFirstAssetImage/, "browser-native originals should have a storage-first intake path");
-assert.match(js, /targetedCrops:\s*\[\]/, "storage-first originals should leave crop planning to cloud pre-ingestion");
+assert.match(js, /targetedCrops:\s*\[\]/, "storage-first originals should avoid altering the original upload payload");
 assert.match(js, /await ensureImageUploadMetadata\(image\)/, "signed upload must wait for lightweight dimensions before validation");
 assert.match(js, /compressed\.targetedCrops\s*=\s*buildTargetedCropImages/, "targeted crops should be generated once after final compression");
 assert.doesNotMatch(js, /targetedCrops:\s*sourceImage\s*\?\s*buildTargetedCropImages/, "recompression attempts must not regenerate the full crop set");
