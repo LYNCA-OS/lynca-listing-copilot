@@ -1,0 +1,61 @@
+{
+  "schema_version": "lynca-active-service-context-v1",
+  "updated_on": "2026-08-01",
+  "repository": {
+    "checkout": "/Users/paidaxin/lynca-thin-path",
+    "origin": "https://github.com/LYNCA-OS/lynca-listing-copilot.git"
+  },
+  "linear": {
+    "workspace": "LYNCA",
+    "transport": "bundled Linear app",
+    "team": {
+      "name": "Admins",
+      "id": "65d74cab-9c90-4d6f-a675-fee190f54c25"
+    },
+    "project": {
+      "name": "【Infrastructure】LYNCA Collectible Semantic Model",
+      "id": "1cc3354e-b55d-4fc1-8733-6168c7440267"
+    },
+    "tracked_issues": ["COS-8", "COS-9", "COS-25", "COS-26", "COS-27"],
+    "rule": "Read the live issue before every update; never infer status from a local note."
+  },
+  "vercel": {
+    "scope": {
+      "slug": "lyncafei-s-projects",
+      "id": "team_il17GLcdGsr5fows3jsKwMoA",
+      "plan": "pro"
+    },
+    "production": {
+      "project": "lynca-listing-copilot",
+      "project_id": "prj_ZVgquyNvk3mWodOlftvzlLMVXbRb",
+      "cwd": "/Users/paidaxin/lynca-thin-path",
+      "link_file": ".vercel/project.json"
+    },
+    "capacity_lab": {
+      "project": "lynca-capacity-lab",
+      "project_id": "prj_OnBhU4kHtWuOBCs3iGoYZsYfaWbg",
+      "cwd": "/Users/paidaxin/lynca-thin-path/experiments/vercel-capacity-probe",
+      "link_file": "experiments/vercel-capacity-probe/.vercel/project.json",
+      "deployment_target": "preview"
+    },
+    "forbidden_scope": "leon-using-s-projects",
+    "rule": "Run from the exact cwd above; do not rely on --cwd from the repository root and never deploy a capacity probe to production."
+  },
+  "supabase": {
+    "project": "Listing Copilot",
+    "project_ref": "osrrujmpxxiefppjfgpd",
+    "organization_id": "amudxinagqcimbuezvyi",
+    "cwd": "/Users/paidaxin/lynca-thin-path",
+    "link_ref_file": "supabase/.temp/project-ref",
+    "link_metadata_file": "supabase/.temp/linked-project.json",
+    "migrations": "supabase/migrations",
+    "local_env": ".env.local",
+    "required_server_env": ["SUPABASE_URL", "SUPABASE_SECRET_KEY"],
+    "rule": "Never expose SUPABASE_SECRET_KEY; verify the linked ref and URL host before every remote schema or trace operation."
+  },
+  "retired_default_paths": [
+    "Google Cloud Run recognition worker",
+    "vector retrieval/database",
+    "generic OCR sidecar"
+  ]
+}
