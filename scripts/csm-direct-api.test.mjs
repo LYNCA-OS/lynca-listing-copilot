@@ -360,8 +360,7 @@ const canonicalImages = () => ({
   const created = await createCsmRecognitionSession({ ...input, env, fetchImpl });
   assert.equal(created.persistence.recognition_session.saved, true);
   assert.equal(created.persistence.recognition_session.verified_after_write, true);
-  assert.equal(new URL(requests[1].url).searchParams.get("id"), "eq.csmsess_contract");
-  assert.equal(new URL(requests[1].url).searchParams.get("tenant_id"), "eq.tenant-1");
+  assert.equal(requests.length, 1, "a represented insert is verified without a read-back round trip");
   assert.equal(requests[0].init.headers.apikey, "sb_secret_test");
   assert.equal(requests[0].init.headers.authorization, undefined);
 
