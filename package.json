@@ -199,7 +199,7 @@
     "check:e2e:production-writer-journey": "node --check e2e/production-writer-journey.spec.mjs && node --check playwright.config.mjs && node --check scripts/production-writer-journey-contract.test.mjs",
     "test:e2e:production-writer-journey:contract": "node scripts/production-writer-journey-contract.test.mjs",
     "test:e2e:production-writer-journey": "playwright test e2e/production-writer-journey.spec.mjs --project=chromium",
-    "check:thin-path": "node --check lib/listing/thin/sanitize-listing-title.mjs && node --check lib/listing/thin/marketplace-composer-rules.mjs && node --check lib/listing/thin/canonical-fields.mjs && node --check lib/listing/thin/canonical-composer.mjs && node --check lib/listing/thin/thin-listing-path.mjs && node --check scripts/canonical-fields.test.mjs && node --check scripts/run-thin-path-eval.mjs",
+    "check:thin-path": "node --check lib/listing/thin/sanitize-listing-title.mjs && node --check lib/listing/thin/marketplace-composer-rules.mjs && node --check lib/listing/thin/canonical-fields.mjs && node --check lib/listing/thin/canonical-composer.mjs && node --check lib/listing/thin/thin-listing-path.mjs && node --check scripts/canonical-fields.test.mjs && node --check scripts/run-thin-path-eval.mjs && node --check lib/listing/thin/csm-emit.mjs && node --check lib/listing/thin/csm-sem-score.mjs && node --check scripts/csm-conformance.mjs",
     "test:thin-path": "node scripts/canonical-fields.test.mjs"
   },
   "dependencies": {
