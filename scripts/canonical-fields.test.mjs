@@ -5,6 +5,7 @@ import {
   CANONICAL_FIELD_NAMES,
   CANONICAL_ATTRIBUTES,
   CANONICAL_FIELDS_PROMPT,
+  CANONICAL_SERIAL_EXACT_PROMPT,
   semCanonicalEditableFields,
   buildCanonicalFieldsRequest,
   parseCanonicalFields
@@ -101,10 +102,13 @@ assert.ok(!/look for small foil numbering/i.test(CANONICAL_FIELDS_SCHEMA.propert
 // The replacement is precision-oriented, not effort-oriented: the measured
 // failure is 25 misread serials against 12 missing ones.
 assert.match(CANONICAL_FIELDS_SCHEMA.properties.serial.description, /digit by digit/);
+assert.ok(!/leading zero.*must remain/i.test(CANONICAL_FIELDS_PROMPT), "production prompt stays unchanged until the arm passes");
+assert.match(CANONICAL_SERIAL_EXACT_PROMPT, /027\/150 must remain 027\/150/);
 
 for (const name of CANONICAL_FIELDS_SCHEMA.properties.unreadable.items.enum) {
   assert.ok(CANONICAL_FIELD_NAMES.includes(name));
 }
+assert.ok(CANONICAL_FIELD_NAMES.includes("language"), "COS-9 language must support unreadable/low-confidence state");
 
 // One call, images in, nothing else. No candidate list, no catalog rows, no
 // second round -- the three things measured as negative all entered through a
@@ -114,6 +118,12 @@ for (const name of CANONICAL_FIELDS_SCHEMA.properties.unreadable.items.enum) {
   assert.equal(request.input.length, 1);
   assert.equal(request.text.format.strict, true);
   assert.equal(request.input[0].content.filter((part) => part.type === "input_image").length, 1);
+  assert.equal(request.input[0].content.find((part) => part.type === "input_image").detail, "high");
+  const original = buildCanonicalFieldsRequest({
+    imageUrls: ["https://example.test/a.jpg"], model: "gpt-5.6-luna", imageDetail: "original"
+  });
+  assert.equal(original.input[0].content.find((part) => part.type === "input_image").detail, "original");
+  assert.throws(() => buildCanonicalFieldsRequest({ imageDetail: "maximum" }), /unsupported_image_detail/);
 }
 
 // ---------------------------------------------- print run vs checklist code
@@ -449,12 +459,15 @@ process.stdout.write("canonical fields: ok\n");
 // halves: that it renders for TCG in the contract's position, and that it stays
 // out of Standard, where COS-8's order has no such bracket.
 {
-  const tcg = composeFromCanonicalFields({
+  const tcgFields = {
     grammar: "tcg", year: "2025", ip: "Pokemon", language: "JP", set: "Mega Brave",
     subjects: ["Mega Absol Ex"], card_number: "089/063", descriptive_rarity: "Special Art Rare",
     grade: "CGC 10", attributes: [], components: [], unreadable: [], low_confidence: []
-  });
+  };
+  const tcg = composeFromCanonicalFields(tcgFields);
   assert.match(tcg.title, /^2025 Pokemon JP /, "TCG title must carry [Language] right after [IP]");
+  assert.equal(emitCsm(tcgFields, tcg.title).canonical_sem.language, "JP",
+    "COS-9 language must survive the title projection into the canonical CSM object");
   assert.equal(BRACKET_ORDER.tcg.indexOf("language"), BRACKET_ORDER.tcg.indexOf("ip") + 1);
   assert.equal(BRACKET_ORDER.standard.includes("language"), false);
   assert.equal(BRACKET_ORDER.lot.includes("language"), false);
