@@ -35,3 +35,13 @@ missing local script. Do not spend provider calls trying to manufacture an
 independent 150 from the same 255 rows or by treating the 30 observe-only
 events as ground truth. Acquire at least 150 new image-backed, label-blind cards
 with sealed references before promoting any accuracy overlay.
+
+## Separate 17-card unseen-product source
+
+The older catalog checkout contains a separate 17-card
+`unseen_product_benchmark` with local original images and sealed
+manufacturer-checklist identity labels. Its asset IDs do not overlap the 255
+reviewed blind cards, so it is valid for a small cross-distribution screen.
+It is concentrated in Panini Phoenix/Prizm and uses one image per card; it is
+not a replacement for a broad marketplace 150-card gate. The 17-card screen is
+recorded in [accuracy-unseen17-screen-2026-08-02.md](accuracy-unseen17-screen-2026-08-02.md).
