@@ -1,8 +1,8 @@
 {
   "schema_version": "lynca-active-service-context-v2",
-  "updated_on": "2026-08-01",
+  "updated_on": "2026-08-02",
   "repository": {
-    "production_checkout": "/Users/paidaxin/lynca-thin-production",
+    "production_checkout": "/Users/paidaxin/lynca-thin-production-main",
     "experiment_checkout": "/Users/paidaxin/lynca-thin-path",
     "origin": "https://github.com/LYNCA-OS/lynca-listing-copilot.git"
   },
@@ -29,7 +29,7 @@
     "production": {
       "project": "lynca-listing-copilot",
       "project_id": "prj_ZVgquyNvk3mWodOlftvzlLMVXbRb",
-      "cwd": "/Users/paidaxin/lynca-thin-production",
+      "cwd": "/Users/paidaxin/lynca-thin-production-main",
       "link_file": ".vercel/project.json"
     },
     "capacity_lab": {
