@@ -129,7 +129,7 @@ assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);
 assert.match(workflow, /r\.code!=="missing_asset_id"/);
 assert.equal(
   packageJson.scripts["vercel-build"],
-  "node scripts/check-csm-deployment-environment.mjs",
+  "node lib/listing/thin/csm-deployment-environment.mjs",
   "Vercel must fail the build before promotion when the actual deployment environment is unsafe"
 );
 

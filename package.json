@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Metaverse Listing Copilot internal title generation webtool.",
   "scripts": {
-    "vercel-build": "node scripts/check-csm-deployment-environment.mjs",
+    "vercel-build": "node lib/listing/thin/csm-deployment-environment.mjs",
     "maintenance:handbook:check": "node scripts/maintenance-harness-handbook.mjs check",
     "maintenance:handbook:test": "node scripts/maintenance-harness-handbook.test.mjs",
     "maintenance:handbook:bootstrap": "node scripts/maintenance-harness-handbook.mjs bootstrap",
