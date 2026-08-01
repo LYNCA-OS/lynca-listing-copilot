@@ -1,0 +1,63 @@
+{
+  "schema_version": "lynca-active-service-context-v2",
+  "updated_on": "2026-08-01",
+  "repository": {
+    "production_checkout": "/Users/paidaxin/lynca-thin-production",
+    "experiment_checkout": "/Users/paidaxin/lynca-thin-path",
+    "origin": "https://github.com/LYNCA-OS/lynca-listing-copilot.git"
+  },
+  "linear": {
+    "workspace": "LYNCA",
+    "transport": "bundled Linear app",
+    "team": {
+      "name": "Admins",
+      "id": "65d74cab-9c90-4d6f-a675-fee190f54c25"
+    },
+    "project": {
+      "name": "【Infrastructure】LYNCA Collectible Semantic Model",
+      "id": "1cc3354e-b55d-4fc1-8733-6168c7440267"
+    },
+    "tracked_issues": ["COS-8", "COS-9", "COS-25", "COS-26", "COS-27"],
+    "release_gate": "Read every issue live. All acceptance-complete tracked issues must be Done before push, PR, merge, or Production deployment."
+  },
+  "vercel": {
+    "scope": {
+      "slug": "lyncafei-s-projects",
+      "id": "team_il17GLcdGsr5fows3jsKwMoA",
+      "plan": "pro"
+    },
+    "production": {
+      "project": "lynca-listing-copilot",
+      "project_id": "prj_ZVgquyNvk3mWodOlftvzlLMVXbRb",
+      "cwd": "/Users/paidaxin/lynca-thin-production",
+      "link_file": ".vercel/project.json"
+    },
+    "capacity_lab": {
+      "project": "lynca-capacity-lab",
+      "project_id": "prj_OnBhU4kHtWuOBCs3iGoYZsYfaWbg",
+      "cwd": "/Users/paidaxin/lynca-thin-path/experiments/vercel-capacity-probe",
+      "link_file": ".vercel/project.json",
+      "deployment_target": "preview"
+    },
+    "forbidden_scope": "leon-using-s-projects",
+    "rule": "Production deploys only from the clean production checkout. Capacity probes only deploy Preview from the exact lab cwd."
+  },
+  "supabase": {
+    "project": "Listing Copilot",
+    "project_ref": "osrrujmpxxiefppjfgpd",
+    "organization_id": "amudxinagqcimbuezvyi",
+    "cwd": "/Users/paidaxin/lynca-thin-production/infrastructure/supabase-production",
+    "link_ref_file": "supabase/.temp/project-ref",
+    "link_metadata_file": "supabase/.temp/linked-project.json",
+    "migrations": "supabase/migrations",
+    "legacy_unlinked_migrations": "/Users/paidaxin/lynca-thin-production/supabase/migrations",
+    "local_env": "/Users/paidaxin/.config/lynca-listing-copilot/runtime.env",
+    "required_server_env": ["SUPABASE_URL", "SUPABASE_SECRET_KEY"],
+    "rule": "Only the canonical cwd may be linked or used for migration commands. Never repair history, push the legacy ledger, or print server secrets."
+  },
+  "retired_default_paths": [
+    "Google Cloud Run recognition worker",
+    "vector retrieval/database",
+    "generic OCR sidecar"
+  ]
+}

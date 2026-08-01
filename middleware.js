@@ -1,7 +1,8 @@
 import { next } from "@vercel/functions";
 import {
   isPrivateDeploymentPath,
-  isProtectedAppPath
+  isProtectedAppPath,
+  isRetiredListingExecutionPath
 } from "./lib/listing-route-access.mjs";
 import { validListingSessionClaims } from "./lib/listing-session-claims.mjs";
 
@@ -32,6 +33,21 @@ function privateDeploymentPathResponse() {
     status: 404,
     headers: {
       "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store"
+    }
+  });
+}
+
+function retiredExecutionPathResponse() {
+  return new Response(JSON.stringify({
+    ok: false,
+    retryable: false,
+    error_code: "RETIRED_LISTING_EXECUTION_PATH",
+    active_path: "/api/csm-listing-title"
+  }), {
+    status: 410,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store"
     }
   });
@@ -107,6 +123,10 @@ export default async function middleware(request) {
     return privateDeploymentPathResponse();
   }
 
+  if (isRetiredListingExecutionPath(url.pathname)) {
+    return retiredExecutionPathResponse();
+  }
+
   if (
     enabledExactly(process.env.LISTING_MAINTENANCE_MODE)
     && url.pathname.startsWith("/api/")
@@ -169,7 +189,17 @@ export const config = {
     "/artifacts",
     "/artifacts/:path*",
     "/prototypes",
-    "/prototypes/:path*"
+    "/prototypes/:path*",
+    "/infrastructure",
+    "/infrastructure/:path*",
+    "/e2e",
+    "/e2e/:path*",
+    "/maintenance",
+    "/maintenance/:path*",
+    "/AGENTS.md",
+    "/AGENTS.md/:path*",
+    "/playwright.config.mjs",
+    "/playwright.config.mjs/:path*"
   ],
   runtime: "edge"
 };

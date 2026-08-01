@@ -7,9 +7,10 @@ import {
   buildCsmStageRows, computeCsmPacketHashes
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
-  writeCsmStageRows, csmShadowPersistenceEnabled, isCsmPersistenceConfigured,
+  writeCsmStageRows, csmPersistenceEnabled, isCsmPersistenceConfigured,
   checkCsmPersistenceReadiness, writeCsmStagePacketAtomically,
-  THIN_REGISTRY_RELEASE_CONTRACT
+  CSM_PRODUCT_PROJECTION_READINESS_RPC, CSM_PRODUCT_PROJECTION_VERSION,
+  CSM_SUPABASE_REQUEST_TIMEOUT_MS, THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 
@@ -45,11 +46,16 @@ function sessionPatchFor(stageRows) {
 const ENV = {
   SUPABASE_URL: "https://example.supabase.co/",
   SUPABASE_SERVICE_ROLE_KEY: "sb_secret_x",
-  CSM_SHADOW_PERSISTENCE_ENABLED: "1"
+  CSM_PERSISTENCE_ENABLED: "1"
 };
 const REGISTRY_RELEASE = {
   ...THIN_REGISTRY_RELEASE_CONTRACT,
   registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
+};
+const PRODUCT_PROJECTION_READY = {
+  ok: true,
+  code: "csm_product_projection_ready",
+  version: CSM_PRODUCT_PROJECTION_VERSION
 };
 
 const CSM_TABLES = [
@@ -62,6 +68,41 @@ function jsonResponse(value, status = 200) {
     status,
     headers: { "content-type": "application/json" }
   });
+}
+
+// Registry and atomic-RPC probes share a bounded request contract. A body that
+// never arrives is classified by phase instead of hanging before the paid
+// provider boundary.
+{
+  let calls = 0;
+  let clockMs = 0;
+  const timedOut = await checkCsmPersistenceReadiness({
+    env: ENV,
+    requestTimeoutMs: 5,
+    maximumDurationMs: 30,
+    now: () => clockMs,
+    sleep: async () => {},
+    fetchImpl: async (url, init = {}) => {
+      calls += 1;
+      assert.ok(init.signal instanceof AbortSignal);
+      if (!String(url).includes("/rpc/")) return jsonResponse([REGISTRY_RELEASE]);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => {
+          // Advance the injected monotonic clock and return the exact error
+          // AbortSignal.timeout produces. No wall-clock timer participates in
+          // this contract test, so a busy test runner cannot make it flaky.
+          clockMs += 5;
+          throw Object.assign(new Error("simulated_body_timeout"), { name: "TimeoutError" });
+        }
+      };
+    }
+  });
+  assert.equal(timedOut.ready, false);
+  assert.equal(timedOut.reason, "atomic_rpc_probe_timeout");
+  assert.equal(calls, 4, "one bounded retry must repeat registry plus atomic probe");
+  assert.equal(CSM_SUPABASE_REQUEST_TIMEOUT_MS, 5_000);
 }
 
 /** A small PostgREST-shaped store: enough to prove writes, retries and races. */
@@ -147,11 +188,28 @@ function fakeStore({ failOnceOn = "" } = {}) {
 {
   const ready = await checkCsmPersistenceReadiness({
     env: ENV,
-    fetchImpl: async (url) => String(url).includes("/rpc/")
-      ? jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 })
-      : jsonResponse([REGISTRY_RELEASE])
+    fetchImpl: async (url) => {
+      if (String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
+        return jsonResponse(PRODUCT_PROJECTION_READY);
+      }
+      return String(url).includes("/rpc/")
+        ? jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 })
+        : jsonResponse([REGISTRY_RELEASE]);
+    }
   });
   assert.equal(ready.ready, true);
+  const projectionMissing = await checkCsmPersistenceReadiness({
+    env: ENV,
+    fetchImpl: async (url) => String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)
+      ? jsonResponse({ message: "function missing" }, 404)
+      : String(url).includes("/rpc/")
+        ? jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 })
+        : jsonResponse([REGISTRY_RELEASE])
+  });
+  assert.deepEqual(projectionMissing, {
+    ready: false,
+    reason: "product_projection_probe_404"
+  });
   const missing = await checkCsmPersistenceReadiness({
     env: ENV,
     fetchImpl: async () => jsonResponse([])
@@ -171,6 +229,9 @@ function fakeStore({ failOnceOn = "" } = {}) {
     env: ENV,
     fetchImpl: async (url) => {
       if (String(url).includes("/rpc/")) {
+        if (String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
+          return jsonResponse(PRODUCT_PROJECTION_READY);
+        }
         return jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 });
       }
       registryAttempts += 1;
@@ -236,6 +297,30 @@ function fakeStore({ failOnceOn = "" } = {}) {
   assert.equal(requestBody.p_recognition_session_id, "session-1");
   assert.deepEqual(requestBody.p_packet.session_hashes, rows.session_hashes);
 
+  let transientCalls = 0;
+  const recovered = await writeCsmStagePacketAtomically(rows, {
+    sessionPatch: sessionPatchFor(rows),
+    env: ENV,
+    sleep: async () => {},
+    fetchImpl: async () => {
+      transientCalls += 1;
+      if (transientCalls === 1) return jsonResponse({ error: "temporary" }, 503);
+      return jsonResponse({
+        ok: true,
+        code: "exact_replay",
+        status_code: 200,
+        replayed: true,
+        atomic: true,
+        session_saved: false,
+        written: Object.fromEntries(CSM_TABLES.map((table) => [table, 0]))
+      });
+    }
+  });
+  assert.equal(transientCalls, 2);
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.replayed, true,
+    "a lost/failed atomic receipt must retry the same packet, never the model");
+
   const conflict = await writeCsmStagePacketAtomically(rows, {
     sessionPatch: sessionPatchFor(rows),
     env: ENV,
@@ -256,6 +341,40 @@ function fakeStore({ failOnceOn = "" } = {}) {
   });
   assert.equal(invalidCounts.ok, false);
   assert.equal(invalidCounts.code, "csm_atomic_rpc_invalid_counts");
+}
+
+// The paid result's atomic persistence receipt is bounded through response
+// body consumption, retried with the same packet, and returns a distinct
+// timeout code when the bounded attempts are exhausted.
+{
+  let calls = 0;
+  let clockMs = 0;
+  const timedOut = await writeCsmStagePacketAtomically(rows, {
+    sessionPatch: sessionPatchFor(rows),
+    env: ENV,
+    maximumAttempts: 2,
+    requestTimeoutMs: 5,
+    maximumDurationMs: 30,
+    now: () => clockMs,
+    sleep: async () => {},
+    fetchImpl: async (url, init = {}) => {
+      calls += 1;
+      assert.match(String(url), /\/rpc\/persist_csm_stage_packet_v1$/);
+      assert.ok(init.signal instanceof AbortSignal);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => {
+          clockMs += 5;
+          throw Object.assign(new Error("simulated_body_timeout"), { name: "TimeoutError" });
+        }
+      };
+    }
+  });
+  assert.equal(timedOut.ok, false);
+  assert.equal(timedOut.code, "csm_atomic_rpc_timeout");
+  assert.equal(timedOut.failedTable, "persist_csm_stage_packet_v1");
+  assert.equal(calls, 2);
 }
 
 // Idempotency targets match the migration, and insert counts come from the
@@ -391,17 +510,17 @@ function fakeStore({ failOnceOn = "" } = {}) {
 
 // Off by default; local evaluation remains independent from Supabase.
 {
-  assert.equal(csmShadowPersistenceEnabled({}), false);
+  assert.equal(csmPersistenceEnabled({}), false);
   const store = fakeStore();
   const disabled = await writeCsmStageRows(rows, {
-    env: { ...ENV, CSM_SHADOW_PERSISTENCE_ENABLED: "" }, fetchImpl: store.fetchImpl
+    env: { ...ENV, CSM_PERSISTENCE_ENABLED: "" }, fetchImpl: store.fetchImpl
   });
   assert.equal(disabled.ok, true);
   assert.equal(disabled.skipped, "disabled");
   assert.equal(store.calls.length, 0);
 
   const unconfigured = await writeCsmStageRows(rows, {
-    env: { CSM_SHADOW_PERSISTENCE_ENABLED: "1" }, fetchImpl: store.fetchImpl
+    env: { CSM_PERSISTENCE_ENABLED: "1" }, fetchImpl: store.fetchImpl
   });
   assert.equal(unconfigured.ok, true);
   assert.equal(unconfigured.skipped, "unconfigured");

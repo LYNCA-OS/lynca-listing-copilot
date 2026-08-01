@@ -64,6 +64,10 @@ const rows = buildCsmStageRows({
   tenantId: "t1", recognitionSessionId: "s1", fields, composed,
   title: composed.title, createdAt: "2026-08-01T00:00:00Z"
 });
+for (const forbidden of ["evidence", "candidates", "provider_response", "raw_model_response"]) {
+  assert.equal(Object.hasOwn(rows.output.structured_output, forbidden), false,
+    `marketplace output must not duplicate the canonical ${forbidden} trace`);
+}
 assert.equal(rows.resolution.registry_release_id, THIN_REGISTRY_RELEASE_ID);
 assert.equal(rows.resolution.grammar, "NON_TCG");
 assert.equal(rows.output.marketplace, "EBAY");

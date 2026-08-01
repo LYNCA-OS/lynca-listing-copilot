@@ -68,9 +68,10 @@ for (const route of retiredVisualReviewRoutes) {
 }
 
 const workflow = readFileSync(".github/workflows/deploy-production.yml", "utf8");
+const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 const dispatchGate = workflow.indexOf("Fail closed unless this dispatch targets the current main commit");
 const setupNode = workflow.indexOf("actions/setup-node");
-const schemaPreflight = workflow.indexOf("Fail closed unless the Track C production schema is ready");
+const schemaPreflight = workflow.indexOf("Verify CSM persistence and global provider authority before deploy");
 const preHookCommitGate = workflow.indexOf("Re-confirm the exact main commit before the deploy hook");
 const vercelDeploy = workflow.indexOf("Trigger current main through the Vercel Deploy Hook");
 assert.ok(dispatchGate >= 0, "production deployment must have an explicit dispatch gate");
@@ -83,41 +84,54 @@ assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main/);
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
 assert.equal(
-  [...workflow.matchAll(/node scripts\/check-track-c-production-schema-rest\.mjs/g)].length,
+  [...workflow.matchAll(/node scripts\/check-csm-thin-production-readiness\.mjs/g)].length,
   2,
-  "both predeploy and postdeploy schema gates must use the strict REST fallback when direct Postgres is unavailable"
-);
-assert.equal(
-  [...workflow.matchAll(/if test -n "\$POSTGRES_URL_NON_POOLING"/g)].length,
-  2,
-  "direct Postgres catalog verification must remain the preferred production gate"
+  "both predeploy and postdeploy gates must verify Registry, atomic persistence, and provider authority"
 );
 assert.match(workflow, /SUPABASE_URL: \$\{\{ vars\.SUPABASE_URL \}\}/);
 assert.match(workflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
-assert.match(
-  workflow,
-  /diagnostics_deferred === false[\s\S]*vision_provider[\s\S]*paddle_ocr[\s\S]*vector_retrieval/,
-  "production acceptance must retry until the deep OCR and vector readiness contract is present"
+assert.match(workflow, /CSM_PERSISTENCE_ENABLED: "true"/);
+assert.equal(
+  [...workflow.matchAll(/V4_QUEUE_PUMP_DISABLED: "true"/g)].length,
+  2,
+  "both schema gates must require the retired V4 queue pump to stay disabled"
 );
-assert.match(workflow, /deep_diagnostics_complete: status\.workflow_readiness\?\.diagnostics_deferred === false/);
+for (const flag of [
+  "ENABLE_RECOGNITION_WORKER",
+  "ENABLE_PADDLE_OCR_FIELD_VERIFIER",
+  "ENABLE_VECTOR_RETRIEVAL",
+  "ENABLE_VISUAL_VECTOR_RETRIEVAL",
+  "ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT",
+  "ENABLE_STORED_VISUAL_FEATURE_LOOKUP",
+  "DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED",
+  "DATA_LOOP_SIDECARS_ENABLED"
+]) {
+  assert.match(workflow, new RegExp(`${flag}: "false"`), `${flag} must be disabled at release`);
+}
 assert.doesNotMatch(
   workflow,
   /echo[^\n]*(?:SUPABASE_SERVICE_ROLE_KEY|\$SUPABASE_SERVICE_ROLE_KEY)/,
   "the release workflow must never print the service-role key"
 );
 assert.doesNotMatch(workflow, /\/api\/admin-apply-/, "code deploy must not invoke runtime migration routes");
-assert.match(workflow, /listingConcurrencyContract as concurrency/, "production deploy must read the machine-owned frozen concurrency contract");
-for (const check of [
-  "worker_claim_limit_frozen",
-  "provider_global_concurrency_frozen",
-  "queue_submission_concurrency_frozen",
-  "catalog_global_capacity_frozen",
-  "catalog_query_concurrency_frozen",
-  "vector_global_capacity_frozen",
-  "vector_index_concurrency_frozen"
-]) {
-  assert.match(workflow, new RegExp(`${check}:`), `production deploy must enforce ${check}`);
-}
+assert.doesNotMatch(workflow, /google-github-actions|setup-gcloud|deploy-vision-ocr|Cloud Run/i);
+assert.doesNotMatch(workflow, /listing-provider-status|writer-assisted-production-readiness/);
+assert.match(workflow, /active_path === 'CSM_THIN_DIRECT'/);
+assert.match(workflow, /h\.model === 'gpt-5\.6-luna'/);
+assert.match(workflow, /h\.reasoning_effort === 'none'/);
+assert.match(workflow, /scheduler_attempt_slots === 120/);
+assert.match(workflow, /baseline_working_attempts === 43/);
+assert.match(workflow, /pacer_estimated_tokens_per_second === 60000/);
+assert.match(workflow, /pacer_burst_estimated_tokens === 65200/);
+assert.match(workflow, /steady_reserved_attempts_per_minute === 679/);
+assert.match(workflow, /effective_reserved_attempt_ceiling === 83/);
+assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);
+assert.match(workflow, /r\.code!=="missing_asset_id"/);
+assert.equal(
+  packageJson.scripts["vercel-build"],
+  "node scripts/check-csm-deployment-environment.mjs",
+  "Vercel must fail the build before promotion when the actual deployment environment is unsafe"
+);
 
 const browserPreingest = readFileSync("api/listing-preingest.js", "utf8");
 assert.doesNotMatch(
@@ -126,10 +140,20 @@ assert.doesNotMatch(
   "browser pre-ingestion must only persist durable OCR jobs; the independent worker consumes them"
 );
 const vercelConfig = readFileSync("vercel.json", "utf8");
-assert.match(
+assert.doesNotMatch(
   vercelConfig,
   /"path"\s*:\s*"\/api\/v4\/listing-preingest-worker"[\s\S]*?"schedule"\s*:\s*"\* \* \* \* \*"/,
-  "durable pre-ingestion jobs require an independent scheduled sweeper"
+  "the active thin deployment must not schedule the retired OCR worker"
+);
+assert.doesNotMatch(
+  vercelConfig,
+  /"path"\s*:\s*"\/api\/v4\/listing-job-pump"[\s\S]*?"schedule"\s*:\s*"\* \* \* \* \*"/,
+  "the active thin deployment must not schedule the retired V4 queue pump"
+);
+assert.match(
+  vercelConfig,
+  /"path"\s*:\s*"\/api\/listing-storage-retention-cleanup"[\s\S]*?"schedule"\s*:\s*"0 9 \* \* \*"/,
+  "storage retention remains an active data-lifecycle responsibility"
 );
 
 for (const runtimeModule of [

@@ -31,17 +31,17 @@ for (const id of ["inviteLoginHint", "inviteLoginSection", "inviteLoginLink"]) {
 assert.doesNotMatch(sessionControls, /if \(!response\.ok \|\| !session\.authenticated\)/, "transient session errors must not force logout");
 
 const feedbackSource = js.slice(
-  js.indexOf("function pendingV4FeedbackSubmission"),
+  js.indexOf("function pendingFeedbackSubmission"),
   js.indexOf("async function copyAllTitles")
 );
 assert.ok(feedbackSource.length > 0, "the writer feedback workflow must remain present");
 assert.match(feedbackSource, /pendingFeedbackSubmissionId/, "feedback retries must retain a client-owned idempotency key");
 assert.match(feedbackSource, /pendingFeedbackOccurredAt/, "feedback retries must retain the original client timestamp");
-assert.match(feedbackSource, /feedback_submission_id: v4Submission\.id/, "V4 feedback must send the retained idempotency key");
-assert.match(feedbackSource, /client_occurred_at: v4Submission\.occurredAt/, "V4 feedback must send the retained client timestamp");
+assert.match(feedbackSource, /feedback_submission_id: submission\.id/, "feedback must send the retained idempotency key");
+assert.match(feedbackSource, /client_occurred_at: submission\.occurredAt/, "feedback must send the retained client timestamp");
 assert.match(feedbackSource, /if \(feedbackRequest\.error\)[\s\S]*throw new Error/, "feedback must fail closed on a rejected persistence response");
 assert.ok(
-  feedbackSource.indexOf("clearPendingV4FeedbackSubmission(result, v4Submission)")
+  feedbackSource.indexOf("clearPendingFeedbackSubmission(result, submission)")
     > feedbackSource.indexOf("payload.v4_persistence?.transaction?.saved !== true"),
   "the idempotency key must only clear after the database transaction is acknowledged"
 );
@@ -52,28 +52,24 @@ assert.match(feedbackSource, /\(!correctedTitle && !explicitReject\)[\s\S]*retur
 assert.match(js, /event\.isComposing/, "Enter must not submit while an IME composition is active");
 assert.doesNotMatch(js, /feedbackStatus = payload\.training_eligible/, "training eligibility must never decide whether an accepted title is treated as stored");
 
-const queueSource = js.slice(
-  js.indexOf("async function processAssetViaQueue"),
-  js.indexOf("function failedResult")
+const directRecognitionSource = js.slice(
+  js.indexOf("async function processAssetViaCsmThinPath"),
+  js.indexOf("function backgroundPreparationAvailable")
 );
-assert.match(queueSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "enqueue must establish verified originals without waiting for optional crops");
-assert.match(queueSource, /buildAssetQueueIntentBody\(asset,/, "enqueue must rebuild a transport-safe intent from the current asset state");
-assert.match(queueSource, /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT/, "recognition and retry must use the canonical enqueue boundary");
-assert.match(queueSource, /asset_id: canonicalAssetId\(asset\)/, "fresh enqueue must bind the durable asset identity");
+assert.match(directRecognitionSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "recognition must establish verified originals without waiting for optional crops");
+assert.match(directRecognitionSource, /fetchJsonWithRetry\(CSM_THIN_API_ENDPOINT/, "recognition and retry must use the direct CSM boundary");
+assert.match(directRecognitionSource, /asset_id: canonicalAssetId\(asset\)/, "recognition must bind the durable asset identity");
+assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobject_path\s*:/, "recognition must not carry browser image transport fields");
 
-const priorityRetrySource = js.slice(
-  js.indexOf("async function retryFailedAssetInPriorityQueue"),
+const retrySource = js.slice(
+  js.indexOf("async function retryFailedAsset"),
   js.indexOf("async function copyTitle")
 );
-assert.match(priorityRetrySource, /const retriesFailedDurableJob = Boolean\(retryOfJobId\)/, "priority retry must distinguish a durable failed job from a pre-enqueue failure");
-assert.match(priorityRetrySource, /\["FAILED",\s*"CANCELLED"\]\.includes\(retryOfJobStatus\)/, "only an explicitly terminal durable job may use retry authorization");
-assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*priority: 0,[\s\S]*skipSpeculative: true,[\s\S]*manualRetry: retriesFailedDurableJob && !retryState\.input_rebind_required,[\s\S]*retryOfJobId: retryState\.input_rebind_required \? null : \(retryOfJobId \|\| null\)/, "priority retry must support authorized durable retries, fresh pre-enqueue retries, and safe input rebinds");
-assert.doesNotMatch(priorityRetrySource, /不能提升到优先队列；请重新上传/, "a pre-enqueue failure must remain retryable without re-uploading images");
-assert.match(priorityRetrySource, /旧任务仅保留审计记录/, "priority retry must preserve the old job only as audit history");
-assert.match(priorityRetrySource, /assetLifecycleMatches\(asset, lifecycleGeneration\)/, "a stale retry response must not overwrite a newer upload generation");
-assert.match(priorityRetrySource, /fetchJsonWithRetry\(JOB_RECOVERY_API_ENDPOINT/, "a stalled active job should use the atomic recovery boundary");
-assert.match(priorityRetrySource, /JSON\.stringify\(\{ job_id: current\.v4_job_id \|\| current\.job_id \}\)/, "active recovery may send only the durable job id, never the persisted image payload");
-assert.doesNotMatch(priorityRetrySource, /payload:\s*current|images:\s*current|asset_images:\s*current/, "the browser must not replay a persisted legacy job payload");
+assert.match(retrySource, /retryStateForResult\(current \|\| \{\}\)/, "retry must apply the result recovery policy");
+assert.match(retrySource, /resetAssetPreparationForRetry\(asset, \{[\s\S]*inputRebind: retryState\.input_rebind_required/, "an immutable-input conflict must rebind before retry");
+assert.match(retrySource, /await processAssetViaCsmThinPath\(asset, \{[\s\S]*manualRetry:\s*true/, "retry must use the same direct CSM route");
+assert.match(retrySource, /assetLifecycleMatches\(asset, lifecycleGeneration\)/, "a stale retry response must not overwrite a newer upload generation");
+assert.doesNotMatch(retrySource, /JOB_RECOVERY_API_ENDPOINT|processAssetViaQueue|Cloud Run|v4_job_id/, "retry must not fall back to the retired queue or Cloud Run");
 
 assert.match(js, /backgroundPreparationRunId/, "asynchronous image preparation must own a stale-run guard");
 assert.match(js, /filePreparationRunId/, "file preparation must own an independent UI stale-run guard");
@@ -81,7 +77,7 @@ assert.match(js, /assetLifecycleGeneration/, "product interactions must retain t
 assert.match(js, /async function saveWriterTitleAndAdvance/, "writer mode must advance only through the persistence bridge");
 assert.match(js, /persisted = await saveFeedbackForResult\(result, asset, \{ deferFinalRender: true \}\)/, "writer advance must await durable persistence");
 assert.match(js, /titleSnapshotByIndex/, "writer export must freeze persisted titles before asynchronous uploads");
-assert.match(js, /state\.priorityRetryInFlight/, "priority retry must participate in the workspace mutation lock");
+assert.match(js, /state\.retryInFlight/, "direct retry must participate in the workspace mutation lock");
 assert.match(js, /function updateCorrectedTitle[\s\S]*result\.persistenceStatus = "";/, "editing a persisted title must reopen its persistence contract");
 assert.match(css, /prefers-reduced-motion: reduce/, "writer transitions must respect reduced-motion preferences");
 assert.match(css, /--wb-bg:/, "the writer workbench must own one coherent visual token layer");

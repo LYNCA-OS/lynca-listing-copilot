@@ -1408,11 +1408,10 @@ assert.match(fastScoutPrewarmApiSource, /prewarm_status: "CACHE_MISS"/, "cache-o
 assert.match(vercelConfigSource, /admin-apply-v4-production-job-queue-migration\.js/, "the production migration function must have an explicit Vercel bundle rule.");
 assert.match(vercelConfigSource, /supabase\/migrations\/\*\.sql/, "all required SQL migrations must ship with the admin migration function.");
 assert.doesNotMatch(productionDeployWorkflowSource, /\/api\/admin-apply-/, "a production deployment must never mutate the database through a public runtime route.");
-assert.match(productionDeployWorkflowSource, /Migrations are maintenance-window operations/, "production migration ownership must remain an explicit maintenance-window boundary.");
-assert.match(productionDeployWorkflowSource, /check-track-c-production-schema\.mjs[\s\S]*track-c-production-schema-preflight\.json/, "production deployment must fail closed on a read-only Track C schema preflight.");
-assert.match(productionDeployWorkflowSource, /track-c-production-schema-postdeploy\.json/, "the read-only production schema result must be retained after deployment.");
-assert.match(productionDeployWorkflowSource, /check-track-c-production-schema-rest\.mjs/, "production deployment must retain a strict Supabase Data API fallback when direct Postgres is unavailable.");
-assert.match(productionDeployWorkflowSource, /SUPABASE_SERVICE_ROLE_KEY:\s*\$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/, "the REST schema fallback must receive its service key only through GitHub secrets.");
+assert.doesNotMatch(productionDeployWorkflowSource, /check-track-c-production-schema/, "the retired V4 Track C schema must not gate the active CSM-only production workflow.");
+assert.match(productionDeployWorkflowSource, /check-csm-thin-production-readiness\.mjs[\s\S]*csm-thin-schema-preflight\.json/, "the active CSM workflow must fail closed on its read-only schema and Registry preflight.");
+assert.match(productionDeployWorkflowSource, /csm-thin-schema-postdeploy\.json/, "the active CSM schema result must be retained after deployment.");
+assert.match(productionDeployWorkflowSource, /SUPABASE_SERVICE_ROLE_KEY:\s*\$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/, "the CSM readiness probe must receive its service key only through GitHub secrets.");
 assert.match(queueMigrationApiSource, /20260713224500_v4_tenant_fair_provider_queue\.sql/, "production migration apply must include the tenant-fair scheduler.");
 assert.match(queueMigrationApiSource, /tenant_fair_scheduler/, "the migration probe must verify that tenant-first scheduling is installed.");
 assert.match(queueMigrationApiSource, /tenant_fair_claim_ok/, "the migration probe must prove that multiple batches cannot multiply one tenant's provider share.");

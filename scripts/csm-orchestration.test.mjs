@@ -2,14 +2,18 @@
 
 import assert from "node:assert/strict";
 
-import { runPersistedCanonicalListingPath } from "../lib/listing/thin/csm-orchestration.mjs";
+import {
+  persistPreparedCanonicalListingPath,
+  prepareCanonicalListingPath,
+  runPersistedCanonicalListingPath
+} from "../lib/listing/thin/csm-orchestration.mjs";
 import { writeCsmStageRows } from "../lib/listing/thin/csm-supabase-writer.mjs";
-import { patchV4Row } from "../lib/listing/v4/session/supabase-rest.mjs";
+import { patchSupabaseRow } from "../lib/supabase-rest.mjs";
 
 const enabledEnv = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
-  CSM_SHADOW_PERSISTENCE_ENABLED: "1"
+  CSM_PERSISTENCE_ENABLED: "1"
 };
 
 function providerFor(fields) {
@@ -17,10 +21,14 @@ function providerFor(fields) {
     assert.equal(request.model, "gpt-5.6-luna");
     assert.equal(request.reasoning.effort, "none");
     return new Response(JSON.stringify({
+      id: "resp_csm_trace",
       output_text: JSON.stringify(fields),
       reasoning: { effort: "none" },
       usage: { input_tokens: 100, output_tokens: 30 }
-    }), { status: 200, headers: { "content-type": "application/json" } });
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json", "x-request-id": "req_csm_trace" }
+    });
   };
 }
 
@@ -66,7 +74,7 @@ const common = {
 // production failure that previously emitted `tenant_id=tenant-legacy`.
 {
   let requestedUrl = "";
-  const patched = await patchV4Row({
+  const patched = await patchSupabaseRow({
     table: "v4_recognition_sessions", id: "session-1",
     match: { tenant_id: "tenant-legacy" }, patch: { csm_grammar: "TCG" },
     requireMatch: true, env: enabledEnv,
@@ -90,6 +98,8 @@ const common = {
   const result = await runPersistedCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-tcg",
     imageUrls: ["https://example.test/front.jpg"],
+    promptVersion: "csm-canonical-fields-v1",
+    providerClientRequestId: "lynca-client-trace",
     callProvider: providerFor(common), env: enabledEnv, fetchImpl: writes.fetchImpl,
     createdAt: "2026-08-01T00:00:00Z",
     writeRows: writeCsmStageRows,
@@ -99,6 +109,16 @@ const common = {
       assert.equal(match.tenant_id, "tenant-1");
       assert.equal(patch.csm_grammar, "TCG");
       assert.equal(patch.csm_recognition_stage_status, "COMPLETE");
+      assert.equal(patch.csm_owner_versions.prompt_version, "csm-canonical-fields-v1");
+      assert.equal(patch.csm_owner_versions.provider_response_id, "resp_csm_trace");
+      assert.equal(patch.csm_owner_versions.provider_request_id, "req_csm_trace");
+      assert.equal(patch.csm_owner_versions.provider_client_request_id, "lynca-client-trace");
+      assert.equal(patch.csm_owner_versions.provider, "openai");
+      assert.equal(patch.csm_owner_versions.reasoning_effort, "none");
+      assert.equal(patch.csm_owner_versions.latency_ms >= 0, true);
+      assert.equal(patch.csm_owner_versions.input_tokens, 100);
+      assert.equal(patch.csm_owner_versions.output_tokens, 30);
+      assert.equal(patch.csm_owner_versions.total_tokens, 130);
       assert.match(patch.csm_recognition_packet_sha256, /^[0-9a-f]{64}$/);
       assert.match(patch.csm_resolution_packet_sha256, /^[0-9a-f]{64}$/);
       assert.match(patch.csm_marketplace_packet_sha256, /^[0-9a-f]{64}$/);
@@ -118,6 +138,13 @@ const common = {
   assert.equal(result.csm_persistence.ok, true);
   assert.deepEqual(patchedHashes, result.csm_rows.session_hashes,
     "the session must persist the exact three hashes verified by replay");
+  assert.deepEqual(result.csm_rows.output.dropped_trace, {
+    dropped_for_budget: result.dropped_brackets,
+    suppressed_by_profile: result.suppressed_brackets,
+    restored: result.restored_brackets,
+    truncated: result.truncated
+  }, "the public Composer result must survive the orchestration-to-CSM mapping losslessly");
+  assert.ok(result.csm_rows.output.dropped_trace.suppressed_by_profile.includes("search_optimization"));
   assert.deepEqual(writes.tables, [
     "csm_evidence_observations", "csm_bracket_candidates", "csm_candidate_evidence_links",
     "csm_identity_resolutions", "csm_resolved_brackets", "csm_marketplace_outputs"
@@ -198,6 +225,61 @@ const common = {
   });
   assert.equal(replay.csm_persistence.replayed, true);
   assert.equal(patchCalls, 0);
+}
+
+// The prepare packet is a complete resume unit: after one paid observation, a
+// transient write failure can replay the exact packet without image/provider
+// inputs. Tampering is rejected before the writer is entered.
+{
+  let providerCalls = 0;
+  const baseProvider = providerFor(common);
+  const prepared = await prepareCanonicalListingPath({
+    tenantId: "tenant-1",
+    recognitionSessionId: "session-resume",
+    imageUrls: ["https://example.test/front.jpg"],
+    callProvider: async (request) => {
+      providerCalls += 1;
+      return baseProvider(request);
+    }
+  });
+  let writeCalls = 0;
+  const persist = (writeRows) => persistPreparedCanonicalListingPath({
+    tenantId: "tenant-1",
+    recognitionSessionId: "session-resume",
+    prepared,
+    writeRows,
+    patchSession: async () => ({ saved: true })
+  });
+  await assert.rejects(
+    persist(async () => {
+      writeCalls += 1;
+      return { ok: false, code: "csm_atomic_rpc_failed", statusCode: 503 };
+    }),
+    (error) => error.code === "csm_atomic_rpc_failed" && error.statusCode === 503
+  );
+  const resumed = await persist(async () => {
+    writeCalls += 1;
+    return {
+      ok: true, atomic: true, replayed: false,
+      session: { saved: true }, written: {}
+    };
+  });
+  assert.equal(resumed.title, prepared.title);
+  assert.equal(providerCalls, 1);
+  assert.equal(writeCalls, 2);
+
+  const tampered = structuredClone(prepared);
+  tampered.csm_rows.output.title += " tampered";
+  await assert.rejects(
+    persistPreparedCanonicalListingPath({
+      tenantId: "tenant-1",
+      recognitionSessionId: "session-resume",
+      prepared: tampered,
+      writeRows: async () => { writeCalls += 1; return { ok: true }; }
+    }),
+    (error) => error.code === "csm_prepared_result_invalid"
+  );
+  assert.equal(writeCalls, 2, "invalid replay must fail before storage");
 }
 
 await assert.rejects(

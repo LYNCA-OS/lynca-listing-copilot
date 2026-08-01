@@ -14,7 +14,6 @@ jobs:
     environment: production
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v5
       - name: Fail closed unless this dispatch targets the current main commit
@@ -32,59 +31,44 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - name: Install and verify release artifact
+      - name: Verify the CSM thin release artifact
         run: |
           npm ci --no-audit --no-fund
           npm ls --omit=dev --all
           node scripts/npm-audit-gate.mjs
-          npm run check:v4-spine
-          npm run test:v4-spine
-          npm run check:launch-benchmark
-          npm run test:launch-benchmark
-          npm run check:production-engineering
-          npm run test:production-engineering
-          npm run check:production-schema-rest
-          npm run test:production-schema-rest
-      - name: Fail closed unless the Track C production schema is ready
+          npm run check:csm-thin
+          npm run test:csm-thin
+          node scripts/auth-production-entrypoint.test.mjs
+          node scripts/api-access-contract.test.mjs
+          node scripts/upload-safety-layer.test.mjs
+          node scripts/writer-wheel-mode.test.mjs
+          node scripts/production-release-boundaries.test.mjs
+      - name: Verify CSM persistence and global provider authority before deploy
         env:
-          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CSM_PERSISTENCE_ENABLED: "true"
+          V4_QUEUE_PUMP_DISABLED: "true"
+          ENABLE_RECOGNITION_WORKER: "false"
+          ENABLE_PADDLE_OCR_FIELD_VERIFIER: "false"
+          ENABLE_VECTOR_RETRIEVAL: "false"
+          ENABLE_VISUAL_VECTOR_RETRIEVAL: "false"
+          ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT: "false"
+          ENABLE_STORED_VISUAL_FEATURE_LOOKUP: "false"
+          DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED: "false"
+          DATA_LOOP_SIDECARS_ENABLED: "false"
         run: |
-          # Migrations are maintenance-window operations. Deployment is
-          # deliberately read-only with respect to the production database.
-          if test -n "$POSTGRES_URL_NON_POOLING"; then
-            node scripts/check-track-c-production-schema.mjs \
-              --out /tmp/track-c-production-schema-preflight.json
-          else
-            test -n "$SUPABASE_URL"
-            test -n "$SUPABASE_SERVICE_ROLE_KEY"
-            node scripts/check-track-c-production-schema-rest.mjs \
-              --out /tmp/track-c-production-schema-preflight.json
-          fi
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          node scripts/check-csm-thin-production-readiness.mjs \
+            --database-only \
+            --out /tmp/csm-thin-schema-preflight.json
       - name: Re-confirm the exact main commit before the deploy hook
         env:
           DISPATCH_SHA: ${{ github.sha }}
         run: |
           git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
-      - name: Authenticate the exact main release to Google Cloud
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-      - name: Install Google Cloud CLI
-        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db
-      - name: Deploy lean Google Vision OCR service from exact main
-        env:
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-        run: |
-          test -n "$GCP_PROJECT_ID"
-          scripts/deploy-vision-ocr-worker-cloud-run.sh
-          test -s /tmp/vision-ocr-service-url.txt
-          curl -fsS --max-time 30 "$(cat /tmp/vision-ocr-service-url.txt)/readyz" \
-            -o /tmp/vision-ocr-ready.json
-          node -e 'const r=require("/tmp/vision-ocr-ready.json"); if(r.status!=="ready"||r.auth_mode!=="adc"||r.paddle_loaded!==false) process.exit(1)'
       - name: Trigger current main through the Vercel Deploy Hook
         env:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
@@ -95,140 +79,87 @@ jobs:
           node - <<'NODE'
           const response = require('/tmp/vercel-deploy-hook.json');
           if (!response.job?.id || !['PENDING', 'RUNNING', 'BUILDING'].includes(response.job?.state)) {
-            console.error(JSON.stringify({ state: response.job?.state || null, has_job_id: Boolean(response.job?.id) }));
             process.exit(1);
           }
           console.log(JSON.stringify({ deploy_hook_accepted: true, state: response.job.state }));
           NODE
-      - name: Wait for the exact main commit to reach production
+      - name: Wait for the exact CSM thin main commit to reach production
         run: |
           for _attempt in $(seq 1 60); do
-            if curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health \
-              -o /tmp/v4-health-deployed.json \
-              && node -e 'const h=require("/tmp/v4-health-deployed.json"); process.exit(h.deployment?.git_commit_sha === process.env.GITHUB_SHA ? 0 : 1)'; then
+            if curl -fsS --max-time 30 https://listing.lyncafei.team/api/health \
+              -o /tmp/csm-thin-health.json \
+              && node - <<'NODE'
+          const h = require('/tmp/csm-thin-health.json');
+          const ok = h.ready === true
+            && h.deployment?.git_commit_sha === process.env.GITHUB_SHA
+            && h.active_path === 'CSM_THIN_DIRECT'
+            && h.model === 'gpt-5.6-luna'
+            && h.reasoning_effort === 'none'
+            && h.runtime?.cloud_run_calls === 0
+            && h.runtime?.vector_calls === 0
+            && h.runtime?.generic_ocr_calls === 0
+            && h.capacity?.scheduler_attempt_slots === 120
+            && h.capacity?.baseline_working_attempts === 43
+            && h.capacity?.pacer_estimated_tokens_per_second === 60000
+            && h.capacity?.pacer_burst_estimated_tokens === 65200
+            && h.capacity?.steady_reserved_attempts_per_minute === 679
+            && h.capacity?.effective_reserved_attempt_ceiling === 83;
+          process.exit(ok ? 0 : 1);
+          NODE
+            then
               break
             fi
-            rm -f /tmp/v4-health-deployed.json
+            rm -f /tmp/csm-thin-health.json
             sleep 10
           done
-          test -s /tmp/v4-health-deployed.json
-          node -e 'const h=require("/tmp/v4-health-deployed.json"); if(h.deployment?.git_commit_sha !== process.env.GITHUB_SHA) process.exit(1)'
-      - name: Re-verify the production schema after deployment
+          test -s /tmp/csm-thin-health.json
+      - name: Re-verify CSM persistence after deployment
         env:
-          POSTGRES_URL_NON_POOLING: ${{ secrets.POSTGRES_URL_NON_POOLING }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CSM_PERSISTENCE_ENABLED: "true"
+          V4_QUEUE_PUMP_DISABLED: "true"
+          ENABLE_RECOGNITION_WORKER: "false"
+          ENABLE_PADDLE_OCR_FIELD_VERIFIER: "false"
+          ENABLE_VECTOR_RETRIEVAL: "false"
+          ENABLE_VISUAL_VECTOR_RETRIEVAL: "false"
+          ENABLE_QUERY_VISUAL_VECTOR_PREFLIGHT: "false"
+          ENABLE_STORED_VISUAL_FEATURE_LOOKUP: "false"
+          DATA_LOOP_PADDLE_OCR_DISPATCH_ENABLED: "false"
+          DATA_LOOP_SIDECARS_ENABLED: "false"
         run: |
-          if test -n "$POSTGRES_URL_NON_POOLING"; then
-            node scripts/check-track-c-production-schema.mjs \
-              --out /tmp/track-c-production-schema-postdeploy.json
-          else
-            test -n "$SUPABASE_URL"
-            test -n "$SUPABASE_SERVICE_ROLE_KEY"
-            node scripts/check-track-c-production-schema-rest.mjs \
-              --out /tmp/track-c-production-schema-postdeploy.json
-          fi
-      - name: Verify production alias and V4 runtime
+          node scripts/check-csm-thin-production-readiness.mjs \
+            --database-only \
+            --out /tmp/csm-thin-schema-postdeploy.json
+      - name: Verify authenticated UI, active API, and retired boundaries
         env:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: |
-          # A migration can commit milliseconds before PostgREST exposes the
-          # new tables to a different Vercel region. Wait for the complete
-          # readiness contract, not only for the deployment SHA.
-          for _attempt in $(seq 1 36); do
-            if curl -fsS --max-time 30 https://listing.lyncafei.team/api/v4/health -o /tmp/v4-health.json \
-              && node -e 'const h=require("/tmp/v4-health.json"); process.exit(h.ready === true && h.deployment?.git_commit_sha === process.env.GITHUB_SHA ? 0 : 1)'; then
-              break
-            fi
-            rm -f /tmp/v4-health.json
-            sleep 10
-          done
-          test -s /tmp/v4-health.json
           curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
             -H 'content-type: application/json' \
             --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
             https://listing.lyncafei.team/api/login -o /tmp/login.json
-          # The status route intentionally returns a shallow, usable response
-          # when deep OCR/vector probes time out. Release acceptance needs the
-          # deep contract, so retry that diagnostic snapshot with the same
-          # authenticated session instead of treating omitted components as a
-          # permanent runtime regression.
-          for _attempt in $(seq 1 12); do
-            if curl -fsS --max-time 45 -b /tmp/lynca-cookies.txt \
-              https://listing.lyncafei.team/api/listing-provider-status -o /tmp/provider-status.json \
-              && node -e 'const s=require("/tmp/provider-status.json"); const ids=new Set((s.workflow_readiness?.components||[]).map(x=>x.id)); process.exit(s.workflow_readiness?.diagnostics_deferred === false && ["vision_provider","paddle_ocr","vector_retrieval"].every(id=>ids.has(id)) ? 0 : 1)'; then
-              break
-            fi
-            rm -f /tmp/provider-status.json
-            sleep 10
-          done
-          test -s /tmp/provider-status.json
-          node --input-type=module - <<'NODE'
-          import fs from 'node:fs';
-          import { listingConcurrencyContract as concurrency } from './lib/listing/v4/orchestration/concurrency-contract.mjs';
-          const health = JSON.parse(fs.readFileSync('/tmp/v4-health.json', 'utf8'));
-          const status = JSON.parse(fs.readFileSync('/tmp/provider-status.json', 'utf8'));
-          const components = new Map((status.workflow_readiness?.components || []).map((item) => [item.id, item]));
-          const vector = components.get('vector_retrieval') || {};
-          const vision = components.get('vision_provider') || {};
-          const ocr = components.get('paddle_ocr') || {};
-          const ocrCapacity = status.execution_control?.stage_capacity?.paddle_ocr || {};
-          const catalogCapacity = status.execution_control?.stage_capacity?.catalog || {};
-          const vectorCapacity = status.execution_control?.stage_capacity?.vector || {};
-          const checks = {
-            deep_diagnostics_complete: status.workflow_readiness?.diagnostics_deferred === false,
-            v4_ready: health.ready === true,
-            deployed_commit_matches: health.deployment?.git_commit_sha === process.env.GITHUB_SHA,
-            queue_configured: health.production_queue?.configured === true,
-            worker_claim_limit_frozen: health.production_queue?.worker_claim_limit === concurrency.gpt_provider.concurrency,
-            storage_bucket_ready: status.storage?.configured === true && status.storage?.bucket === 'listing-card-images',
-            cloud_recognition_ready: status.workflow_readiness?.can_run_cloud_recognition === true,
-            model_ready: vision.details?.model_id === 'gpt-5-mini',
-            ocr_runtime_profile_frozen: ocr.details?.runtime_ready === true
-              && ocr.details?.runtime_profile === 'lean-google-vision-v1'
-              && ocr.details?.backend === 'google_vision'
-              && ocr.details?.auth_mode === 'adc'
-              && ocr.details?.paddle_loaded === false,
-            vector_index_ready: vector.details?.index_ready === true,
-            vector_runtime_ready: vector.details?.runtime_ready === true && vector.details?.preload_status === 'READY',
-            provider_per_key_concurrency_frozen: status.execution_control?.per_key_stable_concurrency === concurrency.gpt_provider.concurrency,
-            provider_global_concurrency_frozen: status.execution_control?.global_provider_concurrency === concurrency.gpt_provider.concurrency,
-            queue_submission_concurrency_frozen: status.execution_control?.queue_submission_concurrency === concurrency.queue_submission.concurrency,
-            provider_done_capacity_handoff_enabled: status.execution_control?.provider_done_capacity_handoff_enabled === true,
-            ocr_stage_capacity_enabled: ocrCapacity.capacity_control_enabled === true,
-            ocr_stage_global_capacity: ocrCapacity.global_capacity === concurrency.paddle_ocr.concurrency,
-            ocr_per_asset_capacity: ocrCapacity.per_asset_capacity === concurrency.paddle_ocr.per_asset_concurrency,
-            ocr_per_asset_batch_size: ocrCapacity.per_asset_batch_size === concurrency.paddle_ocr.per_asset_batch_size,
-            ocr_anchor_concurrency: ocrCapacity.anchor_concurrency === concurrency.paddle_ocr.anchor_lane_limit,
-            ocr_detail_concurrency: ocrCapacity.detail_concurrency === concurrency.paddle_ocr.detail_lane_limit,
-            catalog_stage_capacity_enabled: catalogCapacity.capacity_control_enabled === true,
-            catalog_global_capacity_frozen: catalogCapacity.global_capacity === concurrency.catalog_retrieval.concurrency,
-            catalog_query_concurrency_frozen: catalogCapacity.query_concurrency === concurrency.catalog_internal_queries.concurrency,
-            vector_stage_capacity_enabled: vectorCapacity.capacity_control_enabled === true,
-            vector_global_capacity_frozen: vectorCapacity.global_capacity === concurrency.vector_query.concurrency,
-            vector_index_concurrency_frozen: vectorCapacity.index_concurrency === concurrency.vector_index.concurrency
-          };
-          console.log(JSON.stringify({ checks, deployment_sha: process.env.GITHUB_SHA }, null, 2));
-          if (Object.values(checks).some((value) => value !== true)) process.exit(1);
-          NODE
-      - name: Enforce writer-assisted production readiness
-        env:
-          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
-          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
-        run: node scripts/writer-assisted-production-readiness.mjs --cloud --out /tmp/writer-assisted-readiness.json
+          curl -fsS --max-time 30 -b /tmp/lynca-cookies.txt \
+            https://listing.lyncafei.team/app/listing-copilot.js \
+            -o /tmp/listing-copilot.js
+          grep -q '"/api/csm-listing-title"' /tmp/listing-copilot.js
+          test "$(curl -sS --max-time 30 -o /tmp/retired-route.json -w '%{http_code}' \
+            -X POST https://listing.lyncafei.team/api/v4/listing-job-enqueue)" = "410"
+          node -e 'const r=require("/tmp/retired-route.json"); if(r.error_code!=="RETIRED_LISTING_EXECUTION_PATH") process.exit(1)'
+          test "$(curl -sS --max-time 30 -o /tmp/csm-noop.json -w '%{http_code}' \
+            -b /tmp/lynca-cookies.txt -H 'content-type: application/json' \
+            --data '{}' https://listing.lyncafei.team/api/csm-listing-title)" = "400"
+          node -e 'const r=require("/tmp/csm-noop.json"); if(r.code!=="missing_asset_id") process.exit(1)'
       - name: Upload release evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: production-release-evidence
           path: |
-            /tmp/track-c-production-schema-preflight.json
-            /tmp/track-c-production-schema-postdeploy.json
-            /tmp/v4-health.json
-            /tmp/v4-health-deployed.json
-            /tmp/provider-status.json
+            /tmp/csm-thin-schema-preflight.json
+            /tmp/csm-thin-schema-postdeploy.json
+            /tmp/csm-thin-health.json
             /tmp/vercel-deploy-hook.json
-            /tmp/vision-ocr-ready.json
-            /tmp/vision-ocr-service-url.txt
-            /tmp/writer-assisted-readiness.json
+            /tmp/retired-route.json
+            /tmp/csm-noop.json
