@@ -282,6 +282,7 @@ export async function runDirectCsmAsset({
   env = process.env, fetchImpl = globalThis.fetch, callProvider = null,
   dependencies = {}
 } = {}) {
+  const routeStartedAt = Date.now();
   const tenant = requiredText(tenantId, "tenant_id");
   const user = requiredText(userId, "user_id");
   const asset = requiredText(assetId, "asset_id");
@@ -299,12 +300,18 @@ export async function runDirectCsmAsset({
   // Fail before the paid provider boundary unless both the replay store and
   // the durable provider authority/pacer are live. A usable title without its
   // CSM lineage or globally paced claim is not an acceptable production asset.
+  const readinessStartedAt = Date.now();
   const readiness = checkReadiness
     ? await checkReadiness({ env, fetchImpl })
     : await checkCachedCsmPersistenceReadiness({ env, fetchImpl });
   if (!readiness.ready) throw Object.assign(new Error(`csm_persistence_not_ready:${readiness.reason}`), { statusCode: 503 });
+  const latencyStages = {
+    preflight_ms: Date.now() - readinessStartedAt
+  };
 
+  const imageManifestStartedAt = Date.now();
   const canonical = await readImages({ tenantId: tenant, assetId: asset, env, fetchImpl });
+  latencyStages.image_manifest_ms = Date.now() - imageManifestStartedAt;
   const originals = canonical.images.filter((image) => image.derived !== true).slice(0, 2);
   if (!originals.length) {
     throw Object.assign(new Error("canonical_original_image_missing"), { statusCode: 409 });
@@ -360,6 +367,7 @@ export async function runDirectCsmAsset({
 
   const executeTask = async (dispatched) => {
     let imageUrls;
+    const attemptStages = { ...latencyStages };
     const sessionId = deterministicCsmSessionId(dispatched.operation_key);
     const providerClientRequestId = deterministicProviderClientRequestId({
       operationKey: dispatched.operation_key,
@@ -367,6 +375,7 @@ export async function runDirectCsmAsset({
       attempt: dispatched.attempt
     });
     try {
+      const signedUrlStartedAt = Date.now();
       imageUrls = await Promise.all(originals.map((image) => signImage({
         objectPath: image.objectPath,
         bucket: image.bucket,
@@ -374,6 +383,8 @@ export async function runDirectCsmAsset({
         env,
         fetchImpl
       })));
+      attemptStages.signed_url_ms = Date.now() - signedUrlStartedAt;
+      const recognitionSessionStartedAt = Date.now();
       const session = await createSession({
         sessionId,
         tenantId: tenant,
@@ -394,6 +405,7 @@ export async function runDirectCsmAsset({
         env,
         fetchImpl
       });
+      attemptStages.recognition_session_ms = Date.now() - recognitionSessionStartedAt;
       if (session.persistence?.recognition_session?.saved !== true) {
         throw Object.assign(new Error("csm_recognition_session_not_persisted"), {
           statusCode: 503
@@ -407,6 +419,7 @@ export async function runDirectCsmAsset({
       throw error;
     }
 
+    const providerStartedAt = Date.now();
     const prepared = await preparePath({
       tenantId: tenant,
       recognitionSessionId: sessionId,
@@ -427,8 +440,12 @@ export async function runDirectCsmAsset({
       env,
       fetchImpl
     });
+    attemptStages.provider_prepare_ms = Date.now() - providerStartedAt;
+    if (Number.isFinite(Number(prepared?.latency_ms))) {
+      attemptStages.provider_ms = Number(prepared.latency_ms);
+    }
     return buildCsmPersistenceCheckpoint({
-      prepared,
+      prepared: { ...prepared, latency_stages_ms: attemptStages },
       tenantId: tenant,
       operationKey: dispatched.operation_key,
       payloadHash: dispatched.payload_hash,
@@ -444,18 +461,27 @@ export async function runDirectCsmAsset({
     maxAttempts: CSM_DIRECT_MAX_ATTEMPTS
   });
   const sessionId = deterministicCsmSessionId(operationKey);
+  const dispatchStartedAt = Date.now();
   const settled = durableResult || await (
     manualRetry === true && Number(task.prior_attempts) > 0
       ? dispatcher.manualRetry(task)
       : dispatcher.enqueue(task)
   );
   if (alreadyPersisted(settled, sessionId)) return publicPersistedResult(settled);
-  const prepared = validateCsmPersistenceCheckpoint(settled, {
+  const preparedWithDispatchStages = {
+    ...settled,
+    latency_stages_ms: {
+      ...(settled.latency_stages_ms || {}),
+      authority_dispatch_ms: Date.now() - dispatchStartedAt
+    }
+  };
+  const prepared = validateCsmPersistenceCheckpoint(preparedWithDispatchStages, {
     tenantId: tenant,
     operationKey,
     payloadHash,
     recognitionSessionId: sessionId
   });
+  const persistenceStartedAt = Date.now();
   const persisted = await persistPath({
     tenantId: tenant,
     recognitionSessionId: sessionId,
@@ -467,21 +493,31 @@ export async function runDirectCsmAsset({
     env,
     fetchImpl
   });
-  if (persisted?.csm_persistence?.ok !== true
-      || persisted?.csm_persistence?.atomic !== true
-      || persisted?.csm_persistence?.session?.saved !== true) {
-    const code = persisted?.csm_persistence?.ok === true
+  const persistedWithLatency = persisted && typeof persisted === "object"
+    ? {
+        ...persisted,
+        latency_stages_ms: {
+          ...(persisted.latency_stages_ms || prepared.latency_stages_ms || {}),
+          csm_persistence_ms: Date.now() - persistenceStartedAt,
+          request_total_ms: Date.now() - routeStartedAt
+        }
+      }
+    : persisted;
+  if (persistedWithLatency?.csm_persistence?.ok !== true
+      || persistedWithLatency?.csm_persistence?.atomic !== true
+      || persistedWithLatency?.csm_persistence?.session?.saved !== true) {
+    const code = persistedWithLatency?.csm_persistence?.ok === true
       ? "csm_persistence_incomplete"
-      : String(persisted?.csm_persistence?.code || "csm_persistence_failed");
+      : String(persistedWithLatency?.csm_persistence?.code || "csm_persistence_failed");
     throw Object.assign(new Error(code), {
       code,
-      statusCode: persisted?.csm_persistence?.ok === true
+      statusCode: persistedWithLatency?.csm_persistence?.ok === true
         ? 503
-        : Number(persisted?.csm_persistence?.statusCode || 503),
-      retryable: Number(persisted?.csm_persistence?.statusCode || 503) >= 500
+        : Number(persistedWithLatency?.csm_persistence?.statusCode || 503),
+      retryable: Number(persistedWithLatency?.csm_persistence?.statusCode || 503) >= 500
     });
   }
-  return publicPersistedResult(persisted);
+  return publicPersistedResult(persistedWithLatency);
 }
 
 function responseStatus(error) {

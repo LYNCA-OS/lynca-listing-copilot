@@ -20,8 +20,15 @@ import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
 import { buildSemValidationEvent } from "../lib/listing/csm/sem-validation.mjs";
 import {
   WRITER_TITLE_SEM_PARSER_VERSION,
-  WRITER_TITLE_SEM_CANDIDATE_SCHEMA_VERSION
+  WRITER_TITLE_SEM_CANDIDATE_SCHEMA_VERSION,
+  gradingInfoSuggestion,
+  printFinishSuggestion
 } from "../lib/listing/csm/title-derived-sem.mjs";
+
+assert.equal(printFinishSuggestion({ parallel_exact: "Gold Vinyl", surface_color: "Gold", parallel_family: "Vinyl" }), "Gold Vinyl");
+assert.equal(printFinishSuggestion({ surface_color: "Gold", parallel_family: "Refractor" }), "Gold Refractor");
+assert.equal(printFinishSuggestion({ surface_color: "Gold" }), "Gold");
+assert.deepEqual(gradingInfoSuggestion({ grade_company: "PSA", grade: "10" }), { company: "PSA", card_grade: "10" });
 
 const fields = (overrides = {}) => parseCanonicalFields({
   year: "", manufacturer: "", product: "", set: "", subjects: [], team: "",
