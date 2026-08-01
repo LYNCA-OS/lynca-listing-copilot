@@ -69,6 +69,7 @@ for (const route of retiredVisualReviewRoutes) {
 
 const workflow = readFileSync(".github/workflows/deploy-production.yml", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
+const health = readFileSync("api/health.js", "utf8");
 const dispatchGate = workflow.indexOf("Fail closed unless this dispatch targets the current main commit");
 const setupNode = workflow.indexOf("actions/setup-node");
 const schemaPreflight = workflow.indexOf("Verify CSM persistence and global provider authority before deploy");
@@ -127,6 +128,8 @@ assert.match(workflow, /steady_reserved_attempts_per_minute === 679/);
 assert.match(workflow, /effective_reserved_attempt_ceiling === 83/);
 assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);
 assert.match(workflow, /r\.code!=="missing_asset_id"/);
+assert.match(health, /LYNCA_RELEASE_GIT_SHA\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_SHA/);
+assert.match(health, /LYNCA_RELEASE_GIT_REF\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_REF/);
 assert.equal(
   packageJson.scripts["vercel-build"],
   "node lib/listing/thin/csm-deployment-environment.mjs",
