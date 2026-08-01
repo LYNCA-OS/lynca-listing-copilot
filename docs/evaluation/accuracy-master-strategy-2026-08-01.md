@@ -381,3 +381,36 @@ The complete per-card ledger is in
 `docs/evaluation/candidate-expression-v4-identity-replay-stop-2026-08-02.md`.
 Future identity work must separate IP/product identity from affiliation,
 grading-company marks and logo fragments before another paid confirmation.
+
+## 13. 2026-08-02 follow-up: guarded narrow bundle replay
+
+The open-expression v4 response was paired with the canonical-v3 checkpoint and
+replayed through the same deterministic Composer. The six narrow overlays were
+applied sequentially, with a per-card guard that rejects any proposal that
+crosses 80 characters or removes a token already present in the reference title.
+
+The final development replay was `12/0/138`, Δ macro F1 `+0.006551`, with zero
+reference-token loss and zero over-80 titles. The gain is interaction evidence,
+not independent generalization: the same 150-card development cohort supplied
+the canonical and expression checkpoints. The receipt is
+`artifacts/candidate-expression-v4/expression-v4-narrow-bundle-replay-150-2026-08-02.json`.
+
+Keep the bundle evaluation-only. It is a candidate for a pre-registered
+independent 150-card confirmation, not a production Composer change. The
+per-card guard is part of the experiment contract and must remain attached if
+the bundle is later re-tested.
+
+## 14. 2026-08-02 follow-up: source-pool boundary is real
+
+The reviewed Supabase table contains 255 image-backed rows: 150 are already in
+the development cohort and only 105 are outside it. The 30
+`v4_writer_feedback_events` rows embed original images, but they are
+`OBSERVE_ONLY`/`ADMIN_TEST_ONLY` accepts without sealed reviewed corrections;
+they are diagnostic material, not accuracy labels. A mixed 150 therefore cannot
+be called an independent 150. Acquire a new label-blind, sealed image pool
+before promoting any overlay.
+
+This boundary is intentional: no amount of replay can create independent
+evidence from reused cards. Until the pool exists, use zero-cost replay to
+reject negative mechanisms and document candidates, but do not spend provider
+calls on a pseudo-confirmation run.
