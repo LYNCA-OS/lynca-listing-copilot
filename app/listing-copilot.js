@@ -1583,7 +1583,10 @@ async function processAssetViaCsmThinPath(asset, {
     final_title: payload.title,
     rendered_title: payload.title,
     generatedTitle: payload.title,
-    correctedTitle: "",
+    // CSM's title is the initial writer draft. Keeping this populated is
+    // important because an empty correctedTitle is a deliberate "no title"
+    // value in the writer UI, not a signal to fall back to generatedTitle.
+    correctedTitle: payload.title,
     writerTitlePending: false,
     confidence: lowConfidence.length || payload.trace_status !== "PERSISTED" ? "MEDIUM" : "HIGH",
     provider: "gpt-5.6-luna",
