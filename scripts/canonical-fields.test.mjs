@@ -441,3 +441,47 @@ assert.match(
 }
 
 process.stdout.write("canonical fields: ok\n");
+
+// COS-9: [Language] is a * (highest tier) TCG bracket sitting immediately after
+// [IP], and it appears in NO other grammar. It was in semCanonicalEditableFields
+// and semTcgTitleOrder from the start; the thin path's THIN_FIELDS omitted it,
+// so it was filtered out of every TCG title silently. These assertions pin both
+// halves: that it renders for TCG in the contract's position, and that it stays
+// out of Standard, where COS-8's order has no such bracket.
+{
+  const tcg = composeFromCanonicalFields({
+    grammar: "tcg", year: "2025", ip: "Pokemon", language: "JP", set: "Mega Brave",
+    subjects: ["Mega Absol Ex"], card_number: "089/063", descriptive_rarity: "Special Art Rare",
+    grade: "CGC 10", attributes: [], components: [], unreadable: [], low_confidence: []
+  });
+  assert.match(tcg.title, /^2025 Pokemon JP /, "TCG title must carry [Language] right after [IP]");
+  assert.equal(BRACKET_ORDER.tcg.indexOf("language"), BRACKET_ORDER.tcg.indexOf("ip") + 1);
+  assert.equal(BRACKET_ORDER.standard.includes("language"), false);
+  assert.equal(BRACKET_ORDER.lot.includes("language"), false);
+
+  // A sports card leaves it empty and loses nothing.
+  const standard = composeFromCanonicalFields({
+    grammar: "standard", year: "2023", manufacturer: "Panini", product: "Prizm",
+    subjects: ["Victor Wembanyama"], language: "", attributes: [], components: [],
+    unreadable: [], low_confidence: []
+  });
+  assert.equal(/\bJP\b|\bEN\b/.test(standard.title), false);
+}
+
+// COS-8 / COS-9 compression tiers. The table is consulted on 28 of 148 real
+// cards, so an order that contradicts the grammar is not a theoretical problem.
+{
+  assert.equal(DROP_ORDER.standard[0], "card_number", "COS-8: Card Number is *** and yields first");
+  assert.ok(DROP_ORDER.standard.indexOf("print_finish") < DROP_ORDER.standard.indexOf("release_variant"),
+    "COS-8: Print Finish is ** and Release Variant is *, so the finish yields first");
+  assert.equal(DROP_ORDER.tcg[0], "manufacturer", "COS-9: Manufacturer is **** in TCG");
+  assert.ok(DROP_ORDER.tcg.indexOf("product") < DROP_ORDER.tcg.indexOf("year"),
+    "COS-9: Product is **** and Year is *, so Product yields first");
+  // Identity and price are in no drop list, in any grammar.
+  for (const grammar of ["standard", "tcg", "lot"]) {
+    for (const bracket of ["subject", "numerical_rarity", "grading_info", "card_number"]) {
+      if (grammar === "standard" && bracket === "card_number") continue;
+      assert.equal(DROP_ORDER[grammar].includes(bracket), false, `${grammar}/${bracket} must never be dropped`);
+    }
+  }
+}
