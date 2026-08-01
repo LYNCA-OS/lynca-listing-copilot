@@ -37,6 +37,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { scoreCsmFields } from "../lib/listing/thin/csm-field-metric.mjs";
+import { scoreSemQuality } from "../lib/listing/thin/csm-sem-score.mjs";
 
 const argValue = (argv, name, fallback = "") => {
   const index = argv.indexOf(name);
@@ -59,7 +60,11 @@ const METRICS = {
   f1: (a, b) => a.f1 - b.f1,
   precision: (a, b) => a.precision - b.precision,
   csm_fields: (a, b) => (scoreCsmFields(a.reference, a.title).score ?? 0)
-    - (scoreCsmFields(b.reference, b.title).score ?? 0)
+    - (scoreCsmFields(b.reference, b.title).score ?? 0),
+  // CSM's own SEM validator. The only ruler here whose fields, weights and
+  // rules were all written before this comparison existed and by someone with
+  // no stake in it.
+  csm_sem: (a, b) => scoreSemQuality(a.title).confidence - scoreSemQuality(b.title).confidence
 };
 
 function loadArms(checkpointPath, armA, armB) {

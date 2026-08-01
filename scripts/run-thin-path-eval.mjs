@@ -26,6 +26,7 @@ import {
   extractProviderTitle, THIN_TITLE_PROMPT
 } from "../lib/listing/thin/thin-listing-path.mjs";
 import { buildCanonicalFieldsRequest, extractCanonicalPayload } from "../lib/listing/thin/canonical-fields.mjs";
+import { summariseSemQuality } from "../lib/listing/thin/csm-sem-score.mjs";
 
 const BARE_PROMPT = "Write the eBay listing title for this sports trading card. "
   + "Reply with the title only -- no explanation, no quotes, no label.";
@@ -290,6 +291,10 @@ export async function main(argv = process.argv.slice(2)) {
     arms: ARMS.map((arm) => {
       const rows = [...byArm.get(arm.key).values()];
       const canonical = rows.filter((row) => row.fields);
+      // CSM's own ruler, run alongside ours. It was written for the writer
+      // feedback loop, so it has no stake in which arm wins -- the property
+      // every metric built for this comparison lacked.
+      const sem = summariseSemQuality(rows);
       return {
         arm: arm.key,
         n: rows.length,
@@ -307,7 +312,10 @@ export async function main(argv = process.argv.slice(2)) {
         descriptive_rarity_stated: canonical.filter((row) => row.fields.descriptive_rarity).length,
         low_confidence_used: canonical.filter((row) => (row.low_confidence_fields || []).length).length,
         unreadable_used: canonical.filter((row) => (row.unreadable_fields || []).length).length,
-        canonical_n: canonical.length
+        canonical_n: canonical.length,
+        sem_confidence: sem.sem_confidence,
+        sem_field_count: sem.mean_field_count,
+        sem_structurally_valid: sem.structurally_valid
       };
     }),
     paired_delta_f1: deltas.length ? average(deltas) : null,
@@ -316,11 +324,12 @@ export async function main(argv = process.argv.slice(2)) {
 
   await writeFile(resolve(outDir, `thin-path-${model}.json`), `${JSON.stringify(summary, null, 2)}\n`, "utf8");
 
-  process.stdout.write(`\narm              n      F1  recall  precis  tok_rec  len  latency  out_tok\n`);
+  process.stdout.write(`\narm              n      F1  recall  precis  tok_rec  SEM_conf  len  latency  out_tok\n`);
   for (const arm of summary.arms) {
     process.stdout.write(
       `${arm.arm.padEnd(15)} ${String(arm.n).padStart(3)}  ${(arm.f1 ?? NaN).toFixed(4)}  `
-      + `${(arm.recall ?? NaN).toFixed(4)}  ${(arm.precision ?? NaN).toFixed(4)}   ${(arm.token_recall ?? NaN).toFixed(4)}  `
+      + `${(arm.recall ?? NaN).toFixed(4)}  ${(arm.precision ?? NaN).toFixed(4)}   ${(arm.token_recall ?? NaN).toFixed(4)}    `
+      + `${(arm.sem_confidence ?? NaN).toFixed(4)}  `
       + `${String(arm.median_length).padStart(3)}  ${String(Math.round(arm.median_latency_ms ?? NaN)).padStart(7)}  ${String(arm.median_output_tokens).padStart(7)}\n`
     );
   }
