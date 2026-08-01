@@ -423,7 +423,11 @@ value is attested by the local knowledge registry, and only into an empty
 `card_name`. The combined development replay reached `13/0/137`, Δ macro F1
 `+0.006900`, with zero reference-token loss and zero over-80 titles.
 
-This is a useful positive interaction candidate, not a production result. Its
-source is the exhaustive observation checkpoint, which the production
-canonical response does not carry. Keep it behind the same independent-150
-gate and preserve the per-card budget/reference guard when re-testing.
+This is a useful positive interaction candidate, not a production result. A
+control replay with the experiment-only `product_leaf_recovery` feature
+disabled (matching production `main`) produced the same `13/0/137` and
+`+0.006900`; the result therefore does not depend on that unpromoted feature
+for this cohort. Its source is still the exhaustive observation checkpoint,
+which the production canonical response does not carry. Keep it behind the
+same independent-150 gate and preserve the per-card budget/reference guard
+when re-testing.

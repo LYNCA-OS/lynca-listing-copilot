@@ -33,6 +33,7 @@ const controlPath = arg("--control", canonicalPath);
 const exhaustivePath = arg("--exhaustive", "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl");
 const outPath = arg("--out", "artifacts/candidate-expression-v4/expression-v4-narrow-bundle-replay-150-2026-08-02.json");
 const includeAttestedInsert = process.argv.includes("--include-attested-insert");
+const disableProductLeaf = process.argv.includes("--disable-product-leaf");
 const mechanismNames = [
   ...(includeAttestedInsert ? ["attested_insert"] : []),
   "finish_family_color_only",
@@ -66,6 +67,10 @@ function replayAttestedInsert(fields, observations = []) {
   };
 }
 
+const compose = (fields) => composeFromCanonicalFields(fields, disableProductLeaf
+  ? { features: { product_leaf_recovery: false } }
+  : {});
+
 const canonical = new Map(rows(canonicalPath).filter((row) => row.arm === "thin_canonical" && row.fields).map((row) => [row.asset_id, row]));
 const candidates = new Map(rows(candidatePath).map((row) => [row.asset_id, row]));
 const control = new Map(rows(controlPath).filter((row) => row.arm === "thin_budgeted").map((row) => [row.asset_id, row]));
@@ -77,11 +82,11 @@ const cards = [...canonical.values()].filter((row) => candidates.has(row.asset_i
   const observation = exhaustive.get(row.asset_id);
   if (!freeControl || !observation) throw new Error(`paired_cohort_mismatch:${row.asset_id}`);
 
-  const baseline = composeFromCanonicalFields(row.fields);
+  const baseline = compose(row.fields);
   const baselineScore = score(row.reference, baseline.title);
   const identity = replayCandidateIdentityV3(row.fields, candidate.candidate_facts || []);
   let currentFields = identity.fields;
-  let currentTitle = composeFromCanonicalFields(currentFields).title;
+  let currentTitle = compose(currentFields).title;
   const freeFields = projectFreeTitleThroughCsm(freeControl.title).fields;
   const stages = { identity: currentTitle };
   const changes = { identity: identity.changes };
@@ -95,7 +100,7 @@ const cards = [...canonical.values()].filter((row) => candidates.has(row.asset_i
         freeTitle: freeControl.title,
         observations: observation.observations || []
       });
-    const proposedTitle = composeFromCanonicalFields(proposal.fields).title;
+    const proposedTitle = compose(proposal.fields).title;
     const losses = referenceLosses(row.reference, currentTitle, proposedTitle);
     const reason = proposal.blocked
       || (proposedTitle.length > 80 ? "over_80" : null)

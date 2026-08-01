@@ -21,6 +21,15 @@ three changes: two were F1-neutral because the reference already contained the
 insert, and one recovered `Kaboom-Horizontal` tokens. This is a positive
 development interaction, not independent generalization.
 
+### Production-base control
+
+The experiment checkout currently has an additional `product_leaf_recovery`
+Composer feature that is not present on production `main`. Replaying the same
+receipt with `--disable-product-leaf` produced the identical result:
+`13/0/137`, Δ macro F1 `+0.006900`, zero reference-token loss, and zero
+over-80 titles. This switch is an evaluation control; it does not promote the
+candidate or the unpromoted feature.
+
 ## Decision
 
 Keep `attested_insert` as an evaluation candidate for the same preregistered
@@ -34,6 +43,7 @@ response.
 ```sh
 node scripts/replay-expression-v4-narrow-bundle.mjs \
   --include-attested-insert \
+  --disable-product-leaf \
   --out artifacts/candidate-expression-v4/expression-v4-narrow-bundle-attested-insert-replay-150-2026-08-02.json
 ```
 
