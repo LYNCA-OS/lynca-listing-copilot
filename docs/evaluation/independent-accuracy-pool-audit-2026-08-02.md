@@ -63,3 +63,14 @@ These assets remain useful for diagnostics or future human review, but treating
 their seller/corrected titles as sealed ground truth would turn a data-source
 policy failure into a false independent-150 claim. The independent-card gate
 therefore remains genuinely short of 150.
+
+## Relabeling inventory (read-only)
+
+The materialized legacy images are now recorded by
+`scripts/inventory-relabelable-legacy-pool.mjs` in
+`artifacts/legacy-relabel-inventory-2026-08-02.json`. The inventory exports no
+titles and copies no images. Both pools are physically relabelable (`100 + 172`
+cards; `200 + 344` images), but both remain `accuracy_eval_eligible: false` and
+require a human or official sealed reference pass. This is an operational
+queue, not an accuracy result; until that pass exists, the available count for
+the commercial accuracy gate remains zero.
