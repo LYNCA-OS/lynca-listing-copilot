@@ -19,7 +19,7 @@ assert.match(assignmentSource, /tenantId: context\.tenantId/);
 assert.doesNotMatch(assignmentSource, /tenantId: payload\.(?:tenant_id|tenantId)/);
 assert.match(assignmentServiceSource, /fn: "assign_v4_recognition_job"/);
 assert.doesNotMatch(assignmentServiceSource, /patchV4Row/, "session and paired-job assignment must remain one database transaction");
-assert.match(feedbackSource, /assignedUserId: ownedSession\.session\.assigned_to_user_id/);
+assert.match(feedbackSource, /assignedUserId: ownedSession\.session\.assigned_to_user_id[\s\S]*ownedSession\.session\.operator_id/);
 const assignmentRpcStart = tenantFoundationSql.indexOf("create or replace function public.assign_v4_recognition_job(");
 const assignmentRpcEnd = tenantFoundationSql.indexOf("create or replace function public.track_c_ops_snapshot(", assignmentRpcStart);
 assert.ok(assignmentRpcStart >= 0 && assignmentRpcEnd > assignmentRpcStart, "missing atomic assignment RPC");
@@ -354,6 +354,23 @@ try {
     });
     assert.equal(result.statusCode, 404, "Manager feedback denial stays non-enumerating");
     assert.equal(calls.some(({ url }) => url.pathname === "/rest/v1/rpc/persist_v4_writer_feedback_transaction"), false);
+  }
+
+  {
+    const calls = [];
+    globalThis.fetch = scenarioFetch({
+      actorUserId: "user_manager",
+      actorRole: "MANAGER",
+      sessionAssignee: "",
+      calls
+    });
+    const result = await callPost(feedbackHandler, {
+      userId: "user_manager",
+      url: "/api/v4/listing-feedback",
+      payload: { recognition_session_id: "session_target", action: "ACCEPT", ai_generated_title: "Example" }
+    });
+    assert.equal(result.statusCode, 200, "the thin-session operator can submit feedback before assignment");
+    assert.equal(calls.filter(({ url }) => url.pathname === "/rest/v1/rpc/persist_v4_writer_feedback_transaction").length, 1);
   }
 
   {
