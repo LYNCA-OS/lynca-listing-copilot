@@ -20,7 +20,10 @@ function cleanBaseUrl(value) {
 }
 
 function deploymentId(health = {}) {
-  return health?.deployment?.deployment_id || health?.deployment_id || null;
+  return health?.deployment?.deployment_id
+    || health?.deployment?.git_commit_sha
+    || health?.deployment_id
+    || null;
 }
 
 function responseRequestId(response) {
@@ -175,7 +178,14 @@ test("production writer journey reaches persisted L2 through the real UI", async
     evidence.stages.upload = { passed: true, image_count: files.length };
     const titleInput = journeyPage.getByTestId("writer-title-input").first();
     await expect(titleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
-    await expect(titleInput).not.toHaveValue("");
+    // The disabled/empty state uses a visible placeholder-like fallback value
+    // in the input. Waiting only for a non-empty value races the async CSM
+    // response and can submit that fallback as writer feedback. Wait for a
+    // real resolved title, then read it once for the persistence assertion.
+    await expect.poll(
+      async () => (await titleInput.inputValue()).trim(),
+      { timeout: 6 * 60 * 1000, intervals: [250, 500, 1_000, 2_000] }
+    ).toMatch(/^(?!标题暂不可用$).{1,80}$/);
     const title = await titleInput.inputValue();
     expect(title.length).toBeLessThanOrEqual(80);
     evidence.stages.recognition = { passed: true, route: "/api/csm-listing-title", title_length: title.length };
