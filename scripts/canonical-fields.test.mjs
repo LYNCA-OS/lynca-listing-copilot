@@ -169,7 +169,8 @@ assert.deepEqual(parseCanonicalFields(null).defects, ["not_an_object"]);
 
 {
   const card = fields({
-    year: "2023-24", manufacturer: "Panini", product: "Prizm", surface_color: "Silver",
+    year: "2023-24", manufacturer: "Panini", product: "Prizm",
+    surface_color: "Silver", parallel_family: "Prizm",
     subjects: ["LeBron James"], card_number: "1", serial: "17/50",
     attributes: ["Auto"], grade: "PSA 10"
   });
@@ -185,7 +186,12 @@ assert.deepEqual(parseCanonicalFields(null).defects, ["not_an_object"]);
   assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])));
   // No "#1": the eBay profile does not project [Card Number] for a Standard
   // card. The field is still in the canonical object.
-  assert.equal(first.title, "2023-24 Panini Prizm LeBron James Silver 17/50 Auto PSA 10");
+  // "Prizm" appears twice -- once as the product, once inside the finish -- and
+  // that is left alone deliberately. Prefix de-duplication does not reach a word
+  // in the middle of a bracket, and it should not: the reviewed titles repeat it
+  // too ("Panini Prizm Jalen Brunson RC Prizm Mojo 13/25"). 16 of 148 composed
+  // titles carry a repeat and the reference does the same on those cards.
+  assert.equal(first.title, "2023-24 Panini Prizm LeBron James Silver Prizm 17/50 Auto PSA 10");
   assert.ok(first.suppressed.includes("card_number"));
   assert.equal(card.card_number, "1");
 }
@@ -400,6 +406,33 @@ assert.match(
     extraction: { parser_version: "p", sem_standard_version: "s" },
     validationStatus: "PENDING"
   }), /provenance/);
+}
+
+// [Print Finish] projection is grounded-only: an exact printed name, or a
+// colour with a recognised finish family. A bare colour stays in the canonical
+// object and is not projected onto eBay -- 17 of 59 colours the model wrote on
+// the 150-card set were the wrong colour, and a wrong one costs precision
+// while buying almost no recall.
+{
+  const bare = composeFromCanonicalFields(fields({
+    manufacturer: "Topps", subjects: ["Nolan Ryan"], surface_color: "Gold"
+  }));
+  assert.equal(bare.title, "Topps Nolan Ryan");
+
+  const grounded = composeFromCanonicalFields(fields({
+    manufacturer: "Topps", subjects: ["Nolan Ryan"], surface_color: "Gold", parallel_family: "Refractor"
+  }));
+  assert.equal(grounded.title, "Topps Nolan Ryan Gold Refractor");
+
+  const printed = composeFromCanonicalFields(fields({
+    manufacturer: "Topps", subjects: ["Nolan Ryan"], parallel_exact: "Gold Vinyl", surface_color: "Gold"
+  }));
+  assert.match(printed.title, /Gold Vinyl/);
+
+  // And the colour is still in the object -- this is a projection decision.
+  const card = fields({ manufacturer: "Topps", subjects: ["Nolan Ryan"], surface_color: "Gold" });
+  assert.equal(card.surface_color, "Gold");
+  assert.equal(card.print_finish, "Gold");
 }
 
 process.stdout.write("canonical fields: ok\n");
