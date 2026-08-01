@@ -11,10 +11,22 @@ import {
 } from "../lib/listing/thin/canonical-fields.mjs";
 import { BRACKET_ORDER, DROP_ORDER, composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  emitCsm, emitValidationEvent, classifyReviewedTitle,
+  checkNumberBrackets, unknownFieldNames,
+  SEM_OBSERVATION_LAYER, SEM_FEEDBACK_LAYER
+} from "../lib/listing/thin/csm-emit.mjs";
+import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
+import { buildSemValidationEvent } from "../lib/listing/csm/sem-validation.mjs";
+import {
+  WRITER_TITLE_SEM_PARSER_VERSION,
+  WRITER_TITLE_SEM_CANDIDATE_SCHEMA_VERSION
+} from "../lib/listing/csm/title-derived-sem.mjs";
 
 const fields = (overrides = {}) => parseCanonicalFields({
   year: "", manufacturer: "", product: "", set: "", subjects: [], team: "",
-  card_name: "", release_variant: "", print_finish: "", descriptive_rarity: "",
+  card_name: "", release_variant: "", surface_color: "", parallel_family: "",
+  parallel_exact: "", descriptive_rarity: "",
   card_number: "", serial: "", attributes: [], grade: "", grammar: "standard",
   lot_count: "", unreadable: [], low_confidence: [], ...overrides
 }).fields;
@@ -32,7 +44,7 @@ const fields = (overrides = {}) => parseCanonicalFields({
 
 // Growth has to come from the contract, not from a hunch: every semantic field
 // here is one CSM already defines.
-assert.ok(Object.keys(CANONICAL_FIELDS_SCHEMA.properties).length <= 19);
+assert.ok(Object.keys(CANONICAL_FIELDS_SCHEMA.properties).length <= 21);
 for (const field of ["year", "manufacturer", "product", "set", "card_name",
   "release_variant", "print_finish", "descriptive_rarity", "card_number"]) {
   assert.ok(semCanonicalEditableFields.includes(field), `${field} must be a CSM canonical field`);
@@ -52,7 +64,23 @@ assert.ok(CANONICAL_FIELDS_SCHEMA.properties.subjects);
 for (const finish of ["Refractor", "Prizm", "Holo", "Sapphire", "Mojo"]) {
   assert.ok(!CANONICAL_ATTRIBUTES.includes(finish), `${finish} is a print finish and belongs to print_finish alone`);
 }
-assert.match(CANONICAL_FIELDS_SCHEMA.properties.print_finish.description, /Refractor/);
+// CSM keeps the parallel in three layers and degrades between them. A single
+// field with no ladder lost the colour on 27 of 68 cards whose reviewed title
+// has one, against 9 where the colour named was wrong.
+assert.ok(CANONICAL_FIELDS_SCHEMA.properties.surface_color.enum.includes("Gold"));
+assert.ok(CANONICAL_FIELDS_SCHEMA.properties.parallel_family.enum.includes("Refractor"));
+{
+  const ladder = [
+    [{ surface_color: "Gold", parallel_family: "Refractor" }, "Gold Refractor"],
+    [{ surface_color: "Gold" }, "Gold"],
+    [{ parallel_family: "Mojo" }, "Mojo"],
+    [{ parallel_exact: "Gold Vinyl", surface_color: "Gold" }, "Gold Vinyl"],
+    [{}, ""]
+  ];
+  for (const [input, expected] of ladder) {
+    assert.equal(parseCanonicalFields(input).fields.print_finish, expected);
+  }
+}
 
 // The completeness counterweight. An anti-fabrication instruction with nothing
 // on the other side of the scale makes "say less" the model's optimal play.
@@ -69,7 +97,10 @@ assert.ok(!/sports trading card/i.test(CANONICAL_FIELDS_PROMPT));
 // The clause that induced fabrication is gone: told to hunt for small foil
 // numbering, the model wrote more serials and got more of them wrong (support
 // 0.778 -> 0.682, wrong 13 -> 21).
-assert.ok(!/small foil numbering/i.test(CANONICAL_FIELDS_SCHEMA.properties.serial.description));
+assert.ok(!/look for small foil numbering/i.test(CANONICAL_FIELDS_SCHEMA.properties.serial.description));
+// The replacement is precision-oriented, not effort-oriented: the measured
+// failure is 25 misread serials against 12 missing ones.
+assert.match(CANONICAL_FIELDS_SCHEMA.properties.serial.description, /digit by digit/);
 
 for (const name of CANONICAL_FIELDS_SCHEMA.properties.unreadable.items.enum) {
   assert.ok(CANONICAL_FIELD_NAMES.includes(name));
@@ -138,7 +169,7 @@ assert.deepEqual(parseCanonicalFields(null).defects, ["not_an_object"]);
 
 {
   const card = fields({
-    year: "2023-24", manufacturer: "Panini", product: "Prizm", print_finish: "Silver",
+    year: "2023-24", manufacturer: "Panini", product: "Prizm", surface_color: "Silver",
     subjects: ["LeBron James"], card_number: "1", serial: "17/50",
     attributes: ["Auto"], grade: "PSA 10"
   });
@@ -164,7 +195,7 @@ assert.deepEqual(parseCanonicalFields(null).defects, ["not_an_object"]);
 {
   const composed = composeFromCanonicalFields(fields({
     year: "2023", manufacturer: "Pokemon", product: "Paldean Fates",
-    print_finish: "Shiny Ultra Rare", subjects: ["Charizard ex"],
+    parallel_exact: "Shiny Ultra Rare", subjects: ["Charizard ex"],
     card_number: "086/070", grade: "PSA 10", grammar: "tcg"
   }));
   assert.match(composed.title, /086\/070/);
@@ -261,17 +292,18 @@ assert.match(
 {
   const finished = finishCanonicalTitle(JSON.stringify({
     year: "2025", manufacturer: "Topps", product: "Chrome Platinum", set: "",
-    card_name: "", release_variant: "", print_finish: "Gold Refractor", descriptive_rarity: "",
+    card_name: "", release_variant: "", surface_color: "Gold", parallel_family: "Refractor",
+    parallel_exact: "", descriptive_rarity: "",
     subjects: ["Luisangel Acuna 大发时时彩"], team: "Mets", card_number: "", serial: "12/50",
     attributes: ["Auto", "RC"], grade: "", grammar: "standard", lot_count: "",
-    unreadable: [], low_confidence: ["print_finish"]
+    unreadable: [], low_confidence: ["surface_color"]
   }));
   assert.ok(finished.sanitised);
   assert.ok(!/[一-鿿]/.test(finished.title));
   assert.match(finished.title, /Luisangel Acuna/);
   assert.match(finished.title, /12\/50/);
   assert.match(finished.title, /Gold Refractor/);
-  assert.deepEqual(finished.low_confidence_fields, ["print_finish"]);
+  assert.deepEqual(finished.low_confidence_fields, ["surface_color"]);
   assert.ok(finished.length <= 80);
 }
 
@@ -281,6 +313,93 @@ assert.match(
   const finished = finishCanonicalTitle("I'm sorry, I can't read this card.");
   assert.equal(finished.title, "");
   assert.deepEqual(finished.field_defects, ["unparseable"]);
+}
+
+// ------------------------------------------------------------- CSM emission
+
+// The canonical object is produced FROM our fields, not by composing a title
+// and parsing it back. Round-tripping through a string discards exactly what
+// the string cannot carry -- confidence, provenance, empty-vs-unreadable.
+{
+  const card = fields({
+    year: "2025-26", manufacturer: "Topps", product: "Chrome",
+    surface_color: "Gold", parallel_family: "Refractor",
+    subjects: ["Victor Wembanyama"], team: "Spurs", serial: "17/50",
+    attributes: ["RC"], grade: "PSA 10", low_confidence: ["surface_color"]
+  });
+  const title = composeFromCanonicalFields(card).title;
+  const emitted = emitCsm(card, title);
+
+  assert.equal(emitted.sem_standard_version, SEM_STANDARD_VERSION);
+  assert.equal(emitted.canonical_sem.print_finish, "Gold Refractor");
+  assert.deepEqual(emitted.canonical_sem.subject, ["Victor Wembanyama"]);
+  assert.equal(emitted.canonical_sem.numerical_rarity, "17/50");
+  // RC and the team are search signals in CSM, not brackets of their own.
+  assert.ok(emitted.canonical_sem.search_optimization.includes("RC"));
+  assert.ok(emitted.canonical_sem.search_optimization.includes("Spurs"));
+  // The flywheel projection is what COS-27 consumes.
+  assert.ok(Object.keys(emitted.data_flywheel_sem).includes("parallel"));
+
+  // A field the model flagged is an OBSERVED_FIELD_CANDIDATE; one it did not is
+  // the BEST_OBSERVED_FIELD. Nothing here may claim RESOLVED_SEMANTIC_FIELD --
+  // this path observes and does not resolve.
+  assert.equal(emitted.observation_layers.surface_color, SEM_OBSERVATION_LAYER.OBSERVED_FIELD_CANDIDATE);
+  assert.equal(emitted.observation_layers.year, SEM_OBSERVATION_LAYER.BEST_OBSERVED_FIELD);
+  assert.ok(!Object.values(emitted.observation_layers).includes(SEM_OBSERVATION_LAYER.RESOLVED_SEMANTIC_FIELD));
+
+  assert.deepEqual(checkNumberBrackets(card), []);
+  assert.deepEqual(unknownFieldNames(card), []);
+}
+
+// The reviewed title is writer feedback, and CSM classifies what it is worth.
+{
+  const approved = classifyReviewedTitle("same title", "same title");
+  assert.equal(approved.action, "APPROVE");
+  const edited = classifyReviewedTitle("ours", "theirs");
+  assert.equal(edited.action, "EDIT");
+  assert.equal(edited.feedback_layer, SEM_FEEDBACK_LAYER.REVIEWED_SEMANTIC_TRUTH);
+  // The candidate carries its own parser and standard versions, which is what
+  // makes a learning record replayable.
+  assert.equal(edited.writer_candidate.parser_version, WRITER_TITLE_SEM_PARSER_VERSION);
+  assert.equal(edited.writer_candidate.schema_version, WRITER_TITLE_SEM_CANDIDATE_SCHEMA_VERSION);
+}
+
+// A validation event refuses to exist without parent provenance, and a
+// VALIDATED one refuses without a reviewer, a timestamp and an identity group.
+// Those refusals are the contract doing its job, so they are asserted rather
+// than worked around.
+{
+  const card = fields({ year: "2025", manufacturer: "Topps", subjects: ["Nolan Ryan"] });
+  const title = composeFromCanonicalFields(card).title;
+  const pending = emitValidationEvent({
+    assetId: "card_1", runId: "test", fields: card, composedTitle: title,
+    reviewedTitle: "something else", createdAt: "2026-08-01T00:00:00Z"
+  });
+  assert.equal(pending.validation_status, "PENDING");
+  assert.equal(pending.semantic_truth, false);
+  assert.ok(pending.payload_sha256);
+
+  const validated = emitValidationEvent({
+    assetId: "card_1", runId: "test", fields: card, composedTitle: title,
+    reviewedTitle: title, createdAt: "2026-08-01T00:00:00Z"
+  });
+  assert.equal(validated.validation_status, "VALIDATED");
+  assert.equal(validated.semantic_truth, true);
+  assert.equal(validated.golden_sem_candidate, true);
+
+  // Image evidence is declared SUPPORTED because it genuinely ran; OCR and
+  // catalog are NOT_RUN and say so rather than being absent.
+  assert.equal(pending.validation_sources.IMAGE_EVIDENCE.status, "SUPPORTED");
+  assert.equal(pending.validation_sources.CATALOG.status, "NOT_RUN");
+  assert.equal(validated.validation_sources.HUMAN_CONFIRMATION.status, "SUPPORTED");
+
+  // And the contract's own refusal, called directly: an event with no parent
+  // ids cannot be built. `emitValidationEvent` fills them from the run, so the
+  // refusal has to be provoked at the CSM boundary to be observed at all.
+  assert.throws(() => buildSemValidationEvent({
+    extraction: { parser_version: "p", sem_standard_version: "s" },
+    validationStatus: "PENDING"
+  }), /provenance/);
 }
 
 process.stdout.write("canonical fields: ok\n");
