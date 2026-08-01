@@ -55,30 +55,29 @@ async function jsonOrNull(response) {
   }
 }
 
-async function materializeRealSourceImages(baseUrl, secret) {
+async function materializeRealSourceImages(request, baseUrl, secret) {
   const source = launchGateImageSourceRecords[0];
-  const sourceResponse = await fetch(`${baseUrl}/api/v4/launch-gate-source-images`, {
-    method: "POST",
+  const sourceResponse = await request.post(`${baseUrl}/api/v4/launch-gate-source-images`, {
     headers: {
       "content-type": "application/json",
       "x-lynca-launch-gate-secret": secret
     },
-    body: JSON.stringify({ source_feedback_ids: [source.source_feedback_id] })
+    data: { source_feedback_ids: [source.source_feedback_id] }
   });
   const sourcePayload = await sourceResponse.json();
-  if (!sourceResponse.ok || sourcePayload.ok === false) {
-    throw new Error(`real source materialization failed: HTTP ${sourceResponse.status}`);
+  if (!sourceResponse.ok() || sourcePayload.ok === false) {
+    throw new Error(`real source materialization failed: HTTP ${sourceResponse.status()}`);
   }
   const images = sourcePayload.sources?.[0]?.images || [];
   if (!images.length) throw new Error("real source materialization returned no images");
   return Promise.all(images.map(async (image, index) => {
-    const response = await fetch(image.signed_url);
-    if (!response.ok) throw new Error(`source image ${index + 1} download failed: HTTP ${response.status}`);
-    const mimeType = response.headers.get("content-type") || "image/jpeg";
+    const response = await request.get(image.signed_url);
+    if (!response.ok()) throw new Error(`source image ${index + 1} download failed: HTTP ${response.status()}`);
+    const mimeType = response.headers()["content-type"] || "image/jpeg";
     return {
       name: `${image.role || `image-${index + 1}`}.jpg`,
       mimeType,
-      buffer: Buffer.from(await response.arrayBuffer())
+      buffer: await response.body()
     };
   }));
 }
@@ -119,16 +118,13 @@ test("production writer journey reaches persisted L2 through the real UI", async
   let journeyTracing = false;
 
   try {
-    const healthResponse = await fetch(`${baseUrl}/api/v4/health`, { headers: { accept: "application/json" } });
+    const healthResponse = await fetch(`${baseUrl}/api/health`, { headers: { accept: "application/json" } });
     const health = await healthResponse.json();
     expect(healthResponse.ok, "production health must be reachable").toBeTruthy();
     evidence.deployment_id = deploymentId(health);
     const healthRequestId = healthResponse.headers.get("x-request-id") || healthResponse.headers.get("x-vercel-id");
     if (healthRequestId) requestIds.add(healthRequestId);
     evidence.stages.health = { passed: true, http_status: healthResponse.status };
-
-    const files = await materializeRealSourceImages(baseUrl, launchGateSecret);
-    evidence.stages.real_image_materialization = { passed: true, image_count: files.length };
 
     // Login is a real browser journey, but is intentionally isolated from HAR
     // and trace so administrator credentials can never enter uploaded artifacts.
@@ -140,6 +136,8 @@ test("production writer journey reaches persisted L2 through the real UI", async
     await loginPage.getByTestId("login-submit").click();
     await loginPage.waitForURL((url) => !url.pathname.endsWith("/login.html"), { timeout: 45_000 });
     await expect(loginPage.getByTestId("image-upload-input")).toBeAttached();
+    const files = await materializeRealSourceImages(loginContext.request, baseUrl, launchGateSecret);
+    evidence.stages.real_image_materialization = { passed: true, image_count: files.length };
     const storageState = await loginContext.storageState();
     evidence.stages.login = { passed: true, final_path: new URL(loginPage.url()).pathname };
     await loginContext.close();
@@ -173,18 +171,14 @@ test("production writer journey reaches persisted L2 through the real UI", async
     const uploadInput = journeyPage.getByTestId("image-upload-input");
     await uploadInput.setInputFiles(files);
     const startButton = journeyPage.getByTestId("start-recognition");
-    await expect(startButton).toBeEnabled({ timeout: 90_000 });
+    await expect(startButton).toBeHidden();
     evidence.stages.upload = { passed: true, image_count: files.length };
-
-    await startButton.click();
-    evidence.stages.enqueue = { passed: true };
-
     const titleInput = journeyPage.getByTestId("writer-title-input").first();
     await expect(titleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
     await expect(titleInput).not.toHaveValue("");
     const title = await titleInput.inputValue();
     expect(title.length).toBeLessThanOrEqual(80);
-    evidence.stages.l2_ready = { passed: true, title_length: title.length };
+    evidence.stages.recognition = { passed: true, route: "/api/csm-listing-title", title_length: title.length };
 
     // Exercise edit handling without changing the generated commercial title.
     await titleInput.fill(title);
@@ -206,14 +200,12 @@ test("production writer journey reaches persisted L2 through the real UI", async
     // workbench immediately, so its transient status node may already be gone.
     // The HTTP transaction proof above is the durable persistence assertion.
     await Promise.allSettled([...responseCaptureTasks]);
-    const statusObserved = apiPaths.has("/api/v4/listing-job-status") || apiPaths.has("/api/v4/listing-session-status");
-    expect(statusObserved, "the UI must observe durable job/session status before L2").toBe(true);
+    const statusObserved = apiPaths.has("/api/csm-listing-title");
+    expect(statusObserved, "the UI must receive the direct CSM recognition response before L2").toBe(true);
     expect(ids.asset_id.size, "asset_id must be captured").toBeGreaterThan(0);
-    expect(ids.batch_id.size, "batch_id must be captured").toBeGreaterThan(0);
-    expect(ids.job_id.size, "job_id must be captured").toBeGreaterThan(0);
     expect(ids.session_id.size, "session_id must be captured").toBeGreaterThan(0);
     expect(requestIds.size, "request_id must be captured").toBeGreaterThan(0);
-    evidence.stages.status = { passed: true, endpoint: apiPaths.has("/api/v4/listing-job-status") ? "job" : "session" };
+    evidence.stages.status = { passed: true, endpoint: "/api/csm-listing-title" };
     evidence.passed = true;
   } catch (error) {
     evidence.error = String(error?.message || error).slice(0, 1000);
