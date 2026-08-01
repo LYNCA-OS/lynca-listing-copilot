@@ -1,0 +1,116 @@
+{
+  "schema_version": "thin-path-eval-run-manifest-v2",
+  "fingerprint": "607cb17601ab8d9ecce0bf08a297ad3cfcc5c38395ce4156c70ced32996e5ad3",
+  "contract": {
+    "schema_version": "thin-path-eval-run-contract-v2",
+    "model": "gpt-5.6-luna",
+    "effort": "none",
+    "image_detail": "high",
+    "execution": {
+      "concurrency": 2,
+      "request_timeout_ms": 120000,
+      "max_attempts": 3,
+      "retry_policy": "bounded-retry-after-jitter-v1"
+    },
+    "cohort": {
+      "selection_role": "unseen_product_screen"
+    },
+    "arms": [
+      {
+        "key": "thin_budgeted",
+        "fixed_image_detail": null,
+        "eval_version": null,
+        "response_schema_name": null,
+        "response_schema_sha256": null,
+        "prompt_sha256": null,
+        "request_template_sha256": [
+          "6dc92c8493b5b1cf23d4feb238c6a0fbd10bbd89ec6c325ef6cb7265efa3e56c",
+          "c5231769c717256028609061a83e4a1cb715d2a82dae508891922af68ff0b7eb",
+          "f3c8f6183c86a30a5af10ac06732162c95aa36557929c534089088e6597502c4"
+        ]
+      },
+      {
+        "key": "thin_canonical",
+        "fixed_image_detail": null,
+        "eval_version": null,
+        "response_schema_name": "canonical_card_fields",
+        "response_schema_sha256": "3290b6d509c16355b85b2306f3271e7d2137f0c17d0e43c89a798e14f16fdabe",
+        "prompt_sha256": "dbf9074dd53f268879f477a1cdefc97001178ca59217a191a8dd425c618344d3",
+        "request_template_sha256": [
+          "4d6af0972bb3fe5fdf264565ca56f4aeb09047f06b02d97ae74c6ed2bdbae6dd",
+          "1c11956441a88c841ad116d9b746d11f584c9f628734a8b76614b81e88a06642",
+          "a1958fad777b504cf9bf216eeb13f21fed310ec00a5a4acfd0d9dddcdbdcf90a"
+        ]
+      }
+    ],
+    "dataset_sha256": "d18aa07eed6ca33c552a92049b811358f751c8178bcda752793a89a040ea6865",
+    "asset_ids_sha256": null,
+    "sealed_labels_sha256": "796590f61486fbf1bacb344b8bbe8f207a1aba50f1f9099b99e4547edb6001ff",
+    "source_sha256": {
+      "provider_request_behavior": "186f62757b54de162a82fc9f4d920f7dfb60c879265fdc1fae85d75b621d29d1"
+    }
+  },
+  "finisher": {
+    "fingerprint": "b0b5bc72b98dc9fc3ca27c9250d6dafecba7f073c31bfab31e9197559a1b306a",
+    "contract": {
+      "schema_version": "thin-path-eval-finisher-contract-v1",
+      "derivation_contract": "thin-path-eval-derived-metrics-v1",
+      "arms": [
+        "thin_budgeted",
+        "thin_canonical"
+      ],
+      "source_sha256": {
+        "repo:lib/listing/csm/product-semantics.mjs": "2ca6414007aec9da167cf864550c7a7247d83a1cdfe859f17b6aa7be257f73d9",
+        "repo:lib/listing/csm/sem-definition.mjs": "76126671aa6ab738ad9f344b2b1ad2c0a12c337e99c1071c3157229ed71f8634",
+        "repo:lib/listing/csm/title-derived-sem.mjs": "edbf139c35833913be9aaf28fdf9a5ead32bf2cfd6645b2e74557aba156fdd67",
+        "repo:lib/listing/evidence/evidence-schema.mjs": "a37ef7bcfb796a372b39ddd5ae730aceb2a33fc260ad639c5b16617fef5f1522",
+        "repo:lib/listing/grade/grade-company.mjs": "ac1cd38207b59aae8196d86cf0476ac895a742ed54933be72178d3aae5cbad7b",
+        "repo:lib/listing/grade/grade-value.mjs": "a6d02bbf08b398806308932b04cb856f02d989da02f467c9ae50e09717e7bc77",
+        "repo:lib/listing/memory/title-field-parser.mjs": "c25001a6c11468409875eb4f5ad92691846c004b8a2ffd1b1d42efbade5cc6cf",
+        "repo:lib/listing/pipeline/subject-identity.mjs": "a5a0536cec279284b6cbe954432868365a7196b702bfe4fba535b732de5e1d5c",
+        "repo:lib/listing/pipeline/text.mjs": "0aa4bb42af08923cfea1250984709289cbc925adce3407ba87f7b9ae805584a6",
+        "repo:lib/listing/print-run/print-run-fields.mjs": "6d8bf3d16dcdfdd0b4344ea58382f560bc6381973beeacfd6d013adb20c3a95c",
+        "repo:lib/listing/thin/canonical-composer.mjs": "5647f4580c78acbba425c00748c6fca814d7b85920af7d61b27792d8b9dace25",
+        "repo:lib/listing/thin/canonical-fields.mjs": "f1bca1fef9db557df4117322f018dc0e9597b40f4fb383200c9be2289ed66a62",
+        "repo:lib/listing/thin/csm-sem-score.mjs": "0a5cfdcb13dac788dd7be59deb66f449e85a71c9ebf493ca1e3382dfb19cb0fa",
+        "repo:lib/listing/thin/marketplace-composer-rules.mjs": "54953bf760bd3881307dd323f20ac60b5043240065bca2b4f58d3b7ed9657291",
+        "repo:lib/listing/thin/sanitize-listing-title.mjs": "27b2551a2f0e11c9e6d6684b90d3a3a3a0e921b9ab0f337698d5c69e087f6374",
+        "repo:lib/listing/thin/thin-listing-path.mjs": "5da9df4a69d4559127d09c670874cc1d64a9cd26c6fd2a5479fd7e1ca99f7acf",
+        "repo:lib/listing/year/year-value.mjs": "0fe5efde7b5c211ed22251af8169759f99c433584e1fca1a197fa195b828426d",
+        "scorer:../lib/listing/card-type-policy.mjs": "b4dc4cd94eb18b8d81e4fc7515b6c8d92b5356cc194070a7af9171abad4f576e",
+        "scorer:../lib/listing/catalog/field-vocabulary-store.mjs": "a0bb7c44a836eb22afa290d115e129113e212e85e92efa427fb1a24176e7eb0e",
+        "scorer:../lib/listing/catalog/field-vocabulary.mjs": "104ba327712040998842145e5312231fdefe118987cb4dfcb8df9d88a6fb44a8",
+        "scorer:../lib/listing/cold-start/cold-start-policy.mjs": "78c9bdcae7b27bb1508d60bff79608fc76fed399b84d5038a239b8e6d2027710",
+        "scorer:../lib/listing/csm/sem-definition.mjs": "76126671aa6ab738ad9f344b2b1ad2c0a12c337e99c1071c3157229ed71f8634",
+        "scorer:../lib/listing/evaluation/recognition-benchmark-profile.mjs": "48956efb4523ae44557b5744b1e7b672fc6addad7792e6f773742027252a91e0",
+        "scorer:../lib/listing/evidence/evidence-schema.mjs": "87a130e561825fb7442855654082945a94eee549d0832b44170210bf1874bd9d",
+        "scorer:../lib/listing/external/external-candidate-contract.mjs": "db0d336350f53ff5916dc5300744d49ec163eb26049ddee194e6833ab20a06fb",
+        "scorer:../lib/listing/grade/grade-company.mjs": "ac1cd38207b59aae8196d86cf0476ac895a742ed54933be72178d3aae5cbad7b",
+        "scorer:../lib/listing/grade/grade-value.mjs": "a6d02bbf08b398806308932b04cb856f02d989da02f467c9ae50e09717e7bc77",
+        "scorer:../lib/listing/memory/title-field-parser.mjs": "c25001a6c11468409875eb4f5ad92691846c004b8a2ffd1b1d42efbade5cc6cf",
+        "scorer:../lib/listing/parallel-policy.mjs": "c2741b09ff3d3ffebc1f7c643aa8dff1035babc34d1528fbc6d7e11df0cf1b44",
+        "scorer:../lib/listing/pipeline/publisher-identity.mjs": "9ad191953bd5c4414635a98565480acff844bb947ec87e66bec6ba851b81ab85",
+        "scorer:../lib/listing/pipeline/subject-identity.mjs": "a5a0536cec279284b6cbe954432868365a7196b702bfe4fba535b732de5e1d5c",
+        "scorer:../lib/listing/pipeline/text.mjs": "0aa4bb42af08923cfea1250984709289cbc925adce3407ba87f7b9ae805584a6",
+        "scorer:../lib/listing/print-run/print-run-fields.mjs": "6d8bf3d16dcdfdd0b4344ea58382f560bc6381973beeacfd6d013adb20c3a95c",
+        "scorer:../lib/listing/renderer/generic-title-renderer.mjs": "5015a450d1eb05c606dee44f6a53c87186d908a7c86569cbd9398d9a10fe74c8",
+        "scorer:../lib/listing/renderer/listing-renderer.mjs": "efa37fac589bcedb6ee11430c44e99cddc48a4266dd20714a1e9a3edd8fbdf93",
+        "scorer:../lib/listing/renderer/module-renderer.mjs": "4dc0bfd42245fdd481af2f6fc08ce2fe685de32b4858e628db94ce4f5f172899",
+        "scorer:../lib/listing/renderer/pokemon-title-renderer.mjs": "9c33f756bebca36d08717bef418c24b861c4025dd88823bfa6f68a1a80d47186",
+        "scorer:../lib/listing/renderer/sports-title-renderer.mjs": "e34af411246631c548f74eed11054344ee57cbb5578c380ddb90208262b2c041",
+        "scorer:../lib/listing/renderer/title-cleanup.mjs": "582787912918f902419eee686e9ffc12a8eeffcadad15ee3e6a5dbb39736b223",
+        "scorer:../lib/listing/renderer/title-length-policy.mjs": "816f5c651a2ca66280412b6a98aeb516be1831dff3a659bbb8c29fd4832b8a94",
+        "scorer:../lib/listing/year/year-value.mjs": "0fe5efde7b5c211ed22251af8169759f99c433584e1fca1a197fa195b828426d",
+        "scorer:evaluate-cloud-listing-api.mjs": "ed23097d57ddab5947537e68e7961b9b24b43e0d9edb237b5efbf41efacaeadf"
+      }
+    }
+  },
+  "max_requested_limit": 17,
+  "max_requested_asset_ids_sha256": "e6b15d0247c0399da371d1cc67470970c1bedcbba2326150bfe8c25d546d09be",
+  "created_at": "2026-08-01T23:19:59.472Z",
+  "completed_at": "2026-08-01T23:21:08.296Z",
+  "checkpoint_rows": 34,
+  "checkpoint_sha256": "9ea5aa99c4668af1aa21c30dbc16081b56cf36f81b188bb28dd351476579046b",
+  "checkpoint_bytes": 93076,
+  "paired_cards": 17
+}
