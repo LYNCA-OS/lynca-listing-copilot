@@ -81,3 +81,25 @@ the v1 losses have a deterministic cause and can be removed, but it cannot
 establish an independent-card generalization claim. Do not merge these overlays
 into the production CSM route until a new card pool or an explicitly accepted
 independent confirmation cohort is available.
+
+## Outside-development subset audit
+
+The 150-card response file also contains a fully outside-development subset of
+105 cards. This is the largest independent-card slice currently available; it
+is not a replacement for a new independent 150-card cohort. Replaying the same
+fresh responses through v2 is free and gives a useful generalization check:
+
+| Mechanism | Changed | Wins | Losses | Ties | Δ macro F1 | Decision |
+|---|---:|---:|---:|---:|---:|---|
+| Finish family + compatible serial | 0 | 0 | 0 | 105 | 0 | no change |
+| `SAR` | 0 | 0 | 0 | 105 | 0 | no change |
+| `Trainer Gallery` | 0 | 0 | 0 | 105 | 0 | no change |
+| `1st Bowman` | 0 | 0 | 0 | 105 | 0 | no change |
+| Known-manufacturer Product extension | 5 | 5 | 0 | 100 | +0.003419 | candidate |
+| Five-mechanism bundle, without serial | 5 | 5 | 0 | 100 | +0.003419 | candidate |
+
+The five product wins are all reference-supporting, remain under 80
+characters, and produce no reference-token loss. This strengthens the
+candidate, but the trigger count is only five in the independent subset and
+the full production gate remains closed until the cohort boundary is accepted
+or a new card pool is added.

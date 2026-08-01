@@ -39,11 +39,25 @@ const referenceLosses = (reference, before, after) => {
 
 const inputPath = arg("--input", "artifacts/accuracy-mechanism-confirmatory-2026-08-02/fresh-budgeted-canonical/thin-path-gpt-5.6-luna.jsonl");
 const out = arg("--out", "artifacts/accuracy-mechanism-confirmatory-2026-08-02/fresh-nonserial-confirmation.json");
+const assetIdsPath = arg("--asset-ids-file", null);
 const limit = Number(arg("--limit", "150"));
 if (!Number.isInteger(limit) || limit < 1) throw new Error("limit_must_be_positive_integer");
 
 const input = rows(inputPath);
-const canonical = input.filter((row) => row.arm === "thin_canonical_high" && row.fields).slice(0, limit);
+const selectedAssetIds = assetIdsPath
+  ? JSON.parse(readFileSync(assetIdsPath, "utf8"))
+  : null;
+if (selectedAssetIds !== null && (!Array.isArray(selectedAssetIds)
+    || selectedAssetIds.length !== limit
+    || new Set(selectedAssetIds).size !== selectedAssetIds.length
+    || selectedAssetIds.some((assetId) => typeof assetId !== "string" || !assetId.trim()))) {
+  throw new Error("asset_ids_file_invalid");
+}
+const canonicalRows = input.filter((row) => row.arm === "thin_canonical_high" && row.fields);
+const canonicalByAsset = new Map(canonicalRows.map((row) => [row.asset_id, row]));
+const canonical = selectedAssetIds
+  ? selectedAssetIds.map((assetId) => canonicalByAsset.get(assetId)).filter(Boolean)
+  : canonicalRows.slice(0, limit);
 const freeByAsset = new Map(input.filter((row) => row.arm === "thin_budgeted").map((row) => [row.asset_id, row]));
 if (canonical.length !== limit || canonical.some((row) => !freeByAsset.has(row.asset_id))) {
   throw new Error("paired_fresh_cohort_mismatch_or_too_small");
@@ -126,8 +140,16 @@ for (const name of mechanisms) {
 const payload = {
   schema_version: "accuracy-mechanism-confirmatory-nonserial-v2",
   authority: "evaluation_only",
-  claim_boundary: "fresh_response_mixed_confirmation_not_independent_card_cohort",
-  source: { inputPath, limit, arms: ["thin_budgeted", "thin_canonical_high"], serial_arm: "not_run" },
+  claim_boundary: assetIdsPath
+    ? "fresh_response_outside_development_subset_not_full_150_independent_confirmation"
+    : "fresh_response_mixed_confirmation_not_independent_card_cohort",
+  source: {
+    inputPath,
+    assetIdsPath,
+    limit,
+    arms: ["thin_budgeted", "thin_canonical_high"],
+    serial_arm: "not_run"
+  },
   result
 };
 writeFileSync(out, `${JSON.stringify(payload, null, 2)}\n`);
