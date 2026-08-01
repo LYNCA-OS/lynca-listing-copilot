@@ -5,6 +5,8 @@
   "type": "module",
   "description": "Metaverse Listing Copilot internal title generation webtool.",
   "scripts": {
+    "check:candidate-expression-v4-vocabulary-replay": "node --check lib/listing/thin/candidate-expression-v4-vocabulary-replay-v1.mjs && node --check scripts/analyze-candidate-expression-v4-vocabulary-replay-v1.mjs && node --check scripts/candidate-expression-v4-vocabulary-replay-v1.test.mjs",
+    "test:candidate-expression-v4-vocabulary-replay": "node scripts/candidate-expression-v4-vocabulary-replay-v1.test.mjs",
     "maintenance:handbook:check": "node scripts/maintenance-harness-handbook.mjs check",
     "maintenance:handbook:test": "node scripts/maintenance-harness-handbook.test.mjs",
     "maintenance:handbook:bootstrap": "node scripts/maintenance-harness-handbook.mjs bootstrap",
