@@ -364,3 +364,20 @@ This is a mechanism failure, not an underpowered positive screen. The arm was
 removed from the thin evaluator after recording the audit in
 `docs/evaluation/canonical-product-evidence-v1-screen-20-2026-08-02.md`.
 Do not spend the 150-card confirmation budget on it.
+
+## 12. 2026-08-02 follow-up: v4 identity replay stop
+
+The stored v4 candidate-expression responses were replayed against the stored
+canonical fields without new provider calls. The resolver admitted a visible
+`logo_or_symbol` identity or affiliation into an empty Set. On the 102 cards
+that matched the partial development response set, the overlay produced only
+`4/12/86` wins/losses/ties and changed macro F1 from `0.761042` to `0.756854`
+(`−0.004188`). It is therefore a negative runtime asset and is stopped.
+
+The twelve losses are not random: team marks, NFLPA, BECKETT and fragments
+such as `Optic O Donruss` were promoted as Set. Disney and VeeFriends produced
+four useful-looking wins, but that is not enough to permit a generic logo rule.
+The complete per-card ledger is in
+`docs/evaluation/candidate-expression-v4-identity-replay-stop-2026-08-02.md`.
+Future identity work must separate IP/product identity from affiliation,
+grading-company marks and logo fragments before another paid confirmation.
