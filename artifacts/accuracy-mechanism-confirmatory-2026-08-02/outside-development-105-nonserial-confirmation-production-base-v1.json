@@ -1,0 +1,198 @@
+{
+  "schema_version": "accuracy-mechanism-confirmatory-nonserial-v2",
+  "authority": "evaluation_only",
+  "claim_boundary": "fresh_response_outside_development_subset_not_full_150_independent_confirmation",
+  "source": {
+    "inputPath": "artifacts/accuracy-mechanism-confirmatory-2026-08-02/fresh-budgeted-canonical/thin-path-gpt-5.6-luna.jsonl",
+    "assetIdsPath": "artifacts/accuracy-mechanism-confirmatory-2026-08-02/outside-development-105.asset-ids.json",
+    "limit": 105,
+    "arms": [
+      "thin_budgeted",
+      "thin_canonical_high"
+    ],
+    "serial_arm": "not_run",
+    "product_leaf_recovery": false
+  },
+  "result": {
+    "finish_family_color_only": {
+      "baseline_macro_f1": 0.771022950592498,
+      "candidate_macro_f1": 0.771022950592498,
+      "delta_macro_f1": 0,
+      "wins": 0,
+      "losses": 0,
+      "ties": 105,
+      "changed_cards": 0,
+      "reference_loss_cards": 0,
+      "over_80_cards": 0,
+      "status": "NO_CHANGE",
+      "details": []
+    },
+    "rarity_sar_only": {
+      "baseline_macro_f1": 0.771022950592498,
+      "candidate_macro_f1": 0.771022950592498,
+      "delta_macro_f1": 0,
+      "wins": 0,
+      "losses": 0,
+      "ties": 105,
+      "changed_cards": 0,
+      "reference_loss_cards": 0,
+      "over_80_cards": 0,
+      "status": "NO_CHANGE",
+      "details": []
+    },
+    "printed_trainer_gallery": {
+      "baseline_macro_f1": 0.771022950592498,
+      "candidate_macro_f1": 0.771022950592498,
+      "delta_macro_f1": 0,
+      "wins": 0,
+      "losses": 0,
+      "ties": 105,
+      "changed_cards": 0,
+      "reference_loss_cards": 0,
+      "over_80_cards": 0,
+      "status": "NO_CHANGE",
+      "details": []
+    },
+    "printed_first_bowman": {
+      "baseline_macro_f1": 0.771022950592498,
+      "candidate_macro_f1": 0.771022950592498,
+      "delta_macro_f1": 0,
+      "wins": 0,
+      "losses": 0,
+      "ties": 105,
+      "changed_cards": 0,
+      "reference_loss_cards": 0,
+      "over_80_cards": 0,
+      "status": "NO_CHANGE",
+      "details": []
+    },
+    "product_known_manufacturer_extension": {
+      "baseline_macro_f1": 0.771022950592498,
+      "candidate_macro_f1": 0.7744414735387404,
+      "delta_macro_f1": 0.0034185229462425034,
+      "wins": 5,
+      "losses": 0,
+      "ties": 100,
+      "changed_cards": 5,
+      "reference_loss_cards": 0,
+      "over_80_cards": 0,
+      "status": "CONFIRMATION_CANDIDATE",
+      "details": [
+        {
+          "asset_id": "reviewed_blind_4b7f85614378b77cfcd1",
+          "reference": "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+          "free_title": "2025 Topps Chrome Sapphire Shohei Ohtani Gold Variation /50 PSA 9 Dodgers",
+          "before": "2025 Topps Chrome Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+          "after": "2025 Topps Chrome Sapphire Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+          "delta_f1": 0.04743083003952575,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_808ad8a46431052efe77",
+          "reference": "2026 Topps Cosmic Chrome WWE Penta Orange Refractor 25/25 Star Fractor SSP",
+          "free_title": "2025 Topps Chrome WWE Penta Superfractor 25/25 Rookie RC",
+          "before": "2025 Topps Chrome Penta Purple Prizm 23/25",
+          "after": "2025 Topps Chrome WWE Penta Purple Prizm 23/25",
+          "delta_f1": 0.08421052631578951,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_aa0ffee633bf6e31ba42",
+          "reference": "2024 Topps Chrome Dune Paul Atreides Gold Parallel 09/50",
+          "free_title": "2021 Topps Chrome Dune Paul Atreides Orange Refractor /50 SP",
+          "before": "2021 Topps Chrome Paul Atreides Gold Refractor 99/99",
+          "after": "2021 Topps Chrome Dune Paul Atreides Gold Refractor 99/99",
+          "delta_f1": 0.07843137254901955,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_c7e86fe768345f5f6ec0",
+          "reference": "2026 Topps Chrome VeeFriends Hustling Hamster Red Sparkle Refractor 4/5",
+          "free_title": "2026 Topps Chrome VeeFriends Hustling Hamster VF Trading Refractor FOIL",
+          "before": "2026 Topps Chrome Hustling Hamster Original Artwork Red Sparkle",
+          "after": "2026 Topps Chrome VeeFriends Hustling Hamster Original Artwork Red Sparkle",
+          "delta_f1": 0.06315789473684241,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_9b64a7f207237c35f8d2",
+          "reference": "2025 Topps Chrome MLS Lionel Messi 1995",
+          "free_title": "2025 Topps Chrome MLS Lionel Messi Inter Miami CF Future Stars NF-23 SP Foil",
+          "before": "2025 Topps Chrome Lionel Messi Silver Refractor",
+          "after": "2025 Topps Chrome MLS Lionel Messi Silver Refractor",
+          "delta_f1": 0.08571428571428563,
+          "reference_losses": [],
+          "over_80": false
+        }
+      ]
+    },
+    "bundle_without_serial": {
+      "baseline_macro_f1": 0.771022950592498,
+      "candidate_macro_f1": 0.7744414735387404,
+      "delta_macro_f1": 0.0034185229462425034,
+      "wins": 5,
+      "losses": 0,
+      "ties": 100,
+      "changed_cards": 5,
+      "reference_loss_cards": 0,
+      "over_80_cards": 0,
+      "status": "CONFIRMATION_CANDIDATE",
+      "details": [
+        {
+          "asset_id": "reviewed_blind_4b7f85614378b77cfcd1",
+          "reference": "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+          "free_title": "2025 Topps Chrome Sapphire Shohei Ohtani Gold Variation /50 PSA 9 Dodgers",
+          "before": "2025 Topps Chrome Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+          "after": "2025 Topps Chrome Sapphire Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+          "delta_f1": 0.04743083003952575,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_808ad8a46431052efe77",
+          "reference": "2026 Topps Cosmic Chrome WWE Penta Orange Refractor 25/25 Star Fractor SSP",
+          "free_title": "2025 Topps Chrome WWE Penta Superfractor 25/25 Rookie RC",
+          "before": "2025 Topps Chrome Penta Purple Prizm 23/25",
+          "after": "2025 Topps Chrome WWE Penta Purple Prizm 23/25",
+          "delta_f1": 0.08421052631578951,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_aa0ffee633bf6e31ba42",
+          "reference": "2024 Topps Chrome Dune Paul Atreides Gold Parallel 09/50",
+          "free_title": "2021 Topps Chrome Dune Paul Atreides Orange Refractor /50 SP",
+          "before": "2021 Topps Chrome Paul Atreides Gold Refractor 99/99",
+          "after": "2021 Topps Chrome Dune Paul Atreides Gold Refractor 99/99",
+          "delta_f1": 0.07843137254901955,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_c7e86fe768345f5f6ec0",
+          "reference": "2026 Topps Chrome VeeFriends Hustling Hamster Red Sparkle Refractor 4/5",
+          "free_title": "2026 Topps Chrome VeeFriends Hustling Hamster VF Trading Refractor FOIL",
+          "before": "2026 Topps Chrome Hustling Hamster Original Artwork Red Sparkle",
+          "after": "2026 Topps Chrome VeeFriends Hustling Hamster Original Artwork Red Sparkle",
+          "delta_f1": 0.06315789473684241,
+          "reference_losses": [],
+          "over_80": false
+        },
+        {
+          "asset_id": "reviewed_blind_9b64a7f207237c35f8d2",
+          "reference": "2025 Topps Chrome MLS Lionel Messi 1995",
+          "free_title": "2025 Topps Chrome MLS Lionel Messi Inter Miami CF Future Stars NF-23 SP Foil",
+          "before": "2025 Topps Chrome Lionel Messi Silver Refractor",
+          "after": "2025 Topps Chrome MLS Lionel Messi Silver Refractor",
+          "delta_f1": 0.08571428571428563,
+          "reference_losses": [],
+          "over_80": false
+        }
+      ]
+    }
+  }
+}

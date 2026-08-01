@@ -10,6 +10,7 @@ path until an independent 150-card confirmation clears the stated safety gates.
 | Cohort and source | Mechanism | n | Wins | Losses | Ties | Delta macro F1 | Reference loss | Over 80 | Status |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | Fresh outside-development subset, paired response | Known-manufacturer product extension | 105 | 5 | 0 | 100 | +0.003419 | 0 | 0 | Confirmation candidate; not a full independent 150 |
+| Same outside-development subset, production-base Composer control | Known-manufacturer product extension | 105 | 5 | 0 | 100 | +0.003419 | 0 | 0 | Same result with `product_leaf_recovery` disabled; still not a full independent 150 |
 | Fresh mixed 150, paired response | Known-manufacturer product extension | 150 | 6 | 0 | 144 | +0.002826 | 0 | 0 | Confirmation candidate; cohort mix is documented |
 | Development v4 candidate facts, team-veto replay | Open identity expression | 150 | 4 | 0 | 146 | +0.002187 | 0 | 0 | Evaluation-only; development overlap |
 | Existing paired 150 replay | Identity v3 + product v2 + narrow serial | 150 | 8 | 0 | 142 | +0.004777 | 0 | 0 | Evaluation-only bundle; requires independent 150 |

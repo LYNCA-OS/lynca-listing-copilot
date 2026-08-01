@@ -28,6 +28,15 @@ second model is involved.
 Baseline/replay on the full fresh run was `0.772129 → 0.774955`. The outside
 subset was `0.771023 → 0.774441`.
 
+The outside-105 replay was also rerun with the experiment-only
+`product_leaf_recovery` Composer feature explicitly disabled, matching the
+current production Composer. The result is unchanged: `0.771023 → 0.774441`,
+5/0/100, with zero reference-token loss and zero titles over 80 characters.
+Reproduce with `scripts/analyze-accuracy-mechanism-confirmatory.mjs
+--asset-ids-file
+artifacts/accuracy-mechanism-confirmatory-2026-08-02/outside-development-105.asset-ids.json
+--limit 105 --disable-product-leaf`.
+
 This is a positive **candidate mechanism**, not proof of independent-card
 generalization. It must still pass a pre-registered independent 150-card
 confirmation before any CSM/SEM admission change.
@@ -60,3 +69,4 @@ Replay artifacts:
 
 - `artifacts/accuracy-mechanism-confirmatory-2026-08-02/fresh-nonserial-confirmation-v3.json`
 - `artifacts/accuracy-mechanism-confirmatory-2026-08-02/outside-development-105-nonserial-confirmation-v3.json`
+- `artifacts/accuracy-mechanism-confirmatory-2026-08-02/outside-development-105-nonserial-confirmation-production-base-v1.json`

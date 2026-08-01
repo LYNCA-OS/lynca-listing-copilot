@@ -41,6 +41,7 @@ const inputPath = arg("--input", "artifacts/accuracy-mechanism-confirmatory-2026
 const out = arg("--out", "artifacts/accuracy-mechanism-confirmatory-2026-08-02/fresh-nonserial-confirmation.json");
 const assetIdsPath = arg("--asset-ids-file", null);
 const limit = Number(arg("--limit", "150"));
+const disableProductLeaf = process.argv.includes("--disable-product-leaf");
 if (!Number.isInteger(limit) || limit < 1) throw new Error("limit_must_be_positive_integer");
 
 const input = rows(inputPath);
@@ -71,10 +72,13 @@ const mechanisms = [
   "product_known_manufacturer_extension",
   "bundle_without_serial"
 ];
+const compose = (fields) => composeFromCanonicalFields(fields, disableProductLeaf
+  ? { features: { product_leaf_recovery: false } }
+  : {});
 const cards = canonical.map((row) => {
   const free = freeByAsset.get(row.asset_id);
   const freeFields = projectFreeTitleThroughCsm(free.title).fields;
-  const baseline = composeFromCanonicalFields(row.fields);
+  const baseline = compose(row.fields);
   return { row, free, freeFields, baseline };
 });
 
@@ -103,7 +107,7 @@ for (const name of mechanisms) {
   const deltas = [];
   for (const card of cards) {
     const candidate = applyCandidate(name, card);
-    const output = composeFromCanonicalFields(candidate.fields);
+    const output = compose(candidate.fields);
     const delta = score(card.row.reference, output.title).f1 - score(card.row.reference, card.baseline.title).f1;
     deltas.push(delta);
     if (output.title !== card.baseline.title) {
@@ -125,7 +129,7 @@ for (const name of mechanisms) {
     baseline_macro_f1: mean(cards.map((card) => score(card.row.reference, card.baseline.title).f1)),
     candidate_macro_f1: mean(cards.map((card) => {
       const candidate = applyCandidate(name, card);
-      return score(card.row.reference, composeFromCanonicalFields(candidate.fields).title).f1;
+      return score(card.row.reference, compose(candidate.fields).title).f1;
     })),
     delta_macro_f1: mean(deltas),
     ...sign(deltas),
@@ -148,7 +152,8 @@ const payload = {
     assetIdsPath,
     limit,
     arms: ["thin_budgeted", "thin_canonical_high"],
-    serial_arm: "not_run"
+    serial_arm: "not_run",
+    product_leaf_recovery: !disableProductLeaf
   },
   result
 };
