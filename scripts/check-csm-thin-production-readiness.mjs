@@ -29,7 +29,7 @@ function serviceKey(env) {
 }
 
 function readinessError(code, detail = null) {
-  return Object.assign(new Error(detail ? `${code}:${detail}` : code), { code });
+  return Object.assign(new Error(detail ? `${code}:${detail}` : code), { code, detail });
 }
 
 export async function checkCsmThinProductionReadiness({
@@ -143,7 +143,13 @@ async function main() {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((error) => {
-    console.error(JSON.stringify({ ok: false, code: error?.code || "csm_readiness_failed" }));
+    console.error(JSON.stringify({
+      ok: false,
+      code: error?.code || "csm_readiness_failed",
+      // Only a phase/status contract label is emitted; no request headers or
+      // response bodies are ever included in CI output.
+      detail: error?.detail || null
+    }));
     process.exitCode = 1;
   });
 }
