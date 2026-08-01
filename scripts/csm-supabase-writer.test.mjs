@@ -101,7 +101,8 @@ function jsonResponse(value, status = 200) {
   });
   assert.equal(timedOut.ready, false);
   assert.equal(timedOut.reason, "atomic_rpc_probe_timeout");
-  assert.equal(calls, 4, "one bounded retry must repeat registry plus atomic probe");
+  assert.equal(calls, 6,
+    "one bounded retry must repeat registry plus both concurrent post-registry probes");
   assert.equal(CSM_SUPABASE_REQUEST_TIMEOUT_MS, 5_000);
 }
 
