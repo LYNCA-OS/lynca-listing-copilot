@@ -1,0 +1,97 @@
+{
+  "schema_version": "thin-path-eval-run-manifest-v2",
+  "fingerprint": "233456d5b1d6e5097ba8e1377732fa8e9cc3a65d093193ee469a092a7b3a4686",
+  "contract": {
+    "schema_version": "thin-path-eval-run-contract-v2",
+    "model": "gpt-5.6-luna",
+    "effort": "none",
+    "image_detail": "high",
+    "execution": {
+      "concurrency": 2,
+      "request_timeout_ms": 120000,
+      "max_attempts": 3,
+      "retry_policy": "bounded-retry-after-jitter-v1"
+    },
+    "cohort": {
+      "selection_role": "development_150_identity_hypothesis_tail_19"
+    },
+    "arms": [
+      {
+        "key": "candidate_expression_v4_high",
+        "fixed_image_detail": "high",
+        "eval_version": "candidate-expression-v4",
+        "response_schema_name": "card_candidate_expression_v4",
+        "response_schema_sha256": "457f57b9e531fd59ccda5df363713824c1dab73cfc3266292cd9b80ba9c84c2c",
+        "prompt_sha256": "6ed24c00986bf0e94025277516f1781f19a42c08e4dd83d018b3ab97ae00b1c5",
+        "request_template_sha256": [
+          "7cd89b8ac47e73e25e21d8378a9edbc4cba4bc731538118fdd1c05a719e4fd3c",
+          "38d6a925557f2dc987818e21cc7ed9ccbfc2897314a77c9459df98ae489afe91",
+          "d9d72be45b24ce7cc36445cee295da7bddd9ecfef0aa5d6531520e7d918eb6be"
+        ]
+      }
+    ],
+    "dataset_sha256": "5aebd6a4bb08665d6601801258e39a5954ec82b7187f71f577f18c71bd27adca",
+    "asset_ids_sha256": "72970557ef7060690125146fc12ea38826be1864cf80a44544edf646a831e320",
+    "sealed_labels_sha256": "59669f166180aab0bef24b5133b3cc92b06366f955eae54af0c43f7247436646",
+    "source_sha256": {
+      "provider_request_behavior": "b86e175ea816797bdce4372576bf850997d321e4830bce469c9768ee46e04f81"
+    }
+  },
+  "finisher": {
+    "fingerprint": "1ddb2c51419b9ccd165ab3967997d937d5f56b78ddabe2e13d7fe99ded992048",
+    "contract": {
+      "schema_version": "thin-path-eval-finisher-contract-v1",
+      "derivation_contract": "thin-path-eval-derived-metrics-v1",
+      "arms": [
+        "candidate_expression_v4_high"
+      ],
+      "source_sha256": {
+        "repo:lib/listing/csm/sem-definition.mjs": "76126671aa6ab738ad9f344b2b1ad2c0a12c337e99c1071c3157229ed71f8634",
+        "repo:lib/listing/csm/title-derived-sem.mjs": "6fb6df422fb6712cbfffd7eda15b07ddb074d610b3b45f6bfa7869e0ad93b8eb",
+        "repo:lib/listing/evidence/evidence-schema.mjs": "a37ef7bcfb796a372b39ddd5ae730aceb2a33fc260ad639c5b16617fef5f1522",
+        "repo:lib/listing/grade/grade-company.mjs": "ac1cd38207b59aae8196d86cf0476ac895a742ed54933be72178d3aae5cbad7b",
+        "repo:lib/listing/grade/grade-value.mjs": "a6d02bbf08b398806308932b04cb856f02d989da02f467c9ae50e09717e7bc77",
+        "repo:lib/listing/memory/title-field-parser.mjs": "c25001a6c11468409875eb4f5ad92691846c004b8a2ffd1b1d42efbade5cc6cf",
+        "repo:lib/listing/pipeline/subject-identity.mjs": "a5a0536cec279284b6cbe954432868365a7196b702bfe4fba535b732de5e1d5c",
+        "repo:lib/listing/pipeline/text.mjs": "0aa4bb42af08923cfea1250984709289cbc925adce3407ba87f7b9ae805584a6",
+        "repo:lib/listing/print-run/print-run-fields.mjs": "6d8bf3d16dcdfdd0b4344ea58382f560bc6381973beeacfd6d013adb20c3a95c",
+        "repo:lib/listing/thin/candidate-expression-v4.mjs": "c65f8069970f24bee202ae5a152338478a6fec645850c0e736103bc3d5797e2e",
+        "repo:lib/listing/thin/csm-sem-score.mjs": "0a5cfdcb13dac788dd7be59deb66f449e85a71c9ebf493ca1e3382dfb19cb0fa",
+        "repo:lib/listing/year/year-value.mjs": "0fe5efde7b5c211ed22251af8169759f99c433584e1fca1a197fa195b828426d",
+        "scorer:../lib/listing/card-type-policy.mjs": "b4dc4cd94eb18b8d81e4fc7515b6c8d92b5356cc194070a7af9171abad4f576e",
+        "scorer:../lib/listing/catalog/field-vocabulary-store.mjs": "a0bb7c44a836eb22afa290d115e129113e212e85e92efa427fb1a24176e7eb0e",
+        "scorer:../lib/listing/catalog/field-vocabulary.mjs": "104ba327712040998842145e5312231fdefe118987cb4dfcb8df9d88a6fb44a8",
+        "scorer:../lib/listing/cold-start/cold-start-policy.mjs": "78c9bdcae7b27bb1508d60bff79608fc76fed399b84d5038a239b8e6d2027710",
+        "scorer:../lib/listing/csm/sem-definition.mjs": "76126671aa6ab738ad9f344b2b1ad2c0a12c337e99c1071c3157229ed71f8634",
+        "scorer:../lib/listing/evaluation/recognition-benchmark-profile.mjs": "48956efb4523ae44557b5744b1e7b672fc6addad7792e6f773742027252a91e0",
+        "scorer:../lib/listing/evidence/evidence-schema.mjs": "87a130e561825fb7442855654082945a94eee549d0832b44170210bf1874bd9d",
+        "scorer:../lib/listing/external/external-candidate-contract.mjs": "db0d336350f53ff5916dc5300744d49ec163eb26049ddee194e6833ab20a06fb",
+        "scorer:../lib/listing/grade/grade-company.mjs": "ac1cd38207b59aae8196d86cf0476ac895a742ed54933be72178d3aae5cbad7b",
+        "scorer:../lib/listing/grade/grade-value.mjs": "a6d02bbf08b398806308932b04cb856f02d989da02f467c9ae50e09717e7bc77",
+        "scorer:../lib/listing/memory/title-field-parser.mjs": "c25001a6c11468409875eb4f5ad92691846c004b8a2ffd1b1d42efbade5cc6cf",
+        "scorer:../lib/listing/parallel-policy.mjs": "c2741b09ff3d3ffebc1f7c643aa8dff1035babc34d1528fbc6d7e11df0cf1b44",
+        "scorer:../lib/listing/pipeline/publisher-identity.mjs": "9ad191953bd5c4414635a98565480acff844bb947ec87e66bec6ba851b81ab85",
+        "scorer:../lib/listing/pipeline/subject-identity.mjs": "a5a0536cec279284b6cbe954432868365a7196b702bfe4fba535b732de5e1d5c",
+        "scorer:../lib/listing/pipeline/text.mjs": "0aa4bb42af08923cfea1250984709289cbc925adce3407ba87f7b9ae805584a6",
+        "scorer:../lib/listing/print-run/print-run-fields.mjs": "6d8bf3d16dcdfdd0b4344ea58382f560bc6381973beeacfd6d013adb20c3a95c",
+        "scorer:../lib/listing/renderer/generic-title-renderer.mjs": "5015a450d1eb05c606dee44f6a53c87186d908a7c86569cbd9398d9a10fe74c8",
+        "scorer:../lib/listing/renderer/listing-renderer.mjs": "efa37fac589bcedb6ee11430c44e99cddc48a4266dd20714a1e9a3edd8fbdf93",
+        "scorer:../lib/listing/renderer/module-renderer.mjs": "4dc0bfd42245fdd481af2f6fc08ce2fe685de32b4858e628db94ce4f5f172899",
+        "scorer:../lib/listing/renderer/pokemon-title-renderer.mjs": "9c33f756bebca36d08717bef418c24b861c4025dd88823bfa6f68a1a80d47186",
+        "scorer:../lib/listing/renderer/sports-title-renderer.mjs": "e34af411246631c548f74eed11054344ee57cbb5578c380ddb90208262b2c041",
+        "scorer:../lib/listing/renderer/title-cleanup.mjs": "582787912918f902419eee686e9ffc12a8eeffcadad15ee3e6a5dbb39736b223",
+        "scorer:../lib/listing/renderer/title-length-policy.mjs": "816f5c651a2ca66280412b6a98aeb516be1831dff3a659bbb8c29fd4832b8a94",
+        "scorer:../lib/listing/year/year-value.mjs": "0fe5efde7b5c211ed22251af8169759f99c433584e1fca1a197fa195b828426d",
+        "scorer:evaluate-cloud-listing-api.mjs": "ed23097d57ddab5947537e68e7961b9b24b43e0d9edb237b5efbf41efacaeadf"
+      }
+    }
+  },
+  "max_requested_limit": 19,
+  "max_requested_asset_ids_sha256": "aed64721408e656f51b33b29e4b225e5519c7d6b07f761112411d01d6f5969ca",
+  "created_at": "2026-08-01T20:47:41.151Z",
+  "completed_at": "2026-08-01T20:49:17.697Z",
+  "checkpoint_rows": 19,
+  "checkpoint_sha256": "89abb13490639f13530d84b7f6950aa33a52fcaeb2e1496b90598248683309c4",
+  "checkpoint_bytes": 99689,
+  "paired_cards": 0
+}

@@ -64,6 +64,34 @@ it is still development-overlap evidence, not a 150-card confirmation.
 
 Artifact: `artifacts/candidate-expression-v4/development-150/identity-replay-v3.json`.
 
+### Completed 150-card v4 tail and team-affiliation veto
+
+The original v4 development run had 131 unique completed cards across three
+checkpoint directories. We paid only the 19 missing asset IDs, at the same
+candidate_expression_v4_high / gpt-5.6-luna / none contract, then merged the
+first response for each asset. Fifty-two duplicate rows from earlier retries
+were ignored rather than counted as extra cards. The merge receipt is
+artifacts/candidate-expression-v4/development-150-merged-2026-08-02.jsonl.receipt.json.
+
+The first complete replay exposed three false set promotions: FC Barcelona,
+Atlanta Hawks, and Boston Red Sox. A fourth team (Minnesota Twins) and a
+numeric 3PLAYERS badge were neutral/noisy variants of the same role error. The
+v3 resolver now rejects this measured team-affiliation class while still
+admitting non-team identity marks such as Disney and VeeFriends.
+
+| Replay | Cards | Changed | Wins | Losses | Ties | Δ macro F1 | Reference loss | Over 80 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| v4 facts → identity-v3 before team veto | 150 | 8 | 4 | 3 | 143 | +0.000483 | 0 | 0 |
+| v4 facts → identity-v3 with team veto | 150 | 4 | 4 | 0 | 146 | **+0.002187** | 0 | 0 |
+
+The four surviving changes are all identity additions with positive paired F1:
+Disney Elsa (+0.0833), VeeFriends Common Sense Cow (+0.0649), Disney Mufasa
+(+0.0989), and VeeFriends Adaptable Alien (+0.0809). This is a stronger
+development signal than the partial 102-card screen, but it remains overlap
+evidence and is not production authority or an independent 150-card claim.
+
+Artifact: artifacts/candidate-expression-v4/development-150/identity-replay-v3-team-veto-2026-08-02.json.
+
 ## Orthogonal three-mechanism bundle
 
 The bundle applies, in order: identity v3, the already-screened
@@ -84,7 +112,7 @@ The full per-card/per-stage ledger is in
 
 ## Decision
 
-Keep v3 and the three-mechanism bundle evaluation-only. Pre-register one
+Keep the team-vetoed v3 and the three-mechanism bundle evaluation-only. Pre-register one
 independent 150-card confirmation with the same safety gates:
 
 1. no reference-token loss;
