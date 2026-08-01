@@ -5,7 +5,6 @@ import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { loadEnvFiles } from "../lib/listing/readiness/workflow-context-schema.mjs";
-import { listingConcurrencyContract } from "../lib/listing/v4/orchestration/concurrency-contract.mjs";
 
 const defaultBaseUrl = "https://listing.lyncafei.team";
 
@@ -28,38 +27,34 @@ function check(id, passed, summary, details = {}) {
 
 function staticChecks() {
   const app = source("app/listing-copilot.js");
-  const enqueue = source("api/v4/listing-job-enqueue.js");
-  const status = source("api/v4/listing-job-status.js");
-  const feedback = source("api/v4/listing-feedback.js");
-  const exportApi = source("api/v4/listing-export-workbook.js");
+  const index = source("app/index.html");
+  const directApi = source("api/csm-listing-title.js");
+  const runtime = source("lib/listing/thin/csm-runtime-contract.mjs");
+  const health = source("api/health.js");
+  const orchestration = source("lib/listing/thin/csm-orchestration.mjs");
   const release = source(".github/workflows/deploy-production.yml");
   return [
-    check("writer_one_line_surface", /function TitleCardComponent/.test(app)
-      && !/\$\{workflowSummaryNotice\(result\)\}/.test(app)
-      && !/\$\{publicationGateNotice\(result\)\}/.test(app), "Writer UI exposes one editable title instead of internal control-plane panels."),
-    check("duplicate_paid_enqueue_guard", /speculativeNeedsFreshEnqueue/.test(app)
-      && /Number\(resultCount\) === 0/.test(app)
-      && /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT,[\s\S]*timeoutMs: QUEUE_ENQUEUE_TIMEOUT_MS/.test(app), "The browser blocks duplicate submissions and bounds enqueue waits."),
-    check("durable_queue", /enqueueV4RecognitionJobs/.test(enqueue)
-      && /V4_QUEUE_MAX_JOBS_PER_REQUEST/.test(enqueue)
-      && /runPostEnqueueQueueKick/.test(enqueue), "Recognition enters the durable production queue with bounded admission."),
-    check("operator_isolation", /ownedJobs = result\.rows\.filter/.test(status)
-      && /readV4SessionStatus/.test(feedback), "Status and feedback paths verify authenticated operator ownership."),
-    check("learning_loop", /persistV4WriterFeedbackTransaction/.test(feedback), "Writer accept/edit/reject events atomically persist feedback, training artifacts, and the terminal session state."),
-    check("retained_workbook_export", /createWriterBatchExport/.test(exportApi)
-      && /writerExportRowsBelongToOperator/.test(exportApi)
-      && !/new pg\.Client|client\.query\(sql\)/.test(exportApi), "Final titles and image references are retained without runtime schema mutation."),
+    check("writer_one_line_surface", /id="processButton"[^>]*hidden/.test(index)
+      && /CSM_THIN_API_ENDPOINT\s*=\s*["']\/api\/csm-listing-title["']/.test(app)
+      && /processAssetViaCsmThinPath/.test(app), "Uploading images is the recognition intent; the writer receives one editable title without a start button."),
+    check("direct_csm_boundary", /CSM_THIN_DIRECT/.test(directApi)
+      && /gpt-5\.6-luna/.test(runtime)
+      && /reasoning_effort|reasoningEffort/.test(directApi), "Recognition uses the direct Luna -> CSM/SEM boundary."),
+    check("atomic_persistence", /persistPreparedCanonicalListingPath/.test(orchestration)
+      && /writeCsmStagePacketAtomically/.test(orchestration)
+      && /verifyReplay/.test(orchestration), "The CSM packet is persisted atomically and replay-verified before the writer sees it."),
+    check("retired_execution_paths", /cloud_run_calls:\s*0/.test(health)
+      && /vector_calls:\s*0/.test(health)
+      && /generic_ocr_calls:\s*0/.test(health)
+      && /active_path === 'CSM_THIN_DIRECT'/.test(release), "Cloud Run, vector, OCR, and the old V4 execution path are disabled for this release."),
     check("release_gate", /npm ls --omit=dev --all/.test(release)
       && /node scripts\/npm-audit-gate\.mjs/.test(release)
-      && /npm run test:v4-spine/.test(release)
-      && /npm run check:production-engineering/.test(release)
-      && /npm run test:production-engineering/.test(release)
+      && /npm run check:csm-thin/.test(release)
+      && /npm run test:csm-thin/.test(release)
       && /VERCEL_DEPLOY_HOOK_URL/.test(release)
       && /git_commit_sha === process\.env\.GITHUB_SHA/.test(release)
-      && /Migrations are maintenance-window operations/.test(release)
-      && /check-track-c-production-schema\.mjs[\s\S]*track-c-production-schema-preflight\.json/.test(release)
-      && /check-track-c-production-schema\.mjs[\s\S]*track-c-production-schema-postdeploy\.json/.test(release)
-      && !/\/api\/admin-apply-/.test(release), "Production deploy verifies dependencies, the exact Git commit, V4 behavior, and the read-only production schema contract without running migrations from the application deployment.")
+      && /check-csm-thin-production-readiness\.mjs/.test(release)
+      && !/\/api\/admin-apply-/.test(release), "Production deploy verifies dependencies, the exact Git commit, CSM behavior, and the read-only Supabase readiness contract without running migrations from the application deployment.")
   ];
 }
 
@@ -69,23 +64,21 @@ function cookieFrom(response) {
 }
 
 export function cloudModelCapacityReady(health = {}) {
-  const keyPoolSize = Number(health.openai_pool?.key_pool_size || 0);
-  const perKeyStableConcurrency = Number(health.openai_pool?.per_key_stable_concurrency || 0);
-  const globalConcurrency = Number(health.openai_pool?.global_concurrency || 0);
-  const workerClaimLimit = Number(health.production_queue?.worker_claim_limit || 0);
-  const frozenProviderConcurrency = listingConcurrencyContract.gpt_provider.concurrency;
-  return health.default_model === "gpt-5-mini"
-    && keyPoolSize >= 1
-    && perKeyStableConcurrency === frozenProviderConcurrency
-    && globalConcurrency === frozenProviderConcurrency
-    && workerClaimLimit === frozenProviderConcurrency;
+  const capacity = health.capacity || {};
+  return health.active_path === "CSM_THIN_DIRECT"
+    && health.model === "gpt-5.6-luna"
+    && health.reasoning_effort === "none"
+    && Number(capacity.scheduler_attempt_slots || 0) === 120
+    && Number(capacity.baseline_working_attempts || 0) === 43
+    && Number(capacity.effective_reserved_attempt_ceiling || 0) >= 1
+    && Number(capacity.effective_reserved_attempt_ceiling || 0) <= 83;
 }
 
 async function cloudChecks({ baseUrl, username, password }) {
   if (!username || !password) {
     return [check("cloud_runtime", false, "Cloud verification credentials are missing.")];
   }
-  const healthResponse = await fetch(`${baseUrl}/api/v4/health`, { signal: AbortSignal.timeout(30_000) });
+  const healthResponse = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(30_000) });
   const health = await healthResponse.json().catch(() => ({}));
   const loginResponse = await fetch(`${baseUrl}/api/login`, {
     method: "POST",
@@ -94,50 +87,37 @@ async function cloudChecks({ baseUrl, username, password }) {
     signal: AbortSignal.timeout(30_000)
   });
   const cookie = cookieFrom(loginResponse);
-  const providerResponse = cookie ? await fetch(`${baseUrl}/api/listing-provider-status`, {
+  const appResponse = cookie ? await fetch(`${baseUrl}/app/listing-copilot.js`, {
     headers: { cookie },
-    signal: AbortSignal.timeout(45_000)
+    signal: AbortSignal.timeout(30_000)
   }) : null;
-  const provider = providerResponse ? await providerResponse.json().catch(() => ({})) : {};
-  const components = new Map((provider.workflow_readiness?.components || []).map((item) => [item.id, item]));
-  const vector = components.get("vector_retrieval") || {};
-  const ocr = components.get("paddle_ocr") || {};
-  const tables = health.supabase?.tables || {};
-  const tableFailures = Object.entries(tables).filter(([, value]) => value?.ok !== true).map(([name]) => name);
   return [
-    check("cloud_health", healthResponse.ok && health.ready === true, "V4 production health reports ready.", {
+    check("cloud_health", healthResponse.ok && health.ready === true, "CSM thin production health reports ready.", {
       deployment_sha: health.deployment?.git_commit_sha || null,
-      reasons: health.not_ready_reasons || []
+      active_path: health.active_path || null
     }),
-    check("cloud_model_and_capacity", cloudModelCapacityReady(health), "Production uses GPT-5-mini within the configured key pool's stable concurrency envelope.", {
-      model: health.default_model || null,
-      key_pool: health.openai_pool?.key_pool_size || 0,
-      per_key_stable_concurrency: health.openai_pool?.per_key_stable_concurrency || null,
-      claim_limit: health.production_queue?.worker_claim_limit || null
+    check("cloud_model_and_capacity", cloudModelCapacityReady(health), "Production uses Luna within the durable provider authority envelope.", {
+      model: health.model || null,
+      scheduler_attempt_slots: health.capacity?.scheduler_attempt_slots || null,
+      baseline_working_attempts: health.capacity?.baseline_working_attempts || null,
+      effective_reserved_attempt_ceiling: health.capacity?.effective_reserved_attempt_ceiling || null
     }),
-    check("cloud_supabase_contract", tableFailures.length === 0
-      && tables.v4_writer_export_batches?.ok === true
-      && tables.v4_writer_export_items?.ok === true, "All V4 operational, learning, and writer-export tables are queryable.", { table_failures: tableFailures }),
-    check("cloud_workflow", loginResponse.ok && providerResponse?.ok === true
-      && provider.workflow_readiness?.can_run_cloud_recognition === true, "Authenticated writer workflow can run cloud recognition.", {
-      ready_count: provider.workflow_readiness?.summary?.ready_count ?? null,
-      component_count: provider.workflow_readiness?.summary?.component_count ?? null
+    check("cloud_supabase_contract", health.runtime?.persistence_configured === true
+      && health.runtime?.retired_capabilities_disabled === true, "CSM persistence is configured and retired runtime capabilities are disabled.", {
+      persistence_configured: health.runtime?.persistence_configured ?? null,
+      retired_capabilities_disabled: health.runtime?.retired_capabilities_disabled ?? null
     }),
-    check("cloud_vector_contract", vector.details?.index_ready === true
-      && vector.details?.runtime_ready === true
-      && vector.details?.request_override_supported === true, "Vector index is ready and remains an explicit request-level assist.", {
-      default_request_enabled: vector.details?.default_request_enabled ?? null,
-      model_revision: vector.details?.model_revision || null
+    check("cloud_workflow", loginResponse.ok && appResponse?.ok === true,
+      "Authenticated writer workflow can open the CSM thin frontend.", {
+        login_ok: loginResponse.ok,
+        app_ok: appResponse?.ok === true
     }),
-    check("cloud_ocr_runtime_contract", ocr.details?.runtime_ready === true
-      && ocr.details?.runtime_profile === "lean-google-vision-v1"
-      && ocr.details?.backend === "google_vision"
-      && ocr.details?.auth_mode === "adc"
-      && ocr.details?.paddle_loaded === false, "Production OCR uses the lean Google Vision runtime; PP-OCR remains outside the writer-critical path.", {
-      runtime_profile: ocr.details?.runtime_profile || null,
-      backend: ocr.details?.backend || null,
-      auth_mode: ocr.details?.auth_mode || null,
-      paddle_loaded: ocr.details?.paddle_loaded ?? null
+    check("cloud_retired_boundaries", health.runtime?.cloud_run_calls === 0
+      && health.runtime?.vector_calls === 0
+      && health.runtime?.generic_ocr_calls === 0, "Cloud Run, vector, and generic OCR calls are absent from the active chain.", {
+        cloud_run_calls: health.runtime?.cloud_run_calls ?? null,
+        vector_calls: health.runtime?.vector_calls ?? null,
+        generic_ocr_calls: health.runtime?.generic_ocr_calls ?? null
     })
   ];
 }

@@ -11,28 +11,32 @@ assert.equal(report.scope, "writer_assisted_production");
 assert.equal(report.ready, true);
 assert.equal(report.blocked_count, 0);
 assert.equal(report.autonomous_accuracy_claim_ready, false);
-assert.ok(report.checks.length >= 7);
+assert.equal(report.checks.length, 5);
 assert.ok(report.checks.every((item) => item.status === "passed"));
 
 assert.equal(cloudModelCapacityReady({
-  default_model: "gpt-5-mini",
-  openai_pool: { key_pool_size: 1, per_key_stable_concurrency: 2, global_concurrency: 2 },
-  production_queue: { worker_claim_limit: 2 }
+  active_path: "CSM_THIN_DIRECT",
+  model: "gpt-5.6-luna",
+  reasoning_effort: "none",
+  capacity: { scheduler_attempt_slots: 120, baseline_working_attempts: 43, effective_reserved_attempt_ceiling: 83 }
 }), true);
 assert.equal(cloudModelCapacityReady({
-  default_model: "gpt-5-mini",
-  openai_pool: { key_pool_size: 1, per_key_stable_concurrency: 2, global_concurrency: 2 },
-  production_queue: { worker_claim_limit: 3 }
+  active_path: "CSM_THIN_DIRECT",
+  model: "gpt-5.6-luna",
+  reasoning_effort: "none",
+  capacity: { scheduler_attempt_slots: 120, baseline_working_attempts: 43, effective_reserved_attempt_ceiling: 0 }
 }), false);
 assert.equal(cloudModelCapacityReady({
-  default_model: "gpt-5-mini",
-  openai_pool: { key_pool_size: 1, per_key_stable_concurrency: 2, global_concurrency: 2 },
-  production_queue: { worker_claim_limit: 1 }
+  active_path: "CSM_THIN_DIRECT",
+  model: "gpt-5.6-luna",
+  reasoning_effort: "none",
+  capacity: { scheduler_attempt_slots: 120, baseline_working_attempts: 43, effective_reserved_attempt_ceiling: 84 }
 }), false, "production readiness must reject a circuit-breaker reduction below the frozen optimum");
 assert.equal(cloudModelCapacityReady({
-  default_model: "gpt-4.1-mini-2025-04-14",
-  openai_pool: { key_pool_size: 2, per_key_stable_concurrency: 2, global_concurrency: 2 },
-  production_queue: { worker_claim_limit: 2 }
+  active_path: "CSM_THIN_DIRECT",
+  model: "gpt-5.6-luna",
+  reasoning_effort: "high",
+  capacity: { scheduler_attempt_slots: 120, baseline_working_attempts: 43, effective_reserved_attempt_ceiling: 83 }
 }), false);
 
 console.log("writer assisted production readiness tests passed");
