@@ -414,3 +414,16 @@ This boundary is intentional: no amount of replay can create independent
 evidence from reused cards. Until the pool exists, use zero-cost replay to
 reject negative mechanisms and document candidates, but do not spend provider
 calls on a pseudo-confirmation run.
+
+## 15. 2026-08-02 follow-up: registry-attested insert interaction
+
+The previously screened `attested_insert` resolver was replayed before the six
+narrow overlays. It admits only a high-confidence printed `insert_name` whose
+value is attested by the local knowledge registry, and only into an empty
+`card_name`. The combined development replay reached `13/0/137`, Δ macro F1
+`+0.006900`, with zero reference-token loss and zero over-80 titles.
+
+This is a useful positive interaction candidate, not a production result. Its
+source is the exhaustive observation checkpoint, which the production
+canonical response does not carry. Keep it behind the same independent-150
+gate and preserve the per-card budget/reference guard when re-testing.

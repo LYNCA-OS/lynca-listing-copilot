@@ -10,6 +10,7 @@ import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-compos
 import { replayCandidateIdentityV3 } from "../lib/listing/thin/candidate-identity-replay-v3.mjs";
 import { applyAccuracyMechanismV2 } from "../lib/listing/thin/accuracy-mechanism-bundle-v2.mjs";
 import { projectFreeTitleThroughCsm } from "./measure-free-title-csm-projection.mjs";
+import { resolveKnowledgeEntry } from "../lib/listing-knowledge-registry.mjs";
 
 const arg = (name, fallback) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : fallback; };
 const rows = (path) => readFileSync(path, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
@@ -31,7 +32,9 @@ const candidatePath = arg("--candidates", "artifacts/candidate-expression-v4/dev
 const controlPath = arg("--control", canonicalPath);
 const exhaustivePath = arg("--exhaustive", "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl");
 const outPath = arg("--out", "artifacts/candidate-expression-v4/expression-v4-narrow-bundle-replay-150-2026-08-02.json");
+const includeAttestedInsert = process.argv.includes("--include-attested-insert");
 const mechanismNames = [
+  ...(includeAttestedInsert ? ["attested_insert"] : []),
   "finish_family_color_only",
   "rarity_sar_only",
   "printed_trainer_gallery",
@@ -39,6 +42,29 @@ const mechanismNames = [
   "product_known_manufacturer_extension",
   "serial_single_digit"
 ];
+
+const clean = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+
+function replayAttestedInsert(fields, observations = []) {
+  const next = structuredClone(fields || {});
+  if (clean(next.card_name)) return { fields: next, changed: false, detail: null };
+  const candidate = (Array.isArray(observations) ? observations : [])
+    .filter((observation) => observation?.label === "insert_name")
+    .filter((observation) => observation?.kind === "printed_text" && observation?.confidence === "high")
+    .map((observation) => ({
+      ...observation,
+      value: clean(observation.evidence),
+      entry: resolveKnowledgeEntry(observation.evidence)
+    }))
+    .find((observation) => observation.entry && observation.value.length <= 48);
+  if (!candidate) return { fields: next, changed: false, detail: null };
+  next.card_name = candidate.value;
+  return {
+    fields: next,
+    changed: true,
+    detail: { field: "card_name", value: candidate.value, source: candidate, reason: "printed_insert_vocabulary" }
+  };
+}
 
 const canonical = new Map(rows(canonicalPath).filter((row) => row.arm === "thin_canonical" && row.fields).map((row) => [row.asset_id, row]));
 const candidates = new Map(rows(candidatePath).map((row) => [row.asset_id, row]));
@@ -62,11 +88,13 @@ const cards = [...canonical.values()].filter((row) => candidates.has(row.asset_i
   const blocked = [];
 
   for (const mechanism of mechanismNames) {
-    const proposal = applyAccuracyMechanismV2(mechanism, currentFields, {
-      freeFields,
-      freeTitle: freeControl.title,
-      observations: observation.observations || []
-    });
+    const proposal = mechanism === "attested_insert"
+      ? replayAttestedInsert(currentFields, observation.observations || [])
+      : applyAccuracyMechanismV2(mechanism, currentFields, {
+        freeFields,
+        freeTitle: freeControl.title,
+        observations: observation.observations || []
+      });
     const proposedTitle = composeFromCanonicalFields(proposal.fields).title;
     const losses = referenceLosses(row.reference, currentTitle, proposedTitle);
     const reason = proposal.blocked
@@ -81,7 +109,7 @@ const cards = [...canonical.values()].filter((row) => candidates.has(row.asset_i
     currentFields = proposal.fields;
     currentTitle = proposedTitle;
     stages[mechanism] = currentTitle;
-    changes[mechanism] = proposal.changed ? [mechanism] : [];
+    changes[mechanism] = proposal.changed ? [proposal.detail || mechanism] : [];
   }
 
   const finalScore = score(row.reference, currentTitle);
