@@ -48,6 +48,26 @@ const card = (overrides = {}) => ({
   assert.ok(result.normalization_reasons.includes("product:hierarchy_suffix_removed"));
 }
 
+// If the canonical product repeats the manufacturer and both would otherwise
+// yield, preserve the observed one-word leaf instead of deleting the identity
+// pair wholesale. This never changes the canonical object.
+{
+  const result = composeFromCanonicalFields(card({
+    year: "2001",
+    manufacturer: "Donruss",
+    product: "Donruss Elite",
+    subjects: ["Barry Bonds", "Willie Mays"],
+    card_name: "Passing the Torch",
+    serial: "22/50",
+    components: ["Auto"],
+    grade: "PSA Authentic, Auto 9",
+    print_finish: "Rainbow"
+  }));
+  assert.match(result.title, /Elite/);
+  assert.ok(!result.dropped.includes("product"));
+  assert.ok(result.normalization_reasons.includes("product:manufacturer_prefix_removed"));
+}
+
 // Category words are prose by default, but not when the typed identity would
 // be changed (`Wild Card`) or a named-product construction binds the word.
 {
