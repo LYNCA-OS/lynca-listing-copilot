@@ -45,3 +45,21 @@ reviewed blind cards, so it is valid for a small cross-distribution screen.
 It is concentrated in Panini Phoenix/Prizm and uses one image per card; it is
 not a replacement for a broad marketplace 150-card gate. The 17-card screen is
 recorded in [accuracy-unseen17-screen-2026-08-02.md](accuracy-unseen17-screen-2026-08-02.md).
+
+## Legacy worktree inventory
+
+An additional read-only search covered the older local checkouts, including
+`lynca-listing-copilot.v2_pai` and the June internal backup. It found material
+images, but no additional eligible labels:
+
+| Source | Images / cards | Why it cannot pass the gate |
+| --- | ---: | --- |
+| `ebay-c100-cloud-eval-dataset-20260707` | 200 / 100 | The sealed policy says `seller_title_is_ground_truth:false` and `ebay_answer_key_is_reviewed_ground_truth:false`; writer review is required. |
+| `ebay-image-intake-dataset-20260701` | 344 / 172 | Same policy; `commercial_accuracy_eval_eligible` is not granted. |
+| June internal `development-reviewed-30` | no material image pool | Corrected titles are annotation hints only and the split is development, not commercial holdout. |
+| Public-card / real-photo candidate inventories | varied | Each inventory explicitly sets `commercial_accuracy_eval_eligible:false`. |
+
+These assets remain useful for diagnostics or future human review, but treating
+their seller/corrected titles as sealed ground truth would turn a data-source
+policy failure into a false independent-150 claim. The independent-card gate
+therefore remains genuinely short of 150.
