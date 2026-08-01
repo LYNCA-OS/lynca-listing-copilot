@@ -23,6 +23,12 @@ export default function handler(req, res) {
   const providerConfigured = Boolean(String(process.env.OPENAI_API_KEY || "").trim());
   const retiredCapabilitiesDisabled = csmRetiredCapabilitiesDisabled(process.env);
   const ready = persistenceConfigured && providerConfigured && retiredCapabilitiesDisabled;
+  const releaseGitSha = String(
+    process.env.LYNCA_RELEASE_GIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || ""
+  ).trim() || null;
+  const releaseGitRef = String(
+    process.env.LYNCA_RELEASE_GIT_REF || process.env.VERCEL_GIT_COMMIT_REF || ""
+  ).trim() || null;
 
   // Liveness stays 200 so operators can distinguish a running deployment
   // from a configured-and-ready one. Release gates must assert `ready=true`.
@@ -36,7 +42,8 @@ export default function handler(req, res) {
     model: CSM_THIN_RUNTIME_CONTRACT.model,
     reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
     deployment: {
-      git_commit_sha: process.env.VERCEL_GIT_COMMIT_SHA || null,
+      git_commit_sha: releaseGitSha,
+      git_commit_ref: releaseGitRef,
       environment: process.env.VERCEL_ENV || null
     },
     runtime: {
