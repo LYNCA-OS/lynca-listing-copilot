@@ -47,7 +47,7 @@ const directRecognitionSource = js.slice(
   js.indexOf("async function processAssetViaCsmThinPath"),
   js.indexOf("function backgroundPreparationAvailable")
 );
-assert.match(directRecognitionSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "verified originals must precede paid recognition");
+assert.match(directRecognitionSource, /await ensureAssetPreparedForRecognition\(asset\)/, "all automatic premodel recovery must settle before paid recognition");
 assert.match(directRecognitionSource, /fetchJsonWithRetry\(CSM_THIN_API_ENDPOINT/);
 assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/);
 assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/);
@@ -164,6 +164,23 @@ globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
 
+{
+  let finishPreparation;
+  let settled = false;
+  const backgroundPreparationPromise = new Promise((resolve) => {
+    finishPreparation = resolve;
+  });
+  const prepared = __listingCopilotAppTestHooks.ensureAssetPreparedForRecognition({
+    backgroundPreparationPromise,
+    backgroundPreparationRunId: 0
+  }).then(() => { settled = true; });
+  await Promise.resolve();
+  assert.equal(settled, false, "recognition must wait for the complete automatic preparation recovery");
+  finishPreparation({ ok: true, attempt_count: 2 });
+  await prepared;
+  assert.equal(settled, true);
+}
+
 assert.equal(__listingCopilotAppTestHooks.directRecognitionConcurrencyLimit(), 6);
 assert.equal(__listingCopilotAppTestHooks.directRecognitionConcurrencyLimit({ maxWorkers: 3 }), 3);
 
@@ -243,6 +260,17 @@ assert.equal(verifiedImage.objectPath, "");
 assert.equal(verifiedImage.storageVerificationToken, "");
 assert.equal(verifiedImage.cropMetadata.source_object_path, "");
 
+const missingPendingImage = { pendingStorageVerification: { objectPath: "exact/path.jpg" } };
+assert.deepEqual(
+  __listingCopilotAppTestHooks.notePendingStorageConfirmationFailure(missingPendingImage),
+  { retained: true, exhausted: false, attempts: 1 }
+);
+assert.deepEqual(
+  __listingCopilotAppTestHooks.notePendingStorageConfirmationFailure(missingPendingImage),
+  { retained: false, exhausted: true, attempts: 2 }
+);
+assert.equal(missingPendingImage.pendingStorageVerification, undefined, "an absent ambiguous object must eventually reopen signing");
+
 const rebindImage = {
   sourceBlob: { local: true },
   objectPath: "tenants/tenant-current/listing-assets/2026-08-01/asset-current/front.jpg",
@@ -258,6 +286,7 @@ const rebindAsset = {
   durableTenantId: tenantId,
   imageGenerationId: assetId,
   durableAssetPromise: Promise.resolve(),
+  assetCreateIdempotencyKey: "11111111-2222-4333-8444-555555555555",
   originalStorageUploadPromise: Promise.resolve(),
   images: [rebindImage],
   providerImages: [rebindImage]
@@ -265,6 +294,8 @@ const rebindAsset = {
 __listingCopilotAppTestHooks.resetAssetPreparationForRetry(rebindAsset, { inputRebind: true });
 assert.equal(rebindAsset.durableAssetId, "");
 assert.equal(rebindAsset.imageGenerationId, "");
+assert.equal(rebindAsset.assetCreateIdempotencyKey, "", "an immutable-input rebind must receive a fresh create key");
+assert.equal(rebindAsset.backgroundPreparationScheduledRunId, null);
 assert.match(rebindAsset.clientAssetRef, /^asset-1:rebind:/);
 assert.deepEqual(rebindImage.sourceBlob, { local: true }, "input rebind must preserve the local original");
 assert.equal(rebindImage.objectPath, "");
@@ -290,6 +321,15 @@ assert.deepEqual(
 );
 assert.equal(__listingCopilotAppTestHooks.storageSourceForImage(uploadImage, 40), oversizedOriginal);
 
+const createKeyAsset = {};
+const firstCreateKey = __listingCopilotAppTestHooks.assetCreateIdempotencyKey(createKeyAsset);
+assert.match(firstCreateKey, /^[0-9a-f-]{36}$/i);
+assert.equal(
+  __listingCopilotAppTestHooks.assetCreateIdempotencyKey(createKeyAsset),
+  firstCreateKey,
+  "asset-create retries must retain one idempotency key"
+);
+
 const firstImage = {
   id: "first",
   targetedCrops: Array.from({ length: 6 }, (_, index) => ({
@@ -311,6 +351,94 @@ assert.equal(providerImages.length, 10);
 assert.equal(providerImages[0], firstImage);
 assert.equal(providerImages[1], secondImage);
 assert.equal(providerImages.filter((image) => image.derived).length, 8);
+
+{
+  const batchAssetId = "asset_aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const batchTenantId = "tenant_current";
+  const images = ["one", "two"].map((id, index) => ({
+    id,
+    name: `${id}.jpg`,
+    originalType: "image/jpeg",
+    type: "image/jpeg",
+    originalWidth: 640,
+    originalHeight: 960,
+    width: 640,
+    height: 960,
+    sourceFile: new Blob([new Uint8Array([0xff, 0xd8, 0xff, index])], { type: "image/jpeg" }),
+    contentSha256: "",
+    objectPath: ""
+  }));
+  const persistedObjects = new Set();
+  const calls = { sign: 0, put: 0, verify: 0, csm: 0 };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input), "https://listing.test");
+    if (url.pathname === "/api/listing-image-upload-url") {
+      calls.sign += 1;
+      const body = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        uploads: body.images.map((image) => ({
+          tenant_id: batchTenantId,
+          image_id: image.imageId,
+          storage_role: image.role,
+          object_path: `tenants/${batchTenantId}/listing-assets/2026-08-02/${batchAssetId}/${image.role}-${image.imageId}.jpg`,
+          content_type: image.contentType,
+          signed_upload_url: `https://storage.test/${image.imageId}`
+        }))
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.hostname === "storage.test") {
+      calls.put += 1;
+      persistedObjects.add(url.pathname);
+      if (url.pathname === "/one") {
+        throw new TypeError("response lost after object commit");
+      }
+      return new Response("", { status: 200 });
+    }
+    if (url.pathname === "/api/listing-image-verify-upload") {
+      calls.verify += 1;
+      const body = JSON.parse(init.body);
+      if (calls.verify === 1) {
+        throw new TypeError("verification response lost after record commit");
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        verifications: body.images.map((image) => ({
+          image_id: image.imageId,
+          ok: true,
+          verification: {
+            tenant_id: batchTenantId,
+            object_path: image.objectPath,
+            bucket: "listing-card-images",
+            content_type: image.contentType,
+            size: image.size,
+            width: image.width,
+            height: image.height,
+            content_sha256: image.contentSha256,
+            verification_token: `verified-${image.imageId}`
+          },
+          verification_record: { saved: true, durable: true }
+        }))
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.pathname === "/api/csm-listing-title") calls.csm += 1;
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  const outcomes = await __listingCopilotAppTestHooks.uploadOriginalAssetImagesBatch({
+    durableAssetId: batchAssetId,
+    durableTenantId: batchTenantId,
+    clientAssetRef: "asset-1",
+    images
+  }, images.map((image, imageIndex) => ({ image, imageIndex })));
+  assert.equal(outcomes.every((outcome) => outcome.ok === true), true);
+  assert.equal(calls.sign, 1, "ambiguous PUT recovery must not re-sign the batch");
+  assert.equal(calls.put, 4, "the ambiguous object uses only the bounded same-URL PUT attempts");
+  assert.equal(calls.verify, 2, "a lost verify response must replay exact durable-state confirmation once");
+  assert.equal(calls.csm, 0, "premodel recovery must never manufacture a paid Luna call");
+  assert.equal(persistedObjects.has("/one"), true);
+  assert.equal(images.every((image) => image.storageVerified === true), true);
+}
 
 const clock = __listingCopilotAppTestHooks.recognitionClockFromServerPayload({
   provider_result_summary: {

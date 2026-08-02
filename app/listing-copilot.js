@@ -27,9 +27,11 @@ const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
 const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750, 1500]);
-const STORAGE_VERIFY_TIMEOUT_MS = 20000;
-const STORAGE_VERIFY_RETRY_DELAYS_MS = Object.freeze([250, 1000]);
-const ASSET_CREATE_REQUEST_TIMEOUT_MS = 25000;
+const STORAGE_CONTROL_RECOVERY_TIMEOUT_MS = 3500;
+const STORAGE_CONTROL_RECOVERY_DELAYS_MS = Object.freeze([0]);
+const STORAGE_VERIFY_TIMEOUT_MS = STORAGE_CONTROL_RECOVERY_TIMEOUT_MS;
+const STORAGE_VERIFY_RETRY_DELAYS_MS = STORAGE_CONTROL_RECOVERY_DELAYS_MS;
+const ASSET_CREATE_REQUEST_TIMEOUT_MS = 3500;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
 const EXPORT_REQUEST_TIMEOUT_MS = 90000;
 const CSM_THIN_REQUEST_TIMEOUT_MS = 290000; // csm-runtime-contract.mjs
@@ -261,6 +263,15 @@ function fileExtension(name) {
 function imageId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `image-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function assetCreateIdempotencyKey(asset = {}) {
+  const current = String(asset.assetCreateIdempotencyKey || "").trim();
+  if (current) return current;
+  const key = globalThis.crypto?.randomUUID?.();
+  if (!key) throw new Error("listing_asset_idempotency_key_unavailable");
+  asset.assetCreateIdempotencyKey = key;
+  return key;
 }
 
 function contentTypeForFile(file) {
@@ -694,18 +705,20 @@ async function ensureDurableAssetIdentity(asset) {
   if (asset.durableAssetPromise) return asset.durableAssetPromise;
   asset.durableAssetPromise = (async () => {
     const clientAssetRef = String(asset.clientAssetRef || asset.id || "").trim();
+    const idempotencyKey = assetCreateIdempotencyKey(asset);
     const request = await fetchJsonWithRetry(ASSET_CREATE_API_ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify({
         client_asset_ref: clientAssetRef,
+        idempotency_key: idempotencyKey,
         capture_profile_id: defaultCaptureProfileId,
         expected_original_count: Math.max(1, Math.min(2, Array.isArray(asset.images) ? asset.images.length : 1))
       })
     }, {
       timeoutMs: ASSET_CREATE_REQUEST_TIMEOUT_MS,
-      maxAttempts: 3,
+      maxAttempts: 2,
       retryNetworkErrors: true,
       asset,
       stage: "asset_create"
@@ -718,6 +731,9 @@ async function ensureDurableAssetIdentity(asset) {
     }
     if (String(payload.client_asset_ref || "") !== clientAssetRef) {
       throw new Error("listing_asset_client_ref_mismatch");
+    }
+    if (payload.idempotency_key && String(payload.idempotency_key) !== idempotencyKey) {
+      throw new Error("listing_asset_idempotency_key_mismatch");
     }
     asset.durableAssetId = payload.asset_id;
     asset.durableTenantId = payload.tenant_id;
@@ -936,6 +952,16 @@ function pendingStorageVerificationMatches(pending = {}, expected = {}) {
     && pending.contentSha256 === expected.contentSha256;
 }
 
+function notePendingStorageConfirmationFailure(image = {}, limit = 2) {
+  const pending = image.pendingStorageVerification;
+  if (!pending) return { retained: false, exhausted: false, attempts: 0 };
+  const attempts = Math.max(0, Number(pending.confirmationAttempts || 0)) + 1;
+  pending.confirmationAttempts = attempts;
+  const exhausted = attempts >= Math.max(1, Number(limit) || 2);
+  if (exhausted) delete image.pendingStorageVerification;
+  return { retained: !exhausted, exhausted, attempts };
+}
+
 function applyVerifiedStorageBinding({ asset, image, uploadObjectPath, contentSha256, verifyPayload }) {
   const assetId = canonicalAssetId(asset);
   const tenantId = canonicalAssetTenantId(asset);
@@ -983,37 +1009,46 @@ async function verifyUploadedAssetImage({
 }) {
   const assetId = canonicalAssetId(asset);
   const tenantId = canonicalAssetTenantId(asset);
-  const { response: verifyResponse, payload: verifyPayload } = await fetchStorageApiJson("/api/listing-image-verify-upload", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      assetId,
-      imageId: image.id,
-      role: storageRole,
-      fileName: image.name,
-      objectPath: uploadObjectPath,
-      contentType,
-      size: source.size,
-      width: dimensions.width,
-      height: dimensions.height,
-      signatureHex,
-      contentSha256,
-      cropMetadata: image.cropMetadata || image.crop_metadata || null
-    })
-  }, {
-    // Verification is idempotent and the uploaded object is preserved on
-    // transient errors. Bound this stage separately so one dead storage read
-    // cannot pin a writer card for minutes.
-    timeoutMs: STORAGE_VERIFY_TIMEOUT_MS,
-    retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS
-  });
+  let verificationRequest;
+  try {
+    verificationRequest = await fetchStorageApiJson("/api/listing-image-verify-upload", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        assetId,
+        imageId: image.id,
+        role: storageRole,
+        fileName: image.name,
+        objectPath: uploadObjectPath,
+        contentType,
+        size: source.size,
+        width: dimensions.width,
+        height: dimensions.height,
+        signatureHex,
+        contentSha256,
+        cropMetadata: image.cropMetadata || image.crop_metadata || null
+      })
+    }, {
+      // Verification is idempotent and the uploaded object is preserved on
+      // transient errors. Bound this stage separately so one dead storage read
+      // cannot pin a writer card for minutes.
+      timeoutMs: STORAGE_VERIFY_TIMEOUT_MS,
+      retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS
+    });
+  } catch (error) {
+    notePendingStorageConfirmationFailure(image);
+    throw error;
+  }
+  const { response: verifyResponse, payload: verifyPayload } = verificationRequest;
   assertCurrentAssetLifecycle(asset);
   if (!verifyResponse.ok || !verifyPayload.ok) {
     if (verifyPayload.cleanup?.deleted || verifyPayload.cleanup?.already_absent) {
       delete image.pendingStorageVerification;
+    } else {
+      notePendingStorageConfirmationFailure(image);
     }
     throw new Error(verifyPayload.message || `Storage upload verification failed: ${verifyResponse.status}`);
   }
@@ -1273,66 +1308,95 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
         contentSha256: row.contentSha256
       }))
     })
+  }, {
+    // Signing is deterministic for one asset/image identity. If the response
+    // path stalls, one short replay is cheaper than pinning the card for 30s.
+    timeoutMs: STORAGE_CONTROL_RECOVERY_TIMEOUT_MS,
+    retryDelaysMs: STORAGE_CONTROL_RECOVERY_DELAYS_MS
   });
   if (!signRequest.response.ok || !signRequest.payload.ok || !Array.isArray(signRequest.payload.uploads)) {
     throw new Error(signRequest.payload.message || `Storage upload URL batch failed: ${signRequest.response.status}`);
   }
   const uploadsByImage = new Map(signRequest.payload.uploads.map((upload) => [upload.image_id, upload]));
-  await mapWithConcurrency(pending, STORAGE_UPLOAD_CONCURRENCY, async (row) => {
-    const upload = uploadsByImage.get(row.image.id);
-    if (!upload || upload.tenant_id !== tenantId || upload.storage_role !== row.storageRole) throw new Error("Storage upload identity mismatch.");
-    const objectPath = assertCanonicalImageObjectPath({ objectPath: upload.object_path, tenantId, assetId });
-    const storageRequest = await fetchWithBoundedRetry(upload.signed_upload_url, {
-      method: "PUT",
-      headers: { "content-type": upload.content_type || row.contentType },
-      body: row.source
-    }, {
-      timeoutMs: STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
-      maxAttempts: 3,
-      retryNetworkErrors: true,
-      maxDelayMs: 1500
-    });
-    const error = storageRequest.response.ok ? null : Object.assign(new Error(`Storage upload failed: ${storageRequest.response.status}`), {
-      http_status: storageRequest.response.status
-    });
-    recordClientNetworkStage(asset, "storage_object_upload", { ...storageRequest, error });
-    if (error) throw error;
-    row.upload = upload;
-    row.objectPath = objectPath;
-    row.image.pendingStorageVerification = {
-      ...row.expectedPending,
-      objectPath,
-      contentType: upload.content_type
-    };
+  const putOutcomes = await mapWithConcurrency(pending, STORAGE_UPLOAD_CONCURRENCY, async (row) => {
+    try {
+      const upload = uploadsByImage.get(row.image.id);
+      if (!upload || upload.tenant_id !== tenantId || upload.storage_role !== row.storageRole) throw new Error("Storage upload identity mismatch.");
+      const objectPath = assertCanonicalImageObjectPath({ objectPath: upload.object_path, tenantId, assetId });
+      row.upload = upload;
+      row.objectPath = objectPath;
+      // Record the exact confirmation identity before the PUT. A connection
+      // can disappear after Storage committed the bytes but before fetch saw
+      // the 2xx; recovery must verify this path before paying to upload again.
+      row.image.pendingStorageVerification = {
+        ...row.expectedPending,
+        objectPath,
+        contentType: upload.content_type
+      };
+      const storageRequest = await fetchWithBoundedRetry(upload.signed_upload_url, {
+        method: "PUT",
+        headers: { "content-type": upload.content_type || row.contentType },
+        body: row.source
+      }, {
+        timeoutMs: STORAGE_OBJECT_UPLOAD_TIMEOUT_MS,
+        maxAttempts: 3,
+        retryNetworkErrors: true,
+        maxDelayMs: 1500
+      });
+      const error = storageRequest.response.ok ? null : Object.assign(new Error(`Storage upload failed: ${storageRequest.response.status}`), {
+        http_status: storageRequest.response.status
+      });
+      recordClientNetworkStage(asset, "storage_object_upload", { ...storageRequest, error });
+      if (error) throw error;
+      return { ok: true };
+    } catch (error) {
+      row.putError = error;
+      return { ok: false, error };
+    }
   });
+  const unverifiablePut = putOutcomes.find((outcome, index) => outcome.ok !== true && !pending[index]?.objectPath);
+  if (unverifiablePut) throw unverifiablePut.error;
 
-  const verifyRequest = await fetchStorageApiJson("/api/listing-image-verify-upload", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      assetId,
-      images: pending.map((row) => ({
-        imageId: row.image.id,
-        role: row.storageRole,
-        fileName: row.image.name,
-        objectPath: row.objectPath,
-        contentType: row.upload.content_type,
-        size: row.source.size,
-        width: row.dimensions.width,
-        height: row.dimensions.height,
-        signatureHex: row.signatureHex,
-        contentSha256: row.contentSha256,
-        cropMetadata: row.image.cropMetadata || row.image.crop_metadata || null
-      }))
-    })
-  }, { timeoutMs: STORAGE_VERIFY_TIMEOUT_MS, retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS });
+  let verifyRequest;
+  try {
+    verifyRequest = await fetchStorageApiJson("/api/listing-image-verify-upload", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        assetId,
+        images: pending.map((row) => ({
+          imageId: row.image.id,
+          role: row.storageRole,
+          fileName: row.image.name,
+          objectPath: row.objectPath,
+          contentType: row.upload.content_type,
+          size: row.source.size,
+          width: row.dimensions.width,
+          height: row.dimensions.height,
+          signatureHex: row.signatureHex,
+          contentSha256: row.contentSha256,
+          cropMetadata: row.image.cropMetadata || row.image.crop_metadata || null
+        }))
+      })
+    }, { timeoutMs: STORAGE_VERIFY_TIMEOUT_MS, retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS });
+  } catch (error) {
+    pending.forEach((row) => notePendingStorageConfirmationFailure(row.image));
+    throw error;
+  }
   const verificationByImage = new Map((verifyRequest.payload.verifications || []).map((row) => [row.image_id, row]));
+  let firstVerificationError = null;
   for (const row of pending) {
     const verification = verificationByImage.get(row.image.id);
     if (!verification?.ok) {
       if (verification?.cleanup?.deleted || verification?.cleanup?.already_absent) delete row.image.pendingStorageVerification;
-      throw new Error(verification?.message || verifyRequest.payload.message || `Storage upload verification failed: ${verifyRequest.response.status}`);
+      // A definite PUT rejection is safe to re-sign after verification proves
+      // the object absent. A transport error remains ambiguous and keeps the
+      // pending path for the next exact-state confirmation.
+      if (Number.isFinite(Number(row.putError?.http_status))) delete row.image.pendingStorageVerification;
+      else notePendingStorageConfirmationFailure(row.image);
+      firstVerificationError ||= new Error(verification?.message || verifyRequest.payload.message || `Storage upload verification failed: ${verifyRequest.response.status}`);
+      continue;
     }
     applyVerifiedStorageBinding({
       asset,
@@ -1342,6 +1406,7 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
       verifyPayload: verification
     });
   }
+  if (firstVerificationError) throw firstVerificationError;
   return descriptors.map((row) => ({ ok: true, uploaded: !row.alreadyVerified }));
 }
 
@@ -1532,6 +1597,30 @@ async function prepareAssetInBackground(asset, runId) {
   return asset.backgroundPreparationPromise;
 }
 
+async function ensureAssetPreparedForRecognition(asset) {
+  while (
+    !asset.backgroundPreparationPromise
+    && asset.backgroundPreparationScheduledRunId === state.backgroundPreparationRunId
+  ) {
+    assertCurrentAssetLifecycle(asset);
+    await wait(25);
+  }
+  const backgroundPreparation = asset.backgroundPreparationPromise;
+  if (
+    backgroundPreparation
+    && asset.backgroundPreparationRunId === state.backgroundPreparationRunId
+  ) {
+    const outcome = await backgroundPreparation;
+    assertCurrentAssetLifecycle(asset);
+    if (outcome?.ok === true) return true;
+    const error = new Error(outcome?.error || "background_prepare_failed");
+    error.code = "LISTING_PREMODEL_PREPARATION_FAILED";
+    error.retryable = true;
+    throw error;
+  }
+  return ensureAssetOriginalImagesUploaded(asset);
+}
+
 async function processAssetViaCsmThinPath(asset, {
   intentId = state.backgroundRecognitionBatchId,
   manualRetry = false
@@ -1541,7 +1630,10 @@ async function processAssetViaCsmThinPath(asset, {
   if (!durableIntentId) throw new Error("CSM 识别意图缺失");
   const startedAt = performance.now();
   setAssetProgress(asset.index, "上传并校验原图", 0.12);
-  await ensureAssetOriginalImagesUploaded(asset);
+  // The background preparation promise owns all bounded premodel retries. Do
+  // not mark the card failed after its first shared attempt while a later
+  // automatic attempt is still recovering the exact persisted state.
+  await ensureAssetPreparedForRecognition(asset);
   setAssetProgress(asset.index, "Luna 单次识别", 0.45);
   markAssetStarted(asset, Date.now(), "client_csm_request");
   const request = await fetchJsonWithRetry(CSM_THIN_API_ENDPOINT, {
@@ -2160,14 +2252,17 @@ function imagesForProvider(assetImages) {
 }
 
 export const __listingCopilotAppTestHooks = {
+  assetCreateIdempotencyKey,
   assetLifecycleMatches,
   boundedProviderImagesForRequest,
   clearImageStorageBinding,
   directRecognitionConcurrencyLimit,
+  ensureAssetPreparedForRecognition,
   generationTimingView,
   handleFiles,
   imageHasVerifiedStorageReference,
   imagesForProvider,
+  notePendingStorageConfirmationFailure,
   listingCopilotStateSnapshot: () => ({
     assetIndexes: state.assets.map((asset) => Number(asset.index)),
     intentId: state.backgroundRecognitionBatchId,
@@ -2181,7 +2276,8 @@ export const __listingCopilotAppTestHooks = {
   shouldUseStorageFirstImage,
   storageDimensionsForImage,
   storageSourceForImage,
-  syncAssetGenerationTimingFromServer
+  syncAssetGenerationTimingFromServer,
+  uploadOriginalAssetImagesBatch
 };
 
 function createClientAsset(images, index) {
@@ -3385,9 +3481,11 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
     asset.imageGenerationId = "";
     asset.expectedOriginalCount = null;
     asset.durableAssetPromise = null;
+    asset.assetCreateIdempotencyKey = "";
     asset.originalStorageUploadPromise = null;
     asset.backgroundPreparationPromise = null;
     asset.backgroundPreparationRunId = null;
+    asset.backgroundPreparationScheduledRunId = null;
     asset.backgroundPrepareStatus = "queued";
     for (const image of asset.images || []) clearImageStorageBinding(image);
     for (const image of asset.providerImages || []) clearImageStorageBinding(image);
@@ -3401,6 +3499,7 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
   if (!originalsVerified) {
     asset.originalStorageUploadPromise = null;
     asset.backgroundPreparationPromise = null;
+    asset.backgroundPreparationScheduledRunId = null;
     asset.backgroundPrepareStatus = "queued";
   }
 }
