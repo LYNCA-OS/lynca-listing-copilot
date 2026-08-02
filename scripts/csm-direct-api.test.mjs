@@ -556,6 +556,32 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.equal(paidCalls, 0, "the injected CSM seam must not accidentally call the real provider");
 }
 
+// Signed image reads and the durable recognition-session write are independent
+// pre-provider work. They must start together so writer-visible latency pays
+// for the slower boundary once instead of summing two network round trips.
+{
+  let sessionStarted = false;
+  const authority = passthroughAuthority();
+  const dependencies = successfulDependencies({ authority });
+  dependencies.signImage = async () => {
+    await Promise.resolve();
+    assert.equal(sessionStarted, true, "recognition session creation must overlap signed URL creation");
+    return "https://signed.invalid/a.jpg";
+  };
+  dependencies.createSession = async () => {
+    sessionStarted = true;
+    return { persistence: { recognition_session: { saved: true } } };
+  };
+  const result = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "parallel-pre-provider-boundaries",
+    dependencies
+  });
+  assert.equal(result.title, "Test title");
+}
+
 // A manual retry first resolves durable state. FAILED N becomes RETRY N+1;
 // SUCCEEDED returns the stored result without signing or another provider call.
 {

@@ -375,37 +375,46 @@ export async function runDirectCsmAsset({
       attempt: dispatched.attempt
     });
     try {
-      const signedUrlStartedAt = Date.now();
-      imageUrls = await Promise.all(originals.map((image) => signImage({
-        objectPath: image.objectPath,
-        bucket: image.bucket,
-        tenantId: tenant,
-        env,
-        fetchImpl
-      })));
-      attemptStages.signed_url_ms = Date.now() - signedUrlStartedAt;
-      const recognitionSessionStartedAt = Date.now();
-      const session = await createSession({
-        sessionId,
-        tenantId: tenant,
-        userId: user,
-        operatorId: user,
-        payload: {
-          asset_id: canonical.asset_id,
-          client_asset_ref: canonical.asset_id,
-          images: canonical.image_references,
-          image_references: canonical.image_references,
-          image_generation_id: canonical.image_generation_id,
-          image_set_sha256: canonical.image_set_sha256,
-          expected_original_count: canonical.expected_original_count,
-          provider: MODEL,
-          mode: "csm_thin_direct"
-        },
-        routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
-        env,
-        fetchImpl
-      });
-      attemptStages.recognition_session_ms = Date.now() - recognitionSessionStartedAt;
+      const [signedUrls, session] = await Promise.all([
+        (async () => {
+          const signedUrlStartedAt = Date.now();
+          const urls = await Promise.all(originals.map((image) => signImage({
+            objectPath: image.objectPath,
+            bucket: image.bucket,
+            tenantId: tenant,
+            env,
+            fetchImpl
+          })));
+          attemptStages.signed_url_ms = Date.now() - signedUrlStartedAt;
+          return urls;
+        })(),
+        (async () => {
+          const recognitionSessionStartedAt = Date.now();
+          const created = await createSession({
+            sessionId,
+            tenantId: tenant,
+            userId: user,
+            operatorId: user,
+            payload: {
+              asset_id: canonical.asset_id,
+              client_asset_ref: canonical.asset_id,
+              images: canonical.image_references,
+              image_references: canonical.image_references,
+              image_generation_id: canonical.image_generation_id,
+              image_set_sha256: canonical.image_set_sha256,
+              expected_original_count: canonical.expected_original_count,
+              provider: MODEL,
+              mode: "csm_thin_direct"
+            },
+            routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
+            env,
+            fetchImpl
+          });
+          attemptStages.recognition_session_ms = Date.now() - recognitionSessionStartedAt;
+          return created;
+        })()
+      ]);
+      imageUrls = signedUrls;
       if (session.persistence?.recognition_session?.saved !== true) {
         throw Object.assign(new Error("csm_recognition_session_not_persisted"), {
           statusCode: 503
