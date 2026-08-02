@@ -9,9 +9,11 @@ const visionBootstrap = await readFile("scripts/bootstrap-vision-ocr-gcp.sh", "u
 const visionDockerfile = await readFile("services/recognition-worker/Dockerfile.vision", "utf8");
 const visionRequirements = await readFile("services/recognition-worker/requirements-vision.txt", "utf8");
 
-assert.match(deploy, /MIN_INSTANCES="\$\{RECOGNITION_WORKER_MIN_INSTANCES:-1\}"/);
-assert.match(deploy, /MAX_INSTANCES="\$\{RECOGNITION_WORKER_MAX_INSTANCES:-8\}"/);
-assert.match(deploy, /ROLLOUT_MIN_INSTANCES="\$\{RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-1\}"/);
+assert.match(deploy, /MIN_INSTANCES="\$\{RECOGNITION_WORKER_MIN_INSTANCES:-0\}"/);
+assert.match(deploy, /MAX_INSTANCES="\$\{RECOGNITION_WORKER_MAX_INSTANCES:-10\}"/);
+assert.match(deploy, /ROLLOUT_MIN_INSTANCES="\$\{RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-0\}"/);
+assert.match(deploy, /RECOGNITION_WORKER_ALLOW_WARM_INSTANCES/);
+assert.match(deploy, /I_ACCEPT_ALWAYS_ON_BILLING/);
 
 assert.doesNotMatch(deploy, /gcloud run deploy[\s\S]{0,200}--source/, "OCR deploys must not hide model builds inside Cloud Run source deploys");
 assert.match(deploy, /gcloud builds submit/);
@@ -26,8 +28,8 @@ assert.match(deploy, /OCR_BACKEND=\$\{OCR_BACKEND\}/);
 assert.match(deploy, /PADDLEOCR_ROLE="\$\{PADDLEOCR_ROLE:-shadow\}"/);
 assert.match(
   deploy,
-  /gcloud run services update-traffic "\$SERVICE_NAME"[\s\S]*--to-latest[\s\S]*gcloud run services update "\$SERVICE_NAME"/,
-  "production OCR deploys must move real traffic before restoring the warm floor"
+  /DEPLOYED_URL="\$\(gcloud run deploy "\$SERVICE_NAME"[\s\S]*gcloud run services update "\$SERVICE_NAME"/,
+  "a dormant OCR deploy must finish creating the revision before applying its final scale setting"
 );
 assert.match(deploy, /PADDLEOCR_ENABLE_HPI="\$\{PADDLEOCR_ENABLE_HPI:-true\}"/);
 assert.match(deploy, /PP-OCRv6_medium_det/);

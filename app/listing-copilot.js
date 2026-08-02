@@ -56,6 +56,7 @@ const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_IMAGE = 6;
 const FIELD_MAX_CROPS_PER_ASSET = 8;
 const JOB_ENQUEUE_API_ENDPOINT = "/api/v4/listing-job-enqueue";
+const CSM_THIN_API_ENDPOINT = "/api/csm-listing-title";
 const JOB_STATUS_API_ENDPOINT = "/api/v4/listing-job-status";
 const JOB_RECOVERY_API_ENDPOINT = "/api/v4/listing-job-retry";
 const SESSION_STATUS_API_ENDPOINT = "/api/v4/listing-session-status";
@@ -76,7 +77,8 @@ const QUEUED_BACKGROUND_PREP_WAIT_MS = 800;
 // 识别前移：图片上传 + 证据包就绪后立即开始真正的识别（写手不可见）。
 // L1 scout 与预处理并行，缓存就绪后只启动一次 L2；L1 永不直接展示给写手。
 // 点击“开始生成”变成“展示已就绪的结果”，而不是“从零启动识别”。
-const ENABLE_SPECULATIVE_RECOGNITION = true;
+const ENABLE_CSM_THIN_PATH = true;
+const ENABLE_SPECULATIVE_RECOGNITION = false;
 const SPECULATIVE_SETTLE_MAX_WAIT_MS = 15000;
 const QUEUE_ENQUEUE_TIMEOUT_MS = 25000;
 const supportedImageExtensions = [".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"];
@@ -1775,6 +1777,14 @@ async function prepareAssetInBackground(asset, runId) {
           syncBackgroundPreparationStatus();
           await ensureAssetOriginalImagesUploaded(asset);
           if (runId !== state.backgroundPreparationRunId) return { stale: true };
+          if (ENABLE_CSM_THIN_PATH) {
+            asset.backgroundPrepareStatus = "ready";
+            asset.backgroundPrepareError = "";
+            asset.backgroundPrepareRecoveredByRetry = attempt > 1;
+            asset.backgroundPrepareMs = Math.round(performance.now() - startedAt);
+            syncBackgroundPreparationStatus();
+            return { ok: true, attempt_count: attempt, route: "CSM_THIN_DIRECT" };
+          }
           asset.backgroundPrepareStatus = "preingesting";
           syncBackgroundPreparationStatus();
           const bundle = await ensurePreingestionBundle(asset);
@@ -1815,6 +1825,61 @@ async function prepareAssetInBackground(asset, runId) {
   })();
 
   return asset.backgroundPreparationPromise;
+}
+
+async function processAssetViaCsmThinPath(asset) {
+  assertCurrentAssetLifecycle(asset);
+  const startedAt = performance.now();
+  setAssetProgress(asset.index, "上传并校验原图", 0.12);
+  await ensureAssetOriginalImagesUploaded(asset);
+  setAssetProgress(asset.index, "Luna 单次识别", 0.45);
+  const request = await fetchJsonWithRetry(CSM_THIN_API_ENDPOINT, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify({ asset_id: canonicalAssetId(asset), image_detail: "high" })
+  }, {
+    timeoutMs: 130000,
+    maxAttempts: 1,
+    retryNetworkErrors: false,
+    asset,
+    stage: "csm_thin_direct"
+  });
+  if (request.error || request.payload?.ok !== true) {
+    throw new Error(request.payload?.message || `CSM 薄链路失败：${request.response?.status || "network"}`);
+  }
+  const payload = request.payload;
+  const lowConfidence = payload.low_confidence_fields || [];
+  setAssetProgress(asset.index, "CSM / SEM 组合完成", 0.96);
+  return attachGenerationTimingToResult({
+    index: asset.index,
+    lifecycleGeneration: asset.lifecycleGeneration,
+    asset_id: canonicalAssetId(asset),
+    client_asset_ref: asset.clientAssetRef || asset.id,
+    thumbnail: imagePreviewUrl(asset.images[0]),
+    title: payload.title,
+    final_title: payload.title,
+    rendered_title: payload.title,
+    generatedTitle: payload.title,
+    correctedTitle: "",
+    writerTitlePending: false,
+    confidence: lowConfidence.length || payload.trace_status !== "PERSISTED" ? "MEDIUM" : "HIGH",
+    provider: "gpt-5.6-luna",
+    provider_label: "Luna 5.6",
+    model_id: payload.model || "gpt-5.6-luna",
+    reason: payload.trace_status === "PERSISTED" ? "" : "CSM trace persistence failed",
+    fields: payload.fields || {},
+    resolved: payload.fields || {},
+    generated_resolved_fields: payload.fields || {},
+    unresolved: payload.unreadable_fields || [],
+    recognition_session_id: payload.recognition_session_id || "",
+    title_stage: "FINAL",
+    assisted_draft_status: "READY",
+    csm_trace_status: payload.trace_status,
+    csm_rows: payload.csm_rows,
+    route: payload.route || "CSM_THIN_DIRECT",
+    timing: { client_total_ms: Math.round(performance.now() - startedAt) }
+  });
 }
 
 async function settleBackgroundPreparation(asset, maxWaitMs = 2500) {
@@ -2078,6 +2143,10 @@ function workflowReadinessText(readiness) {
 }
 
 function workflowAllowsGeneration() {
+  // The direct endpoint owns the authoritative, fail-closed CSM/Supabase
+  // readiness check. Cloud worker health must not gate a path that never calls
+  // that worker.
+  if (ENABLE_CSM_THIN_PATH) return true;
   const readiness = state.providerStatus?.workflow_readiness;
   if (!readiness) return false;
   return readiness.can_run_cloud_recognition !== false;
@@ -2143,11 +2212,25 @@ function selectProvider(providerId) {
 function canGenerateTitles() {
   return generationSubmissionAllowed({
     assetCount: state.assets.length,
-    providerId: state.selectedProvider,
+    providerId: ENABLE_CSM_THIN_PATH ? "gpt-5.6-luna" : state.selectedProvider,
     workflowReady: workflowAllowsGeneration(),
     processing: state.processing,
     resultCount: state.results.length
   });
+}
+
+function hasAssetsAwaitingRecognition() {
+  const completedAssetIndexes = new Set(state.results.map((result) => Number(result.index)));
+  return state.assets.some((asset) => !completedAssetIndexes.has(Number(asset.index)));
+}
+
+function canStartRecognitionRun() {
+  return Boolean(
+    hasAssetsAwaitingRecognition()
+    && (ENABLE_CSM_THIN_PATH ? "gpt-5.6-luna" : state.selectedProvider)
+    && workflowAllowsGeneration()
+    && !state.processing
+  );
 }
 
 function generationSubmissionAllowed({
@@ -4044,10 +4127,8 @@ function writerTitleOmissionNotice(result = {}) {
 }
 
 async function handleFiles(fileList, { animateIntake = false } = {}) {
-  if (destructiveWorkspaceInteractionLocked() || state.processing) {
-    setStatus(state.processing
-      ? "当前批次正在识别，请等待完成后再更换图片。"
-      : state.exportingWorkbook
+  if (destructiveWorkspaceInteractionLocked()) {
+    setStatus(state.exportingWorkbook
         ? "Excel 正在生成，请等待导出完成后再更换图片。"
         : state.preparingFiles
           ? "图片正在准备，请等待当前选择完成。"
@@ -4062,8 +4143,13 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
   if (!imageFiles.length) return;
 
   const batchWasEmpty = state.assets.length === 0;
-  const lifecycleGeneration = ++state.assetLifecycleGeneration;
+  // A lifecycle represents the whole visible workspace, not one file-picker
+  // selection. Additional selections inherit the original recognition intent.
+  const lifecycleGeneration = batchWasEmpty
+    ? ++state.assetLifecycleGeneration
+    : state.assetLifecycleGeneration;
   const filePreparationRunId = state.filePreparationRunId + 1;
+  const firstAssetIndex = state.assets.reduce((max, asset) => Math.max(max, Number(asset.index) || 0), 0) + 1;
   const intakePreviewRecords = createIntakePreviewRecords(imageFiles);
   let initialWriterForwardReady = null;
   state.filePreparationRunId = filePreparationRunId;
@@ -4073,35 +4159,37 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
   renderInstantIntakePreviews(intakePreviewRecords);
 
   try {
-    stopAllV4AssistedDraftPolling();
-    setStatus("本地预览已显示；正在校验原图，随后自动上传并启动内部识别…", { busy: true });
+    setStatus(batchWasEmpty
+      ? "本地预览已显示；正在校验原图，随后自动上传并启动内部识别…"
+      : `已追加 ${imageFiles.length} 张图片；正在校验原图并延续当前识别任务…`, { busy: true });
     closeImageModal();
-    releaseImagePreviewUrls(state.files);
-    state.files = [];
-    state.assets = [];
-    state.results = [];
-    if (batchWasEmpty && imageFiles.length > 0) state.workspaceMode = "writer";
-    state.writerActiveIndex = null;
-    state.writerTransition = "";
-    state.writerFocusPending = writerModeActive();
-    state.writerReviewComplete = false;
-    state.writerCompletionFocusPending = false;
-    state.writerCompositionActive = false;
-    state.assetProgress = new Map();
-    stopProgressTicker();
-    resetGenerationTimings();
-    state.activeAssetIndexes = new Set();
-    state.completedAssetCount = 0;
-    state.processingTotal = 0;
+    if (batchWasEmpty) {
+      stopAllV4AssistedDraftPolling();
+      state.workspaceMode = "writer";
+      state.writerActiveIndex = null;
+      state.writerTransition = "";
+      state.writerFocusPending = writerModeActive();
+      state.writerReviewComplete = false;
+      state.writerCompletionFocusPending = false;
+      state.writerCompositionActive = false;
+      state.assetProgress = new Map();
+      stopProgressTicker();
+      resetGenerationTimings();
+      state.activeAssetIndexes = new Set();
+      state.completedAssetCount = 0;
+      state.processingTotal = 0;
+    }
 
     const failures = [];
     const prepareStartedAt = performance.now();
     const groupSize = state.mode === "single" ? 1 : 2;
     const fileGroups = [];
     for (let index = 0; index < imageFiles.length; index += groupSize) {
-      fileGroups.push({ index: Math.floor(index / groupSize) + 1, files: imageFiles.slice(index, index + groupSize) });
+      fileGroups.push({ index: firstAssetIndex + Math.floor(index / groupSize), files: imageFiles.slice(index, index + groupSize) });
     }
-    const backgroundRunId = beginBackgroundPreparationRun();
+    const backgroundRunId = batchWasEmpty
+      ? beginBackgroundPreparationRun()
+      : state.backgroundPreparationRunId || beginBackgroundPreparationRun();
     const groupPreparationConcurrency = state.mode === "single"
       ? IMAGE_PREPROCESS_CONCURRENCY
       : Math.max(1, Math.floor(IMAGE_PREPROCESS_CONCURRENCY / 2));
@@ -4188,6 +4276,18 @@ async function handleFiles(fileList, { animateIntake = false } = {}) {
       }
       renderResults({ forceWriterRender: true });
       syncBackgroundPreparationStatus();
+      if (ENABLE_CSM_THIN_PATH && state.assets.length) {
+        // Selecting card images is the recognition intent. Defer one microtask
+        // so the completed intake state is visible before generation claims
+        // the batch; processTitles owns the lifecycle and duplicate guards.
+        queueMicrotask(() => {
+          if (
+            lifecycleGeneration === state.assetLifecycleGeneration
+            && state.filePreparationRunId === filePreparationRunId
+            && canStartRecognitionRun()
+          ) void processTitles();
+        });
+      }
       if (initialWriterForwardReady) {
         void initialWriterForwardReady.then(() => {
           if (
@@ -4416,22 +4516,21 @@ function processingProgressStatus(completedCount) {
 }
 
 async function processTitles() {
-  if (!canGenerateTitles()) return;
+  if (!canStartRecognitionRun()) return;
   const lifecycleGeneration = state.assetLifecycleGeneration;
 
-  state.results = [];
   state.processing = true;
-  stopAllV4AssistedDraftPolling();
   state.activeAssetIndexes = new Set();
-  state.assetProgress = new Map();
-  resetGenerationTimings();
-  state.completedAssetCount = 0;
+  const completedAssetIndexes = new Set(state.results.map((result) => Number(result.index)));
+  state.completedAssetCount = completedAssetIndexes.size;
   state.processingTotal = state.assets.length;
   const generationQueuedAt = Date.now();
   renderResults();
   elements.processButton.disabled = true;
   setProcessButtonBusy(true);
-  setStatus("卡片已进入识别队列；后续图片准备完成后会自动加入。", { busy: true });
+  setStatus(ENABLE_CSM_THIN_PATH
+    ? "图片已上传，正在自动识别卡片名称。"
+    : "卡片已进入识别队列；后续图片准备完成后会自动加入。", { busy: true });
 
   const recognitionBatchId = state.backgroundRecognitionBatchId || createClientBatchId();
   state.backgroundRecognitionBatchId = recognitionBatchId;
@@ -4440,8 +4539,8 @@ async function processTitles() {
   // Start the full bounded pool even if only one card has arrived. Each worker
   // waits for the same intake run to either expose another card or finish.
   const workerCount = queueSubmissionConcurrencyLimit();
-  const claimedAssetIndexes = new Set();
-  let completedCount = 0;
+  const claimedAssetIndexes = new Set(completedAssetIndexes);
+  let completedCount = completedAssetIndexes.size;
 
   async function worker() {
     while (true) {
@@ -4456,10 +4555,12 @@ async function processTitles() {
       state.processingTotal = state.assets.length;
       markAssetQueued(asset, generationQueuedAt);
       state.activeAssetIndexes.add(asset.index);
-      setAssetProgress(asset.index, "进入识别队列", 0.03);
+      setAssetProgress(asset.index, ENABLE_CSM_THIN_PATH ? "准备直接识别" : "进入识别队列", 0.03);
 
       try {
-        const result = await processAssetViaQueue(asset, { batchId: recognitionBatchId });
+        const result = ENABLE_CSM_THIN_PATH
+          ? await processAssetViaCsmThinPath(asset)
+          : await processAssetViaQueue(asset, { batchId: recognitionBatchId });
         if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
         if (!v4WriterTitlePending(result)) {
           markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
@@ -4470,7 +4571,7 @@ async function processTitles() {
         attachGenerationTimingToResult(result);
         state.results.push(result);
         state.results.sort((a, b) => a.index - b.index);
-        startV4AssistedDraftPolling(result);
+        if (!ENABLE_CSM_THIN_PATH) startV4AssistedDraftPolling(result);
       } catch (error) {
         if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
         markAssetFinished(asset.index, { failed: true });
@@ -4562,7 +4663,9 @@ async function retryFailedAssetInPriorityQueue(button) {
   const retryState = retryStateForResult(current || {});
   if (!asset || !current || retryState.disabled) return;
 
-  if (retryState.active_recovery) {
+  // The retired queue may still appear in historical results, but it must not
+  // become a hidden Cloud Run fallback for the active CSM thin path.
+  if (retryState.active_recovery && !ENABLE_CSM_THIN_PATH) {
     state.priorityRetryInFlight += 1;
     current.queueRetryStatus = "submitting";
     current.feedbackMessage = "正在检查原任务并恢复队列位置…";
@@ -4639,8 +4742,10 @@ async function retryFailedAssetInPriorityQueue(button) {
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   state.priorityRetryInFlight += 1;
   current.queueRetryStatus = "submitting";
-  current.feedbackMessage = "正在提交优先重试…";
-  setStatus(`卡片 ${asset.index} 正在插入优先队列…`, { busy: true });
+  current.feedbackMessage = ENABLE_CSM_THIN_PATH ? "正在重新识别…" : "正在提交优先重试…";
+  setStatus(ENABLE_CSM_THIN_PATH
+    ? `卡片 ${asset.index} 正在通过 CSM 薄链路重新识别…`
+    : `卡片 ${asset.index} 正在插入优先队列…`, { busy: true });
   state.assetGenerationTimings.delete(asset.index);
   markAssetQueued(asset, Date.now());
   setAssetProgress(asset.index, "提交优先重试", 0.08);
@@ -4651,17 +4756,19 @@ async function retryFailedAssetInPriorityQueue(button) {
     resetAssetPreparationForRetry(asset, {
       inputRebind: retryState.input_rebind_required
     });
-    const result = await processAssetViaQueue(asset, {
-      batchId: createClientBatchId(),
-      priority: 0,
-      skipSpeculative: true,
-      repairPreingestion: true,
-      // A durable failed job must be authorized against its old id. A client
-      // preparation failure has no old job, so it creates a fresh priority-zero
-      // job instead of becoming permanently un-retryable.
-      manualRetry: retriesFailedDurableJob && !retryState.input_rebind_required,
-      retryOfJobId: retryState.input_rebind_required ? null : (retryOfJobId || null)
-    });
+    const result = ENABLE_CSM_THIN_PATH
+      ? await processAssetViaCsmThinPath(asset)
+      : await processAssetViaQueue(asset, {
+        batchId: createClientBatchId(),
+        priority: 0,
+        skipSpeculative: true,
+        repairPreingestion: true,
+        // A durable failed job must be authorized against its old id. A client
+        // preparation failure has no old job, so it creates a fresh priority-zero
+        // job instead of becoming permanently un-retryable.
+        manualRetry: retriesFailedDurableJob && !retryState.input_rebind_required,
+        retryOfJobId: retryState.input_rebind_required ? null : (retryOfJobId || null)
+      });
     if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
     if (writerEditedTitle) {
       result.correctedTitle = writerEditedTitle;
@@ -4671,16 +4778,20 @@ async function retryFailedAssetInPriorityQueue(button) {
       };
     }
     result.queueRetryStatus = "";
-    result.feedbackMessage = retryState.input_rebind_required
-      ? "图片已绑定到新的不可变资产，并创建新的优先识别任务。"
-      : retriesFailedDurableJob
-      ? "已创建新的识别任务并进入优先队列；旧任务仅保留审计记录。"
-      : "图片已重新校验，并创建新的优先识别任务。";
+    result.feedbackMessage = ENABLE_CSM_THIN_PATH
+      ? "已通过 CSM 薄链路重新识别；未调用 Cloud Run 或向量服务。"
+      : retryState.input_rebind_required
+        ? "图片已绑定到新的不可变资产，并创建新的优先识别任务。"
+        : retriesFailedDurableJob
+          ? "已创建新的识别任务并进入优先队列；旧任务仅保留审计记录。"
+          : "图片已重新校验，并创建新的优先识别任务。";
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push(result);
     state.results.sort((a, b) => a.index - b.index);
-    startV4AssistedDraftPolling(result);
-    setStatus(`卡片 ${asset.index} 已进入优先队列。`, { busy: true });
+    if (!ENABLE_CSM_THIN_PATH) startV4AssistedDraftPolling(result);
+    setStatus(ENABLE_CSM_THIN_PATH
+      ? `卡片 ${asset.index} 已完成 CSM 薄链路重识别。`
+      : `卡片 ${asset.index} 已进入优先队列。`, { busy: !ENABLE_CSM_THIN_PATH });
   } catch (error) {
     if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
     markAssetFinished(asset.index, { failed: true });

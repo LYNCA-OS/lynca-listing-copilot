@@ -67,7 +67,8 @@ const priorityRetrySource = js.slice(
 );
 assert.match(priorityRetrySource, /const retriesFailedDurableJob = Boolean\(retryOfJobId\)/, "priority retry must distinguish a durable failed job from a pre-enqueue failure");
 assert.match(priorityRetrySource, /\["FAILED",\s*"CANCELLED"\]\.includes\(retryOfJobStatus\)/, "only an explicitly terminal durable job may use retry authorization");
-assert.match(priorityRetrySource, /await processAssetViaQueue\(asset, \{[\s\S]*priority: 0,[\s\S]*skipSpeculative: true,[\s\S]*manualRetry: retriesFailedDurableJob && !retryState\.input_rebind_required,[\s\S]*retryOfJobId: retryState\.input_rebind_required \? null : \(retryOfJobId \|\| null\)/, "priority retry must support authorized durable retries, fresh pre-enqueue retries, and safe input rebinds");
+assert.match(priorityRetrySource, /ENABLE_CSM_THIN_PATH[\s\S]*await processAssetViaCsmThinPath\(asset\)[\s\S]*await processAssetViaQueue\(asset, \{/, "priority retry must stay on the CSM thin path instead of silently falling back to Cloud Run");
+assert.match(priorityRetrySource, /retryState\.active_recovery && !ENABLE_CSM_THIN_PATH/, "historical queue recovery must be unreachable while the CSM thin path is active");
 assert.doesNotMatch(priorityRetrySource, /不能提升到优先队列；请重新上传/, "a pre-enqueue failure must remain retryable without re-uploading images");
 assert.match(priorityRetrySource, /旧任务仅保留审计记录/, "priority retry must preserve the old job only as audit history");
 assert.match(priorityRetrySource, /assetLifecycleMatches\(asset, lifecycleGeneration\)/, "a stale retry response must not overwrite a newer upload generation");

@@ -34,6 +34,10 @@ function eligibilityStableShape(eligibility = {}) {
 
 const baseVectorEnv = {
   ENABLE_VECTOR_RETRIEVAL: "true",
+  // Production is deliberately disabled by default after the negative
+  // measurement. This suite tests the dormant implementation itself, so it
+  // must opt in explicitly instead of weakening the default.
+  V4_VECTOR_RETRIEVAL_DISABLED: "false",
   VECTOR_RETRIEVAL_MODE: "assist",
   SUPABASE_URL: "https://supabase.test",
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
@@ -1516,7 +1520,10 @@ assert.throws(() => validateProviderEvidencePayload("openai_legacy", {
 
 const workerMissing = await embedImagesWithVectorWorker({
   images: [],
-  env: {},
+  // The vector path is intentionally disabled by default. Opt in here because
+  // this assertion is specifically about the independent "enabled but no
+  // worker configured" contract, not about the default kill switch.
+  env: { V4_VECTOR_RETRIEVAL_DISABLED: "false" },
   fetchImpl: async () => {
     throw new Error("should not call network");
   }

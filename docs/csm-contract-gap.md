@@ -140,3 +140,64 @@ provider 支持 `tools: [{type:"web_search"}]`，实测会真去检索并返回�
 **+0.0013，不显著，等于零。** 补对的词和加错的词互相抵消（`Purple Refractor → Purple Geometric Refractor`，而答案是 Raywave）。
 
 判定范围要说清楚：**这否掉的是「用 web_search 补 print_finish」这一个实现**，不是「补充信息」这个方向。它只覆盖 23/150 张（搜索 42% 拒答）、只改一个字段、用的是通用搜索而不是卡牌目录数据库。真正的卡牌世界引擎（结构化 checklist 数据，按 product + 印量直接查平行）没有被测过。
+
+### 自由表达后再投影：方向成立，但尚不能替换 canonical（2026-08-01）
+
+`scripts/measure-free-title-csm-projection.mjs` 用已经保存的 `thin_budgeted`
+标题做零调用反事实：把标题视作 Luna 的自由观察结果，CSM 标题解析器只提出候选，
+只有原文能定位到的候选才进入 Composer。
+
+```
+自由标题             F1 0.7317
+自由标题 -> CSM       F1 0.7617   delta +0.0300
+配对                              88 胜 / 53 负 / 9 平，p=0.0040
+```
+
+所以 **CSM 应当位于观察之后，作为类型与发布边界**，而不是用 21 个必填属性和枚举
+限制模型首先能说什么。但当前 canonical arm 仍是 0.7767；方向成立不等于替换条件成立。
+
+又测了把自由候选单调合入 canonical：只填空值，或在新短语严格包含原短语时扩展，
+绝不覆盖冲突。为避免把这轮 Composer 修复误算成候选收益，两边都用**当前同一版**
+Composer 重组：0.7746 → 0.7789，34 胜 / 28 负 / 88 平，p=0.53，仍然等于零。
+
+逐字段消融说明总均值藏住了什么：
+
+| 增量字段 | ΔF1 | 胜/负/平 | 判定 |
+|---|---:|---:|---|
+| print finish | +0.00630 | 23/11/116 | 最大正向信号，但 p=0.058，未过显著门槛 |
+| product | +0.00334 | 6/0/144 | 全胜但仅 6 张，覆盖不足 |
+| serial | +0.00024 | 2/1/147 | 无统计功效 |
+| card name | -0.00200 | 2/4/144 | 负向 |
+| descriptive rarity | -0.00121 | 1/6/143 | 负向 |
+| components | -0.00188 | 3/13/134 | 显著负向，p=0.021 |
+| year | -0.00023 | 0/2/148 | 负向但极少 |
+| 其余 7 个字段 | 0 | 0/0/150 | 自由链路没有提供可用增量 |
+
+### 53 个负例输在哪里
+
+评测现在逐张、逐词记录最早损失阶段，不再只给一个负例数。53 张负例的参考有用词
+损失为：
+
+| 最早损失阶段 | 受影响卡 | 丢失词次 | 含义 |
+|---|---:|---:|---|
+| 标题解析器 | 31 | 50 | 自由标题已经说出，`parse-reviewed-title-fields-v1` 没结构化出来 |
+| evidence admission | 13 | 15 | SEM 提出了值，但原文定位/规范化规则拒绝进入 canonical |
+| marketplace profile | 13 | 17 | canonical 有值，eBay profile 主动抑制；主要是球队词 |
+| 80 字符预算 | 1 | 2 | `Blue Refractor` 因压缩让位 |
+| Composer normalization | 2 | 3 | TCG 编号格式变换丢了前导零/分隔形态 |
+
+解析损失不是一个大杂项：包括产品/套组短语（`Road to FIFA World Cup`、
+`Sapphire Selections`、`Draft Edition`、`Disney`、`Star Wars`）、属性词
+（`Rookie` 5 次、`Jersey` 2 次）和带斜杠/前导零的编号。Profile 损失集中在
+`Lakers`、`Spurs`、`Mets`、`Dodgers` 等球队；这也说明“全局永远抑制 team”不是
+最终解，只是旧模型常输出冗长全名时的局部最优。
+
+这份拆分同时纠正一个命名误会：CSM 下的 `title-derived-sem` 是版本化候选封装，
+底层仍然调用 `parse-reviewed-title-fields-v1`；`fix/sem-derived-fields` 工作树中的解析器
+与当前分支字节一致，仓库里没有另一套尚未接入的强解析器。
+
+因此当前决策是：
+
+1. 保留 `自由观察 -> 证据候选 -> CSM -> SEM/Composer` 作为下一轮实验架构；
+2. 不把自由候选全量合入现有路径；
+3. 只有新的配对实验显著超过 canonical，才能替换默认路径。

@@ -235,7 +235,7 @@ Lot 处理、深度 OCR、外部/目录富化、低置信度校验、学习聚�
 2. 再做模块边界迁移，逐目录做行为对比。
 3. `v4/` 最后动，且必须逐部件对比——整体净负不等于部件皆负。
 
-**当前完成度**：canonical object → marketplace composition 两段已按 CSM 实现并通过逐卡一致性检查（8 条契约，v3/v4 产物均 0 违规）。upload → asset → evidence → identity resolution 四段未开工。
+**当前完成度（2026-08-01）**：薄链路已产出 canonical object、evidence、candidate、resolution、resolved bracket、marketplace output 六类行；存储行可离线 148/148 回放，PostgREST transport 已实现且默认关闭。COS-8/9 的压缩优先级与 TCG Language 已贯穿解析、canonical CSM 和持久化。仍未完成的是应用调用点、真实 Supabase 写入验证、migration applied 状态和 COS-26 的 TCG/Non-TCG 端到端 demo；因此不得把“代码已构造”写成“系统已运行”。
 
 ---
 
@@ -272,13 +272,14 @@ Lot 处理、深度 OCR、外部/目录富化、低置信度校验、学习聚�
 
 `csm/` 下的八个子目录是**模块边界**，默认全部是同进程函数调用。切分目录的目的是可替换、可独立回放、可独立测试，**不是**部署单元。
 
-**今天真实存在的跨进程边界只有三处**，且都有 CSM 之外的硬理由：
+**当前薄链路只有一个必需的跨进程边界**：
 
 | 边界 | 理由 | 是否保留 |
 |---|---|---|
-| `services/recognition-worker`（Cloud Run） | Python 运行时 + GPU/CPU 伸缩独立 | 保留 |
-| OCR provider（Google Vision / Paddle） | 外部厂商 | 保留 |
-| 模型 provider（OpenAI 等） | 外部厂商 | 保留 |
+| Luna 模型 provider | 模型托管在外部 | 保留 |
+| `services/recognition-worker`（Cloud Run） | 历史兼容代码；2026-08-01 owner 确认全部停止 | 不在正常路径，不恢复、不探活、不部署 |
+| OCR provider（Google Vision / Paddle） | 历史链路依赖 Cloud Run | 不在正常路径 |
+| 向量 worker / vector store | 3,659 次实测中 92.7% 零候选，且 owner 已停库 | 默认关闭，不恢复 |
 
 `identity-resolution/`、`marketplace-composer/`、`registry/`、`ontology/` **今天不跨进程，且不得因为目录分离而变成跨进程**。
 

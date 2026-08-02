@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
-  buildCsmStageRows, CSM_BRACKETS, MODALITIES, EMPTY_REASONS, VALUE_KINDS
+  buildCsmStageRows, CSM_BRACKETS, MODALITIES, EMPTY_REASONS, VALUE_KINDS,
+  THIN_REGISTRY_RELEASE_ID
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
@@ -16,6 +17,10 @@ const MIGRATION = resolve(
   import.meta.dirname, "..", "supabase/migrations/20260728190000_csm_stage_shadow_foundation_v1.sql"
 );
 const sql = readFileSync(MIGRATION, "utf8");
+const ADDITIVE_MIGRATION = resolve(
+  import.meta.dirname, "..", "supabase/migrations/20260801123000_csm_atomic_stage_packet_v1.sql"
+);
+const additiveSql = readFileSync(ADDITIVE_MIGRATION, "utf8");
 
 function columnsOf(table) {
   const match = sql.match(new RegExp(`create table if not exists public\\.${table}\\s*\\(([\\s\\S]*?)\\n\\);`, "i"));
@@ -59,6 +64,22 @@ const rows = buildCsmStageRows({
   tenantId: "t1", recognitionSessionId: "s1", fields, composed,
   title: composed.title, createdAt: "2026-08-01T00:00:00Z"
 });
+assert.equal(rows.resolution.registry_release_id, THIN_REGISTRY_RELEASE_ID);
+assert.equal(rows.resolution.grammar, "NON_TCG");
+assert.equal(rows.output.marketplace, "EBAY");
+assert.ok(rows.evidence.every((row) => row.normalization_outcome === "KEPT"));
+assert.match(additiveSql, new RegExp(`'${THIN_REGISTRY_RELEASE_ID.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`),
+  "the default resolution Registry release must be seeded by a new additive migration");
+assert.doesNotMatch(sql, new RegExp(`'${THIN_REGISTRY_RELEASE_ID.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'`),
+  "the already-applied foundation migration must remain unchanged");
+{
+  const normalizationConstraint = sql.match(/normalization_outcome in \(([^)]*)\)/i)?.[1] || "";
+  const allowedOutcomes = new Set([...normalizationConstraint.matchAll(/'([^']+)'/g)].map((match) => match[1]));
+  for (const row of rows.evidence) {
+    assert.ok(allowedOutcomes.has(row.normalization_outcome),
+      `${row.normalization_outcome} must be accepted by the migration`);
+  }
+}
 
 // Every key we emit is a column that exists.
 for (const [table, produced] of [
@@ -105,6 +126,26 @@ for (const row of rows.candidates) {
   assert.equal(byBracket.language.empty_reason, "ABSENT");
 }
 
+// COS-9 Language is not only a title token. It is a primary canonical bracket,
+// so it must survive into the persisted candidate/resolution rows as well.
+{
+  const tcgFields = parseCanonicalFields({
+    ...fields, grammar: "tcg", ip: "Pokemon", language: "JP",
+    manufacturer: "", product: "", set: "Mega Brave",
+    subjects: ["Mega Absol Ex"], card_number: "089/063"
+  }).fields;
+  const tcgComposed = composeFromCanonicalFields(tcgFields);
+const tcgRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "tcg-language", fields: tcgFields,
+    composed: tcgComposed, title: tcgComposed.title
+});
+assert.equal(tcgRows.resolution.grammar, "TCG");
+  const languageCandidate = tcgRows.candidates.find((row) => row.bracket === "language");
+  const languageResolved = tcgRows.resolved.find((row) => row.bracket === "language");
+  assert.equal(languageCandidate.canonical_value, "JP");
+  assert.equal(languageResolved.canonical_value, "JP");
+}
+
 // A flagged field is lower confidence, not a different modality: the model saw
 // it and is unsure of it.
 {
@@ -130,6 +171,28 @@ for (const link of rows.links) {
 // Collapsing them would make a replay unable to say why a bracket is absent.
 assert.ok(Array.isArray(rows.output.dropped_trace.dropped_for_budget));
 assert.ok(rows.output.dropped_trace.suppressed_by_profile.includes("card_number"));
+assert.deepEqual(rows.output.dropped_trace.empty_at_input, composed.input_empty_fields);
+assert.deepEqual(
+  rows.output.dropped_trace.normalization_reason_codes,
+  composed.normalization_reasons
+);
+assert.equal(rows.output.dropped_trace.character_budget, composed.character_budget);
+assert.equal(rows.output.dropped_trace.rendered_length, composed.length);
+
+// Inferred parents are a Composer normalization, not an observed input. The
+// trace must still say that Manufacturer was empty at input even though the
+// normalized bracket later renders a parent inferred from Product.
+{
+  const inferredFields = { ...fields, manufacturer: "", product: "Prizm" };
+  const inferredComposition = composeFromCanonicalFields(inferredFields);
+  assert.ok(inferredComposition.input_empty_fields.includes("manufacturer"));
+  assert.equal(inferredComposition.empty_fields.includes("manufacturer"), false);
+  const inferredRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "inferred-parent-trace",
+    fields: inferredFields, composed: inferredComposition, title: inferredComposition.title
+  });
+  assert.ok(inferredRows.output.dropped_trace.empty_at_input.includes("manufacturer"));
+}
 
 process.stdout.write("csm persistence: ok\n");
 

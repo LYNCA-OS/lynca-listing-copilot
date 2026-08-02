@@ -85,8 +85,10 @@ class RecognitionWorkerTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[3]
         deploy_script = (repo_root / "scripts" / "deploy-recognition-worker-cloud-run.sh").read_text(encoding="utf-8")
 
-        self.assertIn('MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-1}"', deploy_script)
-        self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-1}"', deploy_script)
+        self.assertIn('MIN_INSTANCES="${RECOGNITION_WORKER_MIN_INSTANCES:-0}"', deploy_script)
+        self.assertIn('ROLLOUT_MIN_INSTANCES="${RECOGNITION_WORKER_ROLLOUT_MIN_INSTANCES:-0}"', deploy_script)
+        self.assertIn('RECOGNITION_WORKER_ALLOW_WARM_INSTANCES', deploy_script)
+        self.assertIn('I_ACCEPT_ALWAYS_ON_BILLING', deploy_script)
         self.assertIn('gcloud run services describe "$SERVICE_NAME"', deploy_script)
         self.assertGreaterEqual(
             deploy_script.count('--min "$ROLLOUT_MIN_INSTANCES"'),

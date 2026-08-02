@@ -19,6 +19,7 @@ import {
   supabaseRestAdminHeaders,
   supabaseServiceHeaders
 } from "../lib/supabase-service-headers.mjs";
+import { listingImageStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 
 const env = {
   SUPABASE_URL: "https://example.supabase.co",
@@ -27,6 +28,11 @@ const env = {
   LISTING_IMAGE_SIGNED_URL_TTL_SECONDS: "600",
   METAVERSE_AUTH_SECRET: "test-secret"
 };
+
+assert.equal(listingImageStorageReadiness({
+  SUPABASE_URL: env.SUPABASE_URL,
+  SUPABASE_SECRET_KEY: "sb_secret_modern"
+}).configured, true, "modern Supabase secret keys must configure server-side storage");
 
 const jpegSignatureHex = "ffd8ffe000104a464946000101000001";
 const pngSignatureHex = "89504e470d0a1a0a0000000d49484452";

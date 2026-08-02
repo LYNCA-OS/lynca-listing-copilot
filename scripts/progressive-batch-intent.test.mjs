@@ -18,7 +18,11 @@ assert.match(
   /const workerCount = queueSubmissionConcurrencyLimit\(\);/,
   "the bounded submission pool must start even when only the first card is ready"
 );
-assert.match(source, /const claimedAssetIndexes = new Set\(\);/, "progressive intake must claim each card once");
+assert.match(
+  source,
+  /const claimedAssetIndexes = new Set\(completedAssetIndexes\);/,
+  "progressive and appended intake must claim each unfinished card once"
+);
 assert.match(
   source,
   /claimNextBatchAsset\(state\.assets, claimedAssetIndexes\)/,

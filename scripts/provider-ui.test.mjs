@@ -16,6 +16,7 @@ const csmFieldLabels = await readFile("lib/listing/csm/field-labels.mjs", "utf8"
 const recognitionProfileAdapter = await readFile("lib/listing/v4/application/recognition-profile-adapter.mjs", "utf8");
 
 assert.match(html, /id="providerControl"/, "provider segmented control should exist");
+assert.match(html, /id="processButton"[^>]*hidden[^>]*aria-hidden="true"/, "recognition must start from upload intent without a visible extra button");
 assert.match(html, /id="providerStatusText"/, "provider status text should exist");
 assert.match(html, /rel="icon"[^>]+href="\/app\/favicon\.svg"/, "main app should provide a favicon to avoid browser 404 noise");
 assert.match(js, /fetchWithBoundedRetry\("\/api\/listing-provider-status"/, "frontend should load provider status with a bounded retry and wait");
@@ -33,7 +34,7 @@ assert.doesNotMatch(processTitlesSource, /markAssetStarted\(asset\)/, "batch wor
 assert.match(js, /state\.selectedProvider = payload\.default_provider \|\| ""/, "frontend should use the server default provider as the selected provider");
 assert.doesNotMatch(js, /state\.selectedProvider\s*=\s*["']openai_legacy["']/, "frontend must use the server default rather than hard-code a provider");
 assert.match(js, /workflowReadinessText/, "frontend should render server workflow readiness in the provider status area");
-assert.match(js, /workflowAllowsGeneration/, "frontend should gate generation on the cloud workflow readiness preflight");
+assert.match(js, /function workflowAllowsGeneration\(\)[\s\S]*if \(ENABLE_CSM_THIN_PATH\) return true;/, "retired Cloud Run readiness must not gate the direct CSM path");
 assert.match(js, /workflow_readiness/, "frontend should read integrated workflow readiness from provider status");
 assert.match(
   js,
@@ -42,7 +43,7 @@ assert.match(
 );
 assert.match(js, /scheduleProviderStatusRecovery/, "a transient provider bootstrap failure must heal without reloading the page");
 assert.match(js, /PROVIDER_STATUS_RECOVERY_DELAYS_MS/, "provider bootstrap recovery must use bounded backoff");
-assert.doesNotMatch(js, /state\.selectedProvider \|\| state\.providerStatus\?\.fallback_available/, "frontend must not allow local fallback to bypass cloud readiness");
+assert.match(js, /providerId:\s*ENABLE_CSM_THIN_PATH \? "gpt-5\.6-luna" : state\.selectedProvider/, "the direct route must not require a selectable legacy cloud provider");
 assert.match(js, /mode:\s*"pair"/, "frontend should default new uploads to two-image paired recognition");
 assert.match(html, /name="assetMode" value="pair" checked/, "two-image paired recognition should be the checked default control");
 assert.match(html, /两图配对/, "paired upload mode should be labeled without front/back judgment");
@@ -74,15 +75,18 @@ assert.match(js, /pendingStorageVerification/, "an uploaded object must retain i
 assert.match(js, /throw failedOriginal\.error/, "a failed original verification must release the cached upload promise for compensation retry");
 assert.match(js, /AUTH_UNAVAILABLE/, "storage API retries should recognize transient tenant authentication failures");
 assert.match(js, /生成时会自动重试/, "background image preparation should expose a recoverable writer-facing status");
-assert.doesNotMatch(js, /TITLE_API_ENDPOINT|fetch\(["'`]\/api\/v4\/listing-copilot-title/, "the browser must not bypass durable enqueue with a direct recognition request");
+assert.match(js, /const CSM_THIN_API_ENDPOINT = "\/api\/csm-listing-title"/, "the browser should use the direct CSM application boundary");
 assert.match(js, /fetchWithBoundedRetry\(/, "storage and queue helpers should use bounded transport retries");
-assert.doesNotMatch(js, /TITLE_API_ENDPOINT|async function processAsset\(/, "writer recognition must not retain a direct paid-provider path that bypasses the durable queue");
-assert.match(js, /const JOB_ENQUEUE_API_ENDPOINT = "\/api\/v4\/listing-job-enqueue"/, "frontend should enqueue default production recognition jobs");
+assert.match(js, /const ENABLE_CSM_THIN_PATH = true/, "the CSM thin path should be the active writer route");
+assert.match(js, /const ENABLE_SPECULATIVE_RECOGNITION = false/, "the browser must not speculatively enqueue a second paid path");
+assert.match(js, /async function processAssetViaCsmThinPath/, "writer recognition should own one explicit thin-path client boundary");
+assert.match(js, /maxAttempts:\s*1,[\s\S]*retryNetworkErrors:\s*false,[\s\S]*stage:\s*"csm_thin_direct"/, "the paid direct request must not retry invisibly");
+assert.match(js, /const JOB_ENQUEUE_API_ENDPOINT = "\/api\/v4\/listing-job-enqueue"/, "the retired queue endpoint may remain only as a compatibility implementation");
 assert.match(js, /const JOB_RECOVERY_API_ENDPOINT = "\/api\/v4\/listing-job-retry"/, "stalled cards should expose the idempotent durable recovery boundary");
 assert.match(js, /const JOB_STATUS_API_ENDPOINT = "\/api\/v4\/listing-job-status"/, "frontend should poll production job status for writer-visible titles");
 assert.doesNotMatch(js, /FAST_SCOUT_PREWARM_API_ENDPOINT/, "frontend must not probe the discarded L1 scout cache before L2");
 assert.match(js, /const SESSION_STATUS_API_ENDPOINT = "\/api\/v4\/listing-session-status"/, "frontend should poll the V4 session status endpoint for background assisted drafts");
-assert.match(js, /fetchJsonWithRetry\(JOB_ENQUEUE_API_ENDPOINT/, "default title requests should enter the V4 production queue with bounded idempotent retries");
+assert.match(js, /fetchJsonWithRetry\(CSM_THIN_API_ENDPOINT/, "default title requests should enter the direct CSM boundary");
 assert.match(js, /fetchJsonWithRetry\(ASSET_CREATE_API_ENDPOINT/, "durable asset creation must recover from transient API failures");
 assert.match(js, /fetchJsonWithTimeout\(`\$\{JOB_STATUS_API_ENDPOINT\}\?\$\{params\.toString\(\)\}`/, "frontend should poll production job status by durable job id with a bounded network and JSON wait");
 assert.match(js, /view:\s*"writer"/, "writer polling should use the compact status projection instead of repeatedly loading full queue payloads");
@@ -99,6 +103,7 @@ const handleFilesSource = js.slice(js.indexOf("async function handleFiles"), js.
 assert.doesNotMatch(handleFilesSource, /providerStatusReadyPromise/, "local previews must not wait for provider readiness before rendering");
 assert.doesNotMatch(handleFilesSource, /wait\(1200\)/, "upload intake must not retain the former provider-readiness delay");
 assert.match(handleFilesSource, /scheduleAssetBackgroundPreparation\(asset, backgroundRunId\)/, "each readable card should immediately start durable background preparation");
+assert.match(handleFilesSource, /queueMicrotask\(\(\) => \{[\s\S]*canStartRecognitionRun\(\)[\s\S]*processTitles\(\)/, "completed or appended upload intake must automatically continue the CSM recognition intent");
 assert.doesNotMatch(handleFilesSource, /startBackgroundPreparation\("file_ready"\)/, "the final file in a batch must not remain a whole-batch upload barrier");
 assert.ok(
   handleFilesSource.indexOf("renderInstantIntakePreviews(intakePreviewRecords)")
@@ -132,7 +137,7 @@ assert.match(queuedSessionRecoverySource, /shouldDeclareClientStatusOrphan/, "on
 const queuedStatusUpdateSource = js.slice(js.indexOf("function applyV4QueuedJobStatusUpdate"), js.indexOf("async function pollV4AssistedDraft"));
 assert.match(queuedStatusUpdateSource, /announce:\s*false/, "per-card status updates should not rewrite the global status banner N times per poll");
 assert.match(queuedStatusUpdateSource, /knownPending:\s*true/, "queued polling should avoid an O\(N\) pending lookup for every card");
-assert.match(js, /processAssetViaQueue\(asset, \{ batchId: recognitionBatchId \}\)/, "batch generation should use one shared production batch identity");
+assert.match(processTitlesSource, /ENABLE_CSM_THIN_PATH[\s\S]*processAssetViaCsmThinPath\(asset\)[\s\S]*processAssetViaQueue/, "batch generation should select the CSM thin path before the retired queue compatibility branch");
 assert.doesNotMatch(js, /create_l1_job|create_l2_job/, "frontend must not own recognition stage selection");
 assert.match(recognitionProfileAdapter, /create_l1_job:\s*false/, "server profile should skip hidden L1 after it showed no stable L2 or writer benefit");
 assert.match(recognitionProfileAdapter, /create_l2_job:\s*true/, "server profile should always enqueue the writer-visible final L2");

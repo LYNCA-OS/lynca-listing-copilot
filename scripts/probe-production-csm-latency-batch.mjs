@@ -61,6 +61,7 @@ async function worker() {
         trace_status: body?.trace_status || null,
         code: body?.code || null,
         retryable: body?.retryable === true,
+        provider_failure_receipt: body?.provider_failure_receipt || null,
         title_length: typeof body?.title === "string" ? body.title.length : null
       };
     } catch (error) {

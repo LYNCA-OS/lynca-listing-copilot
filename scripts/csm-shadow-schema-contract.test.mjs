@@ -5,6 +5,14 @@ const source = await readFile(new URL(
   "../supabase/migrations/20260728190000_csm_stage_shadow_foundation_v1.sql",
   import.meta.url
 ), "utf8");
+const traceMigration = await readFile(new URL(
+  "../supabase/migrations/20260801065859_csm_marketplace_trace_object.sql",
+  import.meta.url
+), "utf8");
+const emptyMigration = await readFile(new URL(
+  "../supabase/migrations/20260801071048_csm_empty_canonical_sql_null.sql",
+  import.meta.url
+), "utf8");
 
 for (const table of [
   "csm_registry_releases",
@@ -36,5 +44,9 @@ assert.match(source, /csm_composition_requires_resolution_complete/);
 assert.match(source, /csm_contract_metadata_required_before_stage_start/);
 assert.match(source, /grant select, insert on table public\.%I to service_role/);
 assert.match(source, /revoke all on table public\.%I from public, anon, authenticated/);
+assert.match(traceMigration, /jsonb_typeof\(dropped_trace\) = 'object'/);
+assert.match(traceMigration, /alter column dropped_trace set default '\{\}'::jsonb/);
+assert.match(emptyMigration, /value_kind = 'EMPTY' and canonical_value is null/);
+assert.match(emptyMigration, /selected_kind = 'EMPTY' and canonical_value is null/);
 
 console.log("csm shadow schema contract tests passed");
