@@ -58,29 +58,30 @@ async function jsonOrNull(response) {
   }
 }
 
-async function materializeRealSourceImages(request, baseUrl, secret) {
+async function materializeRealSourceImages(baseUrl, secret) {
   const source = launchGateImageSourceRecords[0];
-  const sourceResponse = await request.post(`${baseUrl}/api/v4/launch-gate-source-images`, {
+  const sourceResponse = await fetch(`${baseUrl}/api/v4/launch-gate-source-images`, {
+    method: "POST",
     headers: {
       "content-type": "application/json",
       "x-lynca-launch-gate-secret": secret
     },
-    data: { source_feedback_ids: [source.source_feedback_id] }
+    body: JSON.stringify({ source_feedback_ids: [source.source_feedback_id] })
   });
   const sourcePayload = await sourceResponse.json();
-  if (!sourceResponse.ok() || sourcePayload.ok === false) {
-    throw new Error(`real source materialization failed: HTTP ${sourceResponse.status()}`);
+  if (!sourceResponse.ok || sourcePayload.ok === false) {
+    throw new Error(`real source materialization failed: HTTP ${sourceResponse.status}`);
   }
   const images = sourcePayload.sources?.[0]?.images || [];
   if (!images.length) throw new Error("real source materialization returned no images");
   return Promise.all(images.map(async (image, index) => {
-    const response = await request.get(image.signed_url);
-    if (!response.ok()) throw new Error(`source image ${index + 1} download failed: HTTP ${response.status()}`);
-    const mimeType = response.headers()["content-type"] || "image/jpeg";
+    const response = await fetch(image.signed_url);
+    if (!response.ok) throw new Error(`source image ${index + 1} download failed: HTTP ${response.status}`);
+    const mimeType = response.headers.get("content-type") || "image/jpeg";
     return {
       name: `${image.role || `image-${index + 1}`}.jpg`,
       mimeType,
-      buffer: await response.body()
+      buffer: Buffer.from(await response.arrayBuffer())
     };
   }));
 }
@@ -139,7 +140,7 @@ test("production writer journey reaches persisted L2 through the real UI", async
     await loginPage.getByTestId("login-submit").click();
     await loginPage.waitForURL((url) => !url.pathname.endsWith("/login.html"), { timeout: 45_000 });
     await expect(loginPage.getByTestId("image-upload-input")).toBeAttached();
-    const files = await materializeRealSourceImages(loginContext.request, baseUrl, launchGateSecret);
+    const files = await materializeRealSourceImages(baseUrl, launchGateSecret);
     evidence.stages.real_image_materialization = { passed: true, image_count: files.length };
     const storageState = await loginContext.storageState();
     evidence.stages.login = { passed: true, final_path: new URL(loginPage.url()).pathname };
