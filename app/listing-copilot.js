@@ -91,6 +91,23 @@ const state = {
 };
 let backgroundPreparationQueue = [];
 let backgroundPreparationActiveCount = 0;
+let csmWarmupStartedAt = 0;
+let csmWarmupPromise = null;
+
+function startCsmWarmup(fetchImpl = globalThis.fetch, now = Date.now) {
+  const timestamp = now();
+  if (
+    typeof fetchImpl !== "function"
+    || (csmWarmupPromise && timestamp - csmWarmupStartedAt < 45_000)
+  ) return csmWarmupPromise;
+  csmWarmupStartedAt = timestamp;
+  csmWarmupPromise = Promise.resolve(fetchImpl(CSM_THIN_API_ENDPOINT, {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store"
+  })).catch(() => null);
+  return csmWarmupPromise;
+}
 
 const elements = {
   workspace: document.querySelector(".workspace"),
@@ -1151,6 +1168,11 @@ async function uploadAssetImage(asset, image, imageIndex) {
       contentType
     };
 
+    // Warm the one expensive function while the browser is uploading bytes to
+    // the separate Supabase origin. This hides cold start without competing
+    // with the Vercel control-plane requests or calling the paid provider.
+    void startCsmWarmup();
+
     let storageRequest;
     try {
       storageRequest = await fetchWithBoundedRetry(uploadPayload.upload.signed_upload_url, {
@@ -1318,6 +1340,7 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
     throw new Error(signRequest.payload.message || `Storage upload URL batch failed: ${signRequest.response.status}`);
   }
   const uploadsByImage = new Map(signRequest.payload.uploads.map((upload) => [upload.image_id, upload]));
+  void startCsmWarmup();
   const putOutcomes = await mapWithConcurrency(pending, STORAGE_UPLOAD_CONCURRENCY, async (row) => {
     try {
       const upload = uploadsByImage.get(row.image.id);
@@ -2274,6 +2297,7 @@ export const __listingCopilotAppTestHooks = {
   resetAssetPreparationForRetry,
   retryStateForResult,
   shouldUseStorageFirstImage,
+  startCsmWarmup,
   storageDimensionsForImage,
   storageSourceForImage,
   syncAssetGenerationTimingFromServer,

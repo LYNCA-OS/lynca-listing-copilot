@@ -165,6 +165,19 @@ globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
 
 {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url, method: init.method, credentials: init.credentials });
+    return { ok: false, status: 405 };
+  };
+  await __listingCopilotAppTestHooks.startCsmWarmup(fetchImpl, () => 1_000);
+  await __listingCopilotAppTestHooks.startCsmWarmup(fetchImpl, () => 2_000);
+  assert.deepEqual(calls, [
+    { url: "/api/csm-listing-title", method: "GET", credentials: "same-origin" }
+  ], "one batch window must issue exactly one unpaid CSM warmup");
+}
+
+{
   let finishPreparation;
   let settled = false;
   const backgroundPreparationPromise = new Promise((resolve) => {
@@ -369,7 +382,7 @@ assert.equal(providerImages.filter((image) => image.derived).length, 8);
     objectPath: ""
   }));
   const persistedObjects = new Set();
-  const calls = { sign: 0, put: 0, verify: 0, csm: 0 };
+  const calls = { sign: 0, put: 0, verify: 0, csmWarmup: 0, csmPaid: 0 };
   globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input), "https://listing.test");
     if (url.pathname === "/api/listing-image-upload-url") {
@@ -421,7 +434,13 @@ assert.equal(providerImages.filter((image) => image.derived).length, 8);
         }))
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
-    if (url.pathname === "/api/csm-listing-title") calls.csm += 1;
+    if (url.pathname === "/api/csm-listing-title") {
+      if (init.method === "GET") {
+        calls.csmWarmup += 1;
+        return new Response("", { status: 405 });
+      }
+      calls.csmPaid += 1;
+    }
     throw new Error(`unexpected request ${url}`);
   };
 
@@ -435,7 +454,8 @@ assert.equal(providerImages.filter((image) => image.derived).length, 8);
   assert.equal(calls.sign, 1, "ambiguous PUT recovery must not re-sign the batch");
   assert.equal(calls.put, 4, "the ambiguous object uses only the bounded same-URL PUT attempts");
   assert.equal(calls.verify, 2, "a lost verify response must replay exact durable-state confirmation once");
-  assert.equal(calls.csm, 0, "premodel recovery must never manufacture a paid Luna call");
+  assert.equal(calls.csmWarmup, 1, "the upload window should hide exactly one unpaid CSM warmup");
+  assert.equal(calls.csmPaid, 0, "premodel recovery must never manufacture a paid Luna call");
   assert.equal(persistedObjects.has("/one"), true);
   assert.equal(images.every((image) => image.storageVerified === true), true);
 }
