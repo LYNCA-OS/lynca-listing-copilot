@@ -1,5 +1,29 @@
 # Extreme observation high-100 loss audit — 2026-08-01
 
+## Production integration correction
+
+The offline waterfall and the `37 / 8 / 19 / 9` audit below remain valid, but
+the candidate `bounded-open-evidence.mjs` resolver from the evaluation
+worktree is **not approved for production**. A later CSM/SEM conformance review
+found that it trusted model-authored role labels, promoted leading-zero serial
+evidence into `fields.serial`, mapped `Redemption Card` to `card_name`, and had
+no append-only CSM carrier for open-set evidence. Production SEM classifies
+serial evidence as `EVIDENCE_ARTIFACT` with `promotion_allowed: false`.
+
+The reusable asset is therefore the measurement and the bounded same-call
+experiment design, not that resolver implementation. Before any runtime use:
+
+1. add an append-only open-evidence sidecar that cannot directly select a CSM
+   value;
+2. retain serial as renderer-only current-copy evidence;
+3. keep copyright years and visual finish descriptions candidate-only;
+4. measure canonical control versus bounded treatment on an independent
+   150-card paired holdout, including canonical-field drift, false role
+   promotion, tokens and latency.
+
+Until those gates pass, production integration is `NO_GO`; the current
+canonical response remains the runtime contract.
+
 ## Decision
 
 The opposing hypothesis is that exhaustive free expression should become the
