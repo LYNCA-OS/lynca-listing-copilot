@@ -1,0 +1,89 @@
+{
+  "schema_version": "lynca-accuracy-evidence-manifest-v1",
+  "as_of": "2026-08-01",
+  "purpose": "Pin the local, paid-evaluation artifacts used by the accuracy-loss diagnosis without copying the experiment corpus into the production checkout.",
+  "source_checkout": {
+    "role": "paid-evaluation",
+    "name": "lynca-thin-path",
+    "local_root": "/Users/paidaxin/lynca-thin-path"
+  },
+  "production_checkout": {
+    "role": "implementation-and-audit",
+    "name": "lynca-thin-production",
+    "local_root": "/Users/paidaxin/lynca-thin-production"
+  },
+  "artifacts": [
+    {
+      "id": "extreme-high-100-rows",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/extreme-observation-2026-08-01/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "11bba8e2e756f41cee2b3f8c384e0cb0efebffe9130664877c7e7de7805ecfa7"
+    },
+    {
+      "id": "extreme-high-100-waterfall",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/extreme-observation-2026-08-01/diagnosis-high-100.json",
+      "sha256": "07c183c18b953585a7ca96ea3f1116abadd65d8e2dd5bf2e94478895b0084f18"
+    },
+    {
+      "id": "composer-recovery-high-100",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/extreme-observation-2026-08-01/composer-recovery-high-100.json",
+      "sha256": "e3f352f64d28c702c96b1874c1c3c07b679b838fec6aca51f89d0fcb412dad0e"
+    },
+    {
+      "id": "composer-recovery-current-148",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/extreme-observation-2026-08-01/composer-recovery-canonical-v4-148.json",
+      "sha256": "f3d5c160109765d151b662428e1e8925f9fa1121c34fab298dc7066b58a68681"
+    },
+    {
+      "id": "composer-recovery-old-150",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/extreme-observation-2026-08-01/composer-recovery-canonical-v3-150.json",
+      "sha256": "5fa6c43ba4e49df154a65a250733a6dc619e6783e535c2dcb4556aa642e8eadb"
+    },
+    {
+      "id": "high-vs-original-50-rows",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/image-detail-high-vs-original-2026-08-01-canonical-50/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "9f7334697a82cdc46f788824e655e8ed7316e9e0169cc030e2b87237ed572c70"
+    },
+    {
+      "id": "high-vs-original-50-summary",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/image-detail-high-vs-original-2026-08-01-canonical-50/thin-path-gpt-5.6-luna.json",
+      "sha256": "7318aef44a952cef7d1ec64fa6f70e1e03ecd29669ce703014d06b71858768f2"
+    },
+    {
+      "id": "high-vs-original-source-dimensions",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/image-detail-high-vs-original-2026-08-01-canonical-50/source-dimensions.json",
+      "sha256": "c8804a3fcc2837cc09591e09add1679a9b940417195e7927120c2d3f87e274be"
+    },
+    {
+      "id": "canonical-v3-150-rows",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/canonical-v3/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "cf9aec9d3d021cfd8512055f9dafef9ad8fddb272f6d1a58612aac0ea50593ec"
+    },
+    {
+      "id": "free-title-csm-projection-150",
+      "checkout": "source_checkout",
+      "relative_path": "artifacts/canonical-v3/free-title-csm-projection-analysis.json",
+      "sha256": "139e11b2606bd8f3d15b1f0cf2a0a9bb1950bbb679b9fd76df99e287ca2b4855"
+    },
+    {
+      "id": "extreme-high-100-manual-audit",
+      "checkout": "production_checkout",
+      "relative_path": "docs/evaluation/extreme-observation-high-100-loss-audit-2026-08-01.md",
+      "sha256": "393c21b1059fe55eb2d34624b9743733dad537c8d27e1dcab8bac90988a4f780"
+    }
+  ],
+  "non_claims": [
+    "The 170 exhaustive-not-expressed occurrences are not proof of a visual miss.",
+    "The 37 direct occurrences define an oracle ceiling, not a forecast.",
+    "The 148-card and 150-card Composer replays overlap the discovery cohort and are not independent confirmation.",
+    "The 50-card original arm has no source image above 2048 pixels and therefore does not test true full-resolution headroom."
+  ]
+}
