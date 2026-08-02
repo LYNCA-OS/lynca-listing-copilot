@@ -48,6 +48,7 @@ const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_IMAGE = 6;
 const FIELD_MAX_CROPS_PER_ASSET = 8;
 const CSM_THIN_API_ENDPOINT = "/api/csm-listing-title";
+const CSM_THIN_INGEST_API_ENDPOINT = "/api/csm-listing-title-ingest";
 const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
 const FEEDBACK_API_ENDPOINT = "/api/v4/listing-feedback";
 const EXPORT_WORKBOOK_API_ENDPOINT = "/api/v4/listing-export-workbook";
@@ -1733,6 +1734,99 @@ async function ensureAssetPreparedForRecognition(asset) {
   return ensureAssetOriginalImagesUploaded(asset);
 }
 
+function csmIngestFastPathEligible(asset = {}) {
+  if (asset.durableAssetId || asset.originalStorageUploadPromise) return false;
+  const images = Array.isArray(asset.images) ? asset.images : [];
+  if (!images.length || images.length > 2) return false;
+  const sources = images.map(storageSourceForImage);
+  return sources.every((source) => source && source.size > 0)
+    && sources.reduce((total, source) => total + source.size, 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES;
+}
+
+async function requestCsmIngestFastPath(asset, intentId) {
+  const images = await Promise.all(asset.images.map(async (image, imageIndex) => {
+    await ensureImageUploadMetadata(image);
+    const source = storageSourceForImage(image);
+    const usingOriginalSource = source === image.sourceFile;
+    const contentType = usingOriginalSource
+      ? image.originalType || source.type || "image/jpeg"
+      : source.type || image.type || "image/jpeg";
+    const dimensions = storageDimensionsForImage(image, source);
+    const [signatureHex, contentSha256] = await Promise.all([
+      fileSignatureHex(source),
+      image.contentSha256 ? Promise.resolve(image.contentSha256) : contentSha256Hex(source)
+    ]);
+    image.contentSha256 = contentSha256;
+    return {
+      image,
+      source,
+      imageId: image.id,
+      role: storageRoleForImage(image, imageIndex),
+      fileName: image.name,
+      contentType,
+      size: source.size,
+      width: dimensions.width,
+      height: dimensions.height,
+      signatureHex,
+      contentSha256
+    };
+  }));
+  const metadata = {
+    clientAssetRef: asset.clientAssetRef || asset.id,
+    idempotencyKey: assetCreateIdempotencyKey(asset),
+    captureProfileId: defaultCaptureProfileId,
+    intentId,
+    imageDetail: "high",
+    images: images.map(({ source: _source, image: _image, ...image }) => image)
+  };
+  const request = await fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/octet-stream",
+      "x-lynca-ingest-metadata": encodeUploadRelayMetadata(metadata)
+    },
+    credentials: "same-origin",
+    body: new Blob(images.map((image) => image.source), { type: "application/octet-stream" })
+  }, {
+    timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
+    maxAttempts: 1,
+    retryNetworkErrors: false,
+    asset,
+    stage: "csm_thin_ingest"
+  });
+  if (request.error || request.payload?.ok !== true) {
+    const error = new Error(request.payload?.message || `CSM 一体化链路失败：${request.response?.status || "network"}`);
+    error.code = String(request.payload?.code || "").trim();
+    error.retryable = request.payload?.retryable === true;
+    throw error;
+  }
+  const payload = request.payload;
+  if (payload.client_asset_ref !== metadata.clientAssetRef || !payload.asset_id || !payload.tenant_id) {
+    throw new Error("csm_ingest_asset_identity_mismatch");
+  }
+  asset.durableAssetId = payload.asset_id;
+  asset.durableTenantId = payload.tenant_id;
+  asset.imageGenerationId = payload.image_generation_id || payload.asset_id;
+  asset.expectedOriginalCount = Number(payload.expected_original_count || images.length);
+  const verificationByImage = new Map((payload.verifications || []).map((row) => [row.image_id, row]));
+  for (const row of images) {
+    const verification = verificationByImage.get(row.imageId);
+    if (!verification?.upload?.object_path || verification.verification_record?.durable !== true) {
+      throw new Error("csm_ingest_verification_identity_missing");
+    }
+    row.image.storageRole = row.role;
+    applyVerifiedStorageBinding({
+      asset,
+      image: row.image,
+      uploadObjectPath: verification.upload.object_path,
+      contentSha256: row.contentSha256,
+      verifyPayload: verification
+    });
+  }
+  asset.backgroundPrepareStatus = "ready";
+  return payload;
+}
+
 async function processAssetViaCsmThinPath(asset, {
   intentId = state.backgroundRecognitionBatchId,
   manualRetry = false
@@ -1741,40 +1835,48 @@ async function processAssetViaCsmThinPath(asset, {
   const durableIntentId = String(intentId || "").trim();
   if (!durableIntentId) throw new Error("CSM 识别意图缺失");
   const startedAt = performance.now();
-  setAssetProgress(asset.index, "上传并校验原图", 0.12);
-  // The background preparation promise owns all bounded premodel retries. Do
-  // not mark the card failed after its first shared attempt while a later
-  // automatic attempt is still recovering the exact persisted state.
-  await ensureAssetPreparedForRecognition(asset);
-  setAssetProgress(asset.index, "Luna 单次识别", 0.45);
-  markAssetStarted(asset, Date.now(), "client_csm_request");
-  const request = await fetchJsonWithRetry(CSM_THIN_API_ENDPOINT, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "same-origin",
-    body: JSON.stringify({
-      asset_id: canonicalAssetId(asset),
-      intent_id: durableIntentId,
-      image_detail: "high",
-      manual_retry: manualRetry === true
-    })
-  }, {
-    // The server may spend up to 145s waiting for the durable global pool and
-    // 120s in the model call. Keep the browser alive through that bounded
-    // window so it cannot report failure while the server is still spending.
-    timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
-    maxAttempts: 1,
-    retryNetworkErrors: false,
-    asset,
-    stage: "csm_thin_direct"
-  });
-  if (request.error || request.payload?.ok !== true) {
-    const error = new Error(request.payload?.message || `CSM 薄链路失败：${request.response?.status || "network"}`);
-    error.code = String(request.payload?.code || "").trim();
-    error.retryable = request.payload?.retryable === true;
-    throw error;
+  let payload;
+  if (manualRetry !== true && csmIngestFastPathEligible(asset)) {
+    setAssetProgress(asset.index, "上传与 Luna 并行", 0.28);
+    markAssetStarted(asset, Date.now(), "client_csm_ingest_request");
+    try {
+      payload = await requestCsmIngestFastPath(asset, durableIntentId);
+    } catch (fastPathError) {
+      // The durable operation key is asset/intent/image based, so falling back
+      // can safely recover a lost response without buying a second model call.
+      asset.fastIngestFallbackReason = String(fastPathError?.code || fastPathError?.message || "fast_ingest_failed").slice(0, 160);
+    }
   }
-  const payload = request.payload;
+  if (!payload) {
+    setAssetProgress(asset.index, "上传并校验原图", 0.12);
+    await ensureAssetPreparedForRecognition(asset);
+    setAssetProgress(asset.index, "Luna 单次识别", 0.45);
+    markAssetStarted(asset, Date.now(), "client_csm_request");
+    const request = await fetchJsonWithRetry(CSM_THIN_API_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        asset_id: canonicalAssetId(asset),
+        intent_id: durableIntentId,
+        image_detail: "high",
+        manual_retry: manualRetry === true
+      })
+    }, {
+      timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
+      maxAttempts: 1,
+      retryNetworkErrors: false,
+      asset,
+      stage: "csm_thin_direct"
+    });
+    if (request.error || request.payload?.ok !== true) {
+      const error = new Error(request.payload?.message || `CSM 薄链路失败：${request.response?.status || "network"}`);
+      error.code = String(request.payload?.code || "").trim();
+      error.retryable = request.payload?.retryable === true;
+      throw error;
+    }
+    payload = request.payload;
+  }
   const lowConfidence = payload.low_confidence_fields || [];
   setAssetProgress(asset.index, "CSM / SEM 组合完成", 0.96);
   return attachGenerationTimingToResult({
@@ -1839,6 +1941,10 @@ function drainBackgroundPreparationQueue() {
 function scheduleAssetBackgroundPreparation(asset, runId = state.backgroundPreparationRunId) {
   if (!asset || !runId || runId !== state.backgroundPreparationRunId) return false;
   if (!backgroundPreparationAvailable()) return false;
+  // Typical one/two-image assets use one same-origin ingest request. Starting
+  // the legacy upload worker here would recreate the serial boundary and race
+  // the same deterministic object paths.
+  if (csmIngestFastPathEligible(asset)) return true;
   if (asset.backgroundPrepareStatus === "ready") return true;
   if (asset.backgroundPreparationScheduledRunId === runId) return true;
   asset.backgroundPreparationScheduledRunId = runId;

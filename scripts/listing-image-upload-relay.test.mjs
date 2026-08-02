@@ -106,8 +106,12 @@ const appSource = readFileSync(new URL("../app/listing-copilot.js", import.meta.
 assert.match(appSource, /\/api\/listing-image-upload-relay/);
 assert.match(appSource, /row\.source\.size <= STORAGE_UPLOAD_RELAY_MAX_BYTES/);
 assert.match(appSource, /Any relay failure falls back to the existing signed direct path/);
+assert.match(appSource, /\/api\/csm-listing-title-ingest/);
+assert.match(appSource, /body: new Blob\(images\.map\(\(image\) => image\.source\)/);
+assert.match(appSource, /上传与 Luna 并行/);
 
 const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
 assert.deepEqual(vercel.functions["api/listing-image-upload-relay.js"].regions, ["sin1"]);
+assert.deepEqual(vercel.functions["api/csm-listing-title-ingest.js"].regions, ["sin1"]);
 
 console.log("listing image upload relay tests passed");

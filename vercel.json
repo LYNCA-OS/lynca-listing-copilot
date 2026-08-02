@@ -79,6 +79,12 @@
         "sin1"
       ]
     },
+    "api/csm-listing-title-ingest.js": {
+      "maxDuration": 300,
+      "regions": [
+        "sin1"
+      ]
+    },
     "api/listing-asset-create.js": {
       "regions": [
         "sin1"
