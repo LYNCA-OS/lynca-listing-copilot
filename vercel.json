@@ -5,7 +5,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": [
-    "iad1"
+    "sin1"
   ],
   "rewrites": [
     {
@@ -76,22 +76,22 @@
     "api/csm-listing-title.js": {
       "maxDuration": 300,
       "regions": [
-        "syd1"
+        "sin1"
       ]
     },
     "api/listing-asset-create.js": {
       "regions": [
-        "syd1"
+        "sin1"
       ]
     },
     "api/listing-image-upload-url.js": {
       "regions": [
-        "syd1"
+        "sin1"
       ]
     },
     "api/listing-image-verify-upload.js": {
       "regions": [
-        "syd1"
+        "sin1"
       ]
     },
     "api/listing-copilot-title.js": {

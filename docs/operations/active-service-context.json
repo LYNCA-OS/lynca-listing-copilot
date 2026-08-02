@@ -43,8 +43,8 @@
     "rule": "Production deploys only from the clean production checkout. Capacity probes only deploy Preview from the exact lab cwd."
   },
   "supabase": {
-    "project": "Listing Copilot",
-    "project_ref": "osrrujmpxxiefppjfgpd",
+    "project": "Listing Copilot Singapore",
+    "project_ref": "irpgnhkslrsiucybkufc",
     "organization_id": "amudxinagqcimbuezvyi",
     "cwd": "/Users/paidaxin/lynca-thin-production-main/infrastructure/supabase-production",
     "link_ref_file": "supabase/.temp/project-ref",
