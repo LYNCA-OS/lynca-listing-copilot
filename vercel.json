@@ -74,7 +74,10 @@
   ],
   "functions": {
     "api/csm-listing-title.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "regions": [
+        "syd1"
+      ]
     },
     "api/listing-copilot-title.js": {
       "maxDuration": 300
