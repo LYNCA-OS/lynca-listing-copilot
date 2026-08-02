@@ -87,6 +87,12 @@ import {
   parseResidualEvidenceLaneV1,
   withResidualEvidenceLaneV1
 } from "../lib/listing/thin/residual-evidence-lane-v1.mjs";
+import {
+  FIELD_SPECIFIC_OBSERVATION_LANE_V2,
+  buildFieldSpecificObservationSchemaV2,
+  captureFieldSpecificObservationLaneV2,
+  withFieldSpecificObservationLaneV2
+} from "../experiments/accuracy/field-specific-observation-lane-v2.mjs";
 import { summariseSemQuality } from "../lib/listing/thin/csm-sem-score.mjs";
 
 const BARE_PROMPT = "Write the eBay listing title for this sports trading card. "
@@ -279,6 +285,76 @@ function canonicalResidualEvidenceV1Arm(fixedImageDetail = "high") {
   };
 }
 
+// Evaluation-only same-call capture arm.  The observation rows are retained
+// as candidate evidence, never projected into CSM, Composer, persistence, or
+// Production.  Keeping this in the paired harness makes request bytes,
+// checkpoint identity, and provider usage auditable against the canonical
+// control while preserving the one-call boundary.
+function canonicalFieldObservationV2Arm(fixedImageDetail = "high") {
+  return {
+    canonical: true,
+    diagnostic: true,
+    evalVersion: FIELD_SPECIFIC_OBSERVATION_LANE_V2,
+    responseSchemaName: "canonical_card_fields_field_observation_v2",
+    responseSchema: buildFieldSpecificObservationSchemaV2(CANONICAL_FIELDS_SCHEMA),
+    prompt: null,
+    buildRequest: (context) => withFieldSpecificObservationLaneV2(buildCanonicalFieldsRequest({
+      ...context,
+      imageDetail: fixedImageDetail
+    }), { enabled: true }),
+    extract: extractCanonicalPayload,
+    finish: (payload) => {
+      const canonical = finishCanonicalTitle(payload);
+      const capture = captureFieldSpecificObservationLaneV2(payload, {
+        canonicalFields: canonical.fields
+      });
+      return {
+        ...canonical,
+        observations: capture.candidates,
+        observation_candidates: capture.candidates,
+        observation_dropped: capture.dropped,
+        observation_defects: capture.defects,
+        observation_schema_version: capture.schema_version,
+        observation_source_present: capture.source_present,
+        observation_canonical_fields_unchanged: capture.canonical_fields_unchanged,
+        observation_automatic_csm_admission: capture.automatic_csm_admission,
+        observation_automatic_renderer_admission: capture.automatic_renderer_admission,
+        observation_persistence_authority: capture.persistence_authority
+      };
+    },
+    imageDetail: fixedImageDetail
+  };
+}
+
+// Evaluation-only visual treatment. The extra image is a deterministic
+// native-pixel bottom-band sheet supplied by the cohort manifest. It is an
+// additive view: originals remain first and are never replaced or cropped.
+function canonicalVisualBottomBandV1Arm(fixedImageDetail = "high") {
+  return {
+    canonical: true,
+    diagnostic: true,
+    evalVersion: "visual-bottom-two-band-v1",
+    requiresExtraImages: true,
+    responseSchemaName: "canonical_card_fields",
+    responseSchema: CANONICAL_FIELDS_SCHEMA,
+    prompt: CANONICAL_FIELDS_PROMPT,
+    buildRequest: (context) => {
+      const request = buildCanonicalFieldsRequest({
+        ...context,
+        imageDetail: fixedImageDetail
+      });
+      const content = request.input[0].content;
+      for (const url of context.extraImageUrls || []) {
+        content.push({ type: "input_image", image_url: url, detail: fixedImageDetail });
+      }
+      return request;
+    },
+    extract: extractCanonicalPayload,
+    finish: (payload) => finishCanonicalTitle(payload),
+    imageDetail: fixedImageDetail
+  };
+}
+
 
 /**
  * An arm is a request builder plus a finisher, not just a prompt: the canonical
@@ -301,6 +377,8 @@ export const ARM_SPECS = {
   candidate_expression_v4_high: candidateExpressionV4Arm("high"),
   thin_canonical_free_product_v1_high: canonicalFreeProductV1Arm("high"),
   thin_canonical_residual_v1_high: canonicalResidualEvidenceV1Arm("high"),
+  thin_canonical_field_observation_v2_high: canonicalFieldObservationV2Arm("high"),
+  thin_canonical_visual_bottom_band_v1_high: canonicalVisualBottomBandV1Arm("high"),
   exhaustive_observation_high: exhaustiveObservationArm("high"),
   exhaustive_observation_original: exhaustiveObservationArm("original")
 };
@@ -344,6 +422,11 @@ const ARM_SOURCE_ROOTS = Object.freeze({
   candidate_expression_v4_high: [new URL("../lib/listing/thin/candidate-expression-v4.mjs", import.meta.url)],
   thin_canonical_free_product_v1_high: [new URL("../lib/listing/thin/canonical-free-product-v1.mjs", import.meta.url)],
   thin_canonical_residual_v1_high: [SOURCE_URLS.thin_listing_path, SOURCE_URLS.residual_evidence_v1],
+  thin_canonical_field_observation_v2_high: [
+    SOURCE_URLS.thin_listing_path,
+    new URL("../experiments/accuracy/field-specific-observation-lane-v2.mjs", import.meta.url)
+  ],
+  thin_canonical_visual_bottom_band_v1_high: [SOURCE_URLS.thin_listing_path],
   exhaustive_observation_high: [SOURCE_URLS.exhaustive_observation],
   exhaustive_observation_original: [SOURCE_URLS.exhaustive_observation]
 });
@@ -610,8 +693,10 @@ async function loadEvaluationInputs({ dataset, sealedLabels, assetIdsFile, limit
   return { datasetBody, sealedLabelsBody, assetIdsBody, labels, items };
 }
 
-export function imageSetFingerprint(item) {
-  return sha256(JSON.stringify((item?.images || []).slice(0, 2).map((image) => ({
+export function imageSetFingerprint(item, images = null) {
+  const sourceImages = images || item?.images || [];
+  const imageLimit = images ? 3 : 2;
+  return sha256(JSON.stringify(sourceImages.slice(0, imageLimit).map((image) => ({
     bucket: image?.bucket || null,
     object_path: image?.object_path || image?.objectPath || null,
     role: image?.role || null,
@@ -623,17 +708,26 @@ export function imageSetFingerprint(item) {
 }
 
 function expectedCheckpointIdentity({ item, arm, model, effort, imageDetail }) {
-  const signable = (item?.images || []).slice(0, 2).filter((image) => (
+  const sourceImages = [
+    ...(item?.images || []).slice(0, 2),
+    ...(arm.requiresExtraImages ? (item?.visual_extra_images || []).slice(0, 1) : [])
+  ];
+  const isSignable = (image) => (
     (String(image?.bucket || "").trim()
       && String(image?.object_path || image?.objectPath || "").trim())
     || String(image?.local_path || image?.localPath || "").trim()
-  ));
-  const imageUrls = signable.map((_, index) => `https://checkpoint.invalid/image-${index + 1}`);
-  const request = arm.buildRequest({ imageUrls, model, effort, imageDetail });
+  );
+  const primarySignable = (item?.images || []).slice(0, 2).filter(isSignable);
+  const extraSignable = arm.requiresExtraImages
+    ? (item?.visual_extra_images || []).slice(0, 1).filter(isSignable)
+    : [];
+  const imageUrls = primarySignable.map((_, index) => `https://checkpoint.invalid/image-${index + 1}`);
+  const extraImageUrls = extraSignable.map((_, index) => `https://checkpoint.invalid/extra-image-${index + 1}`);
+  const request = arm.buildRequest({ imageUrls, extraImageUrls, model, effort, imageDetail });
   return {
     request_sha256: requestFingerprint(request),
-    image_set_sha256: imageSetFingerprint(item),
-    image_count: imageUrls.length,
+    image_set_sha256: imageSetFingerprint(item, sourceImages),
+    image_count: imageUrls.length + extraImageUrls.length,
     image_detail: arm.imageDetail || imageDetail,
     arm_eval_version: arm.evalVersion || null
   };
@@ -975,14 +1069,23 @@ export async function main(argv = process.argv.slice(2), {
     const order = index % 2 === 0 ? ARMS : [...ARMS].reverse();
 
     let imageUrls = null;
+    let extraImageUrls = null;
     for (const arm of order) {
       const key = `${item.asset_id}::${arm.key}`;
       if (done.has(key)) continue;
       if (!imageUrls) imageUrls = await signImageUrls(item.images, { supabaseUrl, serviceKey, fetchImpl });
+      if (arm.requiresExtraImages && !extraImageUrls) {
+        extraImageUrls = await signImageUrls(item.visual_extra_images || [], { supabaseUrl, serviceKey, fetchImpl });
+      }
 
-      const request = arm.buildRequest({ imageUrls, model, effort, imageDetail });
+      const requestExtraImageUrls = arm.requiresExtraImages ? (extraImageUrls || []) : [];
+      const request = arm.buildRequest({ imageUrls, extraImageUrls: requestExtraImageUrls, model, effort, imageDetail });
       const requestSha256 = requestFingerprint(request);
-      const imageSetSha256 = imageSetFingerprint(item);
+      const requestImageEntries = [
+        ...(item.images || []).slice(0, 2),
+        ...(arm.requiresExtraImages ? (item.visual_extra_images || []).slice(0, 1) : [])
+      ];
+      const imageSetSha256 = imageSetFingerprint(item, requestImageEntries);
       const startedAt = Date.now();
       const startedAtIso = new Date(startedAt).toISOString();
       const providerResult = await callProviderWithRetry({
@@ -1068,7 +1171,7 @@ export async function main(argv = process.argv.slice(2), {
         served_effort: servedEffort,
         request_sha256: requestSha256,
         image_set_sha256: imageSetSha256,
-        image_count: imageUrls.length,
+        image_count: imageUrls.length + requestExtraImageUrls.length,
         request_attempt_count: attemptCount,
         provider_attempts: providerResult.attempts,
         run_fingerprint: expectedManifest.fingerprint,
@@ -1113,6 +1216,15 @@ export async function main(argv = process.argv.slice(2), {
         residual_dropped: finished.residual_dropped ?? null,
         residual_defects: finished.residual_defects ?? null,
         residual_canonical_fields_unchanged: finished.residual_canonical_fields_unchanged ?? null,
+        observation_schema_version: finished.observation_schema_version ?? null,
+        observation_source_present: finished.observation_source_present ?? null,
+        observation_candidates: finished.observation_candidates ?? null,
+        observation_dropped: finished.observation_dropped ?? null,
+        observation_defects: finished.observation_defects ?? null,
+        observation_canonical_fields_unchanged: finished.observation_canonical_fields_unchanged ?? null,
+        observation_automatic_csm_admission: finished.observation_automatic_csm_admission ?? null,
+        observation_automatic_renderer_admission: finished.observation_automatic_renderer_admission ?? null,
+        observation_persistence_authority: finished.observation_persistence_authority ?? null,
         production_promoted: finished.production_promoted ?? null
       };
 

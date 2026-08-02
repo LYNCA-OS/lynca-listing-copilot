@@ -166,6 +166,19 @@ fresh150 的 427 个 audited missing occurrences 按最早损失边界拆分：
 - 线性尺度：p50 `1.786x`，p90 `2.381x`；
 - 只有 V2 显著胜过 V1，额外 token 才有 Pareto 合理性。
 
+### V1 105 张付费结果（已完成）
+
+V1 已在完整 outside-development 105 张上完成唯一一轮付费对照：
+`0.785180 -> 0.789985`（`+0.004805`），paired 为 `27/19/59`，
+`p=0.302`。收益主要落在 `year`、`card_name`、`serial` 和
+`descriptive_rarity`；`product`、`parallel_family`、`print_finish` 混合或
+回退。代价是中位延迟 `5.545s -> 8.177s`、输入 token `+23.8%`，超过当前
+写手路径的 6–8 秒预算，因此 **不进入生产**。保留为候选，下一步只能先做
+零成本的压包/解析设计；没有成本下降前不再购买第二轮视觉样本。
+
+详细结果见
+[`visual-bottom-band-v1-paid105-2026-08-02.md`](./visual-bottom-band-v1-paid105-2026-08-02.md)。
+
 ### 视觉 STOP
 
 - 自动卡体/前景裁剪：只敢裁 71/300，应用子集的中位增益仅 `1.047x`，
