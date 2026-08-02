@@ -221,6 +221,8 @@ async function persistImage({ image, tenantId, assetId, context, now }) {
 
 export default async function handler(req, res) {
   const startedAt = Date.now();
+  let recoveryIdentity = null;
+  let storagePromise = null;
   instrumentProductionRequest(req, res, { api: "/api/csm-listing-title-ingest" });
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, message: "Method not allowed" });
   let context;
@@ -250,6 +252,13 @@ export default async function handler(req, res) {
     const now = new Date();
     const bucket = listingImageStorageReadiness(process.env).bucket;
     const canonical = buildCanonical({ tenantId: context.tenantId, assetId, images, bucket, now });
+    recoveryIdentity = {
+      asset_id: assetId,
+      tenant_id: context.tenantId,
+      client_asset_ref: clientAssetRef,
+      image_generation_id: assetId,
+      expected_original_count: images.length
+    };
 
     const assetPromise = createTenantListingAsset({
       tenantId: context.tenantId,
@@ -259,14 +268,19 @@ export default async function handler(req, res) {
       category: metadata.category,
       expectedOriginalCount: images.length
     });
-    const storagePromise = assetPromise.then(() => Promise.all(images.map((image) => persistImage({
+    storagePromise = assetPromise.then(() => Promise.all(images.map((image) => persistImage({
       image,
       tenantId: context.tenantId,
       assetId,
       context,
       now
     }))));
+    // The provider precondition can fail before persistPath awaits this branch.
+    // Observe the rejection immediately so a concurrent Storage error cannot
+    // terminate the function before the structured CSM response is returned.
+    void storagePromise.catch(() => null);
     const imageByPath = new Map(canonical.images.map((image) => [image.object_path, image.source]));
+    let deferredSessionArgs = null;
     const result = await runDirectCsmAsset({
       tenantId: context.tenantId,
       userId: context.userId,
@@ -281,12 +295,26 @@ export default async function handler(req, res) {
           return `data:${image.contentType};base64,${image.bytes.toString("base64")}`;
         },
         createSession: async (args) => {
-          await assetPromise;
-          const { createCsmRecognitionSession } = await import("../lib/listing/thin/csm-session-store.mjs");
-          return createCsmRecognitionSession(args);
+          // The provider authority has already persisted the immutable
+          // operation/payload identity before executeTask runs. Defer the
+          // formal CSM session until Storage has satisfied the database's
+          // verified_image_set invariant, then create it before CSM rows.
+          deferredSessionArgs = args;
+          return {
+            sessionId: args.sessionId,
+            persistence: { recognition_session: { saved: true, deferred: true } }
+          };
         },
         persistPath: async (args) => {
           await storagePromise;
+          if (!deferredSessionArgs) throw new Error("ingest_deferred_session_missing");
+          const { createCsmRecognitionSession } = await import("../lib/listing/thin/csm-session-store.mjs");
+          const created = await createCsmRecognitionSession(deferredSessionArgs);
+          if (created.persistence?.recognition_session?.saved !== true) {
+            throw new Error(`ingest_session_persistence_failed:${String(
+              created.persistence?.recognition_session?.error || "unknown"
+            ).slice(0, 160)}`);
+          }
           return persistPreparedCanonicalListingPath(args);
         }
       }
@@ -311,12 +339,20 @@ export default async function handler(req, res) {
   } catch (error) {
     const status = Number(error?.statusCode || error?.status || 503);
     const safeStatus = Number.isInteger(status) && status >= 400 && status <= 599 ? status : 503;
+    const recoveredVerifications = storagePromise
+      ? await storagePromise.catch(() => null)
+      : null;
     return sendJson(res, safeStatus, {
       ok: false,
       route: "CSM_THIN_DIRECT_INGEST",
       code: String(error?.code || error?.message || "csm_ingest_failed").split(":")[0],
       retryable: error?.retryable === true || safeStatus >= 500,
-      message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240)
+      message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240),
+      ...(recoveryIdentity && recoveredVerifications ? {
+        ...recoveryIdentity,
+        verifications: recoveredVerifications,
+        upload_recovered: true
+      } : {})
     });
   }
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { launchGateImageSourceRecords } from "../lib/listing/evaluation/launch-gate-image-source-index.generated.mjs";
 
@@ -86,12 +86,23 @@ async function materializeRealSourceImages(baseUrl, secret) {
   }));
 }
 
+async function localSourceImages(value) {
+  const paths = String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
+  if (!paths.length) return null;
+  return Promise.all(paths.map(async (filePath, index) => ({
+    name: path.basename(filePath) || `image-${index + 1}.jpg`,
+    mimeType: "image/jpeg",
+    buffer: await readFile(filePath)
+  })));
+}
+
 test("production writer journey reaches persisted L2 through the real UI", async ({ browser }, testInfo) => {
   await mkdir(artifactDir, { recursive: true });
   const baseUrl = cleanBaseUrl(process.env.WRITER_JOURNEY_BASE_URL);
   const username = requiredEnv("METAVERSE_USERNAME");
   const password = requiredEnv("METAVERSE_PASSWORD");
-  const launchGateSecret = requiredEnv("LAUNCH_GATE_EVAL_SECRET");
+  const localImages = await localSourceImages(process.env.WRITER_JOURNEY_LOCAL_IMAGES);
+  const launchGateSecret = localImages ? "" : requiredEnv("LAUNCH_GATE_EVAL_SECRET");
   const evidence = {
     schema_version: "production-writer-journey-evidence-v1",
     passed: false,
@@ -140,7 +151,7 @@ test("production writer journey reaches persisted L2 through the real UI", async
     await loginPage.getByTestId("login-submit").click();
     await loginPage.waitForURL((url) => !url.pathname.endsWith("/login.html"), { timeout: 45_000 });
     await expect(loginPage.getByTestId("image-upload-input")).toBeAttached();
-    const files = await materializeRealSourceImages(baseUrl, launchGateSecret);
+    const files = localImages || await materializeRealSourceImages(baseUrl, launchGateSecret);
     evidence.stages.real_image_materialization = { passed: true, image_count: files.length };
     const storageState = await loginContext.storageState();
     evidence.stages.login = { passed: true, final_path: new URL(loginPage.url()).pathname };
@@ -173,6 +184,8 @@ test("production writer journey reaches persisted L2 through the real UI", async
 
     await journeyPage.goto("/app/", { waitUntil: "domcontentloaded" });
     const uploadInput = journeyPage.getByTestId("image-upload-input");
+    await journeyPage.waitForLoadState("networkidle");
+    const uploadStartedAt = Date.now();
     await uploadInput.setInputFiles(files);
     const startButton = journeyPage.getByTestId("start-recognition");
     await expect(startButton).toBeHidden();
@@ -189,6 +202,7 @@ test("production writer journey reaches persisted L2 through the real UI", async
     ).toMatch(/^(?!标题暂不可用$).{1,80}$/);
     const title = await titleInput.inputValue();
     expect(title.length).toBeLessThanOrEqual(80);
+    evidence.stages.upload_to_title = { elapsed_ms: Date.now() - uploadStartedAt };
     const recognitionEndpoint = apiPaths.has("/api/csm-listing-title-ingest")
       ? "/api/csm-listing-title-ingest"
       : "/api/csm-listing-title";

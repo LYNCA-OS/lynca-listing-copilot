@@ -114,4 +114,9 @@ const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url
 assert.deepEqual(vercel.functions["api/listing-image-upload-relay.js"].regions, ["sin1"]);
 assert.deepEqual(vercel.functions["api/csm-listing-title-ingest.js"].regions, ["sin1"]);
 
+const ingestSource = readFileSync(new URL("../api/csm-listing-title-ingest.js", import.meta.url), "utf8");
+assert.match(ingestSource, /deferredSessionArgs = args/);
+assert.match(ingestSource, /await storagePromise;[\s\S]+createCsmRecognitionSession/);
+assert.match(ingestSource, /upload_recovered: true/);
+
 console.log("listing image upload relay tests passed");

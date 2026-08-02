@@ -1794,36 +1794,42 @@ async function requestCsmIngestFastPath(asset, intentId) {
     asset,
     stage: "csm_thin_ingest"
   });
+  const payload = request.payload || {};
+  const canRecoverUpload = payload.client_asset_ref === metadata.clientAssetRef
+    && payload.asset_id
+    && payload.tenant_id
+    && Array.isArray(payload.verifications);
+  if (canRecoverUpload) {
+    asset.durableAssetId = payload.asset_id;
+    asset.durableTenantId = payload.tenant_id;
+    asset.imageGenerationId = payload.image_generation_id || payload.asset_id;
+    asset.expectedOriginalCount = Number(payload.expected_original_count || images.length);
+    const verificationByImage = new Map(payload.verifications.map((row) => [row.image_id, row]));
+    for (const row of images) {
+      const verification = verificationByImage.get(row.imageId);
+      if (!verification?.upload?.object_path || verification.verification_record?.durable !== true) {
+        throw new Error("csm_ingest_verification_identity_missing");
+      }
+      row.image.storageRole = row.role;
+      applyVerifiedStorageBinding({
+        asset,
+        image: row.image,
+        uploadObjectPath: verification.upload.object_path,
+        contentSha256: row.contentSha256,
+        verifyPayload: verification
+      });
+    }
+    asset.backgroundPrepareStatus = "ready";
+  }
   if (request.error || request.payload?.ok !== true) {
     const error = new Error(request.payload?.message || `CSM 一体化链路失败：${request.response?.status || "network"}`);
     error.code = String(request.payload?.code || "").trim();
     error.retryable = request.payload?.retryable === true;
     throw error;
   }
-  const payload = request.payload;
-  if (payload.client_asset_ref !== metadata.clientAssetRef || !payload.asset_id || !payload.tenant_id) {
+  if (!canRecoverUpload) {
     throw new Error("csm_ingest_asset_identity_mismatch");
   }
-  asset.durableAssetId = payload.asset_id;
-  asset.durableTenantId = payload.tenant_id;
-  asset.imageGenerationId = payload.image_generation_id || payload.asset_id;
-  asset.expectedOriginalCount = Number(payload.expected_original_count || images.length);
-  const verificationByImage = new Map((payload.verifications || []).map((row) => [row.image_id, row]));
-  for (const row of images) {
-    const verification = verificationByImage.get(row.imageId);
-    if (!verification?.upload?.object_path || verification.verification_record?.durable !== true) {
-      throw new Error("csm_ingest_verification_identity_missing");
-    }
-    row.image.storageRole = row.role;
-    applyVerifiedStorageBinding({
-      asset,
-      image: row.image,
-      uploadObjectPath: verification.upload.object_path,
-      contentSha256: row.contentSha256,
-      verifyPayload: verification
-    });
-  }
-  asset.backgroundPrepareStatus = "ready";
   return payload;
 }
 
