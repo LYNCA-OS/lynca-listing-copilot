@@ -94,6 +94,35 @@ regional fix is a positive production prerequisite; the authority-stage fields
 are additive diagnostic telemetry. No concurrency or accuracy promotion is
 justified by this probe alone.
 
+## Eight-card concurrency screen after enqueue telemetry
+
+To bound the next decision without spending a full 150-card run, the same
+production tenant was screened with eight explicit assets. The table reports
+successful cards only for stage percentiles; a non-retryable 400 is not a
+latency observation and is listed separately.
+
+| Requested concurrency | Success | Request p50 | Request p95/max | Provider p50/p95 | Enqueue p50/p95 | Dispatch p50/p95 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 7/8 | 5,710 ms | 12,337 ms | 3,104 / 8,831 ms | 241 / 678 ms | 4,576 / 11,345 ms |
+| 4 | 8/8 | 5,418 ms | 11,292 ms | 3,214 / 9,140 ms | 239 / 688 ms | 4,677 / 10,356 ms |
+| 6 | 7/8 | 5,737 ms | **6,592 ms** | 3,362 / 4,448 ms | 232 / 652 ms | 4,901 / 6,077 ms |
+| 8 | 7/8 | **5,320 ms** | 8,396 ms | 3,170 / 4,919 ms | 242 / 698 ms | 4,767 / 7,000 ms |
+
+The prior four-card post-telemetry samples were 4/4 at c1 (p50 5,937 ms,
+p95 6,973 ms) and c4 (p50 5,183 ms, p95 6,861 ms). Across the new eight-card
+screen, c6 has the smallest observed p95 and the most stable provider tail;
+c8 has a slightly lower p50 but a materially worse p95. This supports keeping
+the already deployed local concurrency of 6 as the provisional production
+sweet point. It is not a formal SLO claim: the run is one wave per setting,
+provider variance remains visible, and the c2/c4 outliers are provider-bound.
+
+Three cards returned HTTP 400 `canonical_path_provider_failed` once across
+the c2/c6/c8 waves. They produced no stage receipt and were excluded from the
+percentiles; the same asset can succeed in another wave, so this is a
+separate intermittent asset/provider failure to investigate, not evidence
+that c2, c6, or c8 is saturated. No scheduler or claim-poll setting was
+changed from this screen.
+
 ## Accuracy-screen boundary
 
 An eight-card hosted accuracy screen was intentionally stopped after all
