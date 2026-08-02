@@ -37,6 +37,14 @@ assert.equal(row.status_code, 202);
 
 const error = new Error("provider failed Authorization: Bearer sk-live-secret https://storage.example/object?token=abc");
 error.code = "PROVIDER_TIMEOUT";
+error.provider_request_id = "req-provider-safe";
+error.provider_client_request_id = "lynca-client-safe";
+error.provider_status = 400;
+error.provider_error_code = "invalid_image";
+error.provider_error_type = "invalid_request_error";
+error.provider_error_param = "input[0].content[1]";
+error.provider_ms = 12_345;
+error.latency_stages_ms = { signed_url_ms: 220, provider_ms: 12_345 };
 error.stack = "Error: provider failed\nAuthorization: Bearer definitely-secret\n at safe-file.mjs:10:4";
 const errorRow = buildErrorLogRow({ error, requestId: "req-safe-123", context: { tenantId: "tenant_001" } });
 assert.equal(errorRow.error_type, "PROVIDER_TIMEOUT");
@@ -45,6 +53,18 @@ assert.doesNotMatch(errorRow.stack, /definitely-secret/);
 assert.doesNotMatch(errorRow.message, /sk-live-secret|token=abc|storage\.example/);
 assert.match(errorRow.message, /redacted/);
 assert.equal(errorRow.metadata.error_fingerprint, operationalErrorFingerprint(error, "PROVIDER_TIMEOUT"));
+assert.equal(errorRow.metadata.provider_request_id, "req-provider-safe");
+assert.equal(errorRow.metadata.provider_client_request_id, "lynca-client-safe");
+assert.equal(errorRow.metadata.provider_status, 400);
+assert.equal(errorRow.metadata.provider_error_code, "invalid_image");
+assert.deepEqual(errorRow.metadata.latency_stages_ms, { signed_url_ms: 220, provider_ms: 12_345 });
+const safeTimingEvent = buildProductionEventRow({
+  eventType: "provider_called",
+  context: { tenantId: "tenant_001" },
+  metadata: { signed_url: "https://must-not-leak.invalid", signed_url_ms: 220 }
+});
+assert.equal(safeTimingEvent.metadata.signed_url, undefined);
+assert.equal(safeTimingEvent.metadata.signed_url_ms, 220);
 assert.equal(sanitizeOperationalStack(error).includes("definitely-secret"), false);
 assert.equal(sanitizeOperationalText("api_key=sk-live-secret").includes("sk-live-secret"), false);
 

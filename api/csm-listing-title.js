@@ -420,26 +420,37 @@ export async function runDirectCsmAsset({
     }
 
     const providerStartedAt = Date.now();
-    const prepared = await preparePath({
-      tenantId: tenant,
-      recognitionSessionId: sessionId,
-      imageUrls,
-      imageDetail: detail,
-      model: MODEL,
-      effort: EFFORT,
-      promptVersion: CSM_DIRECT_PROMPT_VERSION,
-      providerClientRequestId,
-      callProvider: callProvider || ((request) => createResponsesProviderCaller({
+    let prepared;
+    try {
+      prepared = await preparePath({
+        tenantId: tenant,
+        recognitionSessionId: sessionId,
+        imageUrls,
+        imageDetail: detail,
+        model: MODEL,
+        effort: EFFORT,
+        promptVersion: CSM_DIRECT_PROMPT_VERSION,
+        providerClientRequestId,
+        callProvider: callProvider || ((request) => createResponsesProviderCaller({
+          env,
+          fetchImpl,
+          operationKey: dispatched.operation_key,
+          payloadHash: dispatched.payload_hash,
+          attempt: dispatched.attempt,
+          clientRequestId: providerClientRequestId
+        })(request)),
         env,
-        fetchImpl,
-        operationKey: dispatched.operation_key,
-        payloadHash: dispatched.payload_hash,
-        attempt: dispatched.attempt,
-        clientRequestId: providerClientRequestId
-      })(request)),
-      env,
-      fetchImpl
-    });
+        fetchImpl
+      });
+    } catch (error) {
+      attemptStages.provider_prepare_ms = Date.now() - providerStartedAt;
+      attemptStages.provider_ms = Number.isFinite(Number(error?.provider_ms))
+        ? Number(error.provider_ms)
+        : attemptStages.provider_prepare_ms;
+      error.latency_stages_ms = { ...attemptStages };
+      error.recognition_session_id = sessionId;
+      throw error;
+    }
     attemptStages.provider_prepare_ms = Date.now() - providerStartedAt;
     if (Number.isFinite(Number(prepared?.latency_ms))) {
       attemptStages.provider_ms = Number(prepared.latency_ms);
@@ -533,8 +544,39 @@ function responseStatus(error) {
   return 503;
 }
 
+function safeReceiptText(value) {
+  const text = String(value || "").trim();
+  return /^[a-zA-Z0-9._:\-/\[\]]{1,240}$/.test(text) ? text : null;
+}
+
+export function buildProviderFailureReceipt(error) {
+  if (error?.provider_attempt_started !== true) return null;
+  const stages = error?.latency_stages_ms && typeof error.latency_stages_ms === "object"
+    ? Object.fromEntries(Object.entries(error.latency_stages_ms).flatMap(([name, value]) => (
+        /^[a-z][a-z0-9_]*_ms$/.test(name) && Number.isFinite(Number(value))
+          ? [[name, Math.max(0, Number(value))]]
+          : []
+      )))
+    : {};
+  return {
+    schema_version: "csm-provider-failure-receipt-v1",
+    stage: "provider_attempt",
+    outcome: error?.ambiguous === true ? "unknown" : "definitive_response",
+    http_status: responseStatus(error),
+    provider_request_id: safeReceiptText(error?.provider_request_id),
+    provider_client_request_id: safeReceiptText(error?.provider_client_request_id),
+    provider_error_code: safeReceiptText(error?.provider_error_code),
+    provider_error_type: safeReceiptText(error?.provider_error_type),
+    provider_error_param: safeReceiptText(error?.provider_error_param),
+    provider_ms: Number.isFinite(Number(error?.provider_ms))
+      ? Math.max(0, Number(error.provider_ms))
+      : null,
+    latency_stages_ms: stages
+  };
+}
+
 export default async function handler(req, res) {
-  instrumentProductionRequest(req, res, { api: "/api/csm-listing-title" });
+  const telemetry = instrumentProductionRequest(req, res, { api: "/api/csm-listing-title" });
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, message: "Method not allowed" });
   let context;
   try {
@@ -570,11 +612,29 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const status = responseStatus(error);
+    const providerFailureReceipt = buildProviderFailureReceipt(error);
+    if (providerFailureReceipt) {
+      console.error(JSON.stringify({
+        event: "csm_provider_attempt_failed",
+        request_id: telemetry.requestId,
+        recognition_session_id: safeReceiptText(error?.recognition_session_id),
+        ...providerFailureReceipt
+      }));
+    }
     return sendJson(res, status, {
       ok: false,
+      route: "CSM_THIN_DIRECT",
+      cloud_run_calls: 0,
+      vector_calls: 0,
       code: String(error?.message || "csm_thin_path_failed").split(":")[0],
+      error_type: providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
       retryable: error?.retryable === true || status >= 500,
-      message: String(error?.message || "CSM thin path failed").slice(0, 240)
+      message: String(error?.message || "CSM thin path failed").slice(0, 240),
+      recognition_session_id: safeReceiptText(error?.recognition_session_id),
+      ...(providerFailureReceipt ? {
+        provider_failure_receipt: providerFailureReceipt,
+        latency_stages_ms: providerFailureReceipt.latency_stages_ms
+      } : {})
     });
   }
 }
