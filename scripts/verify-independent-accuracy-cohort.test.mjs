@@ -49,4 +49,38 @@ test("rejects visible labels", async () => {
   );
 });
 
+test("selects a disjoint holdout from a larger mixed dataset", async () => {
+  const dataset = { items: [item("dev-1"), item("new-1"), item("new-2")] };
+  const sealedLabels = ["new-1", "new-2"].map((id) => ({
+    key: id,
+    reviewed_title: "sealed",
+    policy: {
+      reviewed_title_is_ground_truth: true,
+      model_prompt_visible: false,
+      load_after_predictions_frozen: true
+    }
+  }));
+  const result = await validateIndependentAccuracyCohort({
+    dataset,
+    developmentAssetIds: ["dev-1"],
+    selectedAssetIds: ["new-2", "new-1"],
+    sealedLabels,
+    targetCount: 2
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.count, 2);
+});
+
+test("rejects a selected row without a sealed label key", async () => {
+  await assert.rejects(
+    validateIndependentAccuracyCohort({
+      dataset: { items: [item("new-1")] },
+      selectedAssetIds: ["new-1"],
+      sealedLabels: [],
+      targetCount: 1
+    }),
+    (error) => error.code === "cohort_contract_invalid"
+  );
+});
+
 console.log("Independent accuracy cohort gate tests passed.");

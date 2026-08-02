@@ -17,15 +17,76 @@
 //     value produced one paired evaluation in which both arms silently ran the
 //     same configuration and still reported clean-looking numbers.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { hostname } from "node:os";
+import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   finishThinTitle, finishCanonicalTitle, buildThinTitleRequest,
   extractProviderTitle, THIN_TITLE_PROMPT
 } from "../lib/listing/thin/thin-listing-path.mjs";
-import { buildCanonicalFieldsRequest, extractCanonicalPayload } from "../lib/listing/thin/canonical-fields.mjs";
+import {
+  CANONICAL_FIELDS_PROMPT,
+  CANONICAL_SERIAL_EXACT_PROMPT,
+  CANONICAL_FIELDS_SCHEMA,
+  buildCanonicalFieldsRequest,
+  extractCanonicalPayload
+} from "../lib/listing/thin/canonical-fields.mjs";
+import {
+  buildExhaustiveObservationRequest,
+  extractExhaustiveObservationPayload,
+  finishExhaustiveObservation
+} from "../lib/listing/thin/exhaustive-observation.mjs";
+import {
+  BOUNDED_OPEN_EVIDENCE_VERSION,
+  buildBoundedOpenEvidenceRequest,
+  finishBoundedOpenEvidenceTitle
+} from "../lib/listing/thin/bounded-open-evidence.mjs";
+import {
+  BOUNDED_EVIDENCE_V2_PROMPT,
+  BOUNDED_EVIDENCE_V2_SCHEMA,
+  BOUNDED_EVIDENCE_V2_SCHEMA_NAME,
+  BOUNDED_EVIDENCE_V2_VERSION,
+  buildBoundedEvidenceV2Request,
+  finishBoundedEvidenceV2Title
+} from "../lib/listing/thin/bounded-evidence-v2.mjs";
+import {
+  CANDIDATE_EXPRESSION_V3_PROMPT,
+  CANDIDATE_EXPRESSION_V3_SCHEMA,
+  CANDIDATE_EXPRESSION_V3_SCHEMA_NAME,
+  CANDIDATE_EXPRESSION_V3_VERSION,
+  buildCandidateExpressionV3Request,
+  extractCandidateExpressionV3Payload,
+  finishCandidateExpressionV3
+} from "../lib/listing/thin/candidate-expression-v3.mjs";
+import {
+  CANDIDATE_EXPRESSION_V4_PROMPT,
+  CANDIDATE_EXPRESSION_V4_SCHEMA,
+  CANDIDATE_EXPRESSION_V4_SCHEMA_NAME,
+  CANDIDATE_EXPRESSION_V4_VERSION,
+  buildCandidateExpressionV4Request,
+  extractCandidateExpressionV4Payload,
+  finishCandidateExpressionV4
+} from "../lib/listing/thin/candidate-expression-v4.mjs";
+import {
+  CANONICAL_FREE_PRODUCT_V1_PROMPT,
+  CANONICAL_FREE_PRODUCT_V1_SCHEMA,
+  CANONICAL_FREE_PRODUCT_V1_SCHEMA_NAME,
+  CANONICAL_FREE_PRODUCT_V1_VERSION,
+  buildCanonicalFreeProductV1Request,
+  finishCanonicalFreeProductV1
+} from "../lib/listing/thin/canonical-free-product-v1.mjs";
+import {
+  RESIDUAL_EVIDENCE_LANE_V1_VERSION,
+  buildResidualEvidenceLaneV1Prompt,
+  buildResidualEvidenceLaneV1Schema,
+  parseResidualEvidenceLaneV1,
+  withResidualEvidenceLaneV1
+} from "../lib/listing/thin/residual-evidence-lane-v1.mjs";
 import { summariseSemQuality } from "../lib/listing/thin/csm-sem-score.mjs";
 
 const BARE_PROMPT = "Write the eBay listing title for this sports trading card. "
@@ -34,12 +95,28 @@ const BARE_PROMPT = "Write the eBay listing title for this sports trading card. 
 const SERIAL_CLAUSE = "If the card is serial-numbered, write the full serial including the numerator "
   + "(for example 17/50, not /50).";
 
+// Evaluation-only treatment for the largest expression-loss families. It does
+// not add a field or change the schema; it only asks the model to make a
+// second, explicit pass over printed finish/rarity marks before abstaining.
+// Keep it out of production until a paired holdout shows that the extra pass
+// improves those fields without changing identity or serials.
+const FINISH_RARITY_PROMPT = `${CANONICAL_FIELDS_PROMPT} Before finalising, make one separate pass over the slab label and card front for printed parallel, finish, and rarity words such as Refractor, SSP, SP, Sapphire, Wave, or numbered colour names. Copy a word only when it is printed or clearly stamped; do not infer it from artwork or a generic colour. If the mark is present but uncertain, report the value and put the field in low_confidence rather than silently omitting it. Do not change subject, product, year, serial, grade, or card number merely because of this pass.`;
+
+// Frozen local thin-path evaluation sweet spot. c2 is the latency-constrained
+// stable point: the measured c10 arm gained only about 9% throughput while its
+// p95 latency rose from 8.6s to 37.3s on the same 20-card screen. c120 belongs
+// to a separate hosted canonical-capacity boundary.
+export const DEFAULT_THIN_PATH_EVAL_CONCURRENCY = 2;
+
 function promptArm(prompt) {
   return {
     canonical: false,
     buildRequest: (context) => {
       const request = buildThinTitleRequest(context);
       request.input[0].content[0].text = prompt;
+      for (const part of request.input[0].content) {
+        if (part.type === "input_image") part.detail = context.imageDetail || "high";
+      }
       return request;
     },
     extract: extractProviderTitle,
@@ -47,22 +124,185 @@ function promptArm(prompt) {
   };
 }
 
+function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT) {
+  return {
+    canonical: true,
+    responseSchemaName: "canonical_card_fields",
+    responseSchema: CANONICAL_FIELDS_SCHEMA,
+    prompt,
+    buildRequest: (context) => {
+      const request = buildCanonicalFieldsRequest({
+        ...context,
+        ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+      });
+      request.input[0].content[0].text = prompt;
+      return request;
+    },
+    extract: extractCanonicalPayload,
+    finish: (payload) => finishCanonicalTitle(payload),
+    imageDetail: fixedImageDetail
+  };
+}
+
+function exhaustiveObservationArm(fixedImageDetail = null) {
+  return {
+    canonical: false,
+    diagnostic: true,
+    buildRequest: (context) => buildExhaustiveObservationRequest({
+      ...context,
+      ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+    }),
+    extract: extractExhaustiveObservationPayload,
+    finish: finishExhaustiveObservation,
+    imageDetail: fixedImageDetail
+  };
+}
+
+function boundedOpenEvidenceArm(fixedImageDetail = null) {
+  return {
+    canonical: true,
+    diagnostic: true,
+    evalVersion: BOUNDED_OPEN_EVIDENCE_VERSION,
+    buildRequest: (context) => buildBoundedOpenEvidenceRequest({
+      ...context,
+      ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+    }),
+    extract: extractCanonicalPayload,
+    finish: finishBoundedOpenEvidenceTitle,
+    imageDetail: fixedImageDetail
+  };
+}
+
+function boundedEvidenceV2Arm(fixedImageDetail = null) {
+  return {
+    canonical: true,
+    diagnostic: true,
+    evalVersion: BOUNDED_EVIDENCE_V2_VERSION,
+    responseSchemaName: BOUNDED_EVIDENCE_V2_SCHEMA_NAME,
+    responseSchema: BOUNDED_EVIDENCE_V2_SCHEMA,
+    prompt: BOUNDED_EVIDENCE_V2_PROMPT,
+    buildRequest: (context) => buildBoundedEvidenceV2Request({
+      ...context,
+      ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+    }),
+    extract: extractCanonicalPayload,
+    finish: finishBoundedEvidenceV2Title,
+    imageDetail: fixedImageDetail
+  };
+}
+
+function candidateExpressionV3Arm(fixedImageDetail = null) {
+  return {
+    canonical: false,
+    diagnostic: true,
+    evalVersion: CANDIDATE_EXPRESSION_V3_VERSION,
+    responseSchemaName: CANDIDATE_EXPRESSION_V3_SCHEMA_NAME,
+    responseSchema: CANDIDATE_EXPRESSION_V3_SCHEMA,
+    prompt: CANDIDATE_EXPRESSION_V3_PROMPT,
+    buildRequest: (context) => buildCandidateExpressionV3Request({
+      ...context,
+      ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+    }),
+    extract: extractCandidateExpressionV3Payload,
+    finish: finishCandidateExpressionV3,
+    imageDetail: fixedImageDetail
+  };
+}
+
+function candidateExpressionV4Arm(fixedImageDetail = null) {
+  return {
+    canonical: false,
+    diagnostic: true,
+    evalVersion: CANDIDATE_EXPRESSION_V4_VERSION,
+    responseSchemaName: CANDIDATE_EXPRESSION_V4_SCHEMA_NAME,
+    responseSchema: CANDIDATE_EXPRESSION_V4_SCHEMA,
+    prompt: CANDIDATE_EXPRESSION_V4_PROMPT,
+    buildRequest: (context) => buildCandidateExpressionV4Request({
+      ...context,
+      ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+    }),
+    extract: extractCandidateExpressionV4Payload,
+    finish: finishCandidateExpressionV4,
+    imageDetail: fixedImageDetail
+  };
+}
+
+
+function canonicalFreeProductV1Arm(fixedImageDetail = null) {
+  return {
+    canonical: true,
+    diagnostic: true,
+    evalVersion: CANONICAL_FREE_PRODUCT_V1_VERSION,
+    responseSchemaName: CANONICAL_FREE_PRODUCT_V1_SCHEMA_NAME,
+    responseSchema: CANONICAL_FREE_PRODUCT_V1_SCHEMA,
+    prompt: CANONICAL_FREE_PRODUCT_V1_PROMPT,
+    buildRequest: (context) => buildCanonicalFreeProductV1Request({
+      ...context,
+      ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+    }),
+    extract: extractCanonicalPayload,
+    finish: finishCanonicalFreeProductV1,
+    imageDetail: fixedImageDetail
+  };
+}
+
+function canonicalResidualEvidenceV1Arm(fixedImageDetail = "high") {
+  const responseSchema = buildResidualEvidenceLaneV1Schema(CANONICAL_FIELDS_SCHEMA);
+  const prompt = buildResidualEvidenceLaneV1Prompt(CANONICAL_FIELDS_PROMPT);
+  return {
+    canonical: true,
+    diagnostic: true,
+    evalVersion: RESIDUAL_EVIDENCE_LANE_V1_VERSION,
+    responseSchemaName: "canonical_card_fields_residual_v1",
+    responseSchema,
+    prompt,
+    buildRequest: (context) => withResidualEvidenceLaneV1(buildCanonicalFieldsRequest({
+      ...context,
+      imageDetail: fixedImageDetail
+    }), { enabled: true }),
+    extract: extractCanonicalPayload,
+    finish: (payload) => {
+      const canonical = finishCanonicalTitle(payload);
+      const residual = parseResidualEvidenceLaneV1(payload, { canonicalFields: canonical.fields });
+      return {
+        ...canonical,
+        residual_schema_version: residual.schema_version,
+        residual_source_present: residual.source_present,
+        residual_candidates: residual.candidates,
+        residual_replay_candidates: residual.replay_candidates,
+        residual_dropped: residual.dropped,
+        residual_defects: residual.defects,
+        residual_canonical_fields_unchanged: residual.canonical_fields_unchanged
+      };
+    },
+    imageDetail: fixedImageDetail
+  };
+}
+
+
 /**
  * An arm is a request builder plus a finisher, not just a prompt: the canonical
  * arm changes what the model is asked to RETURN and therefore changes both
  * ends. Keeping arms as data is what makes any two comparable -- the
  * alternation, the checkpointing and the scoring cannot tell them apart.
  */
-const ARM_SPECS = {
+export const ARM_SPECS = {
   bare_truncated: promptArm(BARE_PROMPT),
   thin_budgeted: promptArm(THIN_TITLE_PROMPT),
   thin_serial: promptArm(THIN_TITLE_PROMPT.replace("Reply with the title only", `${SERIAL_CLAUSE} Reply with the title only`)),
-  thin_canonical: {
-    canonical: true,
-    buildRequest: (context) => buildCanonicalFieldsRequest(context),
-    extract: extractCanonicalPayload,
-    finish: (payload) => finishCanonicalTitle(payload)
-  }
+  thin_canonical: canonicalArm(),
+  thin_canonical_high: canonicalArm("high"),
+  thin_canonical_original: canonicalArm("original"),
+  thin_canonical_serial_exact_high: canonicalArm("high", CANONICAL_SERIAL_EXACT_PROMPT),
+  thin_canonical_finish_rarity_high: canonicalArm("high", FINISH_RARITY_PROMPT),
+  thin_canonical_bounded_evidence_v1: boundedOpenEvidenceArm(),
+  thin_canonical_bounded_evidence_v2_high: boundedEvidenceV2Arm("high"),
+  candidate_expression_v3_high: candidateExpressionV3Arm("high"),
+  candidate_expression_v4_high: candidateExpressionV4Arm("high"),
+  thin_canonical_free_product_v1_high: canonicalFreeProductV1Arm("high"),
+  thin_canonical_residual_v1_high: canonicalResidualEvidenceV1Arm("high"),
+  exhaustive_observation_high: exhaustiveObservationArm("high"),
+  exhaustive_observation_original: exhaustiveObservationArm("original")
 };
 
 const argValue = (argv, name, fallback = "") => {
@@ -70,13 +310,462 @@ const argValue = (argv, name, fallback = "") => {
   return index >= 0 ? (argv[index + 1] ?? fallback) : fallback;
 };
 
-async function signImageUrls(images = [], { supabaseUrl, serviceKey, expiresIn = 3600 }) {
+function positiveIntegerArg(argv, name, fallback, minimum = 1) {
+  const raw = argValue(argv, name, String(fallback));
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < minimum) throw new Error(`${name.slice(2)}_must_be_integer_at_least_${minimum}`);
+  return value;
+}
+
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+
+const REPO_ROOT_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const SOURCE_URLS = Object.freeze({
+  thin_listing_path: new URL("../lib/listing/thin/thin-listing-path.mjs", import.meta.url),
+  bounded_open_evidence: new URL("../lib/listing/thin/bounded-open-evidence.mjs", import.meta.url),
+  bounded_evidence_v2: new URL("../lib/listing/thin/bounded-evidence-v2.mjs", import.meta.url),
+  candidate_expression_v3: new URL("../lib/listing/thin/candidate-expression-v3.mjs", import.meta.url),
+  residual_evidence_v1: new URL("../lib/listing/thin/residual-evidence-lane-v1.mjs", import.meta.url),
+  exhaustive_observation: new URL("../lib/listing/thin/exhaustive-observation.mjs", import.meta.url),
+  csm_sem_score: new URL("../lib/listing/thin/csm-sem-score.mjs", import.meta.url)
+});
+const ARM_SOURCE_ROOTS = Object.freeze({
+  bare_truncated: [SOURCE_URLS.thin_listing_path],
+  thin_budgeted: [SOURCE_URLS.thin_listing_path],
+  thin_serial: [SOURCE_URLS.thin_listing_path],
+  thin_canonical: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_high: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_original: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_serial_exact_high: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_finish_rarity_high: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_bounded_evidence_v1: [SOURCE_URLS.bounded_open_evidence],
+  thin_canonical_bounded_evidence_v2_high: [SOURCE_URLS.bounded_evidence_v2],
+  candidate_expression_v3_high: [SOURCE_URLS.candidate_expression_v3],
+  candidate_expression_v4_high: [new URL("../lib/listing/thin/candidate-expression-v4.mjs", import.meta.url)],
+  thin_canonical_free_product_v1_high: [new URL("../lib/listing/thin/canonical-free-product-v1.mjs", import.meta.url)],
+  thin_canonical_residual_v1_high: [SOURCE_URLS.thin_listing_path, SOURCE_URLS.residual_evidence_v1],
+  exhaustive_observation_high: [SOURCE_URLS.exhaustive_observation],
+  exhaustive_observation_original: [SOURCE_URLS.exhaustive_observation]
+});
+
+function relativeImportUrls(body, sourceUrl) {
+  const found = new Set();
+  for (const pattern of [/\bfrom\s+["'](\.[^"']+)["']/g, /\bimport\s*["'](\.[^"']+)["']/g]) {
+    for (const match of body.matchAll(pattern)) found.add(new URL(match[1], sourceUrl).href);
+  }
+  return [...found].map((href) => new URL(href));
+}
+
+function sourceName(url, scorerRootPath = null) {
+  const path = fileURLToPath(url);
+  const repoName = relative(REPO_ROOT_PATH, path);
+  if (repoName && !repoName.startsWith("..")) return `repo:${repoName}`;
+  if (scorerRootPath) return `scorer:${relative(scorerRootPath, path)}`;
+  return `external:${sha256(path).slice(0, 16)}`;
+}
+
+async function sourceClosureHashes(rootUrls, { scorerRootPath = null } = {}) {
+  const queue = [...new Map(rootUrls.map((url) => [url.href, url])).values()];
+  const bodies = new Map();
+  while (queue.length) {
+    const url = queue.shift();
+    if (bodies.has(url.href)) continue;
+    const body = await readFile(url, "utf8");
+    bodies.set(url.href, { url, body });
+    for (const imported of relativeImportUrls(body, url)) {
+      if (!bodies.has(imported.href)) queue.push(imported);
+    }
+  }
+  return [...bodies.values()]
+    .map(({ url, body }) => [sourceName(url, scorerRootPath), sha256(body)])
+    .sort(([left], [right]) => left.localeCompare(right));
+}
+
+function providerRequestTemplates(arm, { model, effort, imageDetail }) {
+  return [0, 1, 2].map((imageCount) => requestFingerprint(arm.buildRequest({
+    imageUrls: Array.from({ length: imageCount }, (_, index) => `https://contract.invalid/image-${index + 1}`),
+    model,
+    effort,
+    imageDetail
+  })));
+}
+
+export async function buildFinisherFingerprint({ arms, scorer = null }) {
+  const armRoots = arms.flatMap((arm) => ARM_SOURCE_ROOTS[arm.key] || []);
+  const scorerUrl = scorer ? pathToFileURL(resolve(scorer)) : null;
+  const sourceEntries = await sourceClosureHashes([
+    SOURCE_URLS.csm_sem_score,
+    ...armRoots,
+    ...(scorerUrl ? [scorerUrl] : [])
+  ], { scorerRootPath: scorerUrl ? dirname(fileURLToPath(scorerUrl)) : null });
+  const contract = {
+    schema_version: "thin-path-eval-finisher-contract-v1",
+    derivation_contract: "thin-path-eval-derived-metrics-v1",
+    arms: arms.map(({ key }) => key),
+    source_sha256: Object.fromEntries(sourceEntries)
+  };
+  return { fingerprint: sha256(JSON.stringify(contract)), contract };
+}
+
+export async function buildRunManifest({
+  arms, model, effort, imageDetail, limit, dataset, sealedLabels, assetIdsFile = null,
+  scorer = null, concurrency = 1, requestTimeoutMs = 120_000, maxAttempts = 3,
+  datasetBody = null, sealedLabelsBody = null, assetIdsBody = null,
+  selectedAssetIds = null, selectionRole = "unspecified"
+}) {
+  const datasetBytes = datasetBody ?? await readFile(dataset);
+  const labelBytes = sealedLabelsBody ?? await readFile(sealedLabels);
+  const assetIdBytes = assetIdsBody ?? (assetIdsFile ? await readFile(assetIdsFile) : null);
+  const finisher = await buildFinisherFingerprint({ arms, scorer });
+  const armContracts = arms.map((arm) => ({
+    key: arm.key,
+    fixed_image_detail: arm.imageDetail || null,
+    eval_version: arm.evalVersion || null,
+    response_schema_name: arm.responseSchemaName || null,
+    response_schema_sha256: arm.responseSchema ? sha256(JSON.stringify(arm.responseSchema)) : null,
+    prompt_sha256: arm.prompt ? sha256(arm.prompt) : null,
+    request_template_sha256: providerRequestTemplates(arm, { model, effort, imageDetail })
+  }));
+  const contract = {
+    schema_version: "thin-path-eval-run-contract-v2",
+    model,
+    effort,
+    image_detail: imageDetail,
+    execution: {
+      concurrency,
+      request_timeout_ms: requestTimeoutMs,
+      max_attempts: maxAttempts,
+      retry_policy: RETRY_POLICY_VERSION
+    },
+    cohort: { selection_role: selectionRole },
+    arms: armContracts,
+    dataset_sha256: sha256(datasetBytes),
+    asset_ids_sha256: assetIdBytes ? sha256(assetIdBytes) : null,
+    sealed_labels_sha256: sha256(labelBytes),
+    // This is intentionally a behavior fingerprint, not a file hash. It binds
+    // every paid request shape while allowing zero-cost finisher/resolver replay.
+    source_sha256: {
+      provider_request_behavior: sha256(JSON.stringify(armContracts.map(({ request_template_sha256 }) => (
+        request_template_sha256
+      ))))
+    }
+  };
+  return {
+    schema_version: "thin-path-eval-run-manifest-v2",
+    fingerprint: sha256(JSON.stringify(contract)),
+    contract,
+    finisher,
+    max_requested_limit: limit,
+    max_requested_asset_ids_sha256: Array.isArray(selectedAssetIds)
+      ? sha256(JSON.stringify(selectedAssetIds))
+      : null,
+    created_at: new Date().toISOString()
+  };
+}
+
+export function requestFingerprint(request) {
+  let imageIndex = 0;
+  const normalized = JSON.parse(JSON.stringify(request, (key, value) => {
+    if (key === "image_url" && typeof value === "string") {
+      imageIndex += 1;
+      return `signed-image-${imageIndex}`;
+    }
+    return value;
+  }));
+  return sha256(JSON.stringify(normalized));
+}
+
+export async function writeFileAtomic(path, body) {
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  try {
+    await writeFile(temporary, body, { flag: "wx", encoding: "utf8" });
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+const LOCK_NAME = ".thin-path-eval.lock";
+const DEFAULT_UNKNOWN_LOCK_STALE_MS = 5 * 60 * 1000;
+
+async function readLockOwner(lockPath) {
+  try {
+    return JSON.parse(await readFile(resolve(lockPath, "owner.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function localProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+async function lockCanBeReclaimed(lockPath, { unknownLockStaleMs, processAlive }) {
+  const owner = await readLockOwner(lockPath);
+  if (owner?.hostname === hostname() && Number.isInteger(owner?.pid) && owner.pid > 0) {
+    return !processAlive(owner.pid);
+  }
+  const metadata = await stat(lockPath).catch(() => null);
+  return Boolean(metadata && Math.max(0, Date.now() - metadata.mtimeMs) >= unknownLockStaleMs);
+}
+
+export async function acquireOutDirLock(outDir, {
+  unknownLockStaleMs = DEFAULT_UNKNOWN_LOCK_STALE_MS,
+  processAlive = localProcessAlive
+} = {}) {
+  const lockPath = resolve(outDir, LOCK_NAME);
+  const token = randomUUID();
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await mkdir(lockPath);
+      const owner = {
+        schema_version: "thin-path-eval-lock-v1",
+        token,
+        pid: process.pid,
+        hostname: hostname(),
+        created_at: new Date().toISOString()
+      };
+      try {
+        await writeFile(resolve(lockPath, "owner.json"), `${JSON.stringify(owner, null, 2)}\n`, "utf8");
+      } catch (error) {
+        await rm(lockPath, { recursive: true, force: true });
+        throw error;
+      }
+      return async () => {
+        const current = await readLockOwner(lockPath);
+        if (current?.token === token) await rm(lockPath, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      if (!await lockCanBeReclaimed(lockPath, { unknownLockStaleMs, processAlive })) {
+        const owner = await readLockOwner(lockPath);
+        throw new Error(`evaluation_out_dir_locked:${owner?.pid || "unknown"}@${owner?.hostname || "unknown"}`);
+      }
+      const tombstone = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+      try {
+        await rename(lockPath, tombstone);
+      } catch (renameError) {
+        if (renameError?.code === "ENOENT") continue;
+        throw renameError;
+      }
+      await rm(tombstone, { recursive: true, force: true });
+    }
+  }
+  throw new Error("evaluation_out_dir_lock_race");
+}
+
+function parseSealedLabels(raw) {
+  const byKey = new Map();
+  for (const [index, line] of String(raw).split("\n").entries()) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const row = JSON.parse(trimmed);
+    const key = row.key || row.sealed_eval_label_key || row.id;
+    const title = row.reviewed_title || row.title;
+    if (!key || !title) continue;
+    const normalizedKey = String(key);
+    if (byKey.has(normalizedKey)) throw new Error(`sealed_labels_duplicate_key:${normalizedKey}:line_${index + 1}`);
+    byKey.set(normalizedKey, String(title));
+  }
+  return byKey;
+}
+
+async function loadEvaluationInputs({ dataset, sealedLabels, assetIdsFile, limit }) {
+  const [datasetBody, sealedLabelsBody, assetIdsBody] = await Promise.all([
+    readFile(dataset),
+    readFile(sealedLabels),
+    assetIdsFile ? readFile(assetIdsFile) : Promise.resolve(null)
+  ]);
+  const manifest = JSON.parse(datasetBody.toString("utf8"));
+  if (!Array.isArray(manifest.items)) throw new Error("dataset_items_must_be_array");
+  const datasetIds = manifest.items.map((item) => String(item?.asset_id || "").trim());
+  if (datasetIds.some((id) => !id)) throw new Error("dataset_asset_id_missing");
+  if (new Set(datasetIds).size !== datasetIds.length) throw new Error("dataset_duplicate_asset_ids");
+  const labels = parseSealedLabels(sealedLabelsBody.toString("utf8"));
+
+  let selectedItems = manifest.items;
+  if (assetIdsBody) {
+    const selectedIds = JSON.parse(assetIdsBody.toString("utf8"));
+    if (!Array.isArray(selectedIds) || selectedIds.some((id) => typeof id !== "string" || !id.trim())) {
+      throw new Error("asset_ids_file_must_be_json_string_array");
+    }
+    if (new Set(selectedIds).size !== selectedIds.length) throw new Error("asset_ids_file_contains_duplicates");
+    const byId = new Map(manifest.items.map((item) => [item.asset_id, item]));
+    const missing = selectedIds.filter((id) => !byId.has(id));
+    if (missing.length) throw new Error(`asset_ids_missing_from_dataset:${missing.slice(0, 3).join(",")}`);
+    selectedItems = selectedIds.map((id) => byId.get(id));
+  }
+  const items = selectedItems.slice(0, limit);
+  if (items.length !== limit) throw new Error(`selected_asset_count_mismatch:${items.length}/${limit}`);
+  const missingLabels = items.filter((item) => !labels.has(String(item?.sealed_eval_label_ref?.key || "")));
+  if (missingLabels.length) {
+    throw new Error(`selected_assets_missing_sealed_labels:${missingLabels.slice(0, 3).map(({ asset_id }) => asset_id).join(",")}`);
+  }
+  return { datasetBody, sealedLabelsBody, assetIdsBody, labels, items };
+}
+
+export function imageSetFingerprint(item) {
+  return sha256(JSON.stringify((item?.images || []).slice(0, 2).map((image) => ({
+    bucket: image?.bucket || null,
+    object_path: image?.object_path || image?.objectPath || null,
+    role: image?.role || null,
+    ...(image?.local_path || image?.localPath ? {
+      local_path: image.local_path || image.localPath,
+      content_sha256: image?.content_sha256 || null
+    } : {})
+  }))));
+}
+
+function expectedCheckpointIdentity({ item, arm, model, effort, imageDetail }) {
+  const signable = (item?.images || []).slice(0, 2).filter((image) => (
+    (String(image?.bucket || "").trim()
+      && String(image?.object_path || image?.objectPath || "").trim())
+    || String(image?.local_path || image?.localPath || "").trim()
+  ));
+  const imageUrls = signable.map((_, index) => `https://checkpoint.invalid/image-${index + 1}`);
+  const request = arm.buildRequest({ imageUrls, model, effort, imageDetail });
+  return {
+    request_sha256: requestFingerprint(request),
+    image_set_sha256: imageSetFingerprint(item),
+    image_count: imageUrls.length,
+    image_detail: arm.imageDetail || imageDetail,
+    arm_eval_version: arm.evalVersion || null
+  };
+}
+
+export function validateCheckpointRows(checkpointBody, {
+  arms, items, labels, runFingerprint, finisherFingerprint, model, effort, imageDetail
+}) {
+  const armByKey = new Map(arms.map((arm) => [arm.key, arm]));
+  const itemById = new Map(items.map((item) => [item.asset_id, item]));
+  const done = new Map();
+  for (const [index, line] of String(checkpointBody || "").split("\n").entries()) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let row;
+    try {
+      row = JSON.parse(trimmed);
+    } catch {
+      throw new Error(`checkpoint_invalid_json:line_${index + 1}`);
+    }
+    if (row.run_fingerprint !== runFingerprint) throw new Error(`checkpoint_row_fingerprint_mismatch:line_${index + 1}`);
+    if (row.finisher_fingerprint !== finisherFingerprint) {
+      throw new Error(`checkpoint_finisher_replay_required:line_${index + 1}`);
+    }
+    const arm = armByKey.get(row.arm);
+    if (!arm) throw new Error(`checkpoint_row_unexpected_arm:${row.arm || "missing"}:line_${index + 1}`);
+    const item = itemById.get(row.asset_id);
+    if (!item) throw new Error(`checkpoint_row_outside_selected_cohort:${row.asset_id || "missing"}:line_${index + 1}`);
+    const key = `${row.asset_id}::${row.arm}`;
+    if (done.has(key)) throw new Error(`checkpoint_duplicate_key:${key}`);
+    const reference = labels.get(String(item?.sealed_eval_label_ref?.key || ""));
+    if (row.reference !== reference) throw new Error(`checkpoint_reference_mismatch:${row.asset_id}`);
+    const expected = expectedCheckpointIdentity({ item, arm, model, effort, imageDetail });
+    for (const field of ["request_sha256", "image_set_sha256", "image_count", "image_detail", "arm_eval_version"]) {
+      if ((row[field] ?? null) !== (expected[field] ?? null)) throw new Error(`checkpoint_request_shape_mismatch:${field}:${key}`);
+    }
+    if (row.model !== model || row.requested_effort !== effort || row.served_effort !== effort) {
+      throw new Error(`checkpoint_request_contract_mismatch:${key}`);
+    }
+    done.set(key, row);
+  }
+  return done;
+}
+
+const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 429]);
+const RETRY_POLICY_VERSION = "bounded-retry-after-jitter-v1";
+
+function retryAfterMs(response) {
+  const raw = response?.headers?.get?.("retry-after");
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
+  const date = Date.parse(raw);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
+}
+
+function retryableBodyError(body) {
+  const marker = `${body?.error?.type || ""} ${body?.error?.code || ""} ${body?.error?.message || ""}`.toLowerCase();
+  return /rate.?limit|server|overload|temporar|timeout|unavailable/.test(marker);
+}
+
+export function providerRetryDelayMs({ attempt, response = null, random = Math.random }) {
+  const backoff = Math.min(30_000, 500 * (2 ** Math.max(0, attempt - 1)));
+  const floor = Math.max(backoff, retryAfterMs(response));
+  return Math.min(30_000, Math.ceil(floor * (1 + Math.max(0, Math.min(1, random())) * 0.25)));
+}
+
+export async function callProviderWithRetry({
+  request,
+  maxAttempts,
+  callProvider,
+  recordAttempt = async () => {},
+  sleepImpl = sleep,
+  random = Math.random
+}) {
+  const attempts = [];
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const startedAt = new Date().toISOString();
+    let response = null;
+    let body = null;
+    let thrown = null;
+    try {
+      response = await callProvider(request);
+      body = await response.json();
+    } catch (error) {
+      thrown = error;
+    }
+    const status = Number(response?.status || 0) || null;
+    const successful = !thrown && response?.ok && !body?.error;
+    const retryableStatus = RETRYABLE_HTTP_STATUSES.has(status) || Number(status) >= 500;
+    const failFast4xx = status >= 400 && status < 500 && !RETRYABLE_HTTP_STATUSES.has(status);
+    const retryable = !successful && !failFast4xx
+      && (Boolean(thrown) || retryableStatus || retryableBodyError(body));
+    const willRetry = retryable && attempt < maxAttempts;
+    const delayMs = willRetry ? providerRetryDelayMs({ attempt, response, random }) : 0;
+    const entry = {
+      schema_version: "thin-path-provider-attempt-v1",
+      attempt,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+      http_status: status,
+      outcome: successful ? "provider_success" : thrown ? "transport_error" : "provider_error",
+      retryable,
+      will_retry: willRetry,
+      final: !successful && !willRetry,
+      retry_delay_ms: delayMs,
+      error_code: body?.error?.code || body?.error?.type || thrown?.name || null,
+      error_message: String(body?.error?.message || thrown?.message || "").slice(0, 240) || null
+    };
+    attempts.push(entry);
+    await recordAttempt(entry);
+    if (successful) return { ok: true, response, body, attemptCount: attempt, attempts };
+    if (!willRetry) return { ok: false, response, body, error: thrown, attemptCount: attempt, attempts };
+    await sleepImpl(delayMs);
+  }
+  throw new Error("provider_retry_loop_unreachable");
+}
+
+export async function signImageUrls(images = [], { supabaseUrl, serviceKey, expiresIn = 3600, fetchImpl = fetch }) {
   const urls = [];
   for (const image of images.slice(0, 2)) {
     const bucket = String(image?.bucket || "").trim();
     const objectPath = String(image?.object_path || image?.objectPath || "").trim();
-    if (!bucket || !objectPath) continue;
-    const response = await fetch(`${supabaseUrl}/storage/v1/object/sign/${bucket}/${objectPath}`, {
+    const localPath = String(image?.local_path || image?.localPath || "").trim();
+    if (!bucket || !objectPath) {
+      if (!localPath) continue;
+      const bytes = await readFile(localPath);
+      const contentType = String(image?.content_type || image?.contentType || "image/jpeg").trim();
+      urls.push(`data:${contentType};base64,${bytes.toString("base64")}`);
+      continue;
+    }
+    const response = await fetchImpl(`${supabaseUrl}/storage/v1/object/sign/${bucket}/${objectPath}`, {
       method: "POST",
       headers: { apikey: serviceKey, authorization: `Bearer ${serviceKey}`, "content-type": "application/json" },
       body: JSON.stringify({ expiresIn })
@@ -86,20 +775,6 @@ async function signImageUrls(images = [], { supabaseUrl, serviceKey, expiresIn =
     urls.push(`${supabaseUrl}/storage/v1${body.signedURL || body.signedUrl}`);
   }
   return urls;
-}
-
-async function readSealedLabels(path) {
-  const raw = await readFile(path, "utf8");
-  const byKey = new Map();
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const row = JSON.parse(trimmed);
-    const key = row.key || row.sealed_eval_label_key || row.id;
-    const title = row.reviewed_title || row.title;
-    if (key && title) byKey.set(String(key), String(title));
-  }
-  return byKey;
 }
 
 function signTest(deltas) {
@@ -122,6 +797,17 @@ function signTest(deltas) {
 const average = (values) => values.reduce((sum, value) => sum + value, 0) / values.length;
 const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
+async function mapConcurrent(items, concurrency, worker) {
+  const source = Array.from(items || []);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), source.length || 1) }, async () => {
+    while (cursor < source.length) {
+      const index = cursor++;
+      await worker(source[index], index);
+    }
+  }));
+}
+
 // Precision matters as much as recall: the reviewed titles are the DESIRED
 // output, not a sample of facts, so a word the reviewer did not write is a word
 // that wasted the 80-character budget. Recall-only scoring is what made an arm
@@ -140,29 +826,45 @@ function scoreF1(reference, title) {
   return { recall, precision, f1: (recall + precision) ? (2 * recall * precision) / (recall + precision) : 0 };
 }
 
-export async function main(argv = process.argv.slice(2)) {
+export async function main(argv = process.argv.slice(2), {
+  fetchImpl = fetch,
+  sleepImpl = sleep,
+  random = Math.random
+} = {}) {
   const evalRoot = argValue(argv, "--eval-root", "/Users/paidaxin/lynca-eval-root");
-  const { policyFairTokenRecall } = await import(resolve(evalRoot, "scripts/evaluate-cloud-listing-api.mjs"));
+  const scorerPath = resolve(evalRoot, "scripts/evaluate-cloud-listing-api.mjs");
+  const { policyFairTokenRecall } = await import(scorerPath);
 
-  const ARMS = argValue(argv, "--arms", "thin_budgeted,thin_canonical")
-    .split(",").map((key) => key.trim()).filter(Boolean)
+  const armKeys = argValue(argv, "--arms", "thin_budgeted,thin_canonical")
+    .split(",").map((key) => key.trim()).filter(Boolean);
+  if (new Set(armKeys).size !== armKeys.length) throw new Error("duplicate_arms_not_allowed");
+  const ARMS = armKeys
     .map((key) => {
       if (!ARM_SPECS[key]) throw new Error(`unknown arm: ${key} (have ${Object.keys(ARM_SPECS).join(", ")})`);
       return { key, ...ARM_SPECS[key] };
     });
-  if (ARMS.length !== 2) throw new Error("exactly two arms: the comparison is paired");
+  if (ARMS.length < 1 || ARMS.length > 2) {
+    throw new Error("one or two arms required; two-arm comparisons remain paired");
+  }
 
   const model = argValue(argv, "--model", "gpt-5.6-luna");
   const effort = argValue(argv, "--effort", "none");
+  const imageDetail = argValue(argv, "--image-detail", "high");
+  if (!["high", "original"].includes(imageDetail)) throw new Error("image_detail_must_be_high_or_original");
   // 150 is the verdict size, from a bootstrap over the 255-card paired run:
   // 93% power on a 3pp effect, against 45% at n=50. Below that, 50 is a screen
   // and not a verdict.
-  const limit = Number(argValue(argv, "--limit", "150")) || 150;
+  const limit = positiveIntegerArg(argv, "--limit", 150);
   const dataset = resolve(evalRoot, argValue(argv, "--dataset", "data/eval/reviewed-title-blind/reviewed-title-image-only.json"));
   const sealedLabels = resolve(evalRoot, argValue(argv, "--sealed-labels", "data/eval/reviewed-title-blind/reviewed-title-sealed-labels.jsonl"));
+  const assetIdsArg = argValue(argv, "--asset-ids-file", "").trim();
+  const assetIdsFile = assetIdsArg ? resolve(assetIdsArg) : null;
+  const selectionRole = argValue(argv, "--selection-role", "unspecified").trim();
+  if (!/^[a-z][a-z0-9_]{0,63}$/.test(selectionRole)) throw new Error("selection_role_must_be_lower_snake_case");
   const outDir = resolve(argValue(argv, "--out-dir", "artifacts/thin-path-eval"));
-  const requestTimeoutMs = Math.max(10_000, Number(argValue(argv, "--request-timeout-ms", "120000")) || 120_000);
-  const maxAttempts = Math.max(1, Number(argValue(argv, "--max-attempts", "3")) || 3);
+  const requestTimeoutMs = positiveIntegerArg(argv, "--request-timeout-ms", 120_000, 10_000);
+  const maxAttempts = positiveIntegerArg(argv, "--max-attempts", 3);
+  const concurrency = positiveIntegerArg(argv, "--concurrency", DEFAULT_THIN_PATH_EVAL_CONCURRENCY);
 
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
   const serviceKey = String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "");
@@ -171,33 +873,102 @@ export async function main(argv = process.argv.slice(2)) {
   if (!apiKey) throw new Error("OPENAI_API_KEY is required");
 
   await mkdir(outDir, { recursive: true });
+  const releaseLock = await acquireOutDirLock(outDir);
+  try {
   const checkpointPath = resolve(outDir, `thin-path-${model}.jsonl`);
-
-  const done = new Map();
-  if (existsSync(checkpointPath)) {
-    for (const line of (await readFile(checkpointPath, "utf8")).split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      const row = JSON.parse(trimmed);
-      done.set(`${row.asset_id}::${row.arm}`, row);
+  const manifestPath = resolve(outDir, `thin-path-${model}.manifest.json`);
+  const inputs = await loadEvaluationInputs({ dataset, sealedLabels, assetIdsFile, limit });
+  const { labels, items } = inputs;
+  const expectedManifest = await buildRunManifest({
+    arms: ARMS,
+    model,
+    effort,
+    imageDetail,
+    limit,
+    dataset,
+    sealedLabels,
+    assetIdsFile,
+    scorer: scorerPath,
+    concurrency,
+    requestTimeoutMs,
+    maxAttempts,
+    datasetBody: inputs.datasetBody,
+    sealedLabelsBody: inputs.sealedLabelsBody,
+    assetIdsBody: inputs.assetIdsBody,
+    selectedAssetIds: items.map(({ asset_id }) => asset_id),
+    selectionRole
+  });
+  let storedManifest = null;
+  if (existsSync(manifestPath)) {
+    storedManifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    if (storedManifest.fingerprint !== expectedManifest.fingerprint) {
+      throw new Error("checkpoint_manifest_mismatch: use a fresh --out-dir");
+    }
+    const storedLimit = Number(storedManifest.max_requested_limit || 0);
+    if (!Number.isInteger(storedLimit) || storedLimit < 1 || storedLimit > items.length) {
+      throw new Error("checkpoint_manifest_invalid_max_requested_limit");
+    }
+    if (limit < storedLimit) {
+      throw new Error("checkpoint_limit_cannot_shrink: use a fresh --out-dir");
+    }
+    const storedCohortHash = sha256(JSON.stringify(items.slice(0, storedLimit).map(({ asset_id }) => asset_id)));
+    if (storedManifest.max_requested_asset_ids_sha256 !== storedCohortHash) {
+      throw new Error("checkpoint_manifest_selected_cohort_mismatch");
+    }
+    expectedManifest.created_at = storedManifest.created_at || expectedManifest.created_at;
+    expectedManifest.max_requested_limit = Math.max(limit, storedLimit);
+  } else if (existsSync(checkpointPath)) {
+    throw new Error("checkpoint_manifest_missing: legacy checkpoints cannot be resumed safely; use a fresh --out-dir");
+  }
+  let done = new Map();
+  const checkpointBody = existsSync(checkpointPath) ? await readFile(checkpointPath) : null;
+  if (storedManifest?.checkpoint_sha256) {
+    if (!checkpointBody || sha256(checkpointBody) !== storedManifest.checkpoint_sha256) {
+      throw new Error("checkpoint_sha256_mismatch");
+    }
+    const storedRows = checkpointBody.toString("utf8").split("\n").filter((line) => line.trim()).length;
+    if (storedRows !== Number(storedManifest.checkpoint_rows)) throw new Error("checkpoint_row_count_mismatch");
+  } else if (storedManifest?.completed_at) {
+    throw new Error("completed_manifest_missing_checkpoint_sha256");
+  }
+  if (checkpointBody) {
+    done = validateCheckpointRows(checkpointBody.toString("utf8"), {
+      arms: ARMS,
+      items,
+      labels,
+      runFingerprint: expectedManifest.fingerprint,
+      finisherFingerprint: expectedManifest.finisher.fingerprint,
+      model,
+      effort,
+      imageDetail
+    });
+    if (storedManifest?.finisher?.fingerprint !== expectedManifest.finisher.fingerprint) {
+      throw new Error("checkpoint_finisher_replay_required: provider rows remain reusable; replay derived fields before resume");
     }
     process.stderr.write(`resuming: ${done.size} card-arms already on disk\n`);
   }
+  // All parameters, cohort rows and any existing checkpoint are valid now.
+  // Only at this point may an expanded limit become durable.
+  await writeFileAtomic(manifestPath, `${JSON.stringify(expectedManifest, null, 2)}\n`);
 
-  const manifest = JSON.parse(await readFile(dataset, "utf8"));
-  const labels = await readSealedLabels(sealedLabels);
-  const items = (manifest.items || []).slice(0, limit);
-
-  const callProvider = (request) => fetch("https://api.openai.com/v1/responses", {
+  const callProvider = (request) => fetchImpl("https://api.openai.com/v1/responses", {
     method: "POST",
     signal: AbortSignal.timeout(requestTimeoutMs),
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
     body: JSON.stringify(request)
   });
 
-  for (const [index, item] of items.entries()) {
+  const attemptLogPath = resolve(outDir, `thin-path-${model}.attempts.jsonl`);
+  let durableWrite = Promise.resolve();
+  const appendDurable = async (path, value) => {
+    durableWrite = durableWrite.then(() => writeFile(
+      path, `${JSON.stringify(value)}\n`, { flag: "a", encoding: "utf8" }
+    ));
+    await durableWrite;
+  };
+  await mapConcurrent(items, concurrency, async (item, index) => {
     const reference = labels.get(String(item?.sealed_eval_label_ref?.key || ""));
-    if (!reference) { process.stderr.write(`  ${index + 1}/${items.length}: no sealed label, skipped\n`); continue; }
+    if (!reference) { process.stderr.write(`  ${index + 1}/${items.length}: no sealed label, skipped\n`); return; }
 
     // Rotate which arm goes first: whatever drifts within a card -- signed-URL
     // warmth, provider load -- otherwise lands on the same arm every time.
@@ -207,40 +978,74 @@ export async function main(argv = process.argv.slice(2)) {
     for (const arm of order) {
       const key = `${item.asset_id}::${arm.key}`;
       if (done.has(key)) continue;
-      if (!imageUrls) imageUrls = await signImageUrls(item.images, { supabaseUrl, serviceKey });
+      if (!imageUrls) imageUrls = await signImageUrls(item.images, { supabaseUrl, serviceKey, fetchImpl });
 
-      const request = arm.buildRequest({ imageUrls, model, effort });
+      const request = arm.buildRequest({ imageUrls, model, effort, imageDetail });
+      const requestSha256 = requestFingerprint(request);
+      const imageSetSha256 = imageSetFingerprint(item);
       const startedAt = Date.now();
-      let body = null;
-      let response = null;
-      let lastError = null;
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-          response = await callProvider(request);
-          body = await response.json();
-          lastError = null;
-          break;
-        } catch (error) {
-          lastError = error;
-          process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: attempt ${attempt}/${maxAttempts} ${error?.name || "failed"}\n`);
-        }
-      }
-      if (lastError || !response.ok || body?.error) {
-        process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: FAILED ${lastError?.message || body?.error?.message || response?.status}\n`);
+      const startedAtIso = new Date(startedAt).toISOString();
+      const providerResult = await callProviderWithRetry({
+        request,
+        maxAttempts,
+        callProvider,
+        sleepImpl,
+        random,
+        recordAttempt: (attempt) => appendDurable(attemptLogPath, {
+          ...attempt,
+          event: "provider_attempt",
+          run_fingerprint: expectedManifest.fingerprint,
+          asset_id: item.asset_id,
+          arm: arm.key,
+          request_sha256: requestSha256
+        })
+      });
+      if (!providerResult.ok) {
+        process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: FAILED ${providerResult.error?.message || providerResult.body?.error?.message || providerResult.response?.status}\n`);
         continue;
       }
+      const { body, attemptCount } = providerResult;
       const servedEffort = body?.reasoning?.effort ?? effort;
       if (servedEffort !== effort) {
+        await appendDurable(attemptLogPath, {
+          schema_version: "thin-path-provider-final-v1",
+          event: "final_status",
+          status: "discarded_served_effort",
+          run_fingerprint: expectedManifest.fingerprint,
+          asset_id: item.asset_id,
+          arm: arm.key,
+          request_sha256: requestSha256,
+          completed_at: new Date().toISOString()
+        });
         process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: DISCARDED, provider ran ${servedEffort}\n`);
         continue;
       }
 
-      const payload = arm.extract(body);
-      const finished = arm.finish(payload);
-      const quality = scoreF1(reference, finished.title);
+      let payload;
+      let finished;
+      let quality;
+      try {
+        payload = arm.extract(body);
+        finished = arm.finish(payload);
+        quality = scoreF1(reference, finished.title);
+      } catch (error) {
+        await appendDurable(attemptLogPath, {
+          schema_version: "thin-path-provider-final-v1",
+          event: "final_status",
+          status: "derivation_failed",
+          error: String(error?.message || error).slice(0, 240),
+          run_fingerprint: expectedManifest.fingerprint,
+          asset_id: item.asset_id,
+          arm: arm.key,
+          request_sha256: requestSha256,
+          completed_at: new Date().toISOString()
+        });
+        throw error;
+      }
       const row = {
         asset_id: item.asset_id,
         arm: arm.key,
+        image_detail: arm.imageDetail || imageDetail,
         score: policyFairTokenRecall(reference, finished.title),
         f1: quality.f1,
         recall: quality.recall,
@@ -253,9 +1058,28 @@ export async function main(argv = process.argv.slice(2)) {
         raw_length: finished.raw_length,
         length: finished.length,
         latency_ms: Date.now() - startedAt,
+        input_tokens: body?.usage?.input_tokens ?? null,
         output_tokens: body?.usage?.output_tokens ?? null,
+        total_tokens: body?.usage?.total_tokens ?? null,
+        cached_input_tokens: body?.usage?.input_tokens_details?.cached_tokens ?? null,
+        model,
+        served_model: body?.model ?? null,
+        requested_effort: effort,
+        served_effort: servedEffort,
+        request_sha256: requestSha256,
+        image_set_sha256: imageSetSha256,
+        image_count: imageUrls.length,
+        request_attempt_count: attemptCount,
+        provider_attempts: providerResult.attempts,
+        run_fingerprint: expectedManifest.fingerprint,
+        finisher_fingerprint: expectedManifest.finisher.fingerprint,
+        arm_eval_version: arm.evalVersion || null,
+        started_at: startedAtIso,
+        completed_at: new Date().toISOString(),
         // Canonical arms only; the field report keys off this.
         fields: finished.fields ?? null,
+        canonical_control_title: finished.canonical_control_title ?? null,
+        canonical_control_length: finished.canonical_control_length ?? null,
         field_defects: finished.field_defects ?? null,
         grammar: finished.grammar ?? null,
         brackets: finished.brackets ?? null,
@@ -263,30 +1087,96 @@ export async function main(argv = process.argv.slice(2)) {
         suppressed_brackets: finished.suppressed_brackets ?? null,
         empty_fields: finished.empty_fields ?? null,
         unreadable_fields: finished.unreadable_fields ?? null,
-        low_confidence_fields: finished.low_confidence_fields ?? null
+        low_confidence_fields: finished.low_confidence_fields ?? null,
+        observations: finished.observations ?? null,
+        unreadable_regions: finished.unreadable_regions ?? null,
+        observation_defects: finished.observation_defects ?? null,
+        candidate_schema_version: finished.candidate_schema_version ?? null,
+        candidate_facts: finished.candidate_facts ?? null,
+        candidate_hypotheses: finished.candidate_hypotheses ?? null,
+        candidate_defects: finished.candidate_defects ?? null,
+        free_title: finished.free_title ?? null,
+        eval_version: finished.eval_version ?? null,
+        open_evidence: finished.open_evidence ?? null,
+        evidence_schema_version: finished.evidence_schema_version ?? null,
+        evidence_spans: finished.evidence_spans ?? null,
+        evidence_candidates: finished.evidence_candidates ?? null,
+        evidence_noise_dropped: finished.evidence_noise_dropped ?? null,
+        evidence_promotions: finished.evidence_promotions ?? null,
+        evidence_defects: finished.evidence_defects ?? null,
+        evidence_resolution: finished.evidence_resolution ?? null,
+        evidence_resolver_version: finished.evidence_resolver_version ?? null,
+        residual_schema_version: finished.residual_schema_version ?? null,
+        residual_source_present: finished.residual_source_present ?? null,
+        residual_candidates: finished.residual_candidates ?? null,
+        residual_replay_candidates: finished.residual_replay_candidates ?? null,
+        residual_dropped: finished.residual_dropped ?? null,
+        residual_defects: finished.residual_defects ?? null,
+        residual_canonical_fields_unchanged: finished.residual_canonical_fields_unchanged ?? null,
+        production_promoted: finished.production_promoted ?? null
       };
 
-      await writeFile(checkpointPath, `${JSON.stringify(row)}\n`, { flag: "a", encoding: "utf8" });
+      await appendDurable(checkpointPath, row);
       done.set(key, row);
+      await appendDurable(attemptLogPath, {
+        schema_version: "thin-path-provider-final-v1",
+        event: "final_status",
+        status: "checkpoint_committed",
+        run_fingerprint: expectedManifest.fingerprint,
+        finisher_fingerprint: expectedManifest.finisher.fingerprint,
+        asset_id: item.asset_id,
+        arm: arm.key,
+        request_sha256: requestSha256,
+        completed_at: new Date().toISOString()
+      });
       process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: F1 ${row.f1.toFixed(3)} (${row.length}c)\n`);
     }
-  }
+  });
 
   const byArm = new Map(ARMS.map((arm) => [arm.key, new Map()]));
   for (const row of done.values()) byArm.get(row.arm)?.set(row.asset_id, row);
 
-  const [control, treatment] = ARMS;
-  const paired = [...byArm.get(control.key).keys()]
-    .filter((assetId) => byArm.get(treatment.key).has(assetId))
-    .map((assetId) => ({ control: byArm.get(control.key).get(assetId), treatment: byArm.get(treatment.key).get(assetId) }));
+  let [control, treatment] = ARMS;
+  let paired;
+  if (ARMS.length === 2) {
+    paired = [...byArm.get(control.key).keys()]
+      .filter((assetId) => byArm.get(treatment.key).has(assetId))
+      .map((assetId) => ({ control: byArm.get(control.key).get(assetId), treatment: byArm.get(treatment.key).get(assetId) }));
+  } else if (control.evalVersion === BOUNDED_EVIDENCE_V2_VERSION) {
+    treatment = control;
+    control = { key: "same_response_canonical_control" };
+    paired = [...byArm.get(treatment.key).values()].map((row) => ({
+      control: {
+        ...row,
+        title: row.canonical_control_title,
+        length: row.canonical_control_length,
+        ...scoreF1(row.reference, row.canonical_control_title)
+      },
+      treatment: row
+    }));
+  } else {
+    treatment = control;
+    control = { key: "external_control_not_run" };
+    paired = [];
+  }
 
   const deltas = paired.map(({ control: a, treatment: b }) => b.f1 - a.f1);
   const test = signTest(deltas);
+  const effectiveImageDetails = [...new Set(ARMS.map((arm) => arm.imageDetail || imageDetail))];
 
   const summary = {
     schema_version: "thin-path-eval-v2",
+    run_fingerprint: expectedManifest.fingerprint,
+    finisher_fingerprint: expectedManifest.finisher.fingerprint,
+    selection_role: selectionRole,
+    comparison_mode: ARMS.length === 2
+      ? "paired_live_arms"
+      : ARMS[0].evalVersion === BOUNDED_EVIDENCE_V2_VERSION
+        ? "same_response_canonical_vs_evidence_candidate"
+        : "single_live_arm",
     model,
     effort,
+    image_detail: effectiveImageDetails.length === 1 ? effectiveImageDetails[0] : "mixed",
     cards_paired: paired.length,
     arms: ARMS.map((arm) => {
       const rows = [...byArm.get(arm.key).values()];
@@ -297,6 +1187,7 @@ export async function main(argv = process.argv.slice(2)) {
       const sem = summariseSemQuality(rows);
       return {
         arm: arm.key,
+        image_detail: arm.imageDetail || imageDetail,
         n: rows.length,
         f1: rows.length ? average(rows.map((row) => row.f1)) : null,
         recall: rows.length ? average(rows.map((row) => row.recall)) : null,
@@ -304,7 +1195,11 @@ export async function main(argv = process.argv.slice(2)) {
         token_recall: rows.length ? average(rows.map((row) => row.score)) : null,
         median_length: rows.length ? median(rows.map((row) => row.length)) : null,
         median_latency_ms: rows.length ? median(rows.map((row) => row.latency_ms)) : null,
+        median_input_tokens: rows.length ? median(rows.map((row) => row.input_tokens ?? 0)) : null,
         median_output_tokens: rows.length ? median(rows.map((row) => row.output_tokens ?? 0)) : null,
+        input_tokens_total: rows.reduce((sum, row) => sum + (row.input_tokens ?? 0), 0),
+        output_tokens_total: rows.reduce((sum, row) => sum + (row.output_tokens ?? 0), 0),
+        total_tokens: rows.reduce((sum, row) => sum + (row.total_tokens ?? 0), 0),
         // The questions this run exists to answer, each written down before it.
         print_finish_stated: canonical.filter((row) => row.fields.print_finish).length,
         card_name_stated: canonical.filter((row) => row.fields.card_name).length,
@@ -318,19 +1213,41 @@ export async function main(argv = process.argv.slice(2)) {
         sem_structurally_valid: sem.structurally_valid
       };
     }),
+    same_response_canonical_control: ARMS.length === 1
+      && ARMS[0].evalVersion === BOUNDED_EVIDENCE_V2_VERSION
+      ? {
+          n: paired.length,
+          f1: paired.length ? average(paired.map(({ control: row }) => row.f1)) : null,
+          recall: paired.length ? average(paired.map(({ control: row }) => row.recall)) : null,
+          precision: paired.length ? average(paired.map(({ control: row }) => row.precision)) : null,
+          median_length: paired.length ? median(paired.map(({ control: row }) => row.length)) : null
+        }
+      : null,
     paired_delta_f1: deltas.length ? average(deltas) : null,
     sign_test: test
   };
 
-  await writeFile(resolve(outDir, `thin-path-${model}.json`), `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+  await writeFileAtomic(resolve(outDir, `thin-path-${model}.json`), `${JSON.stringify(summary, null, 2)}\n`);
+  const completedCheckpointBody = existsSync(checkpointPath) ? await readFile(checkpointPath) : Buffer.alloc(0);
+  const completedCheckpointRows = completedCheckpointBody.toString("utf8")
+    .split("\n").filter((line) => line.trim()).length;
+  await writeFileAtomic(manifestPath, `${JSON.stringify({
+    ...expectedManifest,
+    completed_at: new Date().toISOString(),
+    checkpoint_rows: completedCheckpointRows,
+    checkpoint_sha256: sha256(completedCheckpointBody),
+    checkpoint_bytes: completedCheckpointBody.length,
+    paired_cards: paired.length
+  }, null, 2)}\n`);
 
-  process.stdout.write(`\narm              n      F1  recall  precis  tok_rec  SEM_conf  len  latency  out_tok\n`);
+  process.stdout.write(`\narm              n      F1  recall  precis  tok_rec  SEM_conf  len  latency  in_tok  out_tok\n`);
   for (const arm of summary.arms) {
     process.stdout.write(
       `${arm.arm.padEnd(15)} ${String(arm.n).padStart(3)}  ${(arm.f1 ?? NaN).toFixed(4)}  `
       + `${(arm.recall ?? NaN).toFixed(4)}  ${(arm.precision ?? NaN).toFixed(4)}   ${(arm.token_recall ?? NaN).toFixed(4)}    `
       + `${(arm.sem_confidence ?? NaN).toFixed(4)}  `
-      + `${String(arm.median_length).padStart(3)}  ${String(Math.round(arm.median_latency_ms ?? NaN)).padStart(7)}  ${String(arm.median_output_tokens).padStart(7)}\n`
+      + `${String(arm.median_length).padStart(3)}  ${String(Math.round(arm.median_latency_ms ?? NaN)).padStart(7)}  `
+      + `${String(arm.median_input_tokens).padStart(6)}  ${String(arm.median_output_tokens).padStart(7)}\n`
     );
   }
   for (const arm of summary.arms) {
@@ -347,6 +1264,9 @@ export async function main(argv = process.argv.slice(2)) {
     + `${treatment.key} wins ${test.wins} : ${control.key} wins ${test.losses} : ties ${test.ties}  p=${test.p.toExponential(2)}\n`
   );
   return summary;
+  } finally {
+    await releaseLock();
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

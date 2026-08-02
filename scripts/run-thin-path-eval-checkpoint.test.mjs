@@ -16,6 +16,7 @@ import {
   requestFingerprint,
   validateCheckpointRows
 } from "./run-thin-path-eval.mjs";
+import { withResidualEvidenceLaneV1 } from "../lib/listing/thin/residual-evidence-lane-v1.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "thin-eval-checkpoint-adversarial-"));
 const model = "gpt-5.6-luna";
@@ -132,6 +133,36 @@ try {
   });
   assert.equal(promptRequest.input[0].content.find(({ type }) => type === "input_image").detail, "original");
 
+  const residualContext = {
+    imageUrls: ["https://example.invalid/front.jpg", "https://example.invalid/back.jpg"],
+    model,
+    effort,
+    imageDetail
+  };
+  const controlResidualRequest = ARM_SPECS.thin_canonical_high.buildRequest(residualContext);
+  const treatmentResidualRequest = ARM_SPECS.thin_canonical_residual_v1_high.buildRequest(residualContext);
+  assert.deepEqual(treatmentResidualRequest, withResidualEvidenceLaneV1(controlResidualRequest, { enabled: true }));
+  assert.notEqual(requestFingerprint(controlResidualRequest), requestFingerprint(treatmentResidualRequest));
+  assert.equal(treatmentResidualRequest.model, controlResidualRequest.model);
+  assert.deepEqual(treatmentResidualRequest.reasoning, controlResidualRequest.reasoning);
+  assert.equal(treatmentResidualRequest.max_output_tokens, controlResidualRequest.max_output_tokens);
+  assert.deepEqual(
+    treatmentResidualRequest.input[0].content.filter(({ type }) => type === "input_image"),
+    controlResidualRequest.input[0].content.filter(({ type }) => type === "input_image")
+  );
+  const residualFinished = ARM_SPECS.thin_canonical_residual_v1_high.finish(JSON.stringify({
+    grammar: "standard",
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Chrome",
+    subjects: ["A Player"],
+    serial: "8/25",
+    residual_evidence: [{ text: "08/25", target: "serial", anchor: "stamped_number" }]
+  }));
+  assert.equal(residualFinished.residual_source_present, true);
+  assert.equal(residualFinished.residual_replay_candidates.length, 1);
+  assert.equal(residualFinished.residual_canonical_fields_unchanged, true);
+
   const base = await fixture("manifest");
   const canonicalArm = armFor("thin_canonical_high");
   const evidenceArm = armFor("thin_canonical_bounded_evidence_v2_high");
@@ -148,9 +179,12 @@ try {
   const canonicalManifest = await buildRunManifest({ ...manifestInput, arms: [canonicalArm] });
   const evidenceManifest = await buildRunManifest({ ...manifestInput, arms: [evidenceArm] });
   const candidateManifest = await buildRunManifest({ ...manifestInput, arms: [candidateArm] });
+  const residualArm = armFor("thin_canonical_residual_v1_high");
+  const residualManifest = await buildRunManifest({ ...manifestInput, arms: [residualArm] });
   const canonicalSources = Object.keys(canonicalManifest.finisher.contract.source_sha256);
   const evidenceSources = Object.keys(evidenceManifest.finisher.contract.source_sha256);
   const candidateSources = Object.keys(candidateManifest.finisher.contract.source_sha256);
+  const residualSources = Object.keys(residualManifest.finisher.contract.source_sha256);
   assert.ok(canonicalSources.some((name) => name.includes("sem-definition.mjs")));
   assert.ok(canonicalSources.some((name) => name.includes("product-semantics.mjs")));
   assert.ok(canonicalSources.some((name) => name.includes("marketplace-composer-rules.mjs")));
@@ -161,6 +195,9 @@ try {
   assert.ok(candidateSources.some((name) => name.includes("candidate-expression-v3.mjs")));
   assert.ok(!candidateSources.some((name) => name.includes("canonical-fields.mjs")),
     "candidate-first v3 must not acquire a canonical-schema source dependency");
+  assert.ok(residualSources.some((name) => name.includes("residual-evidence-lane-v1.mjs")));
+  assert.equal(residualManifest.contract.arms[0].response_schema_name, "canonical_card_fields_residual_v1");
+  assert.notEqual(residualManifest.fingerprint, canonicalManifest.fingerprint);
   assert.equal(candidateManifest.contract.arms[0].response_schema_name, "card_candidate_expression_v3");
   assert.deepEqual(Object.keys(evidenceManifest.contract.source_sha256), ["provider_request_behavior"]);
   assert.ok(!JSON.stringify(evidenceManifest.contract).includes(evidenceManifest.finisher.fingerprint),
@@ -403,6 +440,55 @@ try {
   assert.equal(candidateCheckpoint.production_promoted, null);
   assert.equal(candidateCheckpoint.title, "",
     "candidate-only evaluation must not render the ledger as a title");
+
+  const residualIntegration = await fixture("residual-v1-integration");
+  let residualCalls = 0;
+  const residualFetch = async (_url, options) => {
+    residualCalls += 1;
+    const request = JSON.parse(options.body);
+    const treatment = request.text.format.name === "canonical_card_fields_residual_v1";
+    return response(200, {
+      output_text: JSON.stringify({
+        grammar: "standard",
+        manufacturer: "Topps",
+        product: "Chrome",
+        subjects: ["Alpha"],
+        serial: "8/25",
+        ...(treatment ? {
+          residual_evidence: [{ text: "08/25", target: "serial", anchor: "stamped_number" }]
+        } : {})
+      }),
+      model,
+      reasoning: { effort },
+      usage: { input_tokens: 2, output_tokens: treatment ? 22 : 12, total_tokens: treatment ? 24 : 14 }
+    });
+  };
+  process.stdout.write = () => true;
+  process.stderr.write = () => true;
+  try {
+    const residualSummary = await main([
+      "--eval-root", residualIntegration.evalRoot,
+      "--dataset", "dataset.json",
+      "--sealed-labels", "labels.jsonl",
+      "--asset-ids-file", residualIntegration.assetIdsFile,
+      "--arms", "thin_canonical_high,thin_canonical_residual_v1_high",
+      "--limit", "1",
+      "--selection-role", "disjoint105_learning",
+      "--out-dir", residualIntegration.outDir
+    ], { fetchImpl: residualFetch });
+    assert.equal(residualSummary.cards_paired, 1);
+  } finally {
+    process.stdout.write = previousStdout;
+    process.stderr.write = previousStderr;
+  }
+  assert.equal(residualCalls, 2, "paired control+treatment is exactly one provider call per arm");
+  const residualRows = (await readFile(
+    join(residualIntegration.outDir, `thin-path-${model}.jsonl`), "utf8"
+  )).trim().split("\n").map(JSON.parse);
+  const residualTreatment = residualRows.find((row) => row.arm === "thin_canonical_residual_v1_high");
+  assert.equal(residualTreatment.residual_source_present, true);
+  assert.equal(residualTreatment.residual_replay_candidates.length, 1);
+  assert.equal(residualTreatment.residual_canonical_fields_unchanged, true);
 
   console.log("thin path eval checkpoint adversarial tests passed");
 } finally {

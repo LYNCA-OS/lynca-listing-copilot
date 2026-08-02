@@ -49,6 +49,20 @@ with the same hard stops:
 
 Until that cohort exists, production stays on the deployed canonical thin path.
 
+## Current-control rerun
+
+On 2026-08-02 the same zero-cost replay was rerun from the current checkout
+with `--disable-product-leaf` (so the experiment-only Composer feature could
+not contribute). The exact current-control receipt is
+`artifacts/candidate-expression-v4/expression-v4-narrow-bundle-rerun-2026-08-02.json`:
+
+- baseline `0.771494` → candidate `0.778394` (`+0.006900`)
+- 13 wins / 0 losses / 137 ties
+- 0 reference-token-loss cards; 0 titles over 80 characters
+
+This is a consistency check of the replay implementation, not a new paid
+sample and not independent-card evidence. The promotion boundary is unchanged.
+
 ## Reproduction
 
 ```sh

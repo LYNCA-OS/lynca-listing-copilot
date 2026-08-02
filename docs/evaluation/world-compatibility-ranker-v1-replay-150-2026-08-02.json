@@ -1,0 +1,568 @@
+{
+  "schema_version": "world-compatibility-ranker-v1-replay-v1",
+  "authority": "evaluation_only_no_provider_no_production",
+  "production_promoted": false,
+  "decision": "STOP_HARD_REJECTION_HOLD_RANK_ONLY",
+  "sources": {
+    "canonical": "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+    "expression": "artifacts/candidate-expression-v4/development-150-merged-2026-08-02.jsonl",
+    "loss_ledger": "docs/evaluation/fresh150-loss-ledger-255-109-63-2026-08-02.json",
+    "constraint_snapshot_version": "constraint-model-v1-94b08531ca0f9fa3",
+    "constraint_snapshot_source_sha256": "94b08531ca0f9fa3724d6a2b3f41615d7d0732d35798dd27bf919e7d95a58cbe",
+    "source_card_count": 2293502
+  },
+  "validation": {
+    "canonical_cards": 150,
+    "expression_cards": 150,
+    "same_asset_set": true,
+    "reference_used_as_ranker_input": false,
+    "provider_calls": 0,
+    "title_compositions": 0,
+    "title_mutations": 0,
+    "hard_rejections": 0,
+    "candidate_value_mutations": 0,
+    "candidate_count_deltas": 0
+  },
+  "snapshot_quality": {
+    "relation_cardinalities": {
+      "player_years": 20816,
+      "player_teams": 4694,
+      "player_team_years": 4694,
+      "set_product_years": 30600,
+      "product_years": 162,
+      "product_sports": 162,
+      "ip_relations": 0
+    },
+    "player_team_subject_share_of_player_year_subjects": 0.22549961568024596,
+    "team_value_contract_present": false,
+    "edge_level_provenance_present": false,
+    "known_ambiguous_or_non_team_labels": {
+      "rookie": 139,
+      "legend": 107,
+      "raw": 84,
+      "smackdown": 77,
+      "nxt": 68,
+      "legends": 57,
+      "toy story": 49,
+      "then": 49,
+      "now": 32,
+      "west": 34,
+      "east": 28,
+      "-": 22,
+      "toy story 3": 20,
+      "toy story 2": 18
+    },
+    "known_ambiguous_or_non_team_edge_count": 784,
+    "set_keys_with_one_product_across_all_years": 27854,
+    "set_keys_with_multiple_products_across_all_years": 2746
+  },
+  "fresh150_coverage": {
+    "subject_occurrences": {
+      "occurrences": 167,
+      "player_years": 144,
+      "player_teams": 121,
+      "player_team_years": 64,
+      "unique_player_team_years": 50
+    },
+    "ip_field_cards": 2,
+    "product_enumerator_value_cards": 4,
+    "product_enumerator_values": [
+      {
+        "asset_id": "reviewed_blind_52526222b532fbef54e2",
+        "reference": "2024-25 Panini Court Kings Victor Wembanyama Dressed To Impress Green 47/49",
+        "visible_set_or_card_name": "Dressed to Impress",
+        "canonical_product": "Court Kings Basketball",
+        "enumerated_product": "Panini Court Kings",
+        "reason": "year_narrows_to_one_product"
+      },
+      {
+        "asset_id": "reviewed_blind_8b3024b5cc435830e80c",
+        "reference": "2025 Panini Donruss Travis Hunter Rated Throwback RC",
+        "visible_set_or_card_name": "Throwback",
+        "canonical_product": "Donruss Football",
+        "enumerated_product": "Panini Select",
+        "reason": "year_narrows_to_one_product"
+      },
+      {
+        "asset_id": "reviewed_blind_3b5183224a0714e832b9",
+        "reference": "2025-26 Topps NBA Hoops Kevin Durant Hoopers Pixel Burst Red 1/5 SSP",
+        "visible_set_or_card_name": "Hoopers",
+        "canonical_product": "NBA Hoops",
+        "enumerated_product": "Topps Hoops",
+        "reason": "year_narrows_to_one_product"
+      },
+      {
+        "asset_id": "reviewed_blind_350b42505d0a78017742",
+        "reference": "2025 Panini Black Ricky Pearsall Metallic Marks Auto Autograph 066/240",
+        "visible_set_or_card_name": "Metallic Marks",
+        "canonical_product": "Black Football",
+        "enumerated_product": "Panini Black",
+        "reason": "year_narrows_to_one_product"
+      }
+    ],
+    "typed_set_candidate_counterfactual_cards": 0,
+    "typed_ip_candidate_counterfactual_cards": 0
+  },
+  "hard_rejection_falsification": {
+    "subject_year": {
+      "covered_cards": 129,
+      "true_positive_wrong_year_rejected": 6,
+      "false_positive_correct_year_rejected": 33,
+      "true_negative_correct_year_kept": 85,
+      "false_negative_wrong_year_kept": 5,
+      "rejection_precision": 0.15384615384615385,
+      "false_positive_rate": 0.2796610169491525
+    },
+    "product_year": {
+      "covered_cards": 78,
+      "true_positive_wrong_year_rejected": 2,
+      "false_positive_correct_year_rejected": 26,
+      "true_negative_correct_year_kept": 49,
+      "false_negative_wrong_year_kept": 1,
+      "rejection_precision": 0.07142857142857142,
+      "false_positive_rate": 0.3466666666666667
+    },
+    "conclusion": "current absence is not contradiction; hard rejection is unsafe"
+  },
+  "candidate_rank_replay": {
+    "subject_year": {
+      "relation": "subject_year",
+      "candidate_kind": "year",
+      "cards": 150,
+      "eligible_multi_candidate_cards": 24,
+      "cards_with_positive_world_support": 10,
+      "changed_top_candidate_cards": 4,
+      "wins": 4,
+      "losses": 0,
+      "unchanged": 146,
+      "mean_delta_on_eligible_cards": 0.0375,
+      "exact_two_sided_sign_p": 0.125,
+      "hard_rejections": 0,
+      "value_mutations": 0,
+      "candidate_count_deltas": 0,
+      "changed": [
+        {
+          "asset_id": "reviewed_blind_65efa016ae8c5a82f3fa",
+          "reference": "2024 Topps Chrome Tennis Holger Rune Patriotic Pride SSP",
+          "before": "2022",
+          "after": "2024",
+          "baseline_candidate_f1": 0,
+          "ranked_candidate_f1": 0.19999999999999998,
+          "delta_f1": 0.19999999999999998,
+          "support_edges": [
+            "subject_year:holger rune:2024"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_b58559bf3334cd6ff54b",
+          "reference": "2026 Bowman Chrome Kendry Chourio 1st Purple Raywave Refractor 105/250",
+          "before": "2025",
+          "after": "2026",
+          "baseline_candidate_f1": 0,
+          "ranked_candidate_f1": 0.16666666666666669,
+          "delta_f1": 0.16666666666666669,
+          "support_edges": [
+            "subject_year:kendry chourio:2026"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_316c9c2012386b0a64ed",
+          "reference": "2025 Futera Unique Miroslav Klose Elite Jersey Relic 17/20",
+          "before": "2011/12",
+          "after": "© 2025 Futera",
+          "baseline_candidate_f1": 0,
+          "ranked_candidate_f1": 0.33333333333333337,
+          "delta_f1": 0.33333333333333337,
+          "support_edges": [
+            "subject_year:miroslav klose:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_b514a8918dbc221a17bd",
+          "reference": "2025 Topps Chrome Platinum Shohei Ohtani Los Angeles Dodgers",
+          "before": "2024 season",
+          "after": "2025",
+          "baseline_candidate_f1": 0,
+          "ranked_candidate_f1": 0.19999999999999998,
+          "delta_f1": 0.19999999999999998,
+          "support_edges": [
+            "subject_year:shohei ohtani:2025"
+          ]
+        }
+      ]
+    },
+    "subject_team_year": {
+      "relation": "subject_team_year",
+      "candidate_kind": "affiliation",
+      "cards": 150,
+      "eligible_multi_candidate_cards": 45,
+      "cards_with_positive_world_support": 31,
+      "changed_top_candidate_cards": 9,
+      "wins": 1,
+      "losses": 6,
+      "unchanged": 143,
+      "mean_delta_on_eligible_cards": -0.023872138258103172,
+      "exact_two_sided_sign_p": 0.125,
+      "hard_rejections": 0,
+      "value_mutations": 0,
+      "candidate_count_deltas": 0,
+      "changed": [
+        {
+          "asset_id": "reviewed_blind_ac56300fcdbf84e6f7d2",
+          "reference": "1992 Upper Deck Frank Thomas White Sox",
+          "before": "UPPER DECK",
+          "after": "CHICAGO WHITE SOX",
+          "baseline_candidate_f1": 0.4444444444444445,
+          "ranked_candidate_f1": 0.4,
+          "delta_f1": -0.04444444444444445,
+          "support_edges": [
+            "subject_team:frank thomas:chicago white sox"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_6683a671093f786a0948",
+          "reference": "2002 Fleer Greats of the Game Bo Jackson Through Years Level 1 Jersey",
+          "before": "KC Royals",
+          "after": "Outfielder for the Kansas City Royals",
+          "baseline_candidate_f1": 0,
+          "ranked_candidate_f1": 0.10526315789473684,
+          "delta_f1": 0.10526315789473684,
+          "support_edges": [
+            "subject_team:bo jackson:kansas city royals"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_940144961215fef91c18",
+          "reference": "2025 Topps Signature Class George Kittle Round 5 Pick 2 027/150 Auto",
+          "before": "Topps",
+          "after": "San Francisco 49ers",
+          "baseline_candidate_f1": 0.14285714285714288,
+          "ranked_candidate_f1": 0,
+          "delta_f1": -0.14285714285714288,
+          "support_edges": [
+            "subject_team_year:george kittle:2025:san francisco 49ers"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_89cde2e9bc69a6edb4fd",
+          "reference": "2019 Topps Luminaries Shohei Ohtani Home Run Kings Auto Autograph Relics 05/15",
+          "before": "Topps",
+          "after": "ANGELS",
+          "baseline_candidate_f1": 0.14285714285714288,
+          "ranked_candidate_f1": 0,
+          "delta_f1": -0.14285714285714288,
+          "support_edges": [
+            "subject_team:shohei ohtani:angels"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_34bee0c655a1edcd18b9",
+          "reference": "2003-04 Topps Pristine Lebron James Refractor RC 1074/1999 BGS 9.5",
+          "before": "BECKETT",
+          "after": "CLEVELAND CAVALIERS",
+          "baseline_candidate_f1": 0,
+          "ranked_candidate_f1": 0,
+          "delta_f1": 0,
+          "support_edges": [
+            "subject_team:lebron james:cleveland cavaliers"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_3215d29874a3dad22bbb",
+          "reference": "2024-25 Topps Chrome NBL Karim Lopez RC Auto",
+          "before": "Topps Chrome",
+          "after": "NEW ZEALAND BREAKERS | F",
+          "baseline_candidate_f1": 0.3636363636363636,
+          "ranked_candidate_f1": 0,
+          "delta_f1": -0.3636363636363636,
+          "support_edges": [
+            "subject_team:karim lopez:new zealand breakers"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_63bfb7a3cd432ce59360",
+          "reference": "2026 Bowman Chrome Roman Anthony Hidden Gems RC SSP",
+          "before": "Topps",
+          "after": "BOSTON RED SOX®",
+          "baseline_candidate_f1": 0,
+          "ranked_candidate_f1": 0,
+          "delta_f1": 0,
+          "support_edges": [
+            "subject_team_year:roman anthony:2026:boston red sox"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_d1cc0f12cdbba0306e8b",
+          "reference": "2026 Topps Munetaka Murakami All Kings RC Rookie SSP",
+          "before": "Topps",
+          "after": "Chicago White Sox®",
+          "baseline_candidate_f1": 0.19999999999999998,
+          "ranked_candidate_f1": 0,
+          "delta_f1": -0.19999999999999998,
+          "support_edges": [
+            "subject_team:munetaka murakami:chicago white sox"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_8cabcafd0596fbab0bb0",
+          "reference": "2022 Panini Donruss Optic Cee Dee Lamb Legendary Logos 02/25",
+          "before": "Optic O Donruss",
+          "after": "Dallas Cowboys",
+          "baseline_candidate_f1": 0.28571428571428575,
+          "ranked_candidate_f1": 0,
+          "delta_f1": -0.28571428571428575,
+          "support_edges": [
+            "subject_team:ceedee lamb:dallas cowboys"
+          ]
+        }
+      ]
+    },
+    "product_year": {
+      "relation": "product_year",
+      "candidate_kind": "identity",
+      "cards": 150,
+      "eligible_multi_candidate_cards": 84,
+      "cards_with_positive_world_support": 46,
+      "changed_top_candidate_cards": 15,
+      "wins": 15,
+      "losses": 0,
+      "unchanged": 135,
+      "mean_delta_on_eligible_cards": 0.043769906236735066,
+      "exact_two_sided_sign_p": 0.00006103515625,
+      "hard_rejections": 0,
+      "value_mutations": 0,
+      "candidate_count_deltas": 0,
+      "changed": [
+        {
+          "asset_id": "reviewed_blind_576057c604b9c50f806c",
+          "reference": "2025 Panini Donruss Optic Cam Skattebo Rated Rookie Blue Hyper Prizm",
+          "before": "OPTIC O DONRUSS",
+          "after": "2025 PANINI — DONRUSS OPTIC FOOTBALL",
+          "baseline_candidate_f1": 0.28571428571428575,
+          "ranked_candidate_f1": 0.5000000000000001,
+          "delta_f1": 0.21428571428571436,
+          "support_edges": [
+            "product_year:Panini Donruss:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_50e7a946ce9892a1f2fb",
+          "reference": "2024 Panini Obsidian Jahmyr Gibbs",
+          "before": "OBSIDIAN",
+          "after": "2024 PANINI - OBSIDIAN FOOTBALL",
+          "baseline_candidate_f1": 0.33333333333333337,
+          "ranked_candidate_f1": 0.6666666666666665,
+          "delta_f1": 0.33333333333333315,
+          "support_edges": [
+            "product_year:Panini Obsidian:2023,2024"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_62cc2e317ae5cd859774",
+          "reference": "2025-26 Panini Donruss Yaxel Lendeborg Auto 07/99",
+          "before": "Donruss",
+          "after": "2025-26 Panini - Donruss Basketball",
+          "baseline_candidate_f1": 0.19999999999999998,
+          "ranked_candidate_f1": 0.5714285714285714,
+          "delta_f1": 0.37142857142857144,
+          "support_edges": [
+            "product_year:Panini Donruss:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_52c03ac5508069913414",
+          "reference": "2026 Bowman Shohei Ohtani Crystallized Chrome SSP",
+          "before": "B Chrome",
+          "after": "BOWMAN CHROME",
+          "baseline_candidate_f1": 0.22222222222222224,
+          "ranked_candidate_f1": 0.4444444444444445,
+          "delta_f1": 0.22222222222222224,
+          "support_edges": [
+            "product_year:Bowman:2025,2026"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_8fb29302a15dd34e880b",
+          "reference": "2023-24 Panini Donruss Optic D'Angelo Russell Lucky Hyper Lakers 2/8",
+          "before": "Optic O Donruss",
+          "after": "2023-24 PANINI - DONRUSS OPTIC BASKETBALL",
+          "baseline_candidate_f1": 0.25,
+          "ranked_candidate_f1": 0.5263157894736842,
+          "delta_f1": 0.2763157894736842,
+          "support_edges": [
+            "product_year:Donruss Optic:2023,2024"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_8e6763a0f5c15b07ef8a",
+          "reference": "2023-24 Panini Donruss Optic Buddy Hield Lucky Hyper 76ers 2/8",
+          "before": "OPTIC O DONRUSS",
+          "after": "2023-24 PANINI - DONRUSS OPTIC BASKETBALL",
+          "baseline_candidate_f1": 0.26666666666666666,
+          "ranked_candidate_f1": 0.5555555555555556,
+          "delta_f1": 0.2888888888888889,
+          "support_edges": [
+            "product_year:Donruss Optic:2023"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_4c8131eeda536c66d385",
+          "reference": "2025-26 Topps Signature Class Cooper Flagg Rookie Auto Red RC /25 Redemption Card",
+          "before": "Topps Redemption Card",
+          "after": "2025 Topps Signature Class Basketball",
+          "baseline_candidate_f1": 0.35294117647058826,
+          "ranked_candidate_f1": 0.4210526315789473,
+          "delta_f1": 0.06811145510835903,
+          "support_edges": [
+            "product_year:Topps Signature Class:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_89e97f6cf6442bdbc497",
+          "reference": "2023 Panini Select Christian McCaffrey Suite Level Tie-Dye 04/25",
+          "before": "PANINI",
+          "after": "2023 PANINI – SELECT FOOTBALL",
+          "baseline_candidate_f1": 0.16666666666666669,
+          "ranked_candidate_f1": 0.39999999999999997,
+          "delta_f1": 0.23333333333333328,
+          "support_edges": [
+            "product_year:Panini Select:2023"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_145998198f262d24fb1b",
+          "reference": "2025 Panini Prizm Tetairoa McMillan RC Red Wave Prizm 018/149",
+          "before": "PRIZM",
+          "after": "2025 PANINI – PRIZM FOOTBALL",
+          "baseline_candidate_f1": 0.18181818181818182,
+          "ranked_candidate_f1": 0.4285714285714285,
+          "delta_f1": 0.24675324675324667,
+          "support_edges": [
+            "product_year:Panini Prizm:2024,2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_0692862d56755fe4e863",
+          "reference": "2023-24 Panini Donruss Optic Spencer Dinwiddie Lucky Hyper Lakers 6/8",
+          "before": "Optic O",
+          "after": "2023-24 Panini - Donruss Optic Basketball",
+          "baseline_candidate_f1": 0.14285714285714285,
+          "ranked_candidate_f1": 0.5555555555555556,
+          "delta_f1": 0.41269841269841273,
+          "support_edges": [
+            "product_year:Donruss Optic:2023"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_159b07bd6d12e0e4e794",
+          "reference": "2025 Topps Chrome Platinum Luisangel Acuna RC Auto Gold Refractor 18/50",
+          "before": "Topps Chrome",
+          "after": "2025 Topps Chrome Platinum Baseball",
+          "baseline_candidate_f1": 0.2857142857142857,
+          "ranked_candidate_f1": 0.47058823529411764,
+          "delta_f1": 0.18487394957983194,
+          "support_edges": [
+            "product_year:Topps Chrome Platinum:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_e2c50c291e40a226e90e",
+          "reference": "2025 Topps Chrome Platinum Griffin Conine Gold Refractor RC Auto 27/50",
+          "before": "Topps Chrome",
+          "after": "2025 Topps Chrome Platinum Baseball",
+          "baseline_candidate_f1": 0.2857142857142857,
+          "ranked_candidate_f1": 0.47058823529411764,
+          "delta_f1": 0.18487394957983194,
+          "support_edges": [
+            "product_year:Topps Chrome Platinum:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_92df2086a5b302c00a0b",
+          "reference": "2025 Topps Cosmic Chrome Jayden Higgins RC First Flight Signature Gold Interstellar Auto 09/50",
+          "before": "Topps Chrome",
+          "after": "from 2025 Topps Cosmic Chrome Football.",
+          "baseline_candidate_f1": 0.23529411764705882,
+          "ranked_candidate_f1": 0.3809523809523809,
+          "delta_f1": 0.14565826330532206,
+          "support_edges": [
+            "product_year:Topps Cosmic Chrome:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_8c2e0969acfd82951320",
+          "reference": "2025-26 Panini Donruss Hugo González Rated Rookie Auto Red 18/49 RC Auto",
+          "before": "DONRUSS",
+          "after": "2025-26 PANINI – DONRUSS BASKETBALL",
+          "baseline_candidate_f1": 0.14285714285714288,
+          "ranked_candidate_f1": 0.4444444444444444,
+          "delta_f1": 0.3015873015873015,
+          "support_edges": [
+            "product_year:Panini Donruss:2025"
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_cbdf65237db1aab4e560",
+          "reference": "2025 Topps Chrome Platinum Spencer Schwellenbach RC Auto Blue 55/99",
+          "before": "Topps Chrome",
+          "after": "2025 Topps Chrome Platinum Baseball",
+          "baseline_candidate_f1": 0.3076923076923077,
+          "ranked_candidate_f1": 0.5000000000000001,
+          "delta_f1": 0.1923076923076924,
+          "support_edges": [
+            "product_year:Topps Chrome Platinum:2025"
+          ]
+        }
+      ]
+    }
+  },
+  "simple_controls": {
+    "longest_identity": {
+      "rule": "longest_identity_candidate_without_world_edges",
+      "changed_top_candidate_cards": 44,
+      "wins": 33,
+      "losses": 10,
+      "unchanged": 107,
+      "exact_two_sided_sign_p": 0.0006061066312668117,
+      "interpretation": "higher gross recall but unsafe; world compatibility trades 18 wins to remove 10 losses in this cohort"
+    }
+  },
+  "fresh150_exhaustive_loss_scope": {
+    "occurrences": 255,
+    "structural_families": {
+      "parallel_or_finish": 76,
+      "serial_or_numbered_print": 35,
+      "attribute_or_component": 25,
+      "bare_number_or_ordinal": 24,
+      "other_identity_or_descriptor": 23,
+      "rarity_or_marker": 17,
+      "product_set_or_ip": 14,
+      "year_or_season": 11,
+      "color": 9,
+      "lot_notation": 8,
+      "subject_or_name": 6,
+      "token_boundary_or_spelling": 4,
+      "team_or_league": 3
+    },
+    "identity_world_family_upper_bound_occurrences": 34,
+    "identity_world_family_upper_bound_share": 0.13333333333333333,
+    "warning": "rankers cannot recover an absent candidate; this is an addressability ceiling, not a recovery forecast"
+  },
+  "historical_359_context": {
+    "source": "user_provided_historical_classification_not_recomputed_here",
+    "team_or_league": 5,
+    "year_or_number_mixed": 42,
+    "finish_color_attribute_rarity_subtotal": 133,
+    "product_or_set_incomplete": "inside_unquantified_other_bucket",
+    "warning": "most historical misses are not subject-team-year or product-set/IP ranking problems"
+  },
+  "gates": {
+    "hard_reject": "STOP_missing_complete_edge_provenance_and_high_false_reject_rate",
+    "subject_team_year_rank": "STOP_negative_title_usefulness_replay",
+    "subject_year_rank": "HOLD_4_wins_0_losses_but_no_statistical_power",
+    "product_year_rank": "HOLD_positive_same_cohort_signal_requires_independent_unseen_candidate_replay",
+    "set_rank": "STOP_no_typed_counterfactual_and_current_enumerator_has_known_false_value",
+    "ip_rank": "STOP_no_local_relation",
+    "production": "STOP_evaluation_only"
+  }
+}

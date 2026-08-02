@@ -1,0 +1,1057 @@
+{
+  "schema_version": "field-specific-observation-lane-v2-analysis-v1",
+  "generated_at": "2026-08-02T10:53:37.449Z",
+  "boundaries": {
+    "provider_calls": 0,
+    "runtime_changes": 0,
+    "production_changes": 0,
+    "automatic_csm_admission": false,
+    "automatic_renderer_admission": false,
+    "reference_used_only_for_offline_oracles": true,
+    "runtime_imports_v2_or_hypothesis": false
+  },
+  "source": {
+    "complementarity_ledger_sha256": "74e7360be9aaa8cbe2fe563d12042fd85bedd77694963fe5ed4e7bf41e1a1758",
+    "hypothesis_proxy_is_separate_prompt": true,
+    "hypothesis_proxy_sha256": "39fbbaeef1c9bd2d01d74aaf36c3a1380e9901d26b76dac502756a91811d5819"
+  },
+  "decomposition_85": {
+    "token_occurrences": 85,
+    "mutually_exclusive_role_occurrences": {
+      "downstream_existing": 38,
+      "identity_phrase": 30,
+      "finish_phrase": 10,
+      "commercial_marker": 6,
+      "exact_code": 1
+    },
+    "capture_target": {
+      "token_occurrences": 47,
+      "cards": 30,
+      "complete_phrases": 39,
+      "max_phrases_on_one_card": 2,
+      "phrase_rows_per_card": {
+        "0": 120,
+        "1": 21,
+        "2": 9
+      },
+      "cap_coverage": {
+        "1": {
+          "covered_phrases": 30,
+          "total_phrases": 39
+        },
+        "2": {
+          "covered_phrases": 39,
+          "total_phrases": 39
+        }
+      }
+    },
+    "roles": {
+      "identity_phrase": {
+        "token_occurrences": 30,
+        "cards": 20,
+        "complete_phrases": 22,
+        "exhaustive_reproduced_tokens": 21,
+        "exhaustive_reproduction_rate": 0.7,
+        "label_oracle_macro_f1": 0.780832,
+        "label_oracle_delta": 0.013068,
+        "exhaustive_reproduced_oracle_delta": 0.008823,
+        "cards_over_80_if_all_phrases_appended": 5
+      },
+      "finish_phrase": {
+        "token_occurrences": 10,
+        "cards": 9,
+        "complete_phrases": 10,
+        "exhaustive_reproduced_tokens": 2,
+        "exhaustive_reproduction_rate": 0.2,
+        "label_oracle_macro_f1": 0.772026,
+        "label_oracle_delta": 0.004263,
+        "exhaustive_reproduced_oracle_delta": 0.000823,
+        "cards_over_80_if_all_phrases_appended": 2
+      },
+      "commercial_marker": {
+        "token_occurrences": 6,
+        "cards": 5,
+        "complete_phrases": 6,
+        "exhaustive_reproduced_tokens": 4,
+        "exhaustive_reproduction_rate": 0.666667,
+        "label_oracle_macro_f1": 0.770058,
+        "label_oracle_delta": 0.002294,
+        "exhaustive_reproduced_oracle_delta": 0.001583,
+        "cards_over_80_if_all_phrases_appended": 2
+      },
+      "exact_code": {
+        "token_occurrences": 1,
+        "cards": 1,
+        "complete_phrases": 1,
+        "exhaustive_reproduced_tokens": 1,
+        "exhaustive_reproduction_rate": 1,
+        "label_oracle_macro_f1": 0.768105,
+        "label_oracle_delta": 0.000342,
+        "exhaustive_reproduced_oracle_delta": 0.000342,
+        "cards_over_80_if_all_phrases_appended": 0
+      }
+    }
+  },
+  "theoretical_value": {
+    "canonical_macro_f1": 0.767764,
+    "all_capture_targets_label_oracle": {
+      "macro_f1": 0.787481,
+      "delta": 0.019718,
+      "cards_over_80_if_all_phrases_appended": 7,
+      "under_80_phrase_subset_macro_f1": 0.783138,
+      "under_80_phrase_subset_delta": 0.015374,
+      "nondeployable": true
+    },
+    "exhaustive_reproduced_subset_oracle": {
+      "macro_f1": 0.779335,
+      "delta": 0.011572,
+      "separate_call_proxy": true,
+      "nondeployable": true
+    }
+  },
+  "pollution_proxy": {
+    "source": "all bare-derived phrase candidates from the 150-card complementarity ledger",
+    "direct_admission_forbidden": true,
+    "by_role": {
+      "identity_phrase": {
+        "candidates": 318,
+        "cards": 145,
+        "support_labels": {
+          "UNSUPPORTED": 201,
+          "FULL_EXACT": 59,
+          "PARTIAL": 56,
+          "FULL_TOKEN": 2
+        },
+        "supported_tokens": 196,
+        "unsupported_tokens": 499,
+        "token_support_rate": 0.282014,
+        "identity_conflicts": 26,
+        "numeric_risk_candidates": 77
+      },
+      "finish_phrase": {
+        "candidates": 50,
+        "cards": 49,
+        "support_labels": {
+          "FULL_EXACT": 19,
+          "UNSUPPORTED": 16,
+          "PARTIAL": 10,
+          "FULL_TOKEN": 5
+        },
+        "supported_tokens": 44,
+        "unsupported_tokens": 32,
+        "token_support_rate": 0.578947,
+        "identity_conflicts": 0,
+        "numeric_risk_candidates": 0
+      },
+      "commercial_marker": {
+        "candidates": 77,
+        "cards": 43,
+        "support_labels": {
+          "UNSUPPORTED": 46,
+          "PARTIAL": 16,
+          "FULL_EXACT": 14,
+          "FULL_TOKEN": 1
+        },
+        "supported_tokens": 40,
+        "unsupported_tokens": 125,
+        "token_support_rate": 0.242424,
+        "identity_conflicts": 2,
+        "numeric_risk_candidates": 16
+      },
+      "exact_code": {
+        "candidates": 57,
+        "cards": 55,
+        "support_labels": {
+          "UNSUPPORTED": 54,
+          "FULL_EXACT": 3
+        },
+        "supported_tokens": 3,
+        "unsupported_tokens": 54,
+        "token_support_rate": 0.052632,
+        "identity_conflicts": 0,
+        "numeric_risk_candidates": 54
+      }
+    }
+  },
+  "v1_audit": {
+    "v1_total_reserved_rows": 7,
+    "measured_max_needed_rows": 2,
+    "excess_reserved_rows_per_card": 5,
+    "capture_target_tokens": 47,
+    "schema_addressable_tokens": 46,
+    "prompt_addressable_tokens": 30,
+    "prompt_addressable_share": 0.638298,
+    "missed_by_prompt_or_role": {
+      "search_optimization": 5,
+      "year": 5,
+      "subject": 4,
+      "commercial_marker": 2,
+      "card_number": 1
+    },
+    "minimal_v2_delta": [
+      "replace four reserved arrays with one max-2 array and an explicit mutually-exclusive role enum",
+      "allow complete subject, team/city, character, and season phrases in identity_phrase",
+      "add literal Redemption and VMAX to commercial_marker",
+      "generalize stamped_serials to candidate-only exact_code for checklist/serial/grade",
+      "drop candidates whose token set is already represented anywhere in canonical fields",
+      "forbid world knowledge; visual_pattern is legal only for finish_phrase"
+    ]
+  },
+  "request_cost": {
+    "v1_vs_control": {
+      "control": {
+        "request_bytes": 8963,
+        "prompt_bytes": 2420,
+        "schema_bytes": 6117
+      },
+      "treatment": {
+        "request_bytes": 11391,
+        "prompt_bytes": 3397,
+        "schema_bytes": 7547
+      },
+      "delta": {
+        "request_bytes": 2428,
+        "prompt_bytes": 977,
+        "schema_bytes": 1430
+      }
+    },
+    "literal_v2_vs_control": {
+      "control": {
+        "request_bytes": 8963,
+        "prompt_bytes": 2420,
+        "schema_bytes": 6117
+      },
+      "treatment": {
+        "request_bytes": 10378,
+        "prompt_bytes": 3309,
+        "schema_bytes": 6622
+      },
+      "delta": {
+        "request_bytes": 1415,
+        "prompt_bytes": 889,
+        "schema_bytes": 505
+      }
+    },
+    "hypothesis_v1_vs_control": {
+      "control": {
+        "request_bytes": 8963,
+        "prompt_bytes": 2420,
+        "schema_bytes": 6117
+      },
+      "treatment": {
+        "request_bytes": 10174,
+        "prompt_bytes": 3103,
+        "schema_bytes": 6627
+      },
+      "delta": {
+        "request_bytes": 1211,
+        "prompt_bytes": 683,
+        "schema_bytes": 510
+      }
+    },
+    "literal_v2_max_output": {
+      "bytes": 318,
+      "approximate_tokens_at_4_bytes": 80
+    },
+    "hypothesis_v1_max_output": {
+      "bytes": 471,
+      "approximate_tokens_at_4_bytes": 118
+    },
+    "literal_prompt_bytes": 888,
+    "hypothesis_prompt_bytes": 682
+  },
+  "product_set_parallel_hypothesis": {
+    "status": "HOLD_SEPARATE_ARM_NOT_DEFAULT",
+    "strict_85_ledger_target": {
+      "token_occurrences": 16,
+      "cards": 12,
+      "label_oracle_macro_f1": 0.774724,
+      "label_oracle_delta": 0.00696,
+      "unique_tokens_beyond_literal_v2": 0,
+      "note": "Strict target includes product, set, and parallel only. It excludes IP, subject, team, year, card-name, marker, and exact-code targets."
+    },
+    "existing_v4_hypothesis_risk_proxy": {
+      "source_is_separate_paid_candidate_v4_call": true,
+      "source_is_risk_proxy_not_same_call_proof": true,
+      "cards": 150,
+      "rows_per_card": {
+        "0": 3,
+        "1": 20,
+        "2": 127
+      },
+      "candidates": 274,
+      "full_reference_supported": 7,
+      "partially_supported": 267,
+      "fully_unsupported": 0,
+      "supported_tokens": 1256,
+      "unsupported_tokens": 801,
+      "token_support_rate": 0.610598,
+      "visible_combination": 266,
+      "model_knowledge": 8,
+      "output_tokens": {
+        "p50_full_v4_including_visible_facts": 397,
+        "p95_full_v4_including_visible_facts": 440,
+        "isolated_hypothesis_cost_available": false
+      }
+    },
+    "interpretation": "The 85-token ledger gives hypotheses no unique measured target over literal v2, while the separate v4 proxy is mostly partially supported rather than exact. Model-knowledge completion outside the ledger is not falsified, so this remains a separate arm gated by a world support-only ranker."
+  },
+  "slab_anchor": {
+    "status": "DEFER_NO_VERIFIED_REGISTRY_COVERAGE",
+    "decision": "Do not add slab_anchor to the literal v2 schema or to the first paid arm. Pre-register it only as a future independent optional candidate lane after exact Registry coverage is measured.",
+    "independent_from_literal_v2": true,
+    "literal_v2_rows_consumed": 0,
+    "literal_v2_max_rows_unchanged": 2,
+    "default_schema_enabled": false,
+    "paid_arm_enabled": false,
+    "runtime_enabled": false,
+    "observed_opportunity": {
+      "exact_single_cert_cards": 37,
+      "conflicting_cert_cards": 0,
+      "current_cert_card_f1": 0.865142,
+      "audited_missing_occurrences": 71,
+      "restore_all_missing_label_oracle_delta": 0.018012,
+      "perfect_cert_cards_label_oracle_delta": 0.033265,
+      "note": "The oracle restores title tokens that are not the certificate number itself; it is not a forecast of Registry lookup gain."
+    },
+    "registry_evidence": {
+      "schema_migration_present": true,
+      "local_seed_or_insert_evidence_present": false,
+      "live_row_coverage_verified": false,
+      "old_v4_exact_lookup_seam_present": true,
+      "old_v4_lookup_is_current_thin_path_authority": false
+    },
+    "future_contract_shape_if_unblocked": {
+      "property": "slab_anchor",
+      "fields": [
+        "grader",
+        "certification_number",
+        "region",
+        "basis"
+      ],
+      "region": "slab_label",
+      "basis": "printed_text",
+      "registry_key": [
+        "grader",
+        "cert_number"
+      ],
+      "lookup": "exact_only",
+      "authority": "candidate_only",
+      "required_conflict_policy": "current-image contradiction => REVIEW_REQUIRED; never overwrite visible text"
+    },
+    "unblock_gate": "Measure reviewed, unique exact Registry hits for the 37 readable certificate cards before adding any schema or paid treatment; zero/few hits remain STOP.",
+    "source": "scripts/analyze-accuracy-big-head-oracles.mjs"
+  },
+  "decision": {
+    "literal_v2": "GO_TO_PAIRED_FRESH150_EXPERIMENT_ONLY",
+    "literal_v2_production": "STOP",
+    "hypothesis_default_schema": "STOP",
+    "hypothesis_independent_arm": "HOLD",
+    "reasons": [
+      "two rows cover all 39 measured target phrases across 30 cards",
+      "the all-target under-80 label oracle is +0.015374 macro F1",
+      "the contract keeps capture and admission separate and has no runtime import",
+      "same-call capture and canonical non-interference remain unmeasured"
+    ]
+  },
+  "minimum_fresh150_experiment": {
+    "shared_control": "thin_canonical_high with identical model/effort/detail/images",
+    "required_treatment": "thin_canonical_high + literal field-specific observation lane v2 in the same response",
+    "optional_independent_treatment": "thin_canonical_high + product/set/parallel hypothesis lane v1; never combine with literal v2 in the first test",
+    "calls_if_literal_only": 300,
+    "calls_if_shared_control_plus_both_separate_treatments": 450,
+    "gates": {
+      "request_bytes_differ_before_scoring": true,
+      "canonical_projection_noninterference": "no critical numeric/subject/product mutation and no aggregate regression",
+      "capture": "at least 8 target cards and >= +0.003 resolver-oracle macro F1 on frozen labels",
+      "authority": "zero automatic CSM/Composer/persistence admission",
+      "cost": "report input/output token delta and latency p50/p95; no second call",
+      "hypothesis_extra": "world ranker must preserve candidate values, hard-reject zero, and beat source-order before paid arm"
+    }
+  },
+  "target_rows": [
+    {
+      "asset_id": "reviewed_blind_04bed0401e6450349141",
+      "reference": "2024 Topps Chrome Dan Marino Teal Refractor 171/250 Dolphins",
+      "canonical_title": "2024 Topps Chrome Dan Marino",
+      "phrase": "Dolphins",
+      "role": "identity_phrase",
+      "fields": [
+        "search_optimization"
+      ],
+      "target_tokens": [
+        "dolphins"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_1ab36981fdce86771040",
+      "reference": "2026 Topps Chrome Disney Mufasa Dalmatian Refractor 004/101",
+      "canonical_title": "2026 Topps Chrome Mufasa #164 09/10 Rainbow Refractor",
+      "phrase": "Disney",
+      "role": "identity_phrase",
+      "fields": [
+        "ip_sport"
+      ],
+      "target_tokens": [
+        "disney"
+      ],
+      "exhaustive_supported_tokens": [
+        "disney"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_1ab36981fdce86771040",
+      "reference": "2026 Topps Chrome Disney Mufasa Dalmatian Refractor 004/101",
+      "canonical_title": "2026 Topps Chrome Mufasa #164 09/10 Rainbow Refractor",
+      "phrase": "Dalmatian",
+      "role": "identity_phrase",
+      "fields": [
+        "subject"
+      ],
+      "target_tokens": [
+        "dalmatian"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_268055e5845c6ecfcf83",
+      "reference": "2026 Bowman Chrome Sapphire Carson Benge New York Mets Yellow Sapphire 50/75",
+      "canonical_title": "2025 Topps Bowman Chrome Carson Benge Outfielder Yellow Sparkle 50/75",
+      "phrase": "2026",
+      "role": "identity_phrase",
+      "fields": [
+        "year"
+      ],
+      "target_tokens": [
+        "2026"
+      ],
+      "exhaustive_supported_tokens": [
+        "2026"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_268055e5845c6ecfcf83",
+      "reference": "2026 Bowman Chrome Sapphire Carson Benge New York Mets Yellow Sapphire 50/75",
+      "canonical_title": "2025 Topps Bowman Chrome Carson Benge Outfielder Yellow Sparkle 50/75",
+      "phrase": "New York Mets",
+      "role": "identity_phrase",
+      "fields": [
+        "search_optimization"
+      ],
+      "target_tokens": [
+        "new",
+        "york"
+      ],
+      "exhaustive_supported_tokens": [
+        "new",
+        "york"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_274c5078fce5de006ab1",
+      "reference": "2018-19 Contenders Optic Luka Doncic RC Blue Rookie Ticket Auto 05/99 PSA 9",
+      "canonical_title": "2018 Panini Contenders Optic Luka Dončić Shooting Blue 5/99 RC Auto PSA 9",
+      "phrase": "Rookie Ticket",
+      "role": "identity_phrase",
+      "fields": [
+        "card_name"
+      ],
+      "target_tokens": [
+        "rookie",
+        "ticket"
+      ],
+      "exhaustive_supported_tokens": [
+        "rookie",
+        "ticket"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_34413231dd0ea69e68a4",
+      "reference": "2025 Panini Mosaic KeAndre Lambert-Smith Rookie Auto Choice Fusion Red Yellow",
+      "canonical_title": "2025 Panini Mosaic KeAndre Lambert-Smith Rainbow Prizm RC Auto",
+      "phrase": "Rookie",
+      "role": "identity_phrase",
+      "fields": [
+        "card_name"
+      ],
+      "target_tokens": [
+        "rookie"
+      ],
+      "exhaustive_supported_tokens": [
+        "rookie"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_35540f2899f796676dcd",
+      "reference": "2025 Goodwin Champions Bianca Bustamante Splash of Color 3-D Lenticular",
+      "canonical_title": "2025 Upper Deck Goodwin Champions Bianca Bustamante Clash of the Champions",
+      "phrase": "Splash of Color",
+      "role": "identity_phrase",
+      "fields": [
+        "card_name"
+      ],
+      "target_tokens": [
+        "splash",
+        "color"
+      ],
+      "exhaustive_supported_tokens": [
+        "color"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_413aa29a2561ee50f989",
+      "reference": "2025 Topps Triumphant Tennis Victoria Mboko Green Foil Autographs Auto 35/35",
+      "canonical_title": "2025 Topps Triumphant Victoria Mboko 35/35 Auto",
+      "phrase": "Tennis",
+      "role": "identity_phrase",
+      "fields": [
+        "ip_sport"
+      ],
+      "target_tokens": [
+        "tennis"
+      ],
+      "exhaustive_supported_tokens": [
+        "tennis"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_46be33ef1f2dbc0956af",
+      "reference": "2025 Topps Finest Shohei Ohtani Gusto Red Refractor 5/5 Los Angeles Dodgers",
+      "canonical_title": "2025 Topps Finest Shohei Ohtani Gusto 5/5",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_4c8131eeda536c66d385",
+      "reference": "2025-26 Topps Signature Class Cooper Flagg Rookie Auto Red RC /25 Redemption Card",
+      "canonical_title": "2025 Topps Signature Class Cooper Flagg Base Rookie Class Auto Red Parallel RC",
+      "phrase": "Redemption",
+      "role": "commercial_marker",
+      "fields": [
+        "commercial_marker"
+      ],
+      "target_tokens": [
+        "redemption"
+      ],
+      "exhaustive_supported_tokens": [
+        "redemption"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_4cd844c77ea0347c87da",
+      "reference": "2025 Disney Lorcana JP Mickey Mouse Special PR Volume 1 Iconic #242 PSA 10",
+      "canonical_title": "2025 Disney Lorcana JP Mickey Mouse Brave Little Prince #242/204 PSA 10",
+      "phrase": "242",
+      "role": "exact_code",
+      "fields": [
+        "card_number"
+      ],
+      "target_tokens": [
+        "242"
+      ],
+      "exhaustive_supported_tokens": [
+        "242"
+      ],
+      "v1_schema": false,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_522dae554f642f6810eb",
+      "reference": "2025 Bowman Sapphire Cooper Flagg Chrome Red Refractor Rookie 1/5 RC",
+      "canonical_title": "2025 Topps Bowman Chrome Cooper Flagg Brookies Rookies Red Cracked Ice 1/5 RC",
+      "phrase": "Rookie",
+      "role": "commercial_marker",
+      "fields": [
+        "commercial_marker"
+      ],
+      "target_tokens": [
+        "rookie"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_522dae554f642f6810eb",
+      "reference": "2025 Bowman Sapphire Cooper Flagg Chrome Red Refractor Rookie 1/5 RC",
+      "canonical_title": "2025 Topps Bowman Chrome Cooper Flagg Brookies Rookies Red Cracked Ice 1/5 RC",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [
+        "refractor"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_5edfef737b8f58f5253b",
+      "reference": "2025 Topps Chrome Platinum Dalton Rushing RC Orange Refractor 12/25 Auto Dodgers",
+      "canonical_title": "2025 Topps Chrome Dalton Rushing 12/25 RC Auto",
+      "phrase": "Orange Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_64d10f8c8986aa1c9af4",
+      "reference": "1986-87 Star Court Kings Michael Jordan Rookie RC SCD 8.5",
+      "canonical_title": "1986 Court Kings Michael Jordan 18/33 Sports Collectors Digest Authentic 8.5",
+      "phrase": "SCD",
+      "role": "identity_phrase",
+      "fields": [
+        "subject"
+      ],
+      "target_tokens": [
+        "scd"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_7059d3b39d01402f0e61",
+      "reference": "2026 Topps Chrome VeeFriends Common Sense Cow Black Mini Diamond Refractor 07/10",
+      "canonical_title": "2026 Topps Chrome Common Sense Cow Original Artwork Rainbow Cracked Ice 9/10",
+      "phrase": "VeeFriends",
+      "role": "identity_phrase",
+      "fields": [
+        "product"
+      ],
+      "target_tokens": [
+        "veefriends"
+      ],
+      "exhaustive_supported_tokens": [
+        "veefriends"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_7059d3b39d01402f0e61",
+      "reference": "2026 Topps Chrome VeeFriends Common Sense Cow Black Mini Diamond Refractor 07/10",
+      "canonical_title": "2026 Topps Chrome Common Sense Cow Original Artwork Rainbow Cracked Ice 9/10",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_7815e1aeda1f8e00dd4e",
+      "reference": "2026 Topps Chrome VeeFriends Adaptable Alien Orange Mini Diamond Refractor /25",
+      "canonical_title": "2026 Topps Chrome Adaptable Alien Orange Sparkle",
+      "phrase": "VeeFriends",
+      "role": "identity_phrase",
+      "fields": [
+        "product"
+      ],
+      "target_tokens": [
+        "veefriends"
+      ],
+      "exhaustive_supported_tokens": [
+        "veefriends"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_7815e1aeda1f8e00dd4e",
+      "reference": "2026 Topps Chrome VeeFriends Adaptable Alien Orange Mini Diamond Refractor /25",
+      "canonical_title": "2026 Topps Chrome Adaptable Alien Orange Sparkle",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_7c93444e09007eaec82f",
+      "reference": "1998-99 Upper Deck MJx Michael Jordan Timepieces Bronze 102/230",
+      "canonical_title": "1998 Upper Deck MJ Timeline Michael Jordan",
+      "phrase": "MJx",
+      "role": "identity_phrase",
+      "fields": [
+        "product"
+      ],
+      "target_tokens": [
+        "mjx"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_86990bc00f236f49430e",
+      "reference": "2024-25 Topps Chrome Victor Wembanyama Gold Refractor Spurs 17/50",
+      "canonical_title": "2025 Topps Chrome X Victor Wembanyama Green Refractor 17/50",
+      "phrase": "2024 25",
+      "role": "identity_phrase",
+      "fields": [
+        "year"
+      ],
+      "target_tokens": [
+        "2024",
+        "25"
+      ],
+      "exhaustive_supported_tokens": [
+        "25"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_8cabcafd0596fbab0bb0",
+      "reference": "2022 Panini Donruss Optic Cee Dee Lamb Legendary Logos 02/25",
+      "canonical_title": "2022 Panini Donruss Legendary Logos CeeDee Lamb Cowboys Purple Prizm 21/25 Relic",
+      "phrase": "Optic",
+      "role": "identity_phrase",
+      "fields": [
+        "product"
+      ],
+      "target_tokens": [
+        "optic"
+      ],
+      "exhaustive_supported_tokens": [
+        "optic"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_9ef085a2c3022091aec0",
+      "reference": "2024 Topps Chrome Tennis Holger Rune 1st Gold Refractor 37/50 RC",
+      "canonical_title": "2024 Topps Chrome Holger Rune 37/50",
+      "phrase": "Tennis",
+      "role": "identity_phrase",
+      "fields": [
+        "ip_sport"
+      ],
+      "target_tokens": [
+        "tennis"
+      ],
+      "exhaustive_supported_tokens": [
+        "tennis"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_9ef085a2c3022091aec0",
+      "reference": "2024 Topps Chrome Tennis Holger Rune 1st Gold Refractor 37/50 RC",
+      "canonical_title": "2024 Topps Chrome Holger Rune 37/50",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_a12d7e8c2d623c870df4",
+      "reference": "2024 Topps Heritage High Number Jackson Chourio RC Dark Blue Bordered",
+      "canonical_title": "2023 Topps Heritage Jackson Chourio RC",
+      "phrase": "2024",
+      "role": "identity_phrase",
+      "fields": [
+        "year"
+      ],
+      "target_tokens": [
+        "2024"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_a4051a222e9be2cf8149",
+      "reference": "2025 Star Wars Smugglers Outpost Paul Kasey Edrio Two Tubes Chrome Auto",
+      "canonical_title": "Topps Star Wars Chrome Black Paul Kasey Auto",
+      "phrase": "Two Tubes",
+      "role": "identity_phrase",
+      "fields": [
+        "subject"
+      ],
+      "target_tokens": [
+        "two",
+        "tubes"
+      ],
+      "exhaustive_supported_tokens": [
+        "two",
+        "tubes"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_a8a73b44f77bf6e823e2",
+      "reference": "2026 Topps Chrome UFC Patrick Mix RC Refractor X-Fractor RC",
+      "canonical_title": "2026 Topps Chrome UFC Patrick Mix Silver Xfractor RC",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_b514a8918dbc221a17bd",
+      "reference": "2025 Topps Chrome Platinum Shohei Ohtani Los Angeles Dodgers",
+      "canonical_title": "2025 Topps Chrome Shohei Ohtani Auto",
+      "phrase": "Los Angeles Dodgers",
+      "role": "identity_phrase",
+      "fields": [
+        "search_optimization"
+      ],
+      "target_tokens": [
+        "los",
+        "angeles"
+      ],
+      "exhaustive_supported_tokens": [
+        "los",
+        "angeles"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_bc6cd6c49b79324c84d7",
+      "reference": "2025-26 Topps Chrome LeBron James Gold Refractor 27/50 Lakers",
+      "canonical_title": "2024-25 Topps Chrome LeBron James Gold Refractor 21/50",
+      "phrase": "2025",
+      "role": "identity_phrase",
+      "fields": [
+        "year"
+      ],
+      "target_tokens": [
+        "2025"
+      ],
+      "exhaustive_supported_tokens": [
+        "2025"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_bcc4e7ac4ac23e1e69d3",
+      "reference": "2026 Bowman Chrome Xavier Neyens Cristopher Polanco Ryan Reptilian Refractor lotx4",
+      "canonical_title": "4 Card Lot 2026 Topps Bowman Chrome Xavier Neyens Silver Prismatic",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_c1fdabad9da739fc592f",
+      "reference": "2025-26 Topps Finest Josh Hart Common Geometric Refractor",
+      "canonical_title": "2025-26 Topps Finest Josh Hart Variation Silver Prismatic",
+      "phrase": "Common",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "common"
+      ],
+      "exhaustive_supported_tokens": [
+        "common"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_c1fdabad9da739fc592f",
+      "reference": "2025-26 Topps Finest Josh Hart Common Geometric Refractor",
+      "canonical_title": "2025-26 Topps Finest Josh Hart Variation Silver Prismatic",
+      "phrase": "Refractor",
+      "role": "finish_phrase",
+      "fields": [
+        "print_finish"
+      ],
+      "target_tokens": [
+        "refractor"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_c6ecb08d49256335aa6b",
+      "reference": "2025-26 Bowman Chrome Sapphire Edition Brayden Burries 1st RC Auto Blue Refractor",
+      "canonical_title": "2025-26 Topps Bowman Chrome Prospect Autograph Brayden Burries Auto",
+      "phrase": "1st",
+      "role": "commercial_marker",
+      "fields": [
+        "special_stamp"
+      ],
+      "target_tokens": [
+        "1st"
+      ],
+      "exhaustive_supported_tokens": [
+        "1st"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_c6ecb08d49256335aa6b",
+      "reference": "2025-26 Bowman Chrome Sapphire Edition Brayden Burries 1st RC Auto Blue Refractor",
+      "canonical_title": "2025-26 Topps Bowman Chrome Prospect Autograph Brayden Burries Auto",
+      "phrase": "RC",
+      "role": "commercial_marker",
+      "fields": [
+        "search_optimization"
+      ],
+      "target_tokens": [
+        "rc"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_dbf99f2a5e722e98b87a",
+      "reference": "2023-24 Panini Prizm Victor Wembanyama RC White Prizm Rookie RC 118/175",
+      "canonical_title": "2023-24 Panini Prizm Victor Wembanyama Silver Prizm 118/175 RC",
+      "phrase": "Rookie",
+      "role": "commercial_marker",
+      "fields": [
+        "commercial_marker"
+      ],
+      "target_tokens": [
+        "rookie"
+      ],
+      "exhaustive_supported_tokens": [
+        "rookie"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_e25ba92ef5f8fb4207a0",
+      "reference": "2022 Pokemon EN SWSH Lost Origin Eternatus VMAX Trainer Gallery #TG22/TG30",
+      "canonical_title": "2022 EN Pokémon Eternatus #TG22/TG30 Rainbow Foil",
+      "phrase": "VMAX",
+      "role": "commercial_marker",
+      "fields": [
+        "commercial_marker"
+      ],
+      "target_tokens": [
+        "vmax"
+      ],
+      "exhaustive_supported_tokens": [
+        "vmax"
+      ],
+      "v1_schema": true,
+      "v1_prompt": false
+    },
+    {
+      "asset_id": "reviewed_blind_e25ba92ef5f8fb4207a0",
+      "reference": "2022 Pokemon EN SWSH Lost Origin Eternatus VMAX Trainer Gallery #TG22/TG30",
+      "canonical_title": "2022 EN Pokémon Eternatus #TG22/TG30 Rainbow Foil",
+      "phrase": "Trainer Gallery",
+      "role": "identity_phrase",
+      "fields": [
+        "set"
+      ],
+      "target_tokens": [
+        "trainer",
+        "gallery"
+      ],
+      "exhaustive_supported_tokens": [],
+      "v1_schema": true,
+      "v1_prompt": true
+    },
+    {
+      "asset_id": "reviewed_blind_f371844dc1d0c6e49f92",
+      "reference": "2024 Topps Chrome Star Wars #DF-3 Duel of the Fates Gold Sapphire 15/50 SP",
+      "canonical_title": "Topps Chrome Qui-Gon Jinn Obi-Wan Kenobi Darth Maul Duel of the Fates",
+      "phrase": "Star Wars",
+      "role": "identity_phrase",
+      "fields": [
+        "ip_sport"
+      ],
+      "target_tokens": [
+        "star",
+        "wars"
+      ],
+      "exhaustive_supported_tokens": [
+        "star",
+        "wars"
+      ],
+      "v1_schema": true,
+      "v1_prompt": true
+    }
+  ]
+}

@@ -1,0 +1,3482 @@
+{
+  "schema_version": "bounded-residual-admission-v2-partial-paired-replay-v1",
+  "verdict": "STOP",
+  "authority": "evaluation_only",
+  "claim_boundary": "partial_disjoint105_learning_checkpoint_reuse_not_independent_confirmation",
+  "provider_calls_by_replay": 0,
+  "production_promoted": false,
+  "positive_mechanism_bank_eligible": false,
+  "source": {
+    "checkpoint": "artifacts/paid105-residual-v1-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+    "checkpoint_sha256": "7fcbaf1a91a898c2ffb8e6a5e76ba78a618a01d78aa0d94e7746e0f7b94eab19",
+    "manifest": "artifacts/paid105-residual-v1-2026-08-02/thin-path-gpt-5.6-luna.manifest.json",
+    "run_fingerprint": "e00a86a39012007204c41950cc6cdc3eecf6e68444e0cbd74dec1c5569483955",
+    "expected_complete_pairs": 50
+  },
+  "comparison": "current_frozen_11_mechanism_combined_bundle_vs_same_bundle_plus_bounded_printed_marker_admission_v2",
+  "summary": {
+    "complete_pairs": 50,
+    "excluded_singletons": 2,
+    "control_macro_f1": 0.812140558723558,
+    "treatment_canonical_macro_f1": 0.8127160502312304,
+    "current_combined_macro_f1": 0.8155603094203171,
+    "bounded_marker_macro_f1": 0.8147967766567844,
+    "bounded_marker_marginal_delta_f1": -0.0007635327635327637,
+    "wins": 1,
+    "losses": 1,
+    "ties": 48,
+    "changed_cards": 2,
+    "reference_loss_cards": 1,
+    "reference_gain_cards": 0,
+    "numeric_mutation_cards": 0,
+    "subject_mutation_cards": 0,
+    "unrelated_field_drift_cards": 0,
+    "over_80_cards": 0,
+    "all_safety_guards_pass_cards": 50,
+    "field_impact": {
+      "descriptive_rarity": {
+        "cards": 2,
+        "wins": 1,
+        "losses": 1,
+        "ties": 0,
+        "mean_delta_f1": -0.019088319088319095
+      }
+    }
+  },
+  "coverage": {
+    "checkpoint_rows": 102,
+    "arm_rows": {
+      "thin_canonical_high": 51,
+      "thin_canonical_residual_v1_high": 51
+    },
+    "complete_pairs": 50,
+    "excluded_singletons": [
+      {
+        "asset_id": "reviewed_blind_87df03b12ad481b4f5f7",
+        "arm": "thin_canonical_residual_v1_high"
+      },
+      {
+        "asset_id": "reviewed_blind_f0ae8659c82aed946e8f",
+        "arm": "thin_canonical_high"
+      }
+    ],
+    "cards_with_any_residual": 29,
+    "residual_candidates": 58,
+    "residual_candidates_by_target": {
+      "card_name": 15,
+      "card_number": 3,
+      "finish": 3,
+      "identity": 22,
+      "marker": 10,
+      "subject": 5
+    },
+    "residual_replay_candidates": 39,
+    "marker_candidates": 10,
+    "marker_candidates_by_text": {
+      "1st Bowman": 2,
+      "Authentic piece of a jersey used by Dmitri Young": 1,
+      "AUTO 9": 1,
+      "Autograph Issue": 1,
+      "CONGRATULATIONS!": 1,
+      "GEM MT 10; AUTO 10": 1,
+      "Topps Certified Autograph Issue": 2,
+      "TOPPS CERTIFIED AUTOGRAPH ISSUE": 1
+    },
+    "marker_candidates_by_disposition": {
+      "candidate_only": 8,
+      "resolver_candidate": 2
+    },
+    "parser_approved_supported_marker_candidates": 2,
+    "cards_with_parser_approved_supported_marker": 2,
+    "approved_marker_candidates_by_text": {
+      "1st Bowman": 2
+    },
+    "decisions_by_disposition": {
+      "admitted": 2,
+      "candidate_only": 56
+    },
+    "decisions_by_reason": {
+      "non_marker_out_of_scope": 48,
+      "printed_marker_specializes_generic_first_edition": 2,
+      "unsupported_printed_marker": 8
+    },
+    "admission_ceiling_cards_in_this_checkpoint": 2
+  },
+  "gate": {
+    "marginal_macro_f1_at_least_0003": false,
+    "at_least_8_wins_zero_losses": false,
+    "zero_reference_loss": false,
+    "zero_numeric_mutation": true,
+    "zero_subject_mutation": true,
+    "zero_unrelated_field_drift": true,
+    "zero_over_80": true,
+    "all_cards_pass_internal_safety_guards": true
+  },
+  "learning_gate_pass": false,
+  "stop_reasons": [
+    "marginal_macro_f1_below_0.003",
+    "fewer_than_8_wins_or_nonzero_losses",
+    "checkpoint_parser_approved_marker_support_ceiling_below_8_cards",
+    "nonzero_reference_loss"
+  ],
+  "subject_ground_truth_boundary": "reviewed titles are token-level labels, not structured subject ground truth; zero means no mechanism-introduced subject mutation",
+  "changed_cards": [
+    {
+      "asset_id": "reviewed_blind_2d76df9a350dae4a44cb",
+      "reference": "2026 Bowman Chrome Sapphire Edition Parks Harper 1st Bowman Orange Sapphire 18/25",
+      "control_title": "2025 Topps Bowman Chrome Parks Harber Orange Geometric 18/25 RC",
+      "treatment_canonical_title": "2025 Topps Bowman Chrome Parks Harber Orange Prismatic 18/25 1st Edition",
+      "combined_title": "2025 Topps Bowman Chrome Parks Harber Orange Prismatic 18/25 1st Edition",
+      "bounded_title": "2025 Topps Bowman Chrome Parks Harber Orange Prismatic 18/25 1st Bowman",
+      "control_f1": 0.5,
+      "treatment_canonical_f1": 0.6666666666666666,
+      "combined_f1": 0.6666666666666666,
+      "bounded_f1": 0.6,
+      "bounded_marginal_delta_f1": -0.06666666666666665,
+      "classification": "loss",
+      "changed_title": true,
+      "changed_fields": [
+        "descriptive_rarity"
+      ],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "1st Bowman",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "bounded_literal_marker"
+        },
+        {
+          "text": "Bowman Briefing",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 1,
+          "text": "Bowman Briefing",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 0,
+          "text": "1st Bowman",
+          "field": "descriptive_rarity",
+          "value": "1st Bowman",
+          "family": "rarity",
+          "disposition": "admitted",
+          "reason": "printed_marker_specializes_generic_first_edition"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [
+        "edition"
+      ],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 72,
+      "after_length": 71
+    },
+    {
+      "asset_id": "reviewed_blind_ced894c69f355380019a",
+      "reference": "2024 Bowman Draft Nick Kurtz Chrome Auto Blue Refractor 1st 049/150 PSA 10",
+      "control_title": "2024 Topps Bowman Chrome Nick Kurtz 1st Bowman 49/150 Auto Edition PSA 10",
+      "treatment_canonical_title": "2024 Topps Bowman Draft Nick Kurtz CHR Prospect Auto 049/150 1st Edition PSA 10",
+      "combined_title": "2024 Topps Bowman Draft Nick Kurtz CHR Prospect Auto 049/150 1st Edition PSA 10",
+      "bounded_title": "2024 Topps Bowman Draft Nick Kurtz CHR Prospect Auto 049/150 1st Bowman PSA 10",
+      "control_f1": 0.7199999999999999,
+      "treatment_canonical_f1": 0.7407407407407408,
+      "combined_f1": 0.7407407407407408,
+      "bounded_f1": 0.7692307692307693,
+      "bounded_marginal_delta_f1": 0.028490028490028463,
+      "classification": "win",
+      "changed_title": true,
+      "changed_fields": [
+        "descriptive_rarity"
+      ],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "1st Bowman",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "bounded_literal_marker"
+        },
+        {
+          "text": "Topps Certified Autograph Issue",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 1,
+          "text": "Topps Certified Autograph Issue",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        },
+        {
+          "index": 0,
+          "text": "1st Bowman",
+          "field": "descriptive_rarity",
+          "value": "1st Bowman",
+          "family": "rarity",
+          "disposition": "admitted",
+          "reason": "printed_marker_specializes_generic_first_edition"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 79,
+      "after_length": 78
+    }
+  ],
+  "all_cards": [
+    {
+      "asset_id": "reviewed_blind_00a74b3ddbc7472af8fa",
+      "reference": "2000 Bowman Chrome Tom Brady Rookie Patriots BGS 9.5 RC",
+      "control_title": "2000 Topps Bowman Chrome Tom Brady RC BGS 9.5",
+      "treatment_canonical_title": "2000 Topps Bowman Chrome Tom Brady RC BGS 9.5",
+      "combined_title": "2000 Topps Bowman Chrome Tom Brady RC BGS 9.5",
+      "bounded_title": "2000 Topps Bowman Chrome Tom Brady RC BGS 9.5",
+      "control_f1": 0.8571428571428572,
+      "treatment_canonical_f1": 0.8571428571428572,
+      "combined_f1": 0.8571428571428572,
+      "bounded_f1": 0.8571428571428572,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 1,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "BOWMAN BRIEFING",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "BOWMAN BRIEFING",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 45,
+      "after_length": 45
+    },
+    {
+      "asset_id": "reviewed_blind_079db68c00432ffb70be",
+      "reference": "2022 Skybox Metal Universe Champions Allen Iverson Auto",
+      "control_title": "2022 SkyBox Metal Universe Champions Allen Iverson Auto",
+      "treatment_canonical_title": "2022 Upper Deck SkyBox Metal Universe Champions Allen Iverson Auto",
+      "combined_title": "2022 Upper Deck SkyBox Metal Universe Champions Allen Iverson Auto",
+      "bounded_title": "2022 Upper Deck SkyBox Metal Universe Champions Allen Iverson Auto",
+      "control_f1": 1,
+      "treatment_canonical_f1": 0.888888888888889,
+      "combined_f1": 0.888888888888889,
+      "bounded_f1": 0.888888888888889,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "CONGRATULATIONS!",
+          "target": "marker",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        },
+        {
+          "text": "Metal Universe Champions",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "CONGRATULATIONS!",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        },
+        {
+          "index": 1,
+          "text": "Metal Universe Champions",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 66,
+      "after_length": 66
+    },
+    {
+      "asset_id": "reviewed_blind_0a34c5b695ecd1365836",
+      "reference": "2021 Topps Chrome Ben Baller Rafael Devers Auto Red Refractor 5/5 PSA Auto 9",
+      "control_title": "2021 Topps Chrome Rafael Devers Red Refractor 5/5 Auto PSA 9",
+      "treatment_canonical_title": "2021 Topps Chrome Rafael Devers Red Refractor 5/5 Auto PSA 9",
+      "combined_title": "2021 Topps Chrome Rafael Devers Red Refractor 5/5 Auto PSA 9",
+      "bounded_title": "2021 Topps Chrome Rafael Devers Red Refractor 5/5 Auto PSA 9",
+      "control_f1": 0.9166666666666666,
+      "treatment_canonical_f1": 0.9166666666666666,
+      "combined_f1": 0.9166666666666666,
+      "bounded_f1": 0.9166666666666666,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 3,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "BEN BALLER",
+          "target": "identity",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "#RD",
+          "target": "card_number",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "card_number"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "card_number_boundary_unknown"
+        },
+        {
+          "text": "AUTO 9",
+          "target": "marker",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "BEN BALLER",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "#RD",
+          "target": "card_number",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 2,
+          "text": "AUTO 9",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 60,
+      "after_length": 60
+    },
+    {
+      "asset_id": "reviewed_blind_0d0d4ac00ee1cbeb57e3",
+      "reference": "2000 Bowman Tom Brady Rookie RC PSA 7",
+      "control_title": "2000 Topps Bowman Tom Brady PSA 7",
+      "treatment_canonical_title": "2000 Topps Bowman Tom Brady PSA 7",
+      "combined_title": "2000 Topps Bowman Tom Brady PSA 7",
+      "bounded_title": "2000 Topps Bowman Tom Brady PSA 7",
+      "control_f1": 0.7999999999999999,
+      "treatment_canonical_f1": 0.7999999999999999,
+      "combined_f1": 0.7999999999999999,
+      "bounded_f1": 0.7999999999999999,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 33,
+      "after_length": 33
+    },
+    {
+      "asset_id": "reviewed_blind_1ac7b8c55901d7a6c8df",
+      "reference": "2018 Panini Chronicles Shohei Ohtani Prizm RC Rookie",
+      "control_title": "2018 Panini Prizm Shohei Ohtani Red Prizm RC",
+      "treatment_canonical_title": "2018 Panini Prizm Shohei Ohtani RC",
+      "combined_title": "2018 Panini Prizm Shohei Ohtani RC",
+      "bounded_title": "2018 Panini Prizm Shohei Ohtani RC",
+      "control_f1": 0.7999999999999999,
+      "treatment_canonical_f1": 0.8571428571428571,
+      "combined_f1": 0.8571428571428571,
+      "bounded_f1": 0.8571428571428571,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 34,
+      "after_length": 34
+    },
+    {
+      "asset_id": "reviewed_blind_238c9f842370e9b16560",
+      "reference": "2025 Topps Chrome Jaxson Dart RC Refractor",
+      "control_title": "2025 Topps Chrome Jaxson Dart Refractor RC",
+      "treatment_canonical_title": "2025 Topps Chrome Jaxson Dart Refractor RC",
+      "combined_title": "2025 Topps Chrome Jaxson Dart Refractor RC",
+      "bounded_title": "2025 Topps Chrome Jaxson Dart Refractor RC",
+      "control_f1": 1,
+      "treatment_canonical_f1": 1,
+      "combined_f1": 1,
+      "bounded_f1": 1,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 1,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [
+        {
+          "text": "QB",
+          "target": "subject",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "subject"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "subject_conflict_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "QB",
+          "target": "subject",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 42,
+      "after_length": 42
+    },
+    {
+      "asset_id": "reviewed_blind_283ec5db7623fd3aa0ce",
+      "reference": "2023 Topps Chrome Jaxson Dart Refractor RC",
+      "control_title": "Topps Chrome Jaxson Dart Silver Refractor RC",
+      "treatment_canonical_title": "Topps Chrome Jaxson Dart Silver Refractor RC",
+      "combined_title": "Topps Chrome Jaxson Dart Silver Refractor RC",
+      "bounded_title": "Topps Chrome Jaxson Dart Silver Refractor RC",
+      "control_f1": 0.8571428571428571,
+      "treatment_canonical_f1": 0.8571428571428571,
+      "combined_f1": 0.8571428571428571,
+      "bounded_f1": 0.8571428571428571,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "Topps Chrome",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "QB",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "Topps Chrome",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "QB",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 44,
+      "after_length": 44
+    },
+    {
+      "asset_id": "reviewed_blind_2d4d8efb67aa97cbbe4e",
+      "reference": "2025 Topps Chrome Platinum Jung Hoo Lee Gold Refractor",
+      "control_title": "2025 Topps Chrome Jung Hoo Lee Gold Prismatic Auto",
+      "treatment_canonical_title": "2025 Topps Chrome Jung Hoo Lee Gold Prismatic Auto",
+      "combined_title": "2025 Topps Chrome Jung Hoo Lee Gold Prismatic Auto",
+      "bounded_title": "2025 Topps Chrome Jung Hoo Lee Gold Prismatic Auto",
+      "control_f1": 0.7777777777777778,
+      "treatment_canonical_f1": 0.7777777777777778,
+      "combined_f1": 0.7777777777777778,
+      "bounded_f1": 0.7777777777777778,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 50,
+      "after_length": 50
+    },
+    {
+      "asset_id": "reviewed_blind_2d76df9a350dae4a44cb",
+      "reference": "2026 Bowman Chrome Sapphire Edition Parks Harper 1st Bowman Orange Sapphire 18/25",
+      "control_title": "2025 Topps Bowman Chrome Parks Harber Orange Geometric 18/25 RC",
+      "treatment_canonical_title": "2025 Topps Bowman Chrome Parks Harber Orange Prismatic 18/25 1st Edition",
+      "combined_title": "2025 Topps Bowman Chrome Parks Harber Orange Prismatic 18/25 1st Edition",
+      "bounded_title": "2025 Topps Bowman Chrome Parks Harber Orange Prismatic 18/25 1st Bowman",
+      "control_f1": 0.5,
+      "treatment_canonical_f1": 0.6666666666666666,
+      "combined_f1": 0.6666666666666666,
+      "bounded_f1": 0.6,
+      "bounded_marginal_delta_f1": -0.06666666666666665,
+      "classification": "loss",
+      "changed_title": true,
+      "changed_fields": [
+        "descriptive_rarity"
+      ],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "1st Bowman",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "bounded_literal_marker"
+        },
+        {
+          "text": "Bowman Briefing",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 1,
+          "text": "Bowman Briefing",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 0,
+          "text": "1st Bowman",
+          "field": "descriptive_rarity",
+          "value": "1st Bowman",
+          "family": "rarity",
+          "disposition": "admitted",
+          "reason": "printed_marker_specializes_generic_first_edition"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [
+        "edition"
+      ],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 72,
+      "after_length": 71
+    },
+    {
+      "asset_id": "reviewed_blind_2fa2fac78c6d7b7f8a07",
+      "reference": "2023 Panini Donruss Optic Joe Montana Downtown! SSP Black Pandora 02/25 PSA 10",
+      "control_title": "2023 Panini Donruss Optic Downtown Joe Montana Black Pandora 02/25 PSA 10",
+      "treatment_canonical_title": "2023 Panini Donruss Optic Downtown Joe Montana Black Pandora 02/25 PSA 10",
+      "combined_title": "2023 Panini Donruss Optic Downtown Joe Montana Black Pandora 02/25 PSA 10",
+      "bounded_title": "2023 Panini Donruss Optic Downtown Joe Montana Black Pandora 02/25 PSA 10",
+      "control_f1": 0.9600000000000001,
+      "treatment_canonical_f1": 0.9600000000000001,
+      "combined_f1": 0.9600000000000001,
+      "bounded_f1": 0.9600000000000001,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "DOWNTOWN!",
+          "target": "card_name",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        },
+        {
+          "text": "PRIZM",
+          "target": "finish",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "print_finish"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "finish_requires_catalog_or_visual_attestation"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "DOWNTOWN!",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "PRIZM",
+          "target": "finish",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 73,
+      "after_length": 73
+    },
+    {
+      "asset_id": "reviewed_blind_30f22194ba3be973cf36",
+      "reference": "2024-25 Topps Chrome UEFA Tijjani Reijnders Refractor Green 05/99",
+      "control_title": "2024-25 Topps Chrome Tijjani Reijnders 05/99",
+      "treatment_canonical_title": "2024-25 Topps Chrome UEFA Club Competitions Tijjani Reijnders 05/99",
+      "combined_title": "2024-25 Topps Chrome UEFA Club Competitions Tijjani Reijnders 05/99",
+      "bounded_title": "2024-25 Topps Chrome UEFA Club Competitions Tijjani Reijnders 05/99",
+      "control_f1": 0.8235294117647058,
+      "treatment_canonical_f1": 0.8000000000000002,
+      "combined_f1": 0.8000000000000002,
+      "bounded_f1": 0.8000000000000002,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 3,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "UEFA Champions League",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "MIDFIELDER",
+          "target": "subject",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "subject"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "subject_conflict_requires_resolution"
+        },
+        {
+          "text": "CODE#CMP101224",
+          "target": "identity",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "UEFA Champions League",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "MIDFIELDER",
+          "target": "subject",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 2,
+          "text": "CODE#CMP101224",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 67,
+      "after_length": 67
+    },
+    {
+      "asset_id": "reviewed_blind_38cbd553634330d04e61",
+      "reference": "2025 Bowman Draft Caleb Bonemer Chrome Refractor",
+      "control_title": "2025 Topps Bowman Chrome Caleb Bonemer Silver Refractor",
+      "treatment_canonical_title": "2025 Topps Bowman Chrome Caleb Bonemer Refractor",
+      "combined_title": "2025 Topps Bowman Chrome Caleb Bonemer Refractor",
+      "bounded_title": "2025 Topps Bowman Chrome Caleb Bonemer Refractor",
+      "control_f1": 0.7999999999999999,
+      "treatment_canonical_f1": 0.8571428571428571,
+      "combined_f1": 0.8571428571428571,
+      "bounded_f1": 0.8571428571428571,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "SS",
+          "target": "card_name",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        },
+        {
+          "text": "Bowman Briefing",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "SS",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "Bowman Briefing",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 48,
+      "after_length": 48
+    },
+    {
+      "asset_id": "reviewed_blind_41593163b19d69f7ee47",
+      "reference": "2025 Topps Chrome Platinum Spencer Schwellenbach RC Auto Blue 47/99",
+      "control_title": "2025 Topps Chrome Platinum Spencer Schwellenbach Blue Prizm 1/99 RC Auto",
+      "treatment_canonical_title": "2025 Topps Chrome Platinum Spencer Schwellenbach 1/99 RC Auto",
+      "combined_title": "2025 Topps Chrome Platinum Spencer Schwellenbach 1/99 RC Auto",
+      "bounded_title": "2025 Topps Chrome Platinum Spencer Schwellenbach 1/99 RC Auto",
+      "control_f1": 0.8571428571428572,
+      "treatment_canonical_f1": 0.8421052631578948,
+      "combined_f1": 0.8421052631578948,
+      "bounded_f1": 0.8421052631578948,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 61,
+      "after_length": 61
+    },
+    {
+      "asset_id": "reviewed_blind_417e5bfd9374f5b48e27",
+      "reference": "2025-26 Donruss Road to FIFA World Cup 26' Luka Modric Kaboom SP Gold 05/10",
+      "control_title": "2025-26 Panini Donruss Road to FIFA World Cup 26 Soccer Luka Modrić KABOOM! 5/10",
+      "treatment_canonical_title": "2025-26 Donruss Road to FIFA World Cup 26 Soccer KABOOM! Luka Modrić 05/10",
+      "combined_title": "2025-26 Donruss Road to FIFA World Cup 26 Soccer KABOOM! Luka Modrić 05/10",
+      "bounded_title": "2025-26 Donruss Road to FIFA World Cup 26 Soccer KABOOM! Luka Modrić 05/10",
+      "control_f1": 0.7586206896551724,
+      "treatment_canonical_f1": 0.8571428571428571,
+      "combined_f1": 0.8571428571428571,
+      "bounded_f1": 0.8571428571428571,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 74,
+      "after_length": 74
+    },
+    {
+      "asset_id": "reviewed_blind_4593281b580d1ca91c1a",
+      "reference": "2025 Topps Chrome Ace Bailey Pulsar Refractor RC Utah Jazz",
+      "control_title": "2025 Topps Chrome Ace Bailey Rainbow Prizm RC",
+      "treatment_canonical_title": "2025 Topps Chrome Ace Bailey Rainbow Shimmer RC",
+      "combined_title": "2025 Topps Chrome Ace Bailey Rainbow Shimmer RC",
+      "bounded_title": "2025 Topps Chrome Ace Bailey Rainbow Shimmer RC",
+      "control_f1": 0.6666666666666665,
+      "treatment_canonical_f1": 0.6666666666666665,
+      "combined_f1": 0.6666666666666665,
+      "bounded_f1": 0.6666666666666665,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "CHROME X",
+          "target": "finish",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "print_finish"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "finish_requires_catalog_or_visual_attestation"
+        },
+        {
+          "text": "CODE#CMP121527",
+          "target": "identity",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "CHROME X",
+          "target": "finish",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "CODE#CMP121527",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 47,
+      "after_length": 47
+    },
+    {
+      "asset_id": "reviewed_blind_463eabe55b9d59a0fe35",
+      "reference": "2026 Topps Spencer Strider Major League Material Jersey",
+      "control_title": "2026 Topps Spencer Strider Major League Material Relic",
+      "treatment_canonical_title": "2026 Topps Spencer Strider Major League Material Relic",
+      "combined_title": "2026 Topps Spencer Strider Major League Material Relic",
+      "bounded_title": "2026 Topps Spencer Strider Major League Material Relic",
+      "control_f1": 0.875,
+      "treatment_canonical_f1": 0.875,
+      "combined_f1": 0.875,
+      "bounded_f1": 0.875,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 54,
+      "after_length": 54
+    },
+    {
+      "asset_id": "reviewed_blind_4b7f85614378b77cfcd1",
+      "reference": "2025 Topps Chrome Sapphire Shohei Ohtani Variation-Gold 05/50 PSA 9",
+      "control_title": "2025 Topps Chrome Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+      "treatment_canonical_title": "2025 Topps Chrome Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+      "combined_title": "2025 Topps Chrome Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+      "bounded_title": "2025 Topps Chrome Shohei Ohtani Variation Gold Geometric 05/50 PSA 9",
+      "control_f1": 0.9090909090909091,
+      "treatment_canonical_f1": 0.9090909090909091,
+      "combined_f1": 0.9090909090909091,
+      "bounded_f1": 0.9090909090909091,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "VARIATION-GOLD",
+          "target": "finish",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "print_finish"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_slab_finish_requires_vocabulary_attestation"
+        },
+        {
+          "text": "CHROME",
+          "target": "identity",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "VARIATION-GOLD",
+          "target": "finish",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "CHROME",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 68,
+      "after_length": 68
+    },
+    {
+      "asset_id": "reviewed_blind_4cd4f9bb96d0baf53f96",
+      "reference": "2000-01 Fleer Legacy Kobe Bryant",
+      "control_title": "2000-01 Fleer Legacy Kobe Bryant",
+      "treatment_canonical_title": "2000-01 Fleer Legacy Kobe Bryant",
+      "combined_title": "2000-01 Fleer Legacy Kobe Bryant",
+      "bounded_title": "2000-01 Fleer Legacy Kobe Bryant",
+      "control_f1": 1,
+      "treatment_canonical_f1": 1,
+      "combined_f1": 1,
+      "bounded_f1": 1,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "Fleer Legacy '00-'01",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "Los Angeles Lakers / Guard",
+          "target": "subject",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "subject"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "subject_conflict_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "Fleer Legacy '00-'01",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "Los Angeles Lakers / Guard",
+          "target": "subject",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 32,
+      "after_length": 32
+    },
+    {
+      "asset_id": "reviewed_blind_4edce94773f65449d575",
+      "reference": "2026 Topps Star Wars Masterwork O'Shea Jackson Jr. as Kawlan Roken Auto 1/1",
+      "control_title": "Topps Star Wars Masterwork O'Shea Jackson Jr. 1/1 Auto",
+      "treatment_canonical_title": "Topps Star Wars Masterwork Kawlan Roken 1/1 Auto",
+      "combined_title": "Topps Star Wars Masterwork Kawlan Roken 1/1 Auto",
+      "bounded_title": "Topps Star Wars Masterwork Kawlan Roken 1/1 Auto",
+      "control_f1": 0.8181818181818181,
+      "treatment_canonical_f1": 0.761904761904762,
+      "combined_f1": 0.761904761904762,
+      "bounded_f1": 0.761904761904762,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 3,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "O'Shea Jackson Jr.",
+          "target": "subject",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "subject"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "subject_conflict_requires_resolution"
+        },
+        {
+          "text": "The Force Is With You!",
+          "target": "card_name",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        },
+        {
+          "text": "Topps Certified Autograph Issue",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "O'Shea Jackson Jr.",
+          "target": "subject",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "The Force Is With You!",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 2,
+          "text": "Topps Certified Autograph Issue",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 48,
+      "after_length": 48
+    },
+    {
+      "asset_id": "reviewed_blind_50a394cce25794fee5d1",
+      "reference": "2026 Topps Chrome UFC Geoff Neal Retro 1986 Signatures Auto Red Refractor 3/5",
+      "control_title": "2026 Topps Chrome UFC 1986 Topps Signatures Geoff Neal 3/5 Auto",
+      "treatment_canonical_title": "2026 Topps Chrome UFC 1986 Topps Signatures Geoff Neal Red Prizm 3/5 Auto",
+      "combined_title": "2026 Topps Chrome UFC 1986 Topps Signatures Geoff Neal Red Prizm 3/5 Auto",
+      "bounded_title": "2026 Topps Chrome UFC 1986 Topps Signatures Geoff Neal Red Prizm 3/5 Auto",
+      "control_f1": 0.8695652173913044,
+      "treatment_canonical_f1": 0.8799999999999999,
+      "combined_f1": 0.8799999999999999,
+      "bounded_f1": 0.8799999999999999,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [
+        {
+          "text": "WELTERWEIGHT",
+          "target": "subject",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "subject"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "subject_conflict_requires_resolution"
+        },
+        {
+          "text": "TOPPS CERTIFIED AUTOGRAPH ISSUE",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "WELTERWEIGHT",
+          "target": "subject",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "TOPPS CERTIFIED AUTOGRAPH ISSUE",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 73,
+      "after_length": 73
+    },
+    {
+      "asset_id": "reviewed_blind_516b5a8933ad95b1b0ac",
+      "reference": "2025-26 Panini Donruss Road to FIFA World Cup 26 Lamine Yamal Spain Cracked Ice",
+      "control_title": "2025-26 Panini Donruss Road to FIFA World Cup 26TM Soccer Lamine Yamal 26",
+      "treatment_canonical_title": "2025-26 Panini Donruss Road to FIFA World Cup 26th Soccer Lamine Yamal",
+      "combined_title": "2025-26 Panini Donruss Road to FIFA World Cup 26th Soccer Lamine Yamal",
+      "bounded_title": "2025-26 Panini Donruss Road to FIFA World Cup 26th Soccer Lamine Yamal",
+      "control_f1": 0.8148148148148148,
+      "treatment_canonical_f1": 0.8148148148148148,
+      "combined_f1": 0.8148148148148148,
+      "bounded_f1": 0.8148148148148148,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 3,
+      "residual_replay_candidate_count": 3,
+      "residual_candidates": [
+        {
+          "text": "Road to FIFA World Cup 26",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "Donruss",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "Goal of the Tournament",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "Road to FIFA World Cup 26",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "Donruss",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 2,
+          "text": "Goal of the Tournament",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 70,
+      "after_length": 70
+    },
+    {
+      "asset_id": "reviewed_blind_5a79cde60b2eed56884d",
+      "reference": "2001 Donruss Elite Barry Bonds Willie Mays Passing The Torch Dual Auto 22/50 PSA 9",
+      "control_title": "2001 Donruss Barry Bonds Willie Mays Passing the Torch 22/50 Auto PSA Authentic",
+      "treatment_canonical_title": "2001 Barry Bonds Willie Mays Passing the Torch-Auto 22/50 Auto PSA Authentic",
+      "combined_title": "2001 Barry Bonds Willie Mays Passing the Torch-Auto 22/50 Auto PSA Authentic",
+      "bounded_title": "2001 Barry Bonds Willie Mays Passing the Torch-Auto 22/50 Auto PSA Authentic",
+      "control_f1": 0.8571428571428571,
+      "treatment_canonical_f1": 0.8148148148148148,
+      "combined_f1": 0.8148148148148148,
+      "bounded_f1": 0.8148148148148148,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 76,
+      "after_length": 76
+    },
+    {
+      "asset_id": "reviewed_blind_6065f2882ab7c63f3da3",
+      "reference": "2025 Bowman Chrome Cam Schlittler Auto Orange Wave Refractor 1st 20/25 PSA 10",
+      "control_title": "2025 Topps Bowman Chrome Cam Schlittler Prospect Auto 20/25 1st Edition PSA 10",
+      "treatment_canonical_title": "2025 Topps Bowman Chrome Cam Schlittler Prospects Auto Orange Wave 20/25 PSA 10",
+      "combined_title": "2025 Topps Bowman Chrome Cam Schlittler Prospects Auto Orange Wave 20/25 PSA 10",
+      "bounded_title": "2025 Topps Bowman Chrome Cam Schlittler Prospects Auto Orange Wave 20/25 PSA 10",
+      "control_f1": 0.7692307692307693,
+      "treatment_canonical_f1": 0.8461538461538461,
+      "combined_f1": 0.8461538461538461,
+      "bounded_f1": 0.8461538461538461,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 79,
+      "after_length": 79
+    },
+    {
+      "asset_id": "reviewed_blind_65f8bb4ac09ff3871288",
+      "reference": "2003-04 Topps Pristine Lebron James Refractor Rookie RC 1578/1999 PSA 10",
+      "control_title": "2003 Topps Pristine LeBron James Refractor 1578/1999 PSA 10",
+      "treatment_canonical_title": "2003 Topps Pristine LeBRON JAMES Refractor 1578/1999 PSA 10",
+      "combined_title": "2003 Topps Pristine LeBRON JAMES Refractor 1578/1999 PSA 10",
+      "bounded_title": "2003 Topps Pristine LeBRON JAMES Refractor 1578/1999 PSA 10",
+      "control_f1": 0.8571428571428571,
+      "treatment_canonical_f1": 0.8571428571428571,
+      "combined_f1": 0.8571428571428571,
+      "bounded_f1": 0.8571428571428571,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 1,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "CAVS",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "CAVS",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 59,
+      "after_length": 59
+    },
+    {
+      "asset_id": "reviewed_blind_67fd6051b9ef8af44c7f",
+      "reference": "2025-26 Topps Finest Cooper Flagg Rookie Auto RC Green Geometric 71/75 PSA 10",
+      "control_title": "2025 Topps Finest Cooper Flagg Rookie Finest Auto AU-Green Geo RC PSA 10",
+      "treatment_canonical_title": "2025 Topps Finest Rookie Finest Autographs Cooper Flagg RC Auto PSA 10",
+      "combined_title": "2025 Topps Finest Rookie Finest Autographs Cooper Flagg Green RC Auto PSA 10",
+      "bounded_title": "2025 Topps Finest Rookie Finest Autographs Cooper Flagg Green RC Auto PSA 10",
+      "control_f1": 0.8148148148148148,
+      "treatment_canonical_f1": 0.8,
+      "combined_f1": 0.8461538461538461,
+      "bounded_f1": 0.8461538461538461,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 3,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "2025/26 Topps Finest Basketball",
+          "target": "identity",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "ROOKIES",
+          "target": "card_name",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        },
+        {
+          "text": "GEM MT 10; AUTO 10",
+          "target": "marker",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "2025/26 Topps Finest Basketball",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "ROOKIES",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 2,
+          "text": "GEM MT 10; AUTO 10",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 76,
+      "after_length": 76
+    },
+    {
+      "asset_id": "reviewed_blind_78374d3f6a71e2385008",
+      "reference": "2023-24 Panini Prizm Victor Wembanyama RC Prizm Silver Rookie PSA 10",
+      "control_title": "2023-24 Panini Prizm Victor Wembanyama Silver Prizm RC PSA 10",
+      "treatment_canonical_title": "2023-24 Panini Prizm Victor Wembanyama Silver Prizm RC PSA 10",
+      "combined_title": "2023-24 Panini Prizm Victor Wembanyama Silver Prizm RC PSA 10",
+      "bounded_title": "2023-24 Panini Prizm Victor Wembanyama Silver Prizm RC PSA 10",
+      "control_f1": 0.9523809523809523,
+      "treatment_canonical_f1": 0.9523809523809523,
+      "combined_f1": 0.9523809523809523,
+      "bounded_f1": 0.9523809523809523,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 61,
+      "after_length": 61
+    },
+    {
+      "asset_id": "reviewed_blind_7cfa318a2f8472e8db3c",
+      "reference": "1986-87 Fleer Michael Jordan Rookie RC PSA 6",
+      "control_title": "1986 Fleer Michael Jordan PSA 6",
+      "treatment_canonical_title": "1986 Fleer Michael Jordan PSA 6",
+      "combined_title": "1986 Fleer Michael Jordan PSA 6",
+      "bounded_title": "1986 Fleer Michael Jordan PSA 6",
+      "control_f1": 0.8,
+      "treatment_canonical_f1": 0.8,
+      "combined_f1": 0.8,
+      "bounded_f1": 0.8,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 31,
+      "after_length": 31
+    },
+    {
+      "asset_id": "reviewed_blind_7fe541fb14811d014345",
+      "reference": "2001 SP Game Used Edition Dmitri Young Authentic Fabric Jersey",
+      "control_title": "2001 Upper Deck SP Game Used Edition Dmitri Young Authentic Fabric Relic Jersey",
+      "treatment_canonical_title": "2001 Upper Deck SP Game Used Edition Dmitri Young Authentic Fabric Relic Jersey",
+      "combined_title": "2001 Upper Deck SP Game Used Edition Dmitri Young Authentic Fabric Relic Jersey",
+      "bounded_title": "2001 Upper Deck SP Game Used Edition Dmitri Young Authentic Fabric Relic Jersey",
+      "control_f1": 0.8695652173913044,
+      "treatment_canonical_f1": 0.8695652173913044,
+      "combined_f1": 0.8695652173913044,
+      "bounded_f1": 0.8695652173913044,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [
+        {
+          "text": "CONGRATULATIONS",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "card_name_conflict_requires_resolution"
+        },
+        {
+          "text": "Authentic piece of a jersey used by Dmitri Young",
+          "target": "marker",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "CONGRATULATIONS",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "Authentic piece of a jersey used by Dmitri Young",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 79,
+      "after_length": 79
+    },
+    {
+      "asset_id": "reviewed_blind_855fcbbbaf060e7aeb7e",
+      "reference": "1997 Upper Deck Ken Griffey Jr. Game-Used Game Jersey",
+      "control_title": "1996 Upper Deck Ken Griffey Jr. Authentic Game-Worn Jersey Relic",
+      "treatment_canonical_title": "1996 Upper Deck Ken Griffey Jr. Authentic Game-Worn Jersey Relic",
+      "combined_title": "1996 Upper Deck Ken Griffey Jr. Authentic Game-Worn Jersey Relic",
+      "bounded_title": "1996 Upper Deck Ken Griffey Jr. Authentic Game-Worn Jersey Relic",
+      "control_f1": 0.7000000000000001,
+      "treatment_canonical_f1": 0.7000000000000001,
+      "combined_f1": 0.7000000000000001,
+      "bounded_f1": 0.7000000000000001,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 64,
+      "after_length": 64
+    },
+    {
+      "asset_id": "reviewed_blind_8a3efd378fa8d266fb90",
+      "reference": "2025 Topps Chrome Caleb Williams Kaiju SSP PSA 9",
+      "control_title": "2025 Topps Chrome Kaiju Caleb Williams PSA 9",
+      "treatment_canonical_title": "2025 Topps Chrome Kaiju Caleb Williams Variation PSA 9",
+      "combined_title": "2025 Topps Chrome Kaiju Caleb Williams Variation PSA 9",
+      "bounded_title": "2025 Topps Chrome Kaiju Caleb Williams Variation PSA 9",
+      "control_f1": 0.9411764705882353,
+      "treatment_canonical_f1": 0.8888888888888888,
+      "combined_f1": 0.8888888888888888,
+      "bounded_f1": 0.8888888888888888,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 54,
+      "after_length": 54
+    },
+    {
+      "asset_id": "reviewed_blind_91e57cac9de2bca03dde",
+      "reference": "2025 Bowman Chrome Sapphire Cooper Flagg RC Red Refractor 1/5",
+      "control_title": "2025 Topps Bowman Chrome Cooper Flagg Red Geometric 1/5 RC",
+      "treatment_canonical_title": "2025 Topps Bowman Chrome Cooper Flagg Briefing Red Cracked Ice 1/5 RC",
+      "combined_title": "2025 Topps Bowman Chrome Cooper Flagg Briefing Red Cracked Ice 1/5 RC",
+      "bounded_title": "2025 Topps Bowman Chrome Cooper Flagg Briefing Red Cracked Ice 1/5 RC",
+      "control_f1": 0.8000000000000002,
+      "treatment_canonical_f1": 0.7272727272727272,
+      "combined_f1": 0.7272727272727272,
+      "bounded_f1": 0.7272727272727272,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 69,
+      "after_length": 69
+    },
+    {
+      "asset_id": "reviewed_blind_934d7a86f13f42d70fa3",
+      "reference": "2025 Topps Definitive Derek Jeter Aaron Judge Dual Auto Autograph Black 09/10",
+      "control_title": "2025 Topps Definitive Collection Derek Jeter Aaron Judge Dual Auto 09/10",
+      "treatment_canonical_title": "2025 Topps Definitive Collection Derek Jeter Aaron Judge Dual Auto 09/10",
+      "combined_title": "2025 Topps Definitive Collection Derek Jeter Aaron Judge Dual Auto 09/10",
+      "bounded_title": "2025 Topps Definitive Collection Derek Jeter Aaron Judge Dual Auto 09/10",
+      "control_f1": 0.8695652173913043,
+      "treatment_canonical_f1": 0.8695652173913043,
+      "combined_f1": 0.8695652173913043,
+      "bounded_f1": 0.8695652173913043,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 72,
+      "after_length": 72
+    },
+    {
+      "asset_id": "reviewed_blind_96387896d100f98c17d4",
+      "reference": "2008 Topps Stadium Club Nick Swisher First Day Issue Hobby 367/599 White Sox",
+      "control_title": "2008 Topps Stadium Club Nick Swisher",
+      "treatment_canonical_title": "2008 Topps Stadium Club Nick Swisher",
+      "combined_title": "2008 Topps Stadium Club Nick Swisher",
+      "bounded_title": "2008 Topps Stadium Club Nick Swisher",
+      "control_f1": 0.631578947368421,
+      "treatment_canonical_f1": 0.631578947368421,
+      "combined_f1": 0.631578947368421,
+      "bounded_f1": 0.631578947368421,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 1,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "OF",
+          "target": "card_name",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "OF",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 36,
+      "after_length": 36
+    },
+    {
+      "asset_id": "reviewed_blind_979ea63a7bb0b6d8a3d2",
+      "reference": "2018 Topps Chrome Shohei Ohtani 1983 Topps RC PSA 10",
+      "control_title": "2018 Topps Chrome Shohei Ohtani Rainbow Refractor RC PSA 10",
+      "treatment_canonical_title": "2018 Topps Chrome Shohei Ohtani Rainbow Refractor RC PSA 10",
+      "combined_title": "2018 Topps Chrome Shohei Ohtani Rainbow Refractor RC PSA 10",
+      "bounded_title": "2018 Topps Chrome Shohei Ohtani Rainbow Refractor RC PSA 10",
+      "control_f1": 0.8421052631578948,
+      "treatment_canonical_f1": 0.8421052631578948,
+      "combined_f1": 0.8421052631578948,
+      "bounded_f1": 0.8421052631578948,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "35th Anniversary",
+          "target": "card_name",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        },
+        {
+          "text": "1983 Topps",
+          "target": "identity",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "35th Anniversary",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "1983 Topps",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 59,
+      "after_length": 59
+    },
+    {
+      "asset_id": "reviewed_blind_9dcedd966ca5702f1a0d",
+      "reference": "2026 Topps Chrome Disney Pixar Mater Sparkle Refractor",
+      "control_title": "2026 Topps Chrome Mater #21 Rainbow Refractor",
+      "treatment_canonical_title": "2026 Topps Chrome Mater Rainbow Refractor",
+      "combined_title": "2026 Topps Chrome Mater Rainbow Refractor",
+      "bounded_title": "2026 Topps Chrome Mater Rainbow Refractor",
+      "control_f1": 0.6666666666666666,
+      "treatment_canonical_f1": 0.7142857142857143,
+      "combined_f1": 0.7142857142857143,
+      "bounded_f1": 0.7142857142857143,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 41,
+      "after_length": 41
+    },
+    {
+      "asset_id": "reviewed_blind_a2d0c0b493d239b69bea",
+      "reference": "2020 Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout Jersey Auto 6/9 BGS 9",
+      "control_title": "Card Lot 2020 Topps Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout",
+      "treatment_canonical_title": "1 Card Lot 2020 Topps Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout",
+      "combined_title": "lotx1 2020 Topps Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout",
+      "bounded_title": "lotx1 2020 Topps Triple Threads Hank Aaron Ken Griffey Jr. Mike Trout",
+      "control_f1": 0.7142857142857142,
+      "treatment_canonical_f1": 0.689655172413793,
+      "combined_f1": 0.7407407407407408,
+      "bounded_f1": 0.7407407407407408,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "Historic Ties Triple Autograph Relic Card",
+          "target": "identity",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "2015 Topps Triple Threads Baseball",
+          "target": "identity",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "Historic Ties Triple Autograph Relic Card",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "2015 Topps Triple Threads Baseball",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 69,
+      "after_length": 69
+    },
+    {
+      "asset_id": "reviewed_blind_a89e9e6878a347b6bf82",
+      "reference": "2013 BBM Shohei Ohtani Rookie RC PSA 10",
+      "control_title": "2013 BBM 2nd Version Shohei Ohtani Rookie RC PSA 10",
+      "treatment_canonical_title": "2013 BBM 2nd Version Shohei Ohtani Rookie RC PSA 10",
+      "combined_title": "2013 BBM 2nd Version Shohei Ohtani Rookie RC PSA 10",
+      "bounded_title": "2013 BBM 2nd Version Shohei Ohtani Rookie RC PSA 10",
+      "control_f1": 0.888888888888889,
+      "treatment_canonical_f1": 0.888888888888889,
+      "combined_f1": 0.888888888888889,
+      "bounded_f1": 0.888888888888889,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "PACIFIC LEAGUE",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "2013 BBM 2ND VERSION",
+          "target": "identity",
+          "anchor": "slab_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "PACIFIC LEAGUE",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "2013 BBM 2ND VERSION",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 51,
+      "after_length": 51
+    },
+    {
+      "asset_id": "reviewed_blind_a9d1875f87d8ae6e3386",
+      "reference": "2003-04 Topps 1st Edition LeBron James Rookie RC PSA 8",
+      "control_title": "2003 Topps LeBron James 1st Edition PSA 8",
+      "treatment_canonical_title": "2003 Topps LeBRON JAMES RC 1st Edition PSA 8",
+      "combined_title": "2003 Topps LeBRON JAMES RC 1st Edition PSA 8",
+      "bounded_title": "2003 Topps LeBRON JAMES RC 1st Edition PSA 8",
+      "control_f1": 0.8421052631578948,
+      "treatment_canonical_f1": 0.9,
+      "combined_f1": 0.9,
+      "bounded_f1": 0.9,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 3,
+      "residual_replay_candidate_count": 3,
+      "residual_candidates": [
+        {
+          "text": "DRAFT PICK #1",
+          "target": "card_name",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        },
+        {
+          "text": "2003 Topps Rookie Card 2004",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "NBA Draft 2003",
+          "target": "identity",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "DRAFT PICK #1",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "2003 Topps Rookie Card 2004",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 2,
+          "text": "NBA Draft 2003",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 44,
+      "after_length": 44
+    },
+    {
+      "asset_id": "reviewed_blind_b96f4c32f7eab646e573",
+      "reference": "2026 Topps Chrome Disney Judy Hopps Dalmatians Refractor 069/101",
+      "control_title": "2026 Topps Chrome Judy Hopps Silver Refractor 69/101",
+      "treatment_canonical_title": "2026 Topps Chrome Judy Hopps Blue Refractor 69/101",
+      "combined_title": "2026 Topps Chrome Judy Hopps Blue Refractor 69/101",
+      "bounded_title": "2026 Topps Chrome Judy Hopps Blue Refractor 69/101",
+      "control_f1": 0.7058823529411765,
+      "treatment_canonical_f1": 0.7058823529411765,
+      "combined_f1": 0.7058823529411765,
+      "bounded_f1": 0.7058823529411765,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "Disney Zootopia",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "CODE#CMP134780",
+          "target": "card_number",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_number"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "card_number_boundary_unknown"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "Disney Zootopia",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "CODE#CMP134780",
+          "target": "card_number",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 50,
+      "after_length": 50
+    },
+    {
+      "asset_id": "reviewed_blind_c093b2a3085e478838e8",
+      "reference": "2026 Bowman Chrome Handelfry Encarnacion 1st Bowman Auto Green Lava Refractor 86/99",
+      "control_title": "2025 Topps Bowman Chrome Handelfry Encarnacion Green Refractor 86/99 Auto",
+      "treatment_canonical_title": "2026 Topps Bowman Chrome Handel Fry Encarnacion 86/99 Auto 1st Bowman",
+      "combined_title": "2026 Topps Bowman Chrome Handel Fry Encarnacion 86/99 Auto 1st Bowman",
+      "bounded_title": "2026 Topps Bowman Chrome Handel Fry Encarnacion 86/99 Auto 1st Bowman",
+      "control_f1": 0.761904761904762,
+      "treatment_canonical_f1": 0.6666666666666666,
+      "combined_f1": 0.6666666666666666,
+      "bounded_f1": 0.6666666666666666,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "Autograph Issue",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        },
+        {
+          "text": "Outfielder",
+          "target": "card_name",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "Autograph Issue",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        },
+        {
+          "index": 1,
+          "text": "Outfielder",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 69,
+      "after_length": 69
+    },
+    {
+      "asset_id": "reviewed_blind_c380d53c672a9e0514aa",
+      "reference": "2024 Leaf Eclectic Ollie Gordon II Exotic Kaleidoscope Clown Fish Auto 10/10",
+      "control_title": "2024 Leaf Exotic Ollie Gordon II Auto",
+      "treatment_canonical_title": "2024 Leaf Exotic Ollie Gordon II Auto",
+      "combined_title": "2024 Leaf Exotic Ollie Gordon II Auto",
+      "bounded_title": "2024 Leaf Exotic Ollie Gordon II Auto",
+      "control_f1": 0.7368421052631579,
+      "treatment_canonical_f1": 0.7368421052631579,
+      "combined_f1": 0.7368421052631579,
+      "bounded_f1": 0.7368421052631579,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 37,
+      "after_length": 37
+    },
+    {
+      "asset_id": "reviewed_blind_c7e1e0e245c6ecc2a1fd",
+      "reference": "2003-04 Fleer E-X Kobe Bryant Jambalaya BGS 9",
+      "control_title": "2003-04 Fleer E-X Kobe Bryant Jambalaya BGS 9",
+      "treatment_canonical_title": "2003-04 Fleer E-X Jambalaya Kobe Bryant Vertical BGS 9",
+      "combined_title": "2003-04 Fleer E-X Jambalaya Kobe Bryant Vertical BGS 9",
+      "bounded_title": "2003-04 Fleer E-X Jambalaya Kobe Bryant Vertical BGS 9",
+      "control_f1": 1,
+      "treatment_canonical_f1": 0.9523809523809523,
+      "combined_f1": 0.9523809523809523,
+      "bounded_f1": 0.9523809523809523,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 1,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [
+        {
+          "text": "8 OF 15 JB",
+          "target": "card_number",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_number"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "card_number_boundary_unknown"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "8 OF 15 JB",
+          "target": "card_number",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 54,
+      "after_length": 54
+    },
+    {
+      "asset_id": "reviewed_blind_cd2008f3f6a6c5f9a84c",
+      "reference": "2020 Topps Chrome Sapphire Gavin Lux RC Red Refractor Auto 3/5 PSA 9",
+      "control_title": "2020 Topps Chrome Gavin Lux Sapphire Edition Red Sapphire 3/5 RC Auto PSA 9",
+      "treatment_canonical_title": "2020 Topps Chrome Gavin Lux Red Refractor 3/5 RC Auto PSA 9",
+      "combined_title": "2020 Topps Chrome Gavin Lux Red Refractor 3/5 RC Auto PSA 9",
+      "bounded_title": "2020 Topps Chrome Gavin Lux Red Refractor 3/5 RC Auto PSA 9",
+      "control_f1": 0.9230769230769231,
+      "treatment_canonical_f1": 0.9600000000000001,
+      "combined_f1": 0.9600000000000001,
+      "bounded_f1": 0.9600000000000001,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 59,
+      "after_length": 59
+    },
+    {
+      "asset_id": "reviewed_blind_ced894c69f355380019a",
+      "reference": "2024 Bowman Draft Nick Kurtz Chrome Auto Blue Refractor 1st 049/150 PSA 10",
+      "control_title": "2024 Topps Bowman Chrome Nick Kurtz 1st Bowman 49/150 Auto Edition PSA 10",
+      "treatment_canonical_title": "2024 Topps Bowman Draft Nick Kurtz CHR Prospect Auto 049/150 1st Edition PSA 10",
+      "combined_title": "2024 Topps Bowman Draft Nick Kurtz CHR Prospect Auto 049/150 1st Edition PSA 10",
+      "bounded_title": "2024 Topps Bowman Draft Nick Kurtz CHR Prospect Auto 049/150 1st Bowman PSA 10",
+      "control_f1": 0.7199999999999999,
+      "treatment_canonical_f1": 0.7407407407407408,
+      "combined_f1": 0.7407407407407408,
+      "bounded_f1": 0.7692307692307693,
+      "bounded_marginal_delta_f1": 0.028490028490028463,
+      "classification": "win",
+      "changed_title": true,
+      "changed_fields": [
+        "descriptive_rarity"
+      ],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "1st Bowman",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "bounded_literal_marker"
+        },
+        {
+          "text": "Topps Certified Autograph Issue",
+          "target": "marker",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "descriptive_rarity",
+            "search_optimization"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": false,
+          "disposition": "candidate_only",
+          "reason": "component_or_rarity_role_requires_resolution"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 1,
+          "text": "Topps Certified Autograph Issue",
+          "target": "marker",
+          "disposition": "candidate_only",
+          "reason": "unsupported_printed_marker"
+        },
+        {
+          "index": 0,
+          "text": "1st Bowman",
+          "field": "descriptive_rarity",
+          "value": "1st Bowman",
+          "family": "rarity",
+          "disposition": "admitted",
+          "reason": "printed_marker_specializes_generic_first_edition"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 79,
+      "after_length": 78
+    },
+    {
+      "asset_id": "reviewed_blind_d3ecdbd16bd684c8f13a",
+      "reference": "2023 Panini Prizm Rashee Rice RC Red Sparkle Rookie",
+      "control_title": "2023 Panini Prizm Rashee Rice Red Prizm RC",
+      "treatment_canonical_title": "2023 Panini Prizm Rashee Rice Red Prizm RC",
+      "combined_title": "2023 Panini Prizm Rashee Rice Red Prizm RC",
+      "bounded_title": "2023 Panini Prizm Rashee Rice Red Prizm RC",
+      "control_f1": 0.8750000000000001,
+      "treatment_canonical_f1": 0.8750000000000001,
+      "combined_f1": 0.8750000000000001,
+      "bounded_f1": 0.8750000000000001,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 42,
+      "after_length": 42
+    },
+    {
+      "asset_id": "reviewed_blind_de36e62d7865ce584079",
+      "reference": "2023-24 Topps Chrome UCC Lamine Yamal Auto RC Orange Lava Refractor PSA 9",
+      "control_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal Auto RC PSA 9",
+      "treatment_canonical_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal Auto RC PSA 9",
+      "combined_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal Auto Orange RC PSA 9",
+      "bounded_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal Auto Orange RC PSA 9",
+      "control_f1": 0.7407407407407408,
+      "treatment_canonical_f1": 0.7407407407407408,
+      "combined_f1": 0.7857142857142857,
+      "bounded_f1": 0.7857142857142857,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 77,
+      "after_length": 77
+    },
+    {
+      "asset_id": "reviewed_blind_ebf1f6eb40fb7597b330",
+      "reference": "2025-26 Topps Bowman University Chrome Sienna Betts UCLA Anime SSP",
+      "control_title": "2025 Topps Bowman Chrome Sienna Betts Silver Refractor",
+      "treatment_canonical_title": "2025 Topps Bowman Chrome Sienna Betts Rainbow Refractor",
+      "combined_title": "2025 Topps Bowman Chrome Sienna Betts Rainbow Refractor",
+      "bounded_title": "2025 Topps Bowman Chrome Sienna Betts Rainbow Refractor",
+      "control_f1": 0.631578947368421,
+      "treatment_canonical_f1": 0.631578947368421,
+      "combined_f1": 0.631578947368421,
+      "bounded_f1": 0.631578947368421,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 55,
+      "after_length": 55
+    },
+    {
+      "asset_id": "reviewed_blind_f1ae8e8f0639a1bda4e9",
+      "reference": "2025-26 Topps Cosmic Chrome Cooper Flagg Auto Gold Interstellar Refractor /50 RC",
+      "control_title": "2026 Topps Cosmic Chrome Cooper Flagg Auto Variation Gold Refractor 40/50 RC",
+      "treatment_canonical_title": "2026 Topps Cosmic Chrome Cooper Flagg Auto Variation 40/50 RC",
+      "combined_title": "2026 Topps Cosmic Chrome Cooper Flagg Auto Variation 40/50 RC",
+      "bounded_title": "2026 Topps Cosmic Chrome Cooper Flagg Auto Variation 40/50 RC",
+      "control_f1": 0.7199999999999999,
+      "treatment_canonical_f1": 0.608695652173913,
+      "combined_f1": 0.608695652173913,
+      "bounded_f1": 0.608695652173913,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 0,
+      "residual_replay_candidate_count": 0,
+      "residual_candidates": [],
+      "decisions": [],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 61,
+      "after_length": 61
+    },
+    {
+      "asset_id": "reviewed_blind_f752e32989cb9a7464b6",
+      "reference": "2025-26 Panini Donruss Optic Jason Crowe Jr. Auto 17/99",
+      "control_title": "2025-26 Panini Donruss Optic Jason Crowe Jr. Rainbow Prizm 17/99 RC Auto",
+      "treatment_canonical_title": "2025-26 Panini Donruss Optic Jason Crowe Jr. Silver Prizm 17/99 Auto",
+      "combined_title": "2025-26 Panini Donruss Optic Jason Crowe Jr. Silver Prizm 17/99 Auto",
+      "bounded_title": "2025-26 Panini Donruss Optic Jason Crowe Jr. Silver Prizm 17/99 Auto",
+      "control_f1": 0.8695652173913044,
+      "treatment_canonical_f1": 0.9090909090909091,
+      "combined_f1": 0.9090909090909091,
+      "bounded_f1": 0.9090909090909091,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 1,
+      "residual_replay_candidate_count": 1,
+      "residual_candidates": [
+        {
+          "text": "Top Guard Prospects from Class of 2026",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "Top Guard Prospects from Class of 2026",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 68,
+      "after_length": 68
+    },
+    {
+      "asset_id": "reviewed_blind_faf672269e51f56599f2",
+      "reference": "2025-26 Topps Chrome UCC Lionel Messi FC Barcelona Shadow Etch SSP",
+      "control_title": "2020-21 Topps Chrome Lionel Messi",
+      "treatment_canonical_title": "2020 Topps Chrome Lionel Messi",
+      "combined_title": "2020 Topps Chrome Lionel Messi",
+      "bounded_title": "2020 Topps Chrome Lionel Messi",
+      "control_f1": 0.4444444444444444,
+      "treatment_canonical_f1": 0.47058823529411764,
+      "combined_f1": 0.47058823529411764,
+      "bounded_f1": 0.47058823529411764,
+      "bounded_marginal_delta_f1": 0,
+      "classification": "tie",
+      "changed_title": false,
+      "changed_fields": [],
+      "residual_candidate_count": 2,
+      "residual_replay_candidate_count": 2,
+      "residual_candidates": [
+        {
+          "text": "UEFA Champions League",
+          "target": "identity",
+          "anchor": "front_text",
+          "candidate_brackets": [
+            "product",
+            "set",
+            "ip_sport"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "identity_bracket_requires_resolution"
+        },
+        {
+          "text": "Forward",
+          "target": "card_name",
+          "anchor": "back_text",
+          "candidate_brackets": [
+            "card_name"
+          ],
+          "automatic_csm_admission": false,
+          "automatic_renderer_admission": false,
+          "replay_eligible": true,
+          "disposition": "resolver_candidate",
+          "reason": "literal_card_name_for_empty_field"
+        }
+      ],
+      "decisions": [
+        {
+          "index": 0,
+          "text": "UEFA Champions League",
+          "target": "identity",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        },
+        {
+          "index": 1,
+          "text": "Forward",
+          "target": "card_name",
+          "disposition": "candidate_only",
+          "reason": "non_marker_out_of_scope"
+        }
+      ],
+      "guards": {
+        "allowed_field_mutations_only": true,
+        "numeric_tokens_unchanged": true,
+        "subjects_unchanged": true,
+        "no_unexpected_title_token_loss": true,
+        "within_80_characters": true,
+        "inherited_title_replayable_when_admitting": true
+      },
+      "reference_losses": [],
+      "reference_gains": [],
+      "numeric_field_mutations": [],
+      "numeric_title_mutation": false,
+      "subject_field_mutation": false,
+      "subject_title_losses": [],
+      "unrelated_field_drift": [],
+      "over_80": false,
+      "before_length": 30,
+      "after_length": 30
+    }
+  ]
+}

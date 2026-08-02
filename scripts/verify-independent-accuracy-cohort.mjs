@@ -41,12 +41,27 @@ async function pathExists(path) {
 export async function validateIndependentAccuracyCohort({
   dataset,
   developmentAssetIds = [],
+  selectedAssetIds = null,
+  sealedLabels = null,
   targetCount = 150,
   requireLocalImages = false
 } = {}) {
-  const items = Array.isArray(dataset?.items) ? dataset.items : [];
+  const sourceItems = Array.isArray(dataset?.items) ? dataset.items : [];
   if (!Number.isInteger(targetCount) || targetCount < 1) fail("target_count_invalid");
-  if (!items.length) fail("dataset_items_missing");
+  if (!sourceItems.length) fail("dataset_items_missing");
+
+  let items = sourceItems;
+  if (selectedAssetIds !== null) {
+    if (!Array.isArray(selectedAssetIds) || selectedAssetIds.some((id) => !text(id))) {
+      fail("selected_asset_ids_invalid");
+    }
+    const selected = selectedAssetIds.map(text);
+    if (new Set(selected).size !== selected.length) fail("selected_asset_ids_not_unique");
+    const byId = new Map(sourceItems.map((item) => [text(item?.asset_id), item]));
+    const missing = selected.filter((id) => !byId.has(id));
+    if (missing.length) fail("selected_asset_ids_missing_from_dataset", { missing: missing.slice(0, 20) });
+    items = selected.map((id) => byId.get(id));
+  }
 
   const development = new Set(developmentAssetIds.map(text).filter(Boolean));
   const ids = items.map((item) => text(item?.asset_id));
@@ -62,6 +77,9 @@ export async function validateIndependentAccuracyCohort({
   });
 
   const failures = [];
+  const sealedByKey = sealedLabels === null
+    ? null
+    : new Map((Array.isArray(sealedLabels) ? sealedLabels : []).map((row) => [text(row?.key), row]));
   for (const item of items.slice(0, targetCount)) {
     if (text(item?.canonical_title) || Object.keys(item?.source_titles || {}).length) {
       failures.push({ asset_id: item.asset_id, reason: "label_visible_in_item" });
@@ -74,6 +92,15 @@ export async function validateIndependentAccuracyCohort({
     const labelRef = item?.sealed_eval_label_ref || {};
     if (!text(labelRef.path) || !text(labelRef.key)) {
       failures.push({ asset_id: item.asset_id, reason: "sealed_label_reference_missing" });
+    } else if (sealedByKey) {
+      const sealed = sealedByKey.get(text(labelRef.key));
+      if (!sealed) {
+        failures.push({ asset_id: item.asset_id, reason: "sealed_label_key_missing" });
+      } else if (sealed?.policy?.reviewed_title_is_ground_truth !== true
+          || sealed?.policy?.model_prompt_visible !== false
+          || sealed?.policy?.load_after_predictions_frozen !== true) {
+        failures.push({ asset_id: item.asset_id, reason: "sealed_label_policy_invalid" });
+      }
     }
     const images = Array.isArray(item?.images) ? item.images : [];
     const materializable = images.some((image) => {
@@ -107,15 +134,23 @@ export async function validateIndependentAccuracyCohort({
 if (import.meta.url === `file://${process.argv[1]}`) {
   const datasetPath = resolve(arg("--dataset"));
   const developmentPath = arg("--development");
+  const selectedPath = arg("--asset-ids-file");
+  const sealedLabelsPath = arg("--sealed-labels");
   if (!datasetPath || !developmentPath) fail("dataset_and_development_required");
-  const [dataset, developmentAssetIds] = await Promise.all([
+  const [dataset, developmentAssetIds, selectedAssetIds, sealedLabels] = await Promise.all([
     readFile(datasetPath, "utf8").then(JSON.parse),
-    readFile(resolve(developmentPath), "utf8").then(JSON.parse)
+    readFile(resolve(developmentPath), "utf8").then(JSON.parse),
+    selectedPath ? readFile(resolve(selectedPath), "utf8").then(JSON.parse) : Promise.resolve(null),
+    sealedLabelsPath ? readFile(resolve(sealedLabelsPath), "utf8").then((body) => (
+      body.split(/\n+/).filter((line) => line.trim()).map(JSON.parse)
+    )) : Promise.resolve(null)
   ]);
   try {
     console.log(JSON.stringify(await validateIndependentAccuracyCohort({
       dataset,
       developmentAssetIds,
+      selectedAssetIds,
+      sealedLabels,
       targetCount: Number(arg("--count", "150")),
       requireLocalImages: process.argv.includes("--require-local-images")
     }), null, 2));

@@ -1,0 +1,2951 @@
+{
+  "schema_version": "combined-positive-bundle-v1-replay-150",
+  "authority": "evaluation_only",
+  "production_promoted": false,
+  "provider_calls": 0,
+  "source": {
+    "input_path": "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+    "exhaustive_path": "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl",
+    "input_sha256": "2701f77cef30c0f7d409b8ec8c08ff92015fc1e19f76ff13ef2b5421798844b5",
+    "exhaustive_sha256": "96f71ae0956e1c7defde2579ad7448d955c0f7c33b69c908207855052faad1f9",
+    "cohort_sha256": "c63287ca0d76f669385a720987b36f49a4495b40fe82b1133287fe2c4f272bf7",
+    "canonical_run_fingerprint": "ee0d30c2a3af46339b9392b9bc5eddb9241d1a761e8b7ef2ba48a6bb3e68e0e3",
+    "canonical_finisher_fingerprint": "566b0fc16b41a87fce8ba75e050d1e6bfa1e6f3f78518399312a2627b3b34b13",
+    "exhaustive_run_fingerprint": "c75199e70ed12184170eb0c7c23c43fcbaf673feea1ebd2a9a65be4f7afcaead",
+    "exhaustive_finisher_fingerprint": "a16861c4d5ff5a5bfa0cc95138f0b1abcc42fdb7581782fc311f2e8758bb48c7",
+    "cards": 150,
+    "arms": [
+      "thin_canonical_high",
+      "thin_budgeted",
+      "exhaustive_observation_high"
+    ]
+  },
+  "implementation": {
+    "bundle_sha256": "326d16ff1e7f1c18c156ea5539e1105329d2ed7d310e6d38ff61d53a65def19b",
+    "expression_overlay_sha256": "856ae1c92deaa409e63fb65473fad64551017f98214fbee71414a77202438614",
+    "schema73_overlay_sha256": "6ff618b8173624d9b352f53b154b603dedd2bd866e15a7682c7995611d8043da",
+    "phrase_resolver_sha256": "1b0a71ea46437f5a6f642df056f6e3f96a737957a926e55cf6719cecf55f9029",
+    "composer_recovery_sha256": "e48ebc0e9a374fc3957108501a1052d1915e2c752588a5df6cb8750ecc3cb1ef",
+    "lot_recovery_sha256": "4bf61fae2e6d616174eb674ececb1a9a73df1fee517a6872282c85e96e03b7e1",
+    "replay_script_sha256": "6f2bb2b1c271289e3ddca010877a65607926e20647dd2ea0171e2d64c4e0ea9b"
+  },
+  "mechanism_order": [
+    "candidate_identity_v3",
+    "attested_insert",
+    "finish_family_color_only",
+    "product_known_manufacturer_extension",
+    "serial_single_digit_v1",
+    "exact_season_suffix",
+    "front_same_value_serial",
+    "typed_exact_admission",
+    "phrase_aware_resolver_guard",
+    "typed_product_finish_compaction",
+    "exact_parallel_color_compaction",
+    "compact_lot_quantity"
+  ],
+  "positive_asset_count": {
+    "count": 12,
+    "mechanisms": [
+      "candidate_identity_v3",
+      "attested_insert",
+      "finish_family_color_only",
+      "product_known_manufacturer_extension",
+      "serial_single_digit_v1",
+      "exact_season_suffix",
+      "front_same_value_serial",
+      "typed_exact_admission",
+      "phrase_aware_resolver_guard",
+      "typed_product_finish_compaction",
+      "exact_parallel_color_compaction",
+      "compact_lot_quantity"
+    ],
+    "literal_title_lossless_count": 6,
+    "literal_title_lossless_mechanisms": [
+      "attested_insert",
+      "finish_family_color_only",
+      "product_known_manufacturer_extension",
+      "exact_season_suffix",
+      "phrase_aware_resolver_guard",
+      "exact_parallel_color_compaction"
+    ],
+    "paid_fresh150_eligible_count": 11,
+    "paid_fresh150_eligible": [
+      "attested_insert",
+      "finish_family_color_only",
+      "product_known_manufacturer_extension",
+      "serial_single_digit_v1",
+      "exact_season_suffix",
+      "front_same_value_serial",
+      "typed_exact_admission",
+      "phrase_aware_resolver_guard",
+      "typed_product_finish_compaction",
+      "exact_parallel_color_compaction",
+      "compact_lot_quantity"
+    ],
+    "same_cohort_only": [
+      {
+        "mechanism": "candidate_identity_v3",
+        "reason": "generic_logo_does_not_prove_set_role_and_one_card_displaces_visible_finish_tokens"
+      }
+    ],
+    "gate": "changed_and_positive_with_zero_f1_reference_backing_numeric_drift_length_failures",
+    "excluded": [
+      {
+        "mechanism": "generic_logo_exact_identity_admission",
+        "reason": "selection_biased_role_routing_held_candidate_only"
+      },
+      {
+        "mechanism": "typed_grade_compaction",
+        "reason": "no_change_on_fresh150"
+      },
+      {
+        "mechanism": "typed_patch_relic_compaction",
+        "reason": "defer_semantic_equivalence_unproven"
+      },
+      {
+        "mechanism": "typed_product_parent",
+        "reason": "no_change_on_fresh150"
+      },
+      {
+        "mechanism": "manufacturer_product_set",
+        "reason": "stop_replay_loss"
+      },
+      {
+        "mechanism": "shared_observable_components",
+        "reason": "stop_mixed_lot_semantics"
+      },
+      {
+        "mechanism": "shared_grading_info",
+        "reason": "defer_no_measured_effect"
+      },
+      {
+        "mechanism": "asset_token_diagnostic_oracle",
+        "reason": "overfit_and_reference_loss"
+      },
+      {
+        "mechanism": "world_compatibility_ranker",
+        "reason": "no_title_authority"
+      },
+      {
+        "mechanism": "residual_evidence_lane",
+        "reason": "not_yet_measured"
+      }
+    ]
+  },
+  "stage_summaries": [
+    {
+      "mechanism": "candidate_identity_v3",
+      "before_macro_f1": 0.7669266213698448,
+      "after_macro_f1": 0.7702087644316794,
+      "delta_macro_f1": 0.003282143061834608,
+      "wins": 5,
+      "losses": 0,
+      "ties": 145,
+      "changed_cards": 5,
+      "field_change_cards": 5,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 1,
+      "title_loss_tokens": 3,
+      "sanctioned_title_loss_cards": 0,
+      "unsanctioned_title_loss_cards": 1,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": false
+    },
+    {
+      "mechanism": "attested_insert",
+      "before_macro_f1": 0.7702087644316794,
+      "after_macro_f1": 0.7705550847779997,
+      "delta_macro_f1": 0.00034632034632031683,
+      "wins": 1,
+      "losses": 0,
+      "ties": 149,
+      "changed_cards": 1,
+      "field_change_cards": 2,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 0,
+      "title_loss_tokens": 0,
+      "sanctioned_title_loss_cards": 0,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": true
+    },
+    {
+      "mechanism": "finish_family_color_only",
+      "before_macro_f1": 0.7705550847779997,
+      "after_macro_f1": 0.7714910531574464,
+      "delta_macro_f1": 0.00093596837944665,
+      "wins": 2,
+      "losses": 0,
+      "ties": 148,
+      "changed_cards": 2,
+      "field_change_cards": 2,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 0,
+      "title_loss_tokens": 0,
+      "sanctioned_title_loss_cards": 0,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": true
+    },
+    {
+      "mechanism": "product_known_manufacturer_extension",
+      "before_macro_f1": 0.7714910531574464,
+      "after_macro_f1": 0.7719588894147563,
+      "delta_macro_f1": 0.0004678362573099504,
+      "wins": 1,
+      "losses": 0,
+      "ties": 149,
+      "changed_cards": 1,
+      "field_change_cards": 17,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 0,
+      "title_loss_tokens": 0,
+      "sanctioned_title_loss_cards": 0,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": true
+    },
+    {
+      "mechanism": "serial_single_digit_v1",
+      "before_macro_f1": 0.7719588894147563,
+      "after_macro_f1": 0.7729860499085834,
+      "delta_macro_f1": 0.0010271604938271173,
+      "wins": 2,
+      "losses": 0,
+      "ties": 148,
+      "changed_cards": 2,
+      "field_change_cards": 2,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 2,
+      "title_loss_tokens": 2,
+      "sanctioned_title_loss_cards": 2,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": false
+    },
+    {
+      "mechanism": "exact_season_suffix",
+      "before_macro_f1": 0.7729860499085834,
+      "after_macro_f1": 0.773982262662691,
+      "delta_macro_f1": 0.0009962127541075505,
+      "wins": 3,
+      "losses": 0,
+      "ties": 147,
+      "changed_cards": 3,
+      "field_change_cards": 3,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 0,
+      "title_loss_tokens": 0,
+      "sanctioned_title_loss_cards": 0,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": true
+    },
+    {
+      "mechanism": "front_same_value_serial",
+      "before_macro_f1": 0.773982262662691,
+      "after_macro_f1": 0.7752549899354183,
+      "delta_macro_f1": 0.0012727272727273142,
+      "wins": 2,
+      "losses": 0,
+      "ties": 148,
+      "changed_cards": 2,
+      "field_change_cards": 2,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 2,
+      "title_loss_tokens": 2,
+      "sanctioned_title_loss_cards": 2,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": false
+    },
+    {
+      "mechanism": "typed_exact_admission",
+      "before_macro_f1": 0.7752549899354183,
+      "after_macro_f1": 0.7778705253803655,
+      "delta_macro_f1": 0.0026155354449471924,
+      "wins": 5,
+      "losses": 0,
+      "ties": 145,
+      "changed_cards": 5,
+      "field_change_cards": 5,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 2,
+      "title_loss_tokens": 2,
+      "sanctioned_title_loss_cards": 2,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": false
+    },
+    {
+      "mechanism": "phrase_aware_resolver_guard",
+      "before_macro_f1": 0.7778705253803655,
+      "after_macro_f1": 0.7781845350422013,
+      "delta_macro_f1": 0.00031400966183581236,
+      "wins": 1,
+      "losses": 0,
+      "ties": 149,
+      "changed_cards": 1,
+      "field_change_cards": 1,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 0,
+      "title_loss_tokens": 0,
+      "sanctioned_title_loss_cards": 0,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": true
+    },
+    {
+      "mechanism": "typed_product_finish_compaction",
+      "before_macro_f1": 0.7781845350422013,
+      "after_macro_f1": 0.7797229965806629,
+      "delta_macro_f1": 0.0015384615384615996,
+      "wins": 1,
+      "losses": 0,
+      "ties": 149,
+      "changed_cards": 1,
+      "field_change_cards": 1,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 1,
+      "title_loss_tokens": 3,
+      "sanctioned_title_loss_cards": 1,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": false
+    },
+    {
+      "mechanism": "exact_parallel_color_compaction",
+      "before_macro_f1": 0.7797229965806629,
+      "after_macro_f1": 0.7800306888883551,
+      "delta_macro_f1": 0.0003076923076922311,
+      "wins": 1,
+      "losses": 0,
+      "ties": 149,
+      "changed_cards": 1,
+      "field_change_cards": 1,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 0,
+      "title_loss_tokens": 0,
+      "sanctioned_title_loss_cards": 0,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": true
+    },
+    {
+      "mechanism": "compact_lot_quantity",
+      "before_macro_f1": 0.7800306888883551,
+      "after_macro_f1": 0.7850509044216141,
+      "delta_macro_f1": 0.0050202155332589316,
+      "wins": 6,
+      "losses": 0,
+      "ties": 144,
+      "changed_cards": 6,
+      "field_change_cards": 0,
+      "reference_loss_cards": 0,
+      "reference_loss_tokens": 0,
+      "title_loss_cards": 6,
+      "title_loss_tokens": 18,
+      "sanctioned_title_loss_cards": 6,
+      "unsanctioned_title_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unbacked_numeric_cards": 0,
+      "numeric_mutation_cards": 0,
+      "unrelated_field_drift_cards": 0,
+      "over_80_cards": 0,
+      "positive_asset": true,
+      "literal_title_lossless": false
+    }
+  ],
+  "final_summary": {
+    "baseline_macro_f1": 0.7669266213698448,
+    "candidate_macro_f1": 0.7850509044216141,
+    "before_macro_f1": 0.7669266213698448,
+    "after_macro_f1": 0.7850509044216141,
+    "delta_macro_f1": 0.018124283051769274,
+    "wins": 28,
+    "losses": 0,
+    "ties": 122,
+    "changed_cards": 28,
+    "field_change_cards": 36,
+    "reference_loss_cards": 0,
+    "reference_loss_tokens": 0,
+    "title_loss_cards": 14,
+    "title_loss_tokens": 30,
+    "sanctioned_title_loss_cards": 13,
+    "unsanctioned_title_loss_cards": 1,
+    "unbacked_new_token_cards": 0,
+    "unbacked_numeric_cards": 0,
+    "numeric_mutation_cards": 0,
+    "unrelated_field_drift_cards": 0,
+    "over_80_cards": 0,
+    "positive_asset": true,
+    "literal_title_lossless": false
+  },
+  "interactions": [
+    {
+      "asset_id": "reviewed_blind_dfba61396ec82f2b864e",
+      "isolated_changed_mechanisms": [
+        "exact_season_suffix",
+        "phrase_aware_resolver_guard"
+      ],
+      "sequential_changed_mechanisms": [
+        "exact_season_suffix"
+      ],
+      "isolated_delta_sum": 0.09523809523809534,
+      "final_delta_f1": 0.04761904761904767,
+      "interaction_delta": -0.04761904761904767,
+      "interaction_kind": "deduplicated",
+      "firing_differs": true
+    },
+    {
+      "asset_id": "reviewed_blind_a38ced8b163264d9d95a",
+      "isolated_changed_mechanisms": [
+        "exact_season_suffix",
+        "phrase_aware_resolver_guard"
+      ],
+      "sequential_changed_mechanisms": [
+        "exact_season_suffix"
+      ],
+      "isolated_delta_sum": 0.08666666666666689,
+      "final_delta_f1": 0.043333333333333446,
+      "interaction_delta": -0.043333333333333446,
+      "interaction_kind": "deduplicated",
+      "firing_differs": true
+    },
+    {
+      "asset_id": "reviewed_blind_940144961215fef91c18",
+      "isolated_changed_mechanisms": [
+        "front_same_value_serial",
+        "typed_exact_admission",
+        "phrase_aware_resolver_guard"
+      ],
+      "sequential_changed_mechanisms": [
+        "front_same_value_serial",
+        "typed_exact_admission"
+      ],
+      "isolated_delta_sum": 0.3363636363636363,
+      "final_delta_f1": 0.209090909090909,
+      "interaction_delta": -0.12727272727272732,
+      "interaction_kind": "deduplicated",
+      "firing_differs": true
+    },
+    {
+      "asset_id": "reviewed_blind_c6ecb08d49256335aa6b",
+      "isolated_changed_mechanisms": [
+        "finish_family_color_only",
+        "typed_exact_admission"
+      ],
+      "sequential_changed_mechanisms": [
+        "finish_family_color_only",
+        "typed_exact_admission"
+      ],
+      "isolated_delta_sum": 0.11826086956521753,
+      "final_delta_f1": 0.11130434782608689,
+      "interaction_delta": -0.006956521739130639,
+      "interaction_kind": "nonlinear_metric_overlap",
+      "firing_differs": false
+    },
+    {
+      "asset_id": "reviewed_blind_ee03ba06dd634655b4ba",
+      "isolated_changed_mechanisms": [
+        "attested_insert",
+        "phrase_aware_resolver_guard"
+      ],
+      "sequential_changed_mechanisms": [
+        "attested_insert"
+      ],
+      "isolated_delta_sum": 0.10389610389610371,
+      "final_delta_f1": 0.051948051948051854,
+      "interaction_delta": -0.051948051948051854,
+      "interaction_kind": "deduplicated",
+      "firing_differs": true
+    },
+    {
+      "asset_id": "reviewed_blind_7059d3b39d01402f0e61",
+      "isolated_changed_mechanisms": [
+        "candidate_identity_v3",
+        "product_known_manufacturer_extension"
+      ],
+      "sequential_changed_mechanisms": [
+        "candidate_identity_v3"
+      ],
+      "isolated_delta_sum": 0.27272727272727293,
+      "final_delta_f1": 0.13636363636363646,
+      "interaction_delta": -0.13636363636363646,
+      "interaction_kind": "deduplicated",
+      "firing_differs": true
+    }
+  ],
+  "changed_cards": [
+    {
+      "asset_id": "reviewed_blind_dfba61396ec82f2b864e",
+      "reference": "2018-19 Panini Prizm Jalen Brunson RC Prizm Mojo 13/25 PSA 9",
+      "baseline_title": "2018 Panini Prizm Jalen Brunson Mojo Prizm 13/25 RC PSA 9",
+      "candidate_title": "2018-19 Panini Prizm Jalen Brunson Mojo Prizm 13/25 RC PSA 9",
+      "final_delta_f1": 0.04761904761904767,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "exact_season_suffix"
+      ],
+      "stages": [
+        {
+          "mechanism": "exact_season_suffix",
+          "before_title": "2018 Panini Prizm Jalen Brunson Mojo Prizm 13/25 RC PSA 9",
+          "after_title": "2018-19 Panini Prizm Jalen Brunson Mojo Prizm 13/25 RC PSA 9",
+          "delta_f1": 0.04761904761904767,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "year"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_3215d29874a3dad22bbb",
+      "reference": "2024-25 Topps Chrome NBL Karim Lopez RC Auto",
+      "baseline_title": "2024 Topps Chrome Karim Lopez RC Auto",
+      "candidate_title": "2024 Topps Chrome NBL Karim Lopez RC Auto",
+      "final_delta_f1": 0.06617647058823517,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "typed_exact_admission"
+      ],
+      "stages": [
+        {
+          "mechanism": "typed_exact_admission",
+          "before_title": "2024 Topps Chrome Karim Lopez RC Auto",
+          "after_title": "2024 Topps Chrome NBL Karim Lopez RC Auto",
+          "delta_f1": 0.06617647058823517,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "set"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_a38ced8b163264d9d95a",
+      "reference": "2020-21 Contenders Anthony Edwards Variation RC Rookie Ticket Auto PSA 10",
+      "baseline_title": "2020 Panini Contenders Anthony Edwards Rookie Ticket Variation RC Auto PSA 10",
+      "candidate_title": "2020-21 Panini Contenders Anthony Edwards Rookie Ticket Variation RC Auto PSA 10",
+      "final_delta_f1": 0.043333333333333446,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "exact_season_suffix"
+      ],
+      "stages": [
+        {
+          "mechanism": "exact_season_suffix",
+          "before_title": "2020 Panini Contenders Anthony Edwards Rookie Ticket Variation RC Auto PSA 10",
+          "after_title": "2020-21 Panini Contenders Anthony Edwards Rookie Ticket Variation RC Auto PSA 10",
+          "delta_f1": 0.043333333333333446,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "year"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_5edfef737b8f58f5253b",
+      "reference": "2025 Topps Chrome Platinum Dalton Rushing RC Orange Refractor 12/25 Auto Dodgers",
+      "baseline_title": "2025 Topps Chrome Dalton Rushing 12/25 RC Auto",
+      "candidate_title": "2025 Topps Chrome Dalton Rushing Orange Refractor 12/25 RC Auto",
+      "final_delta_f1": 0.10909090909090902,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "finish_family_color_only"
+      ],
+      "stages": [
+        {
+          "mechanism": "finish_family_color_only",
+          "before_title": "2025 Topps Chrome Dalton Rushing 12/25 RC Auto",
+          "after_title": "2025 Topps Chrome Dalton Rushing Orange Refractor 12/25 RC Auto",
+          "delta_f1": 0.10909090909090902,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "finish_family_color_only",
+              "details": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_72e1bdac368317a7c3b1",
+      "reference": "2026 Topps Graphite Diana Shnaider Mirrored SSP",
+      "baseline_title": "2025 Topps Diana Shnaider Mirrored",
+      "candidate_title": "2025 Topps GRAPHITE Diana Shnaider Mirrored",
+      "final_delta_f1": 0.10256410256410253,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ],
+      "stages": [
+        {
+          "mechanism": "candidate_identity_v3",
+          "before_title": "2025 Topps Diana Shnaider Mirrored",
+          "after_title": "2025 Topps GRAPHITE Diana Shnaider Mirrored",
+          "delta_f1": 0.10256410256410253,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "candidate_identity_v3",
+              "details": [
+                {
+                  "field": "set"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_bcc4e7ac4ac23e1e69d3",
+      "reference": "2026 Bowman Chrome Xavier Neyens Cristopher Polanco Ryan Reptilian Refractor lotx4",
+      "baseline_title": "4 Card Lot 2026 Topps Bowman Chrome Xavier Neyens Silver Prismatic",
+      "candidate_title": "lotx4 2026 Topps Bowman Chrome Xavier Neyens Silver Prismatic",
+      "final_delta_f1": 0.14545454545454545,
+      "reference_losses": [],
+      "title_losses": [
+        "4",
+        "card",
+        "lot"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ],
+      "stages": [
+        {
+          "mechanism": "compact_lot_quantity",
+          "before_title": "4 Card Lot 2026 Topps Bowman Chrome Xavier Neyens Silver Prismatic",
+          "after_title": "lotx4 2026 Topps Bowman Chrome Xavier Neyens Silver Prismatic",
+          "delta_f1": 0.14545454545454545,
+          "reference_losses": [],
+          "title_losses": [
+            "4",
+            "card",
+            "lot"
+          ],
+          "sanctioned_title_losses": [
+            "4",
+            "card",
+            "lot"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "compact_lot_quantity",
+              "source_field": "lot_count"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_f371844dc1d0c6e49f92",
+      "reference": "2024 Topps Chrome Star Wars #DF-3 Duel of the Fates Gold Sapphire 15/50 SP",
+      "baseline_title": "Topps Chrome Qui-Gon Jinn Obi-Wan Kenobi Darth Maul Duel of the Fates",
+      "candidate_title": "Topps Chrome STAR WARS Qui-Gon Jinn Obi-Wan Kenobi Darth Maul Duel of the Fates",
+      "final_delta_f1": 0.1023359288097887,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ],
+      "stages": [
+        {
+          "mechanism": "candidate_identity_v3",
+          "before_title": "Topps Chrome Qui-Gon Jinn Obi-Wan Kenobi Darth Maul Duel of the Fates",
+          "after_title": "Topps Chrome STAR WARS Qui-Gon Jinn Obi-Wan Kenobi Darth Maul Duel of the Fates",
+          "delta_f1": 0.1023359288097887,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "candidate_identity_v3",
+              "details": [
+                {
+                  "field": "set"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_6d227f82fdcb2ded4b6d",
+      "reference": "2026 Bowman Chrome Sam Petersen /499 Luis Cova /250 David /125 Refractor lotx3",
+      "baseline_title": "3 Card Lot 2026 Topps Bowman Chrome Sam Petersen Silver Refractor 034/499",
+      "candidate_title": "lotx3 2026 Topps Bowman Chrome Sam Petersen Silver Refractor 034/499",
+      "final_delta_f1": 0.12869565217391293,
+      "reference_losses": [],
+      "title_losses": [
+        "3",
+        "card",
+        "lot"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ],
+      "stages": [
+        {
+          "mechanism": "compact_lot_quantity",
+          "before_title": "3 Card Lot 2026 Topps Bowman Chrome Sam Petersen Silver Refractor 034/499",
+          "after_title": "lotx3 2026 Topps Bowman Chrome Sam Petersen Silver Refractor 034/499",
+          "delta_f1": 0.12869565217391293,
+          "reference_losses": [],
+          "title_losses": [
+            "3",
+            "card",
+            "lot"
+          ],
+          "sanctioned_title_losses": [
+            "3",
+            "card",
+            "lot"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "compact_lot_quantity",
+              "source_field": "lot_count"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_940144961215fef91c18",
+      "reference": "2025 Topps Signature Class George Kittle Round 5 Pick 2 027/150 Auto",
+      "baseline_title": "2025 Topps Signature Class George Kittle 27/150 Auto",
+      "candidate_title": "2025 Topps Signature Class George Kittle Pick 2 027/150 Auto",
+      "final_delta_f1": 0.209090909090909,
+      "reference_losses": [],
+      "title_losses": [
+        "27/150"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "front_same_value_serial",
+        "typed_exact_admission"
+      ],
+      "stages": [
+        {
+          "mechanism": "front_same_value_serial",
+          "before_title": "2025 Topps Signature Class George Kittle 27/150 Auto",
+          "after_title": "2025 Topps Signature Class George Kittle 027/150 Auto",
+          "delta_f1": 0.09999999999999998,
+          "reference_losses": [],
+          "title_losses": [
+            "27/150"
+          ],
+          "sanctioned_title_losses": [
+            "27/150"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "serial"
+            }
+          ]
+        },
+        {
+          "mechanism": "typed_exact_admission",
+          "before_title": "2025 Topps Signature Class George Kittle 027/150 Auto",
+          "after_title": "2025 Topps Signature Class George Kittle Pick 2 027/150 Auto",
+          "delta_f1": 0.10909090909090902,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "card_name"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_d3bcbaa288c732ffed37",
+      "reference": "2023 Topps Chrome Disney 100 Anna Refractor 082/100 PSA 10",
+      "baseline_title": "2023 Topps Disney 100 Chrome Anna 100-Year Diamond Refractor 82/100 PSA 10",
+      "candidate_title": "2023 Topps Disney 100 Chrome Anna 100-Year Diamond Refractor 082/100 PSA 10",
+      "final_delta_f1": 0.09090909090909083,
+      "reference_losses": [],
+      "title_losses": [
+        "82/100"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "front_same_value_serial"
+      ],
+      "stages": [
+        {
+          "mechanism": "front_same_value_serial",
+          "before_title": "2023 Topps Disney 100 Chrome Anna 100-Year Diamond Refractor 82/100 PSA 10",
+          "after_title": "2023 Topps Disney 100 Chrome Anna 100-Year Diamond Refractor 082/100 PSA 10",
+          "delta_f1": 0.09090909090909083,
+          "reference_losses": [],
+          "title_losses": [
+            "82/100"
+          ],
+          "sanctioned_title_losses": [
+            "82/100"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "serial"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_12f2d135218a7ca35d3e",
+      "reference": "2025 Topps Tribute Bobby Witt Jr. Milestone Relics Jumbo Black Auto HR Derby 1/1",
+      "baseline_title": "2025 Topps Tribute Bobby Witt Jr. Milestone Jumbo Black Auto Relic",
+      "candidate_title": "2025 Topps Tribute Bobby Witt Jr. Milestone Jumbo Black Auto Relic Derby",
+      "final_delta_f1": 0.0461538461538461,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "typed_exact_admission"
+      ],
+      "stages": [
+        {
+          "mechanism": "typed_exact_admission",
+          "before_title": "2025 Topps Tribute Bobby Witt Jr. Milestone Jumbo Black Auto Relic",
+          "after_title": "2025 Topps Tribute Bobby Witt Jr. Milestone Jumbo Black Auto Relic Derby",
+          "delta_f1": 0.0461538461538461,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "release_variant"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_646c3f4af20b9ee7fe07",
+      "reference": "2025 Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo Red RC Refractor lotx3",
+      "baseline_title": "3 Card Lot 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "candidate_title": "lotx3 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "final_delta_f1": 0.1346153846153847,
+      "reference_losses": [],
+      "title_losses": [
+        "3",
+        "card",
+        "lot"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ],
+      "stages": [
+        {
+          "mechanism": "compact_lot_quantity",
+          "before_title": "3 Card Lot 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+          "after_title": "lotx3 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+          "delta_f1": 0.1346153846153847,
+          "reference_losses": [],
+          "title_losses": [
+            "3",
+            "card",
+            "lot"
+          ],
+          "sanctioned_title_losses": [
+            "3",
+            "card",
+            "lot"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "compact_lot_quantity",
+              "source_field": "lot_count"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_c279329f2f78d7f65071",
+      "reference": "2018-19 Panini Hoops Trae Young RC Rookie PSA 9",
+      "baseline_title": "2018 Panini Hoops Trae Young RC PSA 9",
+      "candidate_title": "2018-19 Panini Hoops Trae Young RC PSA 9",
+      "final_delta_f1": 0.05847953216374269,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "exact_season_suffix"
+      ],
+      "stages": [
+        {
+          "mechanism": "exact_season_suffix",
+          "before_title": "2018 Panini Hoops Trae Young RC PSA 9",
+          "after_title": "2018-19 Panini Hoops Trae Young RC PSA 9",
+          "delta_f1": 0.05847953216374269,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "year"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_4aa0c1e7f7e95ed8ae49",
+      "reference": "2023-24 Topps Chrome UCC Lamine Yamal Violet Speckle Refractor Auto 252/299",
+      "baseline_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal 202/299 RC Auto BGS 9",
+      "candidate_title": "2023-24 Topps Chrome Lamine Yamal Violet Speckle Refractor 202/299 RC Auto BGS 9",
+      "final_delta_f1": 0.23076923076923073,
+      "reference_losses": [],
+      "title_losses": [
+        "uefa",
+        "club",
+        "competitions"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "typed_product_finish_compaction"
+      ],
+      "stages": [
+        {
+          "mechanism": "typed_product_finish_compaction",
+          "before_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal 202/299 RC Auto BGS 9",
+          "after_title": "2023-24 Topps Chrome Lamine Yamal Violet Speckle Refractor 202/299 RC Auto BGS 9",
+          "delta_f1": 0.23076923076923073,
+          "reference_losses": [],
+          "title_losses": [
+            "uefa",
+            "club",
+            "competitions"
+          ],
+          "sanctioned_title_losses": [
+            "uefa",
+            "club",
+            "competitions"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "typed_product_finish_compaction",
+              "restored_bracket": "print_finish"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_d768c8f01fbfdd779bb0",
+      "reference": "2026 Bowman Chrome Kendry Chourio Marek Houston Aiva Arquette 1st Base lotx10",
+      "baseline_title": "9 Card Lot 2024 Topps Bowman Chrome Kendry Chourio Marek Houston Aiva Aruquette",
+      "candidate_title": "lotx9 2024 Topps Bowman Chrome Kendry Chourio Marek Houston Aiva Aruquette",
+      "final_delta_f1": 0.04869565217391314,
+      "reference_losses": [],
+      "title_losses": [
+        "9",
+        "card",
+        "lot"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ],
+      "stages": [
+        {
+          "mechanism": "compact_lot_quantity",
+          "before_title": "9 Card Lot 2024 Topps Bowman Chrome Kendry Chourio Marek Houston Aiva Aruquette",
+          "after_title": "lotx9 2024 Topps Bowman Chrome Kendry Chourio Marek Houston Aiva Aruquette",
+          "delta_f1": 0.04869565217391314,
+          "reference_losses": [],
+          "title_losses": [
+            "9",
+            "card",
+            "lot"
+          ],
+          "sanctioned_title_losses": [
+            "9",
+            "card",
+            "lot"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "compact_lot_quantity",
+              "source_field": "lot_count"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_c6ecb08d49256335aa6b",
+      "reference": "2025-26 Bowman Chrome Sapphire Edition Brayden Burries 1st RC Auto Blue Refractor",
+      "baseline_title": "2025-26 Topps Bowman Chrome Prospect Autograph Brayden Burries Auto",
+      "candidate_title": "2025-26 Topps Bowman Chrome Prospect 1st Brayden Burries Blue Wave Auto",
+      "final_delta_f1": 0.11130434782608689,
+      "reference_losses": [],
+      "title_losses": [
+        "autograph"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "finish_family_color_only",
+        "typed_exact_admission"
+      ],
+      "stages": [
+        {
+          "mechanism": "finish_family_color_only",
+          "before_title": "2025-26 Topps Bowman Chrome Prospect Autograph Brayden Burries Auto",
+          "after_title": "2025-26 Topps Bowman Chrome Prospect Autograph Brayden Burries Blue Wave Auto",
+          "delta_f1": 0.03130434782608704,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "finish_family_color_only",
+              "details": []
+            }
+          ]
+        },
+        {
+          "mechanism": "typed_exact_admission",
+          "before_title": "2025-26 Topps Bowman Chrome Prospect Autograph Brayden Burries Blue Wave Auto",
+          "after_title": "2025-26 Topps Bowman Chrome Prospect 1st Brayden Burries Blue Wave Auto",
+          "delta_f1": 0.07999999999999985,
+          "reference_losses": [],
+          "title_losses": [
+            "autograph"
+          ],
+          "sanctioned_title_losses": [
+            "autograph"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "set"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_ee03ba06dd634655b4ba",
+      "reference": "2024-25 Panini Revolution Victor Wembanyama Kaboom-Horizontal BGS 9",
+      "baseline_title": "2024-25 Panini Revolution Victor Wembanyama Horizontal Blue Foil BGS 9",
+      "candidate_title": "2024-25 Panini Revolution Victor Wembanyama KABOOM HORIZONTAL Blue Foil BGS 9",
+      "final_delta_f1": 0.051948051948051854,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "attested_insert"
+      ],
+      "stages": [
+        {
+          "mechanism": "attested_insert",
+          "before_title": "2024-25 Panini Revolution Victor Wembanyama Horizontal Blue Foil BGS 9",
+          "after_title": "2024-25 Panini Revolution Victor Wembanyama KABOOM HORIZONTAL Blue Foil BGS 9",
+          "delta_f1": 0.051948051948051854,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "attested_insert",
+              "details": [
+                {
+                  "field": "card_name"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_8922f71c190ac8dbeca8",
+      "reference": "2026 Topps Chrome Disney Elsa Blue Sparkle Refractor 025/150",
+      "baseline_title": "2026 EN Topps Chrome Elsa #168 025/150 Blue Prismatic",
+      "candidate_title": "2026 EN Topps Chrome Disney Elsa #168 025/150 Blue Prismatic",
+      "final_delta_f1": 0.07017543859649111,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ],
+      "stages": [
+        {
+          "mechanism": "candidate_identity_v3",
+          "before_title": "2026 EN Topps Chrome Elsa #168 025/150 Blue Prismatic",
+          "after_title": "2026 EN Topps Chrome Disney Elsa #168 025/150 Blue Prismatic",
+          "delta_f1": 0.07017543859649111,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "candidate_identity_v3",
+              "details": [
+                {
+                  "field": "set"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_7059d3b39d01402f0e61",
+      "reference": "2026 Topps Chrome VeeFriends Common Sense Cow Black Mini Diamond Refractor 07/10",
+      "baseline_title": "2026 Topps Chrome Common Sense Cow Original Artwork Rainbow Cracked Ice 9/10",
+      "candidate_title": "2026 Topps Chrome VeeFriends Common Sense Cow Original Artwork 9/10",
+      "final_delta_f1": 0.13636363636363646,
+      "reference_losses": [],
+      "title_losses": [
+        "rainbow",
+        "cracked",
+        "ice"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ],
+      "stages": [
+        {
+          "mechanism": "candidate_identity_v3",
+          "before_title": "2026 Topps Chrome Common Sense Cow Original Artwork Rainbow Cracked Ice 9/10",
+          "after_title": "2026 Topps Chrome VeeFriends Common Sense Cow Original Artwork 9/10",
+          "delta_f1": 0.13636363636363646,
+          "reference_losses": [],
+          "title_losses": [
+            "rainbow",
+            "cracked",
+            "ice"
+          ],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [
+            "rainbow",
+            "cracked",
+            "ice"
+          ],
+          "actions": [
+            {
+              "mechanism": "candidate_identity_v3",
+              "details": [
+                {
+                  "field": "set"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_1ab36981fdce86771040",
+      "reference": "2026 Topps Chrome Disney Mufasa Dalmatian Refractor 004/101",
+      "baseline_title": "2026 Topps Chrome Mufasa #164 09/10 Rainbow Refractor",
+      "candidate_title": "2026 Topps Chrome Disney Mufasa #164 09/10 Rainbow Refractor",
+      "final_delta_f1": 0.08088235294117652,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ],
+      "stages": [
+        {
+          "mechanism": "candidate_identity_v3",
+          "before_title": "2026 Topps Chrome Mufasa #164 09/10 Rainbow Refractor",
+          "after_title": "2026 Topps Chrome Disney Mufasa #164 09/10 Rainbow Refractor",
+          "delta_f1": 0.08088235294117652,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "candidate_identity_v3",
+              "details": [
+                {
+                  "field": "set"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_8cabcafd0596fbab0bb0",
+      "reference": "2022 Panini Donruss Optic Cee Dee Lamb Legendary Logos 02/25",
+      "baseline_title": "2022 Panini Donruss Legendary Logos CeeDee Lamb Cowboys Purple Prizm 21/25 Relic",
+      "candidate_title": "2022 Panini Donruss Optic Legendary Logos CeeDee Lamb Purple Prizm 21/25 Relic",
+      "final_delta_f1": 0.09090909090909105,
+      "reference_losses": [],
+      "title_losses": [
+        "cowboys"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "typed_exact_admission"
+      ],
+      "stages": [
+        {
+          "mechanism": "typed_exact_admission",
+          "before_title": "2022 Panini Donruss Legendary Logos CeeDee Lamb Cowboys Purple Prizm 21/25 Relic",
+          "after_title": "2022 Panini Donruss Optic Legendary Logos CeeDee Lamb Purple Prizm 21/25 Relic",
+          "delta_f1": 0.09090909090909105,
+          "reference_losses": [],
+          "title_losses": [
+            "cowboys"
+          ],
+          "sanctioned_title_losses": [
+            "cowboys"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "field": "product"
+            },
+            {
+              "field": "card_name"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_1b6c3c565cffb8fb3442",
+      "reference": "2026 Bowman Chrome Walker JenkinsRefractor Josh Knoth /250/399/175/299 lotx4",
+      "baseline_title": "4 Card Lot 2026 Topps Bowman Chrome Walker Jenkins Josh Knoth Liam Doyle",
+      "candidate_title": "lotx4 2026 Topps Bowman Chrome Walker Jenkins Josh Knoth Liam Doyle",
+      "final_delta_f1": 0.15454545454545454,
+      "reference_losses": [],
+      "title_losses": [
+        "4",
+        "card",
+        "lot"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ],
+      "stages": [
+        {
+          "mechanism": "compact_lot_quantity",
+          "before_title": "4 Card Lot 2026 Topps Bowman Chrome Walker Jenkins Josh Knoth Liam Doyle",
+          "after_title": "lotx4 2026 Topps Bowman Chrome Walker Jenkins Josh Knoth Liam Doyle",
+          "delta_f1": 0.15454545454545454,
+          "reference_losses": [],
+          "title_losses": [
+            "4",
+            "card",
+            "lot"
+          ],
+          "sanctioned_title_losses": [
+            "4",
+            "card",
+            "lot"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "compact_lot_quantity",
+              "source_field": "lot_count"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_f246b38058854d10b78a",
+      "reference": "2018-19 Panini Certified Jalen Brunson RC Mirror Orange /99 PSA 9 Rookie",
+      "baseline_title": "2018 Panini Certified Jalen Brunson Mirror Orange RC PSA 9",
+      "candidate_title": "2018-19 Panini Certified Jalen Brunson Mirror Orange RC PSA 9",
+      "final_delta_f1": 0.047101449275362195,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "phrase_aware_resolver_guard"
+      ],
+      "stages": [
+        {
+          "mechanism": "phrase_aware_resolver_guard",
+          "before_title": "2018 Panini Certified Jalen Brunson Mirror Orange RC PSA 9",
+          "after_title": "2018-19 Panini Certified Jalen Brunson Mirror Orange RC PSA 9",
+          "delta_f1": 0.047101449275362195,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "candidate_field": "year",
+              "candidate_value": "2018-19",
+              "admission_reason": "exact_consecutive_season_from_typed_role"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_70559ba85193165a2f95",
+      "reference": "2018 Topps Shohei Ohtani Silver Pack RC Blue Refractor 018/150 PSA 10",
+      "baseline_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo 018/150 RC PSA 10",
+      "candidate_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo Blue 018/150 RC PSA 10",
+      "final_delta_f1": 0.0461538461538461,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "exact_parallel_color_compaction"
+      ],
+      "stages": [
+        {
+          "mechanism": "exact_parallel_color_compaction",
+          "before_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo 018/150 RC PSA 10",
+          "after_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo Blue 018/150 RC PSA 10",
+          "delta_f1": 0.0461538461538461,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "exact_parallel_color_compaction",
+              "restored_bracket": "print_finish"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_7815e1aeda1f8e00dd4e",
+      "reference": "2026 Topps Chrome VeeFriends Adaptable Alien Orange Mini Diamond Refractor /25",
+      "baseline_title": "2026 Topps Chrome Adaptable Alien Orange Sparkle",
+      "candidate_title": "2026 Topps Chrome VeeFriends Adaptable Alien Orange Sparkle",
+      "final_delta_f1": 0.07017543859649134,
+      "reference_losses": [],
+      "title_losses": [],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "product_known_manufacturer_extension"
+      ],
+      "stages": [
+        {
+          "mechanism": "product_known_manufacturer_extension",
+          "before_title": "2026 Topps Chrome Adaptable Alien Orange Sparkle",
+          "after_title": "2026 Topps Chrome VeeFriends Adaptable Alien Orange Sparkle",
+          "delta_f1": 0.07017543859649134,
+          "reference_losses": [],
+          "title_losses": [],
+          "sanctioned_title_losses": [],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "product_known_manufacturer_extension",
+              "details": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_77f1063c48c35c3d3583",
+      "reference": "2020 Panini Flawless Justin Herbert Rookie Dual Patch Auto Silver RC 05/20 PSA 9/10",
+      "baseline_title": "2020 Panini Flawless Justin Herbert Rookie Dual Patch Auto 5/20 RC PSA 9",
+      "candidate_title": "2020 Panini Flawless Justin Herbert Rookie Dual Patch Auto 05/20 RC PSA 9",
+      "final_delta_f1": 0.07407407407407418,
+      "reference_losses": [],
+      "title_losses": [
+        "5/20"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "serial_single_digit_v1"
+      ],
+      "stages": [
+        {
+          "mechanism": "serial_single_digit_v1",
+          "before_title": "2020 Panini Flawless Justin Herbert Rookie Dual Patch Auto 5/20 RC PSA 9",
+          "after_title": "2020 Panini Flawless Justin Herbert Rookie Dual Patch Auto 05/20 RC PSA 9",
+          "delta_f1": 0.07407407407407418,
+          "reference_losses": [],
+          "title_losses": [
+            "5/20"
+          ],
+          "sanctioned_title_losses": [
+            "5/20"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "serial_single_digit_v1",
+              "details": [
+                {
+                  "field": "serial"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_5bbc14c582d6f0b34f77",
+      "reference": "2026 Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo Red RC Refractor lotx3",
+      "baseline_title": "3 Card Lot 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "candidate_title": "lotx3 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "final_delta_f1": 0.14102564102564097,
+      "reference_losses": [],
+      "title_losses": [
+        "3",
+        "card",
+        "lot"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ],
+      "stages": [
+        {
+          "mechanism": "compact_lot_quantity",
+          "before_title": "3 Card Lot 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+          "after_title": "lotx3 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+          "delta_f1": 0.14102564102564097,
+          "reference_losses": [],
+          "title_losses": [
+            "3",
+            "card",
+            "lot"
+          ],
+          "sanctioned_title_losses": [
+            "3",
+            "card",
+            "lot"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "kind": "compact_lot_quantity",
+              "source_field": "lot_count"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_1638841b99625325c7d4",
+      "reference": "2010-11 Panini Absolute Kobe Bryant Hoopla Signatures Auto 08/25 PSA 10",
+      "baseline_title": "2010-11 Panini Absolute Memorabilia Kobe Bryant Hoopla 8/25 Auto Patch PSA 10",
+      "candidate_title": "2010-11 Panini Absolute Memorabilia Kobe Bryant Hoopla 08/25 Auto Patch PSA 10",
+      "final_delta_f1": 0.07999999999999985,
+      "reference_losses": [],
+      "title_losses": [
+        "8/25"
+      ],
+      "unbacked_new_tokens": [],
+      "lost_numeric_values": [],
+      "unbacked_numeric_values": [],
+      "unrelated_field_drift": [],
+      "changed_mechanisms": [
+        "serial_single_digit_v1"
+      ],
+      "stages": [
+        {
+          "mechanism": "serial_single_digit_v1",
+          "before_title": "2010-11 Panini Absolute Memorabilia Kobe Bryant Hoopla 8/25 Auto Patch PSA 10",
+          "after_title": "2010-11 Panini Absolute Memorabilia Kobe Bryant Hoopla 08/25 Auto Patch PSA 10",
+          "delta_f1": 0.07999999999999985,
+          "reference_losses": [],
+          "title_losses": [
+            "8/25"
+          ],
+          "sanctioned_title_losses": [
+            "8/25"
+          ],
+          "unsanctioned_title_losses": [],
+          "actions": [
+            {
+              "mechanism": "serial_single_digit_v1",
+              "details": [
+                {
+                  "field": "serial"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "asset_id": "reviewed_blind_0692862d56755fe4e863",
+      "baseline_title": "2023-24 Panini Donruss Optic Spencer Dinwiddie Green Prizm 6/8",
+      "candidate_title": "2023-24 Panini Donruss Optic Spencer Dinwiddie Green Prizm 6/8",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_cd842de8c33e22b20d47",
+      "baseline_title": "2025 Topps Chrome Victor Wembanyama Gold Refractor 17/50",
+      "candidate_title": "2025 Topps Chrome Victor Wembanyama Gold Refractor 17/50",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_cbc017ae11b53874adf3",
+      "baseline_title": "1996 Topps Chrome Michael Jordan Rainbow Refractor",
+      "candidate_title": "1996 Topps Chrome Michael Jordan Rainbow Refractor",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_dfba61396ec82f2b864e",
+      "baseline_title": "2018 Panini Prizm Jalen Brunson Mojo Prizm 13/25 RC PSA 9",
+      "candidate_title": "2018-19 Panini Prizm Jalen Brunson Mojo Prizm 13/25 RC PSA 9",
+      "final_delta_f1": 0.04761904761904767,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "exact_season_suffix"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_3c690ab7d28f6c3d3e89",
+      "baseline_title": "2026 Topps UEFA Champions League Bukayo Saka Home Advantage Rainbow Foil",
+      "candidate_title": "2026 Topps UEFA Champions League Bukayo Saka Home Advantage Rainbow Foil",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_b58559bf3334cd6ff54b",
+      "baseline_title": "2025 Topps Bowman Chrome Kendry Chourio Briefing Purple Wave 105/250 1st Edition",
+      "candidate_title": "2025 Topps Bowman Chrome Kendry Chourio Briefing Purple Wave 105/250 1st Edition",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_9ef085a2c3022091aec0",
+      "baseline_title": "2024 Topps Chrome Holger Rune 37/50",
+      "candidate_title": "2024 Topps Chrome Holger Rune 37/50",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_a78c9e94bec0ced79c29",
+      "baseline_title": "2019-20 Panini Eminence Peerless Patches Stephen Curry 3/5 Auto Patch Relic",
+      "candidate_title": "2019-20 Panini Eminence Peerless Patches Stephen Curry 3/5 Auto Patch Relic",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_3215d29874a3dad22bbb",
+      "baseline_title": "2024 Topps Chrome Karim Lopez RC Auto",
+      "candidate_title": "2024 Topps Chrome NBL Karim Lopez RC Auto",
+      "final_delta_f1": 0.06617647058823517,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "typed_exact_admission"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_6b8dd60cff233e74c68a",
+      "baseline_title": "1984-85 Star Michael Jordan Gold Medalist SCD 7",
+      "candidate_title": "1984-85 Star Michael Jordan Gold Medalist SCD 7",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_a38ced8b163264d9d95a",
+      "baseline_title": "2020 Panini Contenders Anthony Edwards Rookie Ticket Variation RC Auto PSA 10",
+      "candidate_title": "2020-21 Panini Contenders Anthony Edwards Rookie Ticket Variation RC Auto PSA 10",
+      "final_delta_f1": 0.043333333333333446,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "exact_season_suffix"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_e9dae371785094df079c",
+      "baseline_title": "2025 Topps All Kings Jalen Brunson Rainbow Foil PSA 9",
+      "candidate_title": "2025 Topps All Kings Jalen Brunson Rainbow Foil PSA 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_a12d7e8c2d623c870df4",
+      "baseline_title": "2023 Topps Heritage Jackson Chourio RC",
+      "candidate_title": "2023 Topps Heritage Jackson Chourio RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_a0f9f2aba5a459e23140",
+      "baseline_title": "2025-26 Topps Finest Masters Autograph Cooper Flagg Gold Prismatic 1/25 RC Auto",
+      "candidate_title": "2025-26 Topps Finest Masters Autograph Cooper Flagg Gold Prismatic 1/25 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_52c03ac5508069913414",
+      "baseline_title": "2026 Topps Bowman Chrome Shohei Ohtani Blue Sparkle",
+      "candidate_title": "2026 Topps Bowman Chrome Shohei Ohtani Blue Sparkle",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_5edfef737b8f58f5253b",
+      "baseline_title": "2025 Topps Chrome Dalton Rushing 12/25 RC Auto",
+      "candidate_title": "2025 Topps Chrome Dalton Rushing Orange Refractor 12/25 RC Auto",
+      "final_delta_f1": 0.10909090909090902,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "finish_family_color_only"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_d22900c718eb034ad08d",
+      "baseline_title": "2025 Panini Prizm Abdul Carter Silver Prizm RC",
+      "candidate_title": "2025 Panini Prizm Abdul Carter Silver Prizm RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_8541091b7125268e2d05",
+      "baseline_title": "1998 Fleer Ultra Gold Medallion Edition Michael Jordan PSA 10",
+      "candidate_title": "1998 Fleer Ultra Gold Medallion Edition Michael Jordan PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_9aa010e8badc5bece7b9",
+      "baseline_title": "2020 Panini Contenders Optic Denzel Mims Rookie Ticket Green Prizm 18/27 RC Auto",
+      "candidate_title": "2020 Panini Contenders Optic Denzel Mims Rookie Ticket Green Prizm 18/27 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_67bb24bb668bed358368",
+      "baseline_title": "2025 Topps Ronaldinho Home Advantage",
+      "candidate_title": "2025 Topps Ronaldinho Home Advantage",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_410c0c9aa76e944a0cbc",
+      "baseline_title": "2001 Donruss Willie Mays Barry Bonds Passing the Torch 22/50 Auto PSA Authentic",
+      "candidate_title": "2001 Donruss Willie Mays Barry Bonds Passing the Torch 22/50 Auto PSA Authentic",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_5b9bb32f10e297d65584",
+      "baseline_title": "2026 Topps Bowman Chrome Mega Futures Roman Anthony Rainbow Geometric RC",
+      "candidate_title": "2026 Topps Bowman Chrome Mega Futures Roman Anthony Rainbow Geometric RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_a0250627a306090528ce",
+      "baseline_title": "1968 Topps Jerry Koosman Nolan Ryan Rookie Stars RC PSA 6",
+      "candidate_title": "1968 Topps Jerry Koosman Nolan Ryan Rookie Stars RC PSA 6",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_72e1bdac368317a7c3b1",
+      "baseline_title": "2025 Topps Diana Shnaider Mirrored",
+      "candidate_title": "2025 Topps GRAPHITE Diana Shnaider Mirrored",
+      "final_delta_f1": 0.10256410256410253,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_bcc4e7ac4ac23e1e69d3",
+      "baseline_title": "4 Card Lot 2026 Topps Bowman Chrome Xavier Neyens Silver Prismatic",
+      "candidate_title": "lotx4 2026 Topps Bowman Chrome Xavier Neyens Silver Prismatic",
+      "final_delta_f1": 0.14545454545454545,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_52526222b532fbef54e2",
+      "baseline_title": "2024-25 Panini Court Kings Victor Wembanyama Dressed to Impress 41/49",
+      "candidate_title": "2024-25 Panini Court Kings Victor Wembanyama Dressed to Impress 41/49",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_098dbc6f39f5cccb43ff",
+      "baseline_title": "2025 Leaf Metal Next In Line Caden Bodine Horizontal Red Foil 11/15 Auto",
+      "candidate_title": "2025 Leaf Metal Next In Line Caden Bodine Horizontal Red Foil 11/15 Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_b70318cffa06b389f851",
+      "baseline_title": "2022 Game of Thrones Kit Harington Auto Costume 12/50 Relic BGS 9.5",
+      "candidate_title": "2022 Game of Thrones Kit Harington Auto Costume 12/50 Relic BGS 9.5",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_cba457f4bf50ba75d06a",
+      "baseline_title": "2018 Panini Kaboom! Neymar Jr. PSA 10",
+      "candidate_title": "2018 Panini Kaboom! Neymar Jr. PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_89cde2e9bc69a6edb4fd",
+      "baseline_title": "2019 Topps Luminaries Shohei Ohtani Home Run Total, Angels® Rookie 19/15 RC Auto",
+      "candidate_title": "2019 Topps Luminaries Shohei Ohtani Home Run Total, Angels® Rookie 19/15 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_f371844dc1d0c6e49f92",
+      "baseline_title": "Topps Chrome Qui-Gon Jinn Obi-Wan Kenobi Darth Maul Duel of the Fates",
+      "candidate_title": "Topps Chrome STAR WARS Qui-Gon Jinn Obi-Wan Kenobi Darth Maul Duel of the Fates",
+      "final_delta_f1": 0.1023359288097887,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_46be33ef1f2dbc0956af",
+      "baseline_title": "2025 Topps Finest Shohei Ohtani Gusto 5/5",
+      "candidate_title": "2025 Topps Finest Shohei Ohtani Gusto 5/5",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_6cbe7097beee5ecb14ba",
+      "baseline_title": "2026 Topps Trey Yesavage 14/50 RC Relic",
+      "candidate_title": "2026 Topps Trey Yesavage 14/50 RC Relic",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_6d227f82fdcb2ded4b6d",
+      "baseline_title": "3 Card Lot 2026 Topps Bowman Chrome Sam Petersen Silver Refractor 034/499",
+      "candidate_title": "lotx3 2026 Topps Bowman Chrome Sam Petersen Silver Refractor 034/499",
+      "final_delta_f1": 0.12869565217391293,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_940144961215fef91c18",
+      "baseline_title": "2025 Topps Signature Class George Kittle 27/150 Auto",
+      "candidate_title": "2025 Topps Signature Class George Kittle Pick 2 027/150 Auto",
+      "final_delta_f1": 0.209090909090909,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "front_same_value_serial",
+        "typed_exact_admission"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_080f2cb760945426220d",
+      "baseline_title": "2023 Leaf Happy Holidays Olivia Miles Auto",
+      "candidate_title": "2023 Leaf Happy Holidays Olivia Miles Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_bc9654d83b13db44d507",
+      "baseline_title": "2026 Topps Series Two Carter Jensen RC",
+      "candidate_title": "2026 Topps Series Two Carter Jensen RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_d3bcbaa288c732ffed37",
+      "baseline_title": "2023 Topps Disney 100 Chrome Anna 100-Year Diamond Refractor 82/100 PSA 10",
+      "candidate_title": "2023 Topps Disney 100 Chrome Anna 100-Year Diamond Refractor 082/100 PSA 10",
+      "final_delta_f1": 0.09090909090909083,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "front_same_value_serial"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_cd081e3a017a5c05b5b5",
+      "baseline_title": "2023-24 Panini One and One Basketball LeBron James Downtown Variation PSA 10",
+      "candidate_title": "2023-24 Panini One and One Basketball LeBron James Downtown Variation PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e0962fbbfd41c6c77f55",
+      "baseline_title": "1976 Topps Walter Payton PSA 9",
+      "candidate_title": "1976 Topps Walter Payton PSA 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_12f2d135218a7ca35d3e",
+      "baseline_title": "2025 Topps Tribute Bobby Witt Jr. Milestone Jumbo Black Auto Relic",
+      "candidate_title": "2025 Topps Tribute Bobby Witt Jr. Milestone Jumbo Black Auto Relic Derby",
+      "final_delta_f1": 0.0461538461538461,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "typed_exact_admission"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_69e5113bcd0c8438df45",
+      "baseline_title": "2026 Topps Bowman Chrome Yojancel Cabrera Blue Geometric 119/150 Auto 1st Bowman",
+      "candidate_title": "2026 Topps Bowman Chrome Yojancel Cabrera Blue Geometric 119/150 Auto 1st Bowman",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_316c9c2012386b0a64ed",
+      "baseline_title": "2025 Futera Unique Miroslav Klose Elite 17/20 Relic Jersey",
+      "candidate_title": "2025 Futera Unique Miroslav Klose Elite 17/20 Relic Jersey",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_646c3f4af20b9ee7fe07",
+      "baseline_title": "3 Card Lot 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "candidate_title": "lotx3 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "final_delta_f1": 0.1346153846153847,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_85c1779f6c205ba425c6",
+      "baseline_title": "2018 Topps Chrome Shohei Ohtani Prism Refractor RC PSA 10",
+      "candidate_title": "2018 Topps Chrome Shohei Ohtani Prism Refractor RC PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_f38c2a941033069e52b2",
+      "baseline_title": "2007-08 Upper Deck Sweet Shot Signature Shots LeBron James 47/100 Auto BGS 9",
+      "candidate_title": "2007-08 Upper Deck Sweet Shot Signature Shots LeBron James 47/100 Auto BGS 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e90ca474692fe8f57b44",
+      "baseline_title": "2025-26 Topps Bowman Chrome Sapphire Selections Cooper Flagg Auto RC",
+      "candidate_title": "2025-26 Topps Bowman Chrome Sapphire Selections Cooper Flagg Auto RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_8b3024b5cc435830e80c",
+      "baseline_title": "2025 Panini Donruss Throwback Travis Hunter Rated Rookie RC",
+      "candidate_title": "2025 Panini Donruss Throwback Travis Hunter Rated Rookie RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_34413231dd0ea69e68a4",
+      "baseline_title": "2025 Panini Mosaic KeAndre Lambert-Smith Rainbow Prizm RC Auto",
+      "candidate_title": "2025 Panini Mosaic KeAndre Lambert-Smith Rainbow Prizm RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_c279329f2f78d7f65071",
+      "baseline_title": "2018 Panini Hoops Trae Young RC PSA 9",
+      "candidate_title": "2018-19 Panini Hoops Trae Young RC PSA 9",
+      "final_delta_f1": 0.05847953216374269,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "exact_season_suffix"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_4aa0c1e7f7e95ed8ae49",
+      "baseline_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal 202/299 RC Auto BGS 9",
+      "candidate_title": "2023-24 Topps Chrome Lamine Yamal Violet Speckle Refractor 202/299 RC Auto BGS 9",
+      "final_delta_f1": 0.23076923076923073,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "typed_product_finish_compaction"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_ba0f97b835e28571d19f",
+      "baseline_title": "2025-26 Topps Chrome Next Stop Signatures Cooper Flagg 72/75 RC Auto",
+      "candidate_title": "2025-26 Topps Chrome Next Stop Signatures Cooper Flagg 72/75 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_159b07bd6d12e0e4e794",
+      "baseline_title": "2025 Topps Chrome Platinum Luisangel Acuna 18/50 RC Auto",
+      "candidate_title": "2025 Topps Chrome Platinum Luisangel Acuna 18/50 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_5578954f2c4a40caf3bc",
+      "baseline_title": "2025-26 Topps 3 Victor Wembanyama Rain Drops Signatures Rainbow Foil 3/5 Auto",
+      "candidate_title": "2025-26 Topps 3 Victor Wembanyama Rain Drops Signatures Rainbow Foil 3/5 Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_145998198f262d24fb1b",
+      "baseline_title": "2025 Panini Prizm Tetairoa McMillan Red Prizm 88/149 RC",
+      "candidate_title": "2025 Panini Prizm Tetairoa McMillan Red Prizm 88/149 RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_63bfb7a3cd432ce59360",
+      "baseline_title": "2026 Topps Chrome Roman Anthony Green Geometric RC",
+      "candidate_title": "2026 Topps Chrome Roman Anthony Green Geometric RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_50e7a946ce9892a1f2fb",
+      "baseline_title": "2024 Panini Obsidian Jahmyr Gibbs RC",
+      "candidate_title": "2024 Panini Obsidian Jahmyr Gibbs RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_6683a671093f786a0948",
+      "baseline_title": "2002 Fleer Greats of the Game Through the Years Bo Jackson Relic Jersey",
+      "candidate_title": "2002 Fleer Greats of the Game Through the Years Bo Jackson Relic Jersey",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e2c50c291e40a226e90e",
+      "baseline_title": "2025 Topps Chrome Platinum Griffin Conine Gold Refractor 27/50 RC Auto",
+      "candidate_title": "2025 Topps Chrome Platinum Griffin Conine Gold Refractor 27/50 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_d768c8f01fbfdd779bb0",
+      "baseline_title": "9 Card Lot 2024 Topps Bowman Chrome Kendry Chourio Marek Houston Aiva Aruquette",
+      "candidate_title": "lotx9 2024 Topps Bowman Chrome Kendry Chourio Marek Houston Aiva Aruquette",
+      "final_delta_f1": 0.04869565217391314,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_b514a8918dbc221a17bd",
+      "baseline_title": "2025 Topps Chrome Shohei Ohtani Auto",
+      "candidate_title": "2025 Topps Chrome Shohei Ohtani Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_12eca650b27f025d5a1c",
+      "baseline_title": "2024-25 Panini Prizm Premier League Soccer Erling Haaland Signature Auto PSA 7",
+      "candidate_title": "2024-25 Panini Prizm Premier League Soccer Erling Haaland Signature Auto PSA 7",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_64d10f8c8986aa1c9af4",
+      "baseline_title": "1986 Court Kings Michael Jordan 18/33 Sports Collectors Digest Authentic 8.5",
+      "candidate_title": "1986 Court Kings Michael Jordan 18/33 Sports Collectors Digest Authentic 8.5",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_3304222f844f985e9574",
+      "baseline_title": "2025 Topps Bowman Draft Seth Hernandez Chrome Prospect Auto 07/25 RC PSA 10",
+      "candidate_title": "2025 Topps Bowman Draft Seth Hernandez Chrome Prospect Auto 07/25 RC PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_dbf99f2a5e722e98b87a",
+      "baseline_title": "2023-24 Panini Prizm Victor Wembanyama Silver Prizm 118/175 RC",
+      "candidate_title": "2023-24 Panini Prizm Victor Wembanyama Silver Prizm 118/175 RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_3b5183224a0714e832b9",
+      "baseline_title": "2025-26 Topps NBA Hoops Kevin Durant Hoopers Red Holo",
+      "candidate_title": "2025-26 Topps NBA Hoops Kevin Durant Hoopers Red Holo",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_c6ecb08d49256335aa6b",
+      "baseline_title": "2025-26 Topps Bowman Chrome Prospect Autograph Brayden Burries Auto",
+      "candidate_title": "2025-26 Topps Bowman Chrome Prospect 1st Brayden Burries Blue Wave Auto",
+      "final_delta_f1": 0.11130434782608689,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "finish_family_color_only",
+        "typed_exact_admission"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_7ce35af9a6cc749b21c9",
+      "baseline_title": "2025 Topps Chrome McDonald's All American Games Sienna Betts Red Wave",
+      "candidate_title": "2025 Topps Chrome McDonald's All American Games Sienna Betts Red Wave",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e6b0b7875e666c36be6b",
+      "baseline_title": "2023-24 Panini Donruss Optic Jonathan Kuminga Green Prizm 3/8",
+      "candidate_title": "2023-24 Panini Donruss Optic Jonathan Kuminga Green Prizm 3/8",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_ee03ba06dd634655b4ba",
+      "baseline_title": "2024-25 Panini Revolution Victor Wembanyama Horizontal Blue Foil BGS 9",
+      "candidate_title": "2024-25 Panini Revolution Victor Wembanyama KABOOM HORIZONTAL Blue Foil BGS 9",
+      "final_delta_f1": 0.051948051948051854,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "attested_insert"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_2cada69235bf401f2a16",
+      "baseline_title": "2017 Impeccable Patrick Mahomes II Elegance 60/75 Auto Patch Relic BGS 9.5",
+      "candidate_title": "2017 Impeccable Patrick Mahomes II Elegance 60/75 Auto Patch Relic BGS 9.5",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_0dd3315a29711425e71b",
+      "baseline_title": "2 Card Lot 2013 BBM BBM Rookie Edition Shohei Ohtani Tomoyuki Sugano 11/19",
+      "candidate_title": "2 Card Lot 2013 BBM BBM Rookie Edition Shohei Ohtani Tomoyuki Sugano 11/19",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_4c8131eeda536c66d385",
+      "baseline_title": "2025 Topps Signature Class Cooper Flagg Base Rookie Class Auto Red Parallel RC",
+      "candidate_title": "2025 Topps Signature Class Cooper Flagg Base Rookie Class Auto Red Parallel RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_8945fde9c65cb1b9f3a8",
+      "baseline_title": "2023 Leaf Metal Draft Xavier Hutchinson 1/1 RC Auto",
+      "candidate_title": "2023 Leaf Metal Draft Xavier Hutchinson 1/1 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_86c114c0d0e9866d56cf",
+      "baseline_title": "2026 Topps Stars Autograph Brice Matthews RC Auto",
+      "candidate_title": "2026 Topps Stars Autograph Brice Matthews RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_8922f71c190ac8dbeca8",
+      "baseline_title": "2026 EN Topps Chrome Elsa #168 025/150 Blue Prismatic",
+      "candidate_title": "2026 EN Topps Chrome Disney Elsa #168 025/150 Blue Prismatic",
+      "final_delta_f1": 0.07017543859649111,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_92df2086a5b302c00a0b",
+      "baseline_title": "2025 Topps Cosmic Chrome First Flight Signature Jayden Higgins 09/50 RC Auto",
+      "candidate_title": "2025 Topps Cosmic Chrome First Flight Signature Jayden Higgins 09/50 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_0184bc4079b5350adad2",
+      "baseline_title": "2012-13 Panini Immaculate Kobe Bryant All-Star Lineage Auto 03/15 BGS 9",
+      "candidate_title": "2012-13 Panini Immaculate Kobe Bryant All-Star Lineage Auto 03/15 BGS 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_04bed0401e6450349141",
+      "baseline_title": "2024 Topps Chrome Dan Marino",
+      "candidate_title": "2024 Topps Chrome Dan Marino",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e0ee4e7070fe806e72b5",
+      "baseline_title": "2025 Topps Chrome Tyler Booker Silver Refractor RC",
+      "candidate_title": "2025 Topps Chrome Tyler Booker Silver Refractor RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_981cde75132b2b4a3269",
+      "baseline_title": "2024 Topps Chrome Tennis Grigor Dimitrov Auto 03/25",
+      "candidate_title": "2024 Topps Chrome Tennis Grigor Dimitrov Auto 03/25",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_31ed8405fc7d36c8ea60",
+      "baseline_title": "2025 Topps Chrome Jaxson Dart Refractor RC",
+      "candidate_title": "2025 Topps Chrome Jaxson Dart Refractor RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e25ba92ef5f8fb4207a0",
+      "baseline_title": "2022 EN Pokémon Eternatus #TG22/TG30 Rainbow Foil",
+      "candidate_title": "2022 EN Pokémon Eternatus #TG22/TG30 Rainbow Foil",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_c4905891fd0ed7eb8308",
+      "baseline_title": "2024 Topps Bowman Chrome Travis Bazzana 1st Bowman 45/71 RC Auto Edition PSA 10",
+      "candidate_title": "2024 Topps Bowman Chrome Travis Bazzana 1st Bowman 45/71 RC Auto Edition PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_d1cc0f12cdbba0306e8b",
+      "baseline_title": "2025 Topps 75th Anniversary Munetaka Murakami Rainbow Refractor RC",
+      "candidate_title": "2025 Topps 75th Anniversary Munetaka Murakami Rainbow Refractor RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_ac56300fcdbf84e6f7d2",
+      "baseline_title": "1992 Upper Deck Frank Thomas",
+      "candidate_title": "1992 Upper Deck Frank Thomas",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_58264271a4854c4a73ed",
+      "baseline_title": "2026 Topps Chrome Ultra Violet All-Stars Zlatan Ibrahimović 92/99",
+      "candidate_title": "2026 Topps Chrome Ultra Violet All-Stars Zlatan Ibrahimović 92/99",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_0c7b873fec31df71ddb3",
+      "baseline_title": "2023 Wild Card Chrome Chris Rodriguez Jr. Rainbow Prismatic Auto",
+      "candidate_title": "2023 Wild Card Chrome Chris Rodriguez Jr. Rainbow Prismatic Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_7059d3b39d01402f0e61",
+      "baseline_title": "2026 Topps Chrome Common Sense Cow Original Artwork Rainbow Cracked Ice 9/10",
+      "candidate_title": "2026 Topps Chrome VeeFriends Common Sense Cow Original Artwork 9/10",
+      "final_delta_f1": 0.13636363636363646,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_1f3be5eca26948c10405",
+      "baseline_title": "2003 Topps Chrome Kobe Bryant Xfractor 038/220 PSA 9",
+      "candidate_title": "2003 Topps Chrome Kobe Bryant Xfractor 038/220 PSA 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_4a97e73ddf0b28cca095",
+      "baseline_title": "1993 Topps Finest 's Finest Bo Jackson Refractor PSA 10",
+      "candidate_title": "1993 Topps Finest 's Finest Bo Jackson Refractor PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_8c2e0969acfd82951320",
+      "baseline_title": "2025-26 Panini Donruss Hugo González Rated Rookie Red Holo 18/49 RC Auto",
+      "candidate_title": "2025-26 Panini Donruss Hugo González Rated Rookie Red Holo 18/49 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_89e97f6cf6442bdbc497",
+      "baseline_title": "2023 Panini Select Suite Level Christian McCaffrey Red Prizm 4/35",
+      "candidate_title": "2023 Panini Select Suite Level Christian McCaffrey Red Prizm 4/35",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_1ab36981fdce86771040",
+      "baseline_title": "2026 Topps Chrome Mufasa #164 09/10 Rainbow Refractor",
+      "candidate_title": "2026 Topps Chrome Disney Mufasa #164 09/10 Rainbow Refractor",
+      "final_delta_f1": 0.08088235294117652,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "candidate_identity_v3"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_8cabcafd0596fbab0bb0",
+      "baseline_title": "2022 Panini Donruss Legendary Logos CeeDee Lamb Cowboys Purple Prizm 21/25 Relic",
+      "candidate_title": "2022 Panini Donruss Optic Legendary Logos CeeDee Lamb Purple Prizm 21/25 Relic",
+      "final_delta_f1": 0.09090909090909105,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "typed_exact_admission"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_4a36645e653a8b8a8019",
+      "baseline_title": "2024-25 Topps Reverence UEFA Club Competitions Gareth Bale Auto 2/5",
+      "candidate_title": "2024-25 Topps Reverence UEFA Club Competitions Gareth Bale Auto 2/5",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_413aa29a2561ee50f989",
+      "baseline_title": "2025 Topps Triumphant Victoria Mboko 35/35 Auto",
+      "candidate_title": "2025 Topps Triumphant Victoria Mboko 35/35 Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_94876e6b8026ed98af01",
+      "baseline_title": "2013 Calbee Shohei Ohtani Exciting Rookie RC PSA 10",
+      "candidate_title": "2013 Calbee Shohei Ohtani Exciting Rookie RC PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_5fd1a40d7b38a755be74",
+      "baseline_title": "2023-24 Topps Crystal Premium UEFA Champions League Lamine Yamal Auto RC PSA 10",
+      "candidate_title": "2023-24 Topps Crystal Premium UEFA Champions League Lamine Yamal Auto RC PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_8e6763a0f5c15b07ef8a",
+      "baseline_title": "2023-24 Panini Donruss Optic Buddy Hield Green Prizm 2/8",
+      "candidate_title": "2023-24 Panini Donruss Optic Buddy Hield Green Prizm 2/8",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_2e500fea9778f1bfafc7",
+      "baseline_title": "2022 Panini Gold Standard Hunter Renfrow Rush 23/99 Relic",
+      "candidate_title": "2022 Panini Gold Standard Hunter Renfrow Rush 23/99 Relic",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_9be0cc1a90961255c312",
+      "baseline_title": "2024-25 Panini Donruss Optic Downtown Jalen Brunson Green Prizm PSA 10",
+      "candidate_title": "2024-25 Panini Donruss Optic Downtown Jalen Brunson Green Prizm PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_62cc2e317ae5cd859774",
+      "baseline_title": "2025-26 Panini Donruss Yaxel Lendeborg Auto",
+      "candidate_title": "2025-26 Panini Donruss Yaxel Lendeborg Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_576057c604b9c50f806c",
+      "baseline_title": "2025 Panini Donruss Optic Cam Skattebo Rated Rookie Blue Holo RC",
+      "candidate_title": "2025 Panini Donruss Optic Cam Skattebo Rated Rookie Blue Holo RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_1b6c3c565cffb8fb3442",
+      "baseline_title": "4 Card Lot 2026 Topps Bowman Chrome Walker Jenkins Josh Knoth Liam Doyle",
+      "candidate_title": "lotx4 2026 Topps Bowman Chrome Walker Jenkins Josh Knoth Liam Doyle",
+      "final_delta_f1": 0.15454545454545454,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_cbdf65237db1aab4e560",
+      "baseline_title": "2025 Topps Chrome Platinum Spencer Schwellenbach Blue Refractor 18/99 RC Auto",
+      "candidate_title": "2025 Topps Chrome Platinum Spencer Schwellenbach Blue Refractor 18/99 RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_350b42505d0a78017742",
+      "baseline_title": "2025 Panini Black Ricky Pearsall Metallic Marks 166/199 Auto",
+      "candidate_title": "2025 Panini Black Ricky Pearsall Metallic Marks 166/199 Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_34bee0c655a1edcd18b9",
+      "baseline_title": "2003-04 Topps Pristine LeBron James Refractor 1074/1999 BGS 9.5",
+      "candidate_title": "2003-04 Topps Pristine LeBron James Refractor 1074/1999 BGS 9.5",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_f246b38058854d10b78a",
+      "baseline_title": "2018 Panini Certified Jalen Brunson Mirror Orange RC PSA 9",
+      "candidate_title": "2018-19 Panini Certified Jalen Brunson Mirror Orange RC PSA 9",
+      "final_delta_f1": 0.047101449275362195,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "phrase_aware_resolver_guard"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_a0cb37084a005a8998fb",
+      "baseline_title": "2024 Topps Graphite Tennis Jessica Pegula Signature Relics Auto Relic",
+      "candidate_title": "2024 Topps Graphite Tennis Jessica Pegula Signature Relics Auto Relic",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_c2b77d787bd8cd8345e3",
+      "baseline_title": "2025 Pokemon JP Mega Brave Mega Absol ex Special Art Rare #089/063 CGC 10",
+      "candidate_title": "2025 Pokemon JP Mega Brave Mega Absol ex Special Art Rare #089/063 CGC 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_659d6de445a5a7f8fdca",
+      "baseline_title": "2020 Panini Prizm Joe Burrow Auto Rainbow Prizm RC PSA 10",
+      "candidate_title": "2020 Panini Prizm Joe Burrow Auto Rainbow Prizm RC PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_70559ba85193165a2f95",
+      "baseline_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo 018/150 RC PSA 10",
+      "candidate_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo Blue 018/150 RC PSA 10",
+      "final_delta_f1": 0.0461538461538461,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "exact_parallel_color_compaction"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_f584d8bfc9982bfd0246",
+      "baseline_title": "2025 Topps Bowman Chrome Madison Booker Rainbow Prismatic 1st Edition",
+      "candidate_title": "2025 Topps Bowman Chrome Madison Booker Rainbow Prismatic 1st Edition",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_b30172f8db7f7620575f",
+      "baseline_title": "2025 Topps Chrome Javier Báez Rainbow Refractor 03/10 Auto",
+      "candidate_title": "2025 Topps Chrome Javier Báez Rainbow Refractor 03/10 Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_10f650102a783e83aff4",
+      "baseline_title": "2025 Panini Donruss Optic Shedeur Sanders Flashback Gold Prizm RC Relic",
+      "candidate_title": "2025 Panini Donruss Optic Shedeur Sanders Flashback Gold Prizm RC Relic",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_431bf2f794eaf169c532",
+      "baseline_title": "2025 Topps Chrome Cooper Flagg Gold Refractor 30/50 RC",
+      "candidate_title": "2025 Topps Chrome Cooper Flagg Gold Refractor 30/50 RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_268055e5845c6ecfcf83",
+      "baseline_title": "2025 Topps Bowman Chrome Carson Benge Outfielder Yellow Sparkle 50/75",
+      "candidate_title": "2025 Topps Bowman Chrome Carson Benge Outfielder Yellow Sparkle 50/75",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_7c93444e09007eaec82f",
+      "baseline_title": "1998 Upper Deck MJ Timeline Michael Jordan",
+      "candidate_title": "1998 Upper Deck MJ Timeline Michael Jordan",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_88345e7136c1087e5187",
+      "baseline_title": "2024 Topps Graphite Tennis Signatures Anna Kalinskaya 20/25 Auto",
+      "candidate_title": "2024 Topps Graphite Tennis Signatures Anna Kalinskaya 20/25 Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e5c7694ffc8faf61ee31",
+      "baseline_title": "2024 Panini Prizm Jayden Daniels Gold Shimmer 09/10 RC PSA 10",
+      "candidate_title": "2024 Panini Prizm Jayden Daniels Gold Shimmer 09/10 RC PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_522dae554f642f6810eb",
+      "baseline_title": "2025 Topps Bowman Chrome Cooper Flagg Brookies Rookies Red Cracked Ice 1/5 RC",
+      "candidate_title": "2025 Topps Bowman Chrome Cooper Flagg Brookies Rookies Red Cracked Ice 1/5 RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_7815e1aeda1f8e00dd4e",
+      "baseline_title": "2026 Topps Chrome Adaptable Alien Orange Sparkle",
+      "candidate_title": "2026 Topps Chrome VeeFriends Adaptable Alien Orange Sparkle",
+      "final_delta_f1": 0.07017543859649134,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "product_known_manufacturer_extension"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_a4051a222e9be2cf8149",
+      "baseline_title": "Topps Star Wars Chrome Black Paul Kasey Auto",
+      "candidate_title": "Topps Star Wars Chrome Black Paul Kasey Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_4cd844c77ea0347c87da",
+      "baseline_title": "2025 Disney Lorcana JP Mickey Mouse Brave Little Prince #242/204 PSA 10",
+      "candidate_title": "2025 Disney Lorcana JP Mickey Mouse Brave Little Prince #242/204 PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_274c5078fce5de006ab1",
+      "baseline_title": "2018 Panini Contenders Optic Luka Dončić Shooting Blue 5/99 RC Auto PSA 9",
+      "candidate_title": "2018 Panini Contenders Optic Luka Dončić Shooting Blue 5/99 RC Auto PSA 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_0e81149eb058b3a98a15",
+      "baseline_title": "2025 Topps Chrome Tennis Flavio Cobolli Auto Green Prizm 1/5 RC",
+      "candidate_title": "2025 Topps Chrome Tennis Flavio Cobolli Auto Green Prizm 1/5 RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_bc6cd6c49b79324c84d7",
+      "baseline_title": "2024-25 Topps Chrome LeBron James Gold Refractor 21/50",
+      "candidate_title": "2024-25 Topps Chrome LeBron James Gold Refractor 21/50",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_c32c92324767426812aa",
+      "baseline_title": "2025 Topps Garbage Pail Kids Global Takeover Pedro Medario Basuritas 25/25",
+      "candidate_title": "2025 Topps Garbage Pail Kids Global Takeover Pedro Medario Basuritas 25/25",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_952016ff08174d8a0b0a",
+      "baseline_title": "2025-26 Donruss Road to FIFA World Cup 26 Soccer Kaboom! Lionel Messi PSA 9",
+      "candidate_title": "2025-26 Donruss Road to FIFA World Cup 26 Soccer Kaboom! Lionel Messi PSA 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_805d56c3f42c2ad4218c",
+      "baseline_title": "2024 Topps Bowman Chrome Leo De Vries Prospect Auto 45/50 1st Edition PSA 10",
+      "candidate_title": "2024 Topps Bowman Chrome Leo De Vries Prospect Auto 45/50 1st Edition PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_6d735fe449afe45dbaa5",
+      "baseline_title": "2018 Panini Donruss Optic Josh Allen Rated Rookie Red Prizm RC PSA 10",
+      "candidate_title": "2018 Panini Donruss Optic Josh Allen Rated Rookie Red Prizm RC PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_86990bc00f236f49430e",
+      "baseline_title": "2025 Topps Chrome X Victor Wembanyama Green Refractor 17/50",
+      "candidate_title": "2025 Topps Chrome X Victor Wembanyama Green Refractor 17/50",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_17d4ec4dd5aa0af31a78",
+      "baseline_title": "2009 Upper Deck NFL Draft Edition Graham Harrell RC Auto",
+      "candidate_title": "2009 Upper Deck NFL Draft Edition Graham Harrell RC Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_c1fdabad9da739fc592f",
+      "baseline_title": "2025-26 Topps Finest Josh Hart Variation Silver Prismatic",
+      "candidate_title": "2025-26 Topps Finest Josh Hart Variation Silver Prismatic",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_77f1063c48c35c3d3583",
+      "baseline_title": "2020 Panini Flawless Justin Herbert Rookie Dual Patch Auto 5/20 RC PSA 9",
+      "candidate_title": "2020 Panini Flawless Justin Herbert Rookie Dual Patch Auto 05/20 RC PSA 9",
+      "final_delta_f1": 0.07407407407407418,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "serial_single_digit_v1"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_35540f2899f796676dcd",
+      "baseline_title": "2025 Upper Deck Goodwin Champions Bianca Bustamante Clash of the Champions",
+      "candidate_title": "2025 Upper Deck Goodwin Champions Bianca Bustamante Clash of the Champions",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_8fb29302a15dd34e880b",
+      "baseline_title": "2023-24 Panini Donruss Optic D’Angelo Russell Green Prizm 2/8",
+      "candidate_title": "2023-24 Panini Donruss Optic D’Angelo Russell Green Prizm 2/8",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_f52efb0422eb065b42e8",
+      "baseline_title": "1994 SkyBox Emotion N-Tense Michael Jordan Gold Sparkle PSA 10",
+      "candidate_title": "1994 SkyBox Emotion N-Tense Michael Jordan Gold Sparkle PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_5bbc14c582d6f0b34f77",
+      "baseline_title": "3 Card Lot 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "candidate_title": "lotx3 2026 Topps Bowman Chrome Harry Ford Drew Gilbert Samuel Basallo",
+      "final_delta_f1": 0.14102564102564097,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "compact_lot_quantity"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_59c73afe530cf56006c3",
+      "baseline_title": "2025 Topps Bowman Chrome Konnor Griffin Silver Refractor",
+      "candidate_title": "2025 Topps Bowman Chrome Konnor Griffin Silver Refractor",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_eee05fabd6546ee79c5b",
+      "baseline_title": "2025-26 Panini Signature Series Karim Lopez Rainbow Foil Auto",
+      "candidate_title": "2025-26 Panini Signature Series Karim Lopez Rainbow Foil Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_1638841b99625325c7d4",
+      "baseline_title": "2010-11 Panini Absolute Memorabilia Kobe Bryant Hoopla 8/25 Auto Patch PSA 10",
+      "candidate_title": "2010-11 Panini Absolute Memorabilia Kobe Bryant Hoopla 08/25 Auto Patch PSA 10",
+      "final_delta_f1": 0.07999999999999985,
+      "verdict": "WIN",
+      "changed_mechanisms": [
+        "serial_single_digit_v1"
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_7ae66142ce80a2d06fc0",
+      "baseline_title": "2025-26 Topps Bowman Chrome Caleb Wilson Prospect Auto Red Wave 1/1",
+      "candidate_title": "2025-26 Topps Bowman Chrome Caleb Wilson Prospect Auto Red Wave 1/1",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_a13d07f85029e110759d",
+      "baseline_title": "2026 Topps UEFA Champions League Vini Jr. Home Advantage",
+      "candidate_title": "2026 Topps UEFA Champions League Vini Jr. Home Advantage",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_65efa016ae8c5a82f3fa",
+      "baseline_title": "2024 Topps Chrome Holger Rune Rainbow Refractor",
+      "candidate_title": "2024 Topps Chrome Holger Rune Rainbow Refractor",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_ccc908ae3278d88b80dc",
+      "baseline_title": "2012 Panini Prizm Kobe Bryant Auto Silver Prizm PSA 9",
+      "candidate_title": "2012 Panini Prizm Kobe Bryant Auto Silver Prizm PSA 9",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_a8a73b44f77bf6e823e2",
+      "baseline_title": "2026 Topps Chrome UFC Patrick Mix Silver Xfractor RC",
+      "candidate_title": "2026 Topps Chrome UFC Patrick Mix Silver Xfractor RC",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_649595fdd1f5ec9fc02e",
+      "baseline_title": "2025-26 Panini Prizm FIFA Soccer Club Legends Lionel Messi 29/199 Auto",
+      "candidate_title": "2025-26 Panini Prizm FIFA Soccer Club Legends Lionel Messi 29/199 Auto",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    },
+    {
+      "asset_id": "reviewed_blind_e15bc8c40fe668ae0b9e",
+      "baseline_title": "2025 Panini Prizm Manga Joe Namath Horizontal Green Prizm PSA 10",
+      "candidate_title": "2025 Panini Prizm Manga Joe Namath Horizontal Green Prizm PSA 10",
+      "final_delta_f1": 0,
+      "verdict": "TIE",
+      "changed_mechanisms": []
+    }
+  ]
+}
