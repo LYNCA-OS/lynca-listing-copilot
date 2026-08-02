@@ -76,3 +76,17 @@ Keep the current production scheduling and CSM/SEM contract unchanged. The
 regional fix is a positive production prerequisite; the authority-stage fields
 are additive diagnostic telemetry. No concurrency or accuracy promotion is
 justified by this probe alone.
+
+## Accuracy-screen boundary
+
+An eight-card hosted accuracy screen was intentionally stopped after all
+eight requests returned HTTP 503 `invalid_durable_listing_asset_id` before the
+provider stage. The supplied IDs were the sealed evaluation labels
+`reviewed_blind_*`, not production `listing_assets.id` values (`asset_*`).
+Therefore this is neither a model loss nor a production-chain latency sample,
+and no paid accuracy result was recorded from it.
+
+The cloud 150-card accuracy gate remains pending until the same 150-card
+references are provisioned as production durable assets and an immutable
+asset-to-reference manifest is available. Replacing the IDs or inventing a
+reference mapping would make the accuracy measurement invalid.
