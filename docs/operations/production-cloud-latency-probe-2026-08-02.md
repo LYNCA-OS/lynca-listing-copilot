@@ -123,6 +123,21 @@ separate intermittent asset/provider failure to investigate, not evidence
 that c2, c6, or c8 is saturated. No scheduler or claim-poll setting was
 changed from this screen.
 
+## High versus original detail spot check
+
+The same production asset was run once at each supported image detail. Both
+requests produced the identical persisted title and completed through the same
+CSM route:
+
+| Detail | HTTP / trace | Provider | Dispatch | Internal total | Client wall | Title |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| high | 200 / PERSISTED | 3,249 ms | 4,920 ms | 6,583 ms | 8,402 ms | `2025-26 Panini Donruss Tyran Stokes Elite Signatures Rainbow Foil 65/75 Auto` |
+| original | 200 / PERSISTED | 3,307 ms | 5,390 ms | 7,244 ms | 8,415 ms | same |
+
+This is only a one-card paired diagnostic, not an accuracy comparison. It
+shows no latency or title benefit from `original` on this asset; keep
+production at `high` until a paired, label-backed image-detail cohort exists.
+
 ## Accuracy-screen boundary
 
 An eight-card hosted accuracy screen was intentionally stopped after all
