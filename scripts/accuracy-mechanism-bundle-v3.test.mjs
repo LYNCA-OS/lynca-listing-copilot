@@ -5,7 +5,7 @@ import {
   applyAccuracyMechanismV3
 } from "../lib/listing/thin/accuracy-mechanism-bundle-v3.mjs";
 
-assert.equal(ACCURACY_MECHANISM_NAMES_V3.length, 6);
+assert.equal(ACCURACY_MECHANISM_NAMES_V3.length, 7);
 const inserted = applyAccuracyMechanismV3("attested_insert", { card_name: "", grammar: "tcg" }, {
   observations: [{
     label: "insert_name",
@@ -28,6 +28,22 @@ const weak = applyAccuracyMechanismV3("attested_insert", { card_name: "", gramma
   observations: [{ label: "insert_name", evidence: "Kaboom", kind: "printed_text", confidence: "medium" }]
 });
 assert.equal(weak.changes.length, 0);
+
+const product = applyAccuracyMechanismV3("product_known_manufacturer_extension", {
+  manufacturer: "Topps",
+  product: "Chrome",
+  grammar: "standard"
+}, { freeFields: { product: "Topps Chrome Sapphire" } });
+assert.equal(product.fields.product, "Topps Chrome Sapphire");
+
+const lotProduct = applyAccuracyMechanismV3("product_known_manufacturer_extension", {
+  manufacturer: "Topps",
+  product: "Chrome",
+  grammar: "lot",
+  lot_count: "3"
+}, { freeFields: { product: "Topps Chrome Sapphire" } });
+assert.equal(lotProduct.changed, false);
+assert.equal(lotProduct.blocked, "lot_product_extension_disallowed");
 
 const bundle = applyAccuracyMechanismBundleV3({ card_name: "", grammar: "tcg" }, {
   observations: [{

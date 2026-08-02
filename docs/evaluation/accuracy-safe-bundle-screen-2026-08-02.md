@@ -13,7 +13,8 @@ canonical result:
 3. exact `SAR` rarity recovery;
 4. printed `Trainer Gallery` recovery for TCG;
 5. printed `1st Bowman` recovery when the canonical product/set is Bowman;
-6. high-confidence, registry-attested insert-name recovery.
+6. v2-gated known-manufacturer Product extension (Lot grammar excluded);
+7. high-confidence, registry-attested insert-name recovery.
 
 None replaces a non-empty canonical field. The last mechanism requires a
 high-confidence printed-text observation, an `insert_name` label, and a
@@ -30,7 +31,7 @@ made.
 | Arm | Cards | Macro F1 | Wins / losses / ties | Changed cards | Reference-loss cards | Over 80 | Decision |
 |---|---:|---:|---:|---:|---:|---:|---|
 | Current canonical Composer | 150 | 0.766927 | — | — | — | — | baseline |
-| Bundle v3 replay | 150 | 0.770623 | 7 / 0 / 143 | 8 | 0 | 0 | replay candidate |
+| Bundle v3 replay | 150 | 0.772000 | 9 / 0 / 141 | 25 field actions | 0 | 0 | replay candidate |
 
 The paired delta is `+0.0036965`. This is a replay projection, not an
 independent accuracy claim: the candidate mechanisms were selected after
@@ -45,6 +46,7 @@ inspecting this same labelled checkpoint.
 | `SAR` | +0.0002463 | 1 / 0 / 149 | 1 | 0 | 0 |
 | `Trainer Gallery` | +0.0009630 | 1 / 0 / 149 | 1 | 0 | 0 |
 | `1st Bowman` | +0.0003865 | 1 / 0 / 149 | 1 | 0 | 0 |
+| known-manufacturer Product | +0.0013769 | 2 / 0 / 148 | 2 | 0 | 0 |
 | attested insert | +0.0003463 | 1 / 0 / 149 | 1 | 0 | 0 |
 
 The eight changed cards are retained in the machine-readable ledger. One
@@ -72,13 +74,14 @@ node scripts/replay-accuracy-safe-bundle-150.mjs \
   --out artifacts/accuracy-bundle-confirmatory-150-2026-08-02/safe-bundle-replay-outside-105.json
 ```
 
-This partial replay produced no net title change (`ΔF1 = 0`, 0 wins, 0
-losses, 105 ties). It is marked `PARTIAL_REPLAY` because the exhaustive
-observation channel is absent for these outside-development cards, so the
-attested-insert mechanism was not actually tested. The result is therefore a
-neutral stability check, not evidence for promotion. It also caught and
-removed the v1 finish rule's serial-denominator false positive; bundle v3 now
-inherits the v2 compatibility gate.
+This partial replay produced `ΔF1 = +0.0034185` with 5 wins, 0 losses and 100
+ties. The five positive cards are all Product-extension recoveries; the other
+field actions were title-neutral. It is marked `PARTIAL_REPLAY` because the
+exhaustive observation channel is absent for these outside-development cards,
+so the attested-insert mechanism was not actually tested. This is useful
+cross-cohort evidence, not a substitute for an independent 150-card gate. The
+replay also caught and removed the v1 finish rule's serial-denominator false
+positive; bundle v3 now inherits the v2 compatibility gate.
 
 ## Promotion gate
 
