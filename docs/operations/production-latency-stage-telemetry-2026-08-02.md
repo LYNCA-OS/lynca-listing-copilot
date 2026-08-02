@@ -19,6 +19,8 @@ sanitized integer map. Current keys are:
 - `recognition_session_ms`: idempotent recognition-session creation;
 - `provider_prepare_ms`: the whole paid model/CSM preparation boundary;
 - `provider_ms`: provider-reported request latency when available;
+- `authority_enqueue_ms`: the durable enqueue RPC before a provider attempt is
+  eligible to claim;
 - `authority_claim_ms`: time spent waiting for the durable global scheduler
   claim after enqueue;
 - `authority_settle_ms`: the final durable settlement RPC after the provider
@@ -72,10 +74,12 @@ gain or a production SLO by itself.
 
 After moving the Vercel function from the unsupported `hkg1` placement to
 `iad1`, an authenticated one-card `high` request completed with HTTP 200,
-`CSM_THIN_DIRECT`, `PERSISTED`, and zero Cloud Run/vector calls. The recorded
-stages were: `provider_ms` 3,134 ms, `authority_claim_ms` 657 ms,
-`authority_settle_ms` 279 ms, `authority_dispatch_ms` 5,649 ms, and
-`request_total_ms` 7,512 ms. The same receipt is present in the latest
-`v4_recognition_sessions.csm_owner_versions` row with attempt 1 and retry 0.
-This is a diagnostic sample, not a concurrency sweet spot or an accuracy
-measurement.
+`CSM_THIN_DIRECT`, `PERSISTED`, and zero Cloud Run/vector calls. The latest
+post-telemetry sample recorded: `provider_ms` 3,249 ms,
+`authority_enqueue_ms` 649 ms, `authority_claim_ms` 242 ms,
+`authority_settle_ms` 266 ms, `authority_dispatch_ms` 4,920 ms,
+`csm_persistence_ms` 285 ms, and route `request_total_ms` 8,402 ms
+(internal receipt `request_total_ms` 6,583 ms). The same stage map is present
+in the latest `v4_recognition_sessions.csm_owner_versions` row with attempt 1
+and retry 0. This is a diagnostic sample, not a concurrency sweet spot or an
+accuracy measurement.
