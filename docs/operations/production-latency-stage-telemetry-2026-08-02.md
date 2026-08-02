@@ -83,3 +83,32 @@ post-telemetry sample recorded: `provider_ms` 3,249 ms,
 in the latest `v4_recognition_sessions.csm_owner_versions` row with attempt 1
 and retry 0. This is a diagnostic sample, not a concurrency sweet spot or an
 accuracy measurement.
+
+## Data-source colocation result
+
+The production Supabase project is in `ap-southeast-2`, while the supported
+CSM function initially ran in `iad1`. The title function now has a function-
+scoped `syd1` override; static files, login, upload, and other functions retain
+the project-level `iad1` default. Luna was verified from an isolated `syd1`
+preview before production promotion, avoiding a repeat of the unsupported
+`hkg1` placement.
+
+A same-asset `high` comparison after overlapping signed-URL creation with the
+idempotent recognition-session write measured:
+
+- `iad1`: 6,259 ms total, 2,994 ms provider, 3,265 ms outside the provider;
+- `syd1` preview: 3,991 ms total, 3,580 ms provider, 411 ms outside the provider;
+- `syd1` production: 3,884 ms total, 3,457 ms provider, 427 ms outside the provider.
+
+The production move therefore reduced the same-card route by 2,375 ms (37.9%)
+even though the provider call itself was 463 ms slower. An eight-card,
+concurrency-six production screen then completed 8/8 with no retry or provider
+failure: server p50 was 3,507 ms and p95/max was 4,214 ms. The prior `iad1`
+screen was 6,038 ms p50 and 9,066 ms p95/max, so the hosted tail fell 41.9% at
+p50 and 53.5% at p95.
+
+Client wall times from the local probe remain invalid for concurrency sizing:
+the local proxy releases concurrent responses in a staircase even while the
+server receipts show overlapping 3.3-4.2 second executions. Use server stage
+receipts for hosted latency and a browser trace without the local proxy for
+writer-device latency.
