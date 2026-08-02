@@ -38,6 +38,18 @@ a model retry.
 
 ## Interpretation gate
 
+## Regional provider gate
+
+The first authenticated production probe on 2026-08-02 reached the CSM route
+but the provider returned HTTP 403 with `Country, region, or territory not
+supported`. Vercel identified the execution region as `hkg1`. A matching
+image-bearing request from the local evaluation environment returned HTTP 200,
+so this was a deployment-region rejection, not a Luna latency tail or an image
+quality result. The Hong Kong placement is therefore a negative production
+asset for this provider and is replaced by the supported `iad1` region before
+any latency comparison. The probe must be repeated after that deployment; the
+pre-change 2.5–3.2 second failures are not provider-latency samples.
+
 Do not change production concurrency or add a second model call from aggregate
 request means. After enough fresh production traffic exists, compare p50/p95
 for each stage and the total:
