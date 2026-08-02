@@ -46,11 +46,11 @@
     "project": "Listing Copilot",
     "project_ref": "osrrujmpxxiefppjfgpd",
     "organization_id": "amudxinagqcimbuezvyi",
-    "cwd": "/Users/paidaxin/lynca-thin-production/infrastructure/supabase-production",
+    "cwd": "/Users/paidaxin/lynca-thin-production-main/infrastructure/supabase-production",
     "link_ref_file": "supabase/.temp/project-ref",
     "link_metadata_file": "supabase/.temp/linked-project.json",
     "migrations": "supabase/migrations",
-    "legacy_unlinked_migrations": "/Users/paidaxin/lynca-thin-production/supabase/migrations",
+    "legacy_unlinked_migrations": "/Users/paidaxin/lynca-thin-production-main/supabase/migrations",
     "local_env": "/Users/paidaxin/.config/lynca-listing-copilot/runtime.env",
     "required_server_env": ["SUPABASE_URL", "SUPABASE_SECRET_KEY"],
     "rule": "Only the canonical cwd may be linked or used for migration commands. Never repair history, push the legacy ledger, or print server secrets."
