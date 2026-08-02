@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Zero-provider-cost replay of the six narrow mechanisms in bundle v3.
+// Zero-provider-cost replay of the seven narrow mechanisms in bundle v3.
 // The source rows are already-paid canonical/free/exhaustive observations.
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -35,6 +35,10 @@ const sign = (deltas) => ({
 const referenceLosses = (reference, before, after) => {
   const wanted = tokens(reference); const oldTokens = tokens(before); const newTokens = tokens(after);
   return [...wanted].filter((token) => oldTokens.has(token) && !newTokens.has(token));
+};
+const changedFields = (before = {}, after = {}) => {
+  const keys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+  return [...keys].sort().filter((field) => JSON.stringify(before?.[field] ?? null) !== JSON.stringify(after?.[field] ?? null));
 };
 
 const inputPath = arg("--input", "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl");
@@ -88,6 +92,7 @@ const cards = canonical.map((row) => {
     candidate_score: score(row.reference, output.title),
     delta_f1: score(row.reference, output.title).f1 - score(row.reference, baseline.title).f1,
     changes: candidate.changes,
+    change_details: candidate.change_details,
     reference_losses: referenceLosses(row.reference, baseline.title, output.title),
     over_80: output.title.length > 80
   };
@@ -96,6 +101,12 @@ const cards = canonical.map((row) => {
 const baseline = mean(cards.map((card) => card.baseline_score.f1));
 const candidate = mean(cards.map((card) => card.candidate_score.f1));
 const deltas = cards.map((card) => card.delta_f1);
+const fieldActionBreakdown = cards.reduce((counts, card) => {
+  for (const change of card.change_details || []) {
+    for (const field of change.fields || []) counts[field.field] = (counts[field.field] || 0) + 1;
+  }
+  return counts;
+}, {});
 const summary = {
   cards: cards.length,
   baseline_macro_f1: baseline,
@@ -105,6 +116,8 @@ const summary = {
   changed_cards: cards.filter((card) => card.changes.length).length,
   reference_loss_cards: cards.filter((card) => card.reference_losses.length).length,
   over_80: cards.filter((card) => card.over_80).length,
+  field_actions: cards.reduce((sum, card) => sum + (card.change_details || []).reduce((inner, change) => inner + change.fields.length, 0), 0),
+  field_actions_by_field: Object.fromEntries(Object.entries(fieldActionBreakdown).sort(([a], [b]) => a.localeCompare(b))),
   status: deltas.some((value) => value < -1e-12)
     || cards.some((card) => card.reference_losses.length || card.over_80)
     ? "STOP"
@@ -130,6 +143,7 @@ for (const name of ACCURACY_MECHANISM_NAMES_V3) {
     return {
       delta_f1: afterScore.f1 - beforeScore.f1,
       changed: after.title !== before.title,
+      field_actions: changedFields(row.fields, result.fields),
       reference_loss: referenceLosses(row.reference, before.title, after.title).length > 0,
       over_80: after.title.length > 80
     };
@@ -139,6 +153,11 @@ for (const name of ACCURACY_MECHANISM_NAMES_V3) {
     ...sign(mechanismDeltas),
     delta_macro_f1: mean(mechanismDeltas),
     changed_cards: rowsForMechanism.filter((row) => row.changed).length,
+    field_actions: rowsForMechanism.reduce((sum, row) => sum + row.field_actions.length, 0),
+    field_actions_by_field: Object.fromEntries(Object.entries(rowsForMechanism.reduce((counts, row) => {
+      for (const field of row.field_actions) counts[field] = (counts[field] || 0) + 1;
+      return counts;
+    }, {})).sort(([a], [b]) => a.localeCompare(b))),
     reference_loss_cards: rowsForMechanism.filter((row) => row.reference_loss).length,
     over_80: rowsForMechanism.filter((row) => row.over_80).length
   };

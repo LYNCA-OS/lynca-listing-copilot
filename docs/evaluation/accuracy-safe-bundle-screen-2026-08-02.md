@@ -31,7 +31,7 @@ made.
 | Arm | Cards | Macro F1 | Wins / losses / ties | Changed cards | Reference-loss cards | Over 80 | Decision |
 |---|---:|---:|---:|---:|---:|---:|---|
 | Current canonical Composer | 150 | 0.766927 | — | — | — | — | baseline |
-| Bundle v3 replay | 150 | 0.772000 | 9 / 0 / 141 | 25 field actions | 0 | 0 | replay candidate |
+| Bundle v3 replay | 150 | 0.772000 | 9 / 0 / 141 | 25 changed cards / 28 field actions | 0 | 0 | replay candidate |
 
 The paired delta is `+0.0050734`. This is a replay projection, not an
 independent accuracy claim: the candidate mechanisms were selected after
@@ -39,19 +39,21 @@ inspecting this same labelled checkpoint.
 
 ### Per-mechanism ledger
 
-| Mechanism | Δ macro F1 | Wins / losses / ties | Changed | Reference loss | Over 80 |
-|---|---:|---:|---:|---:|---:|
-| finish family / colour | +0.0009360 | 2 / 0 / 148 | 2 | 0 | 0 |
-| serial single digit | +0.0010272 | 2 / 0 / 148 | 2 | 0 | 0 |
-| `SAR` | +0.0002463 | 1 / 0 / 149 | 1 | 0 | 0 |
-| `Trainer Gallery` | +0.0009630 | 1 / 0 / 149 | 1 | 0 | 0 |
-| `1st Bowman` | +0.0003865 | 1 / 0 / 149 | 1 | 0 | 0 |
-| known-manufacturer Product | +0.0013769 | 2 / 0 / 148 | 2 | 0 | 0 |
-| attested insert | +0.0003463 | 1 / 0 / 149 | 1 | 0 | 0 |
+| Mechanism | Δ macro F1 | Wins / losses / ties | Changed cards | Field actions | Reference loss | Over 80 |
+|---|---:|---:|---:|---:|---:|---:|
+| finish family / colour | +0.0009360 | 2 / 0 / 148 | 2 | 4 | 0 | 0 |
+| serial single digit | +0.0010272 | 2 / 0 / 148 | 2 | 2 | 0 | 0 |
+| `SAR` | +0.0002463 | 1 / 0 / 149 | 1 | 1 | 0 | 0 |
+| `Trainer Gallery` | +0.0009630 | 1 / 0 / 149 | 1 | 1 | 0 | 0 |
+| `1st Bowman` | +0.0003865 | 1 / 0 / 149 | 1 | 1 | 0 | 0 |
+| known-manufacturer Product | +0.0013769 | 2 / 0 / 148 | 2 | 17 | 0 | 0 |
+| attested insert | +0.0003463 | 1 / 0 / 149 | 1 | 2 | 0 | 0 |
 
-The 25 field actions are retained in the machine-readable ledger. Some actions
-do not change the final title; they remain visible as field-level actions and
-contribute ties rather than being counted as wins.
+The machine-readable ledger retains both 25 changed cards and 28 field actions.
+The field-level breakdown is `product=17`, `card_name=3`,
+`descriptive_rarity=2`, `parallel_exact=2`, `print_finish=2`, and `serial=2`.
+Some field actions do not change the final title; they remain visible as
+field-level actions and contribute ties rather than being counted as wins.
 
 ## Outside-development replay
 

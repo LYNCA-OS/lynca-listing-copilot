@@ -55,6 +55,10 @@ const bundle = applyAccuracyMechanismBundleV3({ card_name: "", grammar: "tcg" },
 });
 assert.equal(bundle.fields.card_name, "KABOOM HORIZONTAL");
 assert.deepEqual(bundle.changes, ["attested_insert"]);
+assert.deepEqual(bundle.change_details, [{
+  mechanism: "attested_insert",
+  fields: [{ field: "card_name", before: "", after: "KABOOM HORIZONTAL" }]
+}]);
 assert.equal(bundle.production_promoted, false);
 
 console.log("Accuracy mechanism bundle v3 tests passed");
