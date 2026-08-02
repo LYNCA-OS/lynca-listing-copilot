@@ -1,5 +1,8 @@
 {
   "name": "lynca-vercel-capacity-probe",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "node control.test.mjs && node accuracy.test.mjs && node run-cloud-paired-accuracy.test.mjs"
+  }
 }
