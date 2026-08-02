@@ -51,6 +51,32 @@ The eight changed cards are retained in the machine-readable ledger. One
 attested insert changed a field without changing the final title; it is still
 counted as a field-level action but contributes a tie.
 
+## Outside-development replay
+
+The source blind pool has only 255 cards. The existing development cohort
+already consumes 150, leaving 105 cards outside it; a mixed 150 that reuses 45
+development cards cannot be called an independent 150. The same bundle was
+therefore replayed on all 105 outside-development cards at zero provider cost.
+That result is a cross-cohort stability check, not a substitute for acquiring
+45 new sealed cards.
+
+The 105-card ledger is generated with:
+
+```sh
+node scripts/replay-accuracy-safe-bundle-150.mjs \
+  --limit 105 \
+  --asset-ids-file artifacts/accuracy-mechanism-confirmatory-2026-08-02/outside-development-105.asset-ids.json \
+  --out artifacts/accuracy-bundle-confirmatory-150-2026-08-02/safe-bundle-replay-outside-105.json
+```
+
+This partial replay produced no net title change (`ΔF1 = 0`, 0 wins, 0
+losses, 105 ties). It is marked `PARTIAL_REPLAY` because the exhaustive
+observation channel is absent for these outside-development cards, so the
+attested-insert mechanism was not actually tested. The result is therefore a
+neutral stability check, not evidence for promotion. It also caught and
+removed the v1 finish rule's serial-denominator false positive; bundle v3 now
+inherits the v2 compatibility gate.
+
 ## Promotion gate
 
 The result earns a place in the next 5–8-mechanism confirmation pool, not a

@@ -40,22 +40,37 @@ const referenceLosses = (reference, before, after) => {
 const inputPath = arg("--input", "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl");
 const exhaustivePath = arg("--exhaustive", "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl");
 const outPath = arg("--out", "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/safe-bundle-replay-150-2026-08-02.json");
+const assetIdsPath = arg("--asset-ids-file", "");
+const allowMissingObservations = process.argv.includes("--allow-missing-observations");
 const limit = Number(arg("--limit", "150"));
 if (!Number.isInteger(limit) || limit < 1) throw new Error("limit_must_be_positive_integer");
 
 const input = rows(inputPath);
-const canonical = input.filter((row) => row.arm === "thin_canonical_high" && row.fields).slice(0, limit);
+const canonicalRows = input.filter((row) => row.arm === "thin_canonical_high" && row.fields);
+const selectedAssetIds = assetIdsPath
+  ? JSON.parse(readFileSync(assetIdsPath, "utf8"))
+  : canonicalRows.slice(0, limit).map((row) => row.asset_id);
+if (!Array.isArray(selectedAssetIds) || new Set(selectedAssetIds).size !== selectedAssetIds.length) {
+  throw new Error("asset_ids_file_must_be_unique_json_array");
+}
+const canonicalByAsset = new Map(canonicalRows.map((row) => [row.asset_id, row]));
+const canonical = selectedAssetIds.map((assetId) => canonicalByAsset.get(assetId)).filter(Boolean).slice(0, limit);
 const freeByAsset = new Map(input.filter((row) => row.arm === "thin_budgeted").map((row) => [row.asset_id, row]));
 const observationsByAsset = new Map(rows(exhaustivePath)
   .filter((row) => row.arm === "exhaustive_observation_high")
   .map((row) => [row.asset_id, row.observations || []]));
-if (canonical.length !== limit || canonical.some((row) => !freeByAsset.has(row.asset_id) || !observationsByAsset.has(row.asset_id))) {
+const missingObservationAssets = canonical
+  .map((row) => row.asset_id)
+  .filter((assetId) => !observationsByAsset.has(assetId));
+if (selectedAssetIds.length < limit || canonical.length !== limit
+    || canonical.some((row) => !freeByAsset.has(row.asset_id))
+    || (missingObservationAssets.length && !allowMissingObservations)) {
   throw new Error("paired_cohort_mismatch_or_too_small");
 }
 
 const cards = canonical.map((row) => {
   const free = freeByAsset.get(row.asset_id);
-  const observations = observationsByAsset.get(row.asset_id);
+  const observations = observationsByAsset.get(row.asset_id) || [];
   const freeFields = projectFreeTitleThroughCsm(free.title).fields;
   const baseline = composeFromCanonicalFields(row.fields);
   const candidate = applyAccuracyMechanismBundleV3(row.fields, {
@@ -93,7 +108,9 @@ const summary = {
   status: deltas.some((value) => value < -1e-12)
     || cards.some((card) => card.reference_losses.length || card.over_80)
     ? "STOP"
-    : deltas.some((value) => value > 1e-12) ? "REPLAY_CANDIDATE" : "NO_CHANGE"
+    : missingObservationAssets.length
+      ? "PARTIAL_REPLAY"
+      : deltas.some((value) => value > 1e-12) ? "REPLAY_CANDIDATE" : "NO_CHANGE"
 };
 
 const perMechanism = {};
@@ -132,7 +149,12 @@ const result = {
   evaluation_only: true,
   production_promoted: false,
   mechanisms: ACCURACY_MECHANISM_NAMES_V3,
-  source: { inputPath, exhaustivePath, limit, canonical_arm: "thin_canonical_high", free_arm: "thin_budgeted", exhaustive_arm: "exhaustive_observation_high" },
+  source: { inputPath, exhaustivePath, assetIdsPath: assetIdsPath || null, limit, canonical_arm: "thin_canonical_high", free_arm: "thin_budgeted", exhaustive_arm: "exhaustive_observation_high" },
+  observation_coverage: {
+    available_cards: limit - missingObservationAssets.length,
+    missing_cards: missingObservationAssets.length,
+    missing_allowed: allowMissingObservations
+  },
   summary,
   per_mechanism: perMechanism,
   cards
