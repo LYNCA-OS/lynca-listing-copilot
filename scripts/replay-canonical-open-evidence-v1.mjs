@@ -74,9 +74,13 @@ if (control.size !== limit || treatment.size !== limit || [...control.keys()].so
 const cards = [...control.keys()].map((assetId) => {
   const controlRow = control.get(assetId);
   const treatmentRow = treatment.get(assetId);
-  const baseline = composeFromCanonicalFields(controlRow.fields || {});
-  const candidate = strictProductExtension(treatmentRow.fields || {}, treatmentRow.candidate_facts);
-  const candidateFields = candidate ? { ...treatmentRow.fields, product: candidate.value } : { ...treatmentRow.fields };
+  const baselineFields = controlRow.fields || {};
+  const baseline = composeFromCanonicalFields(baselineFields);
+  // Use the canonical control fields on both sides. This isolates the open
+  // ledger's resolver effect from unrelated field drift between two paid
+  // responses on the same image.
+  const candidate = strictProductExtension(baselineFields, treatmentRow.candidate_facts);
+  const candidateFields = candidate ? { ...baselineFields, product: candidate.value } : { ...baselineFields };
   const candidateTitle = composeFromCanonicalFields(candidateFields);
   const baselineScore = score(controlRow.reference, baseline.title);
   const candidateScore = score(controlRow.reference, candidateTitle.title);

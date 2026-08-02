@@ -4,8 +4,8 @@
 
 Stop this arm before the 150-card gate. It is a useful capture experiment,
 but not a positive runtime asset: the raw title lift was not significant, the
-response became much larger and slower, and the strict product-only resolver
-introduced three reference-token losses. Nothing was wired to production.
+response became much larger and slower, and the valid control-isolated resolver
+replay produced no title change. Nothing was wired to production.
 
 ## Paid paired screen
 
@@ -29,29 +29,35 @@ The only resolver tested was deliberately narrow: a candidate had to be visible
 and a strict extension of the canonical manufacturer/product. It could not
 overwrite a conflicting value or use model knowledge.
 
+The first diagnostic replay used each paid arm's own canonical fields. That
+comparison is not attribution-safe because the two paid responses changed
+unrelated canonical identity/finish choices; it showed `+0.0072` F1 with
+5/3/12 and three reference-loss cards, but is retained only as a diagnostic.
+The valid replay below uses the canonical control fields on both sides and
+injects only the strict candidate fact from the open arm:
+
 | Metric | Result |
 | --- | ---: |
-| Replay F1 delta | +0.0072 |
-| Wins / losses / ties | 5 / 3 / 12 |
+| Replay F1 delta | +0.0000 |
+| Wins / losses / ties | 0 / 0 / 20 |
 | Candidate product cards | 1 |
-| Reference-loss cards | 3 |
+| Reference-loss cards | 0 |
 | Titles over 80 chars | 0 |
 | Mean open facts/card | 9.25 |
 | Candidate-defect cards | 0 |
 
-The three losses were not caused by product promotion alone: the open arm's
-canonical fields themselves changed unrelated identity/finish choices. The
-ledger also retained noise such as biography/statistic text and a wrong
-stamped number, showing that “open” does not by itself mean “useful”.
+The isolated replay proves that the open ledger did not recover a title on this
+screen. The ledger also retained noise such as biography/statistic text and a
+wrong stamped number, showing that “open” does not by itself mean “useful”.
 
 ## Interpretation
 
 This validates the learning direction only as an observation asset. It does
 not validate this response shape as a production request: the extra schema
 made the call materially slower and larger while the deterministic projection
-had too little supported product evidence. Keep the artifacts for diagnosis,
-but do not spend the independent 150-card gate on this version. The next
-experiment must reduce evidence payload and isolate one known loss family
+had no supported product gain on the isolated replay. Keep the artifacts for
+diagnosis, but do not spend the independent 150-card gate on this version. The
+next experiment must reduce evidence payload and isolate one known loss family
 before reopening a paid confirmation.
 
 Artifacts:
@@ -59,3 +65,4 @@ Artifacts:
 - `artifacts/canonical-open-evidence-screen-20-2026-08-02/`
 - `lib/listing/thin/canonical-open-evidence-v1.mjs`
 - `scripts/replay-canonical-open-evidence-v1.mjs`
+- `artifacts/canonical-open-evidence-screen-20-2026-08-02/replay-control-isolated.json`
