@@ -5,7 +5,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": [
-    "hkg1"
+    "iad1"
   ],
   "rewrites": [
     {
