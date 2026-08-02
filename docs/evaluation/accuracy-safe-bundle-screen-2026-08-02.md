@@ -64,8 +64,11 @@ The 105-card ledger is generated with:
 
 ```sh
 node scripts/replay-accuracy-safe-bundle-150.mjs \
+  --input artifacts/accuracy-mechanism-confirmatory-2026-08-02/fresh-budgeted-canonical/thin-path-gpt-5.6-luna.jsonl \
+  --exhaustive artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl \
   --limit 105 \
   --asset-ids-file artifacts/accuracy-mechanism-confirmatory-2026-08-02/outside-development-105.asset-ids.json \
+  --allow-missing-observations \
   --out artifacts/accuracy-bundle-confirmatory-150-2026-08-02/safe-bundle-replay-outside-105.json
 ```
 
