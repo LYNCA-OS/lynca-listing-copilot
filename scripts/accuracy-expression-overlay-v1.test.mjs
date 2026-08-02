@@ -23,12 +23,16 @@ const expressionFields = {
 
 const result = applyAccuracyExpressionOverlayV1(base, {
   expressionFields,
-  expressionTitle: "2025 Topps Chrome Sapphire Cooper Flagg Red Shimmer Rookie RC 1/5"
+  expressionTitle: "2025 Topps Chrome Sapphire Cooper Flagg Red Shimmer Rookie RC 1/5",
+  observations: [{
+    label: "insert_name", kind: "printed_text", confidence: "high", evidence: "Kaboom"
+  }]
 });
 assert.equal(result.overlay, ACCURACY_EXPRESSION_OVERLAY_V1);
 assert.equal(result.authority, "evaluation_only");
 assert.equal(result.production_promoted, false);
 assert.equal(result.fields.product, "Topps Chrome Sapphire");
+assert.equal(result.fields.card_name, "Kaboom");
 assert.match(result.composed.title, /Sapphire/);
 assert.ok(result.composed.length <= 80);
 assert.deepEqual(base.product, "Chrome", "overlay must not mutate canonical input");

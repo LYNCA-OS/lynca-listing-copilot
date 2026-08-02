@@ -24,18 +24,21 @@ Source checkpoints:
 | stage | changed | wins | losses | ties | Δ macro F1 | reference loss | over 80 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | identity facts → Set | 5 | 5 | 0 | 145 | +0.003282 | 0 | 0 |
-| + finish-family/color | 7 | 7 | 0 | 143 | +0.004218 | 0 | 0 |
-| + known-manufacturer product extension | 8 | 8 | 0 | 142 | +0.004686 | 0 | 0 |
-| + exact single-digit serial formatting | 10 | 10 | 0 | 140 | **+0.005713** | 0 | 0 |
+| + registry-attested insert | 6 | 6 | 0 | 144 | +0.003628 | 0 | 0 |
+| + finish-family/color | 8 | 8 | 0 | 142 | +0.004564 | 0 | 0 |
+| + known-manufacturer product extension | 9 | 9 | 0 | 141 | +0.005032 | 0 | 0 |
+| + exact single-digit serial formatting | 11 | 11 | 0 | 139 | **+0.006059** | 0 | 0 |
 
 The final baseline is macro F1 `0.766927`; the combined replay is
-`0.772640`. Sixteen cards had an overlay rejected by a gate: seven lot product
+`0.772986`. Sixteen cards had an overlay rejected by a gate: seven lot product
 extensions and nine free/canonical serial denominator conflicts.
 
 ## What changed
 
 - Five logo/symbol observations filled an empty Set (`GRAPHITE`, `STAR WARS`,
   `Disney`, and two VeeFriends examples).
+- One high-confidence printed `Kaboom` insert was admitted because the local
+  registry attested the term.
 - Two grounded finish-family additions recovered visible `Orange Refractor`
   / `Blue Wave`-style terms.
 - One accepted product extension exposed a known-manufacturer product phrase.

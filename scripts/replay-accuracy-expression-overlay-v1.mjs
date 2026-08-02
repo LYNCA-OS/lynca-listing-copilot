@@ -68,9 +68,10 @@ const cards = [...canonicalByAsset.values()].map((row) => {
   const candidateScore = score(row.reference, candidate.title);
   const stageConfigs = {
     identity: { mechanisms: [], includeSerial: false },
-    finish: { mechanisms: ["finish_family_color_only"], includeSerial: false },
-    product: { mechanisms: ["finish_family_color_only", "product_known_manufacturer_extension"], includeSerial: false },
-    combined: { mechanisms: ["finish_family_color_only", "product_known_manufacturer_extension"], includeSerial: true }
+    insert: { mechanisms: ["attested_insert"], includeSerial: false },
+    finish: { mechanisms: ["attested_insert", "finish_family_color_only"], includeSerial: false },
+    product: { mechanisms: ["attested_insert", "finish_family_color_only", "product_known_manufacturer_extension"], includeSerial: false },
+    combined: { mechanisms: ["attested_insert", "finish_family_color_only", "product_known_manufacturer_extension"], includeSerial: true }
   };
   const stages = Object.fromEntries(Object.entries(stageConfigs).map(([name, config]) => {
     const stage = applyAccuracyExpressionOverlayV1(row.fields, { ...context, ...config });
@@ -126,7 +127,7 @@ const result = {
     over_80_cards: cards.filter((card) => card.over_80).length,
     rejected_overlays: cards.filter((card) => card.rejected.length).length
   },
-  stages: Object.fromEntries(Object.keys({ identity: 1, finish: 1, product: 1, combined: 1 })
+  stages: Object.fromEntries(Object.keys({ identity: 1, insert: 1, finish: 1, product: 1, combined: 1 })
     .map((name) => [name, stageSummary(name)])),
   cards
 };
