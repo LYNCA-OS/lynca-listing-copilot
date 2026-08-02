@@ -234,6 +234,7 @@ assert.equal(
   assert.equal(admission.globallyEnforced, true);
   assert.equal(executions, 1);
   assert.equal(result.title, "2023 Panini Prizm Victor Wembanyama RC #136");
+  assert.ok(result.latency_stages_ms.authority_enqueue_ms >= 0);
   assert.ok(result.latency_stages_ms.authority_claim_ms >= 0);
   assert.ok(result.latency_stages_ms.authority_settle_ms >= 0);
   assert.deepEqual(store.calls.map(({ name }) => name), [
