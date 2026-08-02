@@ -5,7 +5,7 @@
 Keep bundle v3 in the evaluation lane. Do not change production or spend a
 new paid run from this replay alone.
 
-The bundle contains six narrow, sequential overlays over the already-paid
+The bundle contains seven narrow, sequential overlays over the already-paid
 canonical result:
 
 1. colour-anchored finish-family recovery;
