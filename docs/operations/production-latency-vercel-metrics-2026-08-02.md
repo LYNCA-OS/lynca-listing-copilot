@@ -23,7 +23,8 @@ The 12-hour slice had a p50 of 3,810 ms and the same 5,327 ms p95/p99; the
 last six hours had no successful CSM samples, so it must not be reported as a
 fast result. The outgoing-request metric is grouped by Vercel's origin path,
 not by provider host, so it is supporting evidence rather than a direct
-`provider_ms` receipt.
+`provider_ms` receipt. The 24-hour success count was only `n=9`; these are
+directional tail evidence, not a stable production SLO estimate.
 
 ## Interpretation
 
