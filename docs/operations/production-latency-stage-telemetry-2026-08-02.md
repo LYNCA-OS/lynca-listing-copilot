@@ -19,6 +19,10 @@ sanitized integer map. Current keys are:
 - `recognition_session_ms`: idempotent recognition-session creation;
 - `provider_prepare_ms`: the whole paid model/CSM preparation boundary;
 - `provider_ms`: provider-reported request latency when available;
+- `authority_claim_ms`: time spent waiting for the durable global scheduler
+  claim after enqueue;
+- `authority_settle_ms`: the final durable settlement RPC after the provider
+  result is available;
 - `authority_dispatch_ms`: durable admission through checkpoint settlement.
 
 The successful API response additionally carries `csm_persistence_ms` and
@@ -63,3 +67,15 @@ for each stage and the total:
 
 The receipt is diagnostic evidence only. It does not establish an accuracy
 gain or a production SLO by itself.
+
+## First supported-region sample
+
+After moving the Vercel function from the unsupported `hkg1` placement to
+`iad1`, an authenticated one-card `high` request completed with HTTP 200,
+`CSM_THIN_DIRECT`, `PERSISTED`, and zero Cloud Run/vector calls. The recorded
+stages were: `provider_ms` 3,134 ms, `authority_claim_ms` 657 ms,
+`authority_settle_ms` 279 ms, `authority_dispatch_ms` 5,649 ms, and
+`request_total_ms` 7,512 ms. The same receipt is present in the latest
+`v4_recognition_sessions.csm_owner_versions` row with attempt 1 and retry 0.
+This is a diagnostic sample, not a concurrency sweet spot or an accuracy
+measurement.
