@@ -2,7 +2,8 @@ import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import {
   bindProductionRequestContext,
   instrumentProductionRequest,
-  persistProductionEvent
+  persistProductionEvent,
+  sanitizeOperationalText
 } from "../lib/observability/production-events.mjs";
 import { createListingImageSignedUpload } from "../lib/listing/storage/supabase-image-storage.mjs";
 import { requireTenantListingAsset } from "../lib/tenant/assets.mjs";
@@ -111,11 +112,23 @@ export default async function handler(req, res) {
       ...(Array.isArray(payload.images) ? { uploads } : { upload: uploads[0] })
     });
   } catch (error) {
+    const code = error.code || (error.retryable === true ? "storage_signing_temporarily_unavailable" : "storage_signing_failed");
+    const message = sanitizeOperationalText(error.message || "Unable to create image upload URL.", 240);
+    console.warn(JSON.stringify({
+      event: "listing_image_upload_signing_failed",
+      request_id: context.requestId,
+      tenant_id: context.tenantId,
+      code,
+      retryable: error.retryable === true,
+      message
+    }));
     sendJson(res, error.retryable === true ? 503 : 400, {
       ok: false,
-      code: error.code || (error.retryable === true ? "storage_signing_temporarily_unavailable" : "storage_signing_failed"),
+      request_id: context.requestId,
+      failure_stage: "storage_signing",
+      code,
       retryable: error.retryable === true,
-      message: String(error.message || "Unable to create image upload URL.").slice(0, 240)
+      message
     });
   }
 }

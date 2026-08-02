@@ -673,6 +673,9 @@ const rejectedApiResponse = await callUploadApi({
 });
 assert.equal(rejectedApiResponse.statusCode, 400);
 assert.match(rejectedApiResponse.body.message, /Image file signature is required/);
+assert.equal(rejectedApiResponse.body.failure_stage, "storage_signing");
+assert.equal(rejectedApiResponse.body.code, "storage_signing_failed");
+assert.match(rejectedApiResponse.body.request_id, /^[a-f0-9-]{36}$/i);
 
 globalThis.fetch = tenantAwareFetch(async () => objectResponse(pngVerificationBytes, {
   "content-type": "image/png",
