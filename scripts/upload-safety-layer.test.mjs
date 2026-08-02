@@ -42,7 +42,7 @@ const directRecognitionSource = js.slice(
   js.indexOf("async function processAssetViaCsmThinPath"),
   js.indexOf("function backgroundPreparationAvailable")
 );
-assert.match(directRecognitionSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "recognition must wait for verified originals");
+assert.match(directRecognitionSource, /await ensureAssetPreparedForRecognition\(asset\)/, "recognition must wait for verified originals and bounded automatic recovery");
 assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/, "the direct request must bind the durable asset identity");
 assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/, "the direct request must retain the upload intent identity");
 assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobject_path\s*:|\bdata_url\s*:/, "the browser must not send image bytes or storage paths to recognition");

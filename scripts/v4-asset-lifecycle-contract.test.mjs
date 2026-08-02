@@ -81,7 +81,7 @@ const directRecognitionSource = appSource.slice(
   appSource.indexOf("async function processAssetViaCsmThinPath"),
   appSource.indexOf("function backgroundPreparationAvailable")
 );
-assert.match(directRecognitionSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "recognition must establish the canonical immutable originals first");
+assert.match(directRecognitionSource, /await ensureAssetPreparedForRecognition\(asset\)/, "recognition must establish canonical originals and settle bounded automatic recovery first");
 assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/, "browser recognition intent must bind the durable asset identity");
 assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/, "browser recognition intent must carry one stable operation identity");
 assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobjectPath\s*:|\bobject_path\s*:/, "browser recognition intent must not carry images or object paths");
