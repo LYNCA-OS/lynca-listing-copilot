@@ -38,6 +38,22 @@ assert.ok(result.composed.length <= 80);
 assert.deepEqual(base.product, "Chrome", "overlay must not mutate canonical input");
 assert.ok(Object.keys(result.sem).every((field) => semCanonicalEditableFields.includes(field)));
 
+const unsafeIdentity = applyAccuracyExpressionOverlayV1(base, {
+  candidateFacts: [{
+    value: "SWINGTOWN", kind: "affiliation", basis: "logo_or_symbol",
+    source_kind: "printed_text", source_confidence: "medium", uncertainty: "none"
+  }]
+});
+assert.equal(unsafeIdentity.fields.set, "", "medium-confidence identity stays evidence-only");
+
+const rightsLogoIdentity = applyAccuracyExpressionOverlayV1(base, {
+  candidateFacts: [{
+    value: "LEGENDARY", kind: "affiliation", basis: "logo_or_symbol",
+    source_kind: "printed_text", source_confidence: "high", uncertainty: "none"
+  }]
+});
+assert.equal(rightsLogoIdentity.fields.set, "", "a lone Legendary rights logo is not a Set");
+
 const blocked = applyAccuracyExpressionOverlayV1({
   ...base, grammar: "lot", lot_count: "2", product: "Topps Chrome"
 }, {

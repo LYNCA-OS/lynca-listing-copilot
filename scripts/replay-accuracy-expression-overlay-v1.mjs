@@ -38,7 +38,8 @@ const factsFromObservations = (observations = []) => observations.flatMap((obser
   const value = String(observation.evidence ?? "").replace(/\s+/g, " ").trim();
   return value ? [{
     value, kind: "affiliation", basis: "logo_or_symbol", image: imageFor(observation.region),
-    region: observation.region || "unknown", uncertainty: "none"
+    region: observation.region || "unknown", uncertainty: "none",
+    source_kind: observation.kind, source_confidence: observation.confidence
   }] : [];
 });
 
