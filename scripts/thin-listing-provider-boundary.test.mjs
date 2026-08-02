@@ -26,13 +26,20 @@ await assert.rejects(
   runCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
+    providerClientRequestId: "lynca-client-rate-limit",
     callProvider: async () => new Response(
-      JSON.stringify({ error: { message: "rate limited" } }),
+      JSON.stringify({ error: {
+        message: "rate limited",
+        code: "rate_limit_exceeded",
+        type: "requests",
+        param: "model"
+      } }),
       {
         status: 429,
         headers: {
           "content-type": "application/json",
           "retry-after": "2",
+          "x-request-id": "req-provider-rate-limit",
           "x-ratelimit-limit-tokens": "4000000"
         }
       }
@@ -42,6 +49,12 @@ await assert.rejects(
     && error.status === 429
     && error.safe_to_retry === true
     && error.provider_attempt_started === true
+    && error.provider_request_id === "req-provider-rate-limit"
+    && error.provider_client_request_id === "lynca-client-rate-limit"
+    && error.provider_error_code === "rate_limit_exceeded"
+    && error.provider_error_type === "requests"
+    && error.provider_error_param === "model"
+    && error.provider_ms >= 0
     && error.response.headers.get("retry-after") === "2"
 );
 

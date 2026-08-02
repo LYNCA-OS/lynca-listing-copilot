@@ -10,6 +10,7 @@ import {
   CSM_DIRECT_PROVIDER_TIMEOUT_MS,
   CSM_PERSISTENCE_READINESS_CACHE_TTL_MS,
   CSM_DIRECT_PROMPT_VERSION,
+  buildProviderFailureReceipt,
   buildCsmPersistenceCheckpoint,
   checkCsmDirectPreSpendReadiness,
   checkCachedCsmPersistenceReadiness,
@@ -112,6 +113,35 @@ assert.match(CSM_DIRECT_PROMPT_VERSION, /^csm-canonical-fields-v\d+$/);
 assert.equal(CSM_PERSISTENCE_READINESS_CACHE_TTL_MS, 30_000);
 assert.equal(deterministicCsmSessionId("operation-a"), deterministicCsmSessionId("operation-a"));
 assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessionId("operation-b"));
+
+{
+  const receipt = buildProviderFailureReceipt({
+    provider_attempt_started: true,
+    ambiguous: false,
+    status: 400,
+    provider_request_id: "req-provider-400",
+    provider_client_request_id: "lynca-client-400",
+    provider_error_code: "invalid_image",
+    provider_error_type: "invalid_request_error",
+    provider_error_param: "input[0].content[1]",
+    provider_ms: 12_345,
+    latency_stages_ms: { signed_url_ms: 220, provider_ms: 12_345, unsafe: "drop" }
+  });
+  assert.deepEqual(receipt, {
+    schema_version: "csm-provider-failure-receipt-v1",
+    stage: "provider_attempt",
+    outcome: "definitive_response",
+    http_status: 400,
+    provider_request_id: "req-provider-400",
+    provider_client_request_id: "lynca-client-400",
+    provider_error_code: "invalid_image",
+    provider_error_type: "invalid_request_error",
+    provider_error_param: "input[0].content[1]",
+    provider_ms: 12_345,
+    latency_stages_ms: { signed_url_ms: 220, provider_ms: 12_345 }
+  });
+  assert.equal(buildProviderFailureReceipt({ provider_attempt_started: false }), null);
+}
 
 {
   resetCsmPersistenceReadinessCache();
