@@ -454,3 +454,26 @@ resolver design, but do not add it to the production schema, default prompt,
 or second-call path. Accuracy work now returns to deterministic Composer/SEM
 replays and only the smallest pre-registered candidate mechanisms whose source
 can exist in the production contract.
+
+## 17. 2026-08-02 follow-up: IP field screen held, not promoted
+
+COS-9 gives TCG `[IP]` a first-class bracket, but the thin schema previously
+carried only the fixed IP labels derived by `semTcgIpLabel`. A 20-card,
+evaluation-only screen added one printed `ip` field to the same response. Five
+TCG cards emitted an IP and four were new over the prior canonical control; no
+standard card emitted one and no title exceeded 80 characters.
+
+The live paired result was `6/4/10`, `ΔF1=+0.003504`, but unrelated fields also
+drifted, so it is diagnostic only. The control-field replay that changed only
+the IP was `1/0/19`, `ΔF1=+0.003509`, a positive direction too sparse for a
+verdict. A separate replay that also forced `grammar=tcg` when an IP appeared
+was `1/1/18`, `ΔF1=-0.000658`: the VeeFriends card lost `Original Artwork`
+after the TCG order was applied. This is the current contract interaction to
+solve, not a reason to weaken COS-9.
+
+Median latency increased `12.6%` (5.786s -> 6.513s), input tokens `4.2%`, and
+output tokens `5.8%`. Decision: **HOLD** this mechanism in the next 5--8
+candidate bundle; do not spend the independent 150-card gate on it alone and
+do not wire the new field to production. Promotion requires a grammar-safe
+projection with no VeeFriends-style reference loss, then a fresh 150-card
+confirmation.
