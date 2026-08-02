@@ -431,3 +431,26 @@ for this cohort. Its source is still the exhaustive observation checkpoint,
 which the production canonical response does not carry. Keep it behind the
 same independent-150 gate and preserve the per-card budget/reference guard
 when re-testing.
+
+## 16. 2026-08-02 follow-up: same-call open evidence is stopped
+
+The one-call `canonical + open_evidence` screen was tested on 20
+outside-development cards. The raw paired response was not significant
+(`5/3/12`, `ΔF1=+0.007638`, `p=0.7266`), while median latency rose from
+`5.887s` to `9.301s`, total tokens rose 13.1%, and output tokens rose 4.4x.
+The treatment also changed unrelated canonical fields, so that raw lift cannot
+be attributed to the evidence channel.
+
+The valid control-isolated replay recomposed the canonical control fields on
+both sides and injected only a strict, image-anchored product candidate from
+the open ledger. It produced `0/0/20`, `ΔF1=0`, one candidate-product card,
+zero reference losses, and zero over-80 titles. The first replay that used
+each treatment's drifting canonical fields (`5/3/12`, three reference-loss
+cards) is retained as a diagnostic only and is not evidence of mechanism gain.
+
+Decision: **STOP** this response shape before any 150-card paid gate. It is a
+capture artifact, not a positive runtime asset. Keep the raw ledger for future
+resolver design, but do not add it to the production schema, default prompt,
+or second-call path. Accuracy work now returns to deterministic Composer/SEM
+replays and only the smallest pre-registered candidate mechanisms whose source
+can exist in the production contract.
