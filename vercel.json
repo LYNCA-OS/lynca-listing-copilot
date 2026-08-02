@@ -89,6 +89,12 @@
         "sin1"
       ]
     },
+    "api/listing-image-upload-relay.js": {
+      "maxDuration": 30,
+      "regions": [
+        "sin1"
+      ]
+    },
     "api/listing-image-verify-upload.js": {
       "regions": [
         "sin1"

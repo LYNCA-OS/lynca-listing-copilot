@@ -26,6 +26,8 @@ const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
+const STORAGE_UPLOAD_RELAY_MAX_BYTES = 3_200_000;
+const STORAGE_UPLOAD_RELAY_TIMEOUT_MS = 12_000;
 const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750, 1500]);
 const STORAGE_CONTROL_RECOVERY_TIMEOUT_MS = 3500;
 const STORAGE_CONTROL_RECOVERY_DELAYS_MS = Object.freeze([0]);
@@ -1013,6 +1015,73 @@ function applyVerifiedStorageBinding({ asset, image, uploadObjectPath, contentSh
   return true;
 }
 
+function encodeUploadRelayMetadata(metadata) {
+  const bytes = new TextEncoder().encode(JSON.stringify(metadata));
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 4096) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 4096));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function uploadAssetImageViaRelay(asset, row) {
+  const assetId = canonicalAssetId(asset);
+  const metadata = {
+    assetId,
+    imageId: row.image.id,
+    role: row.storageRole,
+    fileName: row.image.name,
+    contentType: row.contentType,
+    size: row.source.size,
+    width: row.dimensions.width,
+    height: row.dimensions.height,
+    signatureHex: row.signatureHex,
+    contentSha256: row.contentSha256,
+    cropMetadata: row.image.cropMetadata || row.image.crop_metadata || null
+  };
+  const relayRequest = await fetchStorageApiJson("/api/listing-image-upload-relay", {
+    method: "POST",
+    headers: {
+      "content-type": row.contentType,
+      "x-lynca-upload-metadata": encodeUploadRelayMetadata(metadata)
+    },
+    credentials: "same-origin",
+    body: row.source
+  }, {
+    timeoutMs: STORAGE_UPLOAD_RELAY_TIMEOUT_MS,
+    retryDelaysMs: []
+  });
+  const relayError = relayRequest.response.ok && relayRequest.payload?.ok === true
+    ? null
+    : Object.assign(new Error(relayRequest.payload?.message || `Storage upload relay failed: ${relayRequest.response.status}`), {
+      code: relayRequest.payload?.code || "STORAGE_UPLOAD_RELAY_FAILED",
+      http_status: relayRequest.response.status
+    });
+  recordClientNetworkStage(asset, "storage_object_relay", { ...relayRequest, error: relayError });
+  if (relayError) throw relayError;
+  if (
+    relayRequest.payload.asset_id !== assetId
+    || relayRequest.payload.upload?.image_id !== row.image.id
+    || relayRequest.payload.upload?.storage_role !== row.storageRole
+  ) throw new Error("Storage upload relay identity mismatch.");
+  const objectPath = assertCanonicalImageObjectPath({
+    objectPath: relayRequest.payload.upload.object_path,
+    tenantId: canonicalAssetTenantId(asset),
+    assetId
+  });
+  applyVerifiedStorageBinding({
+    asset,
+    image: row.image,
+    uploadObjectPath: objectPath,
+    contentSha256: row.contentSha256,
+    verifyPayload: relayRequest.payload
+  });
+  row.upload = relayRequest.payload.upload;
+  row.objectPath = objectPath;
+  row.relayUploaded = true;
+  return true;
+}
+
 async function verifyUploadedAssetImage({
   asset,
   image,
@@ -1308,8 +1377,29 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
       uploaded: await uploadAssetImage(asset, image, imageIndex)
     }));
   }
-  const pending = descriptors.filter((row) => !row.alreadyVerified);
+  let pending = descriptors.filter((row) => !row.alreadyVerified);
   if (!pending.length) return descriptors.map(() => ({ ok: true, uploaded: false }));
+
+  // China-to-Supabase direct PUTs occasionally spend the whole 30s timeout in
+  // connection setup even for sub-megabyte images. Keep original bytes and
+  // storage-first authority, but carry typical images over the same Vercel
+  // origin as the app; sin1 then signs, stores, verifies and persists locally.
+  // Any relay failure falls back to the existing signed direct path below.
+  void startCsmWarmup();
+  const relayEligible = pending.filter((row) => row.source.size <= STORAGE_UPLOAD_RELAY_MAX_BYTES);
+  if (relayEligible.length) {
+    await mapWithConcurrency(relayEligible, STORAGE_UPLOAD_CONCURRENCY, async (row) => {
+      try {
+        await uploadAssetImageViaRelay(asset, row);
+      } catch (error) {
+        row.relayError = error;
+      }
+    });
+    pending = descriptors.filter((row) => !imageHasVerifiedStorageReference(row.image, assetId, tenantId));
+    if (!pending.length) {
+      return descriptors.map((row) => ({ ok: true, uploaded: row.relayUploaded === true }));
+    }
+  }
 
   const signRequest = await fetchStorageApiJson("/api/listing-image-upload-url", {
     method: "POST",
@@ -1340,7 +1430,6 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
     throw new Error(signRequest.payload.message || `Storage upload URL batch failed: ${signRequest.response.status}`);
   }
   const uploadsByImage = new Map(signRequest.payload.uploads.map((upload) => [upload.image_id, upload]));
-  void startCsmWarmup();
   const putOutcomes = await mapWithConcurrency(pending, STORAGE_UPLOAD_CONCURRENCY, async (row) => {
     try {
       const upload = uploadsByImage.get(row.image.id);
@@ -1430,7 +1519,7 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
     });
   }
   if (firstVerificationError) throw firstVerificationError;
-  return descriptors.map((row) => ({ ok: true, uploaded: !row.alreadyVerified }));
+  return descriptors.map((row) => ({ ok: true, uploaded: row.relayUploaded === true || !row.alreadyVerified }));
 }
 
 function syncDerivedImageSourceMetadata(asset, images = []) {
