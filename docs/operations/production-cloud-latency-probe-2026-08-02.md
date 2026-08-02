@@ -138,6 +138,16 @@ This is only a one-card paired diagnostic, not an accuracy comparison. It
 shows no latency or title benefit from `original` on this asset; keep
 production at `high` until a paired, label-backed image-detail cohort exists.
 
+## Mainline redeploy smoke
+
+After PR #172 was merged, production was redeployed from the aligned
+`origin/main` (`dpl_5e5e7XFteu6Nphm6kf9s2tTGUQ4p`). Health remained ready with
+GPT-5.6 Luna / reasoning `none`; a fresh `high` request for the same asset was
+HTTP 200, `PERSISTED`, and zero Cloud Run/vector calls. Its server receipt was
+7,150 ms total: provider 2,822 ms, enqueue 246 ms, claim 650 ms, settle
+269 ms, dispatch 4,904 ms, and persistence 278 ms. This is a release smoke
+check, not a new sweet-point or accuracy sample.
+
 ## Accuracy-screen boundary
 
 An eight-card hosted accuracy screen was intentionally stopped after all
