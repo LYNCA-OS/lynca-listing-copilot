@@ -29,6 +29,13 @@ Only non-negative finite numbers and bounded field names are retained. No
 tenant identifiers, image URLs, prompt text, or provider response bodies are
 included.
 
+The same owner-version receipt also records `provider_attempt_number` and
+`provider_retry_count`. These are counters, not durations: they distinguish a
+slow first provider attempt from a request that spent its tail in retry or
+admission. They are populated only after a provider attempt has been durably
+claimed, so a pre-provider storage/session failure cannot be misclassified as
+a model retry.
+
 ## Interpretation gate
 
 Do not change production concurrency or add a second model call from aggregate

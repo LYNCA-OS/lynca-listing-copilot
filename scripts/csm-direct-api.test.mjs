@@ -516,6 +516,8 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.ok(result.latency_stages_ms.authority_dispatch_ms >= 0);
   assert.ok(result.latency_stages_ms.csm_persistence_ms >= 0);
   assert.ok(result.latency_stages_ms.request_total_ms >= 0);
+  assert.equal(result.provider_attempt_number, 1);
+  assert.equal(result.provider_retry_count, 0);
   assert.equal(authorityEvents[0].type, "enqueue");
   assert.equal(authorityEvents[0].metadata.attempt, 1);
   assert.equal(authorityEvents[0].metadata.attemptClass, "fresh");

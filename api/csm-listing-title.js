@@ -445,7 +445,12 @@ export async function runDirectCsmAsset({
       attemptStages.provider_ms = Number(prepared.latency_ms);
     }
     return buildCsmPersistenceCheckpoint({
-      prepared: { ...prepared, latency_stages_ms: attemptStages },
+      prepared: {
+        ...prepared,
+        provider_attempt_number: Number(dispatched.attempt),
+        provider_retry_count: Math.max(0, Number(dispatched.attempt) - 1),
+        latency_stages_ms: attemptStages
+      },
       tenantId: tenant,
       operationKey: dispatched.operation_key,
       payloadHash: dispatched.payload_hash,
