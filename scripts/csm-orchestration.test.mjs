@@ -113,6 +113,8 @@ const common = {
       assert.equal(patch.csm_owner_versions.provider_response_id, "resp_csm_trace");
       assert.equal(patch.csm_owner_versions.provider_request_id, "req_csm_trace");
       assert.equal(patch.csm_owner_versions.provider_client_request_id, "lynca-client-trace");
+      assert.equal(patch.csm_owner_versions.provider_attempt_number, null);
+      assert.equal(patch.csm_owner_versions.provider_retry_count, null);
       assert.equal(patch.csm_owner_versions.provider, "openai");
       assert.equal(patch.csm_owner_versions.reasoning_effort, "none");
       assert.equal(patch.csm_owner_versions.latency_ms >= 0, true);
