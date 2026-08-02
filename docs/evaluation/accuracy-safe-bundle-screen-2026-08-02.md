@@ -33,7 +33,7 @@ made.
 | Current canonical Composer | 150 | 0.766927 | — | — | — | — | baseline |
 | Bundle v3 replay | 150 | 0.772000 | 9 / 0 / 141 | 25 field actions | 0 | 0 | replay candidate |
 
-The paired delta is `+0.0036965`. This is a replay projection, not an
+The paired delta is `+0.0050734`. This is a replay projection, not an
 independent accuracy claim: the candidate mechanisms were selected after
 inspecting this same labelled checkpoint.
 
@@ -49,9 +49,9 @@ inspecting this same labelled checkpoint.
 | known-manufacturer Product | +0.0013769 | 2 / 0 / 148 | 2 | 0 | 0 |
 | attested insert | +0.0003463 | 1 / 0 / 149 | 1 | 0 | 0 |
 
-The eight changed cards are retained in the machine-readable ledger. One
-attested insert changed a field without changing the final title; it is still
-counted as a field-level action but contributes a tie.
+The 25 field actions are retained in the machine-readable ledger. Some actions
+do not change the final title; they remain visible as field-level actions and
+contribute ties rather than being counted as wins.
 
 ## Outside-development replay
 
