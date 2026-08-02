@@ -103,6 +103,7 @@ assert.deepEqual(
 assert.match(source, /cloud_run_calls:\s*0/, "the endpoint must make its zero Cloud Run boundary observable");
 assert.match(source, /vector_calls:\s*0/, "the endpoint must make its zero vector boundary observable");
 assert.equal(vercel.functions["api/csm-listing-title.js"].maxDuration, 300);
+assert.deepEqual(vercel.functions["api/csm-listing-title.js"].regions, ["syd1"]);
 assert.equal(CSM_DIRECT_LOCAL_FALLBACK_CONCURRENCY, 6);
 assert.equal(CSM_DIRECT_CLAIM_POLL_MS, 1_000);
 assert.equal(CSM_DIRECT_CLAIM_TIMEOUT_MS, 145_000);
