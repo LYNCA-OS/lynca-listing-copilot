@@ -5,7 +5,7 @@ import {
   applyAccuracyMechanismV3
 } from "../lib/listing/thin/accuracy-mechanism-bundle-v3.mjs";
 
-assert.equal(ACCURACY_MECHANISM_NAMES_V3.length, 7);
+assert.equal(ACCURACY_MECHANISM_NAMES_V3.length, 8);
 const inserted = applyAccuracyMechanismV3("attested_insert", { card_name: "", grammar: "tcg" }, {
   observations: [{
     label: "insert_name",
@@ -28,6 +28,16 @@ const weak = applyAccuracyMechanismV3("attested_insert", { card_name: "", gramma
   observations: [{ label: "insert_name", evidence: "Kaboom", kind: "printed_text", confidence: "medium" }]
 });
 assert.equal(weak.changes.length, 0);
+
+const ip = applyAccuracyMechanismV3("tcg_ip_logo_exact", { grammar: "tcg", ip: "" }, {
+  observations: [{ kind: "printed_text", label: "logo", confidence: "high", evidence: "DISNEY" }]
+});
+assert.equal(ip.fields.ip, "Disney");
+
+const ipDoesNotForceGrammar = applyAccuracyMechanismV3("tcg_ip_logo_exact", { grammar: "standard", ip: "" }, {
+  observations: [{ kind: "printed_text", label: "logo", confidence: "high", evidence: "DISNEY" }]
+});
+assert.equal(ipDoesNotForceGrammar.fields.ip, "");
 
 const product = applyAccuracyMechanismV3("product_known_manufacturer_extension", {
   manufacturer: "Topps",

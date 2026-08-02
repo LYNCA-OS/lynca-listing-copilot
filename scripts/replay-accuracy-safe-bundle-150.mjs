@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// Zero-provider-cost replay of the seven narrow mechanisms in bundle v3.
+// Zero-provider-cost replay of the narrow mechanisms in bundle v3.
 // The source rows are already-paid canonical/free/exhaustive observations.
 
 import { readFileSync, writeFileSync } from "node:fs";
