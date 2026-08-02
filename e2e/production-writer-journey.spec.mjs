@@ -189,7 +189,10 @@ test("production writer journey reaches persisted L2 through the real UI", async
     ).toMatch(/^(?!标题暂不可用$).{1,80}$/);
     const title = await titleInput.inputValue();
     expect(title.length).toBeLessThanOrEqual(80);
-    evidence.stages.recognition = { passed: true, route: "/api/csm-listing-title", title_length: title.length };
+    const recognitionEndpoint = apiPaths.has("/api/csm-listing-title-ingest")
+      ? "/api/csm-listing-title-ingest"
+      : "/api/csm-listing-title";
+    evidence.stages.recognition = { passed: true, route: recognitionEndpoint, title_length: title.length };
 
     // Exercise edit handling without changing the generated commercial title.
     await titleInput.fill(title);
@@ -211,12 +214,13 @@ test("production writer journey reaches persisted L2 through the real UI", async
     // workbench immediately, so its transient status node may already be gone.
     // The HTTP transaction proof above is the durable persistence assertion.
     await Promise.allSettled([...responseCaptureTasks]);
-    const statusObserved = apiPaths.has("/api/csm-listing-title");
+    const statusObserved = apiPaths.has("/api/csm-listing-title")
+      || apiPaths.has("/api/csm-listing-title-ingest");
     expect(statusObserved, "the UI must receive the direct CSM recognition response before L2").toBe(true);
     expect(ids.asset_id.size, "asset_id must be captured").toBeGreaterThan(0);
     expect(ids.session_id.size, "session_id must be captured").toBeGreaterThan(0);
     expect(requestIds.size, "request_id must be captured").toBeGreaterThan(0);
-    evidence.stages.status = { passed: true, endpoint: "/api/csm-listing-title" };
+    evidence.stages.status = { passed: true, endpoint: recognitionEndpoint };
     evidence.passed = true;
   } catch (error) {
     evidence.error = String(error?.message || error).slice(0, 1000);
