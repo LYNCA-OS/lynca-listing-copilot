@@ -221,8 +221,10 @@ bare/canonical 互补审计中，44 张 bare 胜利包含 85 个正确增量：
 - exhaustive 另一次调用复现子集 oracle `+0.011572`。
 
 这些只是上限。Literal v2 当前状态是
-`GO_TO_PAIRED_FRESH150_EXPERIMENT_ONLY / STOP_PRODUCTION`，parser 永远返回
-空 `field_updates` 和空 `admission_proposals`。
+`GO_TO_PAIRED_FRESH150_EXPERIMENT_ONLY / STOP_PRODUCTION`。105 张付费验证后，
+零成本 resolver 只安全拿回 1 张卡的同数值 serial 格式（`+0.000866`，
+1 胜/0 负/104 平），没有达到大头门槛；因此继续保持 candidate-only，
+不进入 runtime。
 
 ### PSP hypothesis beam
 
@@ -257,7 +259,8 @@ bare/canonical 互补审计中，44 张 bare 胜利包含 85 个正确增量：
 - 若把缺边当反证，会错拒 28.0% 正确 subject-year、34.7% 正确
   product-year。
 
-当前 assets/resolver 全部 STOP。
+当前 world resolver 仍 STOP；source-versioned graph asset 已构建，但覆盖率
+不足，状态为 `BUILT_ADVISORY_INSUFFICIENT_COVERAGE`，不进入 runtime。
 
 ### 世界模型应该长什么样
 
@@ -345,36 +348,42 @@ field、产生多少胜/负、是否出现 visible-evidence rejection。
 
 ### Phase 1 — 先补测量与数据资产
 
-并行进行：
+并行进行（当前可验证状态）：
 
-1. 第二写手审 285 个争议词；
+1. 第二写手审 285 个争议词（需要真人盲审，当前标记为待外部证据）；
 2. 获取一批新的、独立 sealed 150 卡，不能从已参与机制选择的 255 张里
-   拼出来；
-3. 建 source-versioned release/product/set/parallel/finish 资产；
-4. 做 hosted no-score preflight，只验证请求字节、image token、transform
-   延迟、checkpoint/operation fingerprint，不下准确率结论。
+   拼出来（本轮付费上限已改为 105，新增独立 150 不再自动购买）；
+3. 建 source-versioned release/product/set/parallel/finish 资产（已生成
+   144 条 advisory edges；覆盖不足，状态为
+   `BUILT_ADVISORY_INSUFFICIENT_COVERAGE`）；
+4. hosted no-score preflight 已由云端链路/图片预算实验覆盖；请求字节、
+   image count、checkpoint/operation fingerprint 已验证，视觉 transform
+   的实际延迟与 token 代价也已纳入 105 张报告。
 
-### Phase 2 — 第一轮真实 150：只测两个大机制
+### Phase 2 — 第一轮真实验证：只测两个大机制（已以 105 完成）
 
-为了降低预期成本，先用 shared control 的三臂设计，不先买高成本视觉 ceiling：
+为了降低成本，先用 shared control 的两轮 105 张验证，不再购买 450 次：
 
 - A：canonical high control；
 - L：A + literal observation v2；
 - V：A + one two-bottom-band sheet。
 
-共 450 次单次 Luna 调用。逐卡轮换顺序，共享同一 hosted Vercel -> Singapore
+每轮 210 次单次 Luna 调用。逐卡轮换顺序，共享同一 hosted Vercel -> Singapore
 Storage -> Luna 路径。不能拿旧 control 对新 treatment。
 
-若 V 没通过，但目标小字有明显正确恢复且没有关键错误，再单独测试两张
-independent bottom crops；否则直接 STOP，不买 2.429x tile 成本。
+V 已测得 `+0.004805` 但中位延迟上升至 `8.177s`，所以未通过写手路径
+Pareto 门槛；不再购买两张 independent bottom crops。该 ceiling comparator
+标记为 `UNVERIFIED_DEFERRED_AFTER_COST_STOP`。
 
 PSP hypothesis、cert anchor、当前 world resolver 不进入这一轮。
 
-### Phase 3 — 机制组合与独立 promotion150
+### Phase 3 — 机制组合与独立 promotion gate
 
 只有 L/V 中至少一个成为正资产，且世界 ranker 在零调用 final-title replay
-通过，才组成候选 bundle。组合不能在发现 cohort 上直接晋级；必须在另一批
-独立 sealed 150 上 contemporaneous paired control/treatment。
+通过，才组成候选 bundle。组合不能在发现 cohort 上直接晋级；若未来仍有
+必要，只能在另一批独立 sealed 105 上做 contemporaneous paired
+control/treatment，且必须先得到明确的零成本正证据；本轮不再购买新的
+付费 cohort。
 
 Production 只在组合达到 `>=0.90` 且 0 critical error 后讨论。
 
@@ -454,14 +463,14 @@ world asset、ranker、CSM/SEM、Composer、scorer。operation key 必须包含�
 | 项目 | 状态 |
 |---|---|
 | Small positive replay bundle | 冻结保留，非主攻 |
-| Literal observation v2 | GO 到 paired fresh150；Production STOP |
-| Bottom two-band visual view | GO 到 hosted preflight/paired fresh150；Production STOP |
-| Two independent bottom crops | 条件式 ceiling comparator |
-| PSP hypothesis | HOLD separate arm |
-| Cert anchor | DEFER，无 Registry coverage |
+| Literal observation v2 | 105 paid capture 完成；resolver `+0.000866`，未过门槛；Production STOP |
+| Bottom two-band visual view | 105 paid 完成，+0.48pp 但延迟负资产；Production STOP |
+| Two independent bottom crops | `UNVERIFIED_DEFERRED_AFTER_COST_STOP` |
+| PSP hypothesis | `UNVERIFIED_HOLD`，无独立证据，不购买新 arm |
+| Cert anchor | `UNVERIFIED_DEFER_NO_REGISTRY_COVERAGE` |
 | Current world/official resolver | STOP |
-| New release/parallel source graph | GO asset build，不进 runtime |
-| 285-token second-writer calibration | GO |
+| New release/parallel source graph | 已构建 144 条 advisory edges，但覆盖不足；`BUILT_ADVISORY_INSUFFICIENT_COVERAGE` |
+| 285-token second-writer calibration | `UNVERIFIED_REQUIRES_HUMAN_BLIND_REVIEW` |
 | Production deployment | PAUSED |
 
 本战略的详细证据见：
@@ -473,4 +482,5 @@ world asset、ranker、CSM/SEM、Composer、scorer。operation key 必须包含�
 - `combined-precision-loss-ledger-150-2026-08-02.md`；
 - `world-asset-coverage-audit-150-2026-08-02.md`。
 
-本轮 provider calls：0。runtime/Production changes：0。
+本轮准确率付费验证为两轮 paired 105（共 420 次成功 Luna 调用）；其后的
+resolver、世界图谱、校准包和所有分析均为零调用。runtime/Production changes：0。

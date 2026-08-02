@@ -59,8 +59,27 @@ use the extra capacity to emit typed evidence.
 
 ## Next bounded action
 
-Do not buy another paid arm for this schema yet. First run a zero-cost
-resolver replay over these 25 rows with three fail-closed rules:
+Do not buy another paid arm for this schema yet. The first zero-cost resolver
+replay is now complete. It applied one deliberately narrow same-numeric-pair
+serial-format repair (`05/50` over an existing `5/50`) and held the other 24
+rows candidate-only:
+
+| Replay result | Value |
+| --- | ---: |
+| Cards | 105 |
+| Admitted repairs | 1 |
+| Candidate-only rows | 24 |
+| F1 | `0.777106 -> 0.777972` (`+0.000866`) |
+| Wins / losses / ties | `1 / 0 / 104` |
+| Reference losses / >80 chars | `0 / 0` |
+
+This is a safe positive micro-repair, but it fails the big-head promotion gate
+(at least 8 wins, zero losses, and `+0.003` mean F1). It is therefore frozen as
+an evaluation-only helper, not promoted to the runtime path. The replay output
+is [`resolver-v1-replay.json`](../../artifacts/accuracy-field-observation-v2-105-2026-08-02/resolver-v1-replay.json),
+implemented by [`field-observation-resolver-v1.mjs`](../../experiments/accuracy/field-observation-resolver-v1.mjs).
+
+The original bounded rules remain:
 
 1. accept only a pure `numerator/denominator` exact-code candidate for a
    same-value serial-format repair;
@@ -69,11 +88,10 @@ resolver replay over these 25 rows with three fail-closed rules:
 3. require a controlled finish vocabulary and preserve the source phrase as
    provenance; no abbreviation expansion or numeric mutation.
 
-If that replay cannot show at least eight wins with zero losses and zero
-reference-token displacement, the observation lane remains a useful evidence
-side-channel but is not a positive accuracy mechanism. The next large head is
-then the additive bottom-band visual arm, separately measured on the same
-105-card budget.
+The observation lane remains a useful evidence side-channel but is not a
+positive big-head accuracy mechanism. The additive bottom-band visual arm has
+also now been measured separately on the same 105-card budget; its result is
+recorded in the visual validation report.
 
 Full per-card evidence, candidate text, role, region, token-overlap diagnostic,
 latency, and integrity rows are in
