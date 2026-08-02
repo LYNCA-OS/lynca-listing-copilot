@@ -162,6 +162,25 @@ assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
 assert.equal(calls[2].search.asset_id, "eq.asset-1");
 assert.equal(calls[2].search.limit, "1");
 
+const modernSecretRead = await readListingImageVerificationRecord({
+  tenantId,
+  assetId: "asset-1",
+  objectPath: verification.object_path,
+  bucket: verification.bucket,
+  contentType: verification.content_type,
+  size: verification.size,
+  width: verification.width,
+  height: verification.height,
+  env: {
+    SUPABASE_URL: env.SUPABASE_URL,
+    SUPABASE_SECRET_KEY: "sb_secret_test"
+  },
+  fetchImpl
+});
+assert.equal(modernSecretRead.verified, true);
+assert.equal(calls.at(-1).headers.apikey, "sb_secret_test");
+assert.equal(calls.at(-1).headers.authorization, undefined);
+
 const mismatch = await readListingImageVerificationRecord({
   tenantId,
   assetId: "asset-1",

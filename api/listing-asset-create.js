@@ -80,6 +80,7 @@ export default async function handler(req, res) {
     const asset = await createTenantListingAsset({
       tenantId: context.tenantId,
       clientAssetRef: payload.client_asset_ref || payload.clientAssetRef,
+      idempotencyKey: payload.idempotency_key || payload.idempotencyKey,
       captureProfileId: payload.capture_profile_id || payload.captureProfileId,
       category: payload.category,
       expectedOriginalCount: payload.expected_original_count ?? payload.expectedOriginalCount,

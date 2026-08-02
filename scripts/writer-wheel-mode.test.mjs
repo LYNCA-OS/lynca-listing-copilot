@@ -56,7 +56,7 @@ const directRecognitionSource = js.slice(
   js.indexOf("async function processAssetViaCsmThinPath"),
   js.indexOf("function backgroundPreparationAvailable")
 );
-assert.match(directRecognitionSource, /await ensureAssetOriginalImagesUploaded\(asset\)/, "recognition must establish verified originals without waiting for optional crops");
+assert.match(directRecognitionSource, /await ensureAssetPreparedForRecognition\(asset\)/, "recognition must wait for verified originals and their bounded automatic recovery");
 assert.match(directRecognitionSource, /fetchJsonWithRetry\(CSM_THIN_API_ENDPOINT/, "recognition and retry must use the direct CSM boundary");
 assert.match(directRecognitionSource, /asset_id: canonicalAssetId\(asset\)/, "recognition must bind the durable asset identity");
 assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobject_path\s*:/, "recognition must not carry browser image transport fields");
