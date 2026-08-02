@@ -70,6 +70,23 @@ itself proof of low per-request latency. The next comparison must use the new
 claim/settle fields over a larger, stable hosted sample before changing
 `claimPollMs`, signing/session order, or the tenant pool.
 
+## Post-telemetry repeat
+
+The same four production assets were run again after the stage split, with
+separate windows and no failures:
+
+| Explicit cards | Concurrency | Success | Request p50 | Request p95/max | Claim range | Settle range |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 1 | 4/4 | 5,937 ms | 6,973 ms | 234–650 ms | 273–458 ms |
+| 4 | 4 | 4/4 | 5,183 ms | 6,861 ms | 230–233 ms | 258–274 ms |
+
+The apparent c4 server improvement is smaller than this four-card sample's
+provider variance: provider time was 2.6–3.7 seconds at c4 and 2.9–4.7
+seconds at c1. Claim and settle were bounded and mostly stable, so the present
+evidence does not justify changing the 1,000 ms claim poll or declaring c4 a
+production sweet spot. The client's wall still accumulated across concurrent
+requests and remains a separate transport/measurement question.
+
 ## Decision
 
 Keep the current production scheduling and CSM/SEM contract unchanged. The
