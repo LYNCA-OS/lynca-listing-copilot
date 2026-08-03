@@ -18,7 +18,7 @@ function providerFor(fields) {
     assert.equal(request.reasoning.effort, "none");
     return new Response(JSON.stringify({
       output_text: JSON.stringify(fields),
-      reasoning: { effort: "none" },
+      reasoning: { effort: "low" },
       usage: { input_tokens: 100, output_tokens: 30 }
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
