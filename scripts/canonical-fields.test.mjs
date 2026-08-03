@@ -57,13 +57,13 @@ for (const field of ["year", "manufacturer", "product", "set", "card_name",
   "release_variant", "print_finish", "descriptive_rarity", "card_number"]) {
   assert.ok(semCanonicalEditableFields.includes(field), `${field} must be a CSM canonical field`);
 }
-// Two schema names differ from CSM's and the difference is deliberate, so it is
-// written down rather than discovered later: this schema says `grade` and
-// `subjects` where CSM says `grading_info` and `subject`. The composer maps
-// them; nothing else may invent a third name.
+// Subject remains the one deliberate plural alias. Grading Info used to be a
+// local display string; aligning it with CSM's structured field is what keeps a
+// separate autograph grade from disappearing before composition.
 assert.ok(semCanonicalEditableFields.includes("grading_info"));
 assert.ok(semCanonicalEditableFields.includes("subject"));
-assert.ok(CANONICAL_FIELDS_SCHEMA.properties.grade);
+assert.ok(CANONICAL_FIELDS_SCHEMA.properties.grading_info);
+assert.equal(CANONICAL_FIELDS_SCHEMA.properties.grade, undefined);
 assert.ok(CANONICAL_FIELDS_SCHEMA.properties.subjects);
 
 // Print finishes have exactly one home. Refractor/Prizm/Holo were in this enum
@@ -95,6 +95,9 @@ assert.ok(CANONICAL_FIELDS_SCHEMA.properties.parallel_family.enum.includes("Refr
 assert.match(CANONICAL_FIELDS_PROMPT, /80-character budget/);
 assert.match(CANONICAL_FIELDS_PROMPT, /Report every field you can actually read/);
 assert.match(CANONICAL_FIELDS_PROMPT, /low_confidence/);
+assert.doesNotMatch(CANONICAL_FIELDS_PROMPT, /mentally rotate it 180 degrees/,
+  "the synthetic inverted-card arm was not rotation-stable enough for Production");
+assert.match(CANONICAL_FIELDS_PROMPT, /Never collapse PSA 9 plus AUTO 10/);
 // And the suppression that must NOT come back: the recognition pipeline forbids
 // confirming Refractor/Prizm/Holo without catalog or vector candidates, and
 // those candidates are disabled -- a gate whose key was thrown away.
@@ -180,8 +183,43 @@ assert.ok(parseCanonicalFields({
   const { fields: parsed, defects } = parseCanonicalFields({
     serial: "17/50", unreadable: ["serial", "grade"], grammar: "standard"
   });
-  assert.deepEqual(parsed.unreadable, ["grade"]);
+  assert.deepEqual(parsed.unreadable, ["grading_info"]);
   assert.ok(defects.includes("unreadable_contradicts_value"));
+}
+
+// CSM's Grading Info is atomic in priority but structured in meaning. Preserve
+// both card and autograph grades until the final marketplace string.
+{
+  const parsed = fields({
+    grading_info: {
+      company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+    }
+  });
+  assert.deepEqual(parsed.grading_info, {
+    company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+  });
+  assert.equal(parsed.grade, "PSA 9/10");
+  assert.deepEqual(emitCsm(parsed, "Example PSA 9/10").canonical_sem.grading_info, {
+    company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+  });
+}
+{
+  const parsed = fields({
+    grading_info: {
+      company: "PSA", card_grade: "", auto_grade: "9", grade_type: "AUTO_ONLY"
+    }
+  });
+  assert.equal(parsed.grade, "PSA Auto 9");
+}
+{
+  const parsed = fields({
+    grading_info: {
+      company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_ONLY"
+    }
+  });
+  assert.equal(parsed.grading_info.grade_type, "CARD_AND_AUTO",
+    "literal grade values outrank a contradictory model enum");
+  assert.equal(parsed.grade, "PSA 9/10");
 }
 
 assert.deepEqual(parseCanonicalFields("not json").defects, ["unparseable"]);
