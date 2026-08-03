@@ -22,6 +22,16 @@ const SOURCE = ["CARD_IMAGE", "SLAB_LABEL", "OFFICIAL_SOURCE"];
 const POLICY = ["REQUIRED", "OPTIONAL", "FORBIDDEN", "NOT_APPLICABLE"];
 const REASON = ["PRODUCT_BASE_APPEARANCE", "NAMES_THE_PARALLEL", "WRITER_CONVENTION", "REDUNDANT", "OTHER"];
 
+// Option order is rotated per claim by a hash of the term. A fixed list makes
+// the first option the default answer, and the first option here happens to be
+// the hypothesis this pilot is supposed to be able to refute.
+const rotate = (list, seed) => {
+  let h = 0;
+  for (const ch of String(seed)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const k = h % list.length;
+  return [...list.slice(k), ...list.slice(0, k)];
+};
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const sel = (name, opts, cls = "") => `<select data-f="${name}" class="${cls}"><option value=""></option>`
   + opts.map((o) => `<option>${o}</option>`).join("") + `</select>`;
@@ -37,7 +47,7 @@ const body = cards.map((card, i) => {
         <label>卡上是不是这样 ${sel("truth_status", TRUTH)}</label>
         <label>依据来源 ${sel("truth_source", SOURCE)}</label>
         <label>该不该进标题 ${sel("title_policy", POLICY)}</label>
-        <label class="key">为什么（最重要） ${sel("policy_reason", REASON, "wide")}</label>
+        <label class="key">为什么 ${sel("policy_reason", rotate(REASON, claim.value + j), "wide")}</label>
         <label class="grow">证据位置 <input data-f="evidence_refs" placeholder="正面右下 / 评级标签 / 来源"></label>
         <label class="grow">备注 <input data-f="note" placeholder="选项表达不了的情况写这里"></label>
       </div>
@@ -97,7 +107,7 @@ background:var(--bg);color:var(--fg)}select.wide{min-width:13rem}input{width:100
 如果哪一条你觉得给的选项没一个对，就选 <b>WRONG_FIELD / WRONG_GRANULARITY / TERM_UNKNOWN</b>，或者写进备注。
 <b>选「都不对」是成功结果，不是没做完。</b> 判断不了就填 UNKNOWN，不要猜。<br>
 两根轴请分开判断：<b>一个词完全可以「是真的」并且「不该写进标题」。</b>
-黄色那格（为什么）比「该不该进标题」本身更重要——它决定我们是该建产品目录，还是该保留这根轴。
+两格都请填：「该不该进标题」和「为什么」。理由那格没有标准答案，按你真实的判断填。
 </div>
 ${body}
 <script>

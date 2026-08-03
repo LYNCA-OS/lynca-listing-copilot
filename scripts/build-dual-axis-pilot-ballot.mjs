@@ -232,16 +232,13 @@ writeFileSync(resolve(outDir, "INSTRUCTIONS.md"), `# 双轴标注 pilot（${ball
 
 | 值 | 什么时候用 |
 |---|---|
-| \`PRODUCT_BASE_APPEARANCE\` | 这个词描述的是这个产品**基础卡本来的样子**，不是这张卡的平行版名。例如 Topps Chrome 的基础卡本来就泛彩虹 |
+| \`PRODUCT_BASE_APPEARANCE\` | 这个词描述的是这个产品**基础卡本来的样子**，不是这张卡的平行版名 |
 | \`NAMES_THE_PARALLEL\` | 这个词就是这张卡平行版的名字 |
 | \`WRITER_CONVENTION\` | 事实没问题，但写手圈子里一般不这么写 / 一般不写它 |
 | \`REDUNDANT\` | 标题里别的地方已经表达了 |
 | \`OTHER\` | 写进 \`note\` |
 
-**为什么问这个**：如果 FORBIDDEN 几乎都是 \`PRODUCT_BASE_APPEARANCE\`，
-说明这个判断能从产品目录推出来，根本不该占用人的时间；
-如果经常是 \`WRITER_CONVENTION\`，说明第 2 轴是真的需要人。
-这一列决定我们要不要建那个 registry。
+这一格**没有标准答案**，按你真实的判断填。选项的排列顺序每条都不同，不代表倾向。
 
 ## 两个轴不要互相牵制
 
