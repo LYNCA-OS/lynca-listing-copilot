@@ -66,3 +66,22 @@ for (let i = 0; i < CLASSES.length; i++) {
 const all = rows.map((r) => f1(normalize(r.reference), normalize(r.title)));
 console.log(`\n全部同义类合并              F1=${mean(all).toFixed(6)}  Δ=+${(mean(all) - mean(raw)).toFixed(6)}`);
 console.log(`\n这不改变任何输出。它衡量的是：如果尺子知道我们已经知道的事，分数会高多少。`);
+
+// Orthography, not vocabulary. We publish Ibrahimović, Dončić, Pokémon and a
+// typographic apostrophe in D’Angelo; the writer types the ASCII forms. Ours
+// is the more faithful rendering of what is printed, and the metric charges us
+// for it. Diacritics are already folded by this scorer's NFD pass, so what is
+// left is the apostrophe and the plural pairs.
+const orthography = (text) => String(text ?? "")
+  .replace(/[‘’ʼ]/g, "'")
+  .replace(/[“”]/g, '"')
+  .replace(/[‐-―]/g, "-");
+const singular = (w) => (/(ss|us|is)$/.test(w) ? w : w.replace(/s$/, ""));
+const foldPlural = (text) => tok(text).map(singular).join(" ");
+
+const orth = rows.map((r) => f1(orthography(r.reference), orthography(r.title)));
+console.log(`\n正字法（弯引号/连字符统一）    F1=${mean(orth).toFixed(6)}  Δ=${mean(orth) - mean(raw) >= 0 ? "+" : ""}${(mean(orth) - mean(raw)).toFixed(6)}`);
+const plur = rows.map((r) => f1(foldPlural(r.reference), foldPlural(r.title)));
+console.log(`单复数折叠                    F1=${mean(plur).toFixed(6)}  Δ=${mean(plur) - mean(raw) >= 0 ? "+" : ""}${(mean(plur) - mean(raw)).toFixed(6)}`);
+const everything = rows.map((r) => f1(foldPlural(normalize(orthography(r.reference))), foldPlural(normalize(orthography(r.title)))));
+console.log(`\n同义 + 正字法 + 单复数 全开   F1=${mean(everything).toFixed(6)}  Δ=+${(mean(everything) - mean(raw)).toFixed(6)}`);
