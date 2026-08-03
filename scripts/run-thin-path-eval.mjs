@@ -140,12 +140,36 @@ function promptArm(prompt) {
 // against 122 for none, with F1 collapsing from 0.828 to 0.469 and print_finish
 // filled on 2 cards of 4. That is a starved answer, not a worse reader, and
 // testing capability on it would have produced a confident wrong conclusion.
+
+// Targeted deliberation, the founder's idea: reasoning is a single knob for the
+// whole request, but the prompt can still say WHERE to spend it.
+//
+// The premise is measured, not assumed. Comparing none against low field by
+// field over the 105 holdout, the effect splits cleanly and the win/loss counts
+// rule out a pure ceiling artefact:
+//
+//   hurt by reasoning   parallel_family 45%->38% (0 wins, 4 losses)
+//                       grading_info    89%->84% (0/2)
+//                       subjects        95%->93% (0/2)
+//   helped              set             21%->50% (9/1)
+//                       descriptive_rarity 30%->50% (3/1)
+//                       serial          58%->72% (7/0)
+//
+// A subject and a slab grade are transcription: they are printed, and thinking
+// about them invents alternatives to something already legible. A set name or a
+// print run has to be worked out. So the instruction names both lists rather
+// than asking for more effort overall.
+const TARGETED_DELIBERATION_PROMPT = `${CANONICAL_FIELDS_PROMPT} `
+  + "Spend no deliberation on what is plainly printed: the subject names, the grading company and grades, the manufacturer, and the parallel family. Read those straight off the card or slab and move on -- reconsidering them replaces a legible fact with a guess. "
+  + "Deliberate on what has to be worked out: the set or insert line, the printed scarcity wording, the stamped print run, the issue year, and the full product line. Those are where a second look changes the answer.";
+
 function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
-                      fixedEffort = null, fixedMaxOutputTokens = null) {
+                      fixedEffort = null, fixedMaxOutputTokens = null,
+                      schema = CANONICAL_FIELDS_SCHEMA) {
   return {
     canonical: true,
     responseSchemaName: "canonical_card_fields",
-    responseSchema: CANONICAL_FIELDS_SCHEMA,
+    responseSchema: schema,
     prompt,
     buildRequest: (context) => {
       const request = buildCanonicalFieldsRequest({
@@ -388,6 +412,8 @@ export const ARM_SPECS = {
   // against 5,193 for none on the smoke run -- the writer budget is 6-8s, so
   // its accuracy is moot. Kept for diagnosis, not for shipping.
   thin_canonical_high_effort_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "low", 8192),
+  // Both arms run at low, the shipped tier, so the only difference is the rule.
+  thin_canonical_low_targeted: canonicalArm("high", TARGETED_DELIBERATION_PROMPT, "low", 8192),
   // medium sits between low and max so the marginal curve can be read rather
   // than assumed: whether the second step buys as much as the first.
   thin_canonical_high_effort_medium: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "medium", 16384),
