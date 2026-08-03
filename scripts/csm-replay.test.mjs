@@ -18,7 +18,9 @@ const base = {
   subjects: ["Victor Wembanyama"], team: "Spurs", card_name: "",
   release_variant: "", surface_color: "Gold", parallel_family: "Refractor",
   parallel_exact: "", descriptive_rarity: "", card_number: "221",
-  serial: "17/50", attributes: ["RC"], grade: "PSA 10",
+  serial: "17/50", attributes: ["RC"], grading_info: {
+    company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+  },
   grammar: "standard", lot_count: "", language: "", ip: "",
   unreadable: [], low_confidence: []
 };
@@ -48,6 +50,10 @@ function reseal(rows) {
 
 const standard = stage(base, "session-standard");
 assert.ok(verifyReplay(standard.rows, standard.composed.title).ok);
+assert.match(standard.composed.title, /PSA 9\/10$/);
+assert.deepEqual(standard.rows.output.structured_output.sem.grading_info, {
+  company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+});
 
 // Identity grammar and composition grammar are different contracts. Uppercase
 // TCG is persisted for identity; lowercase tcg selects the TCG composer.
@@ -55,7 +61,9 @@ const tcg = stage({
   ...base,
   year: "2025", manufacturer: "", product: "Pokemon", set: "Mega Brave",
   subjects: ["Mega Absol Ex"], card_number: "089/063", serial: "",
-  attributes: [], grade: "CGC 10", grammar: "tcg", language: "JP", ip: "Pokemon"
+  attributes: [], grading_info: {
+    company: "CGC", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY"
+  }, grammar: "tcg", language: "JP", ip: "Pokemon"
 }, "session-tcg");
 assert.equal(tcg.rows.resolution.grammar, "TCG");
 assert.equal(tcg.rows.output.structured_output.composition_grammar, "tcg");
@@ -72,7 +80,7 @@ const lot = stage({
   ...base,
   year: "2023", manufacturer: "Panini", product: "Prizm", set: "",
   subjects: ["Victor Wembanyama", "LeBron James"], team: "", card_number: "",
-  serial: "", attributes: [], grade: "", grammar: "lot", lot_count: "2"
+  serial: "", attributes: [], grading_info: null, grade: "", grammar: "lot", lot_count: "2"
 }, "session-lot");
 assert.equal(lot.rows.resolution.grammar, "NON_TCG");
 assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
