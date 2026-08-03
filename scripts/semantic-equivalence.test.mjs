@@ -135,3 +135,52 @@ console.log("semantic-equivalence unobtainable-fact assertions OK");
   assert.ok(invented.equivalent.f1 < 1, "a lot the writer never described stays charged");
 }
 console.log("semantic-equivalence lot-format assertions OK");
+
+// Writers publish the abbreviation; we render the expansion. Neither is wrong,
+// and unlike the hypernym case the two titles share no token, so the phrase has
+// to collapse before tokenisation.
+{
+  const expanded = scoreWithEquivalence("2025-26 Topps Chrome UCC Lionel Messi", "2025-26 Topps Chrome UEFA Champions League Lionel Messi");
+  assert.equal(expanded.equivalent.f1, 1, "UEFA Champions League is UCC");
+  const other = scoreWithEquivalence("2024-25 Topps Chrome UEFA Tijjani Reijnders", "2024-25 Topps Chrome UEFA Club Competitions Tijjani Reijnders");
+  assert.ok(other.equivalent.f1 > other.raw.f1);
+  // Symmetric: abbreviating their expansion is the same statement.
+  const reversed = scoreWithEquivalence("2025-26 Topps Chrome UEFA Champions League Messi", "2025-26 Topps Chrome UCC Messi");
+  assert.equal(reversed.equivalent.f1, 1, "the fold must work both ways");
+  // Writers also use UEFA alone. Folding to the abbreviation broke exactly
+  // this case: their `uefa` and our `ucc` stopped meeting.
+  const bare = scoreWithEquivalence("2024-25 Topps Chrome UEFA Reijnders", "2024-25 Topps Chrome UEFA Club Competitions Reijnders");
+  assert.equal(bare.equivalent.f1, 1, "the bare form must meet the expansion too");
+  // Parent brand beside the sub-brand writers use alone.
+  const skybox = scoreWithEquivalence("2022 Skybox Metal Universe Champions", "2022 Upper Deck Skybox Metal Universe Champions");
+  assert.equal(skybox.equivalent.f1, 1, "Upper Deck beside Skybox adds no fact");
+}
+console.log("semantic-equivalence abbreviation assertions OK");
+
+// An exemption must cut both ways. Removing a token only from what is wanted
+// stops requiring it and starts charging for it -- a 2003 rookie card whose RC
+// we correctly read became a precision loss under the one-sided version.
+{
+  const weSaidIt = scoreWithEquivalence("1976 Topps Walter Payton Rookie RC PSA 9", "1976 Topps Walter Payton RC PSA 9");
+  assert.equal(weSaidIt.equivalent.f1, 1, "being right about an exempted fact must not cost anything");
+  const weDidNot = scoreWithEquivalence("1976 Topps Walter Payton Rookie RC PSA 9", "1976 Topps Walter Payton PSA 9");
+  assert.equal(weDidNot.equivalent.f1, 1, "and omitting it must not either");
+  // Same for a checklist property.
+  const ssp = scoreWithEquivalence("2025-26 Topps UCC Saka Home Advantage SSP", "2025-26 Topps UCC Saka Home Advantage SSP");
+  assert.equal(ssp.equivalent.f1, 1);
+}
+console.log("semantic-equivalence symmetric-exemption assertions OK");
+
+// A writer who lists no components at all has opted out of the bracket.
+{
+  const optedOut = scoreWithEquivalence(
+    "2024 Panini Spectra Baker Mayfield Crush 02/99",
+    "2024 Panini Spectra Baker Mayfield Crush 02/99 Patch Relic");
+  assert.equal(optedOut.equivalent.f1, 1, "components they declined to state are not our error");
+  // But a writer who listed some made a specific choice, and ours disagrees.
+  const disagreed = scoreWithEquivalence(
+    "2023 Panini Certified Rashee Rice Jersey Auto RC",
+    "2023 Panini Certified Rashee Rice Jersey Auto RC Patch");
+  assert.ok(disagreed.equivalent.f1 < 1, "a component added beside their own list still disagrees");
+}
+console.log("semantic-equivalence component-policy assertions OK");
