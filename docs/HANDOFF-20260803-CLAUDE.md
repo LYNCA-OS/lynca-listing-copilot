@@ -85,6 +85,26 @@ branch: codex/thin-production-mainline
 - 这些是链路和持久化证据，不是 `>=0.90` 准确率证据，也不是新的并发上限
   结论。
 
+### Linear / CSM 契约水位
+
+本轮已按 live issue 核对并完成的 COS 是：`COS-8`、`COS-9`、`COS-25`、
+`COS-26`、`COS-27`，均为 `Done`。后续不要凭本地文档推断状态；每次要更新、
+提交或部署前都要重新读取 Linear live issue。
+
+必须保留的契约细节：
+
+- COS-8：三级（先删）是 `Card Number`；二级是 `Print Finish`、
+  `Descriptive Rarity`；一级（最后删）包括 `Year`、`Manufacturer`、
+  `Product`、`Set`、`Subject`、`Card Name`、`Release Variant`、
+  `Numerical Rarity`、`SO`、`Grading Info`。`Release Variant` 不能被当成
+  低级字段提前丢弃。
+- COS-9 TCG：`Manufacturer` 和 `Product` 是 `****` 最低级，绝大多数 TCG
+  上架场景应省略，因为 `Set` 才是产品标识；`Language` 是一级字段，紧跟
+  `IP`，取值 EN/JP/CN/KR。
+- COS-26 是较新的 `under 80 characters` 契约；不要恢复旧的 85 字符实现。
+- CSM canonical field 名单必须以 CSM 为准；不能在应用层的 `THIN_FIELDS`、
+  `unknownFieldNames` 或别的本地名单里静默删掉 `language` 等合法字段。
+
 ## 2. 三日时间线
 
 ### 2026-08-01：薄链路和生产边界固定
