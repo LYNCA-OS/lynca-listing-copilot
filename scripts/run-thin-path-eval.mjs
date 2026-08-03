@@ -130,7 +130,18 @@ function promptArm(prompt) {
   };
 }
 
-function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT) {
+// An arm may pin its own reasoning effort. Comparing tiers across two separate
+// runs would hand the difference to whatever else moved between them, which is
+// the confound the per-card alternation exists to remove -- so the tier travels
+// with the arm and both alternate on the same card.
+// A pinned effort needs a pinned output budget with it. `max_output_tokens` is
+// shared between reasoning and the answer, so at max effort the reasoning eats
+// the budget and the JSON arrives truncated -- measured at 4,096 output tokens
+// against 122 for none, with F1 collapsing from 0.828 to 0.469 and print_finish
+// filled on 2 cards of 4. That is a starved answer, not a worse reader, and
+// testing capability on it would have produced a confident wrong conclusion.
+function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
+                      fixedEffort = null, fixedMaxOutputTokens = null) {
   return {
     canonical: true,
     responseSchemaName: "canonical_card_fields",
@@ -139,14 +150,16 @@ function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT)
     buildRequest: (context) => {
       const request = buildCanonicalFieldsRequest({
         ...context,
-        ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {})
+        ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {}),
+        ...(fixedMaxOutputTokens ? { maxOutputTokens: fixedMaxOutputTokens } : {})
       });
       request.input[0].content[0].text = prompt;
       return request;
     },
     extract: extractCanonicalPayload,
     finish: (payload) => finishCanonicalTitle(payload),
-    imageDetail: fixedImageDetail
+    imageDetail: fixedImageDetail,
+    effort: fixedEffort
   };
 }
 
@@ -368,6 +381,17 @@ export const ARM_SPECS = {
   thin_serial: promptArm(THIN_TITLE_PROMPT.replace("Reply with the title only", `${SERIAL_CLAUSE} Reply with the title only`)),
   thin_canonical: canonicalArm(),
   thin_canonical_high: canonicalArm("high"),
+  // Reasoning-effort tiers. Tested once before the prompt was rewritten, with
+  // no clear gain; the pipeline it was measured on no longer exists.
+  thin_canonical_high_effort_none: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "none"),
+  // `low` is the only tier that can reach production. `max` took 43,187ms
+  // against 5,193 for none on the smoke run -- the writer budget is 6-8s, so
+  // its accuracy is moot. Kept for diagnosis, not for shipping.
+  thin_canonical_high_effort_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "low", 8192),
+  // medium sits between low and max so the marginal curve can be read rather
+  // than assumed: whether the second step buys as much as the first.
+  thin_canonical_high_effort_medium: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "medium", 16384),
+  thin_canonical_high_effort_max: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "max", 32768),
   thin_canonical_original: canonicalArm("original"),
   thin_canonical_serial_exact_high: canonicalArm("high", CANONICAL_SERIAL_EXACT_PROMPT),
   thin_canonical_finish_rarity_high: canonicalArm("high", FINISH_RARITY_PROMPT),
@@ -708,6 +732,7 @@ export function imageSetFingerprint(item, images = null) {
 }
 
 function expectedCheckpointIdentity({ item, arm, model, effort, imageDetail }) {
+  const armEffort = arm.effort ?? effort;
   const sourceImages = [
     ...(item?.images || []).slice(0, 2),
     ...(arm.requiresExtraImages ? (item?.visual_extra_images || []).slice(0, 1) : [])
@@ -723,7 +748,7 @@ function expectedCheckpointIdentity({ item, arm, model, effort, imageDetail }) {
     : [];
   const imageUrls = primarySignable.map((_, index) => `https://checkpoint.invalid/image-${index + 1}`);
   const extraImageUrls = extraSignable.map((_, index) => `https://checkpoint.invalid/extra-image-${index + 1}`);
-  const request = arm.buildRequest({ imageUrls, extraImageUrls, model, effort, imageDetail });
+  const request = arm.buildRequest({ imageUrls, extraImageUrls, model, effort: armEffort, imageDetail });
   return {
     request_sha256: requestFingerprint(request),
     image_set_sha256: imageSetFingerprint(item, sourceImages),
@@ -764,7 +789,8 @@ export function validateCheckpointRows(checkpointBody, {
     for (const field of ["request_sha256", "image_set_sha256", "image_count", "image_detail", "arm_eval_version"]) {
       if ((row[field] ?? null) !== (expected[field] ?? null)) throw new Error(`checkpoint_request_shape_mismatch:${field}:${key}`);
     }
-    if (row.model !== model || row.requested_effort !== effort || row.served_effort !== effort) {
+    const armEffort = arm.effort ?? effort;
+    if (row.model !== model || row.requested_effort !== armEffort || row.served_effort !== armEffort) {
       throw new Error(`checkpoint_request_contract_mismatch:${key}`);
     }
     done.set(key, row);
@@ -1079,7 +1105,10 @@ export async function main(argv = process.argv.slice(2), {
       }
 
       const requestExtraImageUrls = arm.requiresExtraImages ? (extraImageUrls || []) : [];
-      const request = arm.buildRequest({ imageUrls, extraImageUrls: requestExtraImageUrls, model, effort, imageDetail });
+      // The arm's pinned tier wins over the run-level default, so two efforts
+      // can alternate on the same card within one run.
+      const armEffort = arm.effort ?? effort;
+      const request = arm.buildRequest({ imageUrls, extraImageUrls: requestExtraImageUrls, model, effort: armEffort, imageDetail });
       const requestSha256 = requestFingerprint(request);
       const requestImageEntries = [
         ...(item.images || []).slice(0, 2),
@@ -1108,8 +1137,10 @@ export async function main(argv = process.argv.slice(2), {
         continue;
       }
       const { body, attemptCount } = providerResult;
-      const servedEffort = body?.reasoning?.effort ?? effort;
-      if (servedEffort !== effort) {
+      // Read back rather than assumed. One paired evaluation ran both arms on
+      // the same configuration and still reported clean-looking numbers.
+      const servedEffort = body?.reasoning?.effort ?? armEffort;
+      if (servedEffort !== armEffort) {
         await appendDurable(attemptLogPath, {
           schema_version: "thin-path-provider-final-v1",
           event: "final_status",
@@ -1167,7 +1198,7 @@ export async function main(argv = process.argv.slice(2), {
         cached_input_tokens: body?.usage?.input_tokens_details?.cached_tokens ?? null,
         model,
         served_model: body?.model ?? null,
-        requested_effort: effort,
+        requested_effort: armEffort,
         served_effort: servedEffort,
         request_sha256: requestSha256,
         image_set_sha256: imageSetSha256,
