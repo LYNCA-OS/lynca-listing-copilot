@@ -15,7 +15,7 @@ const enabledEnv = {
 function providerFor(fields) {
   return async (request) => {
     assert.equal(request.model, "gpt-5.6-luna");
-    assert.equal(request.reasoning.effort, "none");
+    assert.equal(request.reasoning.effort, "low");
     return new Response(JSON.stringify({
       output_text: JSON.stringify(fields),
       reasoning: { effort: "low" },
