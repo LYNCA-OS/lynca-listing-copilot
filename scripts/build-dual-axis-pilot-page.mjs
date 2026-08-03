@@ -9,12 +9,41 @@
 // Blindness is preserved: the page carries images and candidate terms only --
 // no reference title, no system title, no scores, and no indication of which
 // candidate the pipeline kept.
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const dir = process.argv[2] || "artifacts/dual-axis-pilot";
 const cards = readFileSync(resolve(dir, "ballot.jsonl"), "utf8")
   .split(/\n+/).filter(Boolean).map((l) => JSON.parse(l));
+
+// Images are embedded as data URIs rather than linked.
+//
+// The signed URLs are valid and fetch fine from a normal browser, but every
+// surface the reviewer actually uses blocks them: the chat preview and the
+// Browser pane both refuse non-localhost subresources. A ballot whose images do
+// not appear is not a ballot, and a reviewer who cannot see the card will mark
+// UNKNOWN and waste the round.
+//
+// Front and back are not compressed equally. The finish judgement is made from
+// the front; the back exists to confirm the serial and copyright line. Spending
+// the bytes where the question is decided keeps the whole file around 7 MB
+// instead of 13, without degrading what is being judged.
+const work = mkdtempSync(join(tmpdir(), "pilot-img-"));
+const dataUri = (url, { width, quality }) => {
+  if (!url) return "";
+  const raw = join(work, `${Math.random().toString(36).slice(2)}.jpg`);
+  const out = `${raw}.small.jpg`;
+  try {
+    execFileSync("curl", ["-sS", "-o", raw, url], { timeout: 60000 });
+    execFileSync("sips", ["-Z", String(width), "-s", "format", "jpeg",
+      "-s", "formatOptions", String(quality), raw, "--out", out], { stdio: "ignore" });
+    return `data:image/jpeg;base64,${readFileSync(out).toString("base64")}`;
+  } catch {
+    return url; // fall back to the link rather than losing the card entirely
+  }
+};
 
 const VERDICT = ["OK_TO_JUDGE", "WRONG_FIELD", "WRONG_GRANULARITY", "TERM_UNKNOWN", "OTHER"];
 const TRUTH = ["SUPPORTED", "CONTRADICTED", "UNKNOWN"];
@@ -37,8 +66,11 @@ const sel = (name, opts, cls = "") => `<select data-f="${name}" class="${cls}"><
   + opts.map((o) => `<option>${o}</option>`).join("") + `</select>`;
 
 const body = cards.map((card, i) => {
-  const front = card.images.find((im) => /front/.test(im.role))?.url || "";
-  const back = card.images.find((im) => /back/.test(im.role))?.url || "";
+  const frontUrl = card.images.find((im) => /front/.test(im.role))?.url || "";
+  const backUrl = card.images.find((im) => /back/.test(im.role))?.url || "";
+  const front = dataUri(frontUrl, { width: 1000, quality: 60 });
+  const back = dataUri(backUrl, { width: 700, quality: 45 });
+  process.stderr.write(`\r嵌入 ${i + 1}/${cards.length}   `);
   const claims = card.claims.map((claim, j) => `
     <div class="claim" data-card="${i}" data-claim="${j}" data-value="${esc(claim.value)}">
       <div class="term">${esc(claim.value)}</div>
@@ -56,8 +88,8 @@ const body = cards.map((card, i) => {
   <section class="card" data-card="${i}" data-asset="${esc(card.asset_id)}">
     <header><span class="idx">${i + 1} / ${cards.length}</span><code>${esc(card.asset_id.slice(-12))}</code></header>
     <div class="imgs">
-      <a href="${esc(front)}" target="_blank"><img loading="lazy" src="${esc(front)}" alt="正面"></a>
-      <a href="${esc(back)}" target="_blank"><img loading="lazy" src="${esc(back)}" alt="反面"></a>
+      <a href="${esc(frontUrl)}" target="_blank" title="右键在浏览器打开原图"><img src="${esc(front)}" alt="正面"></a>
+      <a href="${esc(backUrl)}" target="_blank" title="右键在浏览器打开原图"><img src="${esc(back)}" alt="反面"></a>
     </div>
     <div class="claims">${claims}</div>
     <div class="scan">
