@@ -130,11 +130,12 @@ function promptArm(prompt) {
   };
 }
 
-function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT) {
+function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
+                      schema = CANONICAL_FIELDS_SCHEMA) {
   return {
     canonical: true,
     responseSchemaName: "canonical_card_fields",
-    responseSchema: CANONICAL_FIELDS_SCHEMA,
+    responseSchema: schema,
     prompt,
     buildRequest: (context) => {
       const request = buildCanonicalFieldsRequest({
@@ -356,6 +357,32 @@ function canonicalVisualBottomBandV1Arm(fixedImageDetail = "high") {
 }
 
 
+// The pre-2026-08-03 wording, reconstructed by reversing the two edits. Built
+// by transforming the current values so it fails loudly if the text it expects
+// is no longer there, rather than silently comparing against a stale copy.
+function reverseEdit(text, after, before, label) {
+  if (!text.includes(after)) throw new Error(`control arm cannot rebuild ${label}: current text no longer contains the edited passage`);
+  return text.replace(after, before);
+}
+const PRE_COPYRIGHT_LINE_PROMPT = (() => {
+  // CANONICAL_FIELDS_PROMPT is the sentences already joined, so the edits are
+  // reversed on the string.
+  const added = "When there is no slab label, the copyright line on the back is the closest thing the card has to one: "
+    + "it prints the issue year, the publisher and the product together, and it is authoritative for the year. "
+    + "Read it before answering. ";
+  let text = reverseEdit(CANONICAL_FIELDS_PROMPT,
+    "(3) the card back for product, identity code, and the copyright line,",
+    "(3) the card back for product and identity code,", "inspection order");
+  return reverseEdit(text, added, "", "copyright-line sentence");
+})();
+const PRE_COPYRIGHT_LINE_SCHEMA = (() => {
+  const schema = JSON.parse(JSON.stringify(CANONICAL_FIELDS_SCHEMA));
+  const node = schema?.schema?.properties?.year || schema?.properties?.year;
+  if (!node) throw new Error("control arm cannot rebuild schema: year property not found");
+  node.description = "Season or copyright year as printed: \"2023\" or \"2023-24\". Prefer the slab label. A statistics year on the back is not the issue year.";
+  return schema;
+})();
+
 /**
  * An arm is a request builder plus a finisher, not just a prompt: the canonical
  * arm changes what the model is asked to RETURN and therefore changes both
@@ -368,6 +395,13 @@ export const ARM_SPECS = {
   thin_serial: promptArm(THIN_TITLE_PROMPT.replace("Reply with the title only", `${SERIAL_CLAUSE} Reply with the title only`)),
   thin_canonical: canonicalArm(),
   thin_canonical_high: canonicalArm("high"),
+  // Control for the copyright-line arm: the prompt and schema exactly as they
+  // stood before 2026-08-03. Reconstructed here rather than kept in lib, so the
+  // library holds one current version and the comparison still has a real
+  // before. Both the field description and the inspection order changed, which
+  // is two edits and therefore has to be one arm, not two.
+  thin_canonical_high_pre_copyright: canonicalArm("high",
+    PRE_COPYRIGHT_LINE_PROMPT, PRE_COPYRIGHT_LINE_SCHEMA),
   thin_canonical_original: canonicalArm("original"),
   thin_canonical_serial_exact_high: canonicalArm("high", CANONICAL_SERIAL_EXACT_PROMPT),
   thin_canonical_finish_rarity_high: canonicalArm("high", FINISH_RARITY_PROMPT),
