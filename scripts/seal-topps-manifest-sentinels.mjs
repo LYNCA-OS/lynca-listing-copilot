@@ -55,7 +55,11 @@ export function sentinelFor({ cardCount, sample }) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const base = cleanText(process.env.SUPABASE_URL || "https://osrrujmpxxiefppjfgpd.supabase.co");
+  // No fallback ref: the literal that stood here named a project that was
+  // decommissioned in the Sydney -> Singapore move, so an unset SUPABASE_URL
+  // failed as DNS noise instead of as a misconfiguration.
+  const base = cleanText(process.env.SUPABASE_URL);
+  if (!base) throw new Error("SUPABASE_URL is required: there is no default project");
   const key = cleanText(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const apply = argv.includes("--apply");
   // A source that never imported has no evidence behind it. Registering it

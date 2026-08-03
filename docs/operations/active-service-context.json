@@ -1,6 +1,6 @@
 {
   "schema_version": "lynca-active-service-context-v1",
-  "updated_on": "2026-08-01",
+  "updated_on": "2026-08-03",
   "repository": {
     "checkout": "/Users/paidaxin/lynca-thin-path",
     "origin": "https://github.com/LYNCA-OS/lynca-listing-copilot.git"
@@ -16,7 +16,13 @@
       "name": "【Infrastructure】LYNCA Collectible Semantic Model",
       "id": "1cc3354e-b55d-4fc1-8733-6168c7440267"
     },
-    "tracked_issues": ["COS-8", "COS-9", "COS-25", "COS-26", "COS-27"],
+    "tracked_issues": [
+      "COS-8",
+      "COS-9",
+      "COS-25",
+      "COS-26",
+      "COS-27"
+    ],
     "rule": "Read the live issue before every update; never infer status from a local note."
   },
   "vercel": {
@@ -42,16 +48,29 @@
     "rule": "Run from the exact cwd above; do not rely on --cwd from the repository root and never deploy a capacity probe to production."
   },
   "supabase": {
-    "project": "Listing Copilot",
-    "project_ref": "osrrujmpxxiefppjfgpd",
+    "project": "Listing Copilot Singapore",
+    "project_ref": "irpgnhkslrsiucybkufc",
     "organization_id": "amudxinagqcimbuezvyi",
     "cwd": "/Users/paidaxin/lynca-thin-path",
     "link_ref_file": "supabase/.temp/project-ref",
     "link_metadata_file": "supabase/.temp/linked-project.json",
     "migrations": "supabase/migrations",
     "local_env": ".env.local",
-    "required_server_env": ["SUPABASE_URL", "SUPABASE_SECRET_KEY"],
-    "rule": "Never expose SUPABASE_SECRET_KEY; verify the linked ref and URL host before every remote schema or trace operation."
+    "required_server_env": [
+      "SUPABASE_URL",
+      "SUPABASE_SECRET_KEY"
+    ],
+    "rule": "Never expose SUPABASE_SECRET_KEY; verify the linked ref and URL host before every remote schema or trace operation.",
+    "scope": "EVALUATION READ ONLY. This checkout signs eval images and reads reviewed titles. Production migrations, db push, migration-history repair and deploys belong to the production checkout /Users/paidaxin/lynca-thin-production-main.",
+    "superseded": {
+      "project_ref": "osrrujmpxxiefppjfgpd",
+      "note": "Sydney, decommissioned; the hostname no longer resolves. Recorded so a stale reference found elsewhere is recognised as dead rather than retried as a network fault."
+    },
+    "cli_link_expectation": {
+      "state": "NOT_LINKED_TO_PRODUCTION",
+      "forbidden_ref": "irpgnhkslrsiucybkufc",
+      "reason": "This checkout reads evaluation data over SUPABASE_URL and a key. It must never hold a CLI link to the production project: db push, migration-history repair and deploys belong to /Users/paidaxin/lynca-thin-production-main. The stale link to the decommissioned Sydney ref is inert and fails closed, which is the safe state."
+    }
   },
   "retired_default_paths": [
     "Google Cloud Run recognition worker",

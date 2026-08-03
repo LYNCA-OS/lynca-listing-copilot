@@ -53,7 +53,10 @@ STARTUP_PROBE_FAILURE_THRESHOLD="${RECOGNITION_WORKER_STARTUP_PROBE_FAILURE_THRE
 # occasionally cross one 240-second probe window, so require two failed probes
 # before rejecting a healthy-but-slow revision. Set both service-level and
 # revision-level scaling: a stale service cap silently overrides a larger cap.
-ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:-osrrujmpxxiefppjfgpd.supabase.co}"
+# No default host: this allowlist gates which storage the worker may fetch
+# from, and the old literal named a decommissioned project -- a deploy that
+# took the default would have silently refused every current image.
+ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:?set to the storage host for the target project}"
 TOKEN_SECRET_NAME="${RECOGNITION_WORKER_TOKEN_SECRET_NAME:-lynca-recognition-worker-token}"
 VISION_SECRET_NAME="${VISION_API_KEY_SECRET_NAME:-lynca-google-vision-api-key}"
 OCR_BACKEND="${OCR_BACKEND:-google_vision}"

@@ -45,13 +45,17 @@ import process from "node:process";
 import { supabaseRestAdminHeaders } from "../lib/supabase-service-headers.mjs";
 
 import {
-  defaultSupabaseUrl,
+  resolveSupabaseUrl,
   telemetryTables,
   telemetryVerificationContractVersion,
   verifyExport
 } from "./export-telemetry-local.mjs";
 
-const SUPABASE = "https://osrrujmpxxiefppjfgpd.supabase.co";
+// Resolved from the environment, never hardcoded. This is a destructive
+// script whose safety gate asserts that the telemetry export it is about to
+// act on belongs to the project being reclaimed; a literal ref here made that
+// gate assert against a project that no longer exists.
+const supabase = () => resolveSupabaseUrl();
 
 function argValue(argv, name, fallback = "") {
   const index = argv.indexOf(name);
@@ -153,7 +157,10 @@ export async function verifyReclaimGate(verificationPath) {
   if (saved.schema_version !== telemetryVerificationContractVersion || saved.complete !== true) {
     throw new Error("telemetry export verification contract is incomplete or unsupported");
   }
-  if (saved.project_url !== SUPABASE || saved.project_url !== defaultSupabaseUrl) {
+  // Was `!== SUPABASE || !== defaultSupabaseUrl` -- two names for the same
+  // literal, so the second clause could never fire. One comparison, against
+  // the project this run actually targets.
+  if (saved.project_url !== supabase()) {
     throw new Error("telemetry export verification belongs to a different Supabase project");
   }
   const required = new Set(telemetryTables.map(({ table }) => table));
@@ -172,7 +179,7 @@ export async function verifyReclaimGate(verificationPath) {
 
 async function reachable(key) {
   try {
-    const response = await fetch(`${SUPABASE}/rest/v1/catalog_cards?select=id&limit=1`, {
+    const response = await fetch(`${supabase()}/rest/v1/catalog_cards?select=id&limit=1`, {
       headers: headers(key), signal: AbortSignal.timeout(10_000)
     });
     return response.ok;

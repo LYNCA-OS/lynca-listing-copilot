@@ -33,7 +33,10 @@ fi
 # the other of regional Cloud Run CPU. At 4 vCPU and 8 GiB per instance, five
 # replicas use the full 20 vCPU / 40 GiB regional budget.
 MAX_INSTANCES="${VECTOR_WORKER_MAX_INSTANCES:-5}"
-ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:-osrrujmpxxiefppjfgpd.supabase.co}"
+# No default host: this allowlist gates which storage the worker may fetch
+# from, and the old literal named a decommissioned project -- a deploy that
+# took the default would have silently refused every current image.
+ALLOWED_HOSTS="${RECOGNITION_ALLOWED_IMAGE_HOSTS:?set to the storage host for the target project}"
 TOKEN_SECRET_NAME="${RECOGNITION_WORKER_TOKEN_SECRET_NAME:-lynca-recognition-worker-token}"
 IMAGE_TAG="${VECTOR_WORKER_IMAGE_TAG:-$(date -u +%Y%m%d%H%M%S)}"
 IMAGE_URI="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/cloud-run-source-deploy/${SERVICE_NAME}:${IMAGE_TAG}"

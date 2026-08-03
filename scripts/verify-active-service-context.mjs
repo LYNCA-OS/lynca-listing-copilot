@@ -27,12 +27,23 @@ async function verifyVercelLink(target) {
 await verifyVercelLink(context.vercel.production);
 await verifyVercelLink(context.vercel.capacity_lab);
 
+// The CLI link is checked for what it must NOT be.
+//
+// This used to assert linked_ref === project_ref, and it passed for weeks while
+// both named a project that had been decommissioned: two records that agree
+// with each other and with nothing real. Equality with the eval read target is
+// also the wrong thing to want here -- reading evaluation images over
+// SUPABASE_URL is not the same permission as holding a CLI link that `db push`
+// and migration-history repair will act on.
+//
+// So the invariant is the boundary itself: this checkout must not be linked to
+// the production project. The stale link to the dead Sydney ref is inert and
+// fails closed, which is a safe state and deliberately left alone.
+const expectation = context.supabase.cli_link_expectation;
 const linkedRef = (await readFile(join(repoRoot, context.supabase.link_ref_file), "utf8")).trim();
-assert.equal(linkedRef, context.supabase.project_ref, "supabase_link_ref_mismatch");
 const linkedProject = JSON.parse(await readFile(join(repoRoot, context.supabase.link_metadata_file), "utf8"));
-assert.equal(linkedProject.ref, context.supabase.project_ref, "supabase_metadata_ref_mismatch");
-assert.equal(linkedProject.name, context.supabase.project, "supabase_project_name_mismatch");
-assert.equal(linkedProject.organization_id, context.supabase.organization_id, "supabase_organization_mismatch");
+assert.notEqual(linkedRef, expectation.forbidden_ref, "experiment_checkout_linked_to_production");
+assert.notEqual(linkedProject.ref, expectation.forbidden_ref, "experiment_checkout_linked_to_production");
 
 const envPath = join(repoRoot, context.supabase.local_env);
 const envText = await readFile(envPath, "utf8");
@@ -54,5 +65,6 @@ process.stdout.write(`${JSON.stringify({
   linear: `${context.linear.workspace}/${context.linear.team.name}/${context.linear.project.id}`,
   vercel: `${context.vercel.scope.slug}/${context.vercel.production.project}`,
   capacity_lab: `${context.vercel.scope.slug}/${context.vercel.capacity_lab.project}:preview`,
-  supabase_project_ref: context.supabase.project_ref
+  supabase_eval_read_ref: context.supabase.project_ref,
+  supabase_cli_link: `${linkedRef} (${expectation.state})`
 })}\n`);
