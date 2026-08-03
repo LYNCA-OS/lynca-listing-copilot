@@ -208,12 +208,21 @@ assert.deepEqual(parseCanonicalFields(null).defects, ["not_an_object"]);
   assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])));
   // No "#1": the eBay profile does not project [Card Number] for a Standard
   // card. The field is still in the canonical object.
-  // "Prizm" appears twice -- once as the product, once inside the finish -- and
-  // that is left alone deliberately. Prefix de-duplication does not reach a word
-  // in the middle of a bracket, and it should not: the reviewed titles repeat it
-  // too ("Panini Prizm Jalen Brunson RC Prizm Mojo 13/25"). 16 of 148 composed
-  // titles carry a repeat and the reference does the same on those cards.
-  assert.equal(first.title, "2023-24 Panini Prizm LeBron James Silver Prizm 17/50 Auto PSA 10");
+  //
+  // No "Silver Prizm" either, and this fixture is the textbook case for why:
+  // a base Panini Prizm IS silver, so the colour describes the product's base
+  // appearance rather than naming a parallel, and the reviewed titles call the
+  // card a Prizm. The admission layer withholds it. Measured across 150 cards,
+  // `silver` as an observed surface colour hit the reference once in eleven
+  // uses and `rainbow` none in thirty.
+  //
+  // This assertion previously expected the finish to survive; it was written
+  // before the per-term hit rates were measured and encoded the defect.
+  assert.equal(first.title, "2023-24 Panini Prizm LeBron James 17/50 Auto PSA 10");
+  // The observation is preserved even though the resolution rejected it --
+  // withholding must stay reversible for a registry that can confirm the term.
+  assert.equal(card.observed_surface_color, "Silver");
+  assert.equal(card.withheld_finish_terms[0].reason, "BASE_APPEARANCE_NOT_PARALLEL");
   assert.ok(first.suppressed.includes("card_number"));
   assert.equal(card.card_number, "1");
 }
