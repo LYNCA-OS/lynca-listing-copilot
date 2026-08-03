@@ -144,6 +144,20 @@ function promptArm(prompt) {
 // Targeted deliberation, the founder's idea: reasoning is a single knob for the
 // whole request, but the prompt can still say WHERE to spend it.
 //
+// MEASURED, and the verdict splits. The mechanism works and the arm does not.
+// Paired on the 105 holdout against the shipped low tier, every predicted
+// indicator moved: parallel_family filled on 46 cards against 37, its hit rate
+// 59% against 57%, and unreadable stayed low at 9 against 6 -- so naming the
+// field as read-not-reasoned does unstick the silence that low effort induces.
+//
+// It did not become score. F1 0.8387 -> 0.8359, 23 wins to 31, p=0.341, with
+// precision down 0.0116. The extra families we coaxed out are words the writer
+// does not use, because the prompt still teaches the wrong taxonomy one clause
+// away: it offers "Refractor, Prizm, Mojo" as equivalent examples of a finish
+// family when Mojo is a pattern that sits on one. Getting the model to answer
+// and getting it to answer with the right word are separate problems, and this
+// arm only solved the first.
+//
 // The premise is measured, not assumed. Comparing none against low field by
 // field over the 105 holdout, the effect splits cleanly and the win/loss counts
 // rule out a pure ceiling artefact:
