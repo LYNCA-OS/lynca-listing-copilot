@@ -319,15 +319,19 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
     subjects: ["Victor Wembanyama", "Chet Holmgren", "Scoot Henderson"],
     card_number: "1", serial: "17/50", lot_count: "12", grammar: "lot"
   }));
-  assert.ok(composed.title.startsWith("12 Card Lot"));
+  // Lot*n since 2026-08-03; the writers never wrote "n Card Lot" and the
+  // bracket comment in the composer had specified Lot*n all along.
+  assert.ok(composed.title.startsWith("Lot*12"));
   assert.ok(!composed.title.includes("#1"));
   assert.ok(composed.title.includes("17/50"));
   // The combined bracket carries the product, not just the manufacturer.
   assert.match(composed.title, /Panini Prizm/);
 }
-// An uncounted lot says "Card Lot" rather than inventing a count from the
+// An uncounted lot says a bare "Lot" rather than inventing a count from the
 // subject list, which caps at 3 and is not the number of cards.
-assert.ok(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title.startsWith("Card Lot"));
+assert.ok(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title.startsWith("Lot"));
+assert.ok(!composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title.startsWith("Lot*"),
+  "an unread count must not be fabricated");
 
 // ------------------------------------------------------------ empty and team
 

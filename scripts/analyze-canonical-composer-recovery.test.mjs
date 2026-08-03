@@ -18,25 +18,53 @@ const result = analyzeCanonicalComposerRecovery(rows, diagnosis);
 assert.equal(result.population, 100);
 assert.ok(Math.abs(result.baseline.macro_f1 - 0.7698022907754876) < 1e-12,
   "the stored control must reproduce before candidate scoring is trusted");
-assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.006060524338785123) < 1e-12);
+// Repinned 2026-08-03 when the lot bracket changed from "n Card Lot" to
+// "Lot*n" at the founder's direction. The control still reproduces exactly
+// (the assertion above is untouched), so the movement is the candidate's.
+//
+// The shorter marker frees four characters, and the composer spends them: the
+// one new loss is a card where the reclaimed budget went to two more subject
+// names and pushed "Rainbow Refractor" out. That is COS-8 behaving as written
+// -- Subject is a `*` bracket and Print Finish is `**` -- not a defect.
+assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.008554120597598858) < 1e-12);
 assert.deepEqual(
   [result.paired.wins, result.paired.losses, result.paired.ties],
-  [10, 0, 90]
+  [14, 1, 85]
 );
-assert.equal(result.paired.p_two_sided, 0.001953125);
+assert.equal(result.paired.p_two_sided, 0.0009765625);
 assert.deepEqual(result.downstream_53, {
-  recovered_occurrences: 12,
+  recovered_occurrences: 16,
   total_occurrences: 53,
-  recovered_share: 12 / 53,
-  recovered_cards: 10
+  recovered_share: 16 / 53,
+  recovered_cards: 12
 });
+// The one lost reference token is "Refractor" on a lot card, displaced by two
+// subject names the reclaimed budget made room for -- COS-8 ranks Subject
+// above Print Finish, so the composer chose correctly. Nothing was invented,
+// and that is asserted on its own line so a future change cannot trade a
+// fabricated token for a budget explanation.
+assert.equal(result.safety.cards_with_unbacked_new_tokens, 0,
+  "nothing may be invented, whatever the budget does");
 assert.deepEqual(result.safety, {
   over_80_characters: 0,
-  cards_with_lost_reference_tokens: 0,
+  cards_with_lost_reference_tokens: 1,
   cards_with_unbacked_new_tokens: 0,
-  critical_wrong_proxy: 0
+  critical_wrong_proxy: 1
 });
-assert.equal(result.promotion_gate.default_eligible, true);
+// FLIPPED by the lot-format change, and left flipped deliberately.
+//
+// The gate requires zero lost reference tokens. After "Lot*n" freed four
+// characters, one lot card spends them on two more subjects and drops
+// "Refractor", so leaf recovery -- a DIFFERENT mechanism -- no longer passes
+// its own gate on this cohort.
+//
+// The gate is stricter than the contract it serves: COS-8 ranks Subject `*`
+// above Print Finish `**`, so that displacement is the drop order working. But
+// redefining someone else's promotion gate to keep a green light is how a gate
+// stops meaning anything, so the assertion records the truth and the decision
+// goes to whoever owns that mechanism.
+assert.equal(result.promotion_gate.default_eligible, false,
+  "leaf recovery loses gate eligibility under Lot*n; the gate is stricter than COS-8's drop order");
 
 const baselineCommit = "d8bc6590bc542ab7be0a0395e41d9a1bac344240";
 const replay = (path) => JSON.parse(execFileSync(process.execPath, [
@@ -52,20 +80,32 @@ const replay = (path) => JSON.parse(execFileSync(process.execPath, [
 // 100 as the only surface on which the rule must work.
 const currentSchema = replay("artifacts/canonical-v4/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(currentSchema.population, 148);
-assert.ok(Math.abs(currentSchema.paired.delta_macro_f1 - 0.0026979749805836617) < 1e-12);
+assert.ok(Math.abs(currentSchema.paired.delta_macro_f1 - 0.004033250554989709) < 1e-12);
 assert.deepEqual(
   [currentSchema.paired.wins, currentSchema.paired.losses, currentSchema.paired.ties],
-  [6, 0, 142]
+  [11, 1, 136]
 );
-assert.equal(currentSchema.safety.critical_wrong_proxy, 0);
+// critical_wrong_proxy sums lost reference tokens and unbacked new ones, and
+// only the first moved. FABRICATION IS STILL ZERO, which is the half that
+// makes this a safety gate; asserted separately below so a future change
+// cannot hide an invented token behind a budget reallocation.
+assert.equal(currentSchema.safety.cards_with_unbacked_new_tokens, 0,
+  "nothing may be invented, whatever the budget does");
+assert.equal(currentSchema.safety.critical_wrong_proxy, 2);
+// Both are explainable. One card loses "Refractor" because the freed budget
+// went to two more subjects, which COS-8 ranks higher. The other loses "card",
+// a token we never actually recognised -- the reference says "Card Shop" and
+// the old "2 Card Lot" wording matched it by coincidence.
 
 const priorSchema = replay("artifacts/canonical-v3/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(priorSchema.population, 150);
-assert.ok(Math.abs(priorSchema.paired.delta_macro_f1 - 0.0027281267592480507) < 1e-12);
+assert.ok(Math.abs(priorSchema.paired.delta_macro_f1 - 0.004451679077766002) < 1e-12);
 assert.deepEqual(
   [priorSchema.paired.wins, priorSchema.paired.losses, priorSchema.paired.ties],
-  [6, 0, 144]
+  [12, 1, 137]
 );
-assert.equal(priorSchema.safety.critical_wrong_proxy, 0);
+assert.equal(priorSchema.safety.cards_with_unbacked_new_tokens, 0,
+  "nothing may be invented, whatever the budget does");
+assert.equal(priorSchema.safety.critical_wrong_proxy, 1);
 
 process.stdout.write("canonical composer recovery analysis: ok\n");

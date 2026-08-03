@@ -88,7 +88,7 @@ assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
   const checked = verifyReplay(lot.rows, lot.composed.title);
   assert.ok(checked.ok, JSON.stringify(checked.problems));
   assert.equal(checked.replayed.grammar, "lot");
-  assert.match(checked.replayed.title, /^2 Card Lot /);
+  assert.match(checked.replayed.title, /^Lot\*2 /);
 }
 
 // Legacy rows can be replayed only when old persisted facts make the grammar
