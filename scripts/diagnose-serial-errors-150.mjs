@@ -12,6 +12,20 @@ import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 
 const tok = (v) => String(v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "")
   .toLowerCase().split(/[^a-z0-9/']+/).filter(Boolean);
+
+// A grade pair reads exactly like a print run. "PSA 9/10" is a card grade of 9
+// with an autograph grade of 10, and counting it as a serial inflated the
+// "reference has one, we emit nothing" bucket. Same class of mistake as an
+// earlier `\blot\b` that could not match "lotx3": a regex that is right about
+// shape and wrong about meaning.
+const GRADERS = /(psa|bgs|sgc|cgc|beckett)$/i;
+function refSerialTokens(reference) {
+  const words = String(reference ?? "").split(/\s+/).filter(Boolean);
+  return words.filter((word, index) => /^\d+\/\d+$/.test(word.toLowerCase())
+    && !(index > 0 && GRADERS.test(words[index - 1])))
+    .map((w) => w.toLowerCase());
+}
+
 const rows = readFileSync(process.argv[2]
   || "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl", "utf8")
   .split(/\n+/).filter(Boolean).map((l) => JSON.parse(l))
@@ -20,7 +34,7 @@ const rows = readFileSync(process.argv[2]
 const strip = (s) => s.replace(/^0+(?=\d)/, "");
 const parts = (s) => { const m = /^(\d+)\s*\/\s*(\d+)$/.exec(String(s).trim()); return m ? [m[1], m[2]] : null; };
 // Any x/y in the reference is a candidate serial; the writer's own token is truth.
-const refSerials = (ref) => tok(ref).filter((t) => /^\d+\/\d+$/.test(t));
+const refSerials = (ref) => refSerialTokens(ref);
 
 const b = {}; const ex = {};
 const note = (k, d) => { b[k] = (b[k] || 0) + 1; (ex[k] = ex[k] || []).push(d); };

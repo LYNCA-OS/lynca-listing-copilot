@@ -24,6 +24,20 @@ const padToDenominator = (s) => {
   return `${bare.padStart(den.length, "0")}/${den}`;
 };
 
+
+// A grade pair reads exactly like a print run. "PSA 9/10" is a card grade of 9
+// with an autograph grade of 10, and counting it as a serial inflated the
+// "reference has one, we emit nothing" bucket. Same class of mistake as an
+// earlier `\blot\b` that could not match "lotx3": a regex that is right about
+// shape and wrong about meaning.
+const GRADERS = /(psa|bgs|sgc|cgc|beckett)$/i;
+function refSerialTokens(reference) {
+  const words = String(reference ?? "").split(/\s+/).filter(Boolean);
+  return words.filter((word, index) => /^\d+\/\d+$/.test(word.toLowerCase())
+    && !(index > 0 && GRADERS.test(words[index - 1])))
+    .map((w) => w.toLowerCase());
+}
+
 const rows = readFileSync(process.argv[2]
   || "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl", "utf8")
   .split(/\n+/).filter(Boolean).map((l) => JSON.parse(l))
@@ -34,7 +48,7 @@ let refPadded = 0, refUnpadded = 0;
 for (const row of rows) {
   const { fields } = parseCanonicalFields(row.raw_title);
   const ours = String(fields.serial || "").trim();
-  const refTokens = tok(row.reference).filter((t) => /^\d+\/\d+$/.test(t));
+  const refTokens = refSerialTokens(row.reference);
   const p = parts(ours);
   if (p && Number(p[0].replace(/^0+(?=\d)/, "")) > Number(p[1].replace(/^0+(?=\d)/, ""))) {
     impossible++; impossibleList.push(`${row.asset_id.slice(-8)} ${ours}`);

@@ -103,29 +103,57 @@ for (const card of selected) {
       .map(({ value }) => ({
         field: "print_finish",
         value,
+        // Asked BEFORE the two axes, because a reviewer who cannot judge a
+        // claim on our terms must be able to say so instead of picking the
+        // least-wrong box. A ballot that always yields a clean answer is not
+        // evidence that the frame fits -- it is evidence that the frame was
+        // not falsifiable, which is the failure this project keeps repeating.
+        //
+        // OK_TO_JUDGE | WRONG_FIELD | WRONG_GRANULARITY | TERM_UNKNOWN | OTHER
+        claim_verdict: "",
         // TWO fields, never one enum. The whole point of the pilot.
         truth_status: "",
         truth_source: "",
         evidence_refs: [],
         title_policy: "",
+        // WHY, not just what. CSM already fixes title policy at the FIELD level
+        // -- [Print Finish] is a secondary-priority bracket, include it if it
+        // fits -- so every claim on this ballot gets the same answer from the
+        // contract. What CSM cannot say is whether a given VALUE names this
+        // card's parallel or merely describes the base product it was printed
+        // on, and that is a fact about the product, not a matter of taste.
+        //
+        // So the reason is the load-bearing answer. If FORBIDDEN is almost
+        // always PRODUCT_BASE_APPEARANCE, the judgement is derivable from a
+        // registry and should never have been asked of a person. If it is
+        // often WRITER_CONVENTION, the second axis is real and has to stay.
+        // This single column decides whether COS-43 replaces human labour here
+        // or merely supplements it.
+        policy_reason: "",
         note: ""
       })),
     // The load-bearing step of gold construction, exercised in miniature. Recall's
     // denominator depends on catching facts that NO candidate list contains, so
     // the ballot has to ask for them explicitly rather than assume the union is
     // complete.
-    missing_facts_scan: { finish_terms_not_listed_above: "", other_required_facts: "" }
+    missing_facts_scan: {
+      finish_terms_not_listed_above: "",
+      other_required_facts: "",
+      // Let the reviewer simply state the right answer rather than navigate our
+      // option set to approximate it.
+      what_this_cards_finish_actually_is: ""
+    }
   });
 }
 
 writeFileSync(resolve(outDir, "ballot.jsonl"), ballot.map((r) => JSON.stringify(r)).join("\n") + "\n");
 writeFileSync(resolve(outDir, "ballot.csv"),
-  "asset_id,front,back,claim_value,truth_status,truth_source,evidence_refs,title_policy,note\n"
+  "asset_id,front,back,claim_value,claim_verdict,truth_status,truth_source,evidence_refs,title_policy,policy_reason,note\n"
   + ballot.flatMap((card) => {
     const front = card.images.find((i) => /front/.test(i.role)) || {};
     const back = card.images.find((i) => /back/.test(i.role)) || {};
     return card.claims.map((claim) => [card.asset_id, front.url || front.object_path || "",
-      back.url || back.object_path || "", claim.value, "", "", "", "", ""]
+      back.url || back.object_path || "", claim.value, "", "", "", "", "", "", ""]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
   }).join("\n") + "\n");
 
@@ -134,24 +162,43 @@ writeFileSync(resolve(outDir, "ballot.csv"),
 // candidate row, and makes the load-bearing recall-denominator check actually
 // fillable outside the JSON representation.
 writeFileSync(resolve(outDir, "missing-facts.csv"),
-  "asset_id,front,back,finish_terms_not_listed_above,other_required_facts,note\n"
+  "asset_id,front,back,what_this_cards_finish_actually_is,finish_terms_not_listed_above,other_required_facts,note\n"
   + ballot.map((card) => {
     const front = card.images.find((i) => /front/.test(i.role)) || {};
     const back = card.images.find((i) => /back/.test(i.role)) || {};
-    return [card.asset_id, front.url || front.object_path || "", back.url || back.object_path || "", "", "", ""]
+    return [card.asset_id, front.url || front.object_path || "", back.url || back.object_path || "", "", "", "", ""]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
   }).join("\n") + "\n");
 
-writeFileSync(resolve(outDir, "INSTRUCTIONS.md"), `# 双轴标注 pilot（${ballot.length} 张卡）
+writeFileSync(resolve(outDir, "INSTRUCTIONS.md"), `# 双轴标注 pilot（${ballot.length} 张卡 / ${ballot.reduce((s, c) => s + c.claims.length, 0)} 条判断）
 
-这是**试跑**，用来发现表格本身的问题，结果不计入任何结论。发现表达不了的情况，
-写在 \`note\` 里，比勉强填一个格子有用得多。
+这是**试跑**。我们要检验的不是你判得准不准，而是**这张表本身够不够用**。
+结果不计入任何结论。
 
-## 每条 claim 要填两个**互相独立**的判断
+> **最重要的一条**：如果你觉得我们给的选项没有一个对，那正是我们想知道的。
+> 请用 \`claim_verdict\` 说出来，或者写进 \`note\`。
+> **选「都不对」是这次试跑的成功结果，不是你没做完。**
+> 被迫往不合适的格子里填一个答案，会让我们拿到一份看起来干净、实际错误的数据。
 
-看正反面图，对列出的每一个工艺/平行版词，分别回答：
+---
 
-**第一轴 · 这张卡实际上是不是这样？**（\`truth_status\`）
+## 第 0 步：这条判断本身成不成立？（\`claim_verdict\`）
+
+我们从卡上提取了一些**工艺/平行版**候选词，逐条请你判断。但这些词可能本身就有问题：
+
+| 值 | 什么时候用 |
+|---|---|
+| \`OK_TO_JUDGE\` | 这个词确实是这张卡的工艺/平行版候选，可以往下判 |
+| \`WRONG_FIELD\` | 这个词根本不是工艺（例如它是套组名的一部分、是球队、是卡名） |
+| \`WRONG_GRANULARITY\` | 拆错了。比如我们分开列了「Gold」和「Prismatic」，但这张卡的平行版名就叫「Gold Prismatic」，该算一个 |
+| \`TERM_UNKNOWN\` | 我不认识这个词，不确定它指什么 |
+| \`OTHER\` | 别的问题，写在 \`note\` |
+
+**只有填 \`OK_TO_JUDGE\` 才需要继续填后面两轴。** 其余情况后面留空即可。
+
+---
+
+## 第 1 轴：这张卡实际上是不是这样？（\`truth_status\`）
 
 | 值 | 含义 |
 |---|---|
@@ -162,38 +209,66 @@ writeFileSync(resolve(outDir, "INSTRUCTIONS.md"), `# 双轴标注 pilot（${ball
 **判断不了就填 \`UNKNOWN\`，不要猜。** 猜出来的「假」比空着危害大得多。
 
 同时填 \`truth_source\`：\`CARD_IMAGE\`（卡面）/ \`SLAB_LABEL\`（评级标签）/ \`OFFICIAL_SOURCE\`（查过官方资料，请在 note 写来源）。
-\`evidence_refs\` 不能为空：写明具体图片 object path/正反面，或稳定的官方来源标识；
-只写“我判断过”不构成可复核证据。
 
-**第二轴 · 这个词该不该出现在 eBay 标题里？**（\`title_policy\`）
+\`evidence_refs\` 不能为空：写明具体是正面还是反面、卡上哪个位置，或稳定的官方来源标识。
+只写「我判断过」不构成可复核证据。
+
+---
+
+## 第 2 轴：这个词该不该出现在 eBay 标题里？（\`title_policy\`）
 
 | 值 | 含义 |
 |---|---|
 | \`REQUIRED\` | 必须写，不写这条标题就不合格 |
 | \`OPTIONAL\` | 写不写都行 |
 | \`FORBIDDEN\` | 不该写（例如它只是这个产品的基础外观，不是这张卡的平行版名） |
-| \`NOT_APPLICABLE\` | 第一轴是 CONTRADICTED 或 UNKNOWN 时填这个 |
+| \`NOT_APPLICABLE\` | 第 1 轴填了 CONTRADICTED 或 UNKNOWN 时用这个 |
+
+### 还要填理由（\`policy_reason\`）—— 这一列比上面那格更重要
+
+我们的标题规则（哪些 bracket、什么顺序、谁先让位）**已经写死在 CSM 里了**，
+所以「print_finish 该不该进标题」这个问题，契约对每一条的回答都一样。
+契约回答不了的是：**这个词到底是在指认这张卡的版本，还是只是在描述它印在什么产品上。**
+
+| 值 | 什么时候用 |
+|---|---|
+| \`PRODUCT_BASE_APPEARANCE\` | 这个词描述的是这个产品**基础卡本来的样子**，不是这张卡的平行版名。例如 Topps Chrome 的基础卡本来就泛彩虹 |
+| \`NAMES_THE_PARALLEL\` | 这个词就是这张卡平行版的名字 |
+| \`WRITER_CONVENTION\` | 事实没问题，但写手圈子里一般不这么写 / 一般不写它 |
+| \`REDUNDANT\` | 标题里别的地方已经表达了 |
+| \`OTHER\` | 写进 \`note\` |
+
+**为什么问这个**：如果 FORBIDDEN 几乎都是 \`PRODUCT_BASE_APPEARANCE\`，
+说明这个判断能从产品目录推出来，根本不该占用人的时间；
+如果经常是 \`WRITER_CONVENTION\`，说明第 2 轴是真的需要人。
+这一列决定我们要不要建那个 registry。
 
 ## 两个轴不要互相牵制
 
-这是本次 pilot 最要紧的一条。**一个词完全可以「是真的」并且「不该写进标题」。**
-第一轴只问事实，第二轴只问市场表达。请分开判断，不要因为觉得不该写就把事实判成假。
+这是本次试跑最要紧的检验点。**一个词完全可以「是真的」并且「不该写进标题」。**
+第 1 轴只问事实，第 2 轴只问市场表达。请分开判断，
+不要因为觉得不该写就把事实判成假，也不要因为是真的就觉得必须写。
 
-## 还要做一件事：补漏
+---
 
-另一个文件 \`missing-facts.csv\` 每张卡有一行、两个必须填写的空格：
+## 每张卡还要填一张 \`missing-facts.csv\`
 
-- \`finish_terms_not_listed_above\`：上面没列出来、但你在图上看到的工艺/平行版词；
-- \`other_required_facts\`：这张卡还有什么信息是**必须**进标题的。
+- \`what_this_cards_finish_actually_is\`：**直接写出你认为这张卡的工艺/平行版到底是什么。**
+  不用管我们上面列了什么。如果我们列的全不对，这一格就是正确答案。
+- \`finish_terms_not_listed_above\`：上面没列、但你在图上看到的其他工艺词
+- \`other_required_facts\`：这张卡还有什么信息是**必须**进标题的
 
 这一步不能跳。上面的候选词是机器给的，只审它们会让「机器和人都漏掉的事实」
 从统计里彻底消失。
 
+---
+
 ## 不要做的事
 
-- 不要看任何已有标题（系统的、别的写手的都不行）。
+- 不要看任何已有标题（系统产出的、别的写手写的都不行）。
 - 不要和别人讨论具体某张卡。
 - 不要回头改前面填过的行来求一致。
+- **不要为了填满而填。** 空着并说明原因，比填一个你不信的值有用。
 
 合法取值：\`truth_status\` ∈ ${TRUTH_STATUSES.join(" / ")}；\`title_policy\` ∈ ${TITLE_POLICIES.join(" / ")}。
 `);
