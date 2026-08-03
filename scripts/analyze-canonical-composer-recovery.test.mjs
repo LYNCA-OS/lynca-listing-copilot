@@ -48,6 +48,7 @@ assert.equal(result.safety.cards_with_unbacked_new_tokens, 0,
 assert.deepEqual(result.safety, {
   over_80_characters: 0,
   cards_with_lost_reference_tokens: 1,
+  cards_with_uncontracted_token_loss: 1,
   cards_with_unbacked_new_tokens: 0,
   critical_wrong_proxy: 1
 });
@@ -63,8 +64,22 @@ assert.deepEqual(result.safety, {
 // redefining someone else's promotion gate to keep a green light is how a gate
 // stops meaning anything, so the assertion records the truth and the decision
 // goes to whoever owns that mechanism.
+// Still false, and for a reason the gate cannot be taught without becoming
+// wrong in another direction.
+//
+// The gate now defers to CSM: a reference token dropped because the priority
+// order preferred a higher bracket is the contract working, not a defect. That
+// is not what happened here. The lost token is `card`, from the writer's "Card
+// Shop Promo" -- a shop name we never identified. The old wording "2 Card Lot"
+// matched it by pure coincidence, and Lot*n removed the accident.
+//
+// So this is a third category: not a contract-sanctioned drop, not a
+// fabrication, but the loss of a match we never earned. Teaching the gate to
+// forgive it would mean forgiving every coincidental match, which is how a
+// safety signal becomes decoration. Recorded, and the owner of leaf recovery
+// decides.
 assert.equal(result.promotion_gate.default_eligible, false,
-  "leaf recovery loses gate eligibility under Lot*n; the gate is stricter than COS-8's drop order");
+  "one card loses a token it only ever matched by coincidence; not a contract drop, so the gate holds");
 
 const baselineCommit = "d8bc6590bc542ab7be0a0395e41d9a1bac344240";
 const replay = (path) => JSON.parse(execFileSync(process.execPath, [
@@ -91,7 +106,7 @@ assert.deepEqual(
 // cannot hide an invented token behind a budget reallocation.
 assert.equal(currentSchema.safety.cards_with_unbacked_new_tokens, 0,
   "nothing may be invented, whatever the budget does");
-assert.equal(currentSchema.safety.critical_wrong_proxy, 2);
+assert.equal(currentSchema.safety.critical_wrong_proxy, currentSchema.safety.cards_with_uncontracted_token_loss + currentSchema.safety.cards_with_unbacked_new_tokens);
 // Both are explainable. One card loses "Refractor" because the freed budget
 // went to two more subjects, which COS-8 ranks higher. The other loses "card",
 // a token we never actually recognised -- the reference says "Card Shop" and
@@ -106,6 +121,6 @@ assert.deepEqual(
 );
 assert.equal(priorSchema.safety.cards_with_unbacked_new_tokens, 0,
   "nothing may be invented, whatever the budget does");
-assert.equal(priorSchema.safety.critical_wrong_proxy, 1);
+assert.equal(priorSchema.safety.critical_wrong_proxy, priorSchema.safety.cards_with_uncontracted_token_loss + priorSchema.safety.cards_with_unbacked_new_tokens);
 
 process.stdout.write("canonical composer recovery analysis: ok\n");

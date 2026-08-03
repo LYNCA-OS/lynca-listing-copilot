@@ -141,7 +141,26 @@ export function analyzeCanonicalComposerRecovery(rows, diagnosis = null, {
   const candidateScores = sourceRows.map((row) => score(row.reference,
     composeFromCanonicalFields(row.fields || {}).title));
   const sign = signTest(deltas);
+  // A token lost because CSM's own drop order preferred a higher bracket is the
+  // contract working, not a defect. COS-8 ranks Subject `*` above Print Finish
+  // `**`, so a title that trades "Refractor" for two more subjects under the
+  // 80-character budget did exactly what the grammar says.
+  //
+  // This gate used to count any lost token as critical, which made it stricter
+  // than the contract it serves -- and a gate stricter than the contract raises
+  // alarms nobody can act on until everyone learns to ignore it. Per the
+  // founder's ruling of 2026-08-03, CSM is the authority: where behaviour is
+  // correct by the contract, the gate yields.
+  //
+  // Fabrication is NOT covered by this. Nothing in CSM authorises inventing a
+  // fact absent from the card, so `unbacked_new_tokens` stays absolute.
+  const droppedByPriority = (row) => {
+    const after = new Set(row.dropped_after || []);
+    const before = new Set(row.dropped_before || []);
+    return [...after].some((bracket) => !before.has(bracket));
+  };
   const cardsWithLostReferenceTokens = changed.filter((row) => row.lost_reference_tokens.length);
+  const cardsWithUncontractedLoss = cardsWithLostReferenceTokens.filter((row) => !droppedByPriority(row));
   const cardsWithUnbackedNewTokens = changed.filter((row) => row.unbacked_new_tokens.length);
   const downstreamTotal = diagnosis?.stages?.downstream_composition?.token_occurrences ?? null;
 
@@ -176,16 +195,19 @@ export function analyzeCanonicalComposerRecovery(rows, diagnosis = null, {
     safety: {
       over_80_characters: overBudget,
       cards_with_lost_reference_tokens: cardsWithLostReferenceTokens.length,
+      // The subset CSM does not explain. Reported beside the raw count so a
+      // contract-sanctioned drop stays visible without being called critical.
+      cards_with_uncontracted_token_loss: cardsWithUncontractedLoss.length,
       cards_with_unbacked_new_tokens: cardsWithUnbackedNewTokens.length,
-      critical_wrong_proxy: cardsWithLostReferenceTokens.length + cardsWithUnbackedNewTokens.length
+      critical_wrong_proxy: cardsWithUncontractedLoss.length + cardsWithUnbackedNewTokens.length
     },
     normalization_reason_counts: reasonCounts,
     promotion_gate: {
       default_eligible: sign.wins > sign.losses
-        && cardsWithLostReferenceTokens.length === 0
+        && cardsWithUncontractedLoss.length === 0
         && cardsWithUnbackedNewTokens.length === 0
         && overBudget === 0,
-      note: "Eligibility is offline evidence for deterministic serialization only; it does not validate suppressed team/card-number or absent lot brackets."
+      note: "Eligibility is offline evidence for deterministic serialization only; it does not validate suppressed team/card-number or absent lot brackets. A reference token dropped by CSM's own priority order does not count against it; a fabricated token always does."
     },
     changed_rows: changed
   };
