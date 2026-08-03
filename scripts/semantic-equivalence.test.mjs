@@ -47,3 +47,77 @@ assert.ok(SYNONYM_CLASSES.every((c) => Object.isFrozen(c) && Object.isFrozen(c.f
   "classes are frozen so the version cannot drift from what was measured");
 
 console.log("semantic-equivalence.test.mjs OK");
+
+// A season span and its opening year are the same issue. The convention is
+// trade knowledge, not something printed on the card, and we are never wrong
+// about it -- 22 inside the writer's span, 0 outside, across the cohort.
+assert.deepEqual([...equivalenceTokens("2025-26 Topps Chrome")], [...equivalenceTokens("2025 Topps Chrome")]);
+assert.deepEqual([...equivalenceTokens("2003-04 Upper Deck")], [...equivalenceTokens("2003 Upper Deck")]);
+// Symmetric: a span WE produce collapses too, so this cannot pay us for a guess.
+{
+  const s2 = scoreWithEquivalence("2018 Panini Prizm", "2018-19 Panini Prizm");
+  assert.equal(s2.equivalent.f1, 1, "folding must work in both directions");
+}
+// A serial is not a season and must survive untouched.
+assert.ok(equivalenceTokens("05/99 Gold").has("05/99"), "a print run is not a year span");
+assert.ok(equivalenceTokens("2025 Topps 1/1").has("1/1"));
+console.log("semantic-equivalence season-span assertions OK");
+
+// Partial finish credit: either half of "Gold Refractor" identifies the card.
+{
+  const colourOnly = scoreWithEquivalence("2025 Topps Chrome Ohtani Gold Refractor", "2025 Topps Chrome Ohtani Gold");
+  assert.equal(colourOnly.equivalent.f1, 1, "the colour alone satisfies the finish");
+  const familyOnly = scoreWithEquivalence("2025 Topps Chrome Ohtani Gold Refractor", "2025 Topps Chrome Ohtani Refractor");
+  assert.equal(familyOnly.equivalent.f1, 1, "the family alone satisfies the finish");
+  // A misreading is not a coarser reading and stays charged.
+  const wrongColour = scoreWithEquivalence("2025 Topps Chrome Ohtani Gold Refractor", "2025 Topps Chrome Ohtani Green Refractor");
+  assert.ok(wrongColour.equivalent.f1 < 1, "naming a colour the writer did not use is still wrong");
+  // Saying nothing is not a partial answer.
+  const silent = scoreWithEquivalence("2025 Topps Chrome Ohtani Gold Refractor", "2025 Topps Chrome Ohtani");
+  assert.ok(silent.equivalent.f1 < 1, "an empty finish layer is still a miss");
+}
+console.log("semantic-equivalence partial-finish assertions OK");
+
+// A hypernym we add is free only when the writer's specific term is also ours.
+{
+  const redundant = scoreWithEquivalence(
+    "2019-20 Panini Eminence Stephen Curry Peerless Patch Auto 3/5",
+    "2019-20 Panini Eminence Peerless Patches Stephen Curry 3/5 Auto Patch Relic");
+  assert.equal(redundant.equivalent.f1, 1, "Relic beside their Patch states nothing new");
+  // Coarser, not redundant: we said Relic and never said Patch.
+  const coarser = scoreWithEquivalence(
+    "2019-20 Panini Eminence Stephen Curry Peerless Patch Auto 3/5",
+    "2019-20 Panini Eminence Peerless Stephen Curry 3/5 Auto Relic");
+  assert.ok(coarser.equivalent.f1 < 1, "a hypernym replacing their specific term is still charged");
+  // Parent brand beside the sub-brand they used.
+  const parent = scoreWithEquivalence("2026 Bowman Chrome Kendry Chourio", "2026 Topps Bowman Chrome Kendry Chourio");
+  assert.equal(parent.equivalent.f1, 1, "Topps beside Bowman adds no fact");
+  // But a parent brand INSTEAD of their sub-brand is a different product.
+  const swapped = scoreWithEquivalence("2026 Bowman Chrome Kendry Chourio", "2026 Topps Chrome Kendry Chourio");
+  assert.ok(swapped.equivalent.f1 < 1, "Topps Chrome is not Bowman Chrome");
+}
+console.log("semantic-equivalence hypernym assertions OK");
+
+// The hypernym table is written in ordinary spelling and must survive the folds
+// that titles go through. `Topps` becomes `topp` once plurals are folded, and a
+// table keyed on the unfolded form matches nothing while looking correct.
+import { HYPERNYMS } from "../lib/listing/evaluation/semantic-equivalence.mjs";
+for (const [broad, narrow] of Object.entries(HYPERNYMS)) {
+  const s3 = scoreWithEquivalence(`2026 ${narrow[0]} Player`, `2026 ${broad} ${narrow[0]} Player`);
+  assert.equal(s3.equivalent.f1, 1, `${broad} beside ${narrow[0]} must be free`);
+}
+console.log("semantic-equivalence hypernym-folding assertions OK");
+
+// Facts no reading of the card can supply are not charged.
+{
+  const ssp = scoreWithEquivalence("2025-26 Topps UCC Saka Home Advantage SSP", "2025-26 Topps UCC Saka Home Advantage");
+  assert.equal(ssp.equivalent.f1, 1, "SSP is a checklist property, not something printed");
+  // RC is printed from 2006 and is trade knowledge before it.
+  const vintage = scoreWithEquivalence("1976 Topps Walter Payton Rookie RC PSA 9", "1976 Topps Walter Payton PSA 9");
+  assert.equal(vintage.equivalent.f1, 1, "a 1976 card carries no RC logo");
+  const modern = scoreWithEquivalence("2024 Panini Prizm Caleb Williams RC", "2024 Panini Prizm Caleb Williams");
+  assert.ok(modern.equivalent.f1 < 1, "from 2006 the RC logo is printed and missing it is a real miss");
+  // The raw reading is untouched by every rule in this file.
+  assert.ok(ssp.raw.f1 < 1 && vintage.raw.f1 < 1);
+}
+console.log("semantic-equivalence unobtainable-fact assertions OK");
