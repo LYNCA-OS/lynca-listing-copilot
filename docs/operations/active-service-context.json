@@ -70,6 +70,13 @@
       "state": "NOT_LINKED_TO_PRODUCTION",
       "forbidden_ref": "irpgnhkslrsiucybkufc",
       "reason": "This checkout reads evaluation data over SUPABASE_URL and a key. It must never hold a CLI link to the production project: db push, migration-history repair and deploys belong to /Users/paidaxin/lynca-thin-production-main. The stale link to the decommissioned Sydney ref is inert and fails closed, which is the safe state."
+    },
+    "credential_source": {
+      "canonical": "/Users/paidaxin/.config/lynca-listing-copilot/runtime.env",
+      "rule": "ONE copy. .env.local in this checkout is a symlink to it and ~/.lynca-eval-secrets/eval.env sources it. Never write a second copy of SUPABASE_URL or a key into a checkout: on 2026-08-03 three copies existed, two were stale, and the drift surfaced as DNS ENOTFOUND rather than as bad config.",
+      "aliases": {
+        "SUPABASE_SERVICE_ROLE_KEY": "aliased from SUPABASE_SECRET_KEY in eval.env"
+      }
     }
   },
   "retired_default_paths": [
