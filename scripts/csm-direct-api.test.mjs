@@ -55,7 +55,7 @@ const result = await runDirectCsmAsset({
       events.push("model_and_csm");
       assert.equal(input.imageDetail, "original");
       assert.equal(input.model, "gpt-5.6-luna");
-      assert.equal(input.effort, "none");
+      assert.equal(input.effort, "low");
       assert.deepEqual(input.imageUrls, ["https://signed.invalid/a.jpg"]);
       return {
         title: "Test title",

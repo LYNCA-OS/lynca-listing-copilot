@@ -1,3 +1,4 @@
+import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
 import {
   analyzeImageQualityFromImageData,
   claimNextBatchAsset,
@@ -3864,6 +3865,7 @@ function TitleCardComponent(result, asset = null) {
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${queueFailureAdviceHtml(result.reason || "", failed && Boolean(queueFailureLines[0]))}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status" data-testid="writer-persistence-status" role="status" aria-live="polite">${escapeHtml(result.feedbackMessage)}</p>` : ""}
+      ${result.csmResolutionView ? renderCsmGlassBox(result.csmResolutionView, { assetIndex: result.index }) : ""}
     </div>
   `;
 }
@@ -4985,6 +4987,15 @@ function applyV4AssistedDraftUpdate(result = {}, session = {}) {
   if (!writerEdited) {
     result.correctedTitle = finalTitle;
     result.title_override = null;
+  }
+  // Glass Box: fetch the field-level trace once the title is final. Read-only,
+  // so a failure here must never disturb the title the writer is waiting on --
+  // an inspector that can break the thing it inspects is worse than no
+  // inspector.
+  if (result.assetId && !result.csmResolutionView) {
+    loadCsmResolutionView(result.assetId)
+      .then((view) => { if (view) { result.csmResolutionView = view; renderResults(); } })
+      .catch(() => {});
   }
   if (session.resolved_fields && typeof session.resolved_fields === "object") {
     result.resolved = session.resolved_fields;

@@ -12,7 +12,15 @@ import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "
 import { readJsonPayload, sendJson } from "../lib/listing/v4/session/http-handler-utils.mjs";
 
 const MODEL = "gpt-5.6-luna";
-const EFFORT = "none";
+// `low` since 2026-08-03. Paired on the 105-card holdout: F1 0.8149 -> 0.8339,
+// +0.019042, 42 wins to 18, p=0.0027, replicating +0.014190 on a separate 150.
+// Almost all of it is precision.
+//
+// Spelled out rather than left to the library default, because this constant
+// overrides that default -- shipping the default alone would have changed
+// nothing here, and the endpoint would have kept running the old tier while
+// every test and replay reported the new one.
+const EFFORT = "low";
 
 function providerCaller(env = process.env, fetchImpl = globalThis.fetch) {
   const apiKey = String(env.OPENAI_API_KEY || "").trim();
