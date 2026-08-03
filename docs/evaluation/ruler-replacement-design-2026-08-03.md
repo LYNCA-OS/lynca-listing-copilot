@@ -26,15 +26,19 @@
 
 | 角色 | 指标 | 用途 |
 |---|---|---|
-| Primary | Publishable Card Rate (PCR) | 有多少卡可以不改事实直接发布 |
-| Driver 1 | Recognition Exact Fact Recall | 修对字段是否优于删掉字段 |
-| Driver 2 | Recognition Verified Claim Precision | canonical 是否加入错误事实 |
+| Release gate | Publishable Card Rate (PCR) | 只用于 promotion；有多少卡可以不改事实直接发布 |
+| Iteration driver 1 | Recognition Exact Fact Recall | 修对字段是否优于删掉字段 |
+| Iteration driver 2 | Recognition Verified Claim Precision | canonical 是否加入错误事实 |
+| Iteration driver 3 | Required Recall / unresolved ledger | 定位 PCR 被哪一条合取条件卡住 |
 | Guardrail 1 | Critical false / unresolved card count | 身份、数字、grade 等硬错误一票否决 |
 | Guardrail 2 | 80-char legality + latency/cost | 防止分数靠变长、变慢或多调用换来 |
 | Secondary outcome | Blind Writer Preference / As-is Acceptance | 衡量写手市场表达偏好，不冒充字段真值 |
 
 token F1 保留为 legacy compatibility metric 和回归诊断，但不再单独决定
 GO/STOP。
+
+PCR 是七条条件的合取，适合做发布闸门，不适合指导日常优化。机制迭代必须
+看 driver 向量和逐字段 ledger；禁止通过放松 PCR 判据来制造进步。
 
 ## 1. 我们到底在测量什么
 
@@ -76,6 +80,11 @@ Writer A 的单条标题只对第 2、3 项提供有限证据，不能充当第 
 arm 按 fields 评分、string arm 按 title 评分。没有 typed trace 的纯字符串
 arm，要么由盲审者做 claim segmentation，要么不具备 SPG 评分资格；不能用
 title-derived SEM 给它自动补身份，因为那会用解析器给解析器打分。
+
+`concept_id` 不是运行时 Composer 的必填输出。运行时首先要忠实记录
+`field/value/rendered text/title span/source/transform`；冻结的离线 registry 再把
+value 解析成 concept。显式传入未知 concept id、跨 field concept id，或 registry
+内容与冻结 SHA 不一致时，scorer 必须 fail closed。
 
 ### 2.2 Gold label 必须有两个独立轴
 
@@ -141,6 +150,10 @@ Required Title Recall
 `UNKNOWN` 不进入 precision 分母伪装成 false，也不能被忽略。任何已发布的
 unknown claim 会进入 unresolved ledger，并阻止该卡成为 publishable。
 
+进入评分前，annotation packet、scorer、critical policy 与 concept registry 都必须
+版本冻结；后两者的声明 SHA 必须与规范化内容重算结果一致。否则该卡是
+`ineligible`，publishability 为 `null`，不是 fail 也不是 pass。
+
 一张卡只有同时满足以下条件，`publishable_i = 1`：
 
 1. annotation 完整且全部经过独立 adjudication；
@@ -177,7 +190,8 @@ recognition 和 publishability。两者不再被压成几乎相同的 token F1�
 - Gold claims 漏标时，unresolved rate 会被人为抬高；因此不完整卡必须
   `ineligible`，不能默认为错或对。
 - Concept hierarchy 写错会系统性偏袒某种表达；registry 必须版本化、独立
-  审核并在 arm 输出冻结前确定。
+  审核并在 arm 输出冻结前确定；scorer 会重算 registry SHA，不接受只填一个
+  64 位字符串的“纸面冻结”。
 - `REQUIRED/OPTIONAL/FORBIDDEN` 仍有写手偏好；它要由独立写手标注并按
   STANDARD/TCG/LOT grammar 分层报告，不能由机制作者决定。
 - PCR 是严格 pass rate，对小缺陷敏感；所以必须同时报告三个 driver ledger，
@@ -226,8 +240,8 @@ recognition 和 publishability。两者不再被压成几乎相同的 token F1�
 
 ### 成本
 
-需要前端把 field-level edit event 与 session/image lineage 持久化。上线后边际
-标注成本低，但需要足够真实流量。
+需要前端持久化真实 field-level edit event，并绑定已经存在的 session/image
+lineage；不需要为 lineage 另建一条链。上线后边际标注成本低，但需要足够真实流量。
 
 ### 它会骗人
 
@@ -287,6 +301,45 @@ gold truth。
 node scripts/audit-ruler-annotation-readiness.mjs
 ```
 
+### 5.4 Required-fact scan 的覆盖验收
+
+`union + required scan` 不能自己证明分母完整。先从同一 source pool 按 hash
+划出 20 张 coverage-only cards，再封存其余 meta-validation cohort。把这 20 张交给
+一位没有看到任何 arm claims、也没有参与这 20 张 gold construction 的 reviewer
+做无约束整卡 typed transcription；它们
+只审 gold construction，不进入 ruler meta-validation，也不能验后塞回 sealed set。
+
+把 unrestricted transcript 记为 `U_i`，构造后的 gold 记为 `G_i`：
+
+```text
+Exact Gold Coverage = sum(|U_i intersect G_i|) / sum(|U_i|)
+Critical Gold Coverage = captured critical claims / transcript critical claims
+```
+
+这里的交集必须通过同一个冻结 concept registry/claim resolver 计算，不得直接比较
+raw string，也不得见到 `concept_id` 就忽略 value。显式 concept id 的 field/value
+必须与 registry 一致；`Auto/Autograph` 这类 alias 应合并；重复或冲突 gold claim
+直接 fail closed。
+
+预注册通过条件：
+
+- 20/20 卡完成；
+- micro Exact Gold Coverage `>=0.95`；
+- macro card Exact Gold Coverage `>=0.95`，且任一卡不得低于 `0.80`；
+- Critical Gold Coverage `=1.00`；
+- critical-field policy 已批准、冻结，且内容重算 SHA 匹配；
+- 按 field 和 grammar 报告 missing ledger，不能只报总均值。
+
+这里不报 claim-level Wilson：同一卡里的 claims 不是独立 Bernoulli 样本，把它们
+当 IID 会虚构精度。20 卡只是 gold-construction 的 process audit，不是对总体覆盖率
+做 95% 统计证明；真正的尺子元验收仍由固定 sealed100 独立卡承担。
+
+如果失败，只能修 gold construction 流程并在另一批 coverage cards 上重验；
+不能把本批 unrestricted transcript 直接补回后，再把同一批称为通过。
+
+已实现 `gold-coverage-audit-v1` 及反事实测试。浅扫描每卡漏一个非关键事实时
+coverage 为 `0.90` 并失败；漏任一 critical fact 也失败；完整 gold 才通过。
+
 ## 6. 新尺子的元验收
 
 “更贴合 CSM”不是元验收。唯一有效的验收是：新尺子在未见过的争议卡上，
@@ -311,26 +364,75 @@ node scripts/audit-ruler-annotation-readiness.mjs
 #### Stage B - 独立盲判 calibration
 
 1. 先用 20-30 张 pilot 修 ballot/ontology 的机械问题；pilot 不计最终结果；
-2. 冻结 scorer、critical policy、concept registry 和 arm outputs；
-3. 使用至少 60 个 adjudicated non-tie contested comparisons，覆盖至少三组
-   正交 arm 和 STANDARD/TCG/LOT；
-4. 两位独立 reviewer，第三人裁定分歧；
-5. token F1 与 SPG 都只输出 arm preference，不看 reviewer label；
-6. 在 sealed set 上比较它们与 adjudicated preference 的 paired agreement。
+2. 根据 pilot 的 card-level paired delta 做预注册 power simulation，随后一次性冻结
+   `n=100`；不得看 sealed outcome 后从 60 追加到 100；
+3. 在出 label 前冻结 scorer bundle、critical policy、concept registry、grammar
+   checker SHA、arm outputs、source pool 与 salted-hash selection manifest；100 张必须
+   是 100 个不同 physical card/capture，并覆盖至少三组正交 arm；
+4. 预先冻结 STANDARD/TCG/LOT 与 arm-pair 配额。任何要作正式门的 stratum 至少
+   20 张；达不到时该层只能报 descriptive/`INCONCLUSIVE`，不能被总均值代替；
+5. 两位独立 reviewer，第三人只裁定分歧；
+6. 独立 marketplace panel 对每个匿名标题只回答 `AS_IS_PUBLISHABLE / NEEDS_EDIT`；
+   同卡两臂自然形成 `A_ONLY / B_ONLY / BOTH / NEITHER`，不要求写手在两个都能
+   发布时硬选一个；
+7. SPG 对每个 arm 输出 publishable boolean；legacy token F1 只有在 tuning set
+   预先冻结单标题 threshold 后，才能输出同一 binary prediction；
+8. 在 sealed set 上计算 sensitivity、specificity、balanced accuracy；同一卡两臂的
+   不确定性必须按 card cluster bootstrap 或 paired randomization 估计，不能把 200
+   个标题当成 200 个独立样本。
 
-通过条件：
+Gold truth/title-policy panel 与 marketplace as-is panel 必须彼此看不到对方标签；
+后者不得看到 concept registry、required policy 或任何分数。差值区间使用 paired
+card bootstrap 或等价的 paired randomization，不使用把两臂拆开的 item-level Wilson。
 
-- SPG absolute agreement `>= 0.80`；
-- `agreement(SPG) - agreement(token F1)` 的 paired 95% CI 下界 `> 0`；
-- A/B 互换后结果完全反向，不能出现 arm-name bias；
-- 各 grammar 和各 arm pair 不得出现方向相反的系统偏差；
-- 如果 60 个 non-ties 不足以得出结论，扩到 100；不得在看过 sealed labels
-  后改规则再重算同一 set。
+建议通过条件如下；它们在 owner 批准并写入 selection manifest 前仍是
+`PROPOSED`，不得验后调整：
+
+- 100/100 评分材料完整，并共享一个验前封存的 cohort approval manifest；
+- 200 个 arm-title labels 中至少 30 个 `AS_IS_PUBLISHABLE`、30 个 `NEEDS_EDIT`；
+  任一类不足则本次只能 `INCONCLUSIVE`；
+- SPG balanced accuracy `>=0.80`，且 sensitivity、specificity 各 `>=0.75`；
+- `balanced_accuracy(SPG) - balanced_accuracy(token F1)` 的 card-clustered paired
+  95% CI 下界 `>0`；
+- 匿名展示顺序互换不改变单标题判断，不能出现 arm-position bias；
+- 达到正式样本下限的 grammar/arm-pair stratum 不得出现显著反向；未达下限的
+  stratum 明示 `INCONCLUSIVE`，不能写成通过。
+
+样本量不能再用单个 discordance 比例 `q` 的近似式验后解释。正确做法是用 pilot
+得到的每卡 paired correctness delta 与标签 prevalence，按预定检验做 Monte Carlo
+或 permutation power simulation，验前锁定 `n=100`。如果预算内功效仍不足，结论
+就是 `INCONCLUSIVE`；不能追加样本、换阈值或改 strata 后继续看同一 sealed set。
+
+`expected_approval_manifest_sha256` 必须从独立、append-only 的 approval allowlist
+读取，不能由当前评分请求携带的 manifest 现场计算。当前 evaluation skeleton 只会
+验证传入 expected SHA 与所有材料是否一致，还没有 authority allowlist；因此即使
+逻辑测试全绿，也仍是 `HUMAN_UNVERIFIED/PRODUCTION_STOP`。
 
 #### Stage C - 独立 promotion cohort
 
-只有 Stage B 通过后，才在独立 105 张 cohort 上使用 SPG。旧 token F1 同时
-报告，作为 bridge，不再是唯一门。
+只有 Stage B 通过后，才在另一批独立 105 张 cohort 上使用 SPG。source pool、
+目标 tenant/grammar/card-type mixture、salted-hash selector 和 105 个 asset/
+physical-card 映射必须在输出与 labels 之前封存；同一实体卡的不同照片不能重复计。
+
+主 cohort 必须按目标生产 mixture 做无权重抽样，才能使用后面的 `101/105`
+Wilson 门。为观察稀有 grammar 而额外富集的卡放进独立 diagnostic cohort；若主
+cohort 使用分层/加权抽样，就必须改用预注册的 design-weighted estimator，不能再
+把 `101/105` 叫作生产 PCR。
+
+candidate 与当前 approved control 在相同 105 张图片上各冻结一份输出，再开 gold
+labels。若已有同版本、同图片、验前冻结的 control trace 可以复用，就不重复付费；
+否则不能拿历史异质 cohort 冒充 paired control。105 张任一张材料不合格时，PCR
+分母不得缩小，本次 Stage C 为 `INCONCLUSIVE/STOP`。
+
+Stage C 的 CI 实现规格也必须写进同一验前 manifest：resampling unit 是唯一
+`physical_card_id`，candidate/control 必须成对抽取；任何 expected card 的 recall 或
+precision 为 null 时整次 gate 不具备资格，禁止 pairwise deletion。默认使用
+100,000 次 deterministic paired card bootstrap，seed 由
+`sha256(cohort_selection_sha256 | scorer_bundle_sha256)` 导出，报告 percentile 95%
+区间；若 selection manifest 预先定义了 strata，则在 strata 内重采样并用预定 target
+weights 汇总。`-0.01/-0.005` 两个非劣界、absolute `0.90` 门、seed、replicates、
+null policy 与 CI 方法必须一起冻结。所有条件是合取的 intersection-union gate，
+不能只挑显著的一项报告。
 
 ## 7. `0.90` 应该换成什么
 
@@ -349,9 +451,28 @@ node scripts/audit-ruler-annotation-readiness.mjs
 
 - observed critical-false cards = 0；
 - observed critical-unresolved cards = 0；
+- candidate 相对 paired control 的 Recognition Exact Fact Recall 差值，card-level
+  paired 95% CI 下界 `>= -0.01`；
+- candidate 相对 paired control 的 Recognition Verified Claim Precision 差值，
+  card-level paired 95% CI 下界 `>= -0.005`；
+- candidate 的 macro Recognition Exact Fact Recall，card-bootstrap 95% CI 下界
+  `>=0.90`；
+- candidate 的 macro Recognition Verified Claim Precision，card-bootstrap 95% CI
+  下界 `>=0.90`；
 - 全部标题 `<=80`；
 - 单次 Luna、reasoning none；
 - latency/cost 不突破已批准预算。
+
+上面 `-1pp/-0.5pp` 是保守的候选 non-inferiority margin，不是已经批准的业务
+常数。owner 必须在开 labels 前，按漏事实与写错事实的损失函数批准或收紧；验后
+不能改。critical fields 不使用平均非劣界，任何 observed false/unresolved 都直接
+STOP。所有 driver 还要按 field 与 grammar 出 ledger：样本足够的层出现实质反向
+就阻止 promotion，样本不足的层只报 `INCONCLUSIVE`。
+
+这组门防止 candidate 靠删光 OPTIONAL facts 提高 PCR。PCR 回答“能不能直接发”，
+paired recognition guardrail 回答“是否以损失识别能力换安全”；两者必须同时通过。
+因此这里的“准确率超过 90%”不是单指 PCR：publishability、recognition exact
+recall 和 verified precision 三个下界都要过 0.90，同时还要相对 control 非劣。
 
 需要说清统计边界：105 张里 0 个 critical error，只能把总体错误率的 95%
 上界限制到约 `2.81%`，不能声称总体“绝对为零”。若要证明错误率低于：
@@ -386,7 +507,8 @@ SPG 的字段真值不依赖 `F1(A,B)`，所以它不是构建新主尺的前置
 - `scripts/score-writer-agreement.mjs`：在同一批卡上报告 `F1(A,B)`、
   `F1(system,A)`、`F1(system,B)` 及 deterministic bootstrap CI；
 - 已生成的 50 行 worksheet 经扫描不含 Writer A title、system title、score
-  或 sealed label；当前 URL 未签名，需要由正确环境生成短期 signed URL。
+  或 sealed label；`faa205c5` 评审时 100/100 个图片 URL 可访问。URL 有时效，
+  真正发给 Writer B 前仍要复验，过期只重签、不重抽样。
 
 这里的样本量目标不同，不矛盾：若真实 writer agreement 约 0.83，已知
 per-card SD 约 0.1439，则 n=50 足以判断其区间是否明显低于 0.90；若要把
@@ -430,23 +552,34 @@ perfect system 的统计估计。它们证明 token F1 的目标函数有冲突�
 
 核心：
 
+- `lib/listing/evaluation/semantic-publication-contract.mjs`
+- `lib/listing/evaluation/semantic-publication-concepts.mjs`
 - `lib/listing/evaluation/semantic-publication-ruler.mjs`
+- `lib/listing/evaluation/semantic-publication-material-validator.mjs`
+- `lib/listing/evaluation/semantic-publication-cohort-gate.mjs`
 - `lib/listing/evaluation/ruler-annotation-readiness.mjs`
+- `lib/listing/evaluation/gold-coverage-audit.mjs`
 
 验证与审计：
 
 - `scripts/semantic-publication-ruler.test.mjs`
 - `scripts/ruler-annotation-readiness.test.mjs`
 - `scripts/audit-ruler-annotation-readiness.mjs`
+- `scripts/gold-coverage-audit.test.mjs`
 
 复跑：
 
 ```bash
 node --check lib/listing/evaluation/semantic-publication-ruler.mjs
+node --check lib/listing/evaluation/semantic-publication-contract.mjs
+node --check lib/listing/evaluation/semantic-publication-concepts.mjs
+node --check lib/listing/evaluation/semantic-publication-material-validator.mjs
+node --check lib/listing/evaluation/semantic-publication-cohort-gate.mjs
 node --check lib/listing/evaluation/ruler-annotation-readiness.mjs
 node scripts/semantic-publication-ruler.test.mjs
 node scripts/ruler-annotation-readiness.test.mjs
 node scripts/audit-ruler-annotation-readiness.mjs
+node scripts/gold-coverage-audit.test.mjs
 ```
 
 已验证输出：
@@ -455,7 +588,26 @@ node scripts/audit-ruler-annotation-readiness.mjs
 - OPTIONAL omission 仍可 publish；
 - generic parent title 可为真，但 REQUIRED leaf 不通过；
 - critical false 不可 publish；
+- critical policy 未以 `FROZEN_APPROVED + SHA` 提供时，整卡不具备评分资格；
+- critical policy 与 concept registry 的声明 SHA 都会按规范化内容重算；
+- scorer bundle 覆盖 contract、concept resolver、semantic scorer、material validator、cohort gate、
+  gold coverage audit 与 CSM/SEM field definition；外置 grammar checker 另以 SHA
+  绑定，不能只写一个可复用名字；
+- 未批准/被篡改的 registry、未知 concept id、跨 field concept id 均 fail closed；
+- title trace 的 `source_fields` 必须包含 claim 自己的 canonical field，不能把 year
+  假称为 finish 的来源；render span、transform 与最终 title 不一致时 fail closed；
+- 每个 title claim 还必须能从同卡 canonical claim exact/approved-generalization 推导；
+  只有同名 `source_fields`、却没有对应 canonical identity 时整卡 ineligible；
+- annotation claim 必须有合法 `truth_source` 与非空 `evidence_refs`；仅写
+  `adjudicated=true` 不能构造可评分材料；
+- `redundancy_ok` 由 typed title claims 自动计算，覆盖同义重复和父子概念共发，
+  不再接受手填布尔值；
+- 重复 10 次正确 claim 不能稀释 1 个错误 claim；precision 按 semantic set 计数，
+  重复 gold annotation 直接拒绝；
+- gold scan 每卡漏一个事实时 coverage audit 会失败；
 - 105 张达到 PCR 下界 `>0.90` 的最小通过数是 `101`；
+- 当前 cohort module 只验证固定分母与材料资格，并明确返回
+  `promotion_decision=null`；paired/absolute recognition gate 未实现前，代码不能给 GO；
 - 现有 packet 117 cards / 285 disputes，267 可映射，18 个 `components`
   需要 field-role review，独立 labels 为 0。
 
@@ -469,6 +621,134 @@ node scripts/audit-ruler-annotation-readiness.mjs
 - 现有 285 packet 不足以生成主分数；
 - 没有独立人审前，它仍是 `HUMAN_UNVERIFIED`。
 
-下一步只有一个真正的阻塞项：由非尺子作者完成 dual-axis blind pilot。
-pilot 前不得用本尺子重新判 print-finish、visual、literal、world model 或任何
-已存在 arm 的 GO/STOP，更不得接入 Production。
+当前不能确认它是正资产。我们只验证了逻辑单调性、抗刷分和材料封存；Stage B
+还没有独立人类元验收，Stage C 也没有 paired fresh105。因此状态继续是
+`PRODUCTION_STOP`，不得拿零调用反事实测试代替真实 promotion 证据。
+
+当前最便宜的下一个证据是由非尺子作者完成 dual-axis mechanics pilot；但它不是
+唯一的 promotion blocker。正式使用前还必须完成：独立 sealed meta-validation、
+critical policy 与 COS-43 concept registry 冻结、可信 Composer claim trace、以及
+gold coverage audit。任何一项未完成，SPG 都只能返回 ineligible/null。
+
+coverage audit 目前还有一个显式 P2：`STANDARD/TCG/LOT` 是 evaluation-only
+fail-closed allowlist；CSM/SEM 尚未导出正式 grammar enum。它不阻止本轮逻辑提交，
+但在 CSM 提供 authority 前不能升级成生产规则。
+
+blind pilot 前不得用本尺子重新判 print-finish、visual、literal、world model 或
+任何已存在 arm 的 GO/STOP，更不得接入 Production。
+
+## 12. `faa205c5` 评审后的修订
+
+### 12.1 评审意见处置
+
+| 评审项 | 处置 |
+|---|---|
+| required-fact scan 没有验收规格 | 接受；新增独立 20 卡 unrestricted transcription coverage gate |
+| 人力成本未汇总 | 接受；见 12.2，执行前先批准预算 |
+| PCR 不适合作迭代指标 | 接受；PCR 固定为 release gate，driver 向量才指导迭代 |
+| typed claim trace 缺口 | 部分接受；先持久化 field/value/render span/provenance，concept_id 等 COS-43 |
+| concept registry 不存在 | 接受；registry 属于 CSM 治理，应用层不得先造既成事实 |
+| 把 concept_id 当 trace 首要缺口 | 不接受；根因是最终 Composer 没有 claim ownership/span，concept 可离线解析 |
+| 在线反馈指标约八成可用 | 不接受；只有 as-is 可直接派生，其余缺 typed event 或浏览器时间点；见 12.5 |
+| redundancy_ok 是手填后门 | 接受并修复；typed checker 计算同义与父子概念冗余 |
+| critical policy 未批准 | 接受并修复；没有经内容校验的 `FROZEN_APPROVED + SHA` 时 SPG 返回 ineligible |
+| 60 不够再看结果扩 100 | 不接受；改为验前 power simulation 后固定 100，禁止 optional peek |
+| PCR 单门可防删除刷分 | 不接受；Stage C 新增 paired recall/precision non-inferiority guardrail |
+| coverage 可以直接比 concept_id/raw value | 不接受；coverage 复用冻结 resolver，校验 id/value/field 与 alias |
+| source_fields 足以证明 title lineage | 不接受；T_i 必须由同卡 C_i 的同一 identity 或批准泛化推导 |
+| 文件继续堆在一个 scorer | 不接受；拆成 contract/concept resolver、semantic scorer、material validator、cohort gate |
+
+### 12.2 人力成本和最省钱顺序
+
+以下是执行前预算，不是假装精确的工时承诺。先用前 20 张记录实际秒数，再
+收窄区间：
+
+| 工作 | 人力假设 | 预计总人时 |
+|---|---|---:|
+| Writer B 盲写 50 张 | 1 人，45-90 秒/卡，加交接 | `0.8-1.5h` |
+| dual-axis mechanics pilot 25 卡/45 claims | 1 人，只查表格机制 | `0.7-1.5h` |
+| sealed100 完整 gold + required scan | 2 人独立判断，10-14 claims/卡 | `12-27h` |
+| sealed100 A/B marketplace label | 2 人，30-60 秒/arm-title | `2-4h` |
+| gold coverage audit 20 卡 | 1 人无约束整卡转录，3-5 分钟/卡 | `1-1.7h` |
+| 分歧裁定与数据整理 | 只裁定真实分歧 | `2-4h` |
+
+因此：
+
+- 先发 Writer B 50 卡：约 `0.8-1.5h`，立即测旧尺子的 human ceiling；
+- SPG fixed sealed100 元验收：约 `18-38h`；
+- 不设置“先 60、看结果再追加”的路径；pilot 只用于流程与验前功效估计。
+
+不建议在 SPG 自身通过元验收前，把现有 285 disputes 全部双人标完。它们是
+precision error taxonomy，不是证明尺子有效的必要前置；先全标预计还要
+`4-8h`，长期可能有用，但短期会把最稀缺的人力押在一把尚未通过的尺子上。
+
+### 12.3 Typed trace 与 concept registry 解耦
+
+最小可用 trace 是：
+
+```json
+{
+  "claim_id": "stable-per-output-claim-id",
+  "field": "print_finish",
+  "canonical_value": "Gold Refractor",
+  "rendered_text": "Gold Refractor",
+  "title_spans": [{ "start": 42, "end": 57 }],
+  "source_fields": ["print_finish"],
+  "transform_codes": ["EXACT_OR_ALIAS"],
+  "emission_status": "FULL",
+  "concept_id": null
+}
+```
+
+`concept_id` 在 COS-43 registry 冻结前必须允许为空。先写临时 concept id 会让
+应用层提前定义 CSM 本体，违反本设计最重要的 authority 边界。SPG gold
+package 可以在离线评分时，把 claim 映射到独立审核的 concept registry；运行时
+trace 只负责忠实记录 Composer 从哪个 bracket 发出了什么。
+
+trace 必须在 Composer 最终 normalization、dedupe、budget、restore 和 hard
+truncation **之后**生成。现有 `included_brackets` 不能替代它：截断后 ledger
+没有重算，可能声称某个 bracket 已发出，而标题里只剩半个词或已完全删除。
+只有 `emission_status=FULL` 的 atomic claim 才能进入 `T_i`。
+
+每种 `transform_code` 必须有冻结的确定性 validator。当前 evaluation skeleton 只
+接受 `EXACT_OR_ALIAS` 与 `LOT_CARD_LOT`；prefix compaction、复合短语等在 validator
+落地前一律 fail closed。trace 的 `source_fields` 还必须包含被声明 claim 自己的
+canonical field，防止借一个真实但无关字段伪造 provenance。
+
+### 12.4 在线和离线的职责
+
+- SPG：离线 promotion gate，需要独立 gold，不可能成为每个生产请求的实时
+  accuracy score；
+- 在线：持续收集 as-is acceptance、critical edit、semantic edits/card 和
+  time-to-confirm；
+- 在线数据只能形成 learning candidate，不能因为写手按下确认就自动成为
+  semantic truth；
+- 两套指标通过 session、image、canonical packet 和 Composer trace lineage
+  连接，但 authority 不互相继承。
+
+### 12.5 代码审计后的真实接入差距
+
+评审 3.3 把线上材料成熟度估高了。当前不是“八成已有，只差聚合”：
+
+| 指标 | 当前可用程度 | 不能冒充的部分 | 最小补法 |
+|---|---|---|---|
+| as-is acceptance | 可直接由当前 terminal `ACCEPT/EDIT/REJECT` 派生 | 旧 410 route 的聚合 | 只聚合当前 feedback revision，按 tenant/model/prompt/grammar 分层 |
+| critical edit | `0/1` 真 typed event | 当前 `field_level_diff` 是标题反解析、仅 8 个粗字段且漏 deletion | 提交时持久化 immutable `field/from/to/change_kind`，再按冻结 policy 派生 |
+| semantic edits/card | `0/1` 真 typed event | Production 明确不提交 reviewed semantic fields，ground truth 恒为空 | 与 critical edit 共用 typed delta，不另造解析链 |
+| time-to-confirm | 只有 server-ready 到 click 的上偏代理 | 浏览器 title-visible 时刻未持久化 | 首次展示结果时冻结 `title_presented_at` 与 monotonic duration |
+
+反而 session -> durable asset -> verified image set 的 lineage 已由 identity snapshot、
+image-set SHA、RPC 和 trigger 校验接通；不应重复建表。仍缺的是跨不同拍摄识别
+同一实体卡的 `physical_card_id`，只有需要跨 capture 去重时才新增。
+
+typed trace 上线前还有两个更靠前的 STOP blocker：
+
+1. `finishCanonicalTitle()` 会丢 `bracket_text`、character budget 和部分 projection
+   ledger，并重命名 drop/suppress/restore；persistence 仍按 raw Composer shape 读，
+   所以真实 orchestration 的 drop trace 不完整；
+2. persistence 当前写 `structured_output.evidence`，而 foundation migration 的
+   CHECK 明确禁止该顶层 key；JS 单测没有执行数据库 CHECK。
+
+因此正确顺序是：先补 real-seam 与 SQL-contract 反事实测试并修这两处，再做
+Composer-owned claim trace；之后才接 typed writer edits。COS-43 registry 可以并行
+治理，但不得以阻塞为由在应用层临时造 concept id。

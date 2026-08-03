@@ -106,6 +106,7 @@ for (const card of selected) {
         // TWO fields, never one enum. The whole point of the pilot.
         truth_status: "",
         truth_source: "",
+        evidence_refs: [],
         title_policy: "",
         note: ""
       })),
@@ -119,13 +120,26 @@ for (const card of selected) {
 
 writeFileSync(resolve(outDir, "ballot.jsonl"), ballot.map((r) => JSON.stringify(r)).join("\n") + "\n");
 writeFileSync(resolve(outDir, "ballot.csv"),
-  "asset_id,front,back,claim_value,truth_status,truth_source,title_policy,note\n"
+  "asset_id,front,back,claim_value,truth_status,truth_source,evidence_refs,title_policy,note\n"
   + ballot.flatMap((card) => {
     const front = card.images.find((i) => /front/.test(i.role)) || {};
     const back = card.images.find((i) => /back/.test(i.role)) || {};
     return card.claims.map((claim) => [card.asset_id, front.url || front.object_path || "",
-      back.url || back.object_path || "", claim.value, "", "", "", ""]
+      back.url || back.object_path || "", claim.value, "", "", "", "", ""]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
+  }).join("\n") + "\n");
+
+// One row per card. Keeping this separate from the claim-level CSV prevents a
+// reviewer from repeating or contradicting the unrestricted scan on every
+// candidate row, and makes the load-bearing recall-denominator check actually
+// fillable outside the JSON representation.
+writeFileSync(resolve(outDir, "missing-facts.csv"),
+  "asset_id,front,back,finish_terms_not_listed_above,other_required_facts,note\n"
+  + ballot.map((card) => {
+    const front = card.images.find((i) => /front/.test(i.role)) || {};
+    const back = card.images.find((i) => /back/.test(i.role)) || {};
+    return [card.asset_id, front.url || front.object_path || "", back.url || back.object_path || "", "", "", ""]
+      .map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",");
   }).join("\n") + "\n");
 
 writeFileSync(resolve(outDir, "INSTRUCTIONS.md"), `# 双轴标注 pilot（${ballot.length} 张卡）
@@ -148,6 +162,8 @@ writeFileSync(resolve(outDir, "INSTRUCTIONS.md"), `# 双轴标注 pilot（${ball
 **判断不了就填 \`UNKNOWN\`，不要猜。** 猜出来的「假」比空着危害大得多。
 
 同时填 \`truth_source\`：\`CARD_IMAGE\`（卡面）/ \`SLAB_LABEL\`（评级标签）/ \`OFFICIAL_SOURCE\`（查过官方资料，请在 note 写来源）。
+\`evidence_refs\` 不能为空：写明具体图片 object path/正反面，或稳定的官方来源标识；
+只写“我判断过”不构成可复核证据。
 
 **第二轴 · 这个词该不该出现在 eBay 标题里？**（\`title_policy\`）
 
@@ -165,7 +181,7 @@ writeFileSync(resolve(outDir, "INSTRUCTIONS.md"), `# 双轴标注 pilot（${ball
 
 ## 还要做一件事：补漏
 
-每张卡最后有两个空格：
+另一个文件 \`missing-facts.csv\` 每张卡有一行、两个必须填写的空格：
 
 - \`finish_terms_not_listed_above\`：上面没列出来、但你在图上看到的工艺/平行版词；
 - \`other_required_facts\`：这张卡还有什么信息是**必须**进标题的。
@@ -189,6 +205,7 @@ writeFileSync(resolve(outDir, "manifest.json"), JSON.stringify({
   drawn_from: `${divergent.length} cards where the finish admission layer withheld a term`,
   selection: "sha256(dual-axis-pilot-v1|asset_id) ascending",
   signed_urls: ballot.every((c) => c.images.every((i) => i.url)),
+  outputs: ["ballot.jsonl", "ballot.csv", "missing-facts.csv", "INSTRUCTIONS.md"],
   withheld: ["writer_a_title", "system_title", "sealed_labels", "scores", "arm_names",
     "which_candidate_the_pipeline_kept"],
   disqualified_for: "meta-validation -- selected by a mechanism this author wrote; "
