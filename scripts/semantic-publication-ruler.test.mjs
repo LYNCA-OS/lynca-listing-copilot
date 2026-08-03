@@ -169,7 +169,14 @@ const cohort = summariseSemanticPublicationCohort([
   ...Array.from({ length: 4 }, () => wrongFinish)
 ]);
 assert.equal(cohort.publishable_cards, 101);
+assert.equal(cohort.critical_false_cards, 0, "wrong non-critical finish blocks publishability without becoming a critical error");
+assert.equal(cohort.critical_unresolved_cards, 0);
 assert.ok(cohort.publishable_card_rate_wilson_95.lower > 0.90);
+
+const criticalCohort = summariseSemanticPublicationCohort([criticalFalse]);
+assert.equal(criticalCohort.critical_blocked_cards, 1);
+assert.equal(criticalCohort.critical_false_cards, 1);
+assert.equal(criticalCohort.critical_required_missed_cards, 1);
 
 process.stdout.write(`${JSON.stringify({
   ok: true,
