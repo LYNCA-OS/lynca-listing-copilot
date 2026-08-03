@@ -121,3 +121,17 @@ console.log("semantic-equivalence hypernym-folding assertions OK");
   assert.ok(ssp.raw.f1 < 1 && vintage.raw.f1 < 1);
 }
 console.log("semantic-equivalence unobtainable-fact assertions OK");
+
+// Lot wording differs at both ends; the fact does not.
+{
+  const same = scoreWithEquivalence(
+    "2026 Bowman Chrome Sam Petersen Luis Cova David Refractor lot",
+    "3 Card Lot 2026 Bowman Chrome Sam Petersen Luis Cova David Refractor");
+  assert.equal(same.equivalent.f1, 1, "opening or closing, it is the same listing");
+  // Claiming a lot the writer did not describe is a misjudgement, not wording.
+  const invented = scoreWithEquivalence(
+    "2013 BBM Rookie Edition Shohei Ohtani Card Shop Promo PSA 10",
+    "2 Card Lot 2013 BBM Rookie Edition Shohei Ohtani Tomoyuki Sugano");
+  assert.ok(invented.equivalent.f1 < 1, "a lot the writer never described stays charged");
+}
+console.log("semantic-equivalence lot-format assertions OK");
