@@ -177,22 +177,6 @@ const TARGETED_DELIBERATION_PROMPT = `${CANONICAL_FIELDS_PROMPT} `
   + "Spend no deliberation on what is plainly printed: the subject names, the grading company and grades, the manufacturer, and the parallel family. Read those straight off the card or slab and move on -- reconsidering them replaces a legible fact with a guess. "
   + "Deliberate on what has to be worked out: the set or insert line, the printed scarcity wording, the stamped print run, the issue year, and the full product line. Those are where a second look changes the answer.";
 
-// Control for the finish-alignment arm: prompt and schema as they stood before
-// the three changes were made together. Rebuilt by reversing each edit against
-// the current text and throwing if any expected passage is missing, because a
-// control assembled from a stale copy compares against something that was never
-// shipped.
-const PRE_FINISH_ALIGNMENT_PROMPT = (() => {
-  const readNotReasoned = "The colour and the finish family are things you see rather than things you work out. Read them off the card and answer; a second guess replaces a legible impression with a worse one. If the surface plainly has a treatment but you cannot name which family, give the colour and leave the family empty -- that is a complete answer, not a failure. ";
-  const nowFamily = "`parallel_family` is the BASE finish treatment, of which there are only a few -- Refractor, Prizm, Holo, Foil -- while Mojo, Raywave, Geometric, Cracked Ice and the rest are patterns printed ON one of those, so a Raywave Refractor is a Refractor and a Mojo Prizm is a Prizm;";
-  const priorFamily = "`parallel_family` is the finish treatment (Refractor, Prizm, Mojo -- the hobby uses a small fixed set);";
-  for (const passage of [readNotReasoned, nowFamily]) {
-    if (!CANONICAL_FIELDS_PROMPT.includes(passage)) {
-      throw new Error("control arm cannot rebuild prompt: an expected passage is absent");
-    }
-  }
-  return CANONICAL_FIELDS_PROMPT.replace(readNotReasoned, "").replace(nowFamily, priorFamily);
-})();
 const PRE_FINISH_ALIGNMENT_SCHEMA = (() => {
   const schema = JSON.parse(JSON.stringify(CANONICAL_FIELDS_SCHEMA));
   const node = schema?.properties?.parallel_family;
@@ -454,7 +438,6 @@ export const ARM_SPECS = {
   thin_canonical_high_effort_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "low", 8192),
   // Both arms run at low, the shipped tier, so the only difference is the rule.
   thin_canonical_low_targeted: canonicalArm("high", TARGETED_DELIBERATION_PROMPT, "low", 8192),
-  thin_canonical_low_pre_finish_alignment: canonicalArm("high", PRE_FINISH_ALIGNMENT_PROMPT, "low", 8192, PRE_FINISH_ALIGNMENT_SCHEMA),
   // medium sits between low and max so the marginal curve can be read rather
   // than assumed: whether the second step buys as much as the first.
   thin_canonical_high_effort_medium: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "medium", 16384),
