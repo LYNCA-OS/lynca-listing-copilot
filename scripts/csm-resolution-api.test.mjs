@@ -85,3 +85,33 @@ const deps = { readRecord: async () => record, appendReview: async ({ review }) 
 }
 
 console.log("csm-resolution-api.test.mjs OK");
+
+// COS-42 (founder, 2026-08-04): "Field-level semantic approval/correction is a
+// separate trusted reviewer/admin workflow; it is not the default writer
+// workflow." A writer's title edit is cleaned commercial feedback, and the
+// route from editing a title to rewriting canonical fields must not exist.
+{
+  const { TENANT_PERMISSIONS, permissionScopeFor } = await import("../lib/tenant/permissions.mjs");
+  const REVIEW = TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS;
+  assert.ok(REVIEW, "the review workflow needs its own permission, not a borrowed one");
+  assert.equal(permissionScopeFor("WRITER", REVIEW), "NONE",
+    "a writer must not be able to approve or correct canonical fields");
+  assert.notEqual(permissionScopeFor("OWNER", REVIEW), "NONE");
+  assert.notEqual(permissionScopeFor("MANAGER", REVIEW), "NONE");
+  // The separation is the point: writers keep the title edit they had.
+  assert.notEqual(permissionScopeFor("WRITER", TENANT_PERMISSIONS.EDIT_TITLE), "NONE",
+    "writers still edit titles; that is commercial feedback, not semantic truth");
+
+  // And the endpoint must ask for the reviewer permission, not the writer one.
+  const source = await (await import("node:fs/promises")).readFile(
+    new URL("../api/csm-resolution-view.js", import.meta.url), "utf8");
+  assert.match(source, /TENANT_PERMISSIONS\.REVIEW_SEMANTIC_FIELDS/,
+    "the POST path gates on the reviewer permission");
+  // The USAGE, not any mention: the comment above that line names the two
+  // non-existent constants it replaced, and a whole-file regex would fail on
+  // the explanation rather than on the code.
+  assert.ok(!/TENANT_PERMISSIONS\.(WRITE|READ)_LISTING/.test(source),
+    "those constants never existed and read as undefined at the permission check");
+}
+
+console.log("csm-resolution-api reviewer-workflow assertions OK");

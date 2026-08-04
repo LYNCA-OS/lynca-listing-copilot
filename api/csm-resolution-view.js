@@ -132,9 +132,15 @@ export default async function handler(request, response) {
     let access;
     try {
       access = await requireTenantAccess(request, {
+        // COS-42: reviewing canonical fields is a trusted reviewer/admin act,
+        // not the writer workflow. WRITE_LISTING and READ_LISTING were not even
+        // real constants -- they read as undefined, so the check asked for a
+        // permission nobody has or everybody has depending on how the tenant
+        // layer treats undefined. Named permissions now, and the write side is
+        // one writers do not hold.
         permission: request.method === "POST"
-          ? TENANT_PERMISSIONS.WRITE_LISTING
-          : TENANT_PERMISSIONS.READ_LISTING
+          ? TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS
+          : TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK
       });
     } catch (error) {
       return publicTenantAuthError(response, error);
