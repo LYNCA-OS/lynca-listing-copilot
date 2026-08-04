@@ -60,14 +60,21 @@ const base = {
     "eBay removes it before the budget is consulted, which is not the same as dropping it");
 }
 
-// --- a bracket the composer places but the contract does not is flagged -------
+// --- every rendered term is explained by a bracket the contract names --------
 {
   const { fields, composed } = run(base);
   const view = buildCsmResolutionView({ fields, composed });
-  const comps = view.brackets.find((b) => b.bracket === "observable_components");
-  assert.ok(comps, "RC appears in the title, so a bracket must explain it");
-  assert.equal(comps.outside_contract_order, true, "COS-41: the position is an inference");
-  assert.equal(view.summary.outside_contract_order, 1);
+  // COS-41 decided against a [Visible Components] bracket: RC belongs to
+  // [Search Optimization], which the grammar does name. So the title still has
+  // to be explainable, but now with nothing outside the contract order.
+  assert.match(composed.title, /\bRC\b/, "RC is in the title");
+  const so = view.brackets.find((b) => b.bracket === "search_optimization");
+  assert.ok(so, "and Search Optimization is the bracket that explains it");
+  assert.match(so.value, /RC/);
+  assert.ok(!view.brackets.some((b) => b.bracket === "observable_components"),
+    "the rejected bracket must not reappear");
+  assert.equal(view.summary.outside_contract_order, 0,
+    "nothing is rendered from outside the grammar's own order");
 }
 
 // --- a withheld observation is a policy decision, not a blind spot ------------

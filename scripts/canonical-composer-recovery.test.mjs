@@ -159,16 +159,23 @@ const card = (overrides = {}) => ({
   assert.ok(result.normalization_reasons.includes("numerical_rarity:separator_spacing_normalized"));
 }
 
-// This pass does not silently change the two unresolved policy boundaries.
-// Lot still has no components/grade bracket, and eBay still suppresses Standard
-// team/card number until a separately paired exception policy wins.
+// One of the two policy boundaries this guard protected has now been decided
+// rather than silently changed. COS-41 (founder, 2026-08-04) places Auto, RC,
+// Patch and Relic in [Search Optimization] and says a profile that drops them
+// too early has a Composer priority problem, not a missing CSM bracket. The lot
+// grammar's own order carries search_optimization, so RC belongs in a lot title
+// -- and a reviewed lot title in the evaluation set does carry it.
+//
+// The grade boundary is untouched and still asserted: semLotTitleOrder has no
+// grading_info, so PSA 10 stays out.
 {
   const lot = composeFromCanonicalFields(card({
     year: "2025", manufacturer: "Topps", product: "Chrome",
     subjects: ["A", "B"], components: ["RC"], grade: "PSA 10",
     grammar: "lot", lot_count: "2"
   }));
-  assert.ok(!/\bRC\b|PSA 10/.test(lot.title));
+  assert.match(lot.title, /\bRC\b/, "COS-41: a retained search term survives profile suppression");
+  assert.ok(!/PSA 10/.test(lot.title), "the lot grammar still has no grading bracket");
 
   const standard = composeFromCanonicalFields(card({
     year: "2025", manufacturer: "Topps", subjects: ["Nolan Ryan"],

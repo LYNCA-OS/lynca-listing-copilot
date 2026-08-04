@@ -77,9 +77,16 @@ const DEFAULT_FIELD_FOR_BRACKET = Object.freeze({
   numerical_rarity: "serial",
   grading_info: "grade",
   search_optimization: "team",
-  observable_components: "components",
   lot: "lot_count",
   manufacturer_product: "product"
+});
+
+// COS-41 places Auto, RC, Patch and Relic in [Search Optimization] alongside
+// the team, so that bracket draws from two canonical fields. Showing only
+// `team` left an operator reading a title containing RC with a row that said
+// "Dodgers" -- the bracket responsible, displaying the wrong half of itself.
+const EXTRA_FIELDS_FOR_BRACKET = Object.freeze({
+  search_optimization: Object.freeze(["components"])
 });
 
 const asArray = (value) => (Array.isArray(value) ? value : value == null || value === "" ? [] : [value]);
@@ -140,7 +147,8 @@ export function buildCsmResolutionView({
 
   const brackets = order.map((bracket) => {
     const field = fieldForBracket[bracket] || bracket;
-    const raw = fields[field];
+    const extras = (EXTRA_FIELDS_FOR_BRACKET[bracket] || []).flatMap((f) => asArray(fields[f]));
+    const raw = extras.length ? [...asArray(fields[field]), ...extras] : fields[field];
     const value = renderValue(raw);
     const empty = isEmpty(raw);
 
@@ -207,9 +215,16 @@ export function buildCsmResolutionView({
       alternates_unavailable_reason: "SINGLE_OBSERVATION_RESOLVER",
       resolver_version: resolverVersion,
       // True when the composer places this bracket but the grammar's order does
-      // not name it. Surfaced rather than smoothed over: an operator reading a
-      // title that contains RC deserves to know the position is an inference.
-      outside_contract_order: outsideContract.has(bracket)
+      // not name it. Nothing does today -- COS-41 removed the one case by
+      // deciding the components belong to a bracket the grammar already names
+      // -- but the field stays, because the next inference should be visible
+      // rather than discovered later by someone reading a title.
+      outside_contract_order: outsideContract.has(bracket),
+      // What the bracket HOLDS versus what this marketplace published. A
+      // profile that suppresses the team while retaining RC renders half of
+      // this row, and an operator has to be able to see which half.
+      partially_published: !empty && Boolean(rendered.get(bracket))
+        && rendered.get(bracket) !== value
     };
   });
 

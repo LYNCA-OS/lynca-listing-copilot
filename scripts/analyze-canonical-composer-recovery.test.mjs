@@ -18,15 +18,18 @@ const result = analyzeCanonicalComposerRecovery(rows, diagnosis);
 assert.equal(result.population, 100);
 assert.ok(Math.abs(result.baseline.macro_f1 - 0.7698022907754876) < 1e-12,
   "the stored control must reproduce before candidate scoring is trusted");
-// Repinned 2026-08-03 when the lot bracket changed from "n Card Lot" to
-// "Lot*n" at the founder's direction. The control still reproduces exactly
+// Repinned twice at the founder's direction: 2026-08-03 for the lot bracket
+// wording, and 2026-08-04 for COS-41 removing the Visible Components bracket.
+// Only the delta moved on the second pass -- baseline, wins, losses, ties and
+// every safety count are identical, which is what a change of ownership rather
+// than of output should look like. The control still reproduces exactly
 // (the assertion above is untouched), so the movement is the candidate's.
 //
 // The shorter marker frees four characters, and the composer spends them: the
 // one new loss is a card where the reclaimed budget went to two more subject
 // names and pushed "Rainbow Refractor" out. That is COS-8 behaving as written
 // -- Subject is a `*` bracket and Print Finish is `**` -- not a defect.
-assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.008554120597598858) < 1e-12);
+assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.008430486260921022) < 1e-12);
 assert.deepEqual(
   [result.paired.wins, result.paired.losses, result.paired.ties],
   [14, 1, 85]
