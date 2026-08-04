@@ -98,10 +98,11 @@ const replay = (path) => JSON.parse(execFileSync(process.execPath, [
 // 100 as the only surface on which the rule must work.
 const currentSchema = replay("artifacts/canonical-v4/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(currentSchema.population, 148);
-assert.ok(Math.abs(currentSchema.paired.delta_macro_f1 - 0.004033250554989709) < 1e-12);
+assert.ok(Math.abs(currentSchema.paired.delta_macro_f1 - 0.00535206100423502) < 1e-12);
 assert.deepEqual(
+  // The loss is gone as of the COS-41 and COS-39 decisions: 11-1 became 12-0.
   [currentSchema.paired.wins, currentSchema.paired.losses, currentSchema.paired.ties],
-  [11, 1, 136]
+  [12, 0, 136]
 );
 // critical_wrong_proxy sums lost reference tokens and unbacked new ones, and
 // only the first moved. FABRICATION IS STILL ZERO, which is the half that
@@ -117,7 +118,7 @@ assert.equal(currentSchema.safety.critical_wrong_proxy, currentSchema.safety.car
 
 const priorSchema = replay("artifacts/canonical-v3/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(priorSchema.population, 150);
-assert.ok(Math.abs(priorSchema.paired.delta_macro_f1 - 0.004451679077766002) < 1e-12);
+assert.ok(Math.abs(priorSchema.paired.delta_macro_f1 - 0.0049508243769113) < 1e-12);
 assert.deepEqual(
   [priorSchema.paired.wins, priorSchema.paired.losses, priorSchema.paired.ties],
   [12, 1, 137]

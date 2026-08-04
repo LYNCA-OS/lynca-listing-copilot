@@ -265,8 +265,6 @@ export const semBracketAliases = Object.freeze({
   }),
   lot: Object.freeze({
     lot_quantity: "lot",
-    // ONE bracket carrying all three, not an alias for the manufacturer.
-    manufacturer_product_set: "manufacturer_product",
     subjects_max_3: "subject",
     shared_card_name_or_design: "card_name",
     shared_print_finish: "print_finish",
@@ -274,8 +272,40 @@ export const semBracketAliases = Object.freeze({
   })
 });
 
-/** The Standard-grammar name for a bracket in any grammar. */
+/**
+ * Composition responsibilities, which are NOT aliases.
+ *
+ * COS-39 (founder, 2026-08-04): `manufacturer_product_set` describes a
+ * projection duty, not a fourth canonical field. Manufacturer, Product and Set
+ * remain three separate canonical fields; the Composer must understand
+ * containment and repetition across them and emit the most specific widely
+ * accepted market expression.
+ *
+ *   Topps + Topps Chrome + Topps Chrome Update  ->  Topps Chrome Update
+ *   Topps + Topps Chrome + Topps Chrome Disney  ->  Topps Chrome Disney
+ *
+ * Not "Topps Topps Chrome Topps Chrome Update", and not one field chosen
+ * blindly. Listing it as an alias -- which an earlier pass of this file did --
+ * is exactly the reading the decision rejects, because an alias says "these two
+ * names mean the same field" and this name means "work these three out".
+ */
+export const semCompositionResponsibilities = Object.freeze({
+  manufacturer_product_set: Object.freeze({
+    grammar: "lot",
+    composes: Object.freeze(["manufacturer", "product", "set"]),
+    rule: "emit the most specific widely accepted expression; never concatenate all three, never select one blindly"
+  })
+});
+
+/**
+ * The Standard-grammar name for a bracket in any grammar.
+ *
+ * A composition responsibility is returned unchanged: it is not an alias for
+ * any single canonical field, and translating it into one would tell the caller
+ * that Manufacturer alone can stand for Manufacturer + Product + Set.
+ */
 export function semCanonicalBracket(grammar, bracket) {
+  if (semCompositionResponsibilities[bracket]) return bracket;
   const table = semBracketAliases[grammar] || semBracketAliases.standard;
   return table[bracket] || bracket;
 }
