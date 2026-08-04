@@ -173,7 +173,12 @@ export const semTcgTitleOrder = Object.freeze([
   "descriptive_rarity",
   "numerical_rarity",
   "variant",
-  "product_finish",
+  // COS-39 (founder, 2026-08-04): "There is no separate CSM field named
+  // Product Finish." Both grammars use [Print Finish]; grammar classification
+  // happens first and then each applies its own domain validation to the same
+  // field. The alias below stays so stored orders and older callers still
+  // resolve, but the contract no longer names a field it does not have.
+  "print_finish",
   "special_stamp",
   "grading_info",
   "description",

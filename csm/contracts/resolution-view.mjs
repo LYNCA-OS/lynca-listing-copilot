@@ -25,7 +25,8 @@
 import {
   semCanonicalBracket,
   semCanonicalTitleOrder,
-  semGrammarForResolved
+  semGrammarForResolved,
+  semTcgIpLabel
 } from "../ontology/sem-definition.mjs";
 import { csmFieldLabels, labelForCsmField } from "../ontology/field-labels.mjs";
 
@@ -238,9 +239,22 @@ export function buildCsmResolutionView({
       confidence: grammarConfidence,
       contract_version: CSM_RESOLUTION_VIEW_VERSION,
       resolver_version: resolverVersion,
-      // A grammar the classifier could not decide is a review case, not a
-      // silent default to Standard.
-      review_required: grammarConfidence != null && grammarConfidence < 0.5
+      // COS-39 (founder, 2026-08-04): "Grammar classification must happen
+      // first", because each grammar then applies its own domain validation --
+      // a Pokemon card must not receive `Gold Refractor`. So a grammar the
+      // contract cannot corroborate is a review case.
+      //
+      // Surfaced, not corrected. Across 255 cards the model claimed TCG on 5
+      // and the IP table recognised 1; of the other 4, two are genuinely wrong
+      // (Topps Chrome Disney, an Entertainment product COS-8 covers) and two
+      // are genuinely right and invisible, because the table reads `product`
+      // and those cards carry "Mega Brave" or an empty product while being
+      // unmistakably Pokemon. A rule forcing Standard whenever the table is
+      // silent would fix two cards and break two others.
+      ip_corroborated: grammar !== "tcg" ? null
+        : Boolean(semTcgIpLabel({ product: fields.product, set: fields.set || fields.product, card_name: fields.card_name })),
+      review_required: (grammarConfidence != null && grammarConfidence < 0.5)
+        || (grammar === "tcg" && !semTcgIpLabel({ product: fields.product, set: fields.set || fields.product, card_name: fields.card_name }))
     }),
     brackets: Object.freeze(brackets),
     composer: Object.freeze({

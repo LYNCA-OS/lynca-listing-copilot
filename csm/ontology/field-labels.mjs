@@ -79,7 +79,11 @@ export const csmFieldLabels = Object.freeze({
   teams: "Team",
   lot_quantity: "Lot Quantity",
   lot_type: "Lot Type",
-  observable_components: "Visible Components",
+  // COS-41 (founder, 2026-08-04): NOT a CSM semantic field. Auto, RC, Patch
+  // and Relic belong to [Search Optimization]; `observable_components` is an
+  // implementation-level grouping that recognition and identity resolution may
+  // keep, and a label here declared it as one of CSM's own.
+  //   observable_components: "Visible Components",
   cert_number: "Cert Number",
   one_of_one: "1/1"
 });

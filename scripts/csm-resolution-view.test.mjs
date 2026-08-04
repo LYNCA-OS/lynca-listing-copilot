@@ -169,3 +169,34 @@ const base = {
 }
 
 console.log("csm-resolution-view.test.mjs OK");
+
+// COS-39 (founder, 2026-08-04): "Grammar classification must happen first",
+// because each grammar then applies its own domain validation -- a Pokemon card
+// must not receive Gold Refractor. A TCG claim the contract cannot corroborate
+// is therefore a review case.
+//
+// Surfaced, never corrected. Across 255 cards the model claimed TCG five times
+// and the IP table recognised one; of the remaining four, two are genuinely
+// wrong (Topps Chrome Disney is an Entertainment product COS-8 covers) and two
+// are genuinely right and invisible to the table, which reads `product` while
+// those cards carry "Mega Brave" or nothing at all. Forcing Standard whenever
+// the table is silent would fix two and break two.
+{
+  const pokemon = run({ ...base, grammar: "tcg", product: "Pokemon SWSH", set: "Lost Origin", language: "EN" });
+  const pv = buildCsmResolutionView(pokemon);
+  assert.equal(pv.grammar.value, "TCG");
+  assert.equal(pv.grammar.ip_corroborated, true);
+  assert.equal(pv.grammar.review_required, false, "a corroborated TCG claim is not a review case");
+
+  const disney = run({ ...base, grammar: "tcg", product: "Topps Chrome", set: "" });
+  const dv = buildCsmResolutionView(disney);
+  assert.equal(dv.grammar.ip_corroborated, false);
+  assert.equal(dv.grammar.review_required, true, "an uncorroborated TCG claim must be visible");
+
+  // Standard cards are not interrogated about an IP they never claimed.
+  const sv = buildCsmResolutionView(run(base));
+  assert.equal(sv.grammar.ip_corroborated, null);
+  assert.equal(sv.grammar.review_required, false);
+}
+
+console.log("csm-resolution-view grammar-corroboration assertions OK");
