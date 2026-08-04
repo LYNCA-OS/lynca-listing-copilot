@@ -177,15 +177,12 @@ const TARGETED_DELIBERATION_PROMPT = `${CANONICAL_FIELDS_PROMPT} `
   + "Spend no deliberation on what is plainly printed: the subject names, the grading company and grades, the manufacturer, and the parallel family. Read those straight off the card or slab and move on -- reconsidering them replaces a legible fact with a guess. "
   + "Deliberate on what has to be worked out: the set or insert line, the printed scarcity wording, the stamped print run, the issue year, and the full product line. Those are where a second look changes the answer.";
 
-const PRE_FINISH_ALIGNMENT_SCHEMA = (() => {
-  const schema = JSON.parse(JSON.stringify(CANONICAL_FIELDS_SCHEMA));
-  const node = schema?.properties?.parallel_family;
-  if (!node || !/BASE treatment family only/.test(node.description)) {
-    throw new Error("control arm cannot rebuild schema: the base-family rule is absent");
-  }
-  node.description = "The finish family, if you recognise it. These are the standard treatments the hobby uses -- there are not many of them. Empty if you cannot tell which.";
-  return schema;
-})();
+// The finish-alignment control arm was removed with the change it measured
+// (rejected 2026-08-03: combined n=255, +0.003411, 51 wins to 44, p=0.5384).
+// Its rebuilder stayed behind and threw at import time, correctly -- the
+// passage it reconstructs is gone -- which took the whole test suite with it.
+// A guard that fires when its subject is deleted is doing its job; leaving it
+// pointed at nothing is the defect.
 
 function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
                       fixedEffort = null, fixedMaxOutputTokens = null,
