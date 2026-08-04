@@ -143,6 +143,89 @@ export function buildCsmResolutionReview({
  * counted as agreement -- a reviewer who could not tell is not evidence that
  * the resolver was right.
  */
+/**
+ * Which layer owns a repeated pattern. COS-42's approved learning flow.
+ *
+ * The rule the founder set is that no single edit changes anything: patterns
+ * are accumulated, grouped, reviewed, and only then routed. So this maps a
+ * correction reason to the layer that should own the fix, and the aggregation
+ * below refuses to route anything seen once.
+ *
+ *   repeated wording / abbreviation      -> Marketplace Composer
+ *   repeated observation failures        -> Recognition Worker
+ *   repeated matching / normalisation    -> Registry or Identity Resolution
+ *   only repeated cases showing the boundaries cannot represent the
+ *   collectible                          -> a CSM boundary proposal
+ *
+ * The last one is deliberately the hardest to reach. A CSM proposal is a
+ * contract change, and the decision says it needs repeated evidence that no
+ * existing boundary can hold the fact -- not that one reviewer disagreed.
+ */
+export const OWNING_LAYER = Object.freeze({
+  MARKETPLACE_COMPOSER: "MARKETPLACE_COMPOSER",
+  RECOGNITION_WORKER: "RECOGNITION_WORKER",
+  REGISTRY_OR_IDENTITY_RESOLUTION: "REGISTRY_OR_IDENTITY_RESOLUTION",
+  CSM_BOUNDARY_PROPOSAL: "CSM_BOUNDARY_PROPOSAL"
+});
+
+const LAYER_FOR_REASON = Object.freeze({
+  [CORRECTION_REASON.TRUE_BUT_NOT_PUBLISHABLE]: OWNING_LAYER.MARKETPLACE_COMPOSER,
+  [CORRECTION_REASON.MISSED_VALUE]: OWNING_LAYER.RECOGNITION_WORKER,
+  [CORRECTION_REASON.INVENTED_VALUE]: OWNING_LAYER.RECOGNITION_WORKER,
+  [CORRECTION_REASON.WRONG_VALUE]: OWNING_LAYER.REGISTRY_OR_IDENTITY_RESOLUTION,
+  // A fact that keeps landing in the wrong bracket is the one signal that can
+  // mean the boundaries themselves do not fit -- and only when repeated.
+  [CORRECTION_REASON.WRONG_BRACKET]: OWNING_LAYER.CSM_BOUNDARY_PROPOSAL
+});
+
+/**
+ * Group corrections into routable patterns.
+ *
+ * `minimumOccurrences` is the whole point rather than a tuning knob: the
+ * decision says periodic analysis looks for repeated patterns across multiple
+ * records instead of reacting to one correction, so a pattern below the
+ * threshold is reported as observed and explicitly NOT routed.
+ */
+export function routeReviewPatterns(reviews = [], {
+  grammarOf = () => "standard",
+  minimumOccurrences = 3
+} = {}) {
+  const patterns = new Map();
+  for (const review of reviews) {
+    if (review.excluded_from_metrics) continue;
+    const grammar = grammarOf(review);
+    for (const c of review.corrections) {
+      const key = `${grammar}|${c.bracket}|${c.reason}`;
+      const p = patterns.get(key) || {
+        grammar, bracket: c.bracket, reason: c.reason,
+        occurrences: 0, assets: new Set(),
+        owning_layer: LAYER_FOR_REASON[c.reason] || OWNING_LAYER.RECOGNITION_WORKER
+      };
+      p.occurrences++; p.assets.add(review.asset_id);
+      patterns.set(key, p);
+    }
+  }
+  const rows = [...patterns.values()].map((p) => Object.freeze({
+    grammar: p.grammar,
+    bracket: p.bracket,
+    reason: p.reason,
+    occurrences: p.occurrences,
+    distinct_assets: p.assets.size,
+    owning_layer: p.owning_layer,
+    // Distinct assets, not raw corrections: the same card reviewed twice is one
+    // pattern seen once, and counting revisions would let a single card promote
+    // itself by being looked at again.
+    routable: p.assets.size >= minimumOccurrences,
+    withheld_reason: p.assets.size >= minimumOccurrences ? null
+      : `seen on ${p.assets.size} of the ${minimumOccurrences} distinct assets required before routing`
+  })).sort((a, b) => b.distinct_assets - a.distinct_assets);
+  return Object.freeze({
+    minimum_occurrences: minimumOccurrences,
+    routable: Object.freeze(rows.filter((r) => r.routable)),
+    observed_not_routable: Object.freeze(rows.filter((r) => !r.routable))
+  });
+}
+
 export function projectReviewAccuracy(reviews = [], { grammarOf = () => "standard" } = {}) {
   const cells = new Map();
   let counted = 0; let excluded = 0;

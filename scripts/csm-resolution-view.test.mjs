@@ -200,3 +200,55 @@ console.log("csm-resolution-view.test.mjs OK");
 }
 
 console.log("csm-resolution-view grammar-corroboration assertions OK");
+
+// COS-42's approved learning flow: accumulate, group, review, then route. No
+// single correction changes anything, and the routing threshold is the rule
+// rather than a tuning knob.
+{
+  const { routeReviewPatterns, OWNING_LAYER } = await import("../csm/contracts/resolution-review.mjs");
+  const prov = (asset) => ({
+    asset_id: asset, recognition_session_id: "s", resolution_id: "r", output_id: "o",
+    resolver_version: "v", composer_version: "v", view_version: "v", reviewer_id: "u", tenant_id: "t"
+  });
+  const mk = (asset, bracket, reason) => buildCsmResolutionReview({
+    provenance: prov(asset), verdict: REVIEW_VERDICT.CORRECTED,
+    corrections: [{ bracket, reason, corrected_value: "x" }],
+    originalFields: {}, originalTitle: "t", recomposeTitle: () => "t2"
+  });
+
+  const routed = routeReviewPatterns([
+    mk("a1", "print_finish", CORRECTION_REASON.MISSED_VALUE),
+    mk("a2", "print_finish", CORRECTION_REASON.MISSED_VALUE),
+    mk("a3", "print_finish", CORRECTION_REASON.MISSED_VALUE),
+    mk("b1", "card_name", CORRECTION_REASON.WRONG_BRACKET)
+  ]);
+  const finish = routed.routable.find((r) => r.bracket === "print_finish");
+  assert.ok(finish, "three distinct assets is a pattern");
+  assert.equal(finish.owning_layer, OWNING_LAYER.RECOGNITION_WORKER,
+    "a repeated observation failure belongs to Recognition, not to CSM");
+
+  // One correction routes nowhere, and says why rather than going silent.
+  const single = routed.observed_not_routable.find((r) => r.bracket === "card_name");
+  assert.ok(single, "it is still reported");
+  assert.equal(single.routable, false);
+  assert.match(single.withheld_reason, /1 of the 3 distinct assets/);
+  assert.equal(single.owning_layer, OWNING_LAYER.CSM_BOUNDARY_PROPOSAL,
+    "a wrong bracket is the one signal that can reach CSM -- when repeated");
+
+  // The same card reviewed repeatedly must not promote itself.
+  const repeated = routeReviewPatterns([
+    mk("same", "product", CORRECTION_REASON.WRONG_VALUE),
+    mk("same", "product", CORRECTION_REASON.WRONG_VALUE),
+    mk("same", "product", CORRECTION_REASON.WRONG_VALUE)
+  ]);
+  assert.equal(repeated.routable.length, 0,
+    "three revisions of one asset is one pattern seen once");
+  assert.equal(repeated.observed_not_routable[0].occurrences, 3);
+  assert.equal(repeated.observed_not_routable[0].distinct_assets, 1);
+
+  // Excluded reviews carry no weight at all.
+  const undecided = buildCsmResolutionReview({ provenance: prov("u1"), verdict: REVIEW_VERDICT.UNDECIDED });
+  assert.equal(routeReviewPatterns([undecided]).routable.length, 0);
+}
+
+console.log("csm-resolution-view learning-flow assertions OK");
