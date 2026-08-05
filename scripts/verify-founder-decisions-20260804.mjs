@@ -13,6 +13,7 @@ import {
   isSemCardNumberText, classifySemNumberBoundary
 } from "../csm/ontology/sem-definition.mjs";
 import { csmFieldLabels } from "../csm/ontology/field-labels.mjs";
+import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { BRACKET_ORDER, DROP_ORDER, composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { MARKETPLACE_PROFILES } from "../lib/listing/thin/marketplace-composer-rules.mjs";
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
@@ -130,6 +131,29 @@ check("COS-42", "only a repeated wrong-bracket can reach a CSM proposal", () => 
   })));
   assert.equal(many.routable[0].owning_layer, OWNING_LAYER.CSM_BOUNDARY_PROPOSAL);
 });
+check("COS-39", "classification runs BEFORE finish validation", () => {
+  // "TCG vs NON_TCG classification must happen first so domain-inappropriate
+  // finish terminology does not cross Grammar boundaries." It ran forty lines
+  // AFTER the finish admission, so the admission layer read a grammar nothing
+  // had set yet and the boundary could never fire. The decision's own example
+  // is a printed name -- Gold Refractor on a Charizard -- so the gate also has
+  // to precede the `parallel_exact` early return.
+  const charizard = parseCanonicalFields(JSON.stringify({
+    grammar: "tcg", manufacturer: "Pokémon", product: "SWSH",
+    subjects: ["Charizard"], parallel_exact: "Gold Refractor"
+  })).fields;
+  assert.equal(charizard.print_finish, "", "a Charizard must not carry Gold Refractor");
+  assert.ok(charizard.withheld_finish_terms.some((w) => w.reason === "NON_TCG_FINISH_WORDING_ON_TCG_GRAMMAR"));
+
+  // TCG-appropriate wording is untouched, and NON_TCG grammar is untouched.
+  assert.equal(parseCanonicalFields(JSON.stringify({
+    grammar: "tcg", manufacturer: "Pokémon", product: "Mega Brave",
+    subjects: ["Absol"], parallel_family: "Holo"
+  })).fields.print_finish, "Holo");
+  assert.equal(parseCanonicalFields(JSON.stringify({
+    grammar: "standard", subjects: ["X"], parallel_exact: "Gold Refractor"
+  })).fields.print_finish, "Gold Refractor");
+});
 check("COS-42", "every bracket including EMPTY is exposed", () => {
   const v = buildCsmResolutionView({ fields: card({ set: "" }), composed: composeFromCanonicalFields(card({ set: "" })) });
   assert.ok(v.brackets.some((b) => b.state === "ABSENT"));
@@ -142,26 +166,14 @@ check("COS-42", "every bracket including EMPTY is exposed", () => {
 const UNIMPLEMENTED = [
   {
     decision: "COS-39",
-    clause: "TCG cards must not receive Non-TCG finish wording",
+    clause: "the NON_TCG finish vocabulary is one term, not a partition",
     why: [
-      "The decision says the boundary 'should prevent a Pokémon / Charizard card",
-      "from receiving inappropriate Non-TCG finish wording such as Gold Refractor",
-      "or Silver Refractor'. It is not enforced: `admitFinishVocabulary` has no",
-      "grammar argument, and a TCG-grammar Charizard composes 'Gold Refractor'.",
-      "",
-      "It is NOT implemented as written, deliberately. The decision gates on",
-      "GRAMMAR, and the reviewed corpus says grammar is the wrong discriminator:",
-      "of five TCG-grammar cards, two are Topps Chrome Disney and BOTH reviewed",
-      "titles say Refractor --",
-      "  2026 Topps Chrome Disney Elsa Blue Sparkle Refractor 025/150",
-      "  2026 Topps Chrome Disney Mufasa Dalmatian Refractor 004/101",
-      "A grammar-gated ban would break two of the five cards it covers. The",
-      "discriminator the examples actually describe is the PRODUCT LINE: Refractor",
-      "belongs to a Topps Chrome product whatever its grammar, and does not belong",
-      "on a Pokémon card.",
-      "",
-      "Building the product-scoped vocabulary would mean inventing a table CSM has",
-      "not stated, so it waits on a ruling rather than being guessed at."
+      "The boundary is enforced, but the list it enforces holds only `refractor`,",
+      "the term the decision itself names. Whether Prizm, Mojo, Sapphire, Xfractor",
+      "and the rest of the `parallel_family` enum are NON_TCG-only, and which",
+      "terms are TCG-only, is a Registry table CSM has not stated. Writing it here",
+      "would be an invention wearing a contract's name, so the gap stays visible",
+      "instead."
     ].join("\n        ")
   }
 ];
