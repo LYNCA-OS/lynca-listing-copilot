@@ -14,6 +14,7 @@ import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { instrumentProductionRequest, bindProductionRequestContext } from "../lib/observability/production-events.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
 import { buildCsmResolutionView, CSM_RESOLUTION_VIEW_VERSION } from "../lib/listing/csm/resolution-view.mjs";
 import {
   buildCsmResolutionReview, CSM_RESOLUTION_REVIEW_VERSION
@@ -38,7 +39,18 @@ const COMPOSER_VERSION = THIN_COMPOSER_VERSION;
  * with the response and the caller can detect the mismatch.
  */
 export function composeResolutionView(record) {
-  const { fields } = parseCanonicalFields(record.canonical_payload);
+  // Replay from the stored ROWS, not from `structured_output` directly.
+  //
+  // `structured_output` is the CSM emit shape -- `sem`, `print_finish_layers`,
+  // `composition_grammar` -- and `parseCanonicalFields` expects the flat
+  // canonical object. Handing one to the other returned a near-empty result, so
+  // an operator opening a card that resolved perfectly well saw a blank trace.
+  // `replayFromRows` is the reverse mapping the replay verifier already uses;
+  // reimplementing it here would be a second copy free to drift from the one
+  // that guards persistence.
+  const { fields } = record.replay_rows
+    ? replayFromRows(record.replay_rows)
+    : parseCanonicalFields(record.canonical_payload);
   const composed = composeFromCanonicalFields(fields);
   return {
     view: buildCsmResolutionView({
