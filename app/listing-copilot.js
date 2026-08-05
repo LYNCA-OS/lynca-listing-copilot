@@ -2,6 +2,7 @@ import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
 import { claimAssetSingleFlight, nextRetrySubmissionId } from "./asset-single-flight.mjs";
 import {
   analyzeImageQualityFromImageData,
+  batchReviewWindow,
   claimNextBatchAsset,
   defaultCaptureProfileId,
   fetchWithBoundedRetry,
@@ -79,6 +80,11 @@ const state = {
   intakePreviewRecords: [],
   filePreparationRunId: 0,
   retryInFlight: 0,
+  // COS-50: where the bounded eight-card window sits in the whole batch, and
+  // which card the operator asked for. Separate from the window size, which is
+  // a rendering bound and never a limit on what is reachable.
+  reviewWindowStart: 0,
+  reviewFocusIndex: null,
   workspaceMode: "standard",
   writerActiveIndex: null,
   writerTransition: "",
@@ -3094,14 +3100,17 @@ function writerCurrentCardHtml(asset) {
 }
 
 function writerQueueWindowHtml(current) {
-  const visible = writerOutstandingAssets()
-    .sort((left, right) => left.index - right.index)
-    .slice(0, INTAKE_PREVIEW_CARD_WINDOW);
+  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
+  // COS-50: the strip still renders at most eight, but it now says how many
+  // there are. `8 / 8` read as "this batch has 8 cards" on a 20-card batch,
+  // which is the reading that made a correctly accepted batch look truncated.
+  const queueWindow = batchReviewWindow(outstanding, { focusIndex: current.index });
+  const visible = queueWindow.visible;
   const queued = visible.filter((asset) => asset.index !== current.index);
   if (!queued.length) return "";
   return `
-    <section class="writer-queue-window" aria-label="当前八张卡片队列">
-      <header><strong>待处理窗口</strong><span>${visible.length} / ${INTAKE_PREVIEW_CARD_WINDOW}</span></header>
+    <section class="writer-queue-window" aria-label="待处理卡片队列">
+      <header><strong>待处理窗口</strong><span>正在显示 ${queueWindow.from}–${queueWindow.to} / 共 ${queueWindow.total} 张</span></header>
       <div class="writer-queue-window-list">
         ${queued.map((asset, index) => {
           const image = asset.images?.[0];
@@ -3180,6 +3189,45 @@ function renderWriterWheel() {
   updateExportWorkbookControls();
 }
 
+/**
+ * Full-batch navigation over a bounded render window. COS-50.
+ *
+ * The rail lists every card index, not just the visible eight, because the
+ * complaint this answers is that cards 9-20 were not DISCOVERABLE -- an
+ * operator could not tell they had been accepted at all. The rail entries are
+ * one small button each, which is cheap; what stays bounded is the eight
+ * rendered CARDS, which is the expensive part and the reason the window exists.
+ *
+ * Every entry is selectable regardless of state. A card that is still
+ * recognising shows that when opened, which is information; refusing to open it
+ * is the behaviour being repaired.
+ */
+function batchNavigationHtml(window, assets) {
+  if (!window.total) return "";
+  const rail = assets.map((asset) => {
+    const active = asset.index >= window.from && asset.index <= window.to
+      && window.visible.some((visible) => visible.index === asset.index);
+    return `<button type="button" class="batch-rail-item${active ? " is-visible" : ""}"
+      data-batch-focus="${asset.index}"
+      aria-current="${active ? "true" : "false"}"
+      title="${escapeHtml(`卡片 ${asset.index} · ${writerAssetStatusLabel(asset)}`)}"
+    >${asset.index}</button>`;
+  }).join("");
+  return `
+    <nav class="batch-navigation" aria-label="全批导航">
+      <div class="batch-navigation-summary">
+        <strong>正在显示 ${window.from}–${window.to} / 共 ${window.total} 张</strong>
+        <span>第 ${window.page} / ${window.pages} 页</span>
+      </div>
+      <div class="batch-navigation-controls">
+        <button type="button" data-batch-window="previous" ${window.hasPrevious ? "" : "disabled"} aria-label="上一组卡片">上一组</button>
+        <button type="button" data-batch-window="next" ${window.hasNext ? "" : "disabled"} aria-label="下一组卡片">下一组</button>
+      </div>
+      <div class="batch-rail" role="group" aria-label="直接选择卡片">${rail}</div>
+    </nav>
+  `;
+}
+
 function renderAssetRows() {
   if (!state.assets.length) return;
   if (writerModeActive()) {
@@ -3187,16 +3235,25 @@ function renderAssetRows() {
     return;
   }
 
-  const visibleAssets = writerOutstandingAssets()
-    .sort((left, right) => left.index - right.index)
-    .slice(0, INTAKE_PREVIEW_CARD_WINDOW);
+  // COS-50: the render stays bounded at eight cards; what changed is that the
+  // window can MOVE. One constant used to decide both how much DOM is live and
+  // which cards the operator may reach, so a 20-card batch showed `8 / 8` and
+  // cards 9-20 could not be opened until earlier ones were saved.
+  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
+  const reviewWindow = batchReviewWindow(outstanding, {
+    start: state.reviewWindowStart,
+    focusIndex: state.reviewFocusIndex
+  });
+  state.reviewWindowStart = reviewWindow.start;
+  const visibleAssets = reviewWindow.visible;
   if (!visibleAssets.length) {
     elements.assetPreviewList.innerHTML = `<div class="empty-state"><strong>本批卡片已全部确认</strong><p>可以导出已入库标题，或开始下一批。</p></div>`;
     return;
   }
+  const navigation = batchNavigationHtml(reviewWindow, outstanding);
   const hasAnyResult = state.results.length > 0;
   if (!hasAnyResult) {
-    elements.assetPreviewList.innerHTML = visibleAssets.map(assetRowHtml).join("");
+    elements.assetPreviewList.innerHTML = navigation + visibleAssets.map(assetRowHtml).join("");
     return;
   }
 
@@ -4606,6 +4663,24 @@ function bindEvents() {
     if (rejectButton) {
       if (writerModeActive()) void rejectWriterTitleAndAdvance(Number(rejectButton.dataset.rejectTitle), { animate: true });
       else void rejectTitleFeedback(rejectButton, { animate: true });
+      return;
+    }
+
+    // COS-50: window controls and direct card selection. Selection sets a focus
+    // the window follows, so choosing card 20 opens card 20 rather than merely
+    // scrolling a list it is not in.
+    const windowButton = event.target.closest("[data-batch-window]");
+    if (windowButton) {
+      const step = windowButton.dataset.batchWindow === "previous" ? -1 : 1;
+      state.reviewWindowStart = Math.max(0, (state.reviewWindowStart || 0) + step * INTAKE_PREVIEW_CARD_WINDOW);
+      state.reviewFocusIndex = null;
+      renderResults();
+      return;
+    }
+    const railButton = event.target.closest("[data-batch-focus]");
+    if (railButton) {
+      state.reviewFocusIndex = Number(railButton.dataset.batchFocus);
+      renderResults();
       return;
     }
 

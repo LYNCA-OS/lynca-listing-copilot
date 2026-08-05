@@ -1014,3 +1014,80 @@
     transform: none;
   }
 }
+
+/* COS-50: full-batch navigation above the bounded eight-card render window.
+   The rail carries every card index because the defect was discoverability --
+   an operator could not tell cards 9-20 had been accepted at all. The rail
+   entries are cheap; what stays bounded is the eight rendered cards. */
+.batch-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.28));
+  border-radius: 12px;
+  background: var(--surface-raised, rgba(148, 163, 184, 0.06));
+}
+
+.batch-navigation-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-inline-end: auto;
+}
+
+.batch-navigation-summary strong { font-size: 0.95rem; }
+.batch-navigation-summary span { font-size: 0.8rem; opacity: 0.72; }
+
+.batch-navigation-controls { display: flex; gap: 0.5rem; }
+
+.batch-navigation-controls button {
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.34));
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.batch-navigation-controls button[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+/* The rail scrolls inside itself. A 100-card batch must never make the page
+   scroll sideways. */
+.batch-rail {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+  scrollbar-width: thin;
+}
+
+.batch-rail-item {
+  flex: 0 0 auto;
+  min-width: 2rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.28));
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.batch-rail-item.is-visible {
+  border-color: var(--accent, #38bdf8);
+  background: color-mix(in srgb, var(--accent, #38bdf8) 16%, transparent);
+  font-weight: 600;
+}
+
+.batch-rail-item:focus-visible,
+.batch-navigation-controls button:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
