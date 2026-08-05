@@ -61,8 +61,11 @@ assert.match(directRecognitionSource, /fetchJsonWithRetry\(CSM_THIN_API_ENDPOINT
 assert.match(directRecognitionSource, /asset_id: canonicalAssetId\(asset\)/, "recognition must bind the durable asset identity");
 assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobject_path\s*:/, "recognition must not carry browser image transport fields");
 
+// `retryFailedAsset` is synchronous as of COS-51 -- the single-flight claim
+// must land before any await -- and the awaiting half moved to `runAssetRetry`,
+// which follows it. Slice from the entry point through both.
 const retrySource = js.slice(
-  js.indexOf("async function retryFailedAsset"),
+  js.indexOf("function retryFailedAsset"),
   js.indexOf("async function copyTitle")
 );
 assert.match(retrySource, /retryStateForResult\(current \|\| \{\}\)/, "retry must apply the result recovery policy");
