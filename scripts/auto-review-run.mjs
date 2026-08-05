@@ -12,6 +12,9 @@ import { resolve } from "node:path";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { scoreWithEquivalence, EQUIVALENCE_VERSION } from "../lib/listing/evaluation/semantic-equivalence.mjs";
 import { preregister, review, formatReview } from "../lib/listing/evaluation/exploration-review.mjs";
+import {
+  probeReach, probeImposedConstraint, probeComplexity, probeSettled, promptSourcesForRun
+} from "../lib/listing/evaluation/standing-question-probes.mjs";
 
 /**
  * Ledger dimensions. Defined here, not passed in, so a review cannot quietly
@@ -30,7 +33,7 @@ export const REVIEW_DIMENSIONS = Object.freeze([
 
 const tokenise = (s) => new Set(String(s).toLowerCase().split(/[^a-z0-9/]+/).filter(Boolean));
 
-export function buildReview({ artifactPath, control, treatment, preregPath = null }) {
+export function buildReview({ artifactPath, control, treatment, preregPath = null, changedModules = [] }) {
   const rows = readFileSync(artifactPath, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const byAsset = new Map();
   for (const r of rows) {
@@ -98,7 +101,14 @@ export function buildReview({ artifactPath, control, treatment, preregPath = nul
   return {
     result: review({
       prereg, controlScores, treatmentScores, pairs, dimensions,
-      rulerVersion: EQUIVALENCE_VERSION
+      rulerVersion: EQUIVALENCE_VERSION,
+      // The four standing questions ANSWER THEMSELVES. Taking them as
+      // parameters meant a form nobody filled in, which is the same failure as
+      // a review nobody remembers to run.
+      reach: probeReach(changedModules),
+      imposedConstraint: probeImposedConstraint(promptSourcesForRun()),
+      complexity: probeComplexity({ artifactPath }),
+      settled: probeSettled(treatment)
     }),
     preregistered: Boolean(preregPath && existsSync(preregPath))
   };
