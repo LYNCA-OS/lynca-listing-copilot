@@ -1,0 +1,48 @@
+{
+  "schema_version": "csm-live-schema-snapshot-v1",
+  "captured_on": "2026-08-05",
+  "project_ref": "irpgnhkslrsiucybkufc",
+  "project_name": "Listing Copilot Singapore",
+  "why": "COS-51's Supabase audit found readCsmResolutionRecord selecting four columns that do not exist on csm_marketplace_outputs, so the Glass Box read answered 400 for every card in production. The unit tests stubbed the database call, and the migration ledger does not describe tables that predate its baseline, so neither could catch it. This snapshot is the third source: what the live database actually has. Refresh it with the query in scripts/csm-live-schema-contract.test.mjs when the schema changes.",
+  "tables": {
+    "csm_identity_resolutions": [
+      "id", "tenant_id", "recognition_session_id", "contract_version", "revision",
+      "grammar", "registry_release_id", "resolver_version", "conflict_policy_version",
+      "recognition_packet_sha256", "resolution_status", "created_at"
+    ],
+    "csm_marketplace_outputs": [
+      "id", "tenant_id", "recognition_session_id", "resolution_id", "contract_version",
+      "marketplace", "composer_version", "marketplace_profile_version",
+      "resolution_packet_sha256", "title", "structured_output", "included_brackets",
+      "dropped_trace", "created_at"
+    ],
+    "csm_resolution_reviews": [
+      "id", "schema_version", "tenant_id", "asset_id", "recognition_session_id",
+      "resolution_id", "output_id", "resolver_version", "composer_version", "view_version",
+      "reviewer_id", "verdict", "corrections", "original_fields", "original_title",
+      "corrected_fields", "corrected_title", "excluded_from_metrics", "note",
+      "revision_sha256", "reviewed_at", "created_at"
+    ],
+    "listing_manual_recovery_records": [
+      "id", "schema_version", "tenant_id", "asset_id", "client_asset_ref", "failure_code",
+      "failure_stage", "source", "manual_title", "operator_id", "recorded_at", "created_at",
+      "training_eligible", "semantic_truth", "canonical_fields_approved"
+    ],
+    "v4_recognition_sessions": [
+      "id", "schema_version", "status", "asset_id", "preingestion_bundle_id", "route",
+      "route_reason", "route_plan", "request_summary", "final_title", "writer_final_title",
+      "resolved_fields", "field_states", "candidate_control_plane_trace",
+      "provider_result_summary", "writer_feedback_event_id", "learning_event_id",
+      "failure_reason", "operator_id", "created_at", "updated_at", "l1_status", "l1_title",
+      "l1_ready_at", "l1_route", "l1_timing", "l2_status", "l2_title", "l2_ready_at",
+      "l2_route", "l2_timing", "tenant_id", "user_id", "stable_asset_id", "client_asset_ref",
+      "asset_fingerprint", "identity_snapshot", "model_version", "prompt_version",
+      "prompt_mode", "generation_completed_at", "created_by_user_id", "assigned_to_user_id",
+      "csm_contract_version", "csm_registry_release_id", "csm_grammar",
+      "csm_grammar_confidence", "recognition_pipeline_fingerprint", "csm_owner_versions",
+      "csm_recognition_stage_status", "csm_resolution_stage_status",
+      "csm_composition_stage_status", "csm_recognition_packet_sha256",
+      "csm_resolution_packet_sha256", "csm_marketplace_packet_sha256"
+    ]
+  }
+}
