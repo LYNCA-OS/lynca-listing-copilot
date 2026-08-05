@@ -1455,6 +1455,26 @@ export async function main(argv = process.argv.slice(2), {
     `\npaired n=${paired.length}  delta_F1=${(summary.paired_delta_f1 ?? NaN).toFixed(4)}  `
     + `${treatment.key} wins ${test.wins} : ${control.key} wins ${test.losses} : ties ${test.ties}  p=${test.p.toExponential(2)}\n`
   );
+  // The review runs HERE, at the end of the run that produced the data, not
+  // when someone remembers to run it. Every failure this framework is built
+  // from was a review that did not happen: a field-level decomposition the
+  // founder had to ask for, a trade ledger nobody computed, a keepable part
+  // found only on request.
+  //
+  // It spends nothing -- it rescores what is already on disk -- so there is no
+  // reason for it to be optional, and it is deliberately not behind a flag.
+  // A failure here must never lose the run: the artifact is already written.
+  try {
+    const { runAutoReview } = await import("./auto-review-run.mjs");
+    process.stdout.write(await runAutoReview({
+      outDir, model, control: control.key, treatment: treatment.key
+    }));
+  } catch (error) {
+    process.stdout.write(`\n⚠ 自动复盘未能生成：${error?.message || error}\n`
+      + `  产物已落盘，可手动跑：node scripts/review-exploration.mjs --artifact ${outDir}/thin-path-${model}.jsonl `
+      + `--control ${control.key} --treatment ${treatment.key}\n`);
+  }
+
   return summary;
   } finally {
     await releaseLock();
