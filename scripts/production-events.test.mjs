@@ -223,4 +223,42 @@ const configuredZeroCost = v4ResponseUsage({
 assert.equal(configuredZeroCost.estimatedCostUsd, 0, "a configured measured zero remains a real zero");
 assert.equal(configuredZeroCost.pricingCoverage, "PRICED");
 
+// ---------------------------------------------------------------------------
+// Stage latency reaches the request log on the SUCCESS path.
+//
+// It did not. The route measured every stage and returned them on the response,
+// and only a failing request recorded them -- the provider-failure receipt
+// carried `latency_stages_ms` into `error_logs` while `telemetry.finish` on a
+// success ignored the body entirely. So the only requests with a stored
+// breakdown were the ones that never produced a title, and production had
+// 203 sessions of stage data, all of it from a tier that has since changed.
+{
+  const stages = {
+    tenant_access_ms: 1800, provider_ms: 2836, authority_dispatch_ms: 3467,
+    csm_persistence_ms: 38, request_total_ms: 3600, handler_total_ms: 5410
+  };
+  const row = buildRequestLogRow({
+    requestId: "req-stage-1", context: { role: "owner" }, req: { method: "POST" },
+    api: "/api/csm-listing-title", statusCode: 200, durationMs: 5419, latencyStages: stages
+  });
+  assert.deepEqual(row.metadata.latency_stages_ms, stages);
+
+  // The two stages that only exist AFTER the session patch. The receipt stored
+  // on the session is written before persistence finishes, so it can never hold
+  // these; this row is written at `res.end` and can.
+  assert.ok("csm_persistence_ms" in row.metadata.latency_stages_ms);
+  assert.ok("request_total_ms" in row.metadata.latency_stages_ms);
+
+  // Untrusted shapes must not reach the column.
+  const dirty = buildRequestLogRow({
+    requestId: "req-stage-2", req: { method: "POST" }, api: "/x", statusCode: 200, durationMs: 1,
+    latencyStages: { "BAD KEY": 1, negative_ms: -5, nan_ms: "abc", good_ms: 12.6 }
+  });
+  assert.deepEqual(dirty.metadata.latency_stages_ms, { good_ms: 13 });
+
+  // No stages is no key, rather than an empty object on every request log.
+  const bare = buildRequestLogRow({ requestId: "req-stage-3", req: { method: "GET" }, api: "/x", statusCode: 200, durationMs: 1 });
+  assert.equal("latency_stages_ms" in bare.metadata, false);
+}
+
 console.log("production event tests passed");

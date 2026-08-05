@@ -585,23 +585,37 @@ export function buildProviderFailureReceipt(error) {
 }
 
 export default async function handler(req, res) {
+  // Everything before `runDirectCsmAsset` was unmeasured, and it is not free:
+  // production request logs put a successful request at ~5.4s p50 while the
+  // stages recorded inside the route account for ~3.5s. The missing ~1.9s sat
+  // in this prologue -- tenant access is a database round trip -- with nothing
+  // to attribute it to. These three timers close the request from arrival to
+  // response, so the breakdown sums to the number the log already reports.
+  const handlerStartedAt = Date.now();
+  const prologueStages = {};
   const telemetry = instrumentProductionRequest(req, res, { api: "/api/csm-listing-title" });
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, message: "Method not allowed" });
   let context;
   try {
+    const tenantAccessStartedAt = Date.now();
     context = await requireTenantAccess(req, { permission: TENANT_PERMISSIONS.CREATE_JOB });
+    prologueStages.tenant_access_ms = Date.now() - tenantAccessStartedAt;
     bindProductionRequestContext(res, context);
   } catch (error) {
     return sendJson(res, Number(error?.statusCode || 503), publicTenantAuthError(error));
   }
+  const rateLimitStartedAt = Date.now();
   if (!enforceApiRateLimit(req, res, {
     scope: "csm_listing_title", limit: 600, windowMs: 60_000,
     identifier: `${context.tenantId}:${context.userId}`,
     message: "Too many recognition requests. Please try again shortly."
   })) return;
+  prologueStages.rate_limit_ms = Date.now() - rateLimitStartedAt;
 
   try {
+    const payloadStartedAt = Date.now();
     const payload = await readJsonPayload(req, { maxBytes: 16 * 1024 });
+    prologueStages.payload_read_ms = Date.now() - payloadStartedAt;
     const result = await runDirectCsmAsset({
       tenantId: context.tenantId,
       userId: context.userId,
@@ -617,7 +631,12 @@ export default async function handler(req, res) {
       vector_calls: 0,
       recognition_session_id: result.csm_rows.resolution.recognition_session_id,
       trace_status: "PERSISTED",
-      ...result
+      ...result,
+      latency_stages_ms: {
+        ...prologueStages,
+        ...(result?.latency_stages_ms || {}),
+        handler_total_ms: Date.now() - handlerStartedAt
+      }
     });
   } catch (error) {
     const status = responseStatus(error);
