@@ -96,6 +96,11 @@ import {
 } from "../experiments/accuracy/field-specific-observation-lane-v2.mjs";
 import { summariseSemQuality } from "../lib/listing/thin/csm-sem-score.mjs";
 import { examplesFor, fewShotBlock } from "../lib/listing/evaluation/kfold-few-shot.mjs";
+import {
+  CANONICAL_FIELDS_SCHEMA_SERIAL_PARTS,
+  CANONICAL_FIELDS_PROMPT_SERIAL_PARTS,
+  serialFromParts
+} from "../lib/listing/thin/canonical-fields.mjs";
 
 // The reviewed corpus, for the k-fold few-shot arm. Populated once from the
 // sealed labels the harness already reads, so the arm and the scorer are
@@ -449,6 +454,29 @@ export const ARM_SPECS = {
   // other folds AND are filtered against the card's own title, because the
   // corpus contains near-duplicates of itself. Verified on all 255 with zero
   // leaks before this cost anything.
+  // The research report's recommendation: extend the structured-field
+  // treatment that took grading from 33/38 to 38/38 to `serial`. Ceiling
+  // measured first at +0.016142 / +0.010885, both above drift. Its companion
+  // recommendation for `card_number` was NOT built: a card number appears in
+  // 3 of 150 reviewed titles and 0 of 105, so a perfect answer is worth
+  // +0.000000 and no experiment can show anything.
+  thin_canonical_serial_parts_low: {
+    ...canonicalArm("high", CANONICAL_FIELDS_PROMPT_SERIAL_PARTS, "low", 8192,
+      CANONICAL_FIELDS_SCHEMA_SERIAL_PARTS),
+    // The split field only helps if the Composer actually reads it. Reducing it
+    // back into `serial` here keeps the composer, the ruler and the control arm
+    // byte-identical, so the only difference under test is what the model was
+    // asked for.
+    finish: (payload) => {
+      let parsed = payload;
+      if (typeof payload === "string") { try { parsed = JSON.parse(payload); } catch { parsed = {}; } }
+      const fromParts = serialFromParts(parsed);
+      const merged = fromParts && !String(parsed?.serial || "").trim()
+        ? { ...parsed, serial: fromParts }
+        : parsed;
+      return finishCanonicalTitle(JSON.stringify(merged));
+    }
+  },
   thin_canonical_kfold_fewshot_low: canonicalArm(
     "high", CANONICAL_FIELDS_PROMPT, "low", 8192, CANONICAL_FIELDS_SCHEMA,
     (context, basePrompt) => {
