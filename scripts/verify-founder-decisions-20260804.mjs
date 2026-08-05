@@ -136,9 +136,42 @@ check("COS-42", "every bracket including EMPTY is exposed", () => {
   assert.ok(v.brackets.every((b) => b.alternate_candidates.length === 0));
 });
 
+// Clauses that are NOT implemented, listed so a full green run is not read as
+// a decision being finished. A verifier that only lists what it checks reports
+// completeness it never measured.
+const UNIMPLEMENTED = [
+  {
+    decision: "COS-39",
+    clause: "TCG cards must not receive Non-TCG finish wording",
+    why: [
+      "The decision says the boundary 'should prevent a Pokémon / Charizard card",
+      "from receiving inappropriate Non-TCG finish wording such as Gold Refractor",
+      "or Silver Refractor'. It is not enforced: `admitFinishVocabulary` has no",
+      "grammar argument, and a TCG-grammar Charizard composes 'Gold Refractor'.",
+      "",
+      "It is NOT implemented as written, deliberately. The decision gates on",
+      "GRAMMAR, and the reviewed corpus says grammar is the wrong discriminator:",
+      "of five TCG-grammar cards, two are Topps Chrome Disney and BOTH reviewed",
+      "titles say Refractor --",
+      "  2026 Topps Chrome Disney Elsa Blue Sparkle Refractor 025/150",
+      "  2026 Topps Chrome Disney Mufasa Dalmatian Refractor 004/101",
+      "A grammar-gated ban would break two of the five cards it covers. The",
+      "discriminator the examples actually describe is the PRODUCT LINE: Refractor",
+      "belongs to a Topps Chrome product whatever its grammar, and does not belong",
+      "on a Pokémon card.",
+      "",
+      "Building the product-scoped vocabulary would mean inventing a table CSM has",
+      "not stated, so it waits on a ruling rather than being guessed at."
+    ].join("\n        ")
+  }
+];
+
 const failed = results.filter((r) => !r.ok);
 for (const r of results) {
   console.log(`${r.ok ? "  ✓" : "  ✗"} ${r.decision}  ${r.clause}${r.ok ? "" : `\n        ${r.why}`}`);
 }
-console.log(`\n${results.length - failed.length}/${results.length} 条子句已落实`);
+for (const item of UNIMPLEMENTED) {
+  console.log(`  ⏸ ${item.decision}  ${item.clause}\n        ${item.why}`);
+}
+console.log(`\n${results.length - failed.length}/${results.length} 条子句已落实，${UNIMPLEMENTED.length} 条待裁决`);
 if (failed.length) process.exitCode = 1;
