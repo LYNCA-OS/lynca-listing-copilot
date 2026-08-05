@@ -95,6 +95,13 @@ import {
   withFieldSpecificObservationLaneV2
 } from "../experiments/accuracy/field-specific-observation-lane-v2.mjs";
 import { summariseSemQuality } from "../lib/listing/thin/csm-sem-score.mjs";
+import { examplesFor, fewShotBlock } from "../lib/listing/evaluation/kfold-few-shot.mjs";
+
+// The reviewed corpus, for the k-fold few-shot arm. Populated once from the
+// sealed labels the harness already reads, so the arm and the scorer are
+// looking at the same file and cannot disagree about what a card's title is.
+let REVIEWED_CORPUS = [];
+export function setReviewedCorpus(rows) { REVIEWED_CORPUS = rows; }
 
 const BARE_PROMPT = "Write the eBay listing title for this sports trading card. "
   + "Reply with the title only -- no explanation, no quotes, no label.";
@@ -187,7 +194,7 @@ const TARGETED_DELIBERATION_PROMPT = `${CANONICAL_FIELDS_PROMPT} `
 
 function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
                       fixedEffort = null, fixedMaxOutputTokens = null,
-                      schema = CANONICAL_FIELDS_SCHEMA) {
+                      schema = CANONICAL_FIELDS_SCHEMA, promptForCard = null) {
   return {
     canonical: true,
     responseSchemaName: "canonical_card_fields",
@@ -199,7 +206,10 @@ function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
         ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {}),
         ...(fixedMaxOutputTokens ? { maxOutputTokens: fixedMaxOutputTokens } : {})
       });
-      request.input[0].content[0].text = prompt;
+      // A per-card prompt is how k-fold few-shot reaches the request: the
+      // example block depends on which card is being scored, because a card
+      // must never see its own reviewed title.
+      request.input[0].content[0].text = promptForCard ? promptForCard(context, prompt) : prompt;
       return request;
     },
     extract: extractCanonicalPayload,
@@ -435,6 +445,18 @@ export const ARM_SPECS = {
   // its accuracy is moot. Kept for diagnosis, not for shipping.
   thin_canonical_high_effort_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "low", 8192),
   thin_canonical_fewshot_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT_FEWSHOT, "low", 8192),
+  // k-fold few-shot over the REAL reviewed corpus. Examples come only from
+  // other folds AND are filtered against the card's own title, because the
+  // corpus contains near-duplicates of itself. Verified on all 255 with zero
+  // leaks before this cost anything.
+  thin_canonical_kfold_fewshot_low: canonicalArm(
+    "high", CANONICAL_FIELDS_PROMPT, "low", 8192, CANONICAL_FIELDS_SCHEMA,
+    (context, basePrompt) => {
+      if (!context?.cardKey || !REVIEWED_CORPUS.length) return basePrompt;
+      const block = fewShotBlock(examplesFor({ key: context.cardKey, corpus: REVIEWED_CORPUS }));
+      return block ? `${basePrompt}\n${block}` : basePrompt;
+    }
+  ),
   // Both arms run at low, the shipped tier, so the only difference is the rule.
   thin_canonical_low_targeted: canonicalArm("high", TARGETED_DELIBERATION_PROMPT, "low", 8192),
   // medium sits between low and max so the marginal curve can be read rather
@@ -571,6 +593,9 @@ export async function buildRunManifest({
 }) {
   const datasetBytes = datasetBody ?? await readFile(dataset);
   const labelBytes = sealedLabelsBody ?? await readFile(sealedLabels);
+  setReviewedCorpus(
+    String(labelBytes).split("\n").filter(Boolean).map((line) => JSON.parse(line))
+  );
   const assetIdBytes = assetIdsBody ?? (assetIdsFile ? await readFile(assetIdsFile) : null);
   const finisher = await buildFinisherFingerprint({ arms, scorer });
   const armContracts = arms.map((arm) => ({
@@ -797,7 +822,7 @@ function expectedCheckpointIdentity({ item, arm, model, effort, imageDetail }) {
     : [];
   const imageUrls = primarySignable.map((_, index) => `https://checkpoint.invalid/image-${index + 1}`);
   const extraImageUrls = extraSignable.map((_, index) => `https://checkpoint.invalid/extra-image-${index + 1}`);
-  const request = arm.buildRequest({ imageUrls, extraImageUrls, model, effort: armEffort, imageDetail });
+  const request = arm.buildRequest({ imageUrls, extraImageUrls, model, effort: armEffort, imageDetail, cardKey: item?.key });
   return {
     request_sha256: requestFingerprint(request),
     image_set_sha256: imageSetFingerprint(item, sourceImages),
@@ -1157,7 +1182,7 @@ export async function main(argv = process.argv.slice(2), {
       // The arm's pinned tier wins over the run-level default, so two efforts
       // can alternate on the same card within one run.
       const armEffort = arm.effort ?? effort;
-      const request = arm.buildRequest({ imageUrls, extraImageUrls: requestExtraImageUrls, model, effort: armEffort, imageDetail });
+      const request = arm.buildRequest({ imageUrls, extraImageUrls: requestExtraImageUrls, model, effort: armEffort, imageDetail, cardKey: key });
       const requestSha256 = requestFingerprint(request);
       const requestImageEntries = [
         ...(item.images || []).slice(0, 2),
