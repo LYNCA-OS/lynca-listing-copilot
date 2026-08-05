@@ -29,7 +29,19 @@ assert.ok(Math.abs(result.baseline.macro_f1 - 0.7698022907754876) < 1e-12,
 // one new loss is a card where the reclaimed budget went to two more subject
 // names and pushed "Rainbow Refractor" out. That is COS-8 behaving as written
 // -- Subject is a `*` bracket and Print Finish is `**` -- not a defect.
-assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.008430486260921022) < 1e-12);
+//
+// Repinned a third time, 2026-08-05, for COS-49's `LotxN`. `Lot*4` and `Lotx4`
+// are the same five characters, so no budget moves and wins/losses/ties are
+// byte-identical at 14/1/85 with the same p -- the SAME cards win, they just
+// win by more, because `lotx4` is the spelling the writers use and `Lot*4` was
+// not. +0.008430 -> +0.012349, a shift of +0.003919 that matches the isolated
+// lot-marker measurement (+0.0916 on lot cards, ~4 of these 100) to the third
+// decimal.
+//
+// COS-49's bare-colour rule landed in the same pass and contributes nothing
+// here, as intended: the Composer already refused to project a bare colour, so
+// moving the gate upstream changed the canonical record and no title.
+assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.012349436875523923) < 1e-12);
 assert.deepEqual(
   [result.paired.wins, result.paired.losses, result.paired.ties],
   [14, 1, 85]
@@ -98,7 +110,11 @@ const replay = (path) => JSON.parse(execFileSync(process.execPath, [
 // 100 as the only surface on which the rule must work.
 const currentSchema = replay("artifacts/canonical-v4/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(currentSchema.population, 148);
-assert.ok(Math.abs(currentSchema.paired.delta_macro_f1 - 0.00535206100423502) < 1e-12);
+// Repinned 2026-08-05 for COS-49's `LotxN`: +0.005352 -> +0.009619. Same
+// +0.004 shift as the diagnostic 100 and the v3 cohort, and wins/losses/ties
+// hold at 12/0/136 -- the marker is the same five characters, so no budget
+// moves and no card changes side.
+assert.ok(Math.abs(currentSchema.paired.delta_macro_f1 - 0.00961934545458576) < 1e-12);
 assert.deepEqual(
   // The loss is gone as of the COS-41 and COS-39 decisions: 11-1 became 12-0.
   [currentSchema.paired.wins, currentSchema.paired.losses, currentSchema.paired.ties],
@@ -118,7 +134,8 @@ assert.equal(currentSchema.safety.critical_wrong_proxy, currentSchema.safety.car
 
 const priorSchema = replay("artifacts/canonical-v3/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(priorSchema.population, 150);
-assert.ok(Math.abs(priorSchema.paired.delta_macro_f1 - 0.0049508243769113) < 1e-12);
+// Repinned 2026-08-05, same COS-49 change: +0.004951 -> +0.009269.
+assert.ok(Math.abs(priorSchema.paired.delta_macro_f1 - 0.009268500395273827) < 1e-12);
 assert.deepEqual(
   [priorSchema.paired.wins, priorSchema.paired.losses, priorSchema.paired.ties],
   [12, 1, 137]

@@ -106,7 +106,21 @@ export function analyzeCanonicalComposerRecovery(rows, diagnosis = null, {
       .filter((token) => isSanctionedNormalization(token, candidateTokens));
     const lostReferenceTokens = rawLostReferenceTokens
       .filter((token) => !normalizedReferenceTokens.includes(token));
-    const unbackedNewTokens = newTokens.filter((token) => !fieldTokens.has(token));
+    // `LotxN` is ONE token, and `lot_count` holds only the digits, so a literal
+    // set-membership check reads the marker as invented. It is not: the count
+    // came off the images, and three of the five cards this fired on have
+    // `lotx4` / `lotx3` written in the reviewed reference itself.
+    //
+    // The previous `Lot*N` spelling split on the `*` into `lot` + `N`, both
+    // backed, which is the only reason this gate stayed quiet through that
+    // change. The mechanism was never the difference; the tokeniser was. Teach
+    // the backing check the marker's morphology rather than lower the gate --
+    // fabrication has to stay absolute, so it must keep meaning what it says.
+    const lotCount = String((row.fields || {}).lot_count ?? "").trim();
+    const backedLotMarker = lotCount ? `lotx${lotCount}`.toLowerCase() : null;
+    const unbackedNewTokens = newTokens.filter((token) => (
+      !fieldTokens.has(token) && token !== backedLotMarker
+    ));
     const downstreamRecovered = (downstreamByAsset.get(row.asset_id) || [])
       .filter((token) => candidateTokens.has(token));
     if (downstreamRecovered.length) {

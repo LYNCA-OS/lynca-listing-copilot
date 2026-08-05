@@ -77,10 +77,14 @@ for (const finish of ["Refractor", "Prizm", "Holo", "Sapphire", "Mojo"]) {
 // has one, against 9 where the colour named was wrong.
 assert.ok(CANONICAL_FIELDS_SCHEMA.properties.surface_color.enum.includes("Gold"));
 assert.ok(CANONICAL_FIELDS_SCHEMA.properties.parallel_family.enum.includes("Refractor"));
+// COS-49 (Fei, 2026-08-04) removes ONE rung: a bare colour is Recognition
+// evidence and becomes canonical Print Finish only when the card names it or
+// verified taxonomy confirms the colour alone. The other rungs are untouched --
+// colour + family is not a bare colour, and a printed name is explicit.
 {
   const ladder = [
     [{ surface_color: "Gold", parallel_family: "Refractor" }, "Gold Refractor"],
-    [{ surface_color: "Gold" }, "Gold"],
+    [{ surface_color: "Gold" }, ""],
     [{ parallel_family: "Mojo" }, "Mojo"],
     [{ parallel_exact: "Gold Vinyl", surface_color: "Gold" }, "Gold Vinyl"],
     [{}, ""]
@@ -88,6 +92,14 @@ assert.ok(CANONICAL_FIELDS_SCHEMA.properties.parallel_family.enum.includes("Refr
   for (const [input, expected] of ladder) {
     assert.equal(parseCanonicalFields(input).fields.print_finish, expected);
   }
+  // Withheld, not erased. The rejection has to be reversible by a Registry that
+  // later confirms the colour, which it cannot be if the term is simply gone.
+  const bare = parseCanonicalFields({ surface_color: "Gold" }).fields;
+  assert.equal(bare.observed_surface_color, "Gold",
+    "the observation survives its denied promotion");
+  assert.ok(bare.withheld_finish_terms.some((entry) => (
+    entry.value === "Gold" && entry.reason === "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED"
+  )), "the evidence record must name what was withheld and why");
 }
 
 // The completeness counterweight. An anti-fabrication instruction with nothing
@@ -310,7 +322,7 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
 
 // ------------------------------------------------------------- lot structure
 
-// "[Lot*n][Year][Manufacturer Product Set][Subjects up to 3]", and CSM's Lot
+// "[LotxN][Year][Manufacturer Product Set][Subjects up to 3]", and CSM's Lot
 // grammar DOES carry [Shared Numerical Rarity] -- the hand-written version
 // dropped it on the reasoning that a lot has no single copy number.
 {
@@ -319,9 +331,11 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
     subjects: ["Victor Wembanyama", "Chet Holmgren", "Scoot Henderson"],
     card_number: "1", serial: "17/50", lot_count: "12", grammar: "lot"
   }));
-  // Lot*n since 2026-08-03; the writers never wrote "n Card Lot" and the
-  // bracket comment in the composer had specified Lot*n all along.
-  assert.ok(composed.title.startsWith("Lot*12"));
+  // LotxN per COS-49 (Fei, 2026-08-04): the one merchant-facing quantity
+  // marker, and the spelling the reviewed corpus actually uses (`lotx4`,
+  // `Lotx16`). The interim `Lot*n` form is retired; "n Card Lot" before it was
+  // written by no writer at all.
+  assert.ok(composed.title.startsWith("Lotx12"));
   assert.ok(!composed.title.includes("#1"));
   assert.ok(composed.title.includes("17/50"));
   // The combined bracket carries the product, not just the manufacturer.
@@ -330,7 +344,7 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
 // An uncounted lot says a bare "Lot" rather than inventing a count from the
 // subject list, which caps at 3 and is not the number of cards.
 assert.ok(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title.startsWith("Lot"));
-assert.ok(!composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title.startsWith("Lot*"),
+assert.ok(!/^Lotx/.test(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title),
   "an unread count must not be fabricated");
 
 // ------------------------------------------------------------ empty and team
@@ -502,10 +516,17 @@ assert.match(
   }));
   assert.match(printed.title, /Gold Vinyl/);
 
-  // And the colour is still in the object -- this is a projection decision.
+  // COS-49 moved this from a projection decision to a resolution one. The
+  // Composer already refused to print a bare colour; what changed is that the
+  // CANONICAL object no longer claims it as a resolved Print Finish either. The
+  // record and the output now say the same thing, which is the point -- CSM
+  // persists the record and the Glass Box shows it to an operator.
+  //
+  // The observation is not lost: it moves to the evidence layer, where a
+  // Registry that confirms the colour can still admit it.
   const card = fields({ manufacturer: "Topps", subjects: ["Nolan Ryan"], surface_color: "Gold" });
-  assert.equal(card.surface_color, "Gold");
-  assert.equal(card.print_finish, "Gold");
+  assert.equal(card.print_finish, "", "a bare colour is not canonical Print Finish");
+  assert.equal(card.observed_surface_color, "Gold", "but it survives as Recognition evidence");
 }
 
 process.stdout.write("canonical fields: ok\n");

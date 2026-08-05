@@ -41,7 +41,7 @@ for (const [path, arm] of COHORTS) {
     const view = buildCsmResolutionView({ fields, composed });
     // Through the full adjudicated layer, not equivalenceTokens alone. A first
     // version compared bracket tokens to the raw reference and reported the lot
-    // bracket at 0% -- we render Lot*4 and the writer writes lotx4, which the
+    // bracket at 0% -- we rendered Lot*4 while the writer writes lotx4, which the
     // lot-format tolerance already forgives at title level. A projection that
     // disagrees with the scorer it reports alongside is measuring itself.
     const rawGot = equivalenceTokens(composed.title);

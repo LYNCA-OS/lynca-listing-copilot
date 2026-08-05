@@ -23,12 +23,41 @@ import {
   assert.equal(out.withheld[0].reason, "BASE_APPEARANCE_NOT_PARALLEL");
 }
 
-// Non-naming family withheld, real colour survives into the ladder.
+// Non-naming family withheld -- and that leaves the colour bare, which COS-49
+// withholds in turn. "Red" is a real parallel colour, but with "Prismatic" gone
+// nothing on the card or in the taxonomy names it as a finish by itself, so it
+// stays Recognition evidence. Both rejections are recorded, so a Registry that
+// later confirms either term can readmit it.
 {
   const out = admitFinishVocabulary({ surface_color: "Red", parallel_family: "Prismatic" });
   assert.equal(out.parallel_family, "");
-  assert.equal(out.print_finish, "Red");
-  assert.equal(out.withheld[0].reason, "DESCRIBES_SURFACE_NOT_PARALLEL");
+  assert.equal(out.surface_color, "");
+  assert.equal(out.print_finish, "");
+  assert.deepEqual(out.withheld.map((entry) => entry.reason), [
+    "DESCRIBES_SURFACE_NOT_PARALLEL",
+    "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED"
+  ]);
+}
+
+// COS-49's bare-colour rule, and the three ways out of it.
+{
+  const bare = admitFinishVocabulary({ surface_color: "Gold", parallel_family: "", print_finish: "Gold" });
+  assert.equal(bare.print_finish, "", "a bare colour is evidence, not canonical Print Finish");
+  assert.equal(bare.withheld[0].reason, "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED");
+  assert.equal(bare.withheld[0].value, "Gold", "the rejected term is preserved, so it is reversible");
+
+  const named = admitFinishVocabulary({ surface_color: "Gold", parallel_exact: "Gold Vinyl" });
+  assert.deepEqual(named.withheld, [], "a name printed on the card is explicit and never touched");
+
+  const withFamily = admitFinishVocabulary({ surface_color: "Gold", parallel_family: "Refractor" });
+  assert.deepEqual(withFamily.withheld, [], "colour + family is not a bare colour");
+
+  const confirmed = admitFinishVocabulary(
+    { surface_color: "Gold", parallel_family: "", print_finish: "Gold" },
+    { taxonomyConfirmsColour: (colour) => colour === "Gold" }
+  );
+  assert.equal(confirmed.print_finish, "Gold", "verified taxonomy admits the colour alone");
+  assert.deepEqual(confirmed.withheld, []);
 }
 
 // A real parallel colour with a real family is untouched.
