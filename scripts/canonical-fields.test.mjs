@@ -385,6 +385,35 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
   assert.equal(composed.title, "2025 Topps Nolan Ryan");
   assert.ok(composed.suppressed.includes("search_optimization"));
 }
+{
+  // COS-41 (Fei, 2026-08-04): Auto, RC, Patch and Relic stay under Search
+  // Optimization, there is no Visible Components bracket, and the Composer must
+  // "solve title preservation through priority and compression rules INSIDE
+  // Search Optimization" -- suppressing the whole bracket is named as the
+  // failure, not the fix. Resolution path item 4 asks to verify these survive
+  // compression, and nothing did.
+  //
+  // The suppression above and the survival below are the same rule seen twice:
+  // the bracket is projected partially, keeping the terms buyers search on and
+  // dropping the city name they do not.
+  const composed = composeFromCanonicalFields(fields({
+    year: "2024", manufacturer: "Topps", product: "Chrome", subjects: ["Shohei Ohtani"],
+    team: "Los Angeles Dodgers", attributes: ["Auto", "RC", "Patch", "Relic", "Jersey"]
+  }));
+  for (const term of ["Auto", "RC", "Patch", "Relic", "Jersey"]) {
+    assert.match(composed.title, new RegExp(`\\b${term}\\b`), `COS-41: ${term} must survive eBay compression`);
+  }
+  assert.ok(!/Los Angeles|Dodgers/.test(composed.title), "the city name is the low-value term that yields");
+
+  // `components` is DERIVED from `attributes`; supplying it directly is ignored.
+  // Worth pinning, because a test that sets `components` alone sees every term
+  // vanish and reads that as a COS-41 violation. It is malformed input.
+  const direct = composeFromCanonicalFields(fields({
+    year: "2024", manufacturer: "Topps", product: "Chrome", subjects: ["Shohei Ohtani"],
+    components: ["Auto", "RC"]
+  }));
+  assert.ok(!/\bAuto\b/.test(direct.title), "components is derived, not an input");
+}
 
 // Composition Before Repetition, and a player whose surname matches the set
 // must not lose their name to it.
