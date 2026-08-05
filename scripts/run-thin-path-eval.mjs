@@ -31,6 +31,7 @@ import {
 } from "../lib/listing/thin/thin-listing-path.mjs";
 import {
   CANONICAL_FIELDS_PROMPT,
+  CANONICAL_FIELDS_PROMPT_FEWSHOT,
   CANONICAL_SERIAL_EXACT_PROMPT,
   CANONICAL_FIELDS_SCHEMA,
   buildCanonicalFieldsRequest,
@@ -433,6 +434,7 @@ export const ARM_SPECS = {
   // against 5,193 for none on the smoke run -- the writer budget is 6-8s, so
   // its accuracy is moot. Kept for diagnosis, not for shipping.
   thin_canonical_high_effort_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT, "low", 8192),
+  thin_canonical_fewshot_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT_FEWSHOT, "low", 8192),
   // Both arms run at low, the shipped tier, so the only difference is the rule.
   thin_canonical_low_targeted: canonicalArm("high", TARGETED_DELIBERATION_PROMPT, "low", 8192),
   // medium sits between low and max so the marginal curve can be read rather
