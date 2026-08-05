@@ -9,9 +9,11 @@ import {
 import {
   isPrivateDeploymentPath,
   isProtectedAppPath,
+  isRetiredListingExecutionPath,
   PRIVATE_DEPLOYMENT_MATCHERS,
   PRIVATE_DEPLOYMENT_PATH_PREFIXES,
-  PROTECTED_APP_PATHS
+  PROTECTED_APP_PATHS,
+  RETIRED_LISTING_EXECUTION_PATHS
 } from "../lib/listing-route-access.mjs";
 import {
   cookieName,
@@ -49,6 +51,11 @@ for (const prefix of PRIVATE_DEPLOYMENT_PATH_PREFIXES) {
   assert.equal(isPrivateDeploymentPath(`${prefix}/private.txt`), true);
 }
 assert.equal(isPrivateDeploymentPath("/app/index.html"), false);
+for (const path of RETIRED_LISTING_EXECUTION_PATHS) {
+  assert.equal(isRetiredListingExecutionPath(path), true);
+  assert.equal(isRetiredListingExecutionPath(`${path}/`), true);
+}
+assert.equal(isRetiredListingExecutionPath("/api/csm-listing-title"), false);
 
 const previousAuthSecret = process.env.METAVERSE_AUTH_SECRET;
 const previousMaintenanceMode = process.env.LISTING_MAINTENANCE_MODE;
@@ -81,13 +88,18 @@ try {
   assert.equal(malformed.status, 302);
 
   process.env.LISTING_MAINTENANCE_MODE = "true";
-  const blockedMutation = await middleware(new Request(`${origin}/api/v4/listing-job-enqueue`, {
+  const blockedMutation = await middleware(new Request(`${origin}/api/csm-listing-title`, {
     method: "POST"
   }));
   assert.equal(blockedMutation.status, 503);
   assert.equal((await blockedMutation.json()).error_code, "LISTING_MAINTENANCE_MODE");
   assert.equal(blockedMutation.headers.get("retry-after"), "60");
-  const readableStatus = await middleware(new Request(`${origin}/api/v4/health`));
+  const retiredMutation = await middleware(new Request(`${origin}/api/v4/listing-job-enqueue/`, {
+    method: "POST"
+  }));
+  assert.equal(retiredMutation.status, 410);
+  assert.equal((await retiredMutation.json()).error_code, "RETIRED_LISTING_EXECUTION_PATH");
+  const readableStatus = await middleware(new Request(`${origin}/api/health`));
   assert.equal(readableStatus.status, 200, "maintenance mode should preserve read-only health and status probes");
 } finally {
   if (previousAuthSecret === undefined) delete process.env.METAVERSE_AUTH_SECRET;

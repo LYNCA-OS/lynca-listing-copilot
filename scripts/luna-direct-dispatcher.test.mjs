@@ -98,19 +98,32 @@ assert.throws(
     buildLunaDirectPayloadHash(task("asset-1")),
     buildLunaDirectPayloadHash({ ...task("asset-1"), image_urls: ["https://rotated.test/front.jpg"] })
   );
+  const stableMaterial = task("asset-1", { image_fingerprints: ["sha256:front"] });
+  assert.equal(
+    buildLunaDirectPayloadHash(stableMaterial),
+    buildLunaDirectPayloadHash({
+      ...stableMaterial,
+      image_urls: ["https://newly-signed.test/front.jpg"]
+    }),
+    "short-lived signed URL rotation must not create a second durable operation"
+  );
+  assert.notEqual(
+    buildLunaDirectPayloadHash(stableMaterial),
+    buildLunaDirectPayloadHash({ ...stableMaterial, image_fingerprints: ["sha256:replacement"] })
+  );
 }
 
 // Only the explicitly transient HTTP statuses and recognizable network
-// failures retry. A generic application error and HTTP 500 fail immediately.
+// failures retry. A generic application error still fails immediately.
 {
-  for (const status of [429, 502, 503, 504]) {
+  for (const status of [429, 500, 502, 503, 504]) {
     assert.equal(classifyLunaDirectFailure({ status }).retryable, true);
   }
   assert.equal(classifyLunaDirectFailure({ status: 502 }).ambiguous, true);
   assert.equal(classifyLunaDirectFailure({ status: 503 }).ambiguous, true);
   assert.equal(classifyLunaDirectFailure({ status: 504 }).ambiguous, true);
   assert.equal(classifyLunaDirectFailure({ status: 503, safe_to_retry: true }).ambiguous, false);
-  for (const status of [400, 408, 500]) {
+  for (const status of [400, 408]) {
     assert.equal(classifyLunaDirectFailure({ status }).retryable, false);
   }
   assert.deepEqual(
@@ -326,6 +339,35 @@ assert.throws(
   assert.equal(calls[1].attempt_class, "retry");
 }
 
+// A manual retry in a fresh serverless process resumes from the durable
+// attempt number; it must never forge attempt 1 with class RETRY.
+{
+  const attempts = [];
+  const dispatcher = createTestDispatcher({
+    csmDirectConcurrency: 1,
+    providerAdmission: {
+      enqueueAttempt: async (metadata) => {
+        attempts.push({ attempt: metadata.attempt, attemptClass: metadata.attemptClass });
+        return metadata;
+      },
+      runAttempt: async ({ queuedAttempt, execute }) => {
+        await queuedAttempt;
+        return execute();
+      }
+    },
+    executeTask: async () => ({ title: "durable retry" })
+  });
+  assert.throws(
+    () => dispatcher.manualRetry(task("durable-manual")),
+    (error) => error.code === "LUNA_DIRECT_MANUAL_RETRY_INVALID"
+  );
+  assert.deepEqual(
+    await dispatcher.manualRetry(task("durable-manual", { prior_attempts: 1 })),
+    { title: "durable retry" }
+  );
+  assert.deepEqual(attempts, [{ attempt: 2, attemptClass: "retry" }]);
+}
+
 // A timeout is ambiguous: without a result lookup, neither auto retry nor a
 // later manual click can resubmit it. This is deliberately fail-closed until a
 // real server-side idempotency/result lookup exists.
@@ -351,6 +393,34 @@ assert.throws(
   assert.equal(calls, 1, "manual retry must look up the prior ambiguous operation before resubmitting");
 }
 
+// A transient result-lookup transport failure may retry the lookup itself,
+// but it must never spend another provider call until the lookup says not_found.
+{
+  let calls = 0;
+  let lookups = 0;
+  const sleeps = [];
+  const dispatcher = createTestDispatcher({
+    csmDirectConcurrency: 1,
+    maxAttempts: 2,
+    jitterRatio: 0,
+    sleep: async (delayMs) => sleeps.push(delayMs),
+    lookupOperationResult: async () => {
+      lookups += 1;
+      if (lookups === 1) throw new Error("temporary lookup transport failure");
+      return { status: "not_found" };
+    },
+    executeTask: async () => {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error("gateway timeout"), { status: 504 });
+      return { title: "lookup recovered" };
+    }
+  });
+  assert.deepEqual(await dispatcher.enqueue(task("ambiguous-lookup-retry")), { title: "lookup recovered" });
+  assert.equal(calls, 2);
+  assert.equal(lookups, 2);
+  assert.deepEqual(sleeps, [150, 250]);
+}
+
 // A definitive not_found lookup permits resubmission; a found lookup returns
 // the durable result without spending a second provider call.
 {
@@ -363,6 +433,7 @@ assert.throws(
     sleep: async () => {},
     lookupOperationResult: async (payload) => {
       operationKeys.push(payload.operation_key);
+      assert.match(payload.payload_hash, /^[0-9a-f]{64}$/);
       return { status: "not_found" };
     },
     executeTask: async (payload) => {

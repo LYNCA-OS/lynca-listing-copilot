@@ -3,14 +3,16 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFile, realpath, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { isAbsolute, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const contextPath = join(repoRoot, "docs/operations/active-service-context.json");
 const context = JSON.parse(await readFile(contextPath, "utf8"));
+const resolveFrom = (cwd, pathname) => isAbsolute(pathname) ? pathname : join(cwd, pathname);
 
-assert.equal(await realpath(repoRoot), context.repository.checkout, "repository_checkout_mismatch");
+assert.equal(await realpath(repoRoot), context.repository.production_checkout, "repository_checkout_mismatch");
 assert.equal(
   execFileSync("git", ["remote", "get-url", "origin"], { cwd: repoRoot, encoding: "utf8" }).trim(),
   context.repository.origin,
@@ -18,7 +20,7 @@ assert.equal(
 );
 
 async function verifyVercelLink(target) {
-  const link = JSON.parse(await readFile(join(repoRoot, target.link_file), "utf8"));
+  const link = JSON.parse(await readFile(resolveFrom(target.cwd, target.link_file), "utf8"));
   assert.equal(link.orgId, context.vercel.scope.id, `${target.project}_vercel_scope_mismatch`);
   assert.equal(link.projectId, target.project_id, `${target.project}_vercel_project_id_mismatch`);
   assert.equal(link.projectName, target.project, `${target.project}_vercel_project_name_mismatch`);
@@ -27,29 +29,30 @@ async function verifyVercelLink(target) {
 await verifyVercelLink(context.vercel.production);
 await verifyVercelLink(context.vercel.capacity_lab);
 
-// The CLI link is checked for what it must NOT be.
-//
-// This used to assert linked_ref === project_ref, and it passed for weeks while
-// both named a project that had been decommissioned: two records that agree
-// with each other and with nothing real. Equality with the eval read target is
-// also the wrong thing to want here -- reading evaluation images over
-// SUPABASE_URL is not the same permission as holding a CLI link that `db push`
-// and migration-history repair will act on.
-//
-// So the invariant is the boundary itself: this checkout must not be linked to
-// the production project. The stale link to the dead Sydney ref is inert and
-// fails closed, which is a safe state and deliberately left alone.
-const expectation = context.supabase.cli_link_expectation;
-const linkedRef = (await readFile(join(repoRoot, context.supabase.link_ref_file), "utf8")).trim();
-const linkedProject = JSON.parse(await readFile(join(repoRoot, context.supabase.link_metadata_file), "utf8"));
-assert.notEqual(linkedRef, expectation.forbidden_ref, "experiment_checkout_linked_to_production");
-assert.notEqual(linkedProject.ref, expectation.forbidden_ref, "experiment_checkout_linked_to_production");
+const supabaseRoot = context.supabase.cwd;
+const linkedRef = (await readFile(resolveFrom(supabaseRoot, context.supabase.link_ref_file), "utf8")).trim();
+assert.equal(linkedRef, context.supabase.project_ref, "supabase_link_ref_mismatch");
+const linkedProject = JSON.parse(await readFile(
+  resolveFrom(supabaseRoot, context.supabase.link_metadata_file),
+  "utf8"
+));
+assert.equal(linkedProject.ref, context.supabase.project_ref, "supabase_metadata_ref_mismatch");
+assert.equal(linkedProject.name, context.supabase.project, "supabase_project_name_mismatch");
+assert.equal(linkedProject.organization_id, context.supabase.organization_id, "supabase_organization_mismatch");
 
-const envPath = join(repoRoot, context.supabase.local_env);
+await assert.rejects(
+  realpath(join(repoRoot, "supabase/.temp")),
+  { code: "ENOENT" },
+  "legacy_supabase_workdir_must_remain_unlinked"
+);
+
+const envPath = context.supabase.local_env;
 const envText = await readFile(envPath, "utf8");
 const env = Object.fromEntries(envText.split(/\r?\n/).flatMap((line) => {
   const separator = line.indexOf("=");
-  return separator > 0 && !line.startsWith("#") ? [[line.slice(0, separator), line.slice(separator + 1)]] : [];
+  return separator > 0 && !line.startsWith("#")
+    ? [[line.slice(0, separator), line.slice(separator + 1)]]
+    : [];
 }));
 for (const name of context.supabase.required_server_env) {
   assert.ok(String(env[name] || "").trim(), `${name.toLowerCase()}_missing`);
@@ -65,6 +68,6 @@ process.stdout.write(`${JSON.stringify({
   linear: `${context.linear.workspace}/${context.linear.team.name}/${context.linear.project.id}`,
   vercel: `${context.vercel.scope.slug}/${context.vercel.production.project}`,
   capacity_lab: `${context.vercel.scope.slug}/${context.vercel.capacity_lab.project}:preview`,
-  supabase_eval_read_ref: context.supabase.project_ref,
-  supabase_cli_link: `${linkedRef} (${expectation.state})`
+  supabase_project_ref: context.supabase.project_ref,
+  supabase_workdir: context.supabase.cwd
 })}\n`);

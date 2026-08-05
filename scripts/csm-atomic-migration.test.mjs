@@ -8,7 +8,7 @@ const historical = await readFile(new URL(
   import.meta.url
 ), "utf8");
 const additive = await readFile(new URL(
-  "../supabase/migrations/20260801123000_csm_atomic_stage_packet_v1.sql",
+  "../supabase/migrations/20260801094353_csm_atomic_stage_packet_v1.sql",
   import.meta.url
 ), "utf8");
 

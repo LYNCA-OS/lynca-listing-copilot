@@ -33,3 +33,4 @@ alter table public.csm_resolved_brackets
   ) not valid;
 alter table public.csm_resolved_brackets
   validate constraint csm_resolved_bracket_value_check;
+;

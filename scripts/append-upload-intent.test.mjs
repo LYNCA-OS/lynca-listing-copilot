@@ -5,7 +5,7 @@ import { claimNextBatchAsset } from "../lib/listing/client/batch-recognition-int
 const source = await readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
 const handleFilesSource = source.slice(
   source.indexOf("async function handleFiles("),
-  source.indexOf("async function processAssetViaQueue(")
+  source.indexOf("function failedResult(")
 );
 const processTitlesSource = source.slice(
   source.indexOf("async function processTitles("),
@@ -50,6 +50,11 @@ assert.doesNotMatch(
 );
 assert.match(source, /已追加 \$\{imageFiles\.length\} 张图片；正在校验原图并延续当前识别任务/);
 assert.match(source, /elements\.processButton\.addEventListener\("click", processTitles\)/);
+assert.match(
+  handleFilesSource,
+  /requestRecognitionContinuation\(\{ lifecycleGeneration, filePreparationRunId \}\)/,
+  "every completed or appended upload selection must automatically continue recognition"
+);
 
 const assets = Array.from({ length: 110 }, (_, offset) => ({ index: offset + 1 }));
 const completedAssetIndexes = new Set(Array.from({ length: 10 }, (_, offset) => offset + 1));

@@ -11,12 +11,12 @@
     "normalized_sha256": "f3e4d97facf04ff3d185c69cbe1c2dfccc5a8004a1f7474e90da04aac3babc98"
   },
   "local": {
-    "version": "20260801123000",
-    "filename": "20260801123000_csm_atomic_stage_packet_v1.sql",
-    "sha256": "f3e4d97facf04ff3d185c69cbe1c2dfccc5a8004a1f7474e90da04aac3babc98",
+    "version": "20260801094353",
+    "filename": "20260801094353_csm_atomic_stage_packet_v1.sql",
+    "sha256": "9264b268b00171fbc1e9e6066c3a11203695c7cc71875b443ec7bd4c25cb3e91",
     "normalized_sha256": "f3e4d97facf04ff3d185c69cbe1c2dfccc5a8004a1f7474e90da04aac3babc98"
   },
-  "content_observation": "Remote fetch adds one trailing empty SQL statement; normalized content is otherwise identical.",
+  "content_observation": "The canonical clean ledger stores the fetched remote byte representation under the remote version.",
   "safety": {
     "ddl_already_applied": true,
     "ddl_reapply_forbidden": true,

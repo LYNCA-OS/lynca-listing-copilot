@@ -15,3 +15,4 @@ alter table public.csm_marketplace_outputs
 
 alter table public.csm_marketplace_outputs
   validate constraint csm_marketplace_dropped_check;
+;

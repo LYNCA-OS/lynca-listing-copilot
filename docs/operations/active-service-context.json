@@ -1,8 +1,9 @@
 {
-  "schema_version": "lynca-active-service-context-v1",
-  "updated_on": "2026-08-03",
+  "schema_version": "lynca-active-service-context-v2",
+  "updated_on": "2026-08-02",
   "repository": {
-    "checkout": "/Users/paidaxin/lynca-thin-path",
+    "production_checkout": "/Users/paidaxin/lynca-thin-production-main",
+    "experiment_checkout": "/Users/paidaxin/lynca-thin-path",
     "origin": "https://github.com/LYNCA-OS/lynca-listing-copilot.git"
   },
   "linear": {
@@ -16,14 +17,8 @@
       "name": "【Infrastructure】LYNCA Collectible Semantic Model",
       "id": "1cc3354e-b55d-4fc1-8733-6168c7440267"
     },
-    "tracked_issues": [
-      "COS-8",
-      "COS-9",
-      "COS-25",
-      "COS-26",
-      "COS-27"
-    ],
-    "rule": "Read the live issue before every update; never infer status from a local note."
+    "tracked_issues": ["COS-8", "COS-9", "COS-25", "COS-26", "COS-27"],
+    "release_gate": "Read every issue live. All acceptance-complete tracked issues must be Done before push, PR, merge, or Production deployment."
   },
   "vercel": {
     "scope": {
@@ -34,50 +29,31 @@
     "production": {
       "project": "lynca-listing-copilot",
       "project_id": "prj_ZVgquyNvk3mWodOlftvzlLMVXbRb",
-      "cwd": "/Users/paidaxin/lynca-thin-path",
+      "cwd": "/Users/paidaxin/lynca-thin-production-main",
       "link_file": ".vercel/project.json"
     },
     "capacity_lab": {
       "project": "lynca-capacity-lab",
       "project_id": "prj_OnBhU4kHtWuOBCs3iGoYZsYfaWbg",
       "cwd": "/Users/paidaxin/lynca-thin-path/experiments/vercel-capacity-probe",
-      "link_file": "experiments/vercel-capacity-probe/.vercel/project.json",
+      "link_file": ".vercel/project.json",
       "deployment_target": "preview"
     },
     "forbidden_scope": "leon-using-s-projects",
-    "rule": "Run from the exact cwd above; do not rely on --cwd from the repository root and never deploy a capacity probe to production."
+    "rule": "Production deploys only from the clean production checkout. Capacity probes only deploy Preview from the exact lab cwd."
   },
   "supabase": {
     "project": "Listing Copilot Singapore",
     "project_ref": "irpgnhkslrsiucybkufc",
     "organization_id": "amudxinagqcimbuezvyi",
-    "cwd": "/Users/paidaxin/lynca-thin-path",
+    "cwd": "/Users/paidaxin/lynca-thin-production-main/infrastructure/supabase-production",
     "link_ref_file": "supabase/.temp/project-ref",
     "link_metadata_file": "supabase/.temp/linked-project.json",
     "migrations": "supabase/migrations",
-    "local_env": ".env.local",
-    "required_server_env": [
-      "SUPABASE_URL",
-      "SUPABASE_SECRET_KEY"
-    ],
-    "rule": "Never expose SUPABASE_SECRET_KEY; verify the linked ref and URL host before every remote schema or trace operation.",
-    "scope": "EVALUATION READ ONLY. This checkout signs eval images and reads reviewed titles. Production migrations, db push, migration-history repair and deploys belong to the production checkout /Users/paidaxin/lynca-thin-production-main.",
-    "superseded": {
-      "project_ref": "osrrujmpxxiefppjfgpd",
-      "note": "Sydney, decommissioned; the hostname no longer resolves. Recorded so a stale reference found elsewhere is recognised as dead rather than retried as a network fault."
-    },
-    "cli_link_expectation": {
-      "state": "NOT_LINKED_TO_PRODUCTION",
-      "forbidden_ref": "irpgnhkslrsiucybkufc",
-      "reason": "This checkout reads evaluation data over SUPABASE_URL and a key. It must never hold a CLI link to the production project: db push, migration-history repair and deploys belong to /Users/paidaxin/lynca-thin-production-main. The stale link to the decommissioned Sydney ref is inert and fails closed, which is the safe state."
-    },
-    "credential_source": {
-      "canonical": "/Users/paidaxin/.config/lynca-listing-copilot/runtime.env",
-      "rule": "ONE copy. .env.local in this checkout is a symlink to it and ~/.lynca-eval-secrets/eval.env sources it. Never write a second copy of SUPABASE_URL or a key into a checkout: on 2026-08-03 three copies existed, two were stale, and the drift surfaced as DNS ENOTFOUND rather than as bad config.",
-      "aliases": {
-        "SUPABASE_SERVICE_ROLE_KEY": "aliased from SUPABASE_SECRET_KEY in eval.env"
-      }
-    }
+    "legacy_unlinked_migrations": "/Users/paidaxin/lynca-thin-production-main/supabase/migrations",
+    "local_env": "/Users/paidaxin/.config/lynca-listing-copilot/runtime.env",
+    "required_server_env": ["SUPABASE_URL", "SUPABASE_SECRET_KEY"],
+    "rule": "Only the canonical cwd may be linked or used for migration commands. Never repair history, push the legacy ledger, or print server secrets."
   },
   "retired_default_paths": [
     "Google Cloud Run recognition worker",

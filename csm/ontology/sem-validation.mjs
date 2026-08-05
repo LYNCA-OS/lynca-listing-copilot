@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 
-import { feedbackPayloadSha256 } from "../../lib/listing/feedback/feedback-capture.mjs";
+// Digest helper comes from the shared JSON module, not from the feedback
+// capture layer: CSM must not import the application layer to hash its own
+// payload. `feedbackPayloadSha256` was `sha256Hex(stableJson(value))`, which is
+// this function byte for byte, so no stored digest changes.
+import { stableJsonSha256 } from "../../lib/json-digest.mjs";
 import {
   SEM_VALIDATION_SOURCE_TYPES,
   SEM_VALIDATION_STATUSES,
@@ -128,5 +132,5 @@ export function buildSemValidationEvent({
   if (!base.learning_event_id || !base.feedback_event_id || !base.recognition_session_id) {
     throw new Error("sem_validation_parent_provenance_required");
   }
-  return { ...base, payload_sha256: feedbackPayloadSha256(base) };
+  return { ...base, payload_sha256: stableJsonSha256(base) };
 }

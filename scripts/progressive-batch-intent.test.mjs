@@ -15,8 +15,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const workerCount = queueSubmissionConcurrencyLimit\(\);/,
-  "the bounded submission pool must start even when only the first card is ready"
+  /const workerCount = directRecognitionConcurrencyLimit\(\);/,
+  "the bounded direct-recognition pool must start even when only the first card is ready"
 );
 assert.match(
   source,
@@ -36,8 +36,8 @@ assert.match(
 assert.doesNotMatch(source, /const queue = \[\.\.\.state\.assets\];/, "click-time snapshots strand later cards");
 assert.match(
   source,
-  /卡片已进入识别队列；后续图片准备完成后会自动加入。/,
-  "writer-facing copy should expose one recognition queue"
+  /图片已上传，正在自动识别卡片名称。/,
+  "writer-facing copy should expose automatic direct recognition"
 );
 
 const arrivingAssets = [{ index: 1 }];

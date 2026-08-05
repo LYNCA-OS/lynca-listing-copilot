@@ -212,7 +212,19 @@ assert.equal(listingEvaluationRequestAuthorized({
 }, legacyEvaluationOwner, {}), false);
 
 const frontend = readFileSync(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
-assert.match(frontend, /withRecognitionRequestIntent/);
+const directRecognitionSource = frontend.slice(
+  frontend.indexOf("async function processAssetViaCsmThinPath"),
+  frontend.indexOf("function backgroundPreparationAvailable")
+);
+assert.match(frontend, /const CSM_THIN_API_ENDPOINT = "\/api\/csm-listing-title"/);
+assert.match(directRecognitionSource, /fetchJsonWithRetry\(CSM_THIN_API_ENDPOINT/);
+assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/);
+assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/);
+assert.match(directRecognitionSource, /image_detail:\s*"high"/);
+assert.match(directRecognitionSource, /manual_retry:\s*manualRetry === true/);
+assert.match(directRecognitionSource, /maxAttempts:\s*1/);
+assert.match(directRecognitionSource, /retryNetworkErrors:\s*false/);
+assert.doesNotMatch(frontend, /withRecognitionRequestIntent|defaultRecognitionProfileId/);
 assert.doesNotMatch(frontend, /const defaultProviderOptions/);
 assert.doesNotMatch(frontend, /provider_options:\s*\{/);
 assert.doesNotMatch(frontend, /enqueueJobPayload\.force_l2_only/);

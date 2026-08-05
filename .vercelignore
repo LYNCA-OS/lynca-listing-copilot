@@ -46,3 +46,14 @@ artifacts/**
 
 # Authentication prototypes are design artifacts, never runtime assets.
 prototypes/**
+
+# Non-runtime repository material. These paths were previously emitted as
+# public static files by the zero-config build.
+infrastructure/
+infrastructure/**
+e2e/
+e2e/**
+maintenance/
+maintenance/**
+AGENTS.md
+playwright.config.mjs

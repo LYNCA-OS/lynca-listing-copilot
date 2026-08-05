@@ -19,6 +19,11 @@ for (const testId of ["writer-title-result", "writer-title-input", "accept-write
   assert.match(app, new RegExp(`data-testid="${testId}"`));
 }
 
+assert.match(spec, /\/api\/health/);
+assert.match(spec, /\/api\/csm-listing-title/);
+assert.doesNotMatch(spec, /\/api\/v4\/health/);
+assert.doesNotMatch(spec, /startButton\.click\(\)/);
+assert.match(spec, /startButton\)\.toBeHidden/);
 assert.match(spec, /\/api\/v4\/listing-feedback/);
 assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
 assert.doesNotMatch(spec, /getByTestId\("writer-persistence-status"\).*toBeVisible/);

@@ -5,7 +5,7 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "regions": [
-    "syd1"
+    "sin1"
   ],
   "rewrites": [
     {
@@ -73,6 +73,39 @@
     }
   ],
   "functions": {
+    "api/csm-listing-title.js": {
+      "maxDuration": 300,
+      "regions": [
+        "sin1"
+      ]
+    },
+    "api/csm-listing-title-ingest.js": {
+      "maxDuration": 300,
+      "regions": [
+        "sin1"
+      ]
+    },
+    "api/listing-asset-create.js": {
+      "regions": [
+        "sin1"
+      ]
+    },
+    "api/listing-image-upload-url.js": {
+      "regions": [
+        "sin1"
+      ]
+    },
+    "api/listing-image-upload-relay.js": {
+      "maxDuration": 30,
+      "regions": [
+        "sin1"
+      ]
+    },
+    "api/listing-image-verify-upload.js": {
+      "regions": [
+        "sin1"
+      ]
+    },
     "api/listing-copilot-title.js": {
       "maxDuration": 300
     },
@@ -129,14 +162,6 @@
     }
   },
   "crons": [
-    {
-      "path": "/api/v4/listing-job-pump",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/v4/listing-preingest-worker",
-      "schedule": "* * * * *"
-    },
     {
       "path": "/api/listing-storage-retention-cleanup",
       "schedule": "0 9 * * *"

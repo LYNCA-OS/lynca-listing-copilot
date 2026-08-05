@@ -71,7 +71,14 @@ export default async function handler(req, res) {
   }
   try {
     requirePermission(context, TENANT_PERMISSIONS.SUBMIT_FEEDBACK, {
+      // Thin CSM sessions are created before an explicit task assignment and
+      // therefore have no assigned_to_user_id. In that state the immutable
+      // operator/creator identity is the session owner; once assignment is
+      // present it remains the only identity used for Writer-scoped access.
       assignedUserId: ownedSession.session.assigned_to_user_id
+        || ownedSession.session.created_by_user_id
+        || ownedSession.session.operator_id
+        || ownedSession.session.user_id
     });
   } catch {
     // Assignment is persisted server-side. Keep authorization failures

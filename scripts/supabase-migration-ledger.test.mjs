@@ -87,14 +87,15 @@ try {
     controlledMigrationDecision(audit, "20260105000000_new_delta.sql", "").decision,
     "controlled_path_acknowledgement_missing"
   );
-  const controlled = controlledMigrationDecision(
-    audit,
-    "20260105000000_new_delta.sql",
-    CONTROLLED_PATH_ACK
+  assert.equal(
+    controlledMigrationDecision(
+      audit,
+      "20260105000000_new_delta.sql",
+      CONTROLLED_PATH_ACK
+    ).decision,
+    "controlled_migration_has_unreconciled_predecessors",
+    "a reviewed target may not jump over any divergent earlier ledger entry"
   );
-  assert.equal(controlled.ok, true);
-  assert.equal(controlled.db_push_allowed, false);
-  assert.equal(controlled.controlled_single_migration_allowed, true);
   const rendered = `${JSON.stringify(audit)}\n${renderMigrationLedgerMarkdown(audit)}`;
   assert.doesNotMatch(rendered, new RegExp(fixtureRoot));
   assert.doesNotMatch(rendered, /select 2/);
@@ -118,13 +119,16 @@ try {
   assert.equal(dbPushGuardDecision(exact).db_push_allowed, true);
   assert.equal(normalizeFetchedSql("select 1;\r\n;\r\n"), "select 1;\n");
 
-  const liveLocal = await readFile(join(repoRoot, "supabase/migrations/20260801123000_csm_atomic_stage_packet_v1.sql"), "utf8");
+  const liveLocal = await readFile(join(
+    repoRoot,
+    "infrastructure/supabase-production/supabase/migrations/20260801094353_csm_atomic_stage_packet_v1.sql"
+  ), "utf8");
   const receiptFixtureLocal = join(fixtureRoot, "receipt-local");
   const receiptFixtureRemote = join(fixtureRoot, "receipt-remote");
   await Promise.all([mkdir(receiptFixtureLocal), mkdir(receiptFixtureRemote)]);
   await Promise.all([
-    writeFile(join(receiptFixtureLocal, "20260801123000_csm_atomic_stage_packet_v1.sql"), liveLocal),
-    writeFile(join(receiptFixtureRemote, "20260801094353_csm_atomic_stage_packet_v1.sql"), `${liveLocal};\n`)
+    writeFile(join(receiptFixtureLocal, "20260801094353_csm_atomic_stage_packet_v1.sql"), liveLocal),
+    writeFile(join(receiptFixtureRemote, "20260801094353_csm_atomic_stage_packet_v1.sql"), liveLocal)
   ]);
   const pinnedReceipt = JSON.parse(await readFile(
     join(repoRoot, "docs/operations/supabase-migration-receipt-csm-atomic-stage-packet-v1.json"),
@@ -140,20 +144,22 @@ try {
     linkedListRemoteVersions: ["20260801094353"]
   });
   assert.equal(receiptAudit.receipt_validation.ok, true);
+  assert.equal(receiptAudit.receipt_validation.local_version, "20260801094353");
+  assert.equal(receiptAudit.receipt_validation.remote_version, "20260801094353");
   assert.equal(
     controlledMigrationDecision(
       receiptAudit,
-      "20260801123000_csm_atomic_stage_packet_v1.sql",
+      "20260801094353_csm_atomic_stage_packet_v1.sql",
       CONTROLLED_PATH_ACK
     ).decision,
-    "controlled_migration_already_applied_under_different_version"
+    "controlled_migration_version_already_remote"
   );
 
   const canonicalLocal = join(fixtureRoot, "canonical-local");
   await mkdir(canonicalLocal);
   await writeFile(
     join(canonicalLocal, "20260801094353_csm_atomic_stage_packet_v1.sql"),
-    `${liveLocal};\n`
+    liveLocal
   );
   const canonicalAudit = await buildMigrationLedgerAudit({
     localDir: canonicalLocal,
@@ -166,6 +172,86 @@ try {
   });
   assert.equal(canonicalAudit.receipt_validation.mode, "canonical_remote_projection");
   assert.equal(dbPushGuardDecision(canonicalAudit).db_push_allowed, true);
+
+  const providerAdmissionMigration = "20260801101152_csm_thin_provider_admission_v1.sql";
+  const providerPacerMigration = "20260801115421_csm_thin_provider_pacer_v1.sql";
+  const productProjectionMigration = "20260801121955_csm_session_product_projection_v1.sql";
+  const canonicalMigrationDir = join(
+    repoRoot,
+    "infrastructure/supabase-production/supabase/migrations"
+  );
+  const [providerAdmissionSql, providerPacerSql, productProjectionSql] = await Promise.all([
+    readFile(join(canonicalMigrationDir, providerAdmissionMigration), "utf8"),
+    readFile(join(canonicalMigrationDir, providerPacerMigration), "utf8"),
+    readFile(join(canonicalMigrationDir, productProjectionMigration), "utf8")
+  ]);
+  const pacerLocal = join(fixtureRoot, "pacer-local");
+  const pacerRemote = join(fixtureRoot, "pacer-remote");
+  await Promise.all([mkdir(pacerLocal), mkdir(pacerRemote)]);
+  await Promise.all([
+    writeFile(join(pacerLocal, providerAdmissionMigration), providerAdmissionSql),
+    writeFile(join(pacerLocal, providerPacerMigration), providerPacerSql),
+    writeFile(join(pacerRemote, providerAdmissionMigration), providerAdmissionSql)
+  ]);
+  const pacerAudit = await buildMigrationLedgerAudit({
+    localDir: pacerLocal,
+    remoteDir: pacerRemote,
+    projectRef: "test-ref",
+    generatedAt: "2026-08-01T00:00:00.000Z",
+    cliVersion: "test",
+    linkedListRemoteVersions: ["20260801101152"]
+  });
+  assert.equal(pacerAudit.summary.local_only_version_count, 1);
+  assert.equal(pacerAudit.summary.remote_only_version_count, 0);
+  assert.equal(pacerAudit.summary.ledger_exact, false);
+  assert.equal(dbPushGuardDecision(pacerAudit).db_push_allowed, false);
+  const pacerDecision = controlledMigrationDecision(
+    pacerAudit,
+    providerPacerMigration,
+    CONTROLLED_PATH_ACK
+  );
+  assert.equal(pacerDecision.ok, true);
+  assert.equal(pacerDecision.decision, "controlled_single_migration_only");
+  assert.equal(pacerDecision.db_push_allowed, false);
+  assert.equal(pacerDecision.controlled_single_migration_allowed, true);
+  assert.equal(pacerDecision.migration.filename, providerPacerMigration);
+
+  // A newer reviewed migration may exist locally, but it cannot skip the
+  // unapplied pacer predecessor. Once a freshly fetched remote ledger contains
+  // pacer, the exact same single-migration guard admits projection next.
+  await writeFile(join(pacerLocal, productProjectionMigration), productProjectionSql);
+  const orderedAudit = await buildMigrationLedgerAudit({
+    localDir: pacerLocal,
+    remoteDir: pacerRemote,
+    projectRef: "test-ref",
+    generatedAt: "2026-08-01T00:00:00.000Z",
+    cliVersion: "test",
+    linkedListRemoteVersions: ["20260801101152"]
+  });
+  assert.equal(
+    controlledMigrationDecision(
+      orderedAudit,
+      productProjectionMigration,
+      CONTROLLED_PATH_ACK
+    ).decision,
+    "controlled_migration_has_unreconciled_predecessors"
+  );
+  await writeFile(join(pacerRemote, providerPacerMigration), providerPacerSql);
+  const refreshedAudit = await buildMigrationLedgerAudit({
+    localDir: pacerLocal,
+    remoteDir: pacerRemote,
+    projectRef: "test-ref",
+    generatedAt: "2026-08-01T00:01:00.000Z",
+    cliVersion: "test",
+    linkedListRemoteVersions: ["20260801101152", "20260801115421"]
+  });
+  const projectionDecision = controlledMigrationDecision(
+    refreshedAudit,
+    productProjectionMigration,
+    CONTROLLED_PATH_ACK
+  );
+  assert.equal(projectionDecision.ok, true);
+  assert.equal(projectionDecision.migration.filename, productProjectionMigration);
 } finally {
   await rm(fixtureRoot, { recursive: true, force: true });
 }

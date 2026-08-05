@@ -18,7 +18,7 @@ const MIGRATION = resolve(
 );
 const sql = readFileSync(MIGRATION, "utf8");
 const ADDITIVE_MIGRATION = resolve(
-  import.meta.dirname, "..", "supabase/migrations/20260801123000_csm_atomic_stage_packet_v1.sql"
+  import.meta.dirname, "..", "supabase/migrations/20260801094353_csm_atomic_stage_packet_v1.sql"
 );
 const additiveSql = readFileSync(ADDITIVE_MIGRATION, "utf8");
 

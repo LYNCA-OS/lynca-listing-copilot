@@ -77,12 +77,17 @@ assert.equal(
 );
 
 const appSource = readFileSync(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
-const queueIntentSource = appSource.match(/function buildAssetQueueIntentBody[\s\S]*?\n}\n\nfunction createClientBatchId/)?.[0] || "";
-assert.match(queueIntentSource, /image_generation_id:/, "browser intent must bind one immutable image generation");
-assert.doesNotMatch(queueIntentSource, /\bimages\s*:/, "browser enqueue intent must not carry images");
-assert.doesNotMatch(queueIntentSource, /\bobjectPath\s*:/, "browser enqueue intent must not carry object paths");
+const directRecognitionSource = appSource.slice(
+  appSource.indexOf("async function processAssetViaCsmThinPath"),
+  appSource.indexOf("function backgroundPreparationAvailable")
+);
+assert.match(directRecognitionSource, /await ensureAssetPreparedForRecognition\(asset\)/, "recognition must establish canonical originals and settle bounded automatic recovery first");
+assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/, "browser recognition intent must bind the durable asset identity");
+assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/, "browser recognition intent must carry one stable operation identity");
+assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobjectPath\s*:|\bobject_path\s*:/, "browser recognition intent must not carry images or object paths");
+assert.doesNotMatch(directRecognitionSource, /image_generation_id\s*:/, "the server must resolve the canonical image generation from the asset identity");
 assert.match(appSource, /resetAssetPreparationForRetry\(asset, \{[\s\S]*inputRebind:/);
-assert.match(appSource, /jobs:\s*\[\{[\s\S]*image_generation_id:\s*asset\.imageGenerationId/);
+assert.doesNotMatch(appSource, /buildAssetQueueIntentBody|listing-job-enqueue/, "the production browser must not retain the retired queue submission path");
 
 const enqueueSource = readFileSync(new URL("../api/v4/listing-job-enqueue.js", import.meta.url), "utf8");
 assert.match(enqueueSource, /readCanonicalListingImageReferences/, "server must reconstruct canonical images");

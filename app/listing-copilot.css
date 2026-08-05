@@ -1,3 +1,9 @@
+/* Keep retired controls out of the writer surface even when component styles
+   set an explicit display value. The upload itself is the recognition intent. */
+.commercial-workbench [hidden] {
+  display: none !important;
+}
+
 :root {
   color-scheme: dark;
   --bg: #050711;

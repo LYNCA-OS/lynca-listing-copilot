@@ -20,13 +20,16 @@ export const NORMALIZATION_PROFILE = "sql-line-endings-trailing-space-empty-tail
 export const CONTROLLED_PATH_ACK = "single-migration-only-no-db-push";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const defaultLocalDir = join(repoRoot, "supabase/migrations");
+const defaultLocalDir = join(
+  repoRoot,
+  "infrastructure/supabase-production/supabase/migrations"
+);
 const defaultReceiptPath = join(
   repoRoot,
   "docs/operations/supabase-migration-receipt-csm-atomic-stage-packet-v1.json"
 );
-const defaultJsonPath = join(repoRoot, "docs/operations/supabase-migration-ledger-audit-2026-08-01.json");
-const defaultMarkdownPath = join(repoRoot, "docs/operations/supabase-migration-ledger-audit-2026-08-01.md");
+const defaultJsonPath = join(repoRoot, "docs/operations/supabase-production-migration-ledger-audit-2026-08-01.json");
+const defaultMarkdownPath = join(repoRoot, "docs/operations/supabase-production-migration-ledger-audit-2026-08-01.md");
 
 function hash(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -143,7 +146,9 @@ function receiptValidation(receipt, projectRef, localEntries, remoteEntries) {
   if (receipt.safety?.ddl_already_applied !== true) issues.push("receipt_missing_applied_assertion");
   if (receipt.safety?.ddl_reapply_forbidden !== true) issues.push("receipt_missing_reapply_prohibition");
   if (receipt.safety?.migration_history_repair_forbidden !== true) issues.push("receipt_missing_repair_prohibition");
-  let mode = "source_mapping";
+  let mode = receipt.local.version === receipt.remote.version
+    ? "canonical_remote_projection"
+    : "source_mapping";
   let local = localEntries.find((entry) => entry.version === receipt.local.version && entry.name === receipt.migration_name);
   let localExpected = receipt.local;
   if (!local) {
@@ -168,6 +173,10 @@ function receiptValidation(receipt, projectRef, localEntries, remoteEntries) {
     ok: issues.length === 0,
     receipt_id: receipt.receipt_id,
     mode,
+    local_version: receipt.local.version,
+    remote_version: receipt.remote.version,
+    local_filename: receipt.local.filename,
+    remote_filename: receipt.remote.filename,
     issues
   };
 }
@@ -317,6 +326,14 @@ export function controlledMigrationDecision(audit, filename, acknowledgement) {
   }
   if (sameName.length) return denied("controlled_migration_name_collides_with_remote_history");
   if (!/^\d{14}$/.test(local.version)) return denied("controlled_migration_version_must_be_14_digit_timestamp");
+  const unreconciledPredecessors = audit.versions.filter((entry) => (
+    /^\d{14}$/.test(entry.version)
+    && BigInt(entry.version) < BigInt(local.version)
+    && !["exact", "normalized_equivalent"].includes(entry.status)
+  ));
+  if (unreconciledPredecessors.length) {
+    return denied("controlled_migration_has_unreconciled_predecessors");
+  }
   const remoteVersions = audit.versions.filter((entry) => entry.remote.length).map((entry) => BigInt(entry.version));
   if (!remoteVersions.length || BigInt(local.version) <= remoteVersions.reduce((max, value) => value > max ? value : max)) {
     return denied("controlled_migration_not_newer_than_remote_history");
@@ -349,7 +366,20 @@ export function renderMigrationLedgerMarkdown(audit) {
     return `| \`${entry.version}\` | ${entry.status} | ${markdownList(entry.local)} | ${markdownList(entry.remote)} | ${comparison} |`;
   }).join("\n");
   const receipt = audit.receipt_validation;
-  return `# Supabase migration ledger audit — 2026-08-01
+  const maintenance = audit.summary.ledger_exact
+    ? `## Canonical deployment boundary
+
+\`infrastructure/supabase-production\` is the only linked Supabase deployment workdir. The repository-level \`supabase/migrations\` directory is frozen historical/application-contract material and must never be used with \`db push\`.
+
+For a new schema delta, add exactly one reviewed, additive migration to the canonical deployment ledger, run the controlled single-migration guard, apply only that file, fetch the remote ledger again, and restore exact status before any ordinary push is allowed.`
+    : `## Lossless convergence path
+
+1. Keep this ${audit.summary.local_file_count}-file worktree immutable as historical application evidence; do not rename, move, delete, repair, or replay its divergent migrations.
+2. For every database operation, rebuild an isolated remote-first workdir from \`migration list/fetch --linked\`. Its fetched ${audit.summary.remote_file_count}-file history is the only deployable ledger baseline.
+3. Convert same-name/different-version normalized matches into signed receipts. For mismatches, compare the live schema to the intended contract; never infer unapplied DDL from a filename.
+4. Express only verified schema deltas as new additive migrations with versions later than the remote maximum. The controlled guard may authorize exactly one such file; the divergent worktree may never call \`db push\`.
+5. After the new migration is applied through a reviewed single-migration runner, fetch again, pin its remote receipt, and require exact remote-first ledger status before enabling ordinary pushes.`;
+  return `# Supabase production migration ledger audit — 2026-08-01
 
 This is a secret-free, read-only audit of project \`${audit.project_ref}\`. Remote SQL was fetched into an isolated temporary directory and discarded after hashing; no SQL body, connection string, token, or password is persisted here.
 
@@ -365,7 +395,7 @@ Normalization profile: \`${audit.normalization.profile}\`. It only removes repre
 
 ## Pinned CSM receipt
 
-The already-applied \`csm_atomic_stage_packet_v1\` migration is pinned as remote \`20260801094353\` ↔ local \`20260801123000\`. A controlled-path request for the local file must fail as already applied; neither DDL replay nor migration-history repair is permitted.
+The already-applied \`csm_atomic_stage_packet_v1\` migration is pinned as remote \`${receipt.remote_version}\` ↔ local \`${receipt.local_version}\`. A controlled-path request for the local file must fail as already applied; neither DDL replay nor migration-history repair is permitted.
 
 ## Guard commands
 
@@ -385,13 +415,7 @@ ${mappingRows}
 |---|---|---|---|---|
 ${versionRows}
 
-## Lossless convergence path
-
-1. Keep this 107-file worktree immutable as historical application evidence; do not rename, move, delete, repair, or replay its divergent migrations.
-2. For every database operation, rebuild an isolated remote-first workdir from \`migration list/fetch --linked\`. Its fetched 86-file history is the only deployable ledger baseline.
-3. Convert same-name/different-version normalized matches into signed receipts. For mismatches, compare the live schema to the intended contract; never infer unapplied DDL from a filename.
-4. Express only verified schema deltas as new additive migrations with versions later than the remote maximum. The controlled guard may authorize exactly one such file; the divergent worktree may never call \`db push\`.
-5. After the new migration is applied through a reviewed single-migration runner, fetch again, pin its remote receipt, and require exact remote-first ledger status before enabling ordinary pushes.
+${maintenance}
 `;
 }
 

@@ -2,15 +2,20 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL(
-  "../supabase/migrations/20260728190000_csm_stage_shadow_foundation_v1.sql",
+  "../supabase/migrations/20260801065544_csm_stage_shadow_foundation_v1.sql",
   import.meta.url
 ), "utf8");
+// Remote versions, not the local-authored ones. `supabase/migrations` is the
+// frozen projection of the fetched remote ledger, so the same DDL existed twice
+// here after the merge -- once under each branch's version stamp -- and the two
+// declarations collided at parse time. The local pair (065859 / 071048) is gone;
+// these are the versions the remote actually applied.
 const traceMigration = await readFile(new URL(
-  "../supabase/migrations/20260801065859_csm_marketplace_trace_object.sql",
+  "../supabase/migrations/20260801065941_csm_marketplace_trace_object.sql",
   import.meta.url
 ), "utf8");
 const emptyMigration = await readFile(new URL(
-  "../supabase/migrations/20260801071048_csm_empty_canonical_sql_null.sql",
+  "../supabase/migrations/20260801071129_csm_empty_canonical_sql_null.sql",
   import.meta.url
 ), "utf8");
 

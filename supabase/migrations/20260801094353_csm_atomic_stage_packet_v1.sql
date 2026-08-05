@@ -364,3 +364,4 @@ revoke all on function public.persist_csm_stage_packet_v1(text, text, jsonb, jso
   from public, anon, authenticated;
 grant execute on function public.persist_csm_stage_packet_v1(text, text, jsonb, jsonb)
   to service_role;
+;
