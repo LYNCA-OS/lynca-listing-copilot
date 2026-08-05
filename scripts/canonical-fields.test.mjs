@@ -341,11 +341,30 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
   // The combined bracket carries the product, not just the manufacturer.
   assert.match(composed.title, /Panini Prizm/);
 }
-// An uncounted lot says a bare "Lot" rather than inventing a count from the
-// subject list, which caps at 3 and is not the number of cards.
-assert.ok(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title.startsWith("Lot"));
-assert.ok(!/^Lotx/.test(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title),
-  "an unread count must not be fabricated");
+// An uncounted lot ABSTAINS from the quantity bracket. This assertion used to
+// require a bare "Lot", which was the behaviour rather than the contract:
+// COS-14 names `LotxN` as the ONE approved quantity format and requires
+// "route for review or abstain rather than inventing N" when the count cannot
+// be established. A bare "Lot" invents nothing, but it is a fourth marker
+// beside the three the decision forbids, and it ships a title instead of
+// routing. The gate was stricter than the contract in the wrong direction, so
+// the gate moved.
+{
+  const uncounted = composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" }));
+  assert.ok(!/\bLot\b/i.test(uncounted.title), "an unread count must not ship a quantity marker");
+  assert.ok(!/^Lotx/.test(uncounted.title), "an unread count must not be fabricated");
+  assert.equal(uncounted.lot_quantity_unresolved, true, "the caller must be told to route for review");
+
+  // "0" arrives as a string and used to be truthy, rendering `Lotx0` -- a lot
+  // of no cards. N is "the number of cards uploaded or visibly represented".
+  const zero = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 0 }));
+  assert.ok(!/Lotx0/.test(zero.title), "zero cards is not a lot");
+  assert.equal(zero.lot_quantity_unresolved, true);
+
+  const counted = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 4 }));
+  assert.ok(counted.title.startsWith("Lotx4"));
+  assert.equal(counted.lot_quantity_unresolved, false);
+}
 
 // ------------------------------------------------------------ empty and team
 
