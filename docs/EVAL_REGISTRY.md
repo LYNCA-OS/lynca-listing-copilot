@@ -216,3 +216,21 @@ concurrency. The 6-card paired run reduced wall time by 38.7% and increased
 technical throughput by 63.0%, with zero technical failures, zero candidate-arm
 transport/field errors, and no weak-label regression. Seller-title scores remain
 diagnostic weak labels, not reviewed identity ground truth.
+
+## 2026-08-05 exploration ledger
+
+Every paired arm run on 2026-08-05, with its measurement and its disposition, is
+recorded in [`EXPLORATION-LEDGER-20260805.md`](./EXPLORATION-LEDGER-20260805.md).
+Rejections are recorded there and beside the code they would have shipped in, so
+a mechanism cannot be re-tried without meeting its own prior result.
+
+Artifacts: `artifacts/prompt-arm-visible-50-2026-08-05`,
+`artifacts/prompt-arm-identify-50-2026-08-05`,
+`artifacts/prompt-arm-fewshot-50-2026-08-05`,
+`artifacts/kfold-fewshot-50-2026-08-05`,
+`artifacts/serial-parts-50-v2-2026-08-05`.
+
+The first `serial-parts` run (`artifacts/serial-parts-50-2026-08-05`, without
+`-v2`) is VOID: the arm's schema never reached the model, so the field under
+test could not be returned. It is kept only as the evidence that exposed the
+passthrough defect.
