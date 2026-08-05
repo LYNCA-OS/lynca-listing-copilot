@@ -184,3 +184,51 @@ console.log("semantic-equivalence symmetric-exemption assertions OK");
   assert.ok(disagreed.equivalent.f1 < 1, "a component added beside their own list still disagrees");
 }
 console.log("semantic-equivalence component-policy assertions OK");
+
+// ── Founder rulings, 2026-08-05 ─────────────────────────────────────────────
+// Both were adjudicated in conversation and the implementation did not match.
+// Pinned here so a future edit cannot quietly drop them again.
+
+// 1. Any year INSIDE the span is the right year -- not only the opening one.
+{
+  const ref = "2025-26 Topps Chrome Victor Wembanyama Gold Refractor 17/50 Spurs";
+  const tail = "Topps Chrome Victor Wembanyama Gold Refractor 17/50 Spurs";
+  for (const year of ["2025", "2026", "2025-26"]) {
+    assert.equal(scoreWithEquivalence(`${year} ${tail}`, ref).equivalent.f1, 1,
+      `${year} lies inside 2025-26 and must score as the right year`);
+  }
+  for (const year of ["2023", "2027"]) {
+    assert.ok(scoreWithEquivalence(`${year} ${tail}`, ref).equivalent.f1 < 1,
+      `${year} is outside 2025-26 and must not be credited`);
+  }
+  // Symmetric: a span we produce against a bare year the writer used.
+  assert.equal(scoreWithEquivalence("2025-26 Topps X Y Z", "2025 Topps X Y Z").equivalent.f1, 1);
+  // A season crossing a century still resolves.
+  assert.equal(scoreWithEquivalence("2000 Topps X Y Z", "1999-00 Topps X Y Z").equivalent.f1, 1);
+}
+
+// 2. The finish has a safe degradation, and it must rank strictly above a
+//    wrong claim. Saying less is not the same as saying something else.
+{
+  const ref = "2025 Topps Chrome Victor Wembanyama Gold Refractor 17/50 Spurs";
+  const head = "2025 Topps Chrome Victor Wembanyama";
+  const tail = "17/50 Spurs";
+  const score = (finish) => scoreWithEquivalence(
+    [head, finish, tail].filter(Boolean).join(" "), ref
+  ).equivalent.f1;
+
+  const exact = score("Gold Refractor");
+  const degraded = Math.min(score("Gold"), score("Refractor"));
+  const wrong = Math.max(score("Blue Refractor"), score("Gold Prizm"), score("Blue Prizm"));
+
+  assert.equal(exact, 1, "the exact finish is fully credited");
+  assert.ok(degraded < exact, "a degradation is not as good as the full answer");
+  assert.ok(degraded > wrong,
+    `a safe degradation (${degraded}) must rank above a wrong claim (${wrong})`);
+  // The specific regression: an unsupported finish word must withdraw the
+  // partial credit rather than ride on the one token that did match.
+  assert.ok(score("Blue Refractor") < score("Gold"),
+    "a wrong colour beside a right family must not score as a brief-but-true answer");
+}
+
+process.stdout.write("semantic-equivalence founder-ruling assertions OK\n");
