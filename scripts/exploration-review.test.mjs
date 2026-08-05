@@ -168,3 +168,83 @@ assert.match(manual, /auto-review-run\.mjs/,
   "the manual entry point must reuse the automatic implementation, not copy it");
 
 process.stdout.write("exploration review: ok\n");
+
+// ── The framework decides the next step, and does not ask ───────────────────
+// Founder instruction: this should not need confirmation. It was needed --
+// faced with +0.0051 at 9W/7L I recommended "run 150 cards", and the
+// arithmetic says 1569 are required on a corpus of 255.
+{
+  const { requiredSampleSize, recommendNext, CORPUS_SIZE } = await import(
+    "../lib/listing/evaluation/exploration-review.mjs"
+  );
+
+  // A near-tie needs more cards than exist. "Scale up" is not a plan.
+  const tight = requiredSampleSize({ wins: 9, losses: 7, ties: 34 });
+  assert.equal(tight.resolvable, false);
+  assert.ok(tight.cardsNeeded > CORPUS_SIZE, `needs ${tight.cardsNeeded}, corpus is ${CORPUS_SIZE}`);
+
+  // A clean sweep resolves on a handful.
+  const sweep = requiredSampleSize({ wins: 20, losses: 0, ties: 30 });
+  assert.equal(sweep.resolvable, true);
+  assert.ok(sweep.cardsNeeded <= 50);
+
+  // Ties are dead weight: the same win/loss with more ties needs more cards.
+  const fewTies = requiredSampleSize({ wins: 12, losses: 3, ties: 5 });
+  const manyTies = requiredSampleSize({ wins: 12, losses: 3, ties: 200 });
+  assert.ok(manyTies.cardsNeeded > fewTies.cardsNeeded,
+    "an arm that changes nothing on most cards spends most of every run learning nothing");
+
+  // Positive but unresolvable, with one dimension bought too dear -> NARROW,
+  // never SCALE. This is the case that produced the wrong human recommendation.
+  const narrow = recommendNext({
+    delta: 0.005, wins: 9, losses: 7, ties: 34, belowDrift: true,
+    ledger: [{ name: "工艺 finish", gained: 3, cost: 3, verdict: "BOUGHT_TOO_DEAR" }]
+  });
+  assert.equal(narrow.action, "NARROW");
+  assert.match(narrow.detail, /加样本不是出路/);
+
+  // Positive and resolvable -> SCALE, with the number in it.
+  const scale = recommendNext({
+    delta: 0.006, wins: 12, losses: 3, ties: 35, belowDrift: true, ledger: []
+  });
+  assert.equal(scale.action, "SCALE");
+  assert.match(scale.detail, /\d+ 张/);
+
+  // Negative with a real gain somewhere -> narrow to it, do not abandon.
+  const salvage = recommendNext({
+    delta: -0.006, wins: 5, losses: 11, ties: 32, belowDrift: true,
+    ledger: [{ name: "部件 components", gained: 1, cost: 0, verdict: "FREE" }]
+  });
+  assert.equal(salvage.action, "NARROW");
+
+  // Negative with nothing gained anywhere -> stop.
+  assert.equal(recommendNext({
+    delta: -0.01, wins: 3, losses: 14, ties: 33, belowDrift: false, ledger: []
+  }).action, "ABANDON");
+
+  // A clean sweep above drift ships.
+  assert.equal(recommendNext({
+    delta: 0.02, wins: 10, losses: 0, ties: 20, belowDrift: false, ledger: []
+  }).action, "SHIP");
+}
+
+// Which cards moved is printed, not offered. Asking the founder whether they
+// would like to see them is the same failure as asking whether to review.
+{
+  const { review, formatReview } = await import("../lib/listing/evaluation/exploration-review.mjs");
+  const r = review({
+    prereg: prereg(),
+    controlScores: [0.9, 0.7], treatmentScores: [0.7, 0.9],
+    movers: [
+      { delta: 0.2, control_title: "c-up", treatment_title: "t-up", reference: "ref-up" },
+      { delta: -0.2, control_title: "c-down", treatment_title: "t-down", reference: "ref-down" }
+    ]
+  });
+  const text = formatReview(r);
+  assert.match(text, /赢的卡/);
+  assert.match(text, /输的卡/);
+  assert.match(text, /t-up/);
+  assert.match(text, /ref-down/);
+}
+
+process.stdout.write("exploration review: next-step and movers OK\n");

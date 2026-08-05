@@ -42,7 +42,7 @@ export function buildReview({ artifactPath, control, treatment, preregPath = nul
     byAsset.get(r.asset_id)[r.arm] = r;
   }
 
-  const controlScores = [], treatmentScores = [], pairs = [];
+  const controlScores = [], treatmentScores = [], pairs = [], movers = [];
   const dims = REVIEW_DIMENSIONS.map(([name, vocab]) => ({
     name, vocab: new Set(vocab), support: 0,
     control_hits: 0, treatment_hits: 0, control_errors: 0, treatment_errors: 0
@@ -55,9 +55,14 @@ export function buildReview({ artifactPath, control, treatment, preregPath = nul
     const reference = String(c.reference);
     const ct = c.fields ? composeFromCanonicalFields(c.fields).title : String(c.title || "");
     const tt = t.fields ? composeFromCanonicalFields(t.fields).title : String(t.title || "");
-    controlScores.push(scoreWithEquivalence(ct, reference).equivalent.f1);
-    treatmentScores.push(scoreWithEquivalence(tt, reference).equivalent.f1);
+    const cs = scoreWithEquivalence(ct, reference).equivalent.f1;
+    const ts = scoreWithEquivalence(tt, reference).equivalent.f1;
+    controlScores.push(cs);
+    treatmentScores.push(ts);
     pairs.push({ control: c, treatment: t });
+    if (Math.abs(ts - cs) > 1e-9) {
+      movers.push({ delta: ts - cs, control_title: ct, treatment_title: tt, reference, asset_id: c.asset_id });
+    }
 
     const ref = tokenise(reference), cTok = tokenise(ct), tTok = tokenise(tt);
     for (const d of dims) {
@@ -100,7 +105,7 @@ export function buildReview({ artifactPath, control, treatment, preregPath = nul
 
   return {
     result: review({
-      prereg, controlScores, treatmentScores, pairs, dimensions,
+      prereg, controlScores, treatmentScores, pairs, dimensions, movers,
       rulerVersion: EQUIVALENCE_VERSION,
       // The four standing questions ANSWER THEMSELVES. Taking them as
       // parameters meant a form nobody filled in, which is the same failure as

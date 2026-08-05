@@ -593,9 +593,17 @@ export async function buildRunManifest({
 }) {
   const datasetBytes = datasetBody ?? await readFile(dataset);
   const labelBytes = sealedLabelsBody ?? await readFile(sealedLabels);
-  setReviewedCorpus(
-    String(labelBytes).split("\n").filter(Boolean).map((line) => JSON.parse(line))
-  );
+  // Best-effort: several tests drive this function with label bodies that are
+  // not JSONL, and the k-fold arm is the only consumer. A corpus that fails to
+  // parse must leave that arm without examples, never break a run that does not
+  // use it.
+  try {
+    setReviewedCorpus(
+      String(labelBytes).split("\n").filter(Boolean).map((line) => JSON.parse(line))
+    );
+  } catch {
+    setReviewedCorpus([]);
+  }
   const assetIdBytes = assetIdsBody ?? (assetIdsFile ? await readFile(assetIdsFile) : null);
   const finisher = await buildFinisherFingerprint({ arms, scorer });
   const armContracts = arms.map((arm) => ({
