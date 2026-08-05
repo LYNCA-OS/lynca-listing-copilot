@@ -248,3 +248,49 @@ process.stdout.write("exploration review: ok\n");
 }
 
 process.stdout.write("exploration review: next-step and movers OK\n");
+
+// ── An arm's schema must reach the REQUEST, not only the manifest ───────────
+// It did not, for as long as arms have had schemas. `arm.responseSchema` was
+// read once, to fingerprint the run, and the request kept the hard-coded
+// canonical schema. With `strict: true` and `additionalProperties: false` a
+// model physically cannot return a field the schema omits, so an arm testing a
+// new field measured a prompt sentence and an unused property.
+//
+// Zero of 50 cards returned `serial_parts` is what exposed it, and the arm was
+// one conclusion away from being reported as "the report's recommendation is
+// falsified" when the experiment had never run.
+{
+  const { ARM_SPECS } = await import("../scripts/run-thin-path-eval.mjs");
+  const context = {
+    imageUrls: ["https://example.invalid/a"], extraImageUrls: [],
+    model: "m", effort: "low", imageDetail: "high", cardKey: "k"
+  };
+  const schemaOf = (arm) => arm.buildRequest(context)?.text?.format?.schema;
+
+  const control = schemaOf(ARM_SPECS.thin_canonical_high_effort_low);
+  assert.ok(control?.properties, "the control arm still sends a schema");
+  assert.ok(!("serial_parts" in control.properties), "the control schema is unchanged");
+
+  const variant = ARM_SPECS.thin_canonical_serial_parts_low;
+  if (variant) {
+    const sent = schemaOf(variant);
+    assert.ok("serial_parts" in sent.properties,
+      "an arm's own schema must reach the request, or its experiment cannot run");
+    assert.ok(sent.required.includes("serial_parts"),
+      "and its required list must travel with it");
+  }
+
+  // Every arm that declares a schema must send that schema. The manifest
+  // recording one while the request sends another is the failure itself.
+  for (const [name, arm] of Object.entries(ARM_SPECS)) {
+    if (!arm.canonical || !arm.responseSchema) continue;
+    const sent = schemaOf(arm);
+    assert.deepEqual(
+      Object.keys(sent?.properties || {}).sort(),
+      Object.keys(arm.responseSchema.properties || {}).sort(),
+      `${name}: declared schema and sent schema must be the same object`
+    );
+  }
+}
+
+process.stdout.write("exploration review: arm schema reaches the request OK\n");

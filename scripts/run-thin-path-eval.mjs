@@ -208,6 +208,8 @@ function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
     buildRequest: (context) => {
       const request = buildCanonicalFieldsRequest({
         ...context,
+        // The arm's schema has to reach the REQUEST, not only the manifest.
+        schema,
         ...(fixedImageDetail ? { imageDetail: fixedImageDetail } : {}),
         ...(fixedMaxOutputTokens ? { maxOutputTokens: fixedMaxOutputTokens } : {})
       });
