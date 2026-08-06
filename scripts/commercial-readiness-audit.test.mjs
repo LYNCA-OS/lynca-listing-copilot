@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -181,7 +181,13 @@ assert.equal(byId.provider_default_policy.status, "passed");
 assert.equal(byId.provider_default_policy.details.active_path, "CSM_THIN_DIRECT");
 assert.equal(byId.provider_default_policy.details.endpoint, "/api/csm-listing-title");
 assert.equal(byId.provider_default_policy.details.model, "gpt-5.6-luna");
-assert.equal(byId.provider_default_policy.details.reasoning_effort, "none");
+// Read from the contract, not pinned to a literal. Which tier production runs
+// is a founder decision (COS-49's authority order); this audit only cares that
+// the thin path owns recognition. Pinning it here made a founder-approved tier
+// change read as a commercial-readiness regression.
+assert.equal(byId.provider_default_policy.details.reasoning_effort,
+  (await readFile("lib/listing/thin/csm-runtime-contract.mjs", "utf8"))
+    .match(/reasoningEffort:\s*["']([a-z]+)["']/)[1]);
 assert.equal(byId.provider_default_policy.details.direct_api_boundary, true);
 assert.equal(byId.provider_default_policy.details.retired_execution_paths, "disabled");
 assert.equal(byId.provider_default_policy.details.cloud_run_calls, 0);
@@ -245,7 +251,10 @@ assert.match(text, /commercial_review_worklist: passed tasks 248, P0 23, P1 97, 
 assert.match(text, /identity_result_cache: passed read yes, write no, training no/);
 assert.match(text, /active_path: CSM_THIN_DIRECT/);
 assert.match(text, /model: gpt-5\.6-luna/);
-assert.match(text, /reasoning_effort: none/);
+assert.match(text, new RegExp(`reasoning_effort: ${
+  (await readFile("lib/listing/thin/csm-runtime-contract.mjs", "utf8"))
+    .match(/reasoningEffort:\s*["']([a-z]+)["']/)[1]
+}`));
 assert.match(text, /publishing_destination: blocked/);
 
 console.log("commercial readiness audit tests passed");

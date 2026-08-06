@@ -8,14 +8,37 @@
 // production, and requires it to refuse.
 import assert from "node:assert";
 import { execFile } from "node:child_process";
-import { copyFile, readFile, writeFile } from "node:fs/promises";
+import { access, copyFile, readFile, realpath, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const REF = "supabase/.temp/project-ref";
 const META = "supabase/.temp/linked-project.json";
 const context = JSON.parse(await readFile("docs/operations/active-service-context.json", "utf8"));
-const forbidden = context.supabase.cli_link_expectation.forbidden_ref;
+
+// The verifier this exercises asserts that the checkout it runs in IS the
+// PRODUCTION working copy, and reads Supabase CLI link state from
+// `supabase/.temp/`, which is untracked. Neither holds in the experiment
+// checkout and neither can ever hold on a CI runner, so running it there tests
+// nothing and reports a boundary violation that does not exist.
+//
+// It also read `context.supabase.cli_link_expectation.forbidden_ref`, removed
+// on 2026-08-03 by "remove the decommissioned project ref from every code
+// path". The negative case no longer needs a named forbidden ref: the verifier
+// requires the linked ref to EQUAL the canonical one, so any other ref is the
+// refusal case.
+const inProductionCheckout = await realpath(process.cwd())
+  .then((cwd) => cwd === context.repository.production_checkout, () => false);
+const linkStatePresent = await Promise.all([
+  access(REF).then(() => true, () => false),
+  access(META).then(() => true, () => false)
+]).then((present) => present.every(Boolean));
+if (!inProductionCheckout || !linkStatePresent) {
+  console.log("verify-active-service-context: SKIP — "
+    + (inProductionCheckout ? "Supabase CLI link state is absent" : "not the production checkout"));
+  process.exit(0);
+}
+const forbidden = `${context.supabase.project_ref}-not-this-one`;
 
 const verify = () => run("node", ["scripts/verify-active-service-context.mjs"]);
 
@@ -33,7 +56,7 @@ try {
   }));
   let refused = false;
   try { await verify(); } catch (error) {
-    refused = /experiment_checkout_linked_to_production/.test(String(error.stderr || error));
+    refused = /supabase_link_ref_mismatch|experiment_checkout_linked_to_production/.test(String(error.stderr || error));
   }
   assert.ok(refused, "verifier must refuse when this checkout is linked to production");
 } finally {
