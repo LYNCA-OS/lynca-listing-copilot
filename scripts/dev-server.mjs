@@ -59,7 +59,30 @@ function loadLocalEnv() {
   }
 }
 
+// Routes the browser app calls that were never wired here. Without them the
+// local server can serve the page but not a batch: the client's fast path posts
+// to `csm-listing-title-ingest`, its fallback needs `listing-asset-create`, and
+// the Glass Box reads `csm-resolution-view`. Each maps one-to-one onto the file
+// that already implements it, so this adds routing and no behaviour.
+const LAZY_API_ROUTES = Object.freeze({
+  "/api/listing-asset-create": "api/listing-asset-create.js",
+  "/api/csm-listing-title": "api/csm-listing-title.js",
+  "/api/csm-listing-title-ingest": "api/csm-listing-title-ingest.js",
+  "/api/listing-image-upload-relay": "api/listing-image-upload-relay.js",
+  "/api/csm-resolution-view": "api/csm-resolution-view.js",
+  "/api/listing-manual-recovery": "api/listing-manual-recovery.js",
+  "/api/health": "api/health.js"
+});
+
 async function handleApi(request, response, pathname) {
+  const lazyRoute = LAZY_API_ROUTES[pathname];
+  if (lazyRoute) {
+    const moduleUrl = pathToFileURL(join(root, lazyRoute)).href;
+    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
+    await handler(request, response);
+    return true;
+  }
+
   if (pathname === "/api/listing-copilot-title") {
     const moduleUrl = pathToFileURL(join(root, "api/listing-copilot-title.js")).href;
     const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);

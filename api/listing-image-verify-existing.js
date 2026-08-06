@@ -89,10 +89,15 @@ export default async function handler(req, res) {
   }
 
   try {
+    // The client already knows the sha256 of the bytes it holds, and sends it.
+    // This endpoint used to ignore it entirely, which is why the verification
+    // could never conclude anything: with nothing to compare against,
+    // `content_hash_verified` stayed false and the record was refused.
     const verification = await verifyExistingListingImageObject({
       tenantId: context.tenantId,
       objectPath,
-      bucket: payload.bucket || payload.storage_bucket
+      bucket: payload.bucket || payload.storage_bucket,
+      expectedContentSha256: payload.contentSha256 || payload.content_sha256 || ""
     });
     let verificationRecord = {
       saved: false,
@@ -112,11 +117,15 @@ export default async function handler(req, res) {
       if (!verificationRecord.saved || !verificationRecord.durable) {
         throw new Error(verificationRecord.reason || "verification_record_write_failed");
       }
-    } catch {
+    } catch (error) {
+      // The reason used to be discarded here, so a caller saw only "could not be
+      // persisted" and finding the cause meant calling the store by hand.
+      const reason = String(error?.message || "verification_record_write_failed").slice(0, 200);
       sendJson(res, 503, {
         ok: false,
         retryable: true,
         code: "verification_record_write_failed",
+        reason,
         message: "Image verification could not be persisted."
       });
       return;

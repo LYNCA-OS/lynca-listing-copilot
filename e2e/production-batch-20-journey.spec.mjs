@@ -49,7 +49,13 @@ const cleanBaseUrl = (value) => {
   return url;
 };
 
-const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const MIME_FOR_EXTENSION = Object.freeze({
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp"
+});
+const IMAGE_EXTENSIONS = new Set(Object.keys(MIME_FOR_EXTENSION));
 
 /** Forty images, sorted, so a pair-mode upload is a deterministic twenty cards. */
 async function localSourceImages(directory) {
@@ -64,7 +70,10 @@ async function localSourceImages(directory) {
   const chosen = entries.slice(0, 40);
   return Promise.all(chosen.map(async (name) => ({
     name: basename(name),
-    mimeType: extname(name).toLowerCase() === ".png" ? "image/png" : "image/jpeg",
+    // The MIME must match the file's real signature: declaring a .webp as
+    // image/jpeg is rejected upstream as "signature does not match MIME type",
+    // which reads like a broken upload path and is a mislabelled fixture.
+    mimeType: MIME_FOR_EXTENSION[extname(name).toLowerCase()] || "image/jpeg",
     buffer: await readFile(resolve(dir, name))
   })));
 }
@@ -85,7 +94,19 @@ test("a live 20-card batch is fully navigable before anything is saved", async (
   //
   // The username/password path stays for an unattended run where no session
   // exists yet. It is the fallback, not the default.
-  const sessionCookie = String(process.env.WRITER_JOURNEY_SESSION_COOKIE || "").trim();
+  let sessionCookie = String(process.env.WRITER_JOURNEY_SESSION_COOKIE || "").trim();
+  // Against a LOCAL server the signing secret is one this machine generated, so
+  // the session can be minted here instead of copied from a browser. Never do
+  // this against production: there the secret is not ours to hold.
+  if (!sessionCookie && process.env.WRITER_JOURNEY_MINT_SESSION === "1") {
+    const { createListingSessionToken } = await import("../lib/listing-session.mjs");
+    sessionCookie = createListingSessionToken({
+      user_id: process.env.WRITER_JOURNEY_USER_ID || "user_staging_cos51",
+      tenant_id: process.env.WRITER_JOURNEY_TENANT_ID || "tenant_staging_cos51",
+      email: process.env.WRITER_JOURNEY_EMAIL || "staging-cos51@listing.lynca.test",
+      session_version: 1
+    }, requiredEnv("METAVERSE_AUTH_SECRET"));
+  }
 
   const evidence = {
     schema_version: "production-batch-20-journey-evidence-v1",
