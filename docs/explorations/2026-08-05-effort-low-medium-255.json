@@ -1,0 +1,23 @@
+{
+  "schema_version": "exploration-prereg-v1",
+  "name": "effort-low-vs-medium-255-2026-08-05",
+  "hypothesis": "在当前提示词下，effort=medium 相对生产在用的 low 提升 equivalent F1，且 p50 延迟仍落在写手 6-8s 预算内。",
+  "mechanism": "确信地错占错词的 76~81%，同模型同档位换措辞动不了它；提高推理档位是唯一被测过能动它的轴，且 none→low→medium 单调。",
+  "ceiling": null,
+  "falsifier": "sign test 未过标准线（≥8W/0L 或 Δ≥+0.003 且 p<0.05），或 medium p50 > 8000ms —— 后者单独即否决，无论 F1 多好。",
+  "bar": {
+    "description": "≥8W/0L, or ΔF1≥+0.003 with p<0.05",
+    "clean_sweep": {
+      "min_wins": 8,
+      "max_losses": 0
+    },
+    "significant": {
+      "min_delta": 0.003,
+      "max_p": 0.05
+    }
+  },
+  "cohort": "全部 255 张已审语料（150 + 105 两批合并），逐卡交替配对",
+  "cost_note": "",
+  "alternatives_considered": [],
+  "id": "2985a89d0d2c"
+}

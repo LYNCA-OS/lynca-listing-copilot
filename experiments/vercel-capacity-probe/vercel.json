@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "regions": ["syd1"],
+  "functions": {
+    "api/control.js": {
+      "maxDuration": 300
+    },
+    "api/accuracy.js": {
+      "maxDuration": 300,
+      "regions": ["sin1"]
+    }
+  }
+}

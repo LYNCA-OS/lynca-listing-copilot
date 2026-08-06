@@ -1,0 +1,4015 @@
+{
+  "schema_version": "supabase-migration-ledger-audit-v1",
+  "generated_at": "2026-08-01T10:01:27.341Z",
+  "project_ref": "osrrujmpxxiefppjfgpd",
+  "source": {
+    "supabase_cli_version": "2.108.0",
+    "remote_history": "supabase migration fetch --linked in an isolated temporary workdir",
+    "linked_list_remote_version_count": 86,
+    "linked_list_fetch_consistent": true,
+    "remote_writes_performed": false
+  },
+  "normalization": {
+    "profile": "sql-line-endings-trailing-space-empty-tail-v1",
+    "scope": "CRLF, line-tail whitespace, and repeated empty trailing SQL statements only",
+    "semantic_equivalence_claimed": false
+  },
+  "summary": {
+    "local_file_count": 107,
+    "remote_file_count": 86,
+    "local_version_count": 88,
+    "remote_version_count": 86,
+    "shared_version_count": 17,
+    "local_only_version_count": 71,
+    "remote_only_version_count": 69,
+    "duplicate_local_version_count": 9,
+    "duplicate_remote_version_count": 0,
+    "same_name_different_version_mapping_count": 43,
+    "ledger_exact": false,
+    "db_push_allowed": false
+  },
+  "receipt_validation": {
+    "required": true,
+    "ok": true,
+    "receipt_id": "osrrujmpxxiefppjfgpd:csm_atomic_stage_packet_v1:20260801094353",
+    "mode": "source_mapping",
+    "issues": []
+  },
+  "duplicate_versions": {
+    "local": [
+      {
+        "version": "20260622",
+        "files": [
+          "20260622_listing_feedback_v2.sql",
+          "20260622_listing_feedback_v2_rollback.sql",
+          "20260622_listing_image_storage.sql",
+          "20260622_listing_image_storage_rollback.sql",
+          "20260622_listing_image_verifications.sql",
+          "20260622_listing_image_verifications_rollback.sql",
+          "20260622_listing_publish_jobs.sql",
+          "20260622_listing_publish_jobs_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260623",
+        "files": [
+          "20260623_listing_approved_memory_v3.sql",
+          "20260623_listing_approved_memory_v3_rollback.sql",
+          "20260623_listing_identity_result_cache.sql",
+          "20260623_listing_identity_result_cache_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260625035856",
+        "files": [
+          "20260625035856_card_visual_vector_retrieval.sql",
+          "20260625035856_card_visual_vector_retrieval_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260625151516",
+        "files": [
+          "20260625151516_vector_query_lifecycle.sql",
+          "20260625151516_vector_query_lifecycle_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260625153857",
+        "files": [
+          "20260625153857_advanced_retrieval_accuracy_pack.sql",
+          "20260625153857_advanced_retrieval_accuracy_pack_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260626042902",
+        "files": [
+          "20260626042902_card_vector_match_status_columns.sql",
+          "20260626042902_card_vector_match_status_columns_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260626043200",
+        "files": [
+          "20260626043200_catalog_gap_reference_promotion.sql",
+          "20260626043200_catalog_gap_reference_promotion_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260626051832",
+        "files": [
+          "20260626051832_promote_card_reference_to_approved.sql",
+          "20260626051832_promote_card_reference_to_approved_rollback.sql"
+        ]
+      },
+      {
+        "version": "20260724",
+        "files": [
+          "20260724_listing_identity_cache_terminal_l2.sql",
+          "20260724_listing_identity_cache_terminal_l2_rollback.sql",
+          "20260724_listing_identity_cache_version_contract.sql",
+          "20260724_listing_identity_cache_version_contract_rollback.sql"
+        ]
+      }
+    ],
+    "remote": []
+  },
+  "same_name_different_version_mappings": [
+    {
+      "name": "atomic_enqueue_verified_image_set_v2",
+      "local_version": "20260717192000",
+      "remote_version": "20260717120641",
+      "local_filename": "20260717192000_atomic_enqueue_verified_image_set_v2.sql",
+      "remote_filename": "20260717120641_atomic_enqueue_verified_image_set_v2.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 272,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 11746,
+        "remote_bytes": 11748
+      }
+    },
+    {
+      "name": "atomic_v4_noncritical_persistence",
+      "local_version": "20260712072310",
+      "remote_version": "20260712073353",
+      "local_filename": "20260712072310_atomic_v4_noncritical_persistence.sql",
+      "remote_filename": "20260712073353_atomic_v4_noncritical_persistence.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 2,
+        "local_changed_line_count": 211,
+        "remote_changed_line_count": 147,
+        "local_bytes": 7841,
+        "remote_bytes": 7338
+      }
+    },
+    {
+      "name": "atomic_v4_noncritical_persistence",
+      "local_version": "20260712072310",
+      "remote_version": "20260712073552",
+      "local_filename": "20260712072310_atomic_v4_noncritical_persistence.sql",
+      "remote_filename": "20260712073552_atomic_v4_noncritical_persistence.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 213,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 7841,
+        "remote_bytes": 7843
+      }
+    },
+    {
+      "name": "atomic_v4_writer_feedback_transaction",
+      "local_version": "20260711200533",
+      "remote_version": "20260712033532",
+      "local_filename": "20260711200533_atomic_v4_writer_feedback_transaction.sql",
+      "remote_filename": "20260712033532_atomic_v4_writer_feedback_transaction.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 43,
+        "local_changed_line_count": 117,
+        "remote_changed_line_count": 94,
+        "local_bytes": 6295,
+        "remote_bytes": 6204
+      }
+    },
+    {
+      "name": "basketball_catalog_v0",
+      "local_version": "20260626083423",
+      "remote_version": "20260626121414",
+      "local_filename": "20260626083423_basketball_catalog_v0.sql",
+      "remote_filename": "20260626121414_basketball_catalog_v0.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 257,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 12801,
+        "remote_bytes": 12802
+      }
+    },
+    {
+      "name": "catalog_anchor_filter_rpc_v1",
+      "local_version": "20260704060000",
+      "remote_version": "20260704032228",
+      "local_filename": "20260704060000_catalog_anchor_filter_rpc_v1.sql",
+      "remote_filename": "20260704032228_catalog_anchor_filter_rpc_v1.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 27,
+        "local_changed_line_count": 186,
+        "remote_changed_line_count": 169,
+        "local_bytes": 9241,
+        "remote_bytes": 8493
+      }
+    },
+    {
+      "name": "catalog_clean_writer_title_tcg_lot_star_v0",
+      "local_version": "20260703044509",
+      "remote_version": "20260703044544",
+      "local_filename": "20260703044509_catalog_clean_writer_title_tcg_lot_star_v0.sql",
+      "remote_filename": "20260703044544_catalog_clean_writer_title_tcg_lot_star_v0.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 71,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 2171,
+        "remote_bytes": 2172
+      }
+    },
+    {
+      "name": "catalog_clean_writer_title_tcg_sales_terms_v0",
+      "local_version": "20260703044401",
+      "remote_version": "20260703044448",
+      "local_filename": "20260703044401_catalog_clean_writer_title_tcg_sales_terms_v0.sql",
+      "remote_filename": "20260703044448_catalog_clean_writer_title_tcg_sales_terms_v0.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 72,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 2200,
+        "remote_bytes": 2201
+      }
+    },
+    {
+      "name": "catalog_clear_unknown_categories_v0",
+      "local_version": "20260703041438",
+      "remote_version": "20260703041702",
+      "local_filename": "20260703041438_catalog_clear_unknown_categories_v0.sql",
+      "remote_filename": "20260703041702_catalog_clear_unknown_categories_v0.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 8,
+        "local_changed_line_count": 59,
+        "remote_changed_line_count": 59,
+        "local_bytes": 5203,
+        "remote_bytes": 5152
+      }
+    },
+    {
+      "name": "catalog_first_corrected_title_v0",
+      "local_version": "20260626115429",
+      "remote_version": "20260626121534",
+      "local_filename": "20260626115429_catalog_first_corrected_title_v0.sql",
+      "remote_filename": "20260626121534_catalog_first_corrected_title_v0.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 135,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 6698,
+        "remote_bytes": 6699
+      }
+    },
+    {
+      "name": "catalog_search_all_categories_v0",
+      "local_version": "20260703034116",
+      "remote_version": "20260703040500",
+      "local_filename": "20260703034116_catalog_search_all_categories_v0.sql",
+      "remote_filename": "20260703040500_catalog_search_all_categories_v0.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 156,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 7115,
+        "remote_bytes": 7116
+      }
+    },
+    {
+      "name": "catalog_search_blob_materialized_v1",
+      "local_version": "20260706130000",
+      "remote_version": "20260706123735",
+      "local_filename": "20260706130000_catalog_search_blob_materialized_v1.sql",
+      "remote_filename": "20260706123735_catalog_search_blob_materialized_v1.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 1,
+        "local_changed_line_count": 239,
+        "remote_changed_line_count": 36,
+        "local_bytes": 8685,
+        "remote_bytes": 1431
+      }
+    },
+    {
+      "name": "catalog_search_blob_normalization_v1",
+      "local_version": "20260724215000",
+      "remote_version": "20260723213927",
+      "local_filename": "20260724215000_catalog_search_blob_normalization_v1.sql",
+      "remote_filename": "20260723213927_catalog_search_blob_normalization_v1.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 33,
+        "local_changed_line_count": 5,
+        "remote_changed_line_count": 3,
+        "local_bytes": 1546,
+        "remote_bytes": 1404
+      }
+    },
+    {
+      "name": "cert_registry_v1",
+      "local_version": "20260709170000",
+      "remote_version": "20260709123119",
+      "local_filename": "20260709170000_cert_registry_v1.sql",
+      "remote_filename": "20260709123119_cert_registry_v1.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 1,
+        "local_changed_line_count": 53,
+        "remote_changed_line_count": 42,
+        "local_bytes": 2334,
+        "remote_bytes": 1571
+      }
+    },
+    {
+      "name": "create_v4_fast_scout_cache",
+      "local_version": "20260707154500",
+      "remote_version": "20260713124858",
+      "local_filename": "20260707154500_create_v4_fast_scout_cache.sql",
+      "remote_filename": "20260713124858_create_v4_fast_scout_cache.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 32,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 1096,
+        "remote_bytes": 1097
+      }
+    },
+    {
+      "name": "csm_atomic_stage_packet_v1",
+      "local_version": "20260801123000",
+      "remote_version": "20260801094353",
+      "local_filename": "20260801123000_csm_atomic_stage_packet_v1.sql",
+      "remote_filename": "20260801094353_csm_atomic_stage_packet_v1.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 367,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 17230,
+        "remote_bytes": 17232
+      }
+    },
+    {
+      "name": "csm_empty_canonical_sql_null",
+      "local_version": "20260801071048",
+      "remote_version": "20260801071129",
+      "local_filename": "20260801071048_csm_empty_canonical_sql_null.sql",
+      "remote_filename": "20260801071129_csm_empty_canonical_sql_null.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 36,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 1668,
+        "remote_bytes": 1670
+      }
+    },
+    {
+      "name": "csm_marketplace_trace_object",
+      "local_version": "20260801065859",
+      "remote_version": "20260801065941",
+      "local_filename": "20260801065859_csm_marketplace_trace_object.sql",
+      "remote_filename": "20260801065941_csm_marketplace_trace_object.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 18,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 728,
+        "remote_bytes": 730
+      }
+    },
+    {
+      "name": "csm_stage_shadow_foundation_v1",
+      "local_version": "20260728190000",
+      "remote_version": "20260801065544",
+      "local_filename": "20260728190000_csm_stage_shadow_foundation_v1.sql",
+      "remote_filename": "20260801065544_csm_stage_shadow_foundation_v1.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 22,
+        "local_changed_line_count": 466,
+        "remote_changed_line_count": 484,
+        "local_bytes": 21580,
+        "remote_bytes": 22307
+      }
+    },
+    {
+      "name": "data_loop_workflow_sidecars_v0",
+      "local_version": "20260702062734",
+      "remote_version": "20260702092135",
+      "local_filename": "20260702062734_data_loop_workflow_sidecars_v0.sql",
+      "remote_filename": "20260702092135_data_loop_workflow_sidecars_v0.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 253,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 11287,
+        "remote_bytes": 11288
+      }
+    },
+    {
+      "name": "enforce_catalog_source_graph_consistency",
+      "local_version": "20260724050000",
+      "remote_version": "20260723221636",
+      "local_filename": "20260724050000_enforce_catalog_source_graph_consistency.sql",
+      "remote_filename": "20260723221636_enforce_catalog_source_graph_consistency.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 1,
+        "local_changed_line_count": 103,
+        "remote_changed_line_count": 88,
+        "local_bytes": 3535,
+        "remote_bytes": 3262
+      }
+    },
+    {
+      "name": "feedback_workflow_context_v0",
+      "local_version": "20260703112438",
+      "remote_version": "20260710042537",
+      "local_filename": "20260703112438_feedback_workflow_context_v0.sql",
+      "remote_filename": "20260710042537_feedback_workflow_context_v0.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 19,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 2,
+        "local_bytes": 885,
+        "remote_bytes": 918
+      }
+    },
+    {
+      "name": "fix_catalog_snapshot_trigger_transition_tables",
+      "local_version": "20260725150000",
+      "remote_version": "20260725143748",
+      "local_filename": "20260725150000_fix_catalog_snapshot_trigger_transition_tables.sql",
+      "remote_filename": "20260725143748_fix_catalog_snapshot_trigger_transition_tables.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 1,
+        "local_changed_line_count": 104,
+        "remote_changed_line_count": 78,
+        "local_bytes": 3951,
+        "remote_bytes": 2796
+      }
+    },
+    {
+      "name": "fix_track_c_catalog_trigger_when_marker",
+      "local_version": "20260717132242",
+      "remote_version": "20260717132617",
+      "local_filename": "20260717132242_fix_track_c_catalog_trigger_when_marker.sql",
+      "remote_filename": "20260717132617_fix_track_c_catalog_trigger_when_marker.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 361,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 16934,
+        "remote_bytes": 16936
+      }
+    },
+    {
+      "name": "harden_public_function_security_and_queue_heartbeat",
+      "local_version": "20260711194540",
+      "remote_version": "20260711195801",
+      "local_filename": "20260711194540_harden_public_function_security_and_queue_heartbeat.sql",
+      "remote_filename": "20260711195801_harden_public_function_security_and_queue_heartbeat.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 40,
+        "local_changed_line_count": 31,
+        "remote_changed_line_count": 26,
+        "local_bytes": 2416,
+        "remote_bytes": 2033
+      }
+    },
+    {
+      "name": "hybrid_unified_catalog_and_indexes_v1",
+      "local_version": "20260704070000",
+      "remote_version": "20260705151414",
+      "local_filename": "20260704070000_hybrid_unified_catalog_and_indexes_v1.sql",
+      "remote_filename": "20260705151414_hybrid_unified_catalog_and_indexes_v1.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 1,
+        "local_changed_line_count": 242,
+        "remote_changed_line_count": 230,
+        "local_bytes": 9199,
+        "remote_bytes": 8481
+      }
+    },
+    {
+      "name": "isolate_marketplace_catalog_products",
+      "local_version": "20260724033000",
+      "remote_version": "20260723215305",
+      "local_filename": "20260724033000_isolate_marketplace_catalog_products.sql",
+      "remote_filename": "20260723215305_isolate_marketplace_catalog_products.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 2,
+        "local_changed_line_count": 93,
+        "remote_changed_line_count": 73,
+        "local_bytes": 3299,
+        "remote_bytes": 2887
+      }
+    },
+    {
+      "name": "listing_identity_cache_terminal_l2",
+      "local_version": "20260724",
+      "remote_version": "20260724073657",
+      "local_filename": "20260724_listing_identity_cache_terminal_l2.sql",
+      "remote_filename": "20260724073657_listing_identity_cache_terminal_l2.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 9,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 530,
+        "remote_bytes": 531
+      }
+    },
+    {
+      "name": "listing_identity_cache_version_contract",
+      "local_version": "20260724",
+      "remote_version": "20260724071411",
+      "local_filename": "20260724_listing_identity_cache_version_contract.sql",
+      "remote_filename": "20260724071411_listing_identity_cache_version_contract.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 21,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 993,
+        "remote_bytes": 994
+      }
+    },
+    {
+      "name": "listing_image_verified_crop_provenance_v1",
+      "local_version": "20260717191000",
+      "remote_version": "20260717120604",
+      "local_filename": "20260717191000_listing_image_verified_crop_provenance_v1.sql",
+      "remote_filename": "20260717120604_listing_image_verified_crop_provenance_v1.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 416,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 18304,
+        "remote_bytes": 18306
+      }
+    },
+    {
+      "name": "preingestion_evidence_bundle_v0",
+      "local_version": "20260706060115",
+      "remote_version": "20260706062043",
+      "local_filename": "20260706060115_preingestion_evidence_bundle_v0.sql",
+      "remote_filename": "20260706062043_preingestion_evidence_bundle_v0.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 223,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 8191,
+        "remote_bytes": 8192
+      }
+    },
+    {
+      "name": "sem_definition_canonical_v1",
+      "local_version": "20260708084634",
+      "remote_version": "20260708092501",
+      "local_filename": "20260708084634_sem_definition_canonical_v1.sql",
+      "remote_filename": "20260708092501_sem_definition_canonical_v1.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 81,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 3899,
+        "remote_bytes": 3900
+      }
+    },
+    {
+      "name": "supersede_stale_writer_learning_events",
+      "local_version": "20260712040453",
+      "remote_version": "20260712040615",
+      "local_filename": "20260712040453_supersede_stale_writer_learning_events.sql",
+      "remote_filename": "20260712040615_supersede_stale_writer_learning_events.sql",
+      "content": {
+        "classification": "content_changed",
+        "raw_equal": false,
+        "normalized_equal": false,
+        "first_differing_line": 17,
+        "local_changed_line_count": 15,
+        "remote_changed_line_count": 12,
+        "local_bytes": 1094,
+        "remote_bytes": 1092
+      }
+    },
+    {
+      "name": "track_c_fact_and_storage_boundary_convergence",
+      "local_version": "20260717133700",
+      "remote_version": "20260717140201",
+      "local_filename": "20260717133700_track_c_fact_and_storage_boundary_convergence.sql",
+      "remote_filename": "20260717140201_track_c_fact_and_storage_boundary_convergence.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 160,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 5930,
+        "remote_bytes": 5932
+      }
+    },
+    {
+      "name": "track_c_legacy_asset_parent_convergence_v1",
+      "local_version": "20260717190000",
+      "remote_version": "20260717120526",
+      "local_filename": "20260717190000_track_c_legacy_asset_parent_convergence_v1.sql",
+      "remote_filename": "20260717120526_track_c_legacy_asset_parent_convergence_v1.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 170,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 5196,
+        "remote_bytes": 5198
+      }
+    },
+    {
+      "name": "track_c_preingestion_ocr_durable_leases",
+      "local_version": "20260715065820",
+      "remote_version": "20260717133218",
+      "local_filename": "20260715065820_track_c_preingestion_ocr_durable_leases.sql",
+      "remote_filename": "20260717133218_track_c_preingestion_ocr_durable_leases.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 102,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 3576,
+        "remote_bytes": 3578
+      }
+    },
+    {
+      "name": "track_c_retry_state_machine_hardening",
+      "local_version": "20260715065808",
+      "remote_version": "20260717133210",
+      "local_filename": "20260715065808_track_c_retry_state_machine_hardening.sql",
+      "remote_filename": "20260717133210_track_c_retry_state_machine_hardening.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 780,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 26448,
+        "remote_bytes": 26450
+      }
+    },
+    {
+      "name": "track_c_runtime_schema_convergence_v1",
+      "local_version": "20260717193000",
+      "remote_version": "20260717120716",
+      "local_filename": "20260717193000_track_c_runtime_schema_convergence_v1.sql",
+      "remote_filename": "20260717120716_track_c_runtime_schema_convergence_v1.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 418,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 17637,
+        "remote_bytes": 17639
+      }
+    },
+    {
+      "name": "track_c_schema_attestation_and_tenant_convergence",
+      "local_version": "20260717130819",
+      "remote_version": "20260717132042",
+      "local_filename": "20260717130819_track_c_schema_attestation_and_tenant_convergence.sql",
+      "remote_filename": "20260717132042_track_c_schema_attestation_and_tenant_convergence.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 558,
+        "local_changed_line_count": 0,
+        "remote_changed_line_count": 1,
+        "local_bytes": 24232,
+        "remote_bytes": 24234
+      }
+    },
+    {
+      "name": "v4_enable_rls",
+      "local_version": "20260706094322",
+      "remote_version": "20260706094456",
+      "local_filename": "20260706094322_v4_enable_rls.sql",
+      "remote_filename": "20260706094456_v4_enable_rls.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 8,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 629,
+        "remote_bytes": 630
+      }
+    },
+    {
+      "name": "v4_queue_deployment_affinity",
+      "local_version": "20260719205025",
+      "remote_version": "20260720020555",
+      "local_filename": "20260719205025_v4_queue_deployment_affinity.sql",
+      "remote_filename": "20260720020555_v4_queue_deployment_affinity.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 104,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 5309,
+        "remote_bytes": 5310
+      }
+    },
+    {
+      "name": "v4_queue_reclaim_expired_running_jobs",
+      "local_version": "20260708043000",
+      "remote_version": "20260708043008",
+      "local_filename": "20260708043000_v4_queue_reclaim_expired_running_jobs.sql",
+      "remote_filename": "20260708043008_v4_queue_reclaim_expired_running_jobs.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 50,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 1862,
+        "remote_bytes": 1863
+      }
+    },
+    {
+      "name": "v4_recognition_spine",
+      "local_version": "20260706093000",
+      "remote_version": "20260706093959",
+      "local_filename": "20260706093000_v4_recognition_spine.sql",
+      "remote_filename": "20260706093959_v4_recognition_spine.sql",
+      "content": {
+        "classification": "normalized_equivalent",
+        "raw_equal": false,
+        "normalized_equal": true,
+        "first_differing_line": 129,
+        "local_changed_line_count": 1,
+        "remote_changed_line_count": 1,
+        "local_bytes": 5501,
+        "remote_bytes": 5502
+      }
+    }
+  ],
+  "versions": [
+    {
+      "version": "20260622",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260622",
+          "name": "listing_feedback_v2",
+          "filename": "20260622_listing_feedback_v2.sql",
+          "sha256": "c6b94bb2ce4d4e4d9b7d7e27fe609dc97df48cc665e4d91088c317f2e2d185b5",
+          "normalized_sha256": "c6b94bb2ce4d4e4d9b7d7e27fe609dc97df48cc665e4d91088c317f2e2d185b5",
+          "bytes": 3084,
+          "lines": 82
+        },
+        {
+          "version": "20260622",
+          "name": "listing_feedback_v2_rollback",
+          "filename": "20260622_listing_feedback_v2_rollback.sql",
+          "sha256": "bfbd60340b11d567bc44c9e96505d2da698d4157c8b6f889bcc08303d12eb9b1",
+          "normalized_sha256": "bfbd60340b11d567bc44c9e96505d2da698d4157c8b6f889bcc08303d12eb9b1",
+          "bytes": 436,
+          "lines": 8
+        },
+        {
+          "version": "20260622",
+          "name": "listing_image_storage",
+          "filename": "20260622_listing_image_storage.sql",
+          "sha256": "d6bbd1641b71651810cedea07f99e3f54f7c38b7c50598685404b3630248c7e7",
+          "normalized_sha256": "d6bbd1641b71651810cedea07f99e3f54f7c38b7c50598685404b3630248c7e7",
+          "bytes": 2076,
+          "lines": 78
+        },
+        {
+          "version": "20260622",
+          "name": "listing_image_storage_rollback",
+          "filename": "20260622_listing_image_storage_rollback.sql",
+          "sha256": "8d84de119ddcd48c277f704e5e58918aba2897f4d0c2037b2b9b03ba3a077502",
+          "normalized_sha256": "8d84de119ddcd48c277f704e5e58918aba2897f4d0c2037b2b9b03ba3a077502",
+          "bytes": 539,
+          "lines": 14
+        },
+        {
+          "version": "20260622",
+          "name": "listing_image_verifications",
+          "filename": "20260622_listing_image_verifications.sql",
+          "sha256": "c2fa9beb33200368812433f5d15f3d6dc66b62009a70958f998f03930982fe76",
+          "normalized_sha256": "c2fa9beb33200368812433f5d15f3d6dc66b62009a70958f998f03930982fe76",
+          "bytes": 834,
+          "lines": 24
+        },
+        {
+          "version": "20260622",
+          "name": "listing_image_verifications_rollback",
+          "filename": "20260622_listing_image_verifications_rollback.sql",
+          "sha256": "d7d81f71828c4a6efdd265f4522d1f8f7e07fd8a24fb081a127a56c6ca2776ea",
+          "normalized_sha256": "d7d81f71828c4a6efdd265f4522d1f8f7e07fd8a24fb081a127a56c6ca2776ea",
+          "bytes": 191,
+          "lines": 3
+        },
+        {
+          "version": "20260622",
+          "name": "listing_publish_jobs",
+          "filename": "20260622_listing_publish_jobs.sql",
+          "sha256": "8ff35f367cc411f045487fd3590a3d7fe794815849221373f83c135318934c0e",
+          "normalized_sha256": "8ff35f367cc411f045487fd3590a3d7fe794815849221373f83c135318934c0e",
+          "bytes": 1127,
+          "lines": 31
+        },
+        {
+          "version": "20260622",
+          "name": "listing_publish_jobs_rollback",
+          "filename": "20260622_listing_publish_jobs_rollback.sql",
+          "sha256": "8bf5fba91f5ec27b7bfb84857bb6ff1845623b58684c7dda5e7a65398c66b0e1",
+          "normalized_sha256": "8bf5fba91f5ec27b7bfb84857bb6ff1845623b58684c7dda5e7a65398c66b0e1",
+          "bytes": 226,
+          "lines": 4
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260623",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260623",
+          "name": "listing_approved_memory_v3",
+          "filename": "20260623_listing_approved_memory_v3.sql",
+          "sha256": "9a28e35a69f3772d97aa355c9282a12825fccea08eb96303c3ed5cced4243243",
+          "normalized_sha256": "9a28e35a69f3772d97aa355c9282a12825fccea08eb96303c3ed5cced4243243",
+          "bytes": 1695,
+          "lines": 44
+        },
+        {
+          "version": "20260623",
+          "name": "listing_approved_memory_v3_rollback",
+          "filename": "20260623_listing_approved_memory_v3_rollback.sql",
+          "sha256": "a7524321f1249ed663d3a2d813051d9eecf6964007cde4181519bae834dc4990",
+          "normalized_sha256": "a7524321f1249ed663d3a2d813051d9eecf6964007cde4181519bae834dc4990",
+          "bytes": 905,
+          "lines": 22
+        },
+        {
+          "version": "20260623",
+          "name": "listing_identity_result_cache",
+          "filename": "20260623_listing_identity_result_cache.sql",
+          "sha256": "1a43f232763efaf4827f3df64642ed8c6d9ede97bcabb4201af4087f0e002f31",
+          "normalized_sha256": "1a43f232763efaf4827f3df64642ed8c6d9ede97bcabb4201af4087f0e002f31",
+          "bytes": 2553,
+          "lines": 47
+        },
+        {
+          "version": "20260623",
+          "name": "listing_identity_result_cache_rollback",
+          "filename": "20260623_listing_identity_result_cache_rollback.sql",
+          "sha256": "8bf269556f0d237cb2e024e9e3e3ea2bd2d9853a19d64edb851aca2891d43f83",
+          "normalized_sha256": "8bf269556f0d237cb2e024e9e3e3ea2bd2d9853a19d64edb851aca2891d43f83",
+          "bytes": 63,
+          "lines": 1
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260625035856",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260625035856",
+          "name": "card_visual_vector_retrieval",
+          "filename": "20260625035856_card_visual_vector_retrieval.sql",
+          "sha256": "08a1d309a752c2c7b24486a3e88c5ba375ff6485183283410023aaf7691384b3",
+          "normalized_sha256": "08a1d309a752c2c7b24486a3e88c5ba375ff6485183283410023aaf7691384b3",
+          "bytes": 8422,
+          "lines": 218
+        },
+        {
+          "version": "20260625035856",
+          "name": "card_visual_vector_retrieval_rollback",
+          "filename": "20260625035856_card_visual_vector_retrieval_rollback.sql",
+          "sha256": "75b6d6646cc4a7e3513df44317fd875c9726c6e6ac6e18e96822a3841d9afd5b",
+          "normalized_sha256": "75b6d6646cc4a7e3513df44317fd875c9726c6e6ac6e18e96822a3841d9afd5b",
+          "bytes": 310,
+          "lines": 14
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260625151516",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260625151516",
+          "name": "vector_query_lifecycle",
+          "filename": "20260625151516_vector_query_lifecycle.sql",
+          "sha256": "8adb1115b2bfb68f9b78c3a3d56dbad9955aad82af819aec559ecfd7fc95aee5",
+          "normalized_sha256": "8adb1115b2bfb68f9b78c3a3d56dbad9955aad82af819aec559ecfd7fc95aee5",
+          "bytes": 6480,
+          "lines": 123
+        },
+        {
+          "version": "20260625151516",
+          "name": "vector_query_lifecycle_rollback",
+          "filename": "20260625151516_vector_query_lifecycle_rollback.sql",
+          "sha256": "79ee72fc98610b519883e622b8075ad520300d0dc4349f878bb0edf901fea133",
+          "normalized_sha256": "79ee72fc98610b519883e622b8075ad520300d0dc4349f878bb0edf901fea133",
+          "bytes": 207,
+          "lines": 4
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260625153857",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260625153857",
+          "name": "advanced_retrieval_accuracy_pack",
+          "filename": "20260625153857_advanced_retrieval_accuracy_pack.sql",
+          "sha256": "0ef2371e56aa86beeedfd2a0b579a489ca4d54d1fc1f9e304cc21a5d0e453994",
+          "normalized_sha256": "0ef2371e56aa86beeedfd2a0b579a489ca4d54d1fc1f9e304cc21a5d0e453994",
+          "bytes": 16270,
+          "lines": 399
+        },
+        {
+          "version": "20260625153857",
+          "name": "advanced_retrieval_accuracy_pack_rollback",
+          "filename": "20260625153857_advanced_retrieval_accuracy_pack_rollback.sql",
+          "sha256": "289d707317ab433a76a3a0bc39f97f5497694bc1b878db3a418ee9220c2a9b18",
+          "normalized_sha256": "289d707317ab433a76a3a0bc39f97f5497694bc1b878db3a418ee9220c2a9b18",
+          "bytes": 1972,
+          "lines": 50
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260626032350",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260626032350",
+          "name": "create_search_card_identities_hybrid_rpc",
+          "filename": "20260626032350_create_search_card_identities_hybrid_rpc.sql",
+          "sha256": "30a76ada534ebebf2442de0cb1463c1bca97b360bb82a17e427a5fb82b889223",
+          "normalized_sha256": "30a76ada534ebebf2442de0cb1463c1bca97b360bb82a17e427a5fb82b889223",
+          "bytes": 5584,
+          "lines": 157
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260626032350",
+          "name": "create_search_card_identities_hybrid_rpc",
+          "filename": "20260626032350_create_search_card_identities_hybrid_rpc.sql",
+          "sha256": "c6ba5b3e563202959b7770412c4edb600f8f8a7dfa3a020c4d54804dd9852b39",
+          "normalized_sha256": "30a76ada534ebebf2442de0cb1463c1bca97b360bb82a17e427a5fb82b889223",
+          "bytes": 5585,
+          "lines": 157
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 157,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 1,
+          "local_bytes": 5584,
+          "remote_bytes": 5585
+        }
+      ]
+    },
+    {
+      "version": "20260626042902",
+      "status": "ambiguous_duplicate_version",
+      "local": [
+        {
+          "version": "20260626042902",
+          "name": "card_vector_match_status_columns",
+          "filename": "20260626042902_card_vector_match_status_columns.sql",
+          "sha256": "8551a355d5f4ba6fdf470d8698ec3b06e45987efdc21efc0b599bd63afa053f2",
+          "normalized_sha256": "8551a355d5f4ba6fdf470d8698ec3b06e45987efdc21efc0b599bd63afa053f2",
+          "bytes": 3998,
+          "lines": 132
+        },
+        {
+          "version": "20260626042902",
+          "name": "card_vector_match_status_columns_rollback",
+          "filename": "20260626042902_card_vector_match_status_columns_rollback.sql",
+          "sha256": "a5f5959814f0b8c5074904d750d6cb86810826e925ea06f9c61ae2b11f365a19",
+          "normalized_sha256": "a5f5959814f0b8c5074904d750d6cb86810826e925ea06f9c61ae2b11f365a19",
+          "bytes": 2759,
+          "lines": 101
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260626042902",
+          "name": "card_vector_match_status_columns",
+          "filename": "20260626042902_card_vector_match_status_columns.sql",
+          "sha256": "cfa4aab9170151d00d2933b3942df159e759af28941c5fa6a789db29488a18c9",
+          "normalized_sha256": "8551a355d5f4ba6fdf470d8698ec3b06e45987efdc21efc0b599bd63afa053f2",
+          "bytes": 3999,
+          "lines": 132
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260626043200",
+      "status": "ambiguous_duplicate_version",
+      "local": [
+        {
+          "version": "20260626043200",
+          "name": "catalog_gap_reference_promotion",
+          "filename": "20260626043200_catalog_gap_reference_promotion.sql",
+          "sha256": "39ae9ba33e5436dab676a90b249a5d67d2e9b796d96cc11f5b98c114571731e4",
+          "normalized_sha256": "39ae9ba33e5436dab676a90b249a5d67d2e9b796d96cc11f5b98c114571731e4",
+          "bytes": 3091,
+          "lines": 71
+        },
+        {
+          "version": "20260626043200",
+          "name": "catalog_gap_reference_promotion_rollback",
+          "filename": "20260626043200_catalog_gap_reference_promotion_rollback.sql",
+          "sha256": "f4d1d21603613c2ce24061ce6c9b6c6f4ee48b25dcfab653aa94a4794659e5b1",
+          "normalized_sha256": "f4d1d21603613c2ce24061ce6c9b6c6f4ee48b25dcfab653aa94a4794659e5b1",
+          "bytes": 108,
+          "lines": 2
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260626043200",
+          "name": "catalog_gap_reference_promotion",
+          "filename": "20260626043200_catalog_gap_reference_promotion.sql",
+          "sha256": "2581a97315be63612e4a4420f87ffd67b85064d4afaa306566c2fd7e71fc2647",
+          "normalized_sha256": "39ae9ba33e5436dab676a90b249a5d67d2e9b796d96cc11f5b98c114571731e4",
+          "bytes": 3092,
+          "lines": 71
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260626051832",
+      "status": "ambiguous_duplicate_version",
+      "local": [
+        {
+          "version": "20260626051832",
+          "name": "promote_card_reference_to_approved",
+          "filename": "20260626051832_promote_card_reference_to_approved.sql",
+          "sha256": "2f8dd3a9ce82e997bc19a4a13726b27ce049719bfc17942bfa110c396e98db96",
+          "normalized_sha256": "2f8dd3a9ce82e997bc19a4a13726b27ce049719bfc17942bfa110c396e98db96",
+          "bytes": 6421,
+          "lines": 214
+        },
+        {
+          "version": "20260626051832",
+          "name": "promote_card_reference_to_approved_rollback",
+          "filename": "20260626051832_promote_card_reference_to_approved_rollback.sql",
+          "sha256": "bb8e4b00ffbc6239f6b84823c74d138875d00b997783512407a5f5630cda628e",
+          "normalized_sha256": "bb8e4b00ffbc6239f6b84823c74d138875d00b997783512407a5f5630cda628e",
+          "bytes": 118,
+          "lines": 8
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260626051832",
+          "name": "promote_card_reference_to_approved",
+          "filename": "20260626051832_promote_card_reference_to_approved.sql",
+          "sha256": "fdb2a5ff944ec2570cd6be285669bb6dd5c21bde7ac43af2f48facf79c56dda8",
+          "normalized_sha256": "2f8dd3a9ce82e997bc19a4a13726b27ce049719bfc17942bfa110c396e98db96",
+          "bytes": 6422,
+          "lines": 214
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260626083423",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260626083423",
+          "name": "basketball_catalog_v0",
+          "filename": "20260626083423_basketball_catalog_v0.sql",
+          "sha256": "c2310bcd4e954a61c04758dd81bd1f49bc930f0e2923fa9fb1ad44df2950f3c0",
+          "normalized_sha256": "c2310bcd4e954a61c04758dd81bd1f49bc930f0e2923fa9fb1ad44df2950f3c0",
+          "bytes": 12801,
+          "lines": 257
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260626115429",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260626115429",
+          "name": "catalog_first_corrected_title_v0",
+          "filename": "20260626115429_catalog_first_corrected_title_v0.sql",
+          "sha256": "0145b44da4bb17921bc0ffcc4af2bed8895a21d627b676f37b7069ee5ab4c037",
+          "normalized_sha256": "0145b44da4bb17921bc0ffcc4af2bed8895a21d627b676f37b7069ee5ab4c037",
+          "bytes": 6698,
+          "lines": 135
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260626121414",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260626121414",
+          "name": "basketball_catalog_v0",
+          "filename": "20260626121414_basketball_catalog_v0.sql",
+          "sha256": "26a1b4b34580617225d7dc4d229402e1d048dd354f716aba6a111f11f646486a",
+          "normalized_sha256": "c2310bcd4e954a61c04758dd81bd1f49bc930f0e2923fa9fb1ad44df2950f3c0",
+          "bytes": 12802,
+          "lines": 257
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260626121534",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260626121534",
+          "name": "catalog_first_corrected_title_v0",
+          "filename": "20260626121534_catalog_first_corrected_title_v0.sql",
+          "sha256": "6be57278a821aec1bb25147631fbbd52c317912d140761c41703a59cc3b09d34",
+          "normalized_sha256": "0145b44da4bb17921bc0ffcc4af2bed8895a21d627b676f37b7069ee5ab4c037",
+          "bytes": 6699,
+          "lines": 135
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260630125409",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260630125409",
+          "name": "official_checklist_source_family",
+          "filename": "20260630125409_official_checklist_source_family.sql",
+          "sha256": "01c083aaec17762c49ed8a20737e10d0b0261d7365d145420349e8191f78c1f6",
+          "normalized_sha256": "01c083aaec17762c49ed8a20737e10d0b0261d7365d145420349e8191f78c1f6",
+          "bytes": 8930,
+          "lines": 195
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260701113917",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260701113917",
+          "name": "catalog_gap_cold_start_fields",
+          "filename": "20260701113917_catalog_gap_cold_start_fields.sql",
+          "sha256": "eac9f435e3b6c63f11a53b6f00d52e6f484759626a23fcd6c98c1893f2e00ae4",
+          "normalized_sha256": "eac9f435e3b6c63f11a53b6f00d52e6f484759626a23fcd6c98c1893f2e00ae4",
+          "bytes": 4570,
+          "lines": 93
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260701120834",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260701120834",
+          "name": "catalog_cold_start_flywheel_v0",
+          "filename": "20260701120834_catalog_cold_start_flywheel_v0.sql",
+          "sha256": "65a7b3977b0c3557d2217d403b5786387b931d18a510290239c69dd63ac9ba20",
+          "normalized_sha256": "65a7b3977b0c3557d2217d403b5786387b931d18a510290239c69dd63ac9ba20",
+          "bytes": 4360,
+          "lines": 93
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260701122804",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260701122804",
+          "name": "official_catalog_importer_system_v0",
+          "filename": "20260701122804_official_catalog_importer_system_v0.sql",
+          "sha256": "a757e1e4a1cd0f327b7260850f8b38a81dae408cff2663f6d04e0512b3985049",
+          "normalized_sha256": "a757e1e4a1cd0f327b7260850f8b38a81dae408cff2663f6d04e0512b3985049",
+          "bytes": 14084,
+          "lines": 324
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260701124453",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260701124453",
+          "name": "multi_source_catalog_importer_framework_v0",
+          "filename": "20260701124453_multi_source_catalog_importer_framework_v0.sql",
+          "sha256": "8387f80fbc81f3dcf5c1c847e207c2223de8b98a874bc725dc3d899773601f59",
+          "normalized_sha256": "8387f80fbc81f3dcf5c1c847e207c2223de8b98a874bc725dc3d899773601f59",
+          "bytes": 5943,
+          "lines": 157
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260701140635",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260701140635",
+          "name": "catalog_cold_start_flywheel_v0_cloud_sync",
+          "filename": "20260701140635_catalog_cold_start_flywheel_v0_cloud_sync.sql",
+          "sha256": "ff8b7d4b2180a39ad5a48302becc5325e75a7fb94b5a77a124fb50fda34863f5",
+          "normalized_sha256": "a99db50249a28887abb0f27eefbcb88ee629c8266a5e078cfa6f7eec4e3c59f0",
+          "bytes": 8932,
+          "lines": 187
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260701140730",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260701140730",
+          "name": "official_catalog_importer_system_v0_cloud_sync",
+          "filename": "20260701140730_official_catalog_importer_system_v0_cloud_sync.sql",
+          "sha256": "9169dae815a0397d798565790afb12ff999596dea742414ad894b0497e7fca38",
+          "normalized_sha256": "a757e1e4a1cd0f327b7260850f8b38a81dae408cff2663f6d04e0512b3985049",
+          "bytes": 14085,
+          "lines": 324
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260701140951",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260701140951",
+          "name": "multi_source_catalog_importer_framework_v0_cloud_sync",
+          "filename": "20260701140951_multi_source_catalog_importer_framework_v0_cloud_sync.sql",
+          "sha256": "e8bfb4f28fcba3784f78c3f13cddae1c264dcb4c2af8e54ebda20e17257ab03d",
+          "normalized_sha256": "8387f80fbc81f3dcf5c1c847e207c2223de8b98a874bc725dc3d899773601f59",
+          "bytes": 5944,
+          "lines": 157
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024009",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024009",
+          "name": "listing_feedback_v2_reconcile",
+          "filename": "20260702024009_listing_feedback_v2_reconcile.sql",
+          "sha256": "a235c705ef40747508d7f138220cc406e97798acf02dca270a678e96dbd07875",
+          "normalized_sha256": "c6b94bb2ce4d4e4d9b7d7e27fe609dc97df48cc665e4d91088c317f2e2d185b5",
+          "bytes": 3085,
+          "lines": 82
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024025",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024025",
+          "name": "listing_image_storage_reconcile",
+          "filename": "20260702024025_listing_image_storage_reconcile.sql",
+          "sha256": "3c6d47c70d2fc4950069f57878fbe2ef134d2c7a3414dfd3a40aeaf6463b6064",
+          "normalized_sha256": "7b9452aee3d460106dda64f689c4d665ffa43ef1cbacc277d2e1e70b1924abe3",
+          "bytes": 1619,
+          "lines": 71
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024035",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024035",
+          "name": "listing_image_verifications_reconcile",
+          "filename": "20260702024035_listing_image_verifications_reconcile.sql",
+          "sha256": "0f4129020ca489d05776b0a4808b754d2fbb7b093aab6b2c096863050ad86078",
+          "normalized_sha256": "c2fa9beb33200368812433f5d15f3d6dc66b62009a70958f998f03930982fe76",
+          "bytes": 835,
+          "lines": 24
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024050",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024050",
+          "name": "listing_publish_jobs_reconcile",
+          "filename": "20260702024050_listing_publish_jobs_reconcile.sql",
+          "sha256": "abd46dfe8d3c05aae8844975d70849dd6523f5c1ba4ac546df19bd3758f3b35c",
+          "normalized_sha256": "8ff35f367cc411f045487fd3590a3d7fe794815849221373f83c135318934c0e",
+          "bytes": 1128,
+          "lines": 31
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024104",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024104",
+          "name": "listing_approved_memory_v3_reconcile",
+          "filename": "20260702024104_listing_approved_memory_v3_reconcile.sql",
+          "sha256": "8b96f2a26162fe949e3ccf45ed3819750691d3c158a388d5e115e9f08c7c66aa",
+          "normalized_sha256": "9a28e35a69f3772d97aa355c9282a12825fccea08eb96303c3ed5cced4243243",
+          "bytes": 1696,
+          "lines": 44
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024119",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024119",
+          "name": "listing_identity_result_cache_reconcile",
+          "filename": "20260702024119_listing_identity_result_cache_reconcile.sql",
+          "sha256": "8581a926a588346ba1d145603af695c4207938fdb15d65fede23eff5d5b48b01",
+          "normalized_sha256": "6c93095b8789efb061a1e1730ea7cb855930f3c2b5cbc67997c00dbf3ccf5070",
+          "bytes": 2318,
+          "lines": 44
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024238",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024238",
+          "name": "vector_query_lifecycle_reconcile",
+          "filename": "20260702024238_vector_query_lifecycle_reconcile.sql",
+          "sha256": "01ad39d7160cc631b1ef90ca77d50b3bd33e4351f28070e1dbfebae3caf30ab6",
+          "normalized_sha256": "8adb1115b2bfb68f9b78c3a3d56dbad9955aad82af819aec559ecfd7fc95aee5",
+          "bytes": 6481,
+          "lines": 123
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702024337",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702024337",
+          "name": "advanced_retrieval_accuracy_pack_reconcile",
+          "filename": "20260702024337_advanced_retrieval_accuracy_pack_reconcile.sql",
+          "sha256": "324b1879b42ec641ecbf5f26d1cd89e8437e28a48b320380d24b84a02291c9f8",
+          "normalized_sha256": "758ee880cef294fd9709aa896a7040d40e181a5d799a9f527f72995c07cfbc7b",
+          "bytes": 11374,
+          "lines": 274
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702062734",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260702062734",
+          "name": "data_loop_workflow_sidecars_v0",
+          "filename": "20260702062734_data_loop_workflow_sidecars_v0.sql",
+          "sha256": "6b1d03daaf08a33159fc7cc87c9f57c33ff196062295090505d868853aabaebc",
+          "normalized_sha256": "6b1d03daaf08a33159fc7cc87c9f57c33ff196062295090505d868853aabaebc",
+          "bytes": 11287,
+          "lines": 253
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260702092135",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260702092135",
+          "name": "data_loop_workflow_sidecars_v0",
+          "filename": "20260702092135_data_loop_workflow_sidecars_v0.sql",
+          "sha256": "b17368a9ddfb70df0988fedd32ec05873dba80468b30e1a86ec5092ef1ca9e63",
+          "normalized_sha256": "6b1d03daaf08a33159fc7cc87c9f57c33ff196062295090505d868853aabaebc",
+          "bytes": 11288,
+          "lines": 253
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703034116",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260703034116",
+          "name": "catalog_search_all_categories_v0",
+          "filename": "20260703034116_catalog_search_all_categories_v0.sql",
+          "sha256": "f877103cb587539c796a43b0f846fb4cd2c1e69d1b73c70ea178b9d437586974",
+          "normalized_sha256": "f877103cb587539c796a43b0f846fb4cd2c1e69d1b73c70ea178b9d437586974",
+          "bytes": 7115,
+          "lines": 156
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703040500",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260703040500",
+          "name": "catalog_search_all_categories_v0",
+          "filename": "20260703040500_catalog_search_all_categories_v0.sql",
+          "sha256": "d06eaf0c8190876160cfda3af5427002d09b0639ef4cb1cfef3a497432522c6a",
+          "normalized_sha256": "f877103cb587539c796a43b0f846fb4cd2c1e69d1b73c70ea178b9d437586974",
+          "bytes": 7116,
+          "lines": 156
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703041438",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260703041438",
+          "name": "catalog_clear_unknown_categories_v0",
+          "filename": "20260703041438_catalog_clear_unknown_categories_v0.sql",
+          "sha256": "baf6618a9798f779501c98d298192dd14fcc92bccc8200c2bc9fe8f0a3a6c69a",
+          "normalized_sha256": "baf6618a9798f779501c98d298192dd14fcc92bccc8200c2bc9fe8f0a3a6c69a",
+          "bytes": 5203,
+          "lines": 66
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703041702",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260703041702",
+          "name": "catalog_clear_unknown_categories_v0",
+          "filename": "20260703041702_catalog_clear_unknown_categories_v0.sql",
+          "sha256": "dac43b6054b2183f0de88338746ab8d4c2884f9bc1541e715e7a3b26f21bb18d",
+          "normalized_sha256": "0d0722ee4405062ac100cf37779d4835fd4d29023736e2a034de7161f49a1864",
+          "bytes": 5152,
+          "lines": 66
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703044401",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260703044401",
+          "name": "catalog_clean_writer_title_tcg_sales_terms_v0",
+          "filename": "20260703044401_catalog_clean_writer_title_tcg_sales_terms_v0.sql",
+          "sha256": "935490991c923c920fae3a821db296982185ca996251e16c9231d52ce711b232",
+          "normalized_sha256": "935490991c923c920fae3a821db296982185ca996251e16c9231d52ce711b232",
+          "bytes": 2200,
+          "lines": 72
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703044448",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260703044448",
+          "name": "catalog_clean_writer_title_tcg_sales_terms_v0",
+          "filename": "20260703044448_catalog_clean_writer_title_tcg_sales_terms_v0.sql",
+          "sha256": "553dfac27d28d5943fa034d31e345b7868e79f4e6566f705c7050f8164e81e65",
+          "normalized_sha256": "935490991c923c920fae3a821db296982185ca996251e16c9231d52ce711b232",
+          "bytes": 2201,
+          "lines": 72
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703044509",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260703044509",
+          "name": "catalog_clean_writer_title_tcg_lot_star_v0",
+          "filename": "20260703044509_catalog_clean_writer_title_tcg_lot_star_v0.sql",
+          "sha256": "79cf456668e91803d606d3eca8f8294877aa9ef81a8b3ac6fe3c9e9bab0f7ee3",
+          "normalized_sha256": "79cf456668e91803d606d3eca8f8294877aa9ef81a8b3ac6fe3c9e9bab0f7ee3",
+          "bytes": 2171,
+          "lines": 71
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703044544",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260703044544",
+          "name": "catalog_clean_writer_title_tcg_lot_star_v0",
+          "filename": "20260703044544_catalog_clean_writer_title_tcg_lot_star_v0.sql",
+          "sha256": "3d1c9443fcd3f95bc9da37f67d543b0a7ea5e0d27fe488f4afe069d9dd0f498b",
+          "normalized_sha256": "79cf456668e91803d606d3eca8f8294877aa9ef81a8b3ac6fe3c9e9bab0f7ee3",
+          "bytes": 2172,
+          "lines": 71
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703112438",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260703112438",
+          "name": "feedback_workflow_context_v0",
+          "filename": "20260703112438_feedback_workflow_context_v0.sql",
+          "sha256": "7ee1e7c9ec0827cd9a4cdeba5d4be08b6cee5819a922972b48954afdab53824e",
+          "normalized_sha256": "7ee1e7c9ec0827cd9a4cdeba5d4be08b6cee5819a922972b48954afdab53824e",
+          "bytes": 885,
+          "lines": 17
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260703120834",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260703120834",
+          "name": "learning_flywheel_v0",
+          "filename": "20260703120834_learning_flywheel_v0.sql",
+          "sha256": "723c4e0bd3fc8b8ce282f58a0baf3c74acb552e43903faa533767e4b5095d2ba",
+          "normalized_sha256": "723c4e0bd3fc8b8ce282f58a0baf3c74acb552e43903faa533767e4b5095d2ba",
+          "bytes": 1304,
+          "lines": 29
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260704032228",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260704032228",
+          "name": "catalog_anchor_filter_rpc_v1",
+          "filename": "20260704032228_catalog_anchor_filter_rpc_v1.sql",
+          "sha256": "cd7e48aef89339257fd9964897fab7b6547c4df823c31688a4604fd235d00744",
+          "normalized_sha256": "99325a230474ab8be3cdb05ad0c17421ff687a1de7bb12d591deac13b4b179d8",
+          "bytes": 8493,
+          "lines": 195
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260704032658",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260704032658",
+          "name": "catalog_years_compatible_strict_v1",
+          "filename": "20260704032658_catalog_years_compatible_strict_v1.sql",
+          "sha256": "c7472fff7039ab7ef0d95e5161728a6a040d0643dddb0c62d31c290c76c084e1",
+          "normalized_sha256": "0dcc052df4b74a991fcc2b458dde52b6ea460ff6828f6d739c2a71b4f03d7d50",
+          "bytes": 7837,
+          "lines": 179
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260704060000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260704060000",
+          "name": "catalog_anchor_filter_rpc_v1",
+          "filename": "20260704060000_catalog_anchor_filter_rpc_v1.sql",
+          "sha256": "efaea899e708f526653d853518a21f7e93cc14b4f1262a3dc9dc1043b370d139",
+          "normalized_sha256": "efaea899e708f526653d853518a21f7e93cc14b4f1262a3dc9dc1043b370d139",
+          "bytes": 9241,
+          "lines": 212
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260704070000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260704070000",
+          "name": "hybrid_unified_catalog_and_indexes_v1",
+          "filename": "20260704070000_hybrid_unified_catalog_and_indexes_v1.sql",
+          "sha256": "e8ce6d2b8e20f60a3bc5f84338ef4a3b06775bbcbc8d10911ed41ac80f679cc9",
+          "normalized_sha256": "e8ce6d2b8e20f60a3bc5f84338ef4a3b06775bbcbc8d10911ed41ac80f679cc9",
+          "bytes": 9199,
+          "lines": 242
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260705151414",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260705151414",
+          "name": "hybrid_unified_catalog_and_indexes_v1",
+          "filename": "20260705151414_hybrid_unified_catalog_and_indexes_v1.sql",
+          "sha256": "9f426079c163c54b854f7b67efcd33202415bc552c1b474e9452a00d9411fe6e",
+          "normalized_sha256": "6ef1b4de32cadc75e27dc6c75ab12fe53478b3eecb52ae82342a29526c7cff81",
+          "bytes": 8481,
+          "lines": 230
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706060115",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260706060115",
+          "name": "preingestion_evidence_bundle_v0",
+          "filename": "20260706060115_preingestion_evidence_bundle_v0.sql",
+          "sha256": "7b21ca7ff1ba488cc5ae66cc84acecfa82c4a47a396cf8b31c3a5c1ccef241f3",
+          "normalized_sha256": "7b21ca7ff1ba488cc5ae66cc84acecfa82c4a47a396cf8b31c3a5c1ccef241f3",
+          "bytes": 8191,
+          "lines": 223
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706062043",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260706062043",
+          "name": "preingestion_evidence_bundle_v0",
+          "filename": "20260706062043_preingestion_evidence_bundle_v0.sql",
+          "sha256": "263d81126d213ad28589f1bcc125251c3432a49b53dd31e4a756941087bb603e",
+          "normalized_sha256": "7b21ca7ff1ba488cc5ae66cc84acecfa82c4a47a396cf8b31c3a5c1ccef241f3",
+          "bytes": 8192,
+          "lines": 223
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706093000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260706093000",
+          "name": "v4_recognition_spine",
+          "filename": "20260706093000_v4_recognition_spine.sql",
+          "sha256": "2d24be2ac8ddd00156242dd602a0050e59bdb013a495775bf2cf8aabee9a1f57",
+          "normalized_sha256": "2d24be2ac8ddd00156242dd602a0050e59bdb013a495775bf2cf8aabee9a1f57",
+          "bytes": 5501,
+          "lines": 129
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706093959",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260706093959",
+          "name": "v4_recognition_spine",
+          "filename": "20260706093959_v4_recognition_spine.sql",
+          "sha256": "8392828b8bb2f03f07daf0291bd268136c41a1c02b367c1661ab73e3753b4b56",
+          "normalized_sha256": "2d24be2ac8ddd00156242dd602a0050e59bdb013a495775bf2cf8aabee9a1f57",
+          "bytes": 5502,
+          "lines": 129
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706094322",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260706094322",
+          "name": "v4_enable_rls",
+          "filename": "20260706094322_v4_enable_rls.sql",
+          "sha256": "1cfdcbba459b3e2c0737cfaf0cba73d009110ebe8392d9982a0e90336c12c164",
+          "normalized_sha256": "1cfdcbba459b3e2c0737cfaf0cba73d009110ebe8392d9982a0e90336c12c164",
+          "bytes": 629,
+          "lines": 8
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706094456",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260706094456",
+          "name": "v4_enable_rls",
+          "filename": "20260706094456_v4_enable_rls.sql",
+          "sha256": "2e7c2b4de79fb4fd23085ad69e30386c2926a72b6ae78087e7c5b16c0cb7d3be",
+          "normalized_sha256": "1cfdcbba459b3e2c0737cfaf0cba73d009110ebe8392d9982a0e90336c12c164",
+          "bytes": 630,
+          "lines": 8
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706101304",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260706101304",
+          "name": "v4_learning_event_training_envelope",
+          "filename": "20260706101304_v4_learning_event_training_envelope.sql",
+          "sha256": "68296d23ad060b89d88fcedd388fb2ca57ebf4ca1dee2e92bb247cfff65892e2",
+          "normalized_sha256": "68296d23ad060b89d88fcedd388fb2ca57ebf4ca1dee2e92bb247cfff65892e2",
+          "bytes": 445,
+          "lines": 8
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260706101304",
+          "name": "v4_learning_event_training_envelope",
+          "filename": "20260706101304_v4_learning_event_training_envelope.sql",
+          "sha256": "4518e9662d49c9fdf8ffe03b6d5b662992622d750b13acc319f9910f8ae25be2",
+          "normalized_sha256": "68296d23ad060b89d88fcedd388fb2ca57ebf4ca1dee2e92bb247cfff65892e2",
+          "bytes": 446,
+          "lines": 8
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 8,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 1,
+          "local_bytes": 445,
+          "remote_bytes": 446
+        }
+      ]
+    },
+    {
+      "version": "20260706123735",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260706123735",
+          "name": "catalog_search_blob_materialized_v1",
+          "filename": "20260706123735_catalog_search_blob_materialized_v1.sql",
+          "sha256": "cfc7024f0a181d42701e348e333277459bb1552319621fd4caf6c18850cba021",
+          "normalized_sha256": "5400b0f898bfd48c09f000ad0dfe7ba7818016160aa21015256945cadfa67a8c",
+          "bytes": 1431,
+          "lines": 36
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706123826",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260706123826",
+          "name": "hybrid_rpc_materialized_blob_v1",
+          "filename": "20260706123826_hybrid_rpc_materialized_blob_v1.sql",
+          "sha256": "88a54201acaa84013e4342e364e67d95fe2e6dd22678269c0449702b19c6caa8",
+          "normalized_sha256": "b9f8f7239948371f8a3928f77afcc41d4a72112f7dc735ff645712bf5d0d4bb2",
+          "bytes": 7737,
+          "lines": 210
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260706130000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260706130000",
+          "name": "catalog_search_blob_materialized_v1",
+          "filename": "20260706130000_catalog_search_blob_materialized_v1.sql",
+          "sha256": "39b92bc4f278ea78e5702a9763928f35dc134fd37186e887b145bb16af90f443",
+          "normalized_sha256": "39b92bc4f278ea78e5702a9763928f35dc134fd37186e887b145bb16af90f443",
+          "bytes": 8685,
+          "lines": 239
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260707122154",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260707122154",
+          "name": "v4_production_job_queue",
+          "filename": "20260707122154_v4_production_job_queue.sql",
+          "sha256": "4b7c7840dc200d52bb1af05b903d199f4fb681e86721ed7597dc733e30f1e9cb",
+          "normalized_sha256": "4b7c7840dc200d52bb1af05b903d199f4fb681e86721ed7597dc733e30f1e9cb",
+          "bytes": 3223,
+          "lines": 84
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260707130906",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260707130906",
+          "name": "v4_writer_export_batches",
+          "filename": "20260707130906_v4_writer_export_batches.sql",
+          "sha256": "15089e60a18e7047445f09c72c4d2c046b6efd9f38d856c47fedd5283877c2a9",
+          "normalized_sha256": "15089e60a18e7047445f09c72c4d2c046b6efd9f38d856c47fedd5283877c2a9",
+          "bytes": 1717,
+          "lines": 44
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260707133128",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260707133128",
+          "name": "v4_queue_interactive_background_lanes",
+          "filename": "20260707133128_v4_queue_interactive_background_lanes.sql",
+          "sha256": "176a8c83f555970ba852b0e0fed0af25718f9d1d884a2839204dff0d322f17b8",
+          "normalized_sha256": "176a8c83f555970ba852b0e0fed0af25718f9d1d884a2839204dff0d322f17b8",
+          "bytes": 4024,
+          "lines": 109
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260707154500",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260707154500",
+          "name": "create_v4_fast_scout_cache",
+          "filename": "20260707154500_create_v4_fast_scout_cache.sql",
+          "sha256": "8a7cdb55dafabff8f1731140ee6ee336585289fdda294da4af219a5f8b1b85dd",
+          "normalized_sha256": "8a7cdb55dafabff8f1731140ee6ee336585289fdda294da4af219a5f8b1b85dd",
+          "bytes": 1096,
+          "lines": 32
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260708043000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260708043000",
+          "name": "v4_queue_reclaim_expired_running_jobs",
+          "filename": "20260708043000_v4_queue_reclaim_expired_running_jobs.sql",
+          "sha256": "29211412ced2c9caaf46563aafb76899518e7ff6c5f6616945de74ff91fcf739",
+          "normalized_sha256": "29211412ced2c9caaf46563aafb76899518e7ff6c5f6616945de74ff91fcf739",
+          "bytes": 1862,
+          "lines": 50
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260708043008",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260708043008",
+          "name": "v4_queue_reclaim_expired_running_jobs",
+          "filename": "20260708043008_v4_queue_reclaim_expired_running_jobs.sql",
+          "sha256": "78c57293b8ca5e1e2a7d4ca93750c7464ae2255c98244188c8b3dba34c4d7a3c",
+          "normalized_sha256": "29211412ced2c9caaf46563aafb76899518e7ff6c5f6616945de74ff91fcf739",
+          "bytes": 1863,
+          "lines": 50
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260708084634",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260708084634",
+          "name": "sem_definition_canonical_v1",
+          "filename": "20260708084634_sem_definition_canonical_v1.sql",
+          "sha256": "934486648534d60154d16d7aef76980af44c74a2b0f6426a3e91b8972cd84bad",
+          "normalized_sha256": "934486648534d60154d16d7aef76980af44c74a2b0f6426a3e91b8972cd84bad",
+          "bytes": 3899,
+          "lines": 81
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260708092501",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260708092501",
+          "name": "sem_definition_canonical_v1",
+          "filename": "20260708092501_sem_definition_canonical_v1.sql",
+          "sha256": "37f7e89288bf4a3e95c029be15f05a7457e148d1874cd108205629d64b56476e",
+          "normalized_sha256": "934486648534d60154d16d7aef76980af44c74a2b0f6426a3e91b8972cd84bad",
+          "bytes": 3900,
+          "lines": 81
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260708100324",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260708100324",
+          "name": "sem_definition_canonical_v25",
+          "filename": "20260708100324_sem_definition_canonical_v25.sql",
+          "sha256": "725034e8acc7a1e2dd31c0c5d6ba4e8f0bd4c5144c1e42177769c3309c8dfde6",
+          "normalized_sha256": "725034e8acc7a1e2dd31c0c5d6ba4e8f0bd4c5144c1e42177769c3309c8dfde6",
+          "bytes": 4624,
+          "lines": 76
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260708100324",
+          "name": "sem_definition_canonical_v25",
+          "filename": "20260708100324_sem_definition_canonical_v25.sql",
+          "sha256": "bca1c417bdd2ed0905376680996b9ae9c0564f5547a8974dbb16666cb5e28892",
+          "normalized_sha256": "725034e8acc7a1e2dd31c0c5d6ba4e8f0bd4c5144c1e42177769c3309c8dfde6",
+          "bytes": 4625,
+          "lines": 76
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 76,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 1,
+          "local_bytes": 4624,
+          "remote_bytes": 4625
+        }
+      ]
+    },
+    {
+      "version": "20260709123119",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260709123119",
+          "name": "cert_registry_v1",
+          "filename": "20260709123119_cert_registry_v1.sql",
+          "sha256": "775dd1ea89b0af814d4db1507fceb605efb08914a5c3df6c9279f7697a67ff2f",
+          "normalized_sha256": "69bd64a32a548b1599f252b4264c929113e0a76a05f057c6d7883bcab1ba6027",
+          "bytes": 1571,
+          "lines": 42
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260709170000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260709170000",
+          "name": "cert_registry_v1",
+          "filename": "20260709170000_cert_registry_v1.sql",
+          "sha256": "8b1da2a40f918b2b71e0d353baf5a7a43431eeb6fadd1a2dcc6d89f121a4558d",
+          "normalized_sha256": "8b1da2a40f918b2b71e0d353baf5a7a43431eeb6fadd1a2dcc6d89f121a4558d",
+          "bytes": 2334,
+          "lines": 53
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260710042537",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260710042537",
+          "name": "feedback_workflow_context_v0",
+          "filename": "20260710042537_feedback_workflow_context_v0.sql",
+          "sha256": "cfd85372569169204ffef039134fa9dbf5491bd980c057775e71d6b14def2b9c",
+          "normalized_sha256": "015aede22e67e88d2a3fc9502bbacab802d1cd8d9f7f97bf5fd54b242f478d54",
+          "bytes": 918,
+          "lines": 19
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260710055802",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260710055802",
+          "name": "v4_execution_control_plane_v1",
+          "filename": "20260710055802_v4_execution_control_plane_v1.sql",
+          "sha256": "acde35a71996c8cb244635558d9511e4f84016bdf96aa335ad59dde2083696ee",
+          "normalized_sha256": "acde35a71996c8cb244635558d9511e4f84016bdf96aa335ad59dde2083696ee",
+          "bytes": 8850,
+          "lines": 239
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260711042449",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260711042449",
+          "name": "add_v4_node_observability",
+          "filename": "20260711042449_add_v4_node_observability.sql",
+          "sha256": "02c8ff3d57781ec3e092db29e35eec9b200eaf602fa22003137e0a95f71eff23",
+          "normalized_sha256": "02c8ff3d57781ec3e092db29e35eec9b200eaf602fa22003137e0a95f71eff23",
+          "bytes": 642,
+          "lines": 9
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260711042449",
+          "name": "add_v4_node_observability",
+          "filename": "20260711042449_add_v4_node_observability.sql",
+          "sha256": "73c006a503ab0a629bd3c5da3723eaa01801247ec29363e19589042fc52ca8d9",
+          "normalized_sha256": "02c8ff3d57781ec3e092db29e35eec9b200eaf602fa22003137e0a95f71eff23",
+          "bytes": 643,
+          "lines": 9
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 9,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 1,
+          "local_bytes": 642,
+          "remote_bytes": 643
+        }
+      ]
+    },
+    {
+      "version": "20260711194540",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260711194540",
+          "name": "harden_public_function_security_and_queue_heartbeat",
+          "filename": "20260711194540_harden_public_function_security_and_queue_heartbeat.sql",
+          "sha256": "fdd3028a73c233e7705d5853dd007b5225cb85dc4c899341c9ddf2ffea402aaa",
+          "normalized_sha256": "fdd3028a73c233e7705d5853dd007b5225cb85dc4c899341c9ddf2ffea402aaa",
+          "bytes": 2416,
+          "lines": 70
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260711195801",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260711195801",
+          "name": "harden_public_function_security_and_queue_heartbeat",
+          "filename": "20260711195801_harden_public_function_security_and_queue_heartbeat.sql",
+          "sha256": "2ba34fb74156b78ba63438fd58641b9efa1462c02bdbcec66917a67ac51ae7dd",
+          "normalized_sha256": "be48dc1d6deed7671d3e13d0a4b8f3c98c34572b87f0c01b6cd7aa2a09d8745c",
+          "bytes": 2033,
+          "lines": 65
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260711200533",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260711200533",
+          "name": "atomic_v4_writer_feedback_transaction",
+          "filename": "20260711200533_atomic_v4_writer_feedback_transaction.sql",
+          "sha256": "074f2b050ab2d3a692607681a72196af3c29829e0286184f13f963b10f7ab4ca",
+          "normalized_sha256": "074f2b050ab2d3a692607681a72196af3c29829e0286184f13f963b10f7ab4ca",
+          "bytes": 6295,
+          "lines": 159
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712033532",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260712033532",
+          "name": "atomic_v4_writer_feedback_transaction",
+          "filename": "20260712033532_atomic_v4_writer_feedback_transaction.sql",
+          "sha256": "7a085363934be96fc265e0b2463e15dc0069a48f6eb9023cc08da816cb871c98",
+          "normalized_sha256": "80526f4a78e0bb8c231f493f1897a2e59322788057ce19cf7dfdd5219505e4e5",
+          "bytes": 6204,
+          "lines": 136
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712040453",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260712040453",
+          "name": "supersede_stale_writer_learning_events",
+          "filename": "20260712040453_supersede_stale_writer_learning_events.sql",
+          "sha256": "d568fbe158b4b10e0024f5be845907b71fac2443b785cfb1918b67431c901357",
+          "normalized_sha256": "d568fbe158b4b10e0024f5be845907b71fac2443b785cfb1918b67431c901357",
+          "bytes": 1094,
+          "lines": 31
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712040615",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260712040615",
+          "name": "supersede_stale_writer_learning_events",
+          "filename": "20260712040615_supersede_stale_writer_learning_events.sql",
+          "sha256": "2bcd7e403c1e5804c9b37fe5f9a07d513d3624d9ea47a4804aa02d2c50e4a5af",
+          "normalized_sha256": "fae2c21ddad5f56d830cc9b394388fa6515e19ac898ee506d0fc5bc1f157a0ca",
+          "bytes": 1092,
+          "lines": 28
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712063833",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260712063833",
+          "name": "cancel_consumerless_preingestion_jobs",
+          "filename": "20260712063833_cancel_consumerless_preingestion_jobs.sql",
+          "sha256": "b786ebd74bdb388fe35a4d9ffd87d06d6976d1093c615abb6ed4a0d40b7e4f77",
+          "normalized_sha256": "b786ebd74bdb388fe35a4d9ffd87d06d6976d1093c615abb6ed4a0d40b7e4f77",
+          "bytes": 900,
+          "lines": 28
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260712063833",
+          "name": "cancel_consumerless_preingestion_jobs",
+          "filename": "20260712063833_cancel_consumerless_preingestion_jobs.sql",
+          "sha256": "4c57b8ba5e95e1206062735f99beb47cb06f25e7ae6826174ef4e1e0aa531696",
+          "normalized_sha256": "b786ebd74bdb388fe35a4d9ffd87d06d6976d1093c615abb6ed4a0d40b7e4f77",
+          "bytes": 901,
+          "lines": 28
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 28,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 1,
+          "local_bytes": 900,
+          "remote_bytes": 901
+        }
+      ]
+    },
+    {
+      "version": "20260712072310",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260712072310",
+          "name": "atomic_v4_noncritical_persistence",
+          "filename": "20260712072310_atomic_v4_noncritical_persistence.sql",
+          "sha256": "115fdbf53c05c1edba1773243283e682d678f22899668f0d043d3a8b977d34fa",
+          "normalized_sha256": "115fdbf53c05c1edba1773243283e682d678f22899668f0d043d3a8b977d34fa",
+          "bytes": 7841,
+          "lines": 212
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712073353",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260712073353",
+          "name": "atomic_v4_noncritical_persistence",
+          "filename": "20260712073353_atomic_v4_noncritical_persistence.sql",
+          "sha256": "7efd906d42abec8ceee703b46644e383370389a6d389f961c7477617e89f748e",
+          "normalized_sha256": "e4a052cf4f5968cb8aeda6f1853ce2c3fec1f78b73815944612c3fca59ab2ced",
+          "bytes": 7338,
+          "lines": 148
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712073552",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260712073552",
+          "name": "atomic_v4_noncritical_persistence",
+          "filename": "20260712073552_atomic_v4_noncritical_persistence.sql",
+          "sha256": "cedf5d40a0d8b89c5cbe8b391314a67dfc0b3d81e566c9ff369bb55b0dda4b90",
+          "normalized_sha256": "115fdbf53c05c1edba1773243283e682d678f22899668f0d043d3a8b977d34fa",
+          "bytes": 7843,
+          "lines": 213
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712153000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260712153000",
+          "name": "atomic_v4_writer_ready_capacity_release",
+          "filename": "20260712153000_atomic_v4_writer_ready_capacity_release.sql",
+          "sha256": "2860c4991131d93f2613be3343e0b42335bcc5e64d3104f19495b33bcd4a54ce",
+          "normalized_sha256": "2860c4991131d93f2613be3343e0b42335bcc5e64d3104f19495b33bcd4a54ce",
+          "bytes": 3930,
+          "lines": 73
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712170000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260712170000",
+          "name": "v4_balanced_provider_key_slots",
+          "filename": "20260712170000_v4_balanced_provider_key_slots.sql",
+          "sha256": "b945ef8c7a17b7df4f6485d04bcefb51bd0baf63ecec516ed9eb9d01d2095181",
+          "normalized_sha256": "b945ef8c7a17b7df4f6485d04bcefb51bd0baf63ecec516ed9eb9d01d2095181",
+          "bytes": 6169,
+          "lines": 167
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260712183000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260712183000",
+          "name": "refresh_v4_queue_rpc_schema",
+          "filename": "20260712183000_refresh_v4_queue_rpc_schema.sql",
+          "sha256": "6c0848c068f5e1ab882a3165c729a8c467488f516d789be621663193efb2a744",
+          "normalized_sha256": "6c0848c068f5e1ab882a3165c729a8c467488f516d789be621663193efb2a744",
+          "bytes": 239,
+          "lines": 4
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260713111833",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260713111833",
+          "name": "optimize_catalog_candidates_anchor_index_v2",
+          "filename": "20260713111833_optimize_catalog_candidates_anchor_index_v2.sql",
+          "sha256": "9e03a162a2eca4c8d9290b81519b1aea865626f7b81d775cca4a7aa578320396",
+          "normalized_sha256": "9e03a162a2eca4c8d9290b81519b1aea865626f7b81d775cca4a7aa578320396",
+          "bytes": 9276,
+          "lines": 231
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260713111833",
+          "name": "optimize_catalog_candidates_anchor_index_v2",
+          "filename": "20260713111833_optimize_catalog_candidates_anchor_index_v2.sql",
+          "sha256": "3304b37970abc1403f7fa3350f62c5e69a639bda3e99e64b1b7089c78367aafd",
+          "normalized_sha256": "9e03a162a2eca4c8d9290b81519b1aea865626f7b81d775cca4a7aa578320396",
+          "bytes": 9278,
+          "lines": 232
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 232,
+          "local_changed_line_count": 0,
+          "remote_changed_line_count": 1,
+          "local_bytes": 9276,
+          "remote_bytes": 9278
+        }
+      ]
+    },
+    {
+      "version": "20260713124858",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260713124858",
+          "name": "create_v4_fast_scout_cache",
+          "filename": "20260713124858_create_v4_fast_scout_cache.sql",
+          "sha256": "fce809938942c661dc8b6dc35ab170c2797bf91103054074d30fdbab6011d1f0",
+          "normalized_sha256": "8a7cdb55dafabff8f1731140ee6ee336585289fdda294da4af219a5f8b1b85dd",
+          "bytes": 1097,
+          "lines": 32
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260713130000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260713130000",
+          "name": "v4_stage_capacity_control",
+          "filename": "20260713130000_v4_stage_capacity_control.sql",
+          "sha256": "86247b6bec5c16c13f70c771caa37e988816eb36c65ea53aa35c1fbda8f7628f",
+          "normalized_sha256": "86247b6bec5c16c13f70c771caa37e988816eb36c65ea53aa35c1fbda8f7628f",
+          "bytes": 3910,
+          "lines": 107
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260713224500",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260713224500",
+          "name": "v4_tenant_fair_provider_queue",
+          "filename": "20260713224500_v4_tenant_fair_provider_queue.sql",
+          "sha256": "0d0f812db8aa1f24e3a5565d0e1a2b2905a749b739d8a1935d84c67d6d638ca6",
+          "normalized_sha256": "0d0f812db8aa1f24e3a5565d0e1a2b2905a749b739d8a1935d84c67d6d638ca6",
+          "bytes": 7935,
+          "lines": 207
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260714170910",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260714170910",
+          "name": "promote_internal_corrected_title_catalog",
+          "filename": "20260714170910_promote_internal_corrected_title_catalog.sql",
+          "sha256": "f908ba4ee6d1fb34e4efa9d99d68cc45ad2b102b306c1915379e2b6fb1435a07",
+          "normalized_sha256": "f908ba4ee6d1fb34e4efa9d99d68cc45ad2b102b306c1915379e2b6fb1435a07",
+          "bytes": 1008,
+          "lines": 23
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260714170910",
+          "name": "promote_internal_corrected_title_catalog",
+          "filename": "20260714170910_promote_internal_corrected_title_catalog.sql",
+          "sha256": "3ded3a2e37942fbc94bf70637bb6f528d8b4bc3ab7198c73f1c1d96800a373dc",
+          "normalized_sha256": "f908ba4ee6d1fb34e4efa9d99d68cc45ad2b102b306c1915379e2b6fb1435a07",
+          "bytes": 1009,
+          "lines": 23
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 23,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 1,
+          "local_bytes": 1008,
+          "remote_bytes": 1009
+        }
+      ]
+    },
+    {
+      "version": "20260714174210",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260714174210",
+          "name": "expose_catalog_source_feedback_for_self_exclusion",
+          "filename": "20260714174210_expose_catalog_source_feedback_for_self_exclusion.sql",
+          "sha256": "4ab7bae5d0e11e78385b9c51669a215f9fc1b1561fa49f9f64a65e5131576576",
+          "normalized_sha256": "4ab7bae5d0e11e78385b9c51669a215f9fc1b1561fa49f9f64a65e5131576576",
+          "bytes": 2156,
+          "lines": 64
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260715064500",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260715064500",
+          "name": "ensure_v4_learning_events_dataset_disposition_for_queue",
+          "filename": "20260715064500_ensure_v4_learning_events_dataset_disposition_for_queue.sql",
+          "sha256": "bc667db4f0ad684844017dd2b2bf3dd6683aada665a84d4454a45f2567284471",
+          "normalized_sha256": "bc667db4f0ad684844017dd2b2bf3dd6683aada665a84d4454a45f2567284471",
+          "bytes": 2826,
+          "lines": 78
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260715065752",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260715065752",
+          "name": "track_d_feedback_capture_v1",
+          "filename": "20260715065752_track_d_feedback_capture_v1.sql",
+          "sha256": "14b2007c69630213bcc26d13a06dec279f897b353bd5d4599f288f0ac108a51c",
+          "normalized_sha256": "14b2007c69630213bcc26d13a06dec279f897b353bd5d4599f288f0ac108a51c",
+          "bytes": 34589,
+          "lines": 799
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260715065803",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260715065803",
+          "name": "track_c_tenant_foundation_expand",
+          "filename": "20260715065803_track_c_tenant_foundation_expand.sql",
+          "sha256": "44982319069ee3cb2ed3651d21a276aa5e815686c57b290cb0672d644322376a",
+          "normalized_sha256": "44982319069ee3cb2ed3651d21a276aa5e815686c57b290cb0672d644322376a",
+          "bytes": 101500,
+          "lines": 2709
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260715065808",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260715065808",
+          "name": "track_c_retry_state_machine_hardening",
+          "filename": "20260715065808_track_c_retry_state_machine_hardening.sql",
+          "sha256": "73bcd17142ddda4be4308716c75c63cc47907021a3e5953e54c5c70442a54b87",
+          "normalized_sha256": "73bcd17142ddda4be4308716c75c63cc47907021a3e5953e54c5c70442a54b87",
+          "bytes": 26448,
+          "lines": 779
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260715065812",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260715065812",
+          "name": "track_c_tenant_settings",
+          "filename": "20260715065812_track_c_tenant_settings.sql",
+          "sha256": "4f39d6b890b94a20e9b7a62ce2eaac80aa323b4442bc4b1676f4033a60f43ff8",
+          "normalized_sha256": "4f39d6b890b94a20e9b7a62ce2eaac80aa323b4442bc4b1676f4033a60f43ff8",
+          "bytes": 528,
+          "lines": 22
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260715065820",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260715065820",
+          "name": "track_c_preingestion_ocr_durable_leases",
+          "filename": "20260715065820_track_c_preingestion_ocr_durable_leases.sql",
+          "sha256": "6401b421a763cf7da16ce43586fec7fd883666cdb14f3655312f51ad78f54bc0",
+          "normalized_sha256": "6401b421a763cf7da16ce43586fec7fd883666cdb14f3655312f51ad78f54bc0",
+          "bytes": 3576,
+          "lines": 101
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260715065830",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260715065830",
+          "name": "track_d_data_flywheel_convergence",
+          "filename": "20260715065830_track_d_data_flywheel_convergence.sql",
+          "sha256": "5f796ae92ff013c2bbe4f2f20792d55321d2ac45ae869d25b96a5e6fcde2c420",
+          "normalized_sha256": "5f796ae92ff013c2bbe4f2f20792d55321d2ac45ae869d25b96a5e6fcde2c420",
+          "bytes": 62592,
+          "lines": 1549
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260716172824",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260716172824",
+          "name": "auth_otp_invitations_v1",
+          "filename": "20260716172824_auth_otp_invitations_v1.sql",
+          "sha256": "1ef4fac8778b65868a9a91f4b2851ba021627c1a55e89551884df08ceb4557d9",
+          "normalized_sha256": "1962af548d65aa85139dd9054918fe96c66b7abc2e3c4ec51f412b2d4c7bab92",
+          "bytes": 4869,
+          "lines": 118
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717100000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717100000",
+          "name": "fix_v4_queue_atomic_rpc_signature",
+          "filename": "20260717100000_fix_v4_queue_atomic_rpc_signature.sql",
+          "sha256": "96470811630b6a5e92f1174d389e28efa7fd400666d45bb792ffa17e38cae4e0",
+          "normalized_sha256": "96470811630b6a5e92f1174d389e28efa7fd400666d45bb792ffa17e38cae4e0",
+          "bytes": 22038,
+          "lines": 495
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717120526",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717120526",
+          "name": "track_c_legacy_asset_parent_convergence_v1",
+          "filename": "20260717120526_track_c_legacy_asset_parent_convergence_v1.sql",
+          "sha256": "8e55199e6f6c0f104e76ec5e2d007a71cd2c3be9ddcb4ee3932a7ea95ccd403c",
+          "normalized_sha256": "a95e722f64979b5bbcbcbb3d8327fc9e259bbbf9992fd5282ed53a7db466c741",
+          "bytes": 5198,
+          "lines": 170
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717120604",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717120604",
+          "name": "listing_image_verified_crop_provenance_v1",
+          "filename": "20260717120604_listing_image_verified_crop_provenance_v1.sql",
+          "sha256": "66f5d646de4729443d5fc61ec460f501b881c5f1e0de2228099e4699ece6f9cb",
+          "normalized_sha256": "be86fb0c0ef09a8bf6abb6afabdca659782ec36b37d94ee34a083bac19c5bff1",
+          "bytes": 18306,
+          "lines": 416
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717120641",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717120641",
+          "name": "atomic_enqueue_verified_image_set_v2",
+          "filename": "20260717120641_atomic_enqueue_verified_image_set_v2.sql",
+          "sha256": "dad3490a323348f6fd5a6269941a4d46121099bb25825fcca817ae6ac1f86fa1",
+          "normalized_sha256": "fa3a7f1e1dc944ffb39c76887498d7d01c6413b75112a4815d39aff0b10246d6",
+          "bytes": 11748,
+          "lines": 272
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717120716",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717120716",
+          "name": "track_c_runtime_schema_convergence_v1",
+          "filename": "20260717120716_track_c_runtime_schema_convergence_v1.sql",
+          "sha256": "eb69aa7ff09cff451865efbd52215f60a5da6e9450f166fdc9e127cdb9c7bbff",
+          "normalized_sha256": "90a9921a38cc65be8a3a4e7b395180869ab6d5796207214be64660ccfc723bab",
+          "bytes": 17639,
+          "lines": 418
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717130819",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717130819",
+          "name": "track_c_schema_attestation_and_tenant_convergence",
+          "filename": "20260717130819_track_c_schema_attestation_and_tenant_convergence.sql",
+          "sha256": "87ce57d558dc1f4b65e54fe02c0141acfbdfadda6efe3786968e60e0ada87c29",
+          "normalized_sha256": "87ce57d558dc1f4b65e54fe02c0141acfbdfadda6efe3786968e60e0ada87c29",
+          "bytes": 24232,
+          "lines": 557
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717132042",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717132042",
+          "name": "track_c_schema_attestation_and_tenant_convergence",
+          "filename": "20260717132042_track_c_schema_attestation_and_tenant_convergence.sql",
+          "sha256": "b7faee300ae52967f41578297902f50ad74ecd1e83941eed3d3161050d588d24",
+          "normalized_sha256": "87ce57d558dc1f4b65e54fe02c0141acfbdfadda6efe3786968e60e0ada87c29",
+          "bytes": 24234,
+          "lines": 558
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717132242",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717132242",
+          "name": "fix_track_c_catalog_trigger_when_marker",
+          "filename": "20260717132242_fix_track_c_catalog_trigger_when_marker.sql",
+          "sha256": "7bb63643f40318b944933a8ea551d693aa298949b3398ed3f8d0c46eb27cd4cd",
+          "normalized_sha256": "7bb63643f40318b944933a8ea551d693aa298949b3398ed3f8d0c46eb27cd4cd",
+          "bytes": 16934,
+          "lines": 360
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717132617",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717132617",
+          "name": "fix_track_c_catalog_trigger_when_marker",
+          "filename": "20260717132617_fix_track_c_catalog_trigger_when_marker.sql",
+          "sha256": "e5741fcff22fc47fb9b93d1c7fa9f62ddac25736bf13c6fa992e42703d365741",
+          "normalized_sha256": "7bb63643f40318b944933a8ea551d693aa298949b3398ed3f8d0c46eb27cd4cd",
+          "bytes": 16936,
+          "lines": 361
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717133210",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717133210",
+          "name": "track_c_retry_state_machine_hardening",
+          "filename": "20260717133210_track_c_retry_state_machine_hardening.sql",
+          "sha256": "72008bfde650646e9229227aba0d3e029a0ca109f5be4f201a650ddda85b4315",
+          "normalized_sha256": "73bcd17142ddda4be4308716c75c63cc47907021a3e5953e54c5c70442a54b87",
+          "bytes": 26450,
+          "lines": 780
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717133218",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717133218",
+          "name": "track_c_preingestion_ocr_durable_leases",
+          "filename": "20260717133218_track_c_preingestion_ocr_durable_leases.sql",
+          "sha256": "cca8f27f2f3d04b2db45fc9be52cf4a9b3f9e93af30d4cc58f2daa9479055b23",
+          "normalized_sha256": "6401b421a763cf7da16ce43586fec7fd883666cdb14f3655312f51ad78f54bc0",
+          "bytes": 3578,
+          "lines": 102
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717133700",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717133700",
+          "name": "track_c_fact_and_storage_boundary_convergence",
+          "filename": "20260717133700_track_c_fact_and_storage_boundary_convergence.sql",
+          "sha256": "b8cf8302d83fbfad78c4c56340b6f7d21675726b719c2ed630649e94a8dd86e2",
+          "normalized_sha256": "b8cf8302d83fbfad78c4c56340b6f7d21675726b719c2ed630649e94a8dd86e2",
+          "bytes": 5930,
+          "lines": 159
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717140201",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260717140201",
+          "name": "track_c_fact_and_storage_boundary_convergence",
+          "filename": "20260717140201_track_c_fact_and_storage_boundary_convergence.sql",
+          "sha256": "f5d4757b3ac6b6ffbeb41fae9b1bb99fbf867b52a0382bd541aedd210464cbac",
+          "normalized_sha256": "b8cf8302d83fbfad78c4c56340b6f7d21675726b719c2ed630649e94a8dd86e2",
+          "bytes": 5932,
+          "lines": 160
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717143000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717143000",
+          "name": "create_tenant_invitations",
+          "filename": "20260717143000_create_tenant_invitations.sql",
+          "sha256": "ac7fa9ef5240648fdb28394f69d2ca7e910c846b452d7c547a7410c360d042a1",
+          "normalized_sha256": "ac7fa9ef5240648fdb28394f69d2ca7e910c846b452d7c547a7410c360d042a1",
+          "bytes": 1531,
+          "lines": 38
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717190000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717190000",
+          "name": "track_c_legacy_asset_parent_convergence_v1",
+          "filename": "20260717190000_track_c_legacy_asset_parent_convergence_v1.sql",
+          "sha256": "a95e722f64979b5bbcbcbb3d8327fc9e259bbbf9992fd5282ed53a7db466c741",
+          "normalized_sha256": "a95e722f64979b5bbcbcbb3d8327fc9e259bbbf9992fd5282ed53a7db466c741",
+          "bytes": 5196,
+          "lines": 169
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717191000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717191000",
+          "name": "listing_image_verified_crop_provenance_v1",
+          "filename": "20260717191000_listing_image_verified_crop_provenance_v1.sql",
+          "sha256": "be86fb0c0ef09a8bf6abb6afabdca659782ec36b37d94ee34a083bac19c5bff1",
+          "normalized_sha256": "be86fb0c0ef09a8bf6abb6afabdca659782ec36b37d94ee34a083bac19c5bff1",
+          "bytes": 18304,
+          "lines": 415
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717192000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717192000",
+          "name": "atomic_enqueue_verified_image_set_v2",
+          "filename": "20260717192000_atomic_enqueue_verified_image_set_v2.sql",
+          "sha256": "fa3a7f1e1dc944ffb39c76887498d7d01c6413b75112a4815d39aff0b10246d6",
+          "normalized_sha256": "fa3a7f1e1dc944ffb39c76887498d7d01c6413b75112a4815d39aff0b10246d6",
+          "bytes": 11746,
+          "lines": 271
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260717193000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260717193000",
+          "name": "track_c_runtime_schema_convergence_v1",
+          "filename": "20260717193000_track_c_runtime_schema_convergence_v1.sql",
+          "sha256": "90a9921a38cc65be8a3a4e7b395180869ab6d5796207214be64660ccfc723bab",
+          "normalized_sha256": "90a9921a38cc65be8a3a4e7b395180869ab6d5796207214be64660ccfc723bab",
+          "bytes": 17637,
+          "lines": 417
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260718005049",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260718005049",
+          "name": "v4_queue_hot_slot_and_manual_recovery",
+          "filename": "20260718005049_v4_queue_hot_slot_and_manual_recovery.sql",
+          "sha256": "78e0c868e3e96fa5859c1bf6d2e6a2ff2fc05cc9d727a2b4e6144235e48536ce",
+          "normalized_sha256": "78e0c868e3e96fa5859c1bf6d2e6a2ff2fc05cc9d727a2b4e6144235e48536ce",
+          "bytes": 16488,
+          "lines": 447
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260718005049",
+          "name": "v4_queue_hot_slot_and_manual_recovery",
+          "filename": "20260718005049_v4_queue_hot_slot_and_manual_recovery.sql",
+          "sha256": "89ee48dcb05ac983615a4bd9bb8c80482059c329a6a1cafab94c5817fe0b8562",
+          "normalized_sha256": "78e0c868e3e96fa5859c1bf6d2e6a2ff2fc05cc9d727a2b4e6144235e48536ce",
+          "bytes": 16490,
+          "lines": 448
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 448,
+          "local_changed_line_count": 0,
+          "remote_changed_line_count": 1,
+          "local_bytes": 16488,
+          "remote_bytes": 16490
+        }
+      ]
+    },
+    {
+      "version": "20260719205025",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260719205025",
+          "name": "v4_queue_deployment_affinity",
+          "filename": "20260719205025_v4_queue_deployment_affinity.sql",
+          "sha256": "0fc58180ee866ce763b9c4003ce8df2d2823953df9f5d7e27c01cfd12661300e",
+          "normalized_sha256": "0fc58180ee866ce763b9c4003ce8df2d2823953df9f5d7e27c01cfd12661300e",
+          "bytes": 5309,
+          "lines": 104
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260720020555",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260720020555",
+          "name": "v4_queue_deployment_affinity",
+          "filename": "20260720020555_v4_queue_deployment_affinity.sql",
+          "sha256": "47c838e94b4b89fcb6170ec19ef9f001e7b26b1bd647e925580da994f05d9142",
+          "normalized_sha256": "0fc58180ee866ce763b9c4003ce8df2d2823953df9f5d7e27c01cfd12661300e",
+          "bytes": 5310,
+          "lines": 104
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260722224202",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260722224202",
+          "name": "postgrest_idle_transaction_guard",
+          "filename": "20260722224202_postgrest_idle_transaction_guard.sql",
+          "sha256": "2a7a2c5bcf410dc9096b493916223b0989cbbe87e3a3bff1ccc31ef46cb2e2a3",
+          "normalized_sha256": "18cb35903020aef7f0d7e6d85dfe70a5183eb9bd0a50e08525987d5e3f5afab1",
+          "bytes": 75,
+          "lines": 1
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260722230129",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260722230129",
+          "name": "postgrest_schema_cache_timeout_guard",
+          "filename": "20260722230129_postgrest_schema_cache_timeout_guard.sql",
+          "sha256": "d3dbf4da0df6b0f90fef991722e81d0a04e9e647a2ff35d0436ea54996db1832",
+          "normalized_sha256": "7da1b84190e191935676c4fbadf78ca899dc8b0d16b580402dbcb53df27a1265",
+          "bytes": 88,
+          "lines": 2
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260722230544",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260722230544",
+          "name": "postgrest_schema_cache_timeout_headroom",
+          "filename": "20260722230544_postgrest_schema_cache_timeout_headroom.sql",
+          "sha256": "4ca851878bfa3160cb4ea821b9928287227119a12e8e1ff1707e65cc601c3075",
+          "normalized_sha256": "4e071468ec470e3ab2df1d908e7c0ce823e9a0fa3bb8ae795c1bc4df8b0f7b6e",
+          "bytes": 89,
+          "lines": 2
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260722230724",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260722230724",
+          "name": "postgrest_disable_timezone_preference",
+          "filename": "20260722230724_postgrest_disable_timezone_preference.sql",
+          "sha256": "dcc5b24df55e4008820b791d0a92e7aca3e13e1d952de041f95d4d5e7fd8e7d8",
+          "normalized_sha256": "9f8e797e65ba18d9bbefd4d6ed4778dfcf941c14164a005b8e0d474c9f8093a7",
+          "bytes": 129,
+          "lines": 3
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260722233618",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260722233618",
+          "name": "enable_pg_prewarm",
+          "filename": "20260722233618_enable_pg_prewarm.sql",
+          "sha256": "f8aaa4f4f5fff7b2ee05b865250a973c35da2e42409784115caf4558412465a6",
+          "normalized_sha256": "8166c9ce952b4077f523b67ed9ec9705ffc637427497b6a66f7cd1b59e8f36cc",
+          "bytes": 67,
+          "lines": 1
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723004612",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723004612",
+          "name": "atomic_listing_asset_idempotency",
+          "filename": "20260723004612_atomic_listing_asset_idempotency.sql",
+          "sha256": "33079df88dd9e09ae327332ed1b706475bdb43e289fba6fb0868fb9768a6c63b",
+          "normalized_sha256": "9879c9c0351440732053d411e00e7223ab02a47b56ae3980489104f76bce0540",
+          "bytes": 2629,
+          "lines": 104
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723013540",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723013540",
+          "name": "v4_queue_affinity_claim_indexes",
+          "filename": "20260723013540_v4_queue_affinity_claim_indexes.sql",
+          "sha256": "bdb660f8d63d8ba0bea4ee518a3a69a61132f9373b84138cc1e11878dc8ee567",
+          "normalized_sha256": "b42f20b75360c745231ce90249b7b77c2c660fad12f2c67b51f476abd2ec2465",
+          "bytes": 1347,
+          "lines": 41
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723020121",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723020121",
+          "name": "prune_asset_scoped_capacity_leases",
+          "filename": "20260723020121_prune_asset_scoped_capacity_leases.sql",
+          "sha256": "1464357ccc48d2bd873440903a655a4643614ec6527e867d595cf91a3fc79554",
+          "normalized_sha256": "e82b69255e148e66c649d6db7f5240401b585ccb520aa761e43366e21989120c",
+          "bytes": 1994,
+          "lines": 55
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723020437",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723020437",
+          "name": "prune_stale_asset_capacity_leases",
+          "filename": "20260723020437_prune_stale_asset_capacity_leases.sql",
+          "sha256": "be16c21f94fb98ea56e70ef227f14d7c1bfdee3d2ca697973f257384d1149a68",
+          "normalized_sha256": "e4101d69202e1087f3a04d820b829a5a8ca1c6791ca026d2aae453327d4a5b7d",
+          "bytes": 522,
+          "lines": 8
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723063133",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723063133",
+          "name": "preingestion_job_lookup_long_tail_index",
+          "filename": "20260723063133_preingestion_job_lookup_long_tail_index.sql",
+          "sha256": "d93bf26d5529e134feac112fba52dc379780a6c3fa5122cae42dc0110d94fbed",
+          "normalized_sha256": "f99c8a47ddee5ea9a01ff15a846726ed2ac98793b83305af7e2b6abfdf23c76a",
+          "bytes": 395,
+          "lines": 12
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723193552",
+      "status": "content_mismatch",
+      "local": [
+        {
+          "version": "20260723193552",
+          "name": "quarantine_marketplace_catalog_provenance",
+          "filename": "20260723193552_quarantine_marketplace_catalog_provenance.sql",
+          "sha256": "b07cfa98a92a9e097eb290583c43a7e25e04ad0b6dea17b5790adc3d7c1dbad8",
+          "normalized_sha256": "b07cfa98a92a9e097eb290583c43a7e25e04ad0b6dea17b5790adc3d7c1dbad8",
+          "bytes": 5166,
+          "lines": 127
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260723193552",
+          "name": "quarantine_marketplace_catalog_provenance",
+          "filename": "20260723193552_quarantine_marketplace_catalog_provenance.sql",
+          "sha256": "83fcfc1fd46bacbc45191c9db442deab37a4e8692225d7ab961f8fc101fbdcc0",
+          "normalized_sha256": "0be1aaa78212da821a0738a64a3f4ecd9007ac2ee595fab7e797c5b85caf7bf5",
+          "bytes": 5113,
+          "lines": 127
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "content_changed",
+          "raw_equal": false,
+          "normalized_equal": false,
+          "first_differing_line": 1,
+          "local_changed_line_count": 127,
+          "remote_changed_line_count": 127,
+          "local_bytes": 5166,
+          "remote_bytes": 5113
+        }
+      ]
+    },
+    {
+      "version": "20260723200346",
+      "status": "normalized_equivalent",
+      "local": [
+        {
+          "version": "20260723200346",
+          "name": "catalog_retrieval_preserve_structured_fields",
+          "filename": "20260723200346_catalog_retrieval_preserve_structured_fields.sql",
+          "sha256": "522b1d86117260e60a7ac443d288654e00c2fe289cb3d3443b49d34113e708ea",
+          "normalized_sha256": "522b1d86117260e60a7ac443d288654e00c2fe289cb3d3443b49d34113e708ea",
+          "bytes": 3207,
+          "lines": 78
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260723200346",
+          "name": "catalog_retrieval_preserve_structured_fields",
+          "filename": "20260723200346_catalog_retrieval_preserve_structured_fields.sql",
+          "sha256": "c26331702a854c9ee947b44cfab78c49c49cfc649b51ab96f3cf37583da5f8e1",
+          "normalized_sha256": "522b1d86117260e60a7ac443d288654e00c2fe289cb3d3443b49d34113e708ea",
+          "bytes": 3208,
+          "lines": 78
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "normalized_equivalent",
+          "raw_equal": false,
+          "normalized_equal": true,
+          "first_differing_line": 78,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 1,
+          "local_bytes": 3207,
+          "remote_bytes": 3208
+        }
+      ]
+    },
+    {
+      "version": "20260723213927",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723213927",
+          "name": "catalog_search_blob_normalization_v1",
+          "filename": "20260723213927_catalog_search_blob_normalization_v1.sql",
+          "sha256": "576a32e9c346b5e87779841e80598521d3c373a68c6dcccf821f69e0e94c79b8",
+          "normalized_sha256": "19dcfe9f3916f47c02c295ee1c10d3c498c4a1af3aeed5c17b30a9a1a0958627",
+          "bytes": 1404,
+          "lines": 35
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723215305",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723215305",
+          "name": "isolate_marketplace_catalog_products",
+          "filename": "20260723215305_isolate_marketplace_catalog_products.sql",
+          "sha256": "0af30442d05a28e6c3239474c9595e0fa769d494ddb3f674c9747804cc30c509",
+          "normalized_sha256": "786e7d81949a9ddbd291866f993e85eaf7b2e1b1f3c51a12ab0a73046c2abf52",
+          "bytes": 2887,
+          "lines": 74
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260723221636",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260723221636",
+          "name": "enforce_catalog_source_graph_consistency",
+          "filename": "20260723221636_enforce_catalog_source_graph_consistency.sql",
+          "sha256": "d14d346aef4349612618e130c5c87b5dce1988371a90699e0d34c32b98d435b8",
+          "normalized_sha256": "23ebca4495249f555494f72e8458cf2636eab76b2cb5539c558a9cf2393c4977",
+          "bytes": 3262,
+          "lines": 88
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260724",
+          "name": "listing_identity_cache_terminal_l2",
+          "filename": "20260724_listing_identity_cache_terminal_l2.sql",
+          "sha256": "fc4d82c252b1d0590ff0182d20433a67fc467c5a05ad175d019ed5097f2f5fb4",
+          "normalized_sha256": "fc4d82c252b1d0590ff0182d20433a67fc467c5a05ad175d019ed5097f2f5fb4",
+          "bytes": 530,
+          "lines": 9
+        },
+        {
+          "version": "20260724",
+          "name": "listing_identity_cache_terminal_l2_rollback",
+          "filename": "20260724_listing_identity_cache_terminal_l2_rollback.sql",
+          "sha256": "82ebf9d15ffbfc4f4fdafa57579e66341990df572a7d2ba2dc25b77990dbd5a0",
+          "normalized_sha256": "82ebf9d15ffbfc4f4fdafa57579e66341990df572a7d2ba2dc25b77990dbd5a0",
+          "bytes": 410,
+          "lines": 9
+        },
+        {
+          "version": "20260724",
+          "name": "listing_identity_cache_version_contract",
+          "filename": "20260724_listing_identity_cache_version_contract.sql",
+          "sha256": "e3d587eebb412ea34e0590d367052d8e225a809466f0de8d3a671cebb9f3e2d9",
+          "normalized_sha256": "e3d587eebb412ea34e0590d367052d8e225a809466f0de8d3a671cebb9f3e2d9",
+          "bytes": 993,
+          "lines": 21
+        },
+        {
+          "version": "20260724",
+          "name": "listing_identity_cache_version_contract_rollback",
+          "filename": "20260724_listing_identity_cache_version_contract_rollback.sql",
+          "sha256": "37452a2ff753dbd85216ba34d6ad0d882f99a4f6c54b2b898b45da52ddd31228",
+          "normalized_sha256": "37452a2ff753dbd85216ba34d6ad0d882f99a4f6c54b2b898b45da52ddd31228",
+          "bytes": 272,
+          "lines": 6
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724033000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260724033000",
+          "name": "isolate_marketplace_catalog_products",
+          "filename": "20260724033000_isolate_marketplace_catalog_products.sql",
+          "sha256": "09afa937d17990fe6a3323f509b5840a88317a029cab556715ac3074b2012ce9",
+          "normalized_sha256": "09afa937d17990fe6a3323f509b5840a88317a029cab556715ac3074b2012ce9",
+          "bytes": 3299,
+          "lines": 94
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724050000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260724050000",
+          "name": "enforce_catalog_source_graph_consistency",
+          "filename": "20260724050000_enforce_catalog_source_graph_consistency.sql",
+          "sha256": "59159b2860385e20991e2f0d03cf00e3069c8faa32fde74e14dc15dc7cf97d0e",
+          "normalized_sha256": "59159b2860385e20991e2f0d03cf00e3069c8faa32fde74e14dc15dc7cf97d0e",
+          "bytes": 3535,
+          "lines": 103
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724071411",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260724071411",
+          "name": "listing_identity_cache_version_contract",
+          "filename": "20260724071411_listing_identity_cache_version_contract.sql",
+          "sha256": "c4cb1b30f9ba2cfbc5b6179959f844cbebc03613a402baa6220e13d02b120e3f",
+          "normalized_sha256": "e3d587eebb412ea34e0590d367052d8e225a809466f0de8d3a671cebb9f3e2d9",
+          "bytes": 994,
+          "lines": 21
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724073657",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260724073657",
+          "name": "listing_identity_cache_terminal_l2",
+          "filename": "20260724073657_listing_identity_cache_terminal_l2.sql",
+          "sha256": "f890bb151dd2464c3119be2c5cbddb67ce02972bed0bb9a55fe0a9029b1307a4",
+          "normalized_sha256": "fc4d82c252b1d0590ff0182d20433a67fc467c5a05ad175d019ed5097f2f5fb4",
+          "bytes": 531,
+          "lines": 9
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724215000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260724215000",
+          "name": "catalog_search_blob_normalization_v1",
+          "filename": "20260724215000_catalog_search_blob_normalization_v1.sql",
+          "sha256": "72eb990ab7ddec4f0a95a7539080c3a6adfb33b6c4653033e105a3ea68a5bded",
+          "normalized_sha256": "72eb990ab7ddec4f0a95a7539080c3a6adfb33b6c4653033e105a3ea68a5bded",
+          "bytes": 1546,
+          "lines": 37
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724224500",
+      "status": "content_mismatch",
+      "local": [
+        {
+          "version": "20260724224500",
+          "name": "listing_identity_cache_global_scope_v1",
+          "filename": "20260724224500_listing_identity_cache_global_scope_v1.sql",
+          "sha256": "80aebf25e2e5c930afeaa969bfbfff682c42970cc9fd0f77b44b3183734eb713",
+          "normalized_sha256": "80aebf25e2e5c930afeaa969bfbfff682c42970cc9fd0f77b44b3183734eb713",
+          "bytes": 849,
+          "lines": 17
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260724224500",
+          "name": "listing_identity_cache_global_scope_v1",
+          "filename": "20260724224500_listing_identity_cache_global_scope_v1.sql",
+          "sha256": "0344b7c5ce5905ff07e197916b10be4862debf4d7dafdec9d568d30b717c793d",
+          "normalized_sha256": "0344b7c5ce5905ff07e197916b10be4862debf4d7dafdec9d568d30b717c793d",
+          "bytes": 845,
+          "lines": 13
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "content_changed",
+          "raw_equal": false,
+          "normalized_equal": false,
+          "first_differing_line": 2,
+          "local_changed_line_count": 14,
+          "remote_changed_line_count": 10,
+          "local_bytes": 849,
+          "remote_bytes": 845
+        }
+      ]
+    },
+    {
+      "version": "20260724231500",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260724231500",
+          "name": "fix_writer_feedback_durable_asset_identity",
+          "filename": "20260724231500_fix_writer_feedback_durable_asset_identity.sql",
+          "sha256": "3b9bef793e842a9974e28ec816e1f73c87cae5c3f33e33ee68d9c01b5f913991",
+          "normalized_sha256": "3b9bef793e842a9974e28ec816e1f73c87cae5c3f33e33ee68d9c01b5f913991",
+          "bytes": 17517,
+          "lines": 422
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260724235000",
+      "status": "content_mismatch",
+      "local": [
+        {
+          "version": "20260724235000",
+          "name": "recognition_pipeline_cache_guards_v1",
+          "filename": "20260724235000_recognition_pipeline_cache_guards_v1.sql",
+          "sha256": "3e6dc62578057e82473d50646445470e3c6ab260031381ac5b8f5ff24e028be9",
+          "normalized_sha256": "3e6dc62578057e82473d50646445470e3c6ab260031381ac5b8f5ff24e028be9",
+          "bytes": 8347,
+          "lines": 218
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260724235000",
+          "name": "recognition_pipeline_cache_guards_v1",
+          "filename": "20260724235000_recognition_pipeline_cache_guards_v1.sql",
+          "sha256": "9aef5f5994993a14cc1dc578d7c45801aee39362cdd0eca1b804e83e7a9f6c4b",
+          "normalized_sha256": "9aef5f5994993a14cc1dc578d7c45801aee39362cdd0eca1b804e83e7a9f6c4b",
+          "bytes": 8331,
+          "lines": 202
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "content_changed",
+          "raw_equal": false,
+          "normalized_equal": false,
+          "first_differing_line": 3,
+          "local_changed_line_count": 214,
+          "remote_changed_line_count": 198,
+          "local_bytes": 8347,
+          "remote_bytes": 8331
+        }
+      ]
+    },
+    {
+      "version": "20260724235900",
+      "status": "content_mismatch",
+      "local": [
+        {
+          "version": "20260724235900",
+          "name": "v4_provider_release_visibility",
+          "filename": "20260724235900_v4_provider_release_visibility.sql",
+          "sha256": "bab904fbb33c228a91c2bd63a51b08c4415d3157afe77983d8b33290e1a682db",
+          "normalized_sha256": "bab904fbb33c228a91c2bd63a51b08c4415d3157afe77983d8b33290e1a682db",
+          "bytes": 1478,
+          "lines": 43
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260724235900",
+          "name": "v4_provider_release_visibility",
+          "filename": "20260724235900_v4_provider_release_visibility.sql",
+          "sha256": "8069b936078e736154920bc33ab7268cebd89ee846d9bea8d0b65af9d2d810eb",
+          "normalized_sha256": "8069b936078e736154920bc33ab7268cebd89ee846d9bea8d0b65af9d2d810eb",
+          "bytes": 1477,
+          "lines": 42
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "content_changed",
+          "raw_equal": false,
+          "normalized_equal": false,
+          "first_differing_line": 41,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 0,
+          "local_bytes": 1478,
+          "remote_bytes": 1477
+        }
+      ]
+    },
+    {
+      "version": "20260725000000",
+      "status": "content_mismatch",
+      "local": [
+        {
+          "version": "20260725000000",
+          "name": "revert_provider_release_visibility_v1",
+          "filename": "20260725000000_revert_provider_release_visibility_v1.sql",
+          "sha256": "d22948f35c57ecd31e65a189ba60222be7832b52bf9f383d5a585388ec896df9",
+          "normalized_sha256": "d22948f35c57ecd31e65a189ba60222be7832b52bf9f383d5a585388ec896df9",
+          "bytes": 1016,
+          "lines": 30
+        }
+      ],
+      "remote": [
+        {
+          "version": "20260725000000",
+          "name": "revert_provider_release_visibility_v1",
+          "filename": "20260725000000_revert_provider_release_visibility_v1.sql",
+          "sha256": "7ff39bd73fc7db94aa52a89269510911a44f414754deefc4c608a31720c4ab5a",
+          "normalized_sha256": "7ff39bd73fc7db94aa52a89269510911a44f414754deefc4c608a31720c4ab5a",
+          "bytes": 1015,
+          "lines": 29
+        }
+      ],
+      "content_comparisons": [
+        {
+          "classification": "content_changed",
+          "raw_equal": false,
+          "normalized_equal": false,
+          "first_differing_line": 28,
+          "local_changed_line_count": 1,
+          "remote_changed_line_count": 0,
+          "local_bytes": 1016,
+          "remote_bytes": 1015
+        }
+      ]
+    },
+    {
+      "version": "20260725143748",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260725143748",
+          "name": "fix_catalog_snapshot_trigger_transition_tables",
+          "filename": "20260725143748_fix_catalog_snapshot_trigger_transition_tables.sql",
+          "sha256": "ed149d2aa86b518694dda741d059abb1274574be746187a61ad5e89ab7e8ddac",
+          "normalized_sha256": "e2ecb3c4ead7a0109d277c9ee6e8f7fd56ad206144b4cdb53dfc54e21fdcd5f1",
+          "bytes": 2796,
+          "lines": 78
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260725150000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260725150000",
+          "name": "fix_catalog_snapshot_trigger_transition_tables",
+          "filename": "20260725150000_fix_catalog_snapshot_trigger_transition_tables.sql",
+          "sha256": "be543fa3d6f9ab2e6b0544eaeb805cf24650b6bbc13141c79aaf5319b27f7a38",
+          "normalized_sha256": "be543fa3d6f9ab2e6b0544eaeb805cf24650b6bbc13141c79aaf5319b27f7a38",
+          "bytes": 3951,
+          "lines": 104
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260726160000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260726160000",
+          "name": "bound_idle_transactions_on_unprotected_roles",
+          "filename": "20260726160000_bound_idle_transactions_on_unprotected_roles.sql",
+          "sha256": "e2ce587aec5bcc3ace1de0a8c9a2b8bda335c1f04681aea64b2315ce688b03d1",
+          "normalized_sha256": "e2ce587aec5bcc3ace1de0a8c9a2b8bda335c1f04681aea64b2315ce688b03d1",
+          "bytes": 2453,
+          "lines": 44
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260727054717",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260727054717",
+          "name": "v4_late_provider_capacity_canary",
+          "filename": "20260727054717_v4_late_provider_capacity_canary.sql",
+          "sha256": "a8155c99dd268a9a53177660068c736abe3ceed4310a2fab4ac4b70c552195bc",
+          "normalized_sha256": "06d6a508ac52fe5e97a26929373e7976555ae9b1c2e11d90aab8a3efb20dd84b",
+          "bytes": 4850,
+          "lines": 120
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260728190000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260728190000",
+          "name": "csm_stage_shadow_foundation_v1",
+          "filename": "20260728190000_csm_stage_shadow_foundation_v1.sql",
+          "sha256": "b67211034f4f4f6209ca0ef18d71eabf239eca5da1aa271c37d08d243e529411",
+          "normalized_sha256": "b67211034f4f4f6209ca0ef18d71eabf239eca5da1aa271c37d08d243e529411",
+          "bytes": 21580,
+          "lines": 487
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260730042725",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260730042725",
+          "name": "ocs_cognition_loop_health_view",
+          "filename": "20260730042725_ocs_cognition_loop_health_view.sql",
+          "sha256": "33d9928fa29b7ae14fe7ee32cd165d4082686320e9248a08f0ff261287bf3ef0",
+          "normalized_sha256": "5f0c907f83882ab86c9d3c1e66b7788614010ea10ad058d01dd3674b7cf3d08a",
+          "bytes": 3036,
+          "lines": 50
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260801065544",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260801065544",
+          "name": "csm_stage_shadow_foundation_v1",
+          "filename": "20260801065544_csm_stage_shadow_foundation_v1.sql",
+          "sha256": "25c28f2db4d58ef5bd133ed6183e5b1807d08d1608ef3eb6515ca2a2882f784e",
+          "normalized_sha256": "65dcd71afbdf751e1d64b558256c6878247d4e199b82c7b0573d2656d63e1ecd",
+          "bytes": 22307,
+          "lines": 505
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260801065859",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260801065859",
+          "name": "csm_marketplace_trace_object",
+          "filename": "20260801065859_csm_marketplace_trace_object.sql",
+          "sha256": "299f1cbb583859dc15f591654959ac29aeb7a8dcf415aeea6612fed261908d3b",
+          "normalized_sha256": "299f1cbb583859dc15f591654959ac29aeb7a8dcf415aeea6612fed261908d3b",
+          "bytes": 728,
+          "lines": 17
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260801065941",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260801065941",
+          "name": "csm_marketplace_trace_object",
+          "filename": "20260801065941_csm_marketplace_trace_object.sql",
+          "sha256": "db21ee60c9c1c1cc8910397ac6bd93929da0bd5760e13bc61dd8e915b10e2cca",
+          "normalized_sha256": "299f1cbb583859dc15f591654959ac29aeb7a8dcf415aeea6612fed261908d3b",
+          "bytes": 730,
+          "lines": 18
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260801071048",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260801071048",
+          "name": "csm_empty_canonical_sql_null",
+          "filename": "20260801071048_csm_empty_canonical_sql_null.sql",
+          "sha256": "3cbec02b2219b1f6a9aff24209ffd61a381b77c12e8bfd5bcc5903f5df7137b2",
+          "normalized_sha256": "3cbec02b2219b1f6a9aff24209ffd61a381b77c12e8bfd5bcc5903f5df7137b2",
+          "bytes": 1668,
+          "lines": 35
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260801071129",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260801071129",
+          "name": "csm_empty_canonical_sql_null",
+          "filename": "20260801071129_csm_empty_canonical_sql_null.sql",
+          "sha256": "6e4626f84846047a5dc99ffdae49ca3a50a25883669ee4721a00f88601088e44",
+          "normalized_sha256": "3cbec02b2219b1f6a9aff24209ffd61a381b77c12e8bfd5bcc5903f5df7137b2",
+          "bytes": 1670,
+          "lines": 36
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260801094353",
+      "status": "remote_only",
+      "local": [],
+      "remote": [
+        {
+          "version": "20260801094353",
+          "name": "csm_atomic_stage_packet_v1",
+          "filename": "20260801094353_csm_atomic_stage_packet_v1.sql",
+          "sha256": "9264b268b00171fbc1e9e6066c3a11203695c7cc71875b443ec7bd4c25cb3e91",
+          "normalized_sha256": "f3e4d97facf04ff3d185c69cbe1c2dfccc5a8004a1f7474e90da04aac3babc98",
+          "bytes": 17232,
+          "lines": 367
+        }
+      ],
+      "content_comparisons": []
+    },
+    {
+      "version": "20260801123000",
+      "status": "local_only",
+      "local": [
+        {
+          "version": "20260801123000",
+          "name": "csm_atomic_stage_packet_v1",
+          "filename": "20260801123000_csm_atomic_stage_packet_v1.sql",
+          "sha256": "f3e4d97facf04ff3d185c69cbe1c2dfccc5a8004a1f7474e90da04aac3babc98",
+          "normalized_sha256": "f3e4d97facf04ff3d185c69cbe1c2dfccc5a8004a1f7474e90da04aac3babc98",
+          "bytes": 17230,
+          "lines": 366
+        }
+      ],
+      "remote": [],
+      "content_comparisons": []
+    }
+  ]
+}

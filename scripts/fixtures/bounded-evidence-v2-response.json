@@ -1,0 +1,73 @@
+{
+  "year": "2025",
+  "manufacturer": "Topps",
+  "product": "Signature Class",
+  "set": "",
+  "subjects": ["George Kittle"],
+  "team": "",
+  "card_name": "",
+  "release_variant": "",
+  "surface_color": "",
+  "parallel_family": "",
+  "parallel_exact": "",
+  "descriptive_rarity": "",
+  "card_number": "",
+  "serial": "",
+  "attributes": ["Auto"],
+  "grade": "",
+  "grammar": "standard",
+  "lot_count": "",
+  "language": "",
+  "unreadable": [],
+  "low_confidence": [],
+  "evidence_spans": [
+    {
+      "exact_text": "027/150",
+      "image": "image_1",
+      "region": "card_front",
+      "source": "stamped_text",
+      "advisory_role": "serial",
+      "uncertainty": "none"
+    },
+    {
+      "exact_text": "Topps Chrome Disney 100",
+      "image": "image_2",
+      "region": "slab_label",
+      "source": "slab_label_text",
+      "advisory_role": "product_name",
+      "uncertainty": "semantic_role_uncertain"
+    },
+    {
+      "exact_text": "©2025",
+      "image": "image_2",
+      "region": "card_back",
+      "source": "printed_text",
+      "advisory_role": "release_year",
+      "uncertainty": "semantic_role_uncertain"
+    },
+    {
+      "exact_text": "refractor-style geometric pattern",
+      "image": "image_1",
+      "region": "card_front",
+      "source": "visual_property",
+      "advisory_role": "parallel_exact",
+      "uncertainty": "visual_inference"
+    },
+    {
+      "exact_text": "YR CLUB G MPG FG% REB AST PTS AVG",
+      "image": "image_2",
+      "region": "card_back",
+      "source": "printed_text",
+      "advisory_role": "statistics_table",
+      "uncertainty": "none"
+    },
+    {
+      "exact_text": "027/150",
+      "image": "image_2",
+      "region": "card_back",
+      "source": "printed_text",
+      "advisory_role": "product_name",
+      "uncertainty": "semantic_role_uncertain"
+    }
+  ]
+}

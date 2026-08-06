@@ -46,3 +46,31 @@ If the checkout is dirty, treat its changes as user-owned. Do not reset, overwri
 - Verify Vercel, Cloud Run workers, authentication, and production health separately after deployment.
 - Never treat a successful deploy as accuracy proof. Card-pool evaluation remains a separate strategy gate.
 
+
+## CSM is the authority (founder ruling, 2026-08-03)
+
+When behaviour and a gate disagree, ask first whether the behaviour is correct
+**by CSM**. If it is, the gate yields — amend the gate and cite the rule. If it
+is not, fix the behaviour. Never rewrite a gate's meaning to keep a green light,
+and never change correct behaviour to keep a gate quiet.
+
+The ruling came from a real case. `Lot*n` freed four characters; on one card the
+reclaimed budget went to two more subjects and pushed `Refractor` past the
+80-character limit. That flipped another mechanism's promotion gate, which
+required zero lost reference tokens. But COS-8 ranks Subject `*` above Print
+Finish `**`, so the drop order was correct and the gate was stricter than the
+contract it served. A gate stricter than its contract raises alarms nobody can
+act on, until everyone learns to ignore it.
+
+Two boundaries:
+
+* **Fabrication is never excused.** Nothing in CSM authorises inventing a fact
+  absent from the card, so `cards_with_unbacked_new_tokens` stays absolute
+  regardless of what the drop order explains.
+* **A coincidental match is not a contract drop.** One card "lost" the token
+  `card` because the writer's "Card Shop Promo" happened to match the old
+  `2 Card Lot` wording. We never identified that shop. Forgiving it would mean
+  forgiving every accidental match, so it stays counted.
+
+If CSM itself is wrong, change CSM through a Decision Proposal. Do not route
+around it in the application layer — see COS-23 and COS-27.

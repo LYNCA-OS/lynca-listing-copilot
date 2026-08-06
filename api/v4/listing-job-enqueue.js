@@ -5,7 +5,7 @@ import { bindRecognitionProfileToPayload } from "../../lib/listing/v4/applicatio
 import {
   RecognitionRequestContractError,
   recognitionProfileIdFromPayload,
-  stripClientAlgorithmControls
+  stripClientAlgorithmControlsReporting
 } from "../../lib/listing/v4/contracts/recognition-request.mjs";
 import {
   AssetLifecycleContractError,
@@ -356,12 +356,20 @@ export async function canonicalizeQueueJobs({
     // Public queue requests always receive a server-owned recognition profile,
     // including legacy callers that omit recognition_profile. Only the scoped
     // launch-gate secret may preserve benchmark algorithm controls.
-    const profiledJob = allowAlgorithmOverrides === true
-      ? scoped
-      : stripClientAlgorithmControls(scoped);
+    // Record what the boundary removed. The keys themselves are refused either
+    // way; what changes here is that the caller can find out, instead of
+    // receiving a successful run that quietly ignored its controls.
+    const strippedJob = allowAlgorithmOverrides === true
+      ? { value: scoped, removed: [] }
+      : stripClientAlgorithmControlsReporting(scoped);
+    const strippedPayload = allowAlgorithmOverrides === true
+      ? { value: scopedPayload, removed: [] }
+      : stripClientAlgorithmControlsReporting(scopedPayload);
+    const removedAlgorithmControls = [...new Set([...strippedJob.removed, ...strippedPayload.removed])];
+    const profiledJob = strippedJob.value;
     const applicationPayload = allowAlgorithmOverrides === true
       ? scopedPayload
-      : bindRecognitionProfileToPayload(scopedPayload, {
+      : bindRecognitionProfileToPayload(strippedPayload.value, {
         profileId: requestedProfileId || undefined,
         env
       });
@@ -370,6 +378,7 @@ export async function canonicalizeQueueJobs({
     const imagePaths = canonical.image_paths || {};
     return {
       ...profiledJob,
+      removed_algorithm_controls: removedAlgorithmControls,
       asset_id: identity.asset_id,
       assetId: identity.asset_id,
       client_asset_ref: identity.client_asset_ref,
@@ -778,6 +787,14 @@ export default async function handler(req, res) {
     pump_triggered: pump.triggered,
     pump_reason: pump.reason,
     pump_global_drain: pump.global_drain === true,
+    // Which client-supplied algorithm controls this request had removed. Empty
+    // for the ordinary case of a caller that sent none. Non-empty means the run
+    // that follows is NOT the configuration the caller asked for, and any
+    // measurement taken from it is measuring the server's defaults.
+    removed_algorithm_controls: [...new Set(
+      sourceJobs.flatMap((job) => (Array.isArray(job?.removed_algorithm_controls) ? job.removed_algorithm_controls : []))
+    )],
+    algorithm_overrides_authorized: evaluationAuthorization.authorized,
     jobs: result.jobs.map((entry) => ({
       ok: entry.saved,
       job_id: entry.row?.id || null,

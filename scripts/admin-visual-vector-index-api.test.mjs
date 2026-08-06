@@ -34,6 +34,9 @@ process.env.LISTING_IMAGE_BUCKET = "listing-feedback-images";
 process.env.RECOGNITION_WORKER_URL = "https://recognition.test";
 process.env.RECOGNITION_WORKER_TOKEN = "recognition-token";
 process.env.VECTOR_QUERY_TIMEOUT_MS = "1000";
+// The live vector path is deliberately off. This archived admin-route test
+// opts in explicitly so running it never weakens or misstates that default.
+process.env.V4_VECTOR_RETRIEVAL_DISABLED = "false";
 
 const unauthorizedReq = mockReq({
   headers: { authorization: "Bearer wrong" }

@@ -1,5 +1,8 @@
+import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
+import { claimAssetSingleFlight, nextRetrySubmissionId } from "./asset-single-flight.mjs";
 import {
   analyzeImageQualityFromImageData,
+  batchReviewWindow,
   claimNextBatchAsset,
   defaultCaptureProfileId,
   fetchWithBoundedRetry,
@@ -77,6 +80,11 @@ const state = {
   intakePreviewRecords: [],
   filePreparationRunId: 0,
   retryInFlight: 0,
+  // COS-50: where the bounded eight-card window sits in the whole batch, and
+  // which card the operator asked for. Separate from the window size, which is
+  // a rendering bound and never a limit on what is reachable.
+  reviewWindowStart: 0,
+  reviewFocusIndex: null,
   workspaceMode: "standard",
   writerActiveIndex: null,
   writerTransition: "",
@@ -1016,6 +1024,73 @@ function applyVerifiedStorageBinding({ asset, image, uploadObjectPath, contentSh
   return true;
 }
 
+/**
+ * COS-51: recover from a signed-upload collision without overwriting anything.
+ *
+ * The object path is deterministic, so a second attempt for the same tenant +
+ * asset + image + role lands on the object the first attempt already wrote.
+ * `upsert: false` is correct and stays -- original images are immutable. The
+ * failure this repairs is that the browser had no way OUT: it re-signed the
+ * same identity and collided again, which is what pinned card 5 of a 20-card
+ * batch and blocked every card after it.
+ *
+ * Returns the rows that could NOT be recovered, so the caller can classify them
+ * as INPUT_REBIND and mint a successor generation. Verification compares the
+ * stored bytes against what we were about to upload; a mismatch means the path
+ * belongs to different content and reusing it would silently bind the wrong
+ * image, so that row is deliberately NOT recovered here.
+ */
+async function recoverCollidedStorageObjects(asset, rows, collisions) {
+  const assetId = canonicalAssetId(asset);
+  const byImage = new Map(collisions.map((row) => [row.image_id, row]));
+  const unrecovered = [];
+  await mapWithConcurrency(rows, STORAGE_UPLOAD_CONCURRENCY, async (row) => {
+    const collision = byImage.get(row.image.id);
+    if (!collision?.object_path) { unrecovered.push(row); return; }
+    try {
+      const objectPath = assertCanonicalImageObjectPath({
+        objectPath: collision.object_path,
+        tenantId: canonicalAssetTenantId(asset),
+        assetId
+      });
+      const verify = await fetchStorageApiJson("/api/listing-image-verify-existing", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          assetId,
+          imageId: row.image.id,
+          role: row.storageRole,
+          fileName: row.image.name,
+          contentType: row.contentType,
+          objectPath,
+          bucket: collision.bucket || undefined,
+          cropMetadata: row.image.cropMetadata || row.image.crop_metadata || null
+        })
+      }, { timeoutMs: STORAGE_VERIFY_TIMEOUT_MS, retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS });
+      if (!verify.response.ok || verify.payload?.ok !== true) throw new Error("verify_existing_failed");
+
+      // The bytes must be OUR bytes. Same path with different content is a
+      // stale or foreign object, not a resumable upload, and binding it would
+      // put someone else's image behind this card's title.
+      const storedSha = String(verify.payload.verification?.content_sha256 || "").toLowerCase();
+      const expectedSha = String(row.contentSha256 || "").toLowerCase();
+      if (expectedSha && storedSha && storedSha !== expectedSha) throw new Error("existing_object_content_mismatch");
+
+      applyVerifiedStorageBinding({
+        asset,
+        image: row.image,
+        uploadObjectPath: objectPath,
+        contentSha256: row.contentSha256,
+        verifyPayload: verify.payload
+      });
+    } catch {
+      unrecovered.push(row);
+    }
+  });
+  return unrecovered;
+}
+
 function encodeUploadRelayMetadata(metadata) {
   const bytes = new TextEncoder().encode(JSON.stringify(metadata));
   let binary = "";
@@ -1428,7 +1503,34 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
     retryDelaysMs: STORAGE_CONTROL_RECOVERY_DELAYS_MS
   });
   if (!signRequest.response.ok || !signRequest.payload.ok || !Array.isArray(signRequest.payload.uploads)) {
-    throw new Error(signRequest.payload.message || `Storage upload URL batch failed: ${signRequest.response.status}`);
+    // COS-51. A collision is the one signing failure with a way forward, and
+    // the blind-evaluation path has verified-reuse already; this is the same
+    // recovery finally wired into the production browser path.
+    const collisions = Array.isArray(signRequest.payload?.collisions)
+      ? signRequest.payload.collisions
+      : (signRequest.payload?.code === "STORAGE_OBJECT_ALREADY_EXISTS" && signRequest.payload?.object_path
+        ? [{
+            image_id: pending[0]?.image?.id,
+            object_path: signRequest.payload.object_path,
+            bucket: signRequest.payload.bucket
+          }]
+        : []);
+    if (!collisions.length) {
+      throw new Error(signRequest.payload.message || `Storage upload URL batch failed: ${signRequest.response.status}`);
+    }
+    const unrecovered = await recoverCollidedStorageObjects(asset, pending, collisions);
+    if (!unrecovered.length) {
+      return descriptors.map((row) => ({ ok: true, uploaded: false, recovered: true }));
+    }
+    // Stored bytes are absent, mismatched, or out of scope. Not resumable and
+    // not overwritable: the input identity itself has to move, which is what
+    // INPUT_REBIND means. Retrying the same identity here is the loop.
+    throw Object.assign(new Error("识别输入需要重新绑定：已存在的图片对象与本次上传不一致。"), {
+      code: "STORAGE_OBJECT_ALREADY_EXISTS",
+      recovery_action: "INPUT_REBIND",
+      requires_input_rebind: true,
+      retryable: true
+    });
   }
   const uploadsByImage = new Map(signRequest.payload.uploads.map((upload) => [upload.image_id, upload]));
   const putOutcomes = await mapWithConcurrency(pending, STORAGE_UPLOAD_CONCURRENCY, async (row) => {
@@ -1548,13 +1650,26 @@ function syncDerivedImageSourceMetadata(asset, images = []) {
   });
 }
 
-async function ensureAssetOriginalImagesUploaded(asset) {
-  await ensureDurableAssetIdentity(asset);
-  assertCurrentAssetLifecycle(asset);
-  if (!storageReady()) throw new Error("listing_storage_not_ready");
+function ensureAssetOriginalImagesUploaded(asset) {
+  // COS-51: the single-flight claim happens BEFORE any await, and this is the
+  // whole fix. The memo below already existed, but it sat after
+  // `await ensureDurableAssetIdentity(asset)` -- so two callers both reached it
+  // while it was still unset, both started an upload run, and both signed the
+  // same deterministic object path. The second one got
+  // `400 The resource already exists` before any model call, which is why the
+  // production reproduction shows "模型未启动" next to the storage error.
+  //
+  // The two callers are real and not hypothetical: a manual retry and the
+  // background preparation loop both reach here, and neither can see the
+  // other's `retryStatus`. A per-asset claim is the only thing that answers
+  // "is this asset already being prepared?"; `state.retryInFlight` is a count
+  // and can only answer "is anything retrying?".
   if (asset.originalStorageUploadPromise) return asset.originalStorageUploadPromise;
 
-  asset.originalStorageUploadPromise = (async () => {
+  const attempt = (async () => {
+    await ensureDurableAssetIdentity(asset);
+    assertCurrentAssetLifecycle(asset);
+    if (!storageReady()) throw new Error("listing_storage_not_ready");
     const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
     asset.providerImages = images;
     const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
@@ -1623,12 +1738,16 @@ async function ensureAssetOriginalImagesUploaded(asset) {
     return phases.originalOutcomes.some((outcome) => outcome.uploaded === true);
   })();
 
-  try {
-    return await asset.originalStorageUploadPromise;
-  } catch (error) {
-    asset.originalStorageUploadPromise = null;
+  // Release the claim on failure only, so a failed attempt does not leave the
+  // asset permanently claimed while a successful one stays memoised. The
+  // identity check keeps a stale rejection from clearing a NEWER claim that a
+  // successor generation already installed.
+  const guarded = attempt.catch((error) => {
+    if (asset.originalStorageUploadPromise === guarded) asset.originalStorageUploadPromise = null;
     throw error;
-  }
+  });
+  asset.originalStorageUploadPromise = guarded;
+  return guarded;
 }
 
 function syncBackgroundPreparationStatus() {
@@ -1744,8 +1863,30 @@ function csmIngestFastPathEligible(asset = {}) {
 }
 
 async function requestCsmIngestFastPath(asset, intentId) {
+  // The 18 seconds nobody could see.
+  //
+  // A production run measured 4,652ms server-side against roughly 23 seconds
+  // in front of the operator. Everything in between happens HERE, before the
+  // request exists: decoding each image for its dimensions, reading its
+  // signature, and hashing the WHOLE file with SHA-256 -- then shipping the
+  // bytes as the request body. None of it was timed, and `client_total_ms` was
+  // computed and written to local state only, so the gap has never been
+  // recorded anywhere.
+  //
+  // These ride the metadata header the request already carries, so they cost
+  // no round trip and add no latency to the thing being measured.
+  const clientTiming = {};
+  const clientStage = async (name, work) => {
+    const startedAt = performance.now();
+    try {
+      return await work();
+    } finally {
+      clientTiming[name] = Math.round((clientTiming[name] || 0) + performance.now() - startedAt);
+    }
+  };
+  const preparationStartedAt = performance.now();
   const images = await Promise.all(asset.images.map(async (image, imageIndex) => {
-    await ensureImageUploadMetadata(image);
+    await clientStage("client_image_metadata_ms", () => ensureImageUploadMetadata(image));
     const source = storageSourceForImage(image);
     const usingOriginalSource = source === image.sourceFile;
     const contentType = usingOriginalSource
@@ -1753,8 +1894,12 @@ async function requestCsmIngestFastPath(asset, intentId) {
       : source.type || image.type || "image/jpeg";
     const dimensions = storageDimensionsForImage(image, source);
     const [signatureHex, contentSha256] = await Promise.all([
-      fileSignatureHex(source),
-      image.contentSha256 ? Promise.resolve(image.contentSha256) : contentSha256Hex(source)
+      clientStage("client_signature_ms", () => fileSignatureHex(source)),
+      // Hashing the whole file. On a phone photo this is the expensive one, and
+      // it is charged per image, before anything reaches the network.
+      clientStage("client_sha256_ms", () => (image.contentSha256
+        ? Promise.resolve(image.contentSha256)
+        : contentSha256Hex(source)))
     ]);
     image.contentSha256 = contentSha256;
     return {
@@ -1771,7 +1916,10 @@ async function requestCsmIngestFastPath(asset, intentId) {
       contentSha256
     };
   }));
+  clientTiming.client_preparation_ms = Math.round(performance.now() - preparationStartedAt);
+  clientTiming.client_upload_bytes = images.reduce((total, image) => total + (image.size || 0), 0);
   const metadata = {
+    clientTiming,
     clientAssetRef: asset.clientAssetRef || asset.id,
     idempotencyKey: assetCreateIdempotencyKey(asset),
     captureProfileId: defaultCaptureProfileId,
@@ -1835,7 +1983,8 @@ async function requestCsmIngestFastPath(asset, intentId) {
 
 async function processAssetViaCsmThinPath(asset, {
   intentId = state.backgroundRecognitionBatchId,
-  manualRetry = false
+  manualRetry = false,
+  retrySubmissionId = ""
 } = {}) {
   assertCurrentAssetLifecycle(asset);
   const durableIntentId = String(intentId || "").trim();
@@ -1866,7 +2015,8 @@ async function processAssetViaCsmThinPath(asset, {
         asset_id: canonicalAssetId(asset),
         intent_id: durableIntentId,
         image_detail: "high",
-        manual_retry: manualRetry === true
+        manual_retry: manualRetry === true,
+        ...(retrySubmissionId ? { retry_submission_id: retrySubmissionId } : {})
       })
     }, {
       timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
@@ -1885,7 +2035,7 @@ async function processAssetViaCsmThinPath(asset, {
   }
   const lowConfidence = payload.low_confidence_fields || [];
   setAssetProgress(asset.index, "CSM / SEM 组合完成", 0.96);
-  return attachGenerationTimingToResult({
+  const csmResult = attachGenerationTimingToResult({
     index: asset.index,
     lifecycleGeneration: asset.lifecycleGeneration,
     asset_id: canonicalAssetId(asset),
@@ -1918,6 +2068,18 @@ async function processAssetViaCsmThinPath(asset, {
     route: payload.route || "CSM_THIN_DIRECT",
     timing: { client_total_ms: Math.round(performance.now() - startedAt) }
   });
+  // Glass Box (COS-42): fetch the field-level trace once the title is final.
+  // Read-only and fire-and-forget, so a failure here must never disturb the
+  // title the writer is waiting on -- an inspector that can break the thing it
+  // inspects is worse than no inspector. This hook used to hang off the V4
+  // assisted-draft poller, which the direct CSM route retired; the anchor is
+  // now the point where the CSM result itself becomes final.
+  if (csmResult.asset_id && !csmResult.csmResolutionView) {
+    loadCsmResolutionView(csmResult.asset_id)
+      .then((view) => { if (view) { csmResult.csmResolutionView = view; renderResults(); } })
+      .catch(() => {});
+  }
+  return csmResult;
 }
 
 function backgroundPreparationAvailable() {
@@ -2967,14 +3129,17 @@ function writerCurrentCardHtml(asset) {
 }
 
 function writerQueueWindowHtml(current) {
-  const visible = writerOutstandingAssets()
-    .sort((left, right) => left.index - right.index)
-    .slice(0, INTAKE_PREVIEW_CARD_WINDOW);
+  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
+  // COS-50: the strip still renders at most eight, but it now says how many
+  // there are. `8 / 8` read as "this batch has 8 cards" on a 20-card batch,
+  // which is the reading that made a correctly accepted batch look truncated.
+  const queueWindow = batchReviewWindow(outstanding, { focusIndex: current.index });
+  const visible = queueWindow.visible;
   const queued = visible.filter((asset) => asset.index !== current.index);
   if (!queued.length) return "";
   return `
-    <section class="writer-queue-window" aria-label="当前八张卡片队列">
-      <header><strong>待处理窗口</strong><span>${visible.length} / ${INTAKE_PREVIEW_CARD_WINDOW}</span></header>
+    <section class="writer-queue-window" aria-label="待处理卡片队列">
+      <header><strong>待处理窗口</strong><span>正在显示 ${queueWindow.from}–${queueWindow.to} / 共 ${queueWindow.total} 张</span></header>
       <div class="writer-queue-window-list">
         ${queued.map((asset, index) => {
           const image = asset.images?.[0];
@@ -3053,6 +3218,45 @@ function renderWriterWheel() {
   updateExportWorkbookControls();
 }
 
+/**
+ * Full-batch navigation over a bounded render window. COS-50.
+ *
+ * The rail lists every card index, not just the visible eight, because the
+ * complaint this answers is that cards 9-20 were not DISCOVERABLE -- an
+ * operator could not tell they had been accepted at all. The rail entries are
+ * one small button each, which is cheap; what stays bounded is the eight
+ * rendered CARDS, which is the expensive part and the reason the window exists.
+ *
+ * Every entry is selectable regardless of state. A card that is still
+ * recognising shows that when opened, which is information; refusing to open it
+ * is the behaviour being repaired.
+ */
+function batchNavigationHtml(window, assets) {
+  if (!window.total) return "";
+  const rail = assets.map((asset) => {
+    const active = asset.index >= window.from && asset.index <= window.to
+      && window.visible.some((visible) => visible.index === asset.index);
+    return `<button type="button" class="batch-rail-item${active ? " is-visible" : ""}"
+      data-batch-focus="${asset.index}"
+      aria-current="${active ? "true" : "false"}"
+      title="${escapeHtml(`卡片 ${asset.index} · ${writerAssetStatusLabel(asset)}`)}"
+    >${asset.index}</button>`;
+  }).join("");
+  return `
+    <nav class="batch-navigation" aria-label="全批导航">
+      <div class="batch-navigation-summary">
+        <strong>正在显示 ${window.from}–${window.to} / 共 ${window.total} 张</strong>
+        <span>第 ${window.page} / ${window.pages} 页</span>
+      </div>
+      <div class="batch-navigation-controls">
+        <button type="button" data-batch-window="previous" ${window.hasPrevious ? "" : "disabled"} aria-label="上一组卡片">上一组</button>
+        <button type="button" data-batch-window="next" ${window.hasNext ? "" : "disabled"} aria-label="下一组卡片">下一组</button>
+      </div>
+      <div class="batch-rail" role="group" aria-label="直接选择卡片">${rail}</div>
+    </nav>
+  `;
+}
+
 function renderAssetRows() {
   if (!state.assets.length) return;
   if (writerModeActive()) {
@@ -3060,16 +3264,25 @@ function renderAssetRows() {
     return;
   }
 
-  const visibleAssets = writerOutstandingAssets()
-    .sort((left, right) => left.index - right.index)
-    .slice(0, INTAKE_PREVIEW_CARD_WINDOW);
+  // COS-50: the render stays bounded at eight cards; what changed is that the
+  // window can MOVE. One constant used to decide both how much DOM is live and
+  // which cards the operator may reach, so a 20-card batch showed `8 / 8` and
+  // cards 9-20 could not be opened until earlier ones were saved.
+  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
+  const reviewWindow = batchReviewWindow(outstanding, {
+    start: state.reviewWindowStart,
+    focusIndex: state.reviewFocusIndex
+  });
+  state.reviewWindowStart = reviewWindow.start;
+  const visibleAssets = reviewWindow.visible;
   if (!visibleAssets.length) {
     elements.assetPreviewList.innerHTML = `<div class="empty-state"><strong>本批卡片已全部确认</strong><p>可以导出已入库标题，或开始下一批。</p></div>`;
     return;
   }
+  const navigation = batchNavigationHtml(reviewWindow, outstanding);
   const hasAnyResult = state.results.length > 0;
   if (!hasAnyResult) {
-    elements.assetPreviewList.innerHTML = visibleAssets.map(assetRowHtml).join("");
+    elements.assetPreviewList.innerHTML = navigation + visibleAssets.map(assetRowHtml).join("");
     return;
   }
 
@@ -3236,8 +3449,15 @@ function TitleCardComponent(result, asset = null) {
   const retrySubmitting = retryState.submitting;
   const interactionLocked = workspaceInteractionLocked();
   const hasPersistedSession = Boolean(String(result.recognition_session_id || "").trim());
+  // COS-51: a failed card has a durable asset but never a recognition session,
+  // and requiring the session here is what disabled Save and Reject on exactly
+  // the cards that needed them. The durable asset is enough to persist the
+  // operator's decision -- it is the identity the manual-recovery ledger is
+  // keyed on.
+  const hasDurableAsset = Boolean(String(result.asset_id || "").trim());
+  const canPersistDecision = hasPersistedSession || hasDurableAsset;
   const copyDisabled = !correctedTitle;
-  const saveDisabled = !hasPersistedSession
+  const saveDisabled = !canPersistDecision
     || interactionLocked
     || retrySubmitting
     || result.feedbackStatus === "saving"
@@ -3290,6 +3510,7 @@ function TitleCardComponent(result, asset = null) {
       ${titleOverrideNotice(result)}
       ${failed || result.reason ? `<p class="follow-up-advice">${failureAdviceHtml(result.reason || "")}</p>` : ""}
       ${result.feedbackMessage ? `<p class="feedback-save-status" data-testid="writer-persistence-status" role="status" aria-live="polite">${escapeHtml(result.feedbackMessage)}</p>` : ""}
+      ${result.csmResolutionView ? renderCsmGlassBox(result.csmResolutionView, { assetIndex: result.index }) : ""}
     </div>
   `;
 }
@@ -3729,13 +3950,29 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
   }
 }
 
-async function retryFailedAsset(button) {
+function retryFailedAsset(button) {
   const assetIndex = Number(button.dataset.retryRecognition);
   const asset = state.assets.find((item) => item.index === assetIndex);
   const current = state.results.find((item) => item.index === assetIndex);
   const retryState = retryStateForResult(current || {});
-  if (!asset || !current || retryState.disabled) return;
+  if (!asset || !current || retryState.disabled) return Promise.resolve();
 
+  // COS-51: disable the clicked control synchronously, before anything can
+  // yield. A rerender is not a guard -- it happens on a later turn, and the
+  // second half of a double-click arrives before it.
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+
+  // Collapse onto the running attempt rather than starting a second one. The
+  // operator asked for the result, so they get the result; rejecting would show
+  // an error for an action that is in fact underway.
+  const claim = claimAssetSingleFlight("retry", canonicalAssetId(asset) || assetIndex,
+    () => runAssetRetry({ button, asset, current, retryState, assetIndex }));
+  return claim.promise;
+}
+
+async function runAssetRetry({ asset, current, retryState, assetIndex }) {
+  const retrySubmissionId = nextRetrySubmissionId(canonicalAssetId(asset) || assetIndex);
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   const intentId = String(current.csm_intent_id || state.backgroundRecognitionBatchId || createClientBatchId());
@@ -3754,7 +3991,10 @@ async function retryFailedAsset(button) {
     });
     const result = await processAssetViaCsmThinPath(asset, {
       intentId,
-      manualRetry: true
+      manualRetry: true,
+      // COS-51: one stable key per operator retry action, so the server can be
+      // idempotent for the same tenant + asset + image + intent + submission.
+      retrySubmissionId
     });
     if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
     markAssetFinished(asset.index);
@@ -3884,16 +4124,85 @@ function clearPendingFeedbackSubmission(result, submission = {}) {
   delete result.pendingFeedbackOccurredAt;
 }
 
+/**
+ * Persist manual work for a card whose recognition failed. COS-51.
+ *
+ * Returns true only after the record is durably acknowledged, because the
+ * caller advances the writer queue on that answer. Acknowledging an unwritten
+ * record would cost the operator both the card and the title they typed.
+ */
+async function saveManualRecoveryForResult(result, asset, { deferFinalRender = false } = {}) {
+  const assetId = canonicalAssetId(asset) || String(result.asset_id || "").trim();
+  const rejected = result.explicitReviewOutcome === "REJECTED";
+  const manualTitle = String(result.correctedTitle ?? result.final_title ?? result.title ?? "").trim();
+
+  if (!assetId || (!rejected && !manualTitle)) {
+    result.feedbackStatus = "";
+    result.persistenceStatus = "failed";
+    result.feedbackMessage = assetId
+      ? "请先填写人工标题，或选择拒绝并继续。"
+      : "该卡尚未建立持久资产，无法保存。";
+    if (!deferFinalRender) renderResults();
+    return false;
+  }
+
+  result.feedbackStatus = "saving";
+  result.persistenceStatus = "saving";
+  if (!deferFinalRender) renderResults();
+
+  try {
+    const request = await fetchJsonWithRetry("/api/listing-manual-recovery", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        asset_id: assetId,
+        client_asset_ref: asset?.clientAssetRef || asset?.id || result.client_asset_ref || "",
+        manual_title: rejected ? "" : manualTitle,
+        source: rejected ? "REJECTED_AFTER_RECOGNITION_FAILURE" : "MANUAL_AFTER_RECOGNITION_FAILURE",
+        failure_code: String(result.error_code || "").trim(),
+        failure_stage: String(result.failure_stage || "recognition").trim()
+      })
+    }, { timeoutMs: 20000, maxAttempts: 2, asset, stage: "manual_recovery" });
+
+    if (request.error || request.payload?.ok !== true) {
+      throw new Error(request.payload?.error || `保存失败：${request.response?.status || "network"}`);
+    }
+    result.feedbackStatus = "saved";
+    result.persistenceStatus = "saved";
+    result.manualRecoverySource = request.payload.source;
+    // Shown so the operator can tell this card apart from an AI-reviewed one.
+    // A workaround that looks identical to a good result is how a batch is
+    // signed off without anyone noticing what happened.
+    result.feedbackMessage = rejected
+      ? "已记录「识别失败后拒绝」，可继续下一张。"
+      : "已记录「识别失败后人工标题」（不进入训练，不作为语义真值）。";
+    return true;
+  } catch (error) {
+    result.feedbackStatus = "";
+    result.persistenceStatus = "failed";
+    result.feedbackMessage = `保存人工标题失败：${error.message || "请重试"}`;
+    return false;
+  } finally {
+    if (!deferFinalRender) renderResults();
+  }
+}
+
 async function saveFeedbackForResult(result, asset, { deferFinalRender = false } = {}) {
   if (!result) return false;
 
   const sessionId = String(result.recognition_session_id || "").trim();
   if (!sessionId) {
-    result.feedbackStatus = "";
-    result.persistenceStatus = "failed";
-    result.feedbackMessage = "识别会话尚未持久化，无法保存审核记录。请重新识别后再试。";
-    if (!deferFinalRender) renderResults();
-    return false;
+    // COS-51. This used to be a dead end: no session meant no persistence, and
+    // a failed recognition can never produce one. The operator could type a
+    // complete title and had nowhere to put it, so the card could not advance
+    // and neither could the rest of the batch.
+    //
+    // Manual work after a failure is not AI feedback -- there is no generated
+    // title to compare it against -- so it goes to its own durable ledger,
+    // marked never-training and never-semantic-truth. What matters to the
+    // writer is only that the transaction is acknowledged and the queue moves.
+    return saveManualRecoveryForResult(result, asset, { deferFinalRender });
   }
 
   const generatedTitle = String(result.generatedTitle || result.title || "").trim();
@@ -4383,6 +4692,24 @@ function bindEvents() {
     if (rejectButton) {
       if (writerModeActive()) void rejectWriterTitleAndAdvance(Number(rejectButton.dataset.rejectTitle), { animate: true });
       else void rejectTitleFeedback(rejectButton, { animate: true });
+      return;
+    }
+
+    // COS-50: window controls and direct card selection. Selection sets a focus
+    // the window follows, so choosing card 20 opens card 20 rather than merely
+    // scrolling a list it is not in.
+    const windowButton = event.target.closest("[data-batch-window]");
+    if (windowButton) {
+      const step = windowButton.dataset.batchWindow === "previous" ? -1 : 1;
+      state.reviewWindowStart = Math.max(0, (state.reviewWindowStart || 0) + step * INTAKE_PREVIEW_CARD_WINDOW);
+      state.reviewFocusIndex = null;
+      renderResults();
+      return;
+    }
+    const railButton = event.target.closest("[data-batch-focus]");
+    if (railButton) {
+      state.reviewFocusIndex = Number(railButton.dataset.batchFocus);
+      renderResults();
       return;
     }
 

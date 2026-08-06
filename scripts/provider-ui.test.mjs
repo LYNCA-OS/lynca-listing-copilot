@@ -78,8 +78,11 @@ assert.match(processTitlesSource, /if \(state\.preparingFiles\) \{\s*await wait\
 assert.match(processTitlesSource, /processAssetViaCsmThinPath\(asset, \{ intentId: recognitionBatchId \}\)/);
 assert.doesNotMatch(processTitlesSource, /processAssetViaQueue|JOB_|SESSION_STATUS|provider_options/);
 
+// `retryFailedAsset` is synchronous as of COS-51 -- the single-flight claim
+// must land before any await -- and the awaiting half moved to `runAssetRetry`,
+// which follows it. Slice from the entry point through both.
 const retrySource = js.slice(
-  js.indexOf("async function retryFailedAsset"),
+  js.indexOf("function retryFailedAsset"),
   js.indexOf("async function copyTitle")
 );
 assert.match(retrySource, /resetAssetPreparationForRetry\(asset, \{[\s\S]*inputRebind: retryState\.input_rebind_required/);

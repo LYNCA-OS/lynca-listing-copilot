@@ -1,0 +1,54 @@
+{
+  "schema_version": "residual-evidence-lane-v1-design",
+  "authority": "evaluation_only",
+  "production_promoted": false,
+  "max_items": 4,
+  "max_text_length": 64,
+  "prompt_suffix": "After canonical fields, emit up to 4 short `residual_evidence` rows for useful values absent from every canonical field. Preserve case, punctuation, slashes and leading zeroes for text/stamps. Set `target` and `anchor`; label nonliteral output `visual`, `visible_combination` or `model_knowledge`—never as text. Cover product/set/IP identity, subject, card name, rarity/component marker, year/season, checklist code, stamped serial or finish. Exclude statistics, biography, copyright/legal text, slogans, duplicates and team guesses. This append-only lane cannot change canonical fields. Return [] when none.",
+  "property": {
+    "type": "array",
+    "maxItems": 4,
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "target",
+        "anchor"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "identity",
+            "subject",
+            "card_name",
+            "marker",
+            "year",
+            "card_number",
+            "serial",
+            "finish"
+          ]
+        },
+        "anchor": {
+          "type": "string",
+          "enum": [
+            "slab_text",
+            "front_text",
+            "back_text",
+            "front_symbol",
+            "stamped_number",
+            "visual",
+            "visible_combination",
+            "model_knowledge"
+          ]
+        }
+      }
+    }
+  }
+}

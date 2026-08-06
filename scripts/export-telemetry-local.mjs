@@ -31,7 +31,26 @@ import { supabaseRestAdminHeaders } from "../lib/supabase-service-headers.mjs";
 
 export const telemetryExportContractVersion = "telemetry-export-snapshot-v2";
 export const telemetryVerificationContractVersion = "telemetry-export-verification-v1";
-export const defaultSupabaseUrl = "https://osrrujmpxxiefppjfgpd.supabase.co";
+// There is no default project. A hardcoded ref here outlived the project it
+// named: osrrujmpxxiefppjfgpd was decommissioned in the Sydney -> Singapore
+// move and this constant kept handing it to every caller that did not pass a
+// url. The failure surfaced as DNS ENOTFOUND, which reads like a network blip
+// and invites a retry, rather than as the configuration error it was.
+//
+// Resolved lazily so a missing SUPABASE_URL fails loudly at the first call
+// instead of at import time, and so nothing can be silently pointed at a
+// project nobody chose.
+let cachedSupabaseUrl = "";
+export function resolveSupabaseUrl() {
+  if (cachedSupabaseUrl) return cachedSupabaseUrl;
+  const url = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+  if (!url) {
+    throw new Error("SUPABASE_URL is required: there is no default project. "
+      + "Set it to the project this run should target (see docs/operations/active-service-context.json).");
+  }
+  cachedSupabaseUrl = url;
+  return url;
+}
 export const defaultPageSize = 500;
 
 export const telemetryTables = Object.freeze([
@@ -73,7 +92,7 @@ function contentRangeCount(value) {
 
 export async function snapshotCutoff(key, table, timeColumn = "created_at", {
   fetchImpl = fetch,
-  supabaseUrl = defaultSupabaseUrl
+  supabaseUrl = resolveSupabaseUrl()
 } = {}) {
   const url = `${supabaseUrl}/rest/v1/${table}?select=${timeColumn}&order=${timeColumn}.desc&limit=1`;
   const response = await fetchImpl(url, { headers: headers(key) });
@@ -87,7 +106,7 @@ export async function tableCount(key, table, {
   timeColumn = "created_at",
   keyColumn = "id",
   fetchImpl = fetch,
-  supabaseUrl = defaultSupabaseUrl
+  supabaseUrl = resolveSupabaseUrl()
 } = {}) {
   const filter = cutoff ? `&${timeColumn}=lte.${encodedFilter(cutoff)}` : "";
   const response = await fetchImpl(`${supabaseUrl}/rest/v1/${table}?select=${keyColumn}${filter}`, {
@@ -106,7 +125,7 @@ export async function* pageRows(key, table, {
   timeColumn = "created_at",
   keyColumn = "id",
   fetchImpl = fetch,
-  supabaseUrl = defaultSupabaseUrl
+  supabaseUrl = resolveSupabaseUrl()
 } = {}) {
   let cursor = cleanText(after);
   for (;;) {
@@ -283,7 +302,7 @@ export async function exportTable(key, descriptor, {
   dest,
   pageSize = defaultPageSize,
   fetchImpl = fetch,
-  supabaseUrl = defaultSupabaseUrl,
+  supabaseUrl = resolveSupabaseUrl(),
   onProgress = () => {}
 } = {}) {
   const { table, timeColumn, keyColumn } = descriptor;
@@ -325,7 +344,7 @@ export async function exportTable(key, descriptor, {
   return verified;
 }
 
-export async function verifyExport(dest, { tables = telemetryTables, supabaseUrl = defaultSupabaseUrl } = {}) {
+export async function verifyExport(dest, { tables = telemetryTables, supabaseUrl = resolveSupabaseUrl() } = {}) {
   const verified = [];
   for (const { table, timeColumn, keyColumn } of tables) {
     const tableDir = resolve(dest, table);

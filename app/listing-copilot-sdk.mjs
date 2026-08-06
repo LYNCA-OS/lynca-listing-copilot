@@ -466,7 +466,7 @@ function planTargetedCrops({
   }).filter(Boolean).sort((a, b) => b.priority - a.priority).slice(0, maxCrops);
 }
 
-// lib/listing/csm/field-labels.mjs
+// csm/ontology/field-labels.mjs
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -540,7 +540,11 @@ var csmFieldLabels = Object.freeze({
   teams: "Team",
   lot_quantity: "Lot Quantity",
   lot_type: "Lot Type",
-  observable_components: "Visible Components",
+  // COS-41 (founder, 2026-08-04): NOT a CSM semantic field. Auto, RC, Patch
+  // and Relic belong to [Search Optimization]; `observable_components` is an
+  // implementation-level grouping that recognition and identity resolution may
+  // keep, and a label here declared it as one of CSM's own.
+  //   observable_components: "Visible Components",
   cert_number: "Cert Number",
   one_of_one: "1/1"
 });
@@ -778,6 +782,40 @@ function windowIntakePreviewGroups(groups = [], limit = INTAKE_PREVIEW_CARD_WIND
     remaining: Math.max(0, source.length - boundedLimit)
   };
 }
+function batchReviewWindow(items = [], {
+  start = 0,
+  size = INTAKE_PREVIEW_CARD_WINDOW,
+  focusIndex = null
+} = {}) {
+  const source = Array.isArray(items) ? items : [];
+  const boundedSize = Math.max(1, Math.trunc(Number(size) || INTAKE_PREVIEW_CARD_WINDOW));
+  const total = source.length;
+  let desiredStart = Math.trunc(Number(start) || 0);
+  if (focusIndex !== null && focusIndex !== void 0) {
+    const position = source.findIndex((item) => Number(item?.index) === Number(focusIndex));
+    if (position >= 0 && (position < desiredStart || position >= desiredStart + boundedSize)) {
+      desiredStart = Math.floor(position / boundedSize) * boundedSize;
+    }
+  }
+  const maxStart = Math.max(0, Math.ceil(Math.max(total, 1) / boundedSize) * boundedSize - boundedSize);
+  const clampedStart = Math.min(Math.max(0, desiredStart), Math.min(maxStart, Math.max(0, total - 1)));
+  const normalizedStart = total ? Math.floor(clampedStart / boundedSize) * boundedSize : 0;
+  const visible = source.slice(normalizedStart, normalizedStart + boundedSize);
+  return {
+    visible,
+    start: normalizedStart,
+    size: boundedSize,
+    total,
+    // 1-based and inclusive, because these are the numbers shown to a person.
+    from: total ? normalizedStart + 1 : 0,
+    to: total ? normalizedStart + visible.length : 0,
+    page: total ? Math.floor(normalizedStart / boundedSize) + 1 : 0,
+    pages: total ? Math.ceil(total / boundedSize) : 0,
+    hasPrevious: normalizedStart > 0,
+    hasNext: normalizedStart + boundedSize < total,
+    remaining: Math.max(0, total - (normalizedStart + visible.length))
+  };
+}
 
 // lib/listing/client/upload-phases.mjs
 function firstFailedOutcome(outcomes = []) {
@@ -941,9 +979,16 @@ function normalizeRecognitionProfileId(value, fallback = defaultRecognitionProfi
   return profileId;
 }
 function stripClientAlgorithmControls(value = {}) {
+  return stripClientAlgorithmControlsReporting(value).value;
+}
+function stripClientAlgorithmControlsReporting(value = {}) {
   const scoped = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
-  for (const key of clientForbiddenAlgorithmControlKeys) delete scoped[key];
-  return scoped;
+  const removed = [];
+  for (const key of clientForbiddenAlgorithmControlKeys) {
+    if (Object.hasOwn(scoped, key)) removed.push(key);
+    delete scoped[key];
+  }
+  return { value: scoped, removed };
 }
 function withRecognitionRequestIntent(value = {}, {
   profileId = recognitionProfileIdFromPayload(value) || defaultRecognitionProfileId
@@ -960,6 +1005,7 @@ export {
   SIGNED_UPLOAD_URL_GENERATION_LIMIT,
   WRITER_IMAGE_INTAKE_CONTRACT_VERSION,
   analyzeImageQualityFromImageData,
+  batchReviewWindow,
   claimNextBatchAsset,
   defaultCaptureProfileId,
   defaultRecognitionProfileId,

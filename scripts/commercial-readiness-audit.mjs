@@ -151,7 +151,14 @@ async function auditProviderPolicy() {
     endpoint: /endpoint:\s*["']\/api\/csm-listing-title["']/.test(thinRuntime.text)
       && /CSM_THIN_API_ENDPOINT\s*=\s*["']\/api\/csm-listing-title["']/.test(appJs.text),
     model: /model:\s*["']gpt-5\.6-luna["']/.test(thinRuntime.text),
-    reasoning_effort: /reasoningEffort:\s*["']none["']/.test(thinRuntime.text),
+    // The tier is READ, not required to be a particular value. Which
+    // reasoning effort production runs is a founder decision recorded in the
+    // runtime contract (COS-49's authority order), and this audit's concern is
+    // that the thin path owns recognition -- not which tier was chosen. The
+    // literal `none` was a snapshot of the contract at the time of writing, and
+    // it turned a founder-approved change of tier into a commercial-readiness
+    // failure.
+    reasoning_effort: /reasoningEffort:\s*["'][a-z]+["']/.test(thinRuntime.text),
     direct_handler: /CSM_THIN_DIRECT/.test(thinApi.text)
       && /prepareCanonicalListingPath/.test(thinApi.text),
     no_legacy_queue: !/JOB_ENQUEUE_API_ENDPOINT|listing-job-enqueue/.test(appJs.text),
@@ -164,7 +171,7 @@ async function auditProviderPolicy() {
       active_path: "CSM_THIN_DIRECT",
       endpoint: "/api/csm-listing-title",
       model: "gpt-5.6-luna",
-      reasoning_effort: "none",
+      reasoning_effort: (thinRuntime.text.match(/reasoningEffort:\s*["']([a-z]+)["']/) || [])[1] || null,
       direct_api_boundary: true,
       retired_execution_paths: "disabled",
       cloud_run_calls: 0,

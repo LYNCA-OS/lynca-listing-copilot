@@ -19,6 +19,9 @@ trace. The verifier is local and prints no secret values.
   `infrastructure/supabase-production`, whose ledger is fetched from remote.
   The repository-level `supabase/migrations` directory is frozen historical
   contract material and is deliberately unlinked.
+- The former project ref `osrrujmpxxiefppjfgpd` (Sydney) is decommissioned and
+  its hostname no longer resolves. A reference to it anywhere is stale
+  configuration, not a network fault -- do not retry, repoint.
 - Secrets live in the mode-0600 canonical runtime env file. No key value is
   stored in this context document or printed by the verifier.
 - Cloud Run, vector retrieval, and the generic OCR sidecar are retired and are

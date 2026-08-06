@@ -1,0 +1,37 @@
+{
+  "schema_version": "accuracy-safe-bundle-v3-prereg-v1",
+  "bundle": "accuracy-mechanism-bundle-v3",
+  "authority": "evaluation_only",
+  "production_promoted": false,
+  "model": "gpt-5.6-luna",
+  "reasoning_effort": "none",
+  "image_detail": "high",
+  "mechanisms": [
+    "finish_family_color_only",
+    "serial_single_digit",
+    "rarity_sar_only",
+    "printed_trainer_gallery",
+    "printed_first_bowman",
+    "product_known_manufacturer_extension",
+    "attested_insert"
+  ],
+  "confirmation": {
+    "cards": 150,
+    "paired": true,
+    "asset_ids_must_be_disjoint_from_development": true,
+    "requires_exhaustive_observation_channel": true,
+    "requires_fresh_paid_responses": true,
+    "hard_stops": [
+      "any_reference_token_loss",
+      "any_over_80_title",
+      "any_negative_card_f1_delta",
+      "any_csm_sem_authority_or_replay_failure"
+    ]
+  },
+  "current_data_boundary": {
+    "reviewed_blind_pool_cards": 255,
+    "development_cards": 150,
+    "outside_development_cards": 105,
+    "independent_150_available": false
+  }
+}

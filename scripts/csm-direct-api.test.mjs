@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import { readFile, readdir } from "node:fs/promises";
 
 import {
@@ -472,7 +473,10 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     preparePath: async (input) => {
       events.push("model_and_csm");
       assert.equal(input.model, "gpt-5.6-luna");
-      assert.equal(input.effort, "none");
+      // The endpoint reads CSM_THIN_RUNTIME_CONTRACT.reasoningEffort, `low`
+      // since 2026-08-03. Assert against the contract rather than a literal so
+      // the tier can only change in one place.
+      assert.equal(input.effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
       assert.deepEqual(input.imageUrls, [signedUrl]);
       return preparedResult(input.recognitionSessionId);
     },

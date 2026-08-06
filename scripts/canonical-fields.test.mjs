@@ -5,6 +5,7 @@ import {
   CANONICAL_FIELD_NAMES,
   CANONICAL_ATTRIBUTES,
   CANONICAL_FIELDS_PROMPT,
+  CANONICAL_SERIAL_EXACT_PROMPT,
   semCanonicalEditableFields,
   buildCanonicalFieldsRequest,
   parseCanonicalFields
@@ -56,13 +57,13 @@ for (const field of ["year", "manufacturer", "product", "set", "card_name",
   "release_variant", "print_finish", "descriptive_rarity", "card_number"]) {
   assert.ok(semCanonicalEditableFields.includes(field), `${field} must be a CSM canonical field`);
 }
-// Two schema names differ from CSM's and the difference is deliberate, so it is
-// written down rather than discovered later: this schema says `grade` and
-// `subjects` where CSM says `grading_info` and `subject`. The composer maps
-// them; nothing else may invent a third name.
+// Subject remains the one deliberate plural alias. Grading Info used to be a
+// local display string; aligning it with CSM's structured field is what keeps a
+// separate autograph grade from disappearing before composition.
 assert.ok(semCanonicalEditableFields.includes("grading_info"));
 assert.ok(semCanonicalEditableFields.includes("subject"));
-assert.ok(CANONICAL_FIELDS_SCHEMA.properties.grade);
+assert.ok(CANONICAL_FIELDS_SCHEMA.properties.grading_info);
+assert.equal(CANONICAL_FIELDS_SCHEMA.properties.grade, undefined);
 assert.ok(CANONICAL_FIELDS_SCHEMA.properties.subjects);
 
 // Print finishes have exactly one home. Refractor/Prizm/Holo were in this enum
@@ -76,10 +77,14 @@ for (const finish of ["Refractor", "Prizm", "Holo", "Sapphire", "Mojo"]) {
 // has one, against 9 where the colour named was wrong.
 assert.ok(CANONICAL_FIELDS_SCHEMA.properties.surface_color.enum.includes("Gold"));
 assert.ok(CANONICAL_FIELDS_SCHEMA.properties.parallel_family.enum.includes("Refractor"));
+// COS-49 (Fei, 2026-08-04) removes ONE rung: a bare colour is Recognition
+// evidence and becomes canonical Print Finish only when the card names it or
+// verified taxonomy confirms the colour alone. The other rungs are untouched --
+// colour + family is not a bare colour, and a printed name is explicit.
 {
   const ladder = [
     [{ surface_color: "Gold", parallel_family: "Refractor" }, "Gold Refractor"],
-    [{ surface_color: "Gold" }, "Gold"],
+    [{ surface_color: "Gold" }, ""],
     [{ parallel_family: "Mojo" }, "Mojo"],
     [{ parallel_exact: "Gold Vinyl", surface_color: "Gold" }, "Gold Vinyl"],
     [{}, ""]
@@ -87,6 +92,14 @@ assert.ok(CANONICAL_FIELDS_SCHEMA.properties.parallel_family.enum.includes("Refr
   for (const [input, expected] of ladder) {
     assert.equal(parseCanonicalFields(input).fields.print_finish, expected);
   }
+  // Withheld, not erased. The rejection has to be reversible by a Registry that
+  // later confirms the colour, which it cannot be if the term is simply gone.
+  const bare = parseCanonicalFields({ surface_color: "Gold" }).fields;
+  assert.equal(bare.observed_surface_color, "Gold",
+    "the observation survives its denied promotion");
+  assert.ok(bare.withheld_finish_terms.some((entry) => (
+    entry.value === "Gold" && entry.reason === "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED"
+  )), "the evidence record must name what was withheld and why");
 }
 
 // The completeness counterweight. An anti-fabrication instruction with nothing
@@ -94,6 +107,9 @@ assert.ok(CANONICAL_FIELDS_SCHEMA.properties.parallel_family.enum.includes("Refr
 assert.match(CANONICAL_FIELDS_PROMPT, /80-character budget/);
 assert.match(CANONICAL_FIELDS_PROMPT, /Report every field you can actually read/);
 assert.match(CANONICAL_FIELDS_PROMPT, /low_confidence/);
+assert.doesNotMatch(CANONICAL_FIELDS_PROMPT, /mentally rotate it 180 degrees/,
+  "the synthetic inverted-card arm was not rotation-stable enough for Production");
+assert.match(CANONICAL_FIELDS_PROMPT, /Never collapse PSA 9 plus AUTO 10/);
 // And the suppression that must NOT come back: the recognition pipeline forbids
 // confirming Refractor/Prizm/Holo without catalog or vector candidates, and
 // those candidates are disabled -- a gate whose key was thrown away.
@@ -108,6 +124,8 @@ assert.ok(!/look for small foil numbering/i.test(CANONICAL_FIELDS_SCHEMA.propert
 // The replacement is precision-oriented, not effort-oriented: the measured
 // failure is 25 misread serials against 12 missing ones.
 assert.match(CANONICAL_FIELDS_SCHEMA.properties.serial.description, /digit by digit/);
+assert.ok(!/leading zero.*must remain/i.test(CANONICAL_FIELDS_PROMPT), "production prompt stays unchanged until the arm passes");
+assert.match(CANONICAL_SERIAL_EXACT_PROMPT, /027\/150 must remain 027\/150/);
 
 for (const name of CANONICAL_FIELDS_SCHEMA.properties.unreadable.items.enum) {
   assert.ok(CANONICAL_FIELD_NAMES.includes(name));
@@ -177,8 +195,43 @@ assert.ok(parseCanonicalFields({
   const { fields: parsed, defects } = parseCanonicalFields({
     serial: "17/50", unreadable: ["serial", "grade"], grammar: "standard"
   });
-  assert.deepEqual(parsed.unreadable, ["grade"]);
+  assert.deepEqual(parsed.unreadable, ["grading_info"]);
   assert.ok(defects.includes("unreadable_contradicts_value"));
+}
+
+// CSM's Grading Info is atomic in priority but structured in meaning. Preserve
+// both card and autograph grades until the final marketplace string.
+{
+  const parsed = fields({
+    grading_info: {
+      company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+    }
+  });
+  assert.deepEqual(parsed.grading_info, {
+    company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+  });
+  assert.equal(parsed.grade, "PSA 9/10");
+  assert.deepEqual(emitCsm(parsed, "Example PSA 9/10").canonical_sem.grading_info, {
+    company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+  });
+}
+{
+  const parsed = fields({
+    grading_info: {
+      company: "PSA", card_grade: "", auto_grade: "9", grade_type: "AUTO_ONLY"
+    }
+  });
+  assert.equal(parsed.grade, "PSA Auto 9");
+}
+{
+  const parsed = fields({
+    grading_info: {
+      company: "PSA", card_grade: "9", auto_grade: "10", grade_type: "CARD_ONLY"
+    }
+  });
+  assert.equal(parsed.grading_info.grade_type, "CARD_AND_AUTO",
+    "literal grade values outrank a contradictory model enum");
+  assert.equal(parsed.grade, "PSA 9/10");
 }
 
 assert.deepEqual(parseCanonicalFields("not json").defects, ["unparseable"]);
@@ -205,12 +258,21 @@ assert.deepEqual(parseCanonicalFields(null).defects, ["not_an_object"]);
   assert.ok(positions.every((position, index) => position >= 0 && (index === 0 || position > positions[index - 1])));
   // No "#1": the eBay profile does not project [Card Number] for a Standard
   // card. The field is still in the canonical object.
-  // "Prizm" appears twice -- once as the product, once inside the finish -- and
-  // that is left alone deliberately. Prefix de-duplication does not reach a word
-  // in the middle of a bracket, and it should not: the reviewed titles repeat it
-  // too ("Panini Prizm Jalen Brunson RC Prizm Mojo 13/25"). 16 of 148 composed
-  // titles carry a repeat and the reference does the same on those cards.
-  assert.equal(first.title, "2023-24 Panini Prizm LeBron James Silver Prizm 17/50 Auto PSA 10");
+  //
+  // No "Silver Prizm" either, and this fixture is the textbook case for why:
+  // a base Panini Prizm IS silver, so the colour describes the product's base
+  // appearance rather than naming a parallel, and the reviewed titles call the
+  // card a Prizm. The admission layer withholds it. Measured across 150 cards,
+  // `silver` as an observed surface colour hit the reference once in eleven
+  // uses and `rainbow` none in thirty.
+  //
+  // This assertion previously expected the finish to survive; it was written
+  // before the per-term hit rates were measured and encoded the defect.
+  assert.equal(first.title, "2023-24 Panini Prizm LeBron James 17/50 Auto PSA 10");
+  // The observation is preserved even though the resolution rejected it --
+  // withholding must stay reversible for a registry that can confirm the term.
+  assert.equal(card.observed_surface_color, "Silver");
+  assert.equal(card.withheld_finish_terms[0].reason, "BASE_APPEARANCE_NOT_PARALLEL");
   assert.ok(first.suppressed.includes("card_number"));
   assert.equal(card.card_number, "1");
 }
@@ -260,7 +322,7 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
 
 // ------------------------------------------------------------- lot structure
 
-// "[Lot*n][Year][Manufacturer Product Set][Subjects up to 3]", and CSM's Lot
+// "[LotxN][Year][Manufacturer Product Set][Subjects up to 3]", and CSM's Lot
 // grammar DOES carry [Shared Numerical Rarity] -- the hand-written version
 // dropped it on the reasoning that a lot has no single copy number.
 {
@@ -269,15 +331,40 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
     subjects: ["Victor Wembanyama", "Chet Holmgren", "Scoot Henderson"],
     card_number: "1", serial: "17/50", lot_count: "12", grammar: "lot"
   }));
-  assert.ok(composed.title.startsWith("12 Card Lot"));
+  // LotxN per COS-49 (Fei, 2026-08-04): the one merchant-facing quantity
+  // marker, and the spelling the reviewed corpus actually uses (`lotx4`,
+  // `Lotx16`). The interim `Lot*n` form is retired; "n Card Lot" before it was
+  // written by no writer at all.
+  assert.ok(composed.title.startsWith("Lotx12"));
   assert.ok(!composed.title.includes("#1"));
   assert.ok(composed.title.includes("17/50"));
   // The combined bracket carries the product, not just the manufacturer.
   assert.match(composed.title, /Panini Prizm/);
 }
-// An uncounted lot says "Card Lot" rather than inventing a count from the
-// subject list, which caps at 3 and is not the number of cards.
-assert.ok(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" })).title.startsWith("Card Lot"));
+// An uncounted lot ABSTAINS from the quantity bracket. This assertion used to
+// require a bare "Lot", which was the behaviour rather than the contract:
+// COS-14 names `LotxN` as the ONE approved quantity format and requires
+// "route for review or abstain rather than inventing N" when the count cannot
+// be established. A bare "Lot" invents nothing, but it is a fourth marker
+// beside the three the decision forbids, and it ships a title instead of
+// routing. The gate was stricter than the contract in the wrong direction, so
+// the gate moved.
+{
+  const uncounted = composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" }));
+  assert.ok(!/\bLot\b/i.test(uncounted.title), "an unread count must not ship a quantity marker");
+  assert.ok(!/^Lotx/.test(uncounted.title), "an unread count must not be fabricated");
+  assert.equal(uncounted.lot_quantity_unresolved, true, "the caller must be told to route for review");
+
+  // "0" arrives as a string and used to be truthy, rendering `Lotx0` -- a lot
+  // of no cards. N is "the number of cards uploaded or visibly represented".
+  const zero = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 0 }));
+  assert.ok(!/Lotx0/.test(zero.title), "zero cards is not a lot");
+  assert.equal(zero.lot_quantity_unresolved, true);
+
+  const counted = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 4 }));
+  assert.ok(counted.title.startsWith("Lotx4"));
+  assert.equal(counted.lot_quantity_unresolved, false);
+}
 
 // ------------------------------------------------------------ empty and team
 
@@ -297,6 +384,35 @@ assert.ok(composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lo
   }));
   assert.equal(composed.title, "2025 Topps Nolan Ryan");
   assert.ok(composed.suppressed.includes("search_optimization"));
+}
+{
+  // COS-41 (Fei, 2026-08-04): Auto, RC, Patch and Relic stay under Search
+  // Optimization, there is no Visible Components bracket, and the Composer must
+  // "solve title preservation through priority and compression rules INSIDE
+  // Search Optimization" -- suppressing the whole bracket is named as the
+  // failure, not the fix. Resolution path item 4 asks to verify these survive
+  // compression, and nothing did.
+  //
+  // The suppression above and the survival below are the same rule seen twice:
+  // the bracket is projected partially, keeping the terms buyers search on and
+  // dropping the city name they do not.
+  const composed = composeFromCanonicalFields(fields({
+    year: "2024", manufacturer: "Topps", product: "Chrome", subjects: ["Shohei Ohtani"],
+    team: "Los Angeles Dodgers", attributes: ["Auto", "RC", "Patch", "Relic", "Jersey"]
+  }));
+  for (const term of ["Auto", "RC", "Patch", "Relic", "Jersey"]) {
+    assert.match(composed.title, new RegExp(`\\b${term}\\b`), `COS-41: ${term} must survive eBay compression`);
+  }
+  assert.ok(!/Los Angeles|Dodgers/.test(composed.title), "the city name is the low-value term that yields");
+
+  // `components` is DERIVED from `attributes`; supplying it directly is ignored.
+  // Worth pinning, because a test that sets `components` alone sees every term
+  // vanish and reads that as a COS-41 violation. It is malformed input.
+  const direct = composeFromCanonicalFields(fields({
+    year: "2024", manufacturer: "Topps", product: "Chrome", subjects: ["Shohei Ohtani"],
+    components: ["Auto", "RC"]
+  }));
+  assert.ok(!/\bAuto\b/.test(direct.title), "components is derived, not an input");
 }
 
 // Composition Before Repetition, and a player whose surname matches the set
@@ -448,10 +564,17 @@ assert.match(
   }));
   assert.match(printed.title, /Gold Vinyl/);
 
-  // And the colour is still in the object -- this is a projection decision.
+  // COS-49 moved this from a projection decision to a resolution one. The
+  // Composer already refused to print a bare colour; what changed is that the
+  // CANONICAL object no longer claims it as a resolved Print Finish either. The
+  // record and the output now say the same thing, which is the point -- CSM
+  // persists the record and the Glass Box shows it to an operator.
+  //
+  // The observation is not lost: it moves to the evidence layer, where a
+  // Registry that confirms the colour can still admit it.
   const card = fields({ manufacturer: "Topps", subjects: ["Nolan Ryan"], surface_color: "Gold" });
-  assert.equal(card.surface_color, "Gold");
-  assert.equal(card.print_finish, "Gold");
+  assert.equal(card.print_finish, "", "a bare colour is not canonical Print Finish");
+  assert.equal(card.observed_surface_color, "Gold", "but it survives as Recognition evidence");
 }
 
 process.stdout.write("canonical fields: ok\n");

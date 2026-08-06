@@ -1,0 +1,676 @@
+{
+  "schema_version": "canonical-candidate-unseen17-paired-v1",
+  "authority": "evaluation_only",
+  "production_promoted": false,
+  "source": {
+    "controlPath": "artifacts/accuracy-unseen17-thin-canonical-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+    "hybridPath": "artifacts/accuracy-unseen17-canonical-candidate-v1-2026-08-02/canonical-candidate-gpt-5.6-luna.jsonl",
+    "cards": 17
+  },
+  "summary": {
+    "cards": 17,
+    "control_macro_f1": 0.4420866714984361,
+    "hybrid_macro_f1": 0.43709558415440763,
+    "hybrid_delta_macro_f1": -0.004991087344028526,
+    "hybrid_paired": {
+      "wins": 1,
+      "losses": 2,
+      "ties": 14
+    },
+    "hybrid_reference_loss_cards": 1,
+    "projected_macro_f1": 0.43529934118169405,
+    "projected_delta_macro_f1": -0.006787330316742083,
+    "projected_paired": {
+      "wins": 0,
+      "losses": 1,
+      "ties": 16
+    },
+    "projected_reference_loss_cards": 0,
+    "projected_changed_cards": 1,
+    "median_hybrid_latency_ms": 5957,
+    "median_hybrid_input_tokens": 4544,
+    "median_hybrid_output_tokens": 272
+  },
+  "cards": [
+    {
+      "asset_id": "unseen_40b6057985f303926690",
+      "reference": "2025 Panini Phoenix Contours Jaxson Dart #24",
+      "control_title": "Contours Jason Dart RC",
+      "hybrid_title": "Jason Dart RC",
+      "projected_title": "Contours Jason Dart RC",
+      "control_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.5,
+        "f1": 0.36363636363636365
+      },
+      "hybrid_score": {
+        "recall": 0.14285714285714285,
+        "precision": 0.3333333333333333,
+        "f1": 0.2
+      },
+      "projected_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.5,
+        "f1": 0.36363636363636365
+      },
+      "hybrid_delta_f1": -0.16363636363636364,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [
+        "contours"
+      ],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 3,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 2658,
+      "hybrid_input_tokens": 2312,
+      "hybrid_output_tokens": 224
+    },
+    {
+      "asset_id": "unseen_e90b6054163320bbc04b",
+      "reference": "2025 Panini Phoenix Tank Bigsby #76",
+      "control_title": "Tank Bigsby",
+      "hybrid_title": "Tank Bigsby",
+      "projected_title": "Tank Bigsby",
+      "control_score": {
+        "recall": 0.3333333333333333,
+        "precision": 1,
+        "f1": 0.5
+      },
+      "hybrid_score": {
+        "recall": 0.3333333333333333,
+        "precision": 1,
+        "f1": 0.5
+      },
+      "projected_score": {
+        "recall": 0.3333333333333333,
+        "precision": 1,
+        "f1": 0.5
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 3,
+      "candidate_hypothesis_count": 0,
+      "hybrid_latency_ms": 3343,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 188
+    },
+    {
+      "asset_id": "unseen_af443b0004240f0107ee",
+      "reference": "2025 Panini Phoenix Contours Myles Garrett #8",
+      "control_title": "Myles Garrett Contours Silver Geometric",
+      "hybrid_title": "Contours Myles Garrett Silver Geometric",
+      "projected_title": "Myles Garrett Contours Silver Geometric",
+      "control_score": {
+        "recall": 0.42857142857142855,
+        "precision": 0.6,
+        "f1": 0.5
+      },
+      "hybrid_score": {
+        "recall": 0.42857142857142855,
+        "precision": 0.6,
+        "f1": 0.5
+      },
+      "projected_score": {
+        "recall": 0.42857142857142855,
+        "precision": 0.6,
+        "f1": 0.5
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 5,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 7585,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 287
+    },
+    {
+      "asset_id": "unseen_4a387a2e25fe69fa7508",
+      "reference": "2025 Panini Phoenix Keenan McCardell #134",
+      "control_title": "Keenan McCardell Silver Geometric",
+      "hybrid_title": "Keenan McCardell Silver Prizm",
+      "projected_title": "Keenan McCardell Silver Geometric",
+      "control_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.5,
+        "f1": 0.4
+      },
+      "hybrid_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.5,
+        "f1": 0.4
+      },
+      "projected_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.5,
+        "f1": 0.4
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 4901,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 272
+    },
+    {
+      "asset_id": "unseen_c1f30c005617e6986ef1",
+      "reference": "2023 Panini Phoenix Fire Fabrics Giannis Antetokounmpo #10",
+      "control_title": "Giannis Antetokounmpo Green Geometric",
+      "hybrid_title": "Giannis Antetokounmpo Teal Geometric",
+      "projected_title": "Giannis Antetokounmpo Green Geometric",
+      "control_score": {
+        "recall": 0.25,
+        "precision": 0.5,
+        "f1": 0.3333333333333333
+      },
+      "hybrid_score": {
+        "recall": 0.25,
+        "precision": 0.5,
+        "f1": 0.3333333333333333
+      },
+      "projected_score": {
+        "recall": 0.25,
+        "precision": 0.5,
+        "f1": 0.3333333333333333
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 6597,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 286
+    },
+    {
+      "asset_id": "unseen_745e2fed2b81fdb80c63",
+      "reference": "2023 Panini Phoenix Instant Phenom Noah Clowney #8",
+      "control_title": "Noah Clowney Rookie Signs RC Auto",
+      "hybrid_title": "Noah Clowney Rookie Signs RC Auto",
+      "projected_title": "Noah Clowney Rookie Signs RC Auto",
+      "control_score": {
+        "recall": 0.25,
+        "precision": 0.3333333333333333,
+        "f1": 0.28571428571428575
+      },
+      "hybrid_score": {
+        "recall": 0.25,
+        "precision": 0.3333333333333333,
+        "f1": 0.28571428571428575
+      },
+      "projected_score": {
+        "recall": 0.25,
+        "precision": 0.3333333333333333,
+        "f1": 0.28571428571428575
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 6,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 6859,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 325
+    },
+    {
+      "asset_id": "unseen_189096ee2adb683d47b0",
+      "reference": "2023 Panini Phoenix Fade To Black Nikola Jokic #20",
+      "control_title": "Nikola Jokić",
+      "hybrid_title": "Nikola Jokic",
+      "projected_title": "Nikola Jokić",
+      "control_score": {
+        "recall": 0.2222222222222222,
+        "precision": 1,
+        "f1": 0.3636363636363636
+      },
+      "hybrid_score": {
+        "recall": 0.2222222222222222,
+        "precision": 1,
+        "f1": 0.3636363636363636
+      },
+      "projected_score": {
+        "recall": 0.2222222222222222,
+        "precision": 1,
+        "f1": 0.3636363636363636
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 3261,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 267
+    },
+    {
+      "asset_id": "unseen_e2317539ffdb61b4693b",
+      "reference": "2023 Panini Phoenix Mystique LeBron James #14",
+      "control_title": "LeBron James",
+      "hybrid_title": "LeBron James",
+      "projected_title": "LeBron James",
+      "control_score": {
+        "recall": 0.2857142857142857,
+        "precision": 1,
+        "f1": 0.4444444444444445
+      },
+      "hybrid_score": {
+        "recall": 0.2857142857142857,
+        "precision": 1,
+        "f1": 0.4444444444444445
+      },
+      "projected_score": {
+        "recall": 0.2857142857142857,
+        "precision": 1,
+        "f1": 0.4444444444444445
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 5,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 6054,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 275
+    },
+    {
+      "asset_id": "unseen_bbfc75a6ba32ffe48343",
+      "reference": "2024 Panini Phoenix Rookies Caleb Williams #151",
+      "control_title": "Caleb Williams RC",
+      "hybrid_title": "Caleb Williams Gold Geometric RC",
+      "projected_title": "Caleb Williams RC",
+      "control_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.6666666666666666,
+        "f1": 0.4
+      },
+      "hybrid_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.4,
+        "f1": 0.3333333333333333
+      },
+      "projected_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.6666666666666666,
+        "f1": 0.4
+      },
+      "hybrid_delta_f1": -0.06666666666666671,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 5957,
+      "hybrid_input_tokens": 4304,
+      "hybrid_output_tokens": 261
+    },
+    {
+      "asset_id": "unseen_d2014506e773d47e7536",
+      "reference": "2023 Panini Phoenix Max Strus #218",
+      "control_title": "Max Strus",
+      "hybrid_title": "Max Strus",
+      "projected_title": "Max Strus",
+      "control_score": {
+        "recall": 0.3333333333333333,
+        "precision": 1,
+        "f1": 0.5
+      },
+      "hybrid_score": {
+        "recall": 0.3333333333333333,
+        "precision": 1,
+        "f1": 0.5
+      },
+      "projected_score": {
+        "recall": 0.3333333333333333,
+        "precision": 1,
+        "f1": 0.5
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 0,
+      "hybrid_latency_ms": 6075,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 214
+    },
+    {
+      "asset_id": "unseen_e9c74d3fa6e36cc2a779",
+      "reference": "2024 Panini Phoenix Tyreek Hill #144",
+      "control_title": "Tyreek Hill Green Cracked Ice",
+      "hybrid_title": "Tyreek Hill Green Cracked Ice",
+      "projected_title": "Tyreek Hill Green Cracked Ice",
+      "control_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.4,
+        "f1": 0.3636363636363636
+      },
+      "hybrid_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.4,
+        "f1": 0.3636363636363636
+      },
+      "projected_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.4,
+        "f1": 0.3636363636363636
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 3,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 5407,
+      "hybrid_input_tokens": 3128,
+      "hybrid_output_tokens": 243
+    },
+    {
+      "asset_id": "unseen_382c09472dc13c325652",
+      "reference": "2024 Panini Phoenix Color Blast Malik Nabers #3",
+      "control_title": "Malik Nabers RC",
+      "hybrid_title": "Malik Nabers RC",
+      "projected_title": "Malik Nabers RC",
+      "control_score": {
+        "recall": 0.25,
+        "precision": 0.6666666666666666,
+        "f1": 0.36363636363636365
+      },
+      "hybrid_score": {
+        "recall": 0.25,
+        "precision": 0.6666666666666666,
+        "f1": 0.36363636363636365
+      },
+      "projected_score": {
+        "recall": 0.25,
+        "precision": 0.6666666666666666,
+        "f1": 0.36363636363636365
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 4002,
+      "hybrid_input_tokens": 3147,
+      "hybrid_output_tokens": 249
+    },
+    {
+      "asset_id": "unseen_5aaa54c150b4479171cb",
+      "reference": "2024 Panini Phoenix Archetype Lamar Jackson #2",
+      "control_title": "Conteurs Lamar Jackson",
+      "hybrid_title": "Panini Contenders Lamar Jackson",
+      "projected_title": "Conteurs Lamar Jackson",
+      "control_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.6666666666666666,
+        "f1": 0.4
+      },
+      "hybrid_score": {
+        "recall": 0.42857142857142855,
+        "precision": 0.75,
+        "f1": 0.5454545454545454
+      },
+      "projected_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.6666666666666666,
+        "f1": 0.4
+      },
+      "hybrid_delta_f1": 0.1454545454545454,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 5878,
+      "hybrid_input_tokens": 4439,
+      "hybrid_output_tokens": 259
+    },
+    {
+      "asset_id": "unseen_265e71d598ed841e4475",
+      "reference": "2024 Panini Phoenix Dre Greenlaw #53",
+      "control_title": "Dre Greenlaw Red Mojo",
+      "hybrid_title": "Dre Greenlaw Red Geometric",
+      "projected_title": "Dre Greenlaw Red Mojo",
+      "control_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.5,
+        "f1": 0.4
+      },
+      "hybrid_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.5,
+        "f1": 0.4
+      },
+      "projected_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.5,
+        "f1": 0.4
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": true,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [],
+      "candidate_fact_count": 4,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 3797,
+      "hybrid_input_tokens": 3324,
+      "hybrid_output_tokens": 274
+    },
+    {
+      "asset_id": "unseen_39194858fc5eeec7d09d",
+      "reference": "2025 Panini Prizm FIFA Talismen Lautaro Martinez #6",
+      "control_title": "Panini Prizm Lautaro Martínez Orange Prizm",
+      "hybrid_title": "Panini Prizm Lautaro Martínez Orange Prizm",
+      "projected_title": "Panini Prizm Inter Milan crest Lautaro Martínez Orange Prizm",
+      "control_score": {
+        "recall": 0.5,
+        "precision": 0.8,
+        "f1": 0.6153846153846154
+      },
+      "hybrid_score": {
+        "recall": 0.5,
+        "precision": 0.8,
+        "f1": 0.6153846153846154
+      },
+      "projected_score": {
+        "recall": 0.5,
+        "precision": 0.5,
+        "f1": 0.5
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": -0.11538461538461542,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": true,
+      "identity_changes": [
+        {
+          "field": "set",
+          "value": "Inter Milan crest",
+          "source": {
+            "value": "Inter Milan crest",
+            "kind": "affiliation",
+            "basis": "logo_or_symbol",
+            "image": "image_1",
+            "region": "card_front"
+          }
+        }
+      ],
+      "rejected_identity_facts": [
+        {
+          "value": "Prizm",
+          "kind": "identity",
+          "basis": "exact_text",
+          "image": "image_1",
+          "region": "card_front"
+        }
+      ],
+      "candidate_fact_count": 6,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 7505,
+      "hybrid_input_tokens": 5264,
+      "hybrid_output_tokens": 333
+    },
+    {
+      "asset_id": "unseen_302227384e4e19804899",
+      "reference": "2025 Panini Prizm FIFA Prizm Flashback - 2015 Lionel Messi #2",
+      "control_title": "Panini Prizm Lionel Messi",
+      "hybrid_title": "Panini Prizm Lionel Messi",
+      "projected_title": "Panini Prizm Lionel Messi",
+      "control_score": {
+        "recall": 0.4444444444444444,
+        "precision": 1,
+        "f1": 0.6153846153846153
+      },
+      "hybrid_score": {
+        "recall": 0.4444444444444444,
+        "precision": 1,
+        "f1": 0.6153846153846153
+      },
+      "projected_score": {
+        "recall": 0.4444444444444444,
+        "precision": 1,
+        "f1": 0.6153846153846153
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [
+        {
+          "value": "PRIZM",
+          "kind": "identity",
+          "basis": "exact_text",
+          "image": "image_1",
+          "region": "card_front"
+        },
+        {
+          "value": "FC BARCELONA",
+          "kind": "affiliation",
+          "basis": "exact_text",
+          "image": "image_1",
+          "region": "card_front"
+        }
+      ],
+      "candidate_fact_count": 6,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 7049,
+      "hybrid_input_tokens": 4544,
+      "hybrid_output_tokens": 313
+    },
+    {
+      "asset_id": "unseen_09dd62702d9d39ae7da6",
+      "reference": "2025 Panini Prizm FIFA Club Legends Signatures Zinedine Zidane #4",
+      "control_title": "Panini Prizm Club Legends Zinedine Zidane Rainbow Prizm Auto",
+      "hybrid_title": "Panini Prizm Club Legends Zinedine Zidane Rainbow Prizm Auto",
+      "projected_title": "Panini Prizm Club Legends Zinedine Zidane Rainbow Prizm Auto",
+      "control_score": {
+        "recall": 0.6,
+        "precision": 0.75,
+        "f1": 0.6666666666666665
+      },
+      "hybrid_score": {
+        "recall": 0.6,
+        "precision": 0.75,
+        "f1": 0.6666666666666665
+      },
+      "projected_score": {
+        "recall": 0.6,
+        "precision": 0.75,
+        "f1": 0.6666666666666665
+      },
+      "hybrid_delta_f1": 0,
+      "projected_delta_f1": 0,
+      "hybrid_reference_loss_tokens": [],
+      "projected_reference_loss_tokens": [],
+      "hybrid_changed": false,
+      "projected_changed": false,
+      "identity_changes": [],
+      "rejected_identity_facts": [
+        {
+          "value": "PRIZM",
+          "kind": "identity",
+          "basis": "exact_text",
+          "image": "image_1",
+          "region": "card_front"
+        }
+      ],
+      "candidate_fact_count": 7,
+      "candidate_hypothesis_count": 1,
+      "hybrid_latency_ms": 6873,
+      "hybrid_input_tokens": 3586,
+      "hybrid_output_tokens": 358
+    }
+  ]
+}

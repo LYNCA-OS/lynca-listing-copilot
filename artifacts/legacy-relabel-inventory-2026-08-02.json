@@ -1,0 +1,75 @@
+{
+  "schema_version": "legacy-relabel-inventory-v1",
+  "created_at": "2026-08-01T23:44:30.660Z",
+  "purpose": "read_only_inventory_for_human_or_official_relabeling",
+  "accuracy_gate_policy": {
+    "accuracy_eval_eligible": false,
+    "seller_titles_are_not_ground_truth": true,
+    "requires_sealed_reviewed_reference": true,
+    "no_titles_exported": true,
+    "no_images_copied": true
+  },
+  "source_count": 2,
+  "relabel_ready_source_count": 2,
+  "cards_available_for_relabeling": 272,
+  "cards_available_for_accuracy_gate": 0,
+  "sources": [
+    {
+      "source_id": "ebay-c100-cloud-eval-20260707",
+      "dataset_path": "/Users/paidaxin/Documents/lynca-listing-copilot.v2_pai/data/eval/ebay-reference/ebay-c100-cloud-eval-dataset-20260707.json",
+      "labels_path": "/Users/paidaxin/Documents/lynca-listing-copilot.v2_pai/data/eval/ebay-reference/ebay-c100-sealed-labels-20260707.jsonl",
+      "dataset_sha256": "61e51dc622ecf396419ff2b4acc036e9ae44df9e1718436fdca809667caba42d",
+      "labels_sha256": "da26aeb2b9672e7dfff0aa2f3b636bf00202ad1e8366fd9946df357834ed10bf",
+      "declared_cards": 100,
+      "item_rows": 100,
+      "label_rows": 100,
+      "labels_matching_item_refs": 100,
+      "image_rows": 200,
+      "materialized_images": 200,
+      "missing_images": 0,
+      "all_images_materialized": true,
+      "policy": {
+        "image_only": true,
+        "seller_titles_are_ground_truth": false,
+        "ebay_answer_key_is_reviewed_ground_truth": false,
+        "title_derived_catalog_import_allowed": false,
+        "requires_writer_review_before_approved_reference": true
+      },
+      "review_status_counts": {
+        "NEEDS_WRITER_REVIEW": 100
+      },
+      "accuracy_eval_eligible": false,
+      "relabel_ready": true,
+      "next_action": "obtain_sealed_reviewed_reference_labels_without_model_or_seller_title_visibility"
+    },
+    {
+      "source_id": "ebay-image-intake-20260701",
+      "dataset_path": "/Users/paidaxin/Documents/lynca-listing-copilot.v2_pai/data/eval/ebay-reference/ebay-image-intake-dataset-20260701.json",
+      "labels_path": "/Users/paidaxin/Documents/lynca-listing-copilot.v2_pai/data/eval/ebay-reference/ebay-image-intake-sealed-labels-20260701.jsonl",
+      "dataset_sha256": "ed01df532fca1137b3b65038f013125439771e70eb2b7f4a003ded789c276eb9",
+      "labels_sha256": "d8c792ff3fca6dace3226255fb15c54c2a766ccc1dcbd7ca9fbcfd092a786199",
+      "declared_cards": 172,
+      "item_rows": 172,
+      "label_rows": 172,
+      "labels_matching_item_refs": 172,
+      "image_rows": 344,
+      "materialized_images": 344,
+      "missing_images": 0,
+      "all_images_materialized": true,
+      "policy": {
+        "image_only": true,
+        "seller_titles_are_ground_truth": false,
+        "ebay_answer_key_is_reviewed_ground_truth": false,
+        "title_derived_catalog_import_allowed": false,
+        "requires_writer_review_before_approved_reference": true
+      },
+      "review_status_counts": {
+        "NEEDS_WRITER_REVIEW": 172
+      },
+      "accuracy_eval_eligible": false,
+      "relabel_ready": true,
+      "next_action": "obtain_sealed_reviewed_reference_labels_without_model_or_seller_title_visibility"
+    }
+  ],
+  "errors": []
+}

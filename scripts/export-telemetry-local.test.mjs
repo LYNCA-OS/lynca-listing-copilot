@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
+// `resolveSupabaseUrl` is deliberately lazy and has NO default -- "nothing can
+// be silently pointed at a project nobody chose". That makes the URL an input
+// to this test rather than an ambient fact, so it is set here instead of being
+// inherited from whoever happens to be running. Without this the suite passes
+// on a developer machine with credentials loaded and fails on a runner.
+process.env.SUPABASE_URL = process.env.SUPABASE_URL || "https://example.supabase.co";
+
 import { appendFile, mkdir, mkdtemp, readFile, rm, stat, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 
 import {
-  defaultSupabaseUrl,
+  resolveSupabaseUrl,
   exportTable,
   reconcileCommittedFiles,
   telemetryExportContractVersion,
@@ -45,7 +52,7 @@ async function writeEmptyManifest(dest, { table, timeColumn, keyColumn }) {
   await mkdir(tableDir, { recursive: true });
   await writeFile(resolve(tableDir, "manifest.json"), `${JSON.stringify({
     schema_version: telemetryExportContractVersion,
-    project_url: defaultSupabaseUrl,
+    project_url: resolveSupabaseUrl(),
     table,
     time_column: timeColumn,
     key_column: keyColumn,

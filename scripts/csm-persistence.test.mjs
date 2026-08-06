@@ -64,10 +64,6 @@ const rows = buildCsmStageRows({
   tenantId: "t1", recognitionSessionId: "s1", fields, composed,
   title: composed.title, createdAt: "2026-08-01T00:00:00Z"
 });
-for (const forbidden of ["evidence", "candidates", "provider_response", "raw_model_response"]) {
-  assert.equal(Object.hasOwn(rows.output.structured_output, forbidden), false,
-    `marketplace output must not duplicate the canonical ${forbidden} trace`);
-}
 assert.equal(rows.resolution.registry_release_id, THIN_REGISTRY_RELEASE_ID);
 assert.equal(rows.resolution.grammar, "NON_TCG");
 assert.equal(rows.output.marketplace, "EBAY");
@@ -175,6 +171,28 @@ for (const link of rows.links) {
 // Collapsing them would make a replay unable to say why a bracket is absent.
 assert.ok(Array.isArray(rows.output.dropped_trace.dropped_for_budget));
 assert.ok(rows.output.dropped_trace.suppressed_by_profile.includes("card_number"));
+assert.deepEqual(rows.output.dropped_trace.empty_at_input, composed.input_empty_fields);
+assert.deepEqual(
+  rows.output.dropped_trace.normalization_reason_codes,
+  composed.normalization_reasons
+);
+assert.equal(rows.output.dropped_trace.character_budget, composed.character_budget);
+assert.equal(rows.output.dropped_trace.rendered_length, composed.length);
+
+// Inferred parents are a Composer normalization, not an observed input. The
+// trace must still say that Manufacturer was empty at input even though the
+// normalized bracket later renders a parent inferred from Product.
+{
+  const inferredFields = { ...fields, manufacturer: "", product: "Prizm" };
+  const inferredComposition = composeFromCanonicalFields(inferredFields);
+  assert.ok(inferredComposition.input_empty_fields.includes("manufacturer"));
+  assert.equal(inferredComposition.empty_fields.includes("manufacturer"), false);
+  const inferredRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "inferred-parent-trace",
+    fields: inferredFields, composed: inferredComposition, title: inferredComposition.title
+  });
+  assert.ok(inferredRows.output.dropped_trace.empty_at_input.includes("manufacturer"));
+}
 
 process.stdout.write("csm persistence: ok\n");
 

@@ -9,6 +9,7 @@ import {
   THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { CSM_PROVIDER_AUTHORITY_LIMITS } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
+import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 
 const ENV = {
   CSM_PERSISTENCE_ENABLED: "true",
@@ -72,7 +73,9 @@ const ready = await checkCsmThinProductionReadiness({ env: ENV, fetchImpl });
 assert.equal(ready.ok, true);
 assert.equal(ready.active_path, "CSM_THIN_DIRECT");
 assert.equal(ready.model, "gpt-5.6-luna");
-assert.equal(ready.reasoning_effort, "none");
+// `low` since 2026-08-03 (founder). Asserted against the runtime contract so
+// the readiness probe and the endpoint can never disagree about the tier.
+assert.equal(ready.reasoning_effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
 assert.deepEqual(calls.map(({ pathname }) => pathname), [
   "/rest/v1/csm_registry_releases",
   "/rest/v1/rpc/persist_csm_stage_packet_v1",

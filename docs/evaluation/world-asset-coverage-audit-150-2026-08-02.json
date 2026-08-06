@@ -1,0 +1,681 @@
+{
+  "schema_version": "world-asset-coverage-audit-v1",
+  "authority": "offline_advisory_evaluation_only",
+  "production_promoted": false,
+  "provider_calls": 0,
+  "runtime_changes": 0,
+  "decision": {
+    "current_world_assets": "STOP_INSUFFICIENT_FINAL_TITLE_CORRECTION",
+    "local_official_data_only": "STOP_NO_PRODUCT_PARALLEL_COOCCURRENCE",
+    "next_asset": "GO_BUILD_MINIMAL_SOURCE_VERSIONED_RELEASE_IDENTITY_PARALLEL_GRAPH",
+    "production": "STOP_UNTIL_FULL_150_RESOLVER_COMPOSER_REPLAY_PASSES"
+  },
+  "contrary_hypothesis": "A larger generic player-team world model is not the highest-leverage accuracy investment. Current title losses concentrate in release identity and finish relations, while team ranking is negative.",
+  "invariants": {
+    "visible_text_can_be_overwritten": false,
+    "candidate_generation_allowed": false,
+    "candidate_value_mutation_allowed": false,
+    "asset_absence_means_contradiction": false,
+    "hard_rejection_allowed": false,
+    "advisory_rank_and_abstain_only": true
+  },
+  "source_versions": {
+    "constraints": {
+      "path": "data/catalog/constraints/constraints-94b08531ca0f9fa3.json.gz",
+      "sha256": "3c63700e0506fc187e43deb3bec73fb8b7c1fd5f83269e51380f195592a5fa10",
+      "schema_version": "constraint-model-v1",
+      "generated_at": "2026-07-28T12:32:21.409Z",
+      "source_card_count": 2293502,
+      "edge_level_provenance_present": false
+    },
+    "expression": {
+      "path": "artifacts/candidate-expression-v4/development-150-merged-2026-08-02.jsonl",
+      "sha256": "39fbbaeef1c9bd2d01d74aaf36c3a1380e9901d26b76dac502756a91811d5819"
+    },
+    "world_replay": {
+      "path": "docs/evaluation/world-compatibility-ranker-v1-replay-150-2026-08-02.json",
+      "sha256": "e5c0565e2d202ea08095ca023eb30eed8c9cbf09befcb06e90ba98a54d7397dd"
+    },
+    "official_manifests": [
+      {
+        "path": "data/catalog/official/battle_spirits-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "91356e28598f9821106bdf46e62dbd94a1d950b7cff9d36b640d3966082555f9",
+        "sources": 6
+      },
+      {
+        "path": "data/catalog/official/digimon-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "b9488da65952df5997760a02482dc50fb458b7b371f68c9961d50ad13cff600f",
+        "sources": 12
+      },
+      {
+        "path": "data/catalog/official/dragon_ball_fusion_world-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "21833e7849dd6fea21e904fb9a41fbe38cff4a0a363620940692ab4b09e0e08f",
+        "sources": 1
+      },
+      {
+        "path": "data/catalog/official/dragon_ball_masters-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "019f55f30ce3476f22633aadf5e711a8266924e847e5e4f5777d013af2dcf058",
+        "sources": 25
+      },
+      {
+        "path": "data/catalog/official/leaf-production-sources.json",
+        "schema_version": "official-catalog-source-manifest-v1",
+        "sha256": "d29c1578d8d4b25793eb93c8c3c0a45045606e0c522aa65401e69a1bbbc316e1",
+        "sources": 1
+      },
+      {
+        "path": "data/catalog/official/one_piece-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "ffaf6e72521e0b6c9f37bad9de4eb9823752ef1168841b1e80cf11cdf790be8c",
+        "sources": 10
+      },
+      {
+        "path": "data/catalog/official/panini-production-sources.json",
+        "schema_version": "official-catalog-source-manifest-v1",
+        "sha256": "0500daaf9dc06de1f1eafa44424f7ef128232ebd2bc3957cbdab701b70002fb4",
+        "sources": 1
+      },
+      {
+        "path": "data/catalog/official/topps-production-sources.json",
+        "schema_version": "official-catalog-source-manifest-v1",
+        "sha256": "8e7542ec53cb4375b2e02d2f5364fff72d36238305785cc4858909e05891dc50",
+        "sources": 66
+      },
+      {
+        "path": "data/catalog/official/upper_deck-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "2f6465b12645e0931664403dcfa79502971674296fb563109368b4a975fde34f",
+        "sources": 1
+      },
+      {
+        "path": "data/catalog/official/wotc_gatherer-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "f0593519b83085ca0b39bc774b31b77854296655bff2a591e2d5a58ddba04cdc",
+        "sources": 1
+      }
+    ],
+    "official_graph_sources": [
+      {
+        "file": "data/catalog/official/battle_spirits-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "91356e28598f9821106bdf46e62dbd94a1d950b7cff9d36b640d3966082555f9",
+        "source_count": 6
+      },
+      {
+        "file": "data/catalog/official/digimon-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "b9488da65952df5997760a02482dc50fb458b7b371f68c9961d50ad13cff600f",
+        "source_count": 12
+      },
+      {
+        "file": "data/catalog/official/dragon_ball_fusion_world-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "21833e7849dd6fea21e904fb9a41fbe38cff4a0a363620940692ab4b09e0e08f",
+        "source_count": 1
+      },
+      {
+        "file": "data/catalog/official/dragon_ball_masters-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "019f55f30ce3476f22633aadf5e711a8266924e847e5e4f5777d013af2dcf058",
+        "source_count": 25
+      },
+      {
+        "file": "data/catalog/official/leaf-production-sources.json",
+        "schema_version": "official-catalog-source-manifest-v1",
+        "sha256": "d29c1578d8d4b25793eb93c8c3c0a45045606e0c522aa65401e69a1bbbc316e1",
+        "source_count": 1
+      },
+      {
+        "file": "data/catalog/official/one_piece-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "ffaf6e72521e0b6c9f37bad9de4eb9823752ef1168841b1e80cf11cdf790be8c",
+        "source_count": 10
+      },
+      {
+        "file": "data/catalog/official/panini-production-sources.json",
+        "schema_version": "official-catalog-source-manifest-v1",
+        "sha256": "0500daaf9dc06de1f1eafa44424f7ef128232ebd2bc3957cbdab701b70002fb4",
+        "source_count": 1
+      },
+      {
+        "file": "data/catalog/official/topps-production-sources.json",
+        "schema_version": "official-catalog-source-manifest-v1",
+        "sha256": "8e7542ec53cb4375b2e02d2f5364fff72d36238305785cc4858909e05891dc50",
+        "source_count": 66
+      },
+      {
+        "file": "data/catalog/official/upper_deck-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "2f6465b12645e0931664403dcfa79502971674296fb563109368b4a975fde34f",
+        "source_count": 1
+      },
+      {
+        "file": "data/catalog/official/wotc_gatherer-production-sources.json",
+        "schema_version": "official-source-manifest-v1",
+        "sha256": "f0593519b83085ca0b39bc774b31b77854296655bff2a591e2d5a58ddba04cdc",
+        "source_count": 1
+      },
+      {
+        "file": "data/catalog/vocabulary/field-vocabulary.json",
+        "schema_version": "catalog-field-vocabulary-v1",
+        "generated_at": "2026-07-25T14:09:42.306Z",
+        "source_row_count": 43681,
+        "sha256": "b978c60dbee6ef1863ecd225212b73d1152618870bf2d3aa59d5f14cc7b619b9"
+      }
+    ]
+  },
+  "asset_quality": {
+    "constraint_relation_cardinalities": {
+      "player_years": 20816,
+      "player_teams": 4694,
+      "player_team_years": 4694,
+      "set_product_years": 30600,
+      "product_years": 162,
+      "product_sports": 162,
+      "ip_relations": 0
+    },
+    "player_team_subject_share_of_player_year_subjects": 0.22549961568024596,
+    "known_polluted_team_edges_lower_bound": 784,
+    "official_records": {
+      "manifests": 10,
+      "sources": 124,
+      "required_records": 143,
+      "usable_records": 142,
+      "product": 116,
+      "set_or_insert": 15,
+      "parallel_exact": 2,
+      "rarity": 48,
+      "product_set_pairs": 15,
+      "product_parallel_pairs": 0,
+      "set_parallel_pairs": 0,
+      "product_set_parallel_tuples": 0
+    },
+    "official_graph": {
+      "normalized_term_count": 809,
+      "edge_count": 978,
+      "edges_by_role": {
+        "insert": 626,
+        "product": 190,
+        "release": 124,
+        "rarity": 25,
+        "print_finish": 13
+      },
+      "edges_by_origin": {
+        "official_vocabulary": 696,
+        "manifest_record": 158,
+        "manifest_source": 124
+      },
+      "quality": {
+        "excluded_sentinel_or_short_edges": 24,
+        "excluded_review_required_records": 1,
+        "official_vocabulary_rows": 697,
+        "cross_role_term_count": 60
+      }
+    },
+    "candidate_facts": {
+      "occurrences_by_kind": {
+        "year": 150,
+        "subject": 217,
+        "finish": 58,
+        "number": 246,
+        "grade": 80,
+        "other": 71,
+        "attribute": 208,
+        "identity": 240,
+        "affiliation": 190,
+        "language": 3
+      },
+      "cards_by_kind": {
+        "year": 125,
+        "subject": 150,
+        "finish": 50,
+        "number": 145,
+        "grade": 45,
+        "other": 54,
+        "attribute": 110,
+        "identity": 111,
+        "affiliation": 121,
+        "language": 3
+      }
+    }
+  },
+  "relation_coverage": {
+    "subject_year": {
+      "local_asset": "player_years",
+      "source_keys": 20816,
+      "subject_occurrences": 167,
+      "exact_subject_occurrences_supported": 144,
+      "eligible_multi_candidate_cards": 24,
+      "positive_support_cards": 10,
+      "changed_candidate_rank_cards": 4,
+      "candidate_rank_wins": 4,
+      "candidate_rank_losses": 0,
+      "current_final_title_correction_cards": 1,
+      "current_final_title_oracle_delta": 0.00060606060606061,
+      "correct_value_false_reject_rate": 0.2796610169491525,
+      "decision": "HOLD_SUPPORT_ONLY_NO_HARD_REJECT"
+    },
+    "subject_team_year": {
+      "local_asset": "player_team_years",
+      "source_keys": 4694,
+      "exact_subject_occurrences_supported": 64,
+      "eligible_multi_candidate_cards": 45,
+      "positive_support_cards": 31,
+      "changed_candidate_rank_cards": 9,
+      "candidate_rank_wins": 1,
+      "candidate_rank_losses": 6,
+      "known_polluted_edges_lower_bound": 784,
+      "current_final_title_correction_cards": 0,
+      "decision": "STOP_NEGATIVE_AND_SEMANTICALLY_POLLUTED"
+    },
+    "subject_character_ip": {
+      "local_asset": null,
+      "source_edges": 0,
+      "typed_candidate_counterfactual_cards": 0,
+      "canonical_ip_field_cards": 2,
+      "current_final_title_correction_cards": 0,
+      "decision": "STOP_MISSING_RELATION"
+    },
+    "product_year": {
+      "local_asset": "product_years",
+      "source_keys": 162,
+      "eligible_multi_candidate_cards": 84,
+      "positive_support_cards": 46,
+      "changed_candidate_rank_cards": 15,
+      "candidate_rank_wins": 15,
+      "candidate_rank_losses": 0,
+      "current_final_title_correction_cards": 0,
+      "correct_value_false_reject_rate": 0.3466666666666667,
+      "decision": "HOLD_CANDIDATE_SIGNAL_BUT_RESOLVER_DOES_NOT_CONSUME_IT"
+    },
+    "set_product_year": {
+      "local_asset": "set_product_years",
+      "source_keys": 30600,
+      "typed_candidate_counterfactual_cards": 0,
+      "enumerated_value_cards": 4,
+      "known_wrong_enumerations": 1,
+      "current_final_title_correction_cards": 0,
+      "decision": "STOP_NO_TYPED_SCREEN_AND_KNOWN_FALSE_ENUMERATION"
+    },
+    "release_product_set_parallel": {
+      "local_asset": "official_manifests_plus_field_vocabulary",
+      "graph_terms": 809,
+      "graph_edges": 978,
+      "record_product_set_pairs": 15,
+      "record_product_parallel_pairs": 0,
+      "record_set_parallel_pairs": 0,
+      "record_product_set_parallel_tuples": 0,
+      "exact_supported_candidate_cards": 5,
+      "exact_supported_finish_candidate_cards": 0,
+      "current_final_title_correction_cards": 0,
+      "competing_finish_tokens": 63,
+      "competing_finish_cards": 39,
+      "decision": "GO_BUILD_SOURCE_VERSIONED_RELATION_ASSET_STOP_CURRENT_GRAPH"
+    }
+  },
+  "accuracy_mass": {
+    "fresh150_recall_loss_families": {
+      "parallel_or_finish": 76,
+      "serial_or_numbered_print": 35,
+      "attribute_or_component": 25,
+      "bare_number_or_ordinal": 24,
+      "other_identity_or_descriptor": 23,
+      "rarity_or_marker": 17,
+      "product_set_or_ip": 14,
+      "year_or_season": 11,
+      "color": 9,
+      "lot_notation": 8,
+      "subject_or_name": 6,
+      "token_boundary_or_spelling": 4,
+      "team_or_league": 3
+    },
+    "recall_identity_world_addressability_ceiling": {
+      "occurrences": 34,
+      "share": 0.13333333333333333,
+      "warning": "rankers cannot recover a candidate Luna never expressed"
+    },
+    "current_precision_field_oracles": {
+      "subject_year": {
+        "fields": [
+          "year"
+        ],
+        "token_occurrences": 15,
+        "cards": 14,
+        "oracle_delta": 0.003327210743619302
+      },
+      "release_identity": {
+        "fields": [
+          "manufacturer",
+          "product",
+          "set",
+          "release_variant",
+          "card_name"
+        ],
+        "token_occurrences": 103,
+        "cards": 66,
+        "oracle_delta": 0.023746795369644746
+      },
+      "subject_ip_team": {
+        "fields": [
+          "subjects",
+          "ip",
+          "team"
+        ],
+        "token_occurrences": 19,
+        "cards": 8,
+        "oracle_delta": 0.0037008989919227187
+      },
+      "finish_parallel": {
+        "fields": [
+          "print_finish",
+          "descriptive_rarity"
+        ],
+        "token_occurrences": 91,
+        "cards": 57,
+        "oracle_delta": 0.022958146149993253
+      },
+      "combined_world_scope": {
+        "fields": [
+          "year",
+          "manufacturer",
+          "product",
+          "set",
+          "release_variant",
+          "card_name",
+          "subjects",
+          "ip",
+          "team",
+          "print_finish",
+          "descriptive_rarity"
+        ],
+        "token_occurrences": 228,
+        "cards": 104,
+        "oracle_delta": 0.056275078713504234
+      }
+    }
+  },
+  "target_delta_analysis": {
+    "target_delta_f1": 0.02,
+    "current_verified_final_title_world_delta": 0.00060606060606061,
+    "target_fraction_currently_demonstrated": 0.030303030303030498,
+    "remaining_delta": 0.01939393939393939,
+    "all_clear_precision_errors_oracle_delta": 0.007838226425779804,
+    "all_clear_precision_errors_can_reach_target": false,
+    "precision_only_greedy_oracles": {
+      "subject_year": {
+        "reachable": false,
+        "cards": 14,
+        "token_occurrences": 15,
+        "oracle_delta": 0.0033272107436194106,
+        "card_ordinals": [
+          128,
+          24,
+          13,
+          87,
+          133,
+          47,
+          44,
+          6,
+          118,
+          60,
+          145,
+          85,
+          144,
+          5
+        ]
+      },
+      "release_identity": {
+        "reachable": true,
+        "cards": 48,
+        "token_occurrences": 85,
+        "oracle_delta": 0.020079705884785085,
+        "card_ordinals": [
+          137,
+          62,
+          113,
+          64,
+          10,
+          122,
+          145,
+          30,
+          54,
+          39,
+          96,
+          125,
+          119,
+          99,
+          47,
+          5,
+          124,
+          89,
+          6,
+          67,
+          131,
+          118,
+          126,
+          48,
+          91,
+          141,
+          85,
+          144,
+          110,
+          20,
+          15,
+          129,
+          18,
+          42,
+          68,
+          134,
+          120,
+          11,
+          8,
+          135,
+          132,
+          75,
+          105,
+          56,
+          143,
+          140,
+          37,
+          133
+        ]
+      },
+      "subject_ip_team": {
+        "reachable": false,
+        "cards": 8,
+        "token_occurrences": 19,
+        "oracle_delta": 0.0037008989919228357,
+        "card_ordinals": [
+          31,
+          105,
+          138,
+          72,
+          98,
+          95,
+          60,
+          88
+        ]
+      },
+      "finish_parallel": {
+        "reachable": true,
+        "cards": 44,
+        "token_occurrences": 78,
+        "oracle_delta": 0.020076227283482625,
+        "card_ordinals": [
+          114,
+          15,
+          12,
+          142,
+          38,
+          70,
+          102,
+          146,
+          69,
+          148,
+          135,
+          1,
+          100,
+          56,
+          93,
+          139,
+          83,
+          25,
+          22,
+          127,
+          3,
+          17,
+          138,
+          49,
+          6,
+          95,
+          14,
+          122,
+          80,
+          141,
+          85,
+          88,
+          144,
+          54,
+          116,
+          150,
+          147,
+          112,
+          65,
+          5,
+          94,
+          106,
+          76,
+          123
+        ]
+      },
+      "combined_world_scope": {
+        "reachable": true,
+        "cards": 21,
+        "token_occurrences": 89,
+        "oracle_delta": 0.020646635491704292,
+        "card_ordinals": [
+          6,
+          31,
+          122,
+          105,
+          85,
+          5,
+          15,
+          114,
+          54,
+          144,
+          138,
+          118,
+          137,
+          135,
+          56,
+          62,
+          145,
+          141,
+          88,
+          133,
+          47
+        ]
+      }
+    },
+    "interpretation": "Current assets demonstrate 1 final-title correction. Under a label-reading precision-only oracle, reaching +0.02 requires concentrated corrections across at least the listed high-impact cards; these are workload bounds, not forecasts."
+  },
+  "minimum_asset_extension": {
+    "priority": [
+      "release_year_product_set_parallel_finish",
+      "subject_or_character_ip_release_identity",
+      "source_versioned_product_year_and_set_product_edges",
+      "player_team_year_only_after_semantic_cleanup"
+    ],
+    "edge_schema": [
+      "edge_id",
+      "subject_type",
+      "subject_normalized",
+      "predicate",
+      "object_type",
+      "object_normalized",
+      "release_id",
+      "valid_from",
+      "valid_to",
+      "category_or_ip",
+      "source_url",
+      "source_sha256",
+      "source_version",
+      "evidence_type",
+      "coverage_contract",
+      "confidence",
+      "adjudication_status"
+    ],
+    "first_ingestion_gate": {
+      "required_relation": "release_year_product_set_parallel_finish",
+      "reason": "the local official records contain zero product-parallel and zero set-parallel pairs while finish is the largest relation-addressable precision head",
+      "must_be_disjoint_from_review_labels": true,
+      "absence_contract": "UNKNOWN"
+    }
+  },
+  "offline_counterfactual_ranker_screen": {
+    "input": "frozen Luna candidate multiset plus phrase-role resolver",
+    "action": "stable positive-edge rank only; no create, mutate, delete, or hard reject",
+    "protected": "exact/stamped/logo visible evidence",
+    "evaluation": "full CSM/SEM resolver plus same deterministic Composer on all 150 cards",
+    "negative_controls": [
+      "shuffled_edges",
+      "longest_candidate",
+      "edge_source_removed",
+      "reference_not_available_to_ranker"
+    ],
+    "go_gates": {
+      "macro_f1_delta_at_least": 0.02,
+      "wins_greater_than_losses": true,
+      "numeric_or_subject_critical_regressions": 0,
+      "candidate_count_delta": 0,
+      "candidate_value_mutations": 0,
+      "protected_visible_rejections": 0,
+      "provider_calls": 0
+    }
+  },
+  "label_boundary": {
+    "conclusion": "single_review_title_is_a_marketplace_target_not_exhaustive_field_truth",
+    "mathematical_exact_match_ceiling": 1,
+    "factual_accuracy_ceiling_identifiable_from_single_reference": false,
+    "positive_supported_but_reference_omitted": {
+      "token_occurrences": 86,
+      "cards": 57,
+      "label_removal_oracle_delta": 0.019401036516779047,
+      "boundary": "positive evidence is not independent human adjudication"
+    },
+    "writer_style_or_normalization_mismatch": {
+      "token_occurrences": 24,
+      "cards": 20,
+      "label_removal_oracle_delta": 0.00568299436214359
+    },
+    "minimum_cost_calibration": {
+      "existing_writer_a_role": "marketplace title preference, not implicit field falsehood",
+      "writer_b_scope": {
+        "cards": 117,
+        "disputed_token_occurrences": 285,
+        "average_occurrences_per_affected_card": 2.4358974358974357,
+        "task": "blind field-level adjudication from images plus field/value and evidence region; hide writer A title and model confidence",
+        "labels": [
+          "VISIBLE_TRUE",
+          "FALSE",
+          "OPTIONAL_TITLE",
+          "REQUIRED_TITLE",
+          "UNKNOWN"
+        ]
+      },
+      "writer_a_followup": "review only writer-B-valid omissions and B=UNKNOWN rows; do not rewrite all 150 titles",
+      "final_adjudication": "third review only explicit A/B disagreement or UNKNOWN",
+      "outputs": [
+        "field_truth",
+        "title_preference"
+      ],
+      "promotion_rule": "report factual field score and marketplace title score separately; no gain may come only from deleting B-confirmed visible truth"
+    },
+    "target_090_interpretation": "0.90 remains mathematically reachable by imitating one writer, but this label cannot distinguish factual gains from writer-specific omission and wording. Production accuracy needs a field-truth calibration layer."
+  }
+}

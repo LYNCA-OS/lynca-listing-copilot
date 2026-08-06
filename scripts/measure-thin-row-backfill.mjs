@@ -93,7 +93,11 @@ export function bestPhraseMatch(title = "", phrases = new Map()) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const base = cleanText(argValue(argv, "--url", process.env.SUPABASE_URL || "https://osrrujmpxxiefppjfgpd.supabase.co"));
+  // No fallback ref: the literal that stood here named a project that was
+  // decommissioned in the Sydney -> Singapore move, so an unset SUPABASE_URL
+  // failed as DNS noise instead of as a misconfiguration.
+  const base = cleanText(argValue(argv, "--url", process.env.SUPABASE_URL));
+  if (!base) throw new Error("SUPABASE_URL or --url is required: there is no default project");
   const key = cleanText(process.env.SUPABASE_SERVICE_ROLE_KEY);
   const outPath = argValue(argv, "--out", "");
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");

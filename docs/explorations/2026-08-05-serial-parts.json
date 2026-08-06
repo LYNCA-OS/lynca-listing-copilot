@@ -1,0 +1,27 @@
+{
+  "schema_version": "exploration-prereg-v1",
+  "name": "serial-parts: 按调研报告把 serial 拆成结构化字段",
+  "hypothesis": "把 serial 从单一字符串拆成 numerator/denominator/literal_text/legibility，模型在只看清一半时能报出看清的那半，而不是按现行提示词整个留空。",
+  "mechanism": "与 grading_info 同一机制——单一标量把多个事实压在一起，拆开后局部可读的事实不再被整体丢弃。现行提示词明确写着「若任一数字不清晰则留空并标 unreadable」，这正是把分母清楚、分子花了的卡整张丢掉的原因。",
+  "ceiling": 0.016142,
+  "falsifier": "serial 精确命中不高于对照，或整体 F1 显著为负 —— 说明模型本来就不是因为只看清一半而留空，拆字段解决不了它。",
+  "bar": {
+    "description": "≥8W/0L, or ΔF1≥+0.003 with p<0.05",
+    "clean_sweep": {
+      "min_wins": 8,
+      "max_losses": 0
+    },
+    "significant": {
+      "min_delta": 0.003,
+      "max_p": 0.05
+    }
+  },
+  "cohort": "255 条封存评审卡中的 50 张，与前五臂同队列同抽样",
+  "cost_note": "50 张 × 2 臂，effort=low，与前五臂等价",
+  "alternatives_considered": [
+    "card_number 结构化（报告同样建议）：天花板实测 +0.000000，150 张里只有 3 张、105 张里 0 张参考含卡号，不做",
+    "ROI Crop 多视图（报告 P0）：其两个目标里 card_number 无价值，serial 部分先用零成本的字段拆分验证",
+    "OCR-VLM Shadow：创始人判定投入高 ROI 低，不做"
+  ],
+  "id": "6f7395c45dab"
+}

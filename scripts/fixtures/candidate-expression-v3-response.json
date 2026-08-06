@@ -1,0 +1,39 @@
+{
+  "candidate_facts": [
+    {
+      "value": "VeeFriends",
+      "kind": "identity",
+      "basis": "exact_text",
+      "image": "image_2",
+      "region": "card_back",
+      "uncertainty": "none"
+    },
+    {
+      "value": "Leaf Metal Draft",
+      "kind": "identity",
+      "basis": "model_knowledge",
+      "image": "none",
+      "region": "unknown",
+      "uncertainty": "uncertain"
+    },
+    {
+      "value": "07/10",
+      "kind": "number",
+      "basis": "stamped_text",
+      "image": "image_1",
+      "region": "card_front",
+      "uncertainty": "none"
+    },
+    {
+      "value": "black mini-diamond pattern",
+      "kind": "finish",
+      "basis": "visual_interpretation",
+      "image": "image_1",
+      "region": "card_front",
+      "uncertainty": "uncertain"
+    }
+  ],
+  "unreadable_regions": [
+    "image_2 card_back lower-edge fine print"
+  ]
+}

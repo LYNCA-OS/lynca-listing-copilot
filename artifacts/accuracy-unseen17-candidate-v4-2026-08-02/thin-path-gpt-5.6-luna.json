@@ -1,0 +1,47 @@
+{
+  "schema_version": "thin-path-eval-v2",
+  "run_fingerprint": "f326c6def6bd401bd487ab907f63dfeed972cd6430b39f9b0b673a0be3e91a33",
+  "finisher_fingerprint": "0c25ba48dc02e6a2f5fc960cfaa1c12295533cd7e8c06cd039d16b68a02904cb",
+  "selection_role": "unseen_product_expression_screen",
+  "comparison_mode": "single_live_arm",
+  "model": "gpt-5.6-luna",
+  "effort": "none",
+  "image_detail": "high",
+  "cards_paired": 0,
+  "arms": [
+    {
+      "arm": "candidate_expression_v4_high",
+      "image_detail": "high",
+      "n": 17,
+      "f1": 0,
+      "recall": 0,
+      "precision": 0,
+      "token_recall": 0,
+      "median_length": 0,
+      "median_latency_ms": 3678,
+      "median_input_tokens": 2725,
+      "median_output_tokens": 208,
+      "input_tokens_total": 39477,
+      "output_tokens_total": 3717,
+      "total_tokens": 43194,
+      "print_finish_stated": 0,
+      "card_name_stated": 0,
+      "release_variant_stated": 0,
+      "descriptive_rarity_stated": 0,
+      "low_confidence_used": 0,
+      "unreadable_used": 0,
+      "canonical_n": 0,
+      "sem_confidence": 0,
+      "sem_field_count": null,
+      "sem_structurally_valid": 0
+    }
+  ],
+  "same_response_canonical_control": null,
+  "paired_delta_f1": null,
+  "sign_test": {
+    "wins": 0,
+    "losses": 0,
+    "ties": 0,
+    "p": 1
+  }
+}

@@ -19,11 +19,14 @@ const enabledEnv = {
 function providerFor(fields) {
   return async (request) => {
     assert.equal(request.model, "gpt-5.6-luna");
-    assert.equal(request.reasoning.effort, "none");
+    // `low` since 2026-08-03 (founder). The tier is the shipped one, so the
+    // expectation moves rather than the behaviour: this assertion was written
+    // against the superseded default.
+    assert.equal(request.reasoning.effort, "low");
     return new Response(JSON.stringify({
       id: "resp_csm_trace",
       output_text: JSON.stringify(fields),
-      reasoning: { effort: "none" },
+      reasoning: { effort: "low" },
       usage: { input_tokens: 100, output_tokens: 30 }
     }), {
       status: 200,
@@ -116,7 +119,7 @@ const common = {
       assert.equal(patch.csm_owner_versions.provider_attempt_number, null);
       assert.equal(patch.csm_owner_versions.provider_retry_count, null);
       assert.equal(patch.csm_owner_versions.provider, "openai");
-      assert.equal(patch.csm_owner_versions.reasoning_effort, "none");
+      assert.equal(patch.csm_owner_versions.reasoning_effort, "low");
       assert.equal(patch.csm_owner_versions.latency_ms >= 0, true);
       assert.equal(patch.csm_owner_versions.input_tokens, 100);
       assert.equal(patch.csm_owner_versions.output_tokens, 30);
@@ -144,8 +147,19 @@ const common = {
     dropped_for_budget: result.dropped_brackets,
     suppressed_by_profile: result.suppressed_brackets,
     restored: result.restored_brackets,
-    truncated: result.truncated
+    truncated: result.truncated,
+    empty_at_input: result.input_empty_fields,
+    normalization_reason_codes: result.normalization_reasons,
+    character_budget: result.character_budget,
+    rendered_length: result.length
   }, "the public Composer result must survive the orchestration-to-CSM mapping losslessly");
+// Each of these must be a real value, not `undefined` matching `undefined`:
+// deepEqual is satisfied by two missing keys, which is exactly how the four
+// composition-receipt fields stayed unpersisted while this assertion passed.
+for (const key of ["empty_at_input", "normalization_reason_codes", "character_budget", "rendered_length"]) {
+  assert.notEqual(result.csm_rows.output.dropped_trace[key], undefined,
+    `dropped_trace.${key} must carry a value, not survive as undefined`);
+}
   assert.ok(result.csm_rows.output.dropped_trace.suppressed_by_profile.includes("search_optimization"));
   assert.deepEqual(writes.tables, [
     "csm_evidence_observations", "csm_bracket_candidates", "csm_candidate_evidence_links",

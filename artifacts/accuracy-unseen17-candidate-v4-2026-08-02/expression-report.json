@@ -1,0 +1,772 @@
+{
+  "schema_version": "candidate-expression-v4-report-v1",
+  "authority": "evaluation_only",
+  "source": {
+    "input": "artifacts/accuracy-unseen17-candidate-v4-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+    "limit": 17
+  },
+  "cards": 17,
+  "complete_cards": 17,
+  "defect_cards": 0,
+  "hypothesis_cards": 17,
+  "model_knowledge_cards": 1,
+  "mean_fact_count": 4.411764705882353,
+  "median_fact_count": 4,
+  "mean_hypothesis_count": 1.588235294117647,
+  "median_hypothesis_count": 2,
+  "expression_macro_f1": 0.33010003412480193,
+  "expression_macro_recall": 0.38916900093370677,
+  "expression_macro_precision": 0.2964106155282626,
+  "best_hypothesis_macro_f1": 0.37205003458873426,
+  "total_tokens": {
+    "mean": 2540.823529411765,
+    "median": 2908,
+    "p95": 3679
+  },
+  "output_tokens": {
+    "mean": 218.64705882352942,
+    "median": 208,
+    "p95": 304
+  },
+  "latency_ms": {
+    "mean": 4285.64705882353,
+    "median": 3678,
+    "p95": 6904
+  },
+  "fact_kinds": {
+    "affiliation": 23,
+    "attribute": 17,
+    "subject": 17,
+    "identity": 7,
+    "finish": 5,
+    "number": 4,
+    "other": 2
+  },
+  "fact_bases": {
+    "exact_text": 38,
+    "logo_or_symbol": 18,
+    "visual_interpretation": 10,
+    "stamped_text": 9
+  },
+  "hypothesis_bases": {
+    "visible_combination": 26,
+    "model_knowledge": 1
+  },
+  "missed_reference_tokens": {
+    "2": 2,
+    "3": 1,
+    "4": 1,
+    "6": 1,
+    "8": 2,
+    "10": 1,
+    "14": 1,
+    "20": 1,
+    "24": 1,
+    "53": 1,
+    "76": 1,
+    "134": 1,
+    "144": 1,
+    "151": 1,
+    "218": 1,
+    "2015": 1,
+    "2023": 5,
+    "2024": 5,
+    "2025": 7,
+    "phoenix": 14,
+    "panini": 13,
+    "archetype": 1,
+    "blast": 1,
+    "color": 1,
+    "fabrics": 1,
+    "fire": 1,
+    "flashback": 1,
+    "instant": 1,
+    "jaxson": 1,
+    "mystique": 1,
+    "phenom": 1,
+    "rookies": 1,
+    "signatures": 1,
+    "talismen": 1
+  },
+  "per_card": [
+    {
+      "asset_id": "unseen_40b6057985f303926690",
+      "reference": "2025 Panini Phoenix Contours Jaxson Dart #24",
+      "fact_count": 4,
+      "hypothesis_count": 1,
+      "fact_kinds": [
+        "identity",
+        "subject",
+        "attribute"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "stamped_text",
+        "logo_or_symbol"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.3333333333333333,
+        "f1": 0.30769230769230765
+      },
+      "best_hypothesis": {
+        "value": "Contours Jason Dart rookie card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.2857142857142857,
+          "precision": 0.4,
+          "f1": 0.3333333333333333
+        }
+      },
+      "latency_ms": 2189,
+      "input_tokens": 493,
+      "output_tokens": 167,
+      "total_tokens": 660,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_e90b6054163320bbc04b",
+      "reference": "2025 Panini Phoenix Tank Bigsby #76",
+      "fact_count": 4,
+      "hypothesis_count": 1,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "identity"
+      ],
+      "fact_bases": [
+        "stamped_text",
+        "logo_or_symbol"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.5,
+        "precision": 0.42857142857142855,
+        "f1": 0.4615384615384615
+      },
+      "best_hypothesis": {
+        "value": "Panini NFL Jaguars Tank Bigsby football card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.5,
+          "precision": 0.42857142857142855,
+          "f1": 0.4615384615384615
+        }
+      },
+      "latency_ms": 3916,
+      "input_tokens": 2725,
+      "output_tokens": 207,
+      "total_tokens": 2932,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_4a387a2e25fe69fa7508",
+      "reference": "2025 Panini Phoenix Keenan McCardell #134",
+      "fact_count": 4,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "number",
+        "finish"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "visual_interpretation"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.15384615384615385,
+        "f1": 0.21052631578947367
+      },
+      "best_hypothesis": {
+        "value": "Keenan McCardell Jacksonville Jaguars football card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.3333333333333333,
+          "precision": 0.3333333333333333,
+          "f1": 0.3333333333333333
+        }
+      },
+      "latency_ms": 4948,
+      "input_tokens": 2725,
+      "output_tokens": 234,
+      "total_tokens": 2959,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_af443b0004240f0107ee",
+      "reference": "2025 Panini Phoenix Contours Myles Garrett #8",
+      "fact_count": 5,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "attribute",
+        "affiliation",
+        "subject",
+        "number",
+        "finish"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "visual_interpretation"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.42857142857142855,
+        "precision": 0.21428571428571427,
+        "f1": 0.2857142857142857
+      },
+      "best_hypothesis": {
+        "value": "Contours Myles Garrett Cleveland Browns football card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.42857142857142855,
+          "precision": 0.42857142857142855,
+          "f1": 0.42857142857142855
+        }
+      },
+      "latency_ms": 6545,
+      "input_tokens": 2725,
+      "output_tokens": 261,
+      "total_tokens": 2986,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_745e2fed2b81fdb80c63",
+      "reference": "2023 Panini Phoenix Instant Phenom Noah Clowney #8",
+      "fact_count": 5,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "attribute",
+        "affiliation",
+        "subject"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "logo_or_symbol",
+        "visual_interpretation"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.25,
+        "precision": 0.2,
+        "f1": 0.22222222222222224
+      },
+      "best_hypothesis": {
+        "value": "Noah Clowney Rookie Signs autograph basketball card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.25,
+          "precision": 0.2857142857142857,
+          "f1": 0.26666666666666666
+        }
+      },
+      "latency_ms": 6904,
+      "input_tokens": 2725,
+      "output_tokens": 269,
+      "total_tokens": 2994,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_c1f30c005617e6986ef1",
+      "reference": "2023 Panini Phoenix Fire Fabrics Giannis Antetokounmpo #10",
+      "fact_count": 4,
+      "hypothesis_count": 1,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "number"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "logo_or_symbol"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.25,
+        "precision": 0.2857142857142857,
+        "f1": 0.26666666666666666
+      },
+      "best_hypothesis": {
+        "value": "Giannis Antetokounmpo Milwaukee Bucks basketball card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.25,
+          "precision": 0.3333333333333333,
+          "f1": 0.28571428571428575
+        }
+      },
+      "latency_ms": 6671,
+      "input_tokens": 2725,
+      "output_tokens": 208,
+      "total_tokens": 2933,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_e2317539ffdb61b4693b",
+      "reference": "2023 Panini Phoenix Mystique LeBron James #14",
+      "fact_count": 3,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "other",
+        "affiliation",
+        "subject"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "logo_or_symbol"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.25,
+        "f1": 0.26666666666666666
+      },
+      "best_hypothesis": {
+        "value": "Paragon LeBron James Los Angeles Lakers card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.2857142857142857,
+          "precision": 0.2857142857142857,
+          "f1": 0.2857142857142857
+        }
+      },
+      "latency_ms": 5503,
+      "input_tokens": 2725,
+      "output_tokens": 183,
+      "total_tokens": 2908,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_189096ee2adb683d47b0",
+      "reference": "2023 Panini Phoenix Fade To Black Nikola Jokic #20",
+      "fact_count": 4,
+      "hypothesis_count": 1,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "attribute"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "logo_or_symbol"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.5555555555555556,
+        "precision": 0.5,
+        "f1": 0.5263157894736842
+      },
+      "best_hypothesis": {
+        "value": "Nikola Jokić Denver Nuggets NBA Fade to Black insert card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.5555555555555556,
+          "precision": 0.5,
+          "f1": 0.5263157894736842
+        }
+      },
+      "latency_ms": 5149,
+      "input_tokens": 2725,
+      "output_tokens": 208,
+      "total_tokens": 2933,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_d2014506e773d47e7536",
+      "reference": "2023 Panini Phoenix Max Strus #218",
+      "fact_count": 3,
+      "hypothesis_count": 1,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "number"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "logo_or_symbol",
+        "visual_interpretation"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.25,
+        "f1": 0.28571428571428575
+      },
+      "best_hypothesis": {
+        "value": "Cleveland Cavaliers basketball card featuring Max Strus",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.3333333333333333,
+          "precision": 0.2857142857142857,
+          "f1": 0.30769230769230765
+        }
+      },
+      "latency_ms": 3678,
+      "input_tokens": 2725,
+      "output_tokens": 143,
+      "total_tokens": 2868,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_bbfc75a6ba32ffe48343",
+      "reference": "2024 Panini Phoenix Rookies Caleb Williams #151",
+      "fact_count": 4,
+      "hypothesis_count": 1,
+      "fact_kinds": [
+        "attribute",
+        "subject",
+        "affiliation"
+      ],
+      "fact_bases": [
+        "stamped_text",
+        "exact_text",
+        "logo_or_symbol"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.25,
+        "f1": 0.26666666666666666
+      },
+      "best_hypothesis": {
+        "value": "Caleb Williams Chicago Bears rookie football card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.2857142857142857,
+          "precision": 0.2857142857142857,
+          "f1": 0.2857142857142857
+        }
+      },
+      "latency_ms": 5793,
+      "input_tokens": 2485,
+      "output_tokens": 181,
+      "total_tokens": 2666,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_e9c74d3fa6e36cc2a779",
+      "reference": "2024 Panini Phoenix Tyreek Hill #144",
+      "fact_count": 4,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "finish",
+        "attribute"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "logo_or_symbol",
+        "visual_interpretation"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.125,
+        "f1": 0.18181818181818182
+      },
+      "best_hypothesis": {
+        "value": "Tyreek Hill Miami Dolphins football trading card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.3333333333333333,
+          "precision": 0.2857142857142857,
+          "f1": 0.30769230769230765
+        }
+      },
+      "latency_ms": 2778,
+      "input_tokens": 1309,
+      "output_tokens": 208,
+      "total_tokens": 1517,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_265e71d598ed841e4475",
+      "reference": "2024 Panini Phoenix Dre Greenlaw #53",
+      "fact_count": 4,
+      "hypothesis_count": 1,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "attribute",
+        "finish"
+      ],
+      "fact_bases": [
+        "stamped_text",
+        "logo_or_symbol",
+        "visual_interpretation"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.3333333333333333,
+        "precision": 0.16666666666666666,
+        "f1": 0.2222222222222222
+      },
+      "best_hypothesis": {
+        "value": "Dre Greenlaw San Francisco 49ers football card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.3333333333333333,
+          "precision": 0.2857142857142857,
+          "f1": 0.30769230769230765
+        }
+      },
+      "latency_ms": 2570,
+      "input_tokens": 1505,
+      "output_tokens": 186,
+      "total_tokens": 1691,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_5aaa54c150b4479171cb",
+      "reference": "2024 Panini Phoenix Archetype Lamar Jackson #2",
+      "fact_count": 5,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "other",
+        "subject",
+        "affiliation"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "stamped_text",
+        "logo_or_symbol"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.2857142857142857,
+        "precision": 0.25,
+        "f1": 0.26666666666666666
+      },
+      "best_hypothesis": {
+        "value": "Contempors Lamar Jackson NFL card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.2857142857142857,
+          "precision": 0.4,
+          "f1": 0.3333333333333333
+        }
+      },
+      "latency_ms": 3084,
+      "input_tokens": 2620,
+      "output_tokens": 235,
+      "total_tokens": 2855,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_302227384e4e19804899",
+      "reference": "2025 Panini Prizm FIFA Prizm Flashback - 2015 Lionel Messi #2",
+      "fact_count": 5,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "affiliation",
+        "identity",
+        "subject"
+      ],
+      "fact_bases": [
+        "logo_or_symbol",
+        "exact_text"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.5555555555555556,
+        "precision": 0.5555555555555556,
+        "f1": 0.5555555555555556
+      },
+      "best_hypothesis": {
+        "value": "Panini Prizm Lionel Messi FC Barcelona card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.4444444444444444,
+          "precision": 0.5714285714285714,
+          "f1": 0.5
+        }
+      },
+      "latency_ms": 3293,
+      "input_tokens": 2725,
+      "output_tokens": 242,
+      "total_tokens": 2967,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_39194858fc5eeec7d09d",
+      "reference": "2025 Panini Prizm FIFA Talismen Lautaro Martinez #6",
+      "fact_count": 5,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "identity",
+        "affiliation",
+        "subject"
+      ],
+      "fact_bases": [
+        "logo_or_symbol",
+        "exact_text"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.625,
+        "precision": 0.4166666666666667,
+        "f1": 0.5
+      },
+      "best_hypothesis": {
+        "value": "Panini FIFA Prizm soccer card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.375,
+          "precision": 0.6,
+          "f1": 0.4615384615384615
+        }
+      },
+      "latency_ms": 3257,
+      "input_tokens": 3445,
+      "output_tokens": 234,
+      "total_tokens": 3679,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_09dd62702d9d39ae7da6",
+      "reference": "2025 Panini Prizm FIFA Club Legends Signatures Zinedine Zidane #4",
+      "fact_count": 7,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "affiliation",
+        "attribute",
+        "subject",
+        "finish"
+      ],
+      "fact_bases": [
+        "logo_or_symbol",
+        "exact_text",
+        "visual_interpretation"
+      ],
+      "hypothesis_bases": [
+        "visible_combination"
+      ],
+      "model_knowledge_hypotheses": 0,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.6,
+        "precision": 0.42857142857142855,
+        "f1": 0.5
+      },
+      "best_hypothesis": {
+        "value": "FIFA Prizm Club Legends autograph card",
+        "basis": "visible_combination",
+        "score": {
+          "recall": 0.4,
+          "precision": 0.6666666666666666,
+          "f1": 0.5
+        }
+      },
+      "latency_ms": 3212,
+      "input_tokens": 1767,
+      "output_tokens": 304,
+      "total_tokens": 2071,
+      "request_attempt_count": 1
+    },
+    {
+      "asset_id": "unseen_382c09472dc13c325652",
+      "reference": "2024 Panini Phoenix Color Blast Malik Nabers #3",
+      "fact_count": 5,
+      "hypothesis_count": 2,
+      "fact_kinds": [
+        "subject",
+        "affiliation",
+        "attribute"
+      ],
+      "fact_bases": [
+        "exact_text",
+        "logo_or_symbol",
+        "stamped_text"
+      ],
+      "hypothesis_bases": [
+        "visible_combination",
+        "model_knowledge"
+      ],
+      "model_knowledge_hypotheses": 1,
+      "candidate_defects": [],
+      "expression_score": {
+        "recall": 0.375,
+        "precision": 0.23076923076923078,
+        "f1": 0.2857142857142857
+      },
+      "best_hypothesis": {
+        "value": "Panini football rookie card featuring Malik Nabers",
+        "basis": "model_knowledge",
+        "score": {
+          "recall": 0.375,
+          "precision": 0.42857142857142855,
+          "f1": 0.39999999999999997
+        }
+      },
+      "latency_ms": 3366,
+      "input_tokens": 1328,
+      "output_tokens": 247,
+      "total_tokens": 1575,
+      "request_attempt_count": 1
+    }
+  ]
+}

@@ -236,4 +236,103 @@ const nativeCore = readFileSync(
 assert.match(nativeCore, /const providerExecutionSignal = requestContext\?\.signal \|\| null/);
 assert.match(nativeCore, /requestContext: fullProviderRequestContext,\s+signal: providerExecutionSignal/);
 
+// The strip must report what it took. Silence here is what let a paired run
+// vary --model against an unauthorized deployment, measure the env-pinned model
+// on both arms, and look like a clean comparison.
+{
+  const { stripClientAlgorithmControlsReporting } = await import(
+    "../lib/listing/v4/contracts/recognition-request.mjs"
+  );
+
+  const stripped = stripClientAlgorithmControlsReporting({
+    asset_id: "asset-1",
+    provider_options: { openai_listing_model_override: "gpt-5.6-luna" },
+    model: "gpt-5.6-luna"
+  });
+  assert.deepEqual(stripped.removed.sort(), ["model", "provider_options"]);
+  assert.equal(stripped.value.provider_options, undefined);
+  assert.equal(stripped.value.asset_id, "asset-1", "non-control keys survive");
+
+  // A caller that sent nothing forbidden must not be told anything was taken --
+  // otherwise the signal is noise and gets ignored when it matters.
+  assert.deepEqual(stripClientAlgorithmControlsReporting({ asset_id: "asset-1" }).removed, []);
+}
+
+// An env-pinned model silently outranks the source default. Readiness has to be
+// able to say so, or "we switched the model" stays unfalsifiable.
+{
+  const { providerModelPinning, visionProviderIds: ids, defaultProviderModels: defaults } = await import(
+    "../lib/listing/providers/provider-contract.mjs"
+  );
+  const provider = ids.OPENAI_LEGACY;
+
+  const pinned = providerModelPinning(provider, { OPENAI_LISTING_MODEL: "gpt-5-mini-2025-08-07" });
+  assert.equal(pinned.effective_model, "gpt-5-mini-2025-08-07");
+  assert.equal(pinned.code_default, defaults[provider]);
+  assert.equal(pinned.code_default_is_inert, true);
+  assert.match(pinned.remedy, /overrides the source default/);
+
+  const unpinned = providerModelPinning(provider, {});
+  assert.equal(unpinned.effective_model, defaults[provider]);
+  assert.equal(unpinned.code_default_is_inert, false);
+  assert.equal(unpinned.remedy, null);
+
+  // Agreement is not a conflict.
+  const agreeing = providerModelPinning(provider, { OPENAI_LISTING_MODEL: defaults[provider] });
+  assert.equal(agreeing.code_default_is_inert, false);
+}
+
+// Dotted gpt-5 minor versions belong to the gpt-5 family. Classifying one as
+// legacy sends it `temperature`, which OpenAI rejects with a 400 -- the whole
+// provider call fails rather than degrading, so this is not cosmetic.
+{
+  const { isGpt5ResponsesModel, openAiResponsesModelControls } = await import(
+    "../lib/listing/providers/openai-responses-request.mjs"
+  );
+
+  for (const model of ["gpt-5", "gpt-5-mini", "gpt-5-mini-2025-08-07", "gpt-5.6-luna"]) {
+    assert.equal(isGpt5ResponsesModel(model), true, `${model} is a gpt-5 model`);
+    const controls = openAiResponsesModelControls(model, { env: {} });
+    assert.equal(controls.temperature, undefined, `${model} must not be sent temperature`);
+    assert.ok(controls.reasoning?.effort, `${model} carries a reasoning effort`);
+  }
+
+  // The separator class must not swallow models that merely start with the same
+  // digits. "gpt-50" is not a gpt-5.
+  for (const model of ["gpt-4.1", "gpt-4.1-mini", "gpt-50-fake", ""]) {
+    assert.equal(isGpt5ResponsesModel(model), false, `${model || "(empty)"} is not a gpt-5 model`);
+  }
+  assert.equal(openAiResponsesModelControls("gpt-4.1-mini", { env: {} }).temperature, 0);
+}
+
+// Reasoning-effort names are not uniform across the gpt-5 family, and the API
+// rejects an unsupported one instead of ignoring it. "minimal" and "none" are
+// the same intent under two names, so the configured value has to translate
+// rather than be passed through and fail.
+{
+  const { openAiResponsesModelControls, supportedReasoningEfforts } = await import(
+    "../lib/listing/providers/openai-responses-request.mjs"
+  );
+  const effortFor = (model, env = {}) => openAiResponsesModelControls(model, { env }).reasoning.effort;
+
+  assert.equal(effortFor("gpt-5-mini"), "minimal");
+  assert.equal(effortFor("gpt-5.6-luna"), "none", "dotted models have no 'minimal'");
+  assert.equal(effortFor("gpt-5.6-luna", { OPENAI_GPT5_REASONING_EFFORT: "minimal" }), "none");
+  assert.equal(effortFor("gpt-5-mini", { OPENAI_GPT5_REASONING_EFFORT: "none" }), "minimal");
+
+  // A value both models understand passes through untranslated.
+  assert.equal(effortFor("gpt-5.6-luna", { OPENAI_GPT5_REASONING_EFFORT: "medium" }), "medium");
+  assert.equal(effortFor("gpt-5-mini", { OPENAI_GPT5_REASONING_EFFORT: "medium" }), "medium");
+
+  // Nonsense must land on something the model accepts, never be forwarded.
+  for (const model of ["gpt-5-mini", "gpt-5.6-luna"]) {
+    const effort = effortFor(model, { OPENAI_GPT5_REASONING_EFFORT: "garbage" });
+    assert.ok(supportedReasoningEfforts(model).includes(effort), `${model} got ${effort}`);
+  }
+
+  // Efforts only the dotted models offer must not leak onto the older ones.
+  assert.equal(effortFor("gpt-5-mini", { OPENAI_GPT5_REASONING_EFFORT: "xhigh" }), "minimal");
+  assert.equal(effortFor("gpt-5.6-luna", { OPENAI_GPT5_REASONING_EFFORT: "xhigh" }), "xhigh");
+}
+
 console.log("Recognition request contract tests passed");

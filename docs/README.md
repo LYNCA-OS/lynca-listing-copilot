@@ -4,6 +4,14 @@ This folder contains product specs, architecture decisions, roadmap notes, stand
 
 The documentation is organized so permanent source-of-truth docs are separate from raw training evidence and historical notes.
 
+## Start here for recognition accuracy
+
+**`EXPLORATION-LEDGER-20260805.md`** — what was tried to raise recognition
+accuracy, what each attempt measured, and why it is not being pursued. Eight
+mechanisms measured, one positive and unresolvable on this corpus. Read this
+before proposing an accuracy experiment; two of the obvious ones target fields
+these writers do not publish.
+
 ## Recommended Reading Order
 
 1. `foundation/foundation-v1.md`

@@ -52,7 +52,12 @@ async function readCurrent(base, key, ids) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const base = cleanText(process.env.SUPABASE_URL || "https://osrrujmpxxiefppjfgpd.supabase.co");
+  // No fallback ref. This script WRITES, and the literal that used to sit here
+  // named a project that was decommissioned -- an unset SUPABASE_URL would have
+  // sent a backfill at a dead host and failed as DNS noise rather than as the
+  // misconfiguration it was.
+  const base = cleanText(process.env.SUPABASE_URL);
+  if (!base) throw new Error("SUPABASE_URL is required: there is no default project");
   const key = cleanText(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is required");
 

@@ -3381,3 +3381,30 @@ body.login-shell .input-token {
     animation: none;
   }
 }
+
+/* CSM Glass Box — field-level resolution. COS-42.
+   Empty is not one state: a card that has no serial and a card whose serial we
+   could not read are different failures, so they are coloured differently. */
+.glass-box { margin-top: .6rem; border: 1px solid var(--line, #e3e3e3); border-radius: 8px; padding: .5rem .7rem; }
+.glass-box > summary { cursor: pointer; font-size: .85rem; font-weight: 600; }
+.glass-box-counts { font-weight: 400; color: #666; margin-left: .5rem; font-size: .8rem; }
+.glass-box-warning { background: #fff4e5; border-left: 3px solid #d98324; padding: .4rem .6rem; font-size: .8rem; margin: .5rem 0; }
+.glass-box-grammar { display: flex; gap: 1.2rem; flex-wrap: wrap; margin: .5rem 0; font-size: .78rem; }
+.glass-box-grammar dt { color: #666; display: inline; }
+.glass-box-grammar dd { display: inline; margin: 0 0 0 .3rem; font-weight: 600; }
+.glass-box-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.glass-box-table th, .glass-box-table td { text-align: left; padding: .25rem .4rem; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+.glass-box-table thead th { color: #666; font-weight: 500; }
+.glass-box-value { font-weight: 600; }
+.glass-box-state { font-weight: 400; color: #999; }
+/* The card genuinely lacks it — nothing to fix. */
+.glass-box-absent .glass-box-state { color: #aaa; }
+/* It is there and we could not read it — this one is a recognition gap. */
+.glass-box-insufficient_evidence { background: #fff8e1; }
+.glass-box-insufficient_evidence .glass-box-state { color: #b36b00; font-weight: 600; }
+.glass-box-suppressed { color: #888; }
+.glass-box-dropped { background: #fdf0f0; }
+.glass-box-outside-contract th abbr { font-size: .7rem; color: #b36b00; border-bottom: 1px dotted; margin-left: .3rem; cursor: help; }
+.glass-box-low-confidence { color: #b36b00; font-weight: 600; }
+.glass-box-why small { display: block; color: #888; font-size: .72rem; }
+.glass-box-footnote { color: #888; font-size: .72rem; margin: .5rem 0 0; }

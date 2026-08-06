@@ -1,0 +1,34 @@
+{
+  "schema_version": "canonical-candidate-unseen17-manifest-v1",
+  "run_version": "canonical-candidate-v1",
+  "model": "gpt-5.6-luna",
+  "effort": "none",
+  "imageDetail": "high",
+  "limit": 17,
+  "concurrency": 2,
+  "dataset_sha256": "d18aa07eed6ca33c552a92049b811358f751c8178bcda752793a89a040ea6865",
+  "labels_sha256": "796590f61486fbf1bacb344b8bbe8f207a1aba50f1f9099b99e4547edb6001ff",
+  "checkpoint_rows": 17,
+  "completed_at": "2026-08-01T23:36:45.699Z",
+  "summary": {
+    "schema_version": "canonical-candidate-unseen17-v1",
+    "authority": "evaluation_only",
+    "production_promoted": false,
+    "source": {
+      "dataset": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20.json",
+      "labels": "/Users/paidaxin/Documents/Lynca/lynca-catalog-vocab/artifacts/smoke/unseen20-labels.jsonl",
+      "cards": 17
+    },
+    "arm": "canonical-candidate-v1",
+    "cards": 17,
+    "f1": 0.43709558415440763,
+    "recall": 0.338515406162465,
+    "precision": 0.6784313725490198,
+    "median_latency_ms": 5957,
+    "median_input_tokens": 4544,
+    "median_output_tokens": 272,
+    "candidate_fact_cards": 17,
+    "candidate_hypothesis_cards": 15,
+    "candidate_defect_cards": 0
+  }
+}

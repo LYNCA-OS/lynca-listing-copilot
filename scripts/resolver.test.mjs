@@ -182,9 +182,9 @@ const targetedSerialAndGradeWait = criticalOcrRendezvousDecision({
   criticalWaitMs: 2500
 });
 assert.deepEqual(targetedSerialAndGradeWait.target_fields, ["serial_number", "grade"]);
-// Waiting on the serial numerator raises the budget to the dedicated serial
-// value (8s) even when a grade target is also present.
-assert.equal(targetedSerialAndGradeWait.wait_budget_ms, 8000);
+// The serial target asks for 8s, but the listener-wide ceiling bounds it to 2s.
+assert.equal(targetedSerialAndGradeWait.wait_budget_uncapped_ms, 8000);
+assert.equal(targetedSerialAndGradeWait.wait_budget_ms, 2000);
 assert.equal(targetedSerialAndGradeWait.should_wait, true);
 
 const entirelyMissingGradeWait = criticalOcrRendezvousDecision({
@@ -197,7 +197,8 @@ const entirelyMissingGradeWait = criticalOcrRendezvousDecision({
 assert.deepEqual(entirelyMissingGradeWait.target_fields, ["grade"]);
 assert.deepEqual(entirelyMissingGradeWait.reasons, ["provider_left_grade_unresolved"]);
 assert.equal(entirelyMissingGradeWait.grade_unresolved, true);
-assert.equal(entirelyMissingGradeWait.wait_budget_ms, 2500);
+assert.equal(entirelyMissingGradeWait.wait_budget_uncapped_ms, 2500);
+assert.equal(entirelyMissingGradeWait.wait_budget_ms, 2000);
 
 const slabMissingGradeWait = criticalOcrRendezvousDecision({
   currentFields: { year: "2003-04", players: ["LeBron James"] },
@@ -267,9 +268,8 @@ const ocrPartialSerialWait = criticalOcrRendezvousDecision({
 });
 assert.equal(ocrPartialSerialWait.should_wait, true, "direct OCR numbering should wait for active serial verification");
 assert.deepEqual(ocrPartialSerialWait.target_fields, ["serial_number"]);
-// A serial target gets its own longer budget, not the shared 2.5s critical
-// budget, so a slow foil serial crop can settle before the title is rendered.
-assert.equal(ocrPartialSerialWait.wait_budget_ms, 8000, "serial target must use the dedicated serial budget");
+assert.equal(ocrPartialSerialWait.wait_budget_uncapped_ms, 8000, "serial target must request the dedicated serial budget");
+assert.equal(ocrPartialSerialWait.wait_budget_ms, 2000, "the listener-wide ceiling must bound the serial budget");
 
 const serialWaitRespectsOverride = criticalOcrRendezvousDecision({
   currentFields: {},
@@ -279,9 +279,10 @@ const serialWaitRespectsOverride = criticalOcrRendezvousDecision({
     evidence_patches: [{ field: "numerical_rarity", value: "2/3" }]
   },
   criticalWaitMs: 2500,
-  serialWaitMs: 11000
+  serialWaitMs: 11000,
+  maxWaitMs: 11000
 });
-assert.equal(serialWaitRespectsOverride.wait_budget_ms, 11000, "serialWaitMs override raises the serial wait budget");
+assert.equal(serialWaitRespectsOverride.wait_budget_ms, 11000, "raising both the requested budget and ceiling permits a longer wait");
 
 // A grade-only target keeps the shared critical budget; the serial budget only
 // applies when the serial numerator is actually the field being waited on.
@@ -297,7 +298,20 @@ const gradeOnlyKeepsCriticalBudget = criticalOcrRendezvousDecision({
   serialWaitMs: 8000
 });
 assert.ok(!gradeOnlyKeepsCriticalBudget.target_fields.includes("serial_number"));
-assert.equal(gradeOnlyKeepsCriticalBudget.wait_budget_ms, 2500, "a grade-only wait must not inherit the serial budget");
+assert.equal(gradeOnlyKeepsCriticalBudget.wait_budget_uncapped_ms, 2500, "a grade-only wait must not inherit the serial budget");
+assert.equal(gradeOnlyKeepsCriticalBudget.wait_budget_ms, 2000, "the listener-wide ceiling must also bound grade waits");
+
+const unavailableWorkerDoesNotWait = criticalOcrRendezvousDecision({
+  currentFields: {},
+  latestOcrState: {
+    configured: true,
+    serial_active_count: 1,
+    failed_reasons: ["ocr_worker_unavailable"],
+    evidence_patches: [{ field: "numerical_rarity", value: "2/3" }]
+  }
+});
+assert.equal(unavailableWorkerDoesNotWait.wait_budget_ms, 0);
+assert.equal(unavailableWorkerDoesNotWait.should_wait, false, "a known unavailable worker cannot produce an answer worth waiting for");
 
 const unrelatedOcrPatchDoesNotWait = criticalOcrRendezvousDecision({
   currentFields: {},

@@ -74,7 +74,11 @@ export async function runExportSupabaseRecognitionCandidatesFromRows({
   const output = argValue(argv, "--output") || argValue(argv, "-o") || "data/recognition/manifests/supabase-feedback-candidates.json";
   const reportOutput = argValue(argv, "--report-output") || "";
   const table = argValue(argv, "--table", "listing_title_feedback");
-  const projectUrl = argValue(argv, "--project-url", "https://osrrujmpxxiefppjfgpd.supabase.co");
+  // No fallback ref: the literal that stood here named a project that was
+  // decommissioned in the Sydney -> Singapore move, so an unset SUPABASE_URL
+  // failed as DNS noise instead of as a misconfiguration.
+  const projectUrl = argValue(argv, "--project-url", process.env.SUPABASE_URL || "");
+  if (!projectUrl) throw new Error("--project-url or SUPABASE_URL is required: there is no default project");
   const dryRun = argv.includes("--dry-run");
 
   if (!input) {
