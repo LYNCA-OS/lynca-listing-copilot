@@ -131,19 +131,23 @@ check("COS-42", "only a repeated wrong-bracket can reach a CSM proposal", () => 
   })));
   assert.equal(many.routable[0].owning_layer, OWNING_LAYER.CSM_BOUNDARY_PROPOSAL);
 });
-check("COS-39", "classification runs BEFORE finish validation", () => {
-  // "TCG vs NON_TCG classification must happen first so domain-inappropriate
-  // finish terminology does not cross Grammar boundaries." It ran forty lines
-  // AFTER the finish admission, so the admission layer read a grammar nothing
-  // had set yet and the boundary could never fire. The decision's own example
-  // is a printed name -- Gold Refractor on a Charizard -- so the gate also has
-  // to precede the `parallel_exact` early return.
+check("COS-39", "finish validation is product-scoped and runs first", () => {
+  // The decision's named case: "This boundary should prevent a Pokémon /
+  // Charizard card from receiving inappropriate Non-TCG finish wording such as
+  // Gold Refractor or Silver Refractor."
+  //
+  // Two things had to be true for it to fire at all. Classification has to
+  // precede the finish admission -- it ran forty lines after, so the admission
+  // layer read a grammar nothing had assigned yet. And the check has to precede
+  // the `parallel_exact` early return, because the decision's own example is a
+  // printed name.
   const charizard = parseCanonicalFields(JSON.stringify({
     grammar: "tcg", manufacturer: "Pokémon", product: "SWSH",
     subjects: ["Charizard"], parallel_exact: "Gold Refractor"
   })).fields;
   assert.equal(charizard.print_finish, "", "a Charizard must not carry Gold Refractor");
-  assert.ok(charizard.withheld_finish_terms.some((w) => w.reason === "NON_TCG_FINISH_WORDING_ON_TCG_GRAMMAR"));
+  assert.ok(charizard.withheld_finish_terms.some((w) => w.reason === "FINISH_NOT_MARKET_RECOGNIZED_FOR_PRODUCT"),
+    "withheld on the product taxonomy, which is the authority CSM names");
 
   // TCG-appropriate wording is untouched, and NON_TCG grammar is untouched.
   assert.equal(parseCanonicalFields(JSON.stringify({
@@ -154,18 +158,29 @@ check("COS-39", "classification runs BEFORE finish validation", () => {
     grammar: "standard", subjects: ["X"], parallel_exact: "Gold Refractor"
   })).fields.print_finish, "Gold Refractor");
 
-  // CORROBORATED TCG, not merely claimed TCG. The decision's examples are all
-  // Pokemon, and CSM declares the discriminator: `semTcgIpMatchers` names the
-  // trading card games, and resolution-view already calls a grammar the
-  // contract cannot corroborate "a review case". Gating on `grammar` alone
-  // withheld Refractor from Topps Chrome Disney, whose reviewed titles say
-  // Refractor and which carry no game at all.
+  // PRODUCT taxonomy, not grammar. CSM says so in three places, and 60 Rebuild
+  // Contract adds the reason the earlier gate was wrong: "TCG / Non-TCG is a
+  // grammar choice, NOT an IP-level claim". A finish is withheld only when the
+  // Registry positively knows the term belongs to a different product family.
   const disney = parseCanonicalFields(JSON.stringify({
     grammar: "tcg", manufacturer: "Topps", product: "Topps Chrome",
     subjects: ["Elsa"], surface_color: "Blue", parallel_family: "Refractor"
   })).fields;
-  assert.equal(disney.ip, "", "the IP table does not recognise a Topps Chrome product");
-  assert.equal(disney.print_finish, "Blue Refractor", "an uncorroborated TCG claim must not trigger a domain rule");
+  assert.equal(disney.print_finish, "Blue Refractor",
+    "Refractor is market-recognized for a Topps Chrome product, whatever its grammar");
+
+  const paniniForeign = parseCanonicalFields(JSON.stringify({
+    grammar: "standard", manufacturer: "Panini", product: "Prizm",
+    subjects: ["X"], parallel_family: "Refractor"
+  })).fields;
+  assert.equal(paniniForeign.print_finish, "",
+    "the boundary is the product, so it bites on a NON_TCG card too");
+
+  const unknown = parseCanonicalFields(JSON.stringify({
+    grammar: "standard", subjects: ["X"], parallel_family: "Refractor"
+  })).fields;
+  assert.equal(unknown.print_finish, "Refractor",
+    "Registry supports resolution; absence of knowledge is not rejection");
 });
 check("COS-39", "the IP table is fed the manufacturer it already reads", () => {
   // `semResolvedClassificationText` reads manufacturer, and every call site
@@ -189,6 +204,36 @@ check("COS-39", "the IP table is fed the manufacturer it already reads", () => {
   assert.equal((title.match(/pok[eé]mon/gi) || []).length, 1,
     "once as [IP], and not a second time as [Manufacturer]");
 });
+check("COS-10", "card number is not projected; numerical rarity is", () => {
+  // Decided in COS-10 and re-confirmed by Fei on 2026-08-06. Asserted here so
+  // it stops being re-argued: it came back three times in one session, each
+  // time as "the contract says keep it if space allows", each time answered by
+  // the same measurement. The measurement is not the reason. COS-10 is.
+  //
+  //   "checklist identifiers ... may be omitted WHEN NOT RECOGNIZED or when
+  //    title space is constrained"
+  //   "Numerical Rarity ... should not be treated as optional in the same way"
+  //
+  // A checklist code this path cannot verify against a Registry taxonomy is
+  // not a recognized one, so the eBay profile does not project it.
+  assert.deepEqual(MARKETPLACE_PROFILES.ebay.suppress.card_number, ["standard", "lot"],
+    "card number stays unprojected for Standard and Lot");
+  assert.equal((MARKETPLACE_PROFILES.ebay.suppress.card_number || []).includes("tcg"), false,
+    "TCG card numbers identify the card and must survive (COS-38)");
+
+  const standard = composeFromCanonicalFields(parseCanonicalFields(JSON.stringify({
+    grammar: "standard", year: "2024", manufacturer: "Topps", product: "Chrome",
+    subjects: ["Shohei Ohtani"], card_number: "PAU-12", serial: "22/50"
+  })).fields).title;
+  assert.ok(!/PAU-12/.test(standard), "no checklist code in a Standard eBay title");
+  assert.match(standard, /22\/50/, "the numbered copy is the number that matters");
+
+  const tcg = composeFromCanonicalFields(parseCanonicalFields(JSON.stringify({
+    grammar: "tcg", year: "2022", manufacturer: "Pokémon", language: "EN",
+    subjects: ["Eternatus VMAX"], card_number: "TG22/TG30"
+  })).fields).title;
+  assert.match(tcg, /TG22\/TG30/, "a TCG card number identifies the card within its set");
+});
 check("COS-42", "every bracket including EMPTY is exposed", () => {
   const v = buildCsmResolutionView({ fields: card({ set: "" }), composed: composeFromCanonicalFields(card({ set: "" })) });
   assert.ok(v.brackets.some((b) => b.state === "ABSENT"));
@@ -201,14 +246,22 @@ check("COS-42", "every bracket including EMPTY is exposed", () => {
 const UNIMPLEMENTED = [
   {
     decision: "COS-39",
-    clause: "the NON_TCG finish vocabulary is one term, not a partition",
+    clause: "the Print Finish Registry was seeded, not governed",
     why: [
-      "The boundary is enforced, but the list it enforces holds only `refractor`,",
-      "the term the decision itself names. Whether Prizm, Mojo, Sapphire, Xfractor",
-      "and the rest of the `parallel_family` enum are NON_TCG-only, and which",
-      "terms are TCG-only, is a Registry table CSM has not stated. Writing it here",
-      "would be an invention wearing a contract's name, so the gap stays visible",
-      "instead."
+      "The product-scoped taxonomy in `csm/registry/print-finish-taxonomy.mjs`",
+      "now enforces COS-39's boundary, and its content is sourced rather than",
+      "invented: `20 Registry`'s own Print Finish examples, plus the 255",
+      "reviewed titles, which are the market naming its own products.",
+      "",
+      "What it did NOT go through is `20 Registry`'s admission process --",
+      "\"governed recurring production evidence, aggregated and reviewed",
+      "operator feedback, compatible official checklist evidence, or trusted",
+      "domain knowledge\". One corpus is evidence; it is not governance.",
+      "",
+      "The design fails safe in the meantime: a term or product the table does",
+      "not know is ADMITTED, never withheld, so an ungoverned table can be",
+      "incomplete without deleting anything. Growing it should go through the",
+      "Registry process rather than another read of the same corpus."
     ].join("\n        ")
   }
 ];
