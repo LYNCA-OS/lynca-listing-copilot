@@ -219,6 +219,27 @@ async function persistImage({ image, tenantId, assetId, context, now }) {
   return { image_id: image.imageId, upload: publicUpload, ...verified.body };
 }
 
+/**
+ * Client-reported stage timings, reduced to plain bounded numbers.
+ *
+ * These arrive in a header the browser controls, so they are shaped and capped
+ * before they reach a column: snake_case keys only, finite non-negative numbers
+ * only, and a bounded count. They describe the client's own work and are never
+ * read back as truth about the server.
+ */
+function safeClientTiming(timing) {
+  if (!timing || typeof timing !== "object" || Array.isArray(timing)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(timing)) {
+    if (Object.keys(out).length >= 12) break;
+    if (!/^client_[a-z0-9_]{1,48}$/.test(key)) continue;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) continue;
+    out[key] = Math.min(Math.round(number), 3_600_000);
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   const startedAt = Date.now();
   let recoveryIdentity = null;
@@ -334,7 +355,22 @@ export default async function handler(req, res) {
       recognition_session_id: result.csm_rows.resolution.recognition_session_id,
       trace_status: "PERSISTED",
       ingest_timing: { body_bytes: body.length, total_ms: Date.now() - startedAt },
-      ...result
+      ...result,
+      // The client's own stages, merged with the server's, so one row in
+      // `request_logs` accounts for the whole journey.
+      //
+      // A production run measured 4,652ms here against roughly 23 seconds in
+      // front of the operator. Everything unexplained happens on the client
+      // before this request exists -- decoding, hashing and shipping the image
+      // bytes -- and it was recorded nowhere: the browser computed
+      // `client_total_ms` into local state and threw it away. Reading what the
+      // client already sends costs nothing and makes the gap attributable.
+      latency_stages_ms: {
+        ...safeClientTiming(metadata.clientTiming || metadata.client_timing),
+        ...(result?.latency_stages_ms || {}),
+        ingest_body_bytes: body.length,
+        ingest_total_ms: Date.now() - startedAt
+      }
     });
   } catch (error) {
     const status = Number(error?.statusCode || error?.status || 503);

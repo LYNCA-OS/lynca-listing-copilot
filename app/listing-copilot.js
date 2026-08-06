@@ -1433,8 +1433,12 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
     const storageRole = storageRoleForImage(image, imageIndex);
     image.storageRole = storageRole;
     const [signatureHex, contentSha256] = await Promise.all([
-      fileSignatureHex(source),
-      image.contentSha256 ? Promise.resolve(image.contentSha256) : contentSha256Hex(source)
+      clientStage("client_signature_ms", () => fileSignatureHex(source)),
+      // Hashing the whole file. On a phone photo this is the expensive one, and
+      // it is charged per image, before anything reaches the network.
+      clientStage("client_sha256_ms", () => (image.contentSha256
+        ? Promise.resolve(image.contentSha256)
+        : contentSha256Hex(source)))
     ]);
     const dimensions = storageDimensionsForImage(image, source);
     image.contentSha256 = contentSha256;
@@ -1863,8 +1867,30 @@ function csmIngestFastPathEligible(asset = {}) {
 }
 
 async function requestCsmIngestFastPath(asset, intentId) {
+  // The 18 seconds nobody could see.
+  //
+  // A production run measured 4,652ms server-side against roughly 23 seconds
+  // in front of the operator. Everything in between happens HERE, before the
+  // request exists: decoding each image for its dimensions, reading its
+  // signature, and hashing the WHOLE file with SHA-256 -- then shipping the
+  // bytes as the request body. None of it was timed, and `client_total_ms` was
+  // computed and written to local state only, so the gap has never been
+  // recorded anywhere.
+  //
+  // These ride the metadata header the request already carries, so they cost
+  // no round trip and add no latency to the thing being measured.
+  const clientTiming = {};
+  const clientStage = async (name, work) => {
+    const startedAt = performance.now();
+    try {
+      return await work();
+    } finally {
+      clientTiming[name] = Math.round((clientTiming[name] || 0) + performance.now() - startedAt);
+    }
+  };
+  const preparationStartedAt = performance.now();
   const images = await Promise.all(asset.images.map(async (image, imageIndex) => {
-    await ensureImageUploadMetadata(image);
+    await clientStage("client_image_metadata_ms", () => ensureImageUploadMetadata(image));
     const source = storageSourceForImage(image);
     const usingOriginalSource = source === image.sourceFile;
     const contentType = usingOriginalSource
@@ -1890,7 +1916,10 @@ async function requestCsmIngestFastPath(asset, intentId) {
       contentSha256
     };
   }));
+  clientTiming.client_preparation_ms = Math.round(performance.now() - preparationStartedAt);
+  clientTiming.client_upload_bytes = images.reduce((total, image) => total + (image.size || 0), 0);
   const metadata = {
+    clientTiming,
     clientAssetRef: asset.clientAssetRef || asset.id,
     idempotencyKey: assetCreateIdempotencyKey(asset),
     captureProfileId: defaultCaptureProfileId,

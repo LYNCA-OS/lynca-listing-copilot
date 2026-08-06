@@ -256,6 +256,25 @@ assert.equal(configuredZeroCost.pricingCoverage, "PRICED");
   });
   assert.deepEqual(dirty.metadata.latency_stages_ms, { good_ms: 13 });
 
+  // A byte count is not a duration. The ceiling used to be one number for
+  // everything -- an hour in milliseconds -- so a two-image upload of
+  // 11,238,422 bytes was clamped to 3,600,000 and stored as if that were the
+  // size. A ceiling that rewrites a value it does not understand is worse than
+  // no ceiling, because the result still reads like a measurement.
+  const mixed = buildRequestLogRow({
+    requestId: "req-stage-bytes", req: { method: "POST" }, api: "/x", statusCode: 200, durationMs: 1,
+    latencyStages: {
+      client_sha256_ms: 9130,
+      client_upload_bytes: 11_238_422,
+      ingest_body_bytes: 11_238_422,
+      absurd_ms: 99_999_999_999
+    }
+  });
+  assert.equal(mixed.metadata.latency_stages_ms.client_upload_bytes, 11_238_422);
+  assert.equal(mixed.metadata.latency_stages_ms.ingest_body_bytes, 11_238_422);
+  assert.equal(mixed.metadata.latency_stages_ms.client_sha256_ms, 9130);
+  assert.equal(mixed.metadata.latency_stages_ms.absurd_ms, 3_600_000, "a duration still caps at an hour");
+
   // No stages is no key, rather than an empty object on every request log.
   const bare = buildRequestLogRow({ requestId: "req-stage-3", req: { method: "GET" }, api: "/x", statusCode: 200, durationMs: 1 });
   assert.equal("latency_stages_ms" in bare.metadata, false);
