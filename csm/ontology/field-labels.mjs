@@ -73,7 +73,16 @@ export const csmFieldLabels = Object.freeze({
   relic: "Relic",
   sketch: "Sketch",
   redemption: "Redemption",
+  // COS-21 and COS-23 name this field "IP / Sport". Without an entry the
+  // humanizer renders "Ip Sport", so the review surface showed a name the
+  // contract does not use.
+  ip_sport: "IP / Sport",
   special_stamp: "Special Stamp",
+  // COS-21 and COS-23 both list [Description] among the seventeen canonical
+  // editable fields, and COS-42's review surface renders "canonical bracket key
+  // AND label" -- so a bracket with no label here draws blank in the Glass Box.
+  // It went unnoticed while nothing could emit the bracket.
+  description: "Description",
   search_optimization: "Search Optimization",
   team: "Team",
   teams: "Team",
