@@ -44,7 +44,13 @@ assert.equal(result.slab_anchor.paid_arm_enabled, false);
 assert.equal(result.slab_anchor.registry_evidence.live_row_coverage_verified, false);
 assert.equal(result.slab_anchor.observed_opportunity.exact_single_cert_cards, 37);
 assert.equal(result.slab_anchor.observed_opportunity.conflicting_cert_cards, 0);
-assert.equal(result.boundaries.runtime_imports_v2_or_hypothesis, false);
+// Renamed with the invariant it checks. The old field asked whether the
+// EVALUATION HARNESS imports the experimental lane, and the harness does --
+// `thin_canonical_field_observation_v2_high` is a declared arm whose job is to
+// measure it, so the assertion forbade the one place the import belongs. The
+// boundary that matters is the shipped path, and it is clean.
+assert.equal(result.boundaries.shipped_path_imports_v2_or_hypothesis, false);
+assert.deepEqual(result.boundaries.shipped_path_leaks, []);
 assert.equal(result.boundaries.provider_calls, 0);
 assert.equal(result.decision.literal_v2, "GO_TO_PAIRED_FRESH150_EXPERIMENT_ONLY");
 assert.equal(result.decision.literal_v2_production, "STOP");

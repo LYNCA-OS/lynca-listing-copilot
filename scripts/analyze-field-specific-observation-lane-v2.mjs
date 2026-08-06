@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -370,10 +370,36 @@ export function analyzeObservationLaneV2(ledger, hypothesisRows) {
   });
 
   const candidateProxy = hypothesisProxy(hypothesisRows, new Set(rows.map((row) => row.asset_id)));
-  const sourceImports = readFileSync(resolve(ROOT, "scripts/run-thin-path-eval.mjs"), "utf8");
-  const runtimeImportsV2 = sourceImports.includes("field-specific-observation-lane-v2")
-    || sourceImports.includes("product-set-parallel-hypothesis-lane-v1");
-  assertInvariant(!runtimeImportsV2, "evaluation-only v2/hypothesis module leaked into eval runtime");
+
+  // The boundary is "this experimental lane must not reach what ships", and it
+  // used to be checked against `scripts/run-thin-path-eval.mjs`. That is the
+  // EVALUATION HARNESS, not the shipped path, and it imports the lane on
+  // purpose -- `thin_canonical_field_observation_v2_high` is a declared arm
+  // whose whole job is to measure it. So the assertion forbade the one place
+  // the import belongs and said nothing about the places it would matter.
+  //
+  // It now walks the shipped surface: `api/`, `app/`, `lib/` and `csm/`. All
+  // four are clean, so the boundary holds -- it just needed pointing at the
+  // boundary.
+  const shippedRoots = ["api", "app", "lib", "csm"];
+  const leaked = [];
+  const walk = (dir) => {
+    let entries = [];
+    try { entries = readdirSync(resolve(ROOT, dir), { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const child = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) { walk(child); continue; }
+      if (!/\.(mjs|js)$/.test(entry.name)) continue;
+      const text = readFileSync(resolve(ROOT, child), "utf8");
+      if (text.includes("experiments/accuracy/field-specific-observation-lane-v2")
+        || text.includes("experiments/accuracy/product-set-parallel-hypothesis-lane-v1")) {
+        leaked.push(child);
+      }
+    }
+  };
+  for (const root of shippedRoots) walk(root);
+  assertInvariant(!leaked.length,
+    `evaluation-only v2/hypothesis module leaked into the shipped path: ${leaked.join(", ")}`);
 
   return {
     schema_version: "field-specific-observation-lane-v2-analysis-v1",
@@ -385,7 +411,11 @@ export function analyzeObservationLaneV2(ledger, hypothesisRows) {
       automatic_csm_admission: false,
       automatic_renderer_admission: false,
       reference_used_only_for_offline_oracles: true,
-      runtime_imports_v2_or_hypothesis: runtimeImportsV2
+      // Renamed with the invariant above: the question is whether the SHIPPED
+      // path imports the experimental lane, not whether the evaluation harness
+      // does. The harness does, deliberately.
+      shipped_path_imports_v2_or_hypothesis: leaked.length > 0,
+      shipped_path_leaks: leaked
     },
     source: {
       complementarity_ledger_sha256: null,
