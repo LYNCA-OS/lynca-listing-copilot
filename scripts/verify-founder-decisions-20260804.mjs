@@ -234,6 +234,32 @@ check("COS-10", "card number is not projected; numerical rarity is", () => {
   })).fields).title;
   assert.match(tcg, /TG22\/TG30/, "a TCG card number identifies the card within its set");
 });
+check("COS-39", "Subject precedes Card Name at the writer-visible boundary", () => {
+  // Fei, 2026-08-04, in a COS-39 comment that was never promoted into the issue
+  // description: "Any AI-generated Listing Copilot title with both fields
+  // present in the opposite order is a Marketplace Composer contract failure."
+  //
+  // Found by re-reading the whole CSM project rather than the issue bodies. It
+  // is the one founder decision this verifier had no clause for.
+  for (const grammar of ["standard", "tcg", "lot"]) {
+    const composed = composeFromCanonicalFields(parseCanonicalFields(JSON.stringify({
+      grammar, year: "2024", manufacturer: "Topps", product: "Chrome",
+      subjects: ["Shohei Ohtani"], card_name: "Rookie Ticket",
+      lot_count: grammar === "lot" ? 3 : ""
+    })).fields);
+    assert.equal(composed.subject_before_card_name, true, grammar);
+    assert.ok(composed.title.indexOf("Shohei Ohtani") < composed.title.indexOf("Rookie Ticket"),
+      `${grammar}: ${composed.title}`);
+    // The same comment asks for provenance saying which source produced the
+    // title, so a second one reappearing is visible rather than inferred.
+    assert.equal(composed.title_render_source, "csm_marketplace_composer_v1", grammar);
+  }
+  for (const [grammar, order] of Object.entries(BRACKET_ORDER)) {
+    const s = order.indexOf("subject");
+    const n = order.indexOf("card_name");
+    if (s >= 0 && n >= 0) assert.ok(s < n, `${grammar} order places Card Name first`);
+  }
+});
 check("COS-42", "every bracket including EMPTY is exposed", () => {
   const v = buildCsmResolutionView({ fields: card({ set: "" }), composed: composeFromCanonicalFields(card({ set: "" })) });
   assert.ok(v.brackets.some((b) => b.state === "ABSENT"));
