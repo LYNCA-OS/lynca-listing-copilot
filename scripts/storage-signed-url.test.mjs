@@ -973,6 +973,118 @@ assert.equal(readIndeterminateVerifyApiResponse.body.code, "SUPABASE_STORAGE_OBJ
 assert.equal(readIndeterminateVerifyApiResponse.body.cleanup.attempted, false);
 assert.equal(readIndeterminateVerifyApiResponse.body.cleanup.preserved_for_retry, true);
 
+// ---------------------------------------------------------------------------
+// COS-51's required error contract for a storage collision.
+//
+// The implementation is complete and nothing asserted it. The whole defect it
+// repairs is that a collision used to reduce to `storage_signing_failed` with
+// no existing-object identity, so the browser retried the same asset against
+// the same immutable path forever -- the loop that trapped card 5 of a 20-card
+// batch. Every field below is what gives the caller a way out, and a change
+// that dropped any one of them would have passed silently.
+//
+//   code: STORAGE_OBJECT_ALREADY_EXISTS
+//   recovery_action: VERIFY_EXISTING_OR_INPUT_REBIND
+//   retryable: true
+//   object_path: canonical tenant-scoped path
+//
+// Supabase answers `400 The resource already exists` rather than 409; the
+// endpoint must translate that, because 409 says "this request never succeeds
+// as sent" and a blind retry is the loop.
+{
+  const alreadyExists = () => new Response(
+    JSON.stringify({ statusCode: "400", error: "Duplicate", message: "The resource already exists" }),
+    { status: 400, headers: { "content-type": "application/json" } }
+  );
+  globalThis.fetch = tenantAwareFetch(async (url) => (
+    String(url).includes("/storage/v1/object/upload/sign/")
+      ? alreadyExists()
+      : new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
+  ));
+
+  const single = await callUploadApi({
+    assetId: durableAssetId,
+    imageId: "front-collision",
+    role: "front_original",
+    fileName: "front.jpg",
+    contentType: "image/jpeg",
+    size: 2000,
+    width: 1200,
+    height: 900,
+    signatureHex: jpegSignatureHex,
+    contentSha256: jpegUploadSha256
+  });
+  assert.equal(single.statusCode, 409, "a collision is not 503: the request never succeeds as sent");
+  assert.equal(single.body.code, "STORAGE_OBJECT_ALREADY_EXISTS");
+  assert.equal(single.body.recovery_action, "VERIFY_EXISTING_OR_INPUT_REBIND");
+  assert.equal(single.body.retryable, true);
+  assert.equal(single.body.failure_stage, "storage_signing");
+  assert.match(
+    single.body.object_path,
+    new RegExp(`^tenants/${tenantId}/listing-assets/\\d{4}-\\d{2}-\\d{2}/${durableAssetId}/`),
+    "the caller cannot verify an object it cannot name, and the path must stay tenant-scoped"
+  );
+  assert.doesNotMatch(JSON.stringify(single.body), /test-service-role/);
+
+  // A BATCH must report every collision. Reporting only the first sends the
+  // caller back for a second round trip per image, which on a two-image card is
+  // the same loop at half speed.
+  const batch = await callUploadApi({
+    assetId: durableAssetId,
+    clientAssetRef: "collision-card",
+    images: ["front", "back"].map((side) => ({
+      imageId: `${side}-collision-batch`,
+      role: `${side}_original`,
+      fileName: `${side}.jpg`,
+      contentType: "image/jpeg",
+      size: 2000,
+      width: 1200,
+      height: 900,
+      signatureHex: jpegSignatureHex,
+      contentSha256: jpegUploadSha256
+    }))
+  });
+  assert.equal(batch.statusCode, 409);
+  assert.equal(batch.body.code, "STORAGE_OBJECT_ALREADY_EXISTS");
+  assert.equal(batch.body.collisions.length, 2, "every colliding image, not just the first");
+  assert.deepEqual(
+    batch.body.collisions.map((row) => row.image_id),
+    ["front-collision-batch", "back-collision-batch"]
+  );
+  for (const row of batch.body.collisions) {
+    assert.match(row.object_path, new RegExp(`^tenants/${tenantId}/`));
+  }
+
+  // A batch mixing a collision with a REAL failure is a real failure. Reporting
+  // only the recoverable half sends the caller into a verification loop for a
+  // problem verification cannot fix.
+  globalThis.fetch = tenantAwareFetch(async (url, init = {}) => {
+    if (!String(url).includes("/storage/v1/object/upload/sign/")) {
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return String(init?.body || "").includes("back") || String(url).includes("back")
+      ? new Response(JSON.stringify({ message: "internal" }), { status: 500 })
+      : alreadyExists();
+  });
+  const mixed = await callUploadApi({
+    assetId: durableAssetId,
+    clientAssetRef: "mixed-card",
+    images: ["front", "back"].map((side) => ({
+      imageId: `${side}-mixed`,
+      role: `${side}_original`,
+      fileName: `${side}.jpg`,
+      contentType: "image/jpeg",
+      size: 2000,
+      width: 1200,
+      height: 900,
+      signatureHex: jpegSignatureHex,
+      contentSha256: jpegUploadSha256
+    }))
+  });
+  assert.notEqual(mixed.statusCode, 409, "a real failure must not be presented as a recoverable collision");
+  assert.notEqual(mixed.body.code, "STORAGE_OBJECT_ALREADY_EXISTS");
+}
+
 Object.keys(process.env).forEach((key) => {
   if (!(key in originalEnv)) delete process.env[key];
 });

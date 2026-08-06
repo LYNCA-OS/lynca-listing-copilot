@@ -166,10 +166,23 @@ export default async function handler(req, res) {
       message,
       ...(collision ? {
         recovery_action: "VERIFY_EXISTING_OR_INPUT_REBIND",
-        object_path: error.object_path || null,
-        bucket: error.bucket || null,
-        // Present for a batch request; a single-image request carries the path
-        // on `object_path` above. Callers should prefer this when it exists.
+        // COS-51 names `object_path` as part of the error contract, and it was
+        // always null here. The comment that used to sit below claimed a
+        // single-image request carried the path on this field; it does not. A
+        // single image is wrapped as `[payload]` and takes the same batch path,
+        // so the thrown error only ever has `collisions`. Falling back to the
+        // sole collision makes the contract true for the shape that states it,
+        // and stays null for a genuine batch, where naming one of several paths
+        // would be worse than naming none.
+        object_path: error.object_path
+          || (Array.isArray(error.collisions) && error.collisions.length === 1
+            ? error.collisions[0].object_path || null
+            : null),
+        bucket: error.bucket
+          || (Array.isArray(error.collisions) && error.collisions.length === 1
+            ? error.collisions[0].bucket || null
+            : null),
+        // Every colliding image, so one verification pass clears the batch.
         ...(Array.isArray(error.collisions) ? { collisions: error.collisions } : {})
       } : {})
     });
