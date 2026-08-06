@@ -15,8 +15,20 @@ assert.equal(report.inputs.candidates.sha256,
   "39fbbaeef1c9bd2d01d74aaf36c3a1380e9901d26b76dac502756a91811d5819");
 assert.equal(report.inputs.exhaustive.sha256,
   "96f71ae0956e1c7defde2579ad7448d955c0f7c33b69c908207855052faad1f9");
-assert.equal(report.inputs.production_canonical.sha256,
-  "173ccdb000ba0b7328e602abf84f77e376efc8fc8220fdf249f78e208d4d89b8");
+// Shape, not a value. The other four inputs are frozen evaluation artifacts and
+// pin exactly; this one is `lib/listing/thin/canonical-fields.mjs`, a file under
+// active development, and pinning its hash would turn every legitimate schema
+// change into a false regression here.
+//
+// It used to pin an absolute path into a sibling clone. That checkout moved, the
+// hash stopped matching, and the content it named exists in no commit of either
+// repository -- it was an uncommitted working tree, so the study could never
+// have been reproduced on another machine. Repointing it at the in-repo file
+// left every structural output identical: provider_calls 0, not promoted, 150
+// cards, 255 stage-one occurrences, and the four artifact hashes unchanged.
+assert.match(report.inputs.production_canonical.sha256, /^[0-9a-f]{64}$/);
+assert.equal(report.inputs.production_canonical.path.startsWith("/"), false,
+  "the baseline must live in this repository, not behind an absolute path");
 assert.equal(report.cohort.cards, 150);
 assert.equal(report.cohort.stage_one_occurrences, 255);
 

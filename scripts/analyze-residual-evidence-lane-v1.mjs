@@ -16,7 +16,18 @@ const DEFAULTS = Object.freeze({
   candidates: "artifacts/candidate-expression-v4/development-150-merged-2026-08-02.jsonl",
   exhaustive: "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl",
   fixture: "scripts/fixtures/residual-evidence-lane-v1-design.json",
-  productionCanonical: "/Users/paidaxin/lynca-thin-production-main/lib/listing/thin/canonical-fields.mjs"
+  // The baseline schema and prompt this study measures against.
+  //
+  // It used to be an absolute path into a SIBLING clone. That made the study
+  // unreproducible by construction: the file is imported for its
+  // CANONICAL_FIELDS_SCHEMA and CANONICAL_FIELDS_PROMPT, so its content decides
+  // the baseline, and anyone could move that checkout. It moved. The pinned
+  // input hash then failed, and the content it named exists in no commit of
+  // either repository -- it was an uncommitted working tree.
+  //
+  // Production and this repository's main are the same commit, so the
+  // in-repo file IS the production baseline, and it moves only through review.
+  productionCanonical: "lib/listing/thin/canonical-fields.mjs"
 });
 
 const arg = (name, fallback) => {
