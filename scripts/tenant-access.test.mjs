@@ -138,7 +138,13 @@ const managerAllowed = new Set([
   TENANT_PERMISSIONS.VIEW_TEAM,
   TENANT_PERMISSIONS.RETRY_JOB,
   TENANT_PERMISSIONS.EDIT_TITLE,
-  TENANT_PERMISSIONS.SUBMIT_FEEDBACK
+  TENANT_PERMISSIONS.SUBMIT_FEEDBACK,
+  // COS-42 draws the reviewer boundary against WRITERS -- "field review needs a
+  // reviewer permission writers lack". A manager is not a writer, and the role
+  // matrix grants this tenant-wide. The permission was added to the matrix and
+  // this allow-list was not updated with it, so the gate has been failing
+  // against the contract rather than enforcing it.
+  TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS
 ]);
 for (const permission of allPermissions) {
   assert.equal(
