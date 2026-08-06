@@ -1433,12 +1433,8 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
     const storageRole = storageRoleForImage(image, imageIndex);
     image.storageRole = storageRole;
     const [signatureHex, contentSha256] = await Promise.all([
-      clientStage("client_signature_ms", () => fileSignatureHex(source)),
-      // Hashing the whole file. On a phone photo this is the expensive one, and
-      // it is charged per image, before anything reaches the network.
-      clientStage("client_sha256_ms", () => (image.contentSha256
-        ? Promise.resolve(image.contentSha256)
-        : contentSha256Hex(source)))
+      fileSignatureHex(source),
+      image.contentSha256 ? Promise.resolve(image.contentSha256) : contentSha256Hex(source)
     ]);
     const dimensions = storageDimensionsForImage(image, source);
     image.contentSha256 = contentSha256;
@@ -1898,8 +1894,12 @@ async function requestCsmIngestFastPath(asset, intentId) {
       : source.type || image.type || "image/jpeg";
     const dimensions = storageDimensionsForImage(image, source);
     const [signatureHex, contentSha256] = await Promise.all([
-      fileSignatureHex(source),
-      image.contentSha256 ? Promise.resolve(image.contentSha256) : contentSha256Hex(source)
+      clientStage("client_signature_ms", () => fileSignatureHex(source)),
+      // Hashing the whole file. On a phone photo this is the expensive one, and
+      // it is charged per image, before anything reaches the network.
+      clientStage("client_sha256_ms", () => (image.contentSha256
+        ? Promise.resolve(image.contentSha256)
+        : contentSha256Hex(source)))
     ]);
     image.contentSha256 = contentSha256;
     return {

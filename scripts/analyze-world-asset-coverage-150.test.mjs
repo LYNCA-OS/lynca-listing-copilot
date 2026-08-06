@@ -1,23 +1,28 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import test from "node:test";
 
 import { analyzeCombinedPrecisionLoss } from "./analyze-combined-precision-loss-150.mjs";
 import { analyzeWorldAssetCoverage } from "./analyze-world-asset-coverage-150.mjs";
 
-// The ledger these analyses replay lives under `artifacts/`, which is
-// gitignored, so on a runner the call dies reaching for a file rather than
-// reaching the refusal below. Both outcomes mean "not runnable here"; only the
-// refusal is the thing worth asserting.
+// The inputs these analyses replay live under `artifacts/`, which is gitignored,
+// so on a runner they are simply absent. Classifying that by matching the error
+// message was too fragile -- with the checkpoints missing the code does not die
+// on ENOENT but somewhere downstream, on `Received undefined`, which reads like
+// a real defect. The precondition is checked UP FRONT instead: either the inputs
+// are here and the refusal below is asserted, or they are not and there is
+// nothing to replay.
+const REQUIRED_INPUTS = [
+  "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+  "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl",
+  "artifacts/candidate-expression-v4/development-150-merged-2026-08-02.jsonl"
+];
+const ledgerPresent = REQUIRED_INPUTS.every((file) => existsSync(file));
+
 const refusesOrHasNoLedger = (fn) => {
-  try {
-    fn();
-  } catch (error) {
-    const message = String(error?.message || error);
-    if (/ENOENT/.test(message) && /artifacts\//.test(message)) return "no_ledger";
-    assert.match(message, /precision_loss_combined_title_drift:reviewed_blind_6d227f82fdcb2ded4b6d/);
-    return "refused";
-  }
-  assert.fail("the replay must refuse a ledger written before COS-14");
+  if (!ledgerPresent) return "no_ledger";
+  assert.throws(fn, /precision_loss_combined_title_drift:reviewed_blind_6d227f82fdcb2ded4b6d/);
+  return "refused";
 };
 
 // This replay reproduces stored candidate titles byte-for-byte and refuses when
