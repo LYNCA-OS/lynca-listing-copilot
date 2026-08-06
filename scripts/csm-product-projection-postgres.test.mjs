@@ -37,6 +37,13 @@ function command(name, args, options = {}) {
     return String(execFileSync(name, args, {
       cwd: root,
       encoding: "utf8",
+      // A locale the harness supplies, rather than whatever the caller happens
+      // to export. With neither LC_ALL nor LANG set -- the default in a
+      // non-login shell on macOS -- the postmaster goes multithreaded during
+      // startup and refuses to run, and pg_ctl fails with no message of its
+      // own, so the suite read as a missing PostgreSQL when PostgreSQL was
+      // installed and working. "C" so collation order is the same everywhere.
+      env: { ...process.env, LC_ALL: "C", LANG: "C" },
       stdio: options.capture === false ? "ignore" : ["ignore", "pipe", "pipe"]
     }) ?? "").trim();
   } catch (error) {
