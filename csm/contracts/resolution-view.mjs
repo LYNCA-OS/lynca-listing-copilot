@@ -252,9 +252,9 @@ export function buildCsmResolutionView({
       // unmistakably Pokemon. A rule forcing Standard whenever the table is
       // silent would fix two cards and break two others.
       ip_corroborated: grammar !== "tcg" ? null
-        : Boolean(semTcgIpLabel({ product: fields.product, set: fields.set || fields.product, card_name: fields.card_name })),
+        : Boolean(semTcgIpLabel({ manufacturer: fields.manufacturer, product: fields.product, set: fields.set || fields.product, card_name: fields.card_name })),
       review_required: (grammarConfidence != null && grammarConfidence < 0.5)
-        || (grammar === "tcg" && !semTcgIpLabel({ product: fields.product, set: fields.set || fields.product, card_name: fields.card_name }))
+        || (grammar === "tcg" && !semTcgIpLabel({ manufacturer: fields.manufacturer, product: fields.product, set: fields.set || fields.product, card_name: fields.card_name }))
     }),
     brackets: Object.freeze(brackets),
     composer: Object.freeze({

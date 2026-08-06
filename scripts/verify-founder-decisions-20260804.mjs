@@ -153,6 +153,41 @@ check("COS-39", "classification runs BEFORE finish validation", () => {
   assert.equal(parseCanonicalFields(JSON.stringify({
     grammar: "standard", subjects: ["X"], parallel_exact: "Gold Refractor"
   })).fields.print_finish, "Gold Refractor");
+
+  // CORROBORATED TCG, not merely claimed TCG. The decision's examples are all
+  // Pokemon, and CSM declares the discriminator: `semTcgIpMatchers` names the
+  // trading card games, and resolution-view already calls a grammar the
+  // contract cannot corroborate "a review case". Gating on `grammar` alone
+  // withheld Refractor from Topps Chrome Disney, whose reviewed titles say
+  // Refractor and which carry no game at all.
+  const disney = parseCanonicalFields(JSON.stringify({
+    grammar: "tcg", manufacturer: "Topps", product: "Topps Chrome",
+    subjects: ["Elsa"], surface_color: "Blue", parallel_family: "Refractor"
+  })).fields;
+  assert.equal(disney.ip, "", "the IP table does not recognise a Topps Chrome product");
+  assert.equal(disney.print_finish, "Blue Refractor", "an uncorroborated TCG claim must not trigger a domain rule");
+});
+check("COS-39", "the IP table is fed the manufacturer it already reads", () => {
+  // `semResolvedClassificationText` reads manufacturer, and every call site
+  // dropped it. That is why the table looked silent on cards that are
+  // unmistakably Pokemon: they carry `manufacturer: "Pokémon"` beside an empty
+  // or product-shaped `product`.
+  const pokemon = parseCanonicalFields(JSON.stringify({
+    grammar: "tcg", manufacturer: "Pokémon", product: "Mega Brave", subjects: ["Absol"]
+  })).fields;
+  assert.equal(pokemon.ip, "Pokemon");
+
+  // And the word must appear ONCE. [IP] is a `*` bracket with [Language] pinned
+  // immediately after it, while Manufacturer is `****` under TCG grammar, so
+  // the redundancy is resolved against the manufacturer. Suppressing [IP]
+  // instead put the word behind [Language] and broke COS-9's order.
+  const title = composeFromCanonicalFields(parseCanonicalFields(JSON.stringify({
+    grammar: "tcg", year: "2025", manufacturer: "Pokémon", language: "JP",
+    set: "Mega Brave", subjects: ["Mega Absol ex"], card_number: "089/063"
+  })).fields).title;
+  assert.match(title, /^2025 Pokemon JP /, "COS-9 pins [Language] immediately after [IP]");
+  assert.equal((title.match(/pok[eé]mon/gi) || []).length, 1,
+    "once as [IP], and not a second time as [Manufacturer]");
 });
 check("COS-42", "every bracket including EMPTY is exposed", () => {
   const v = buildCsmResolutionView({ fields: card({ set: "" }), composed: composeFromCanonicalFields(card({ set: "" })) });
