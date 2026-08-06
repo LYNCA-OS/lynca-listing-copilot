@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import {
   semTcgTitleOrder, semStandardTitleOrder, semCanonicalBracket, semTcgIpLabel,
-  isSemCardNumberText, classifySemNumberBoundary
+  isSemCardNumberText, classifySemNumberBoundary, semCanonicalEditableFields
 } from "../csm/ontology/sem-definition.mjs";
 import { csmFieldLabels } from "../csm/ontology/field-labels.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
@@ -204,6 +204,34 @@ check("COS-39", "the IP table is fed the manufacturer it already reads", () => {
   assert.equal((title.match(/pok[eé]mon/gi) || []).length, 1,
     "once as [IP], and not a second time as [Manufacturer]");
 });
+check("COS-21", "the canonical editable field list is exactly the 17 CSM names", () => {
+  // COS-21 is a boundary decision, not a field proposal: implementation and
+  // evidence terms -- `serial_number`, `serial_numerator`, `serial_denominator`,
+  // `print_run_*` -- must never become canonical CSM editable fields just
+  // because implementation code spells them that way. The list is the guard, so
+  // it is asserted verbatim rather than by count.
+  //
+  // It is also why the 2026-08-06 fix was closing a gap rather than adding a
+  // field: Special Stamp and Description were canonical here the whole time,
+  // while the thin path's schema could not carry them.
+  const expected = [
+    "year", "ip_sport", "language", "manufacturer", "product", "set", "subject",
+    "card_name", "card_number", "descriptive_rarity", "numerical_rarity",
+    "release_variant", "print_finish", "special_stamp", "grading_info",
+    "description", "search_optimization"
+  ];
+  if (JSON.stringify([...semCanonicalEditableFields]) !== JSON.stringify(expected)) {
+    return `canonical editable fields drifted: ${semCanonicalEditableFields.join(", ")}`;
+  }
+  for (const banned of ["serial_number", "serial_numerator", "serial_denominator",
+    "print_run", "print_run_number", "serial", "numbered"]) {
+    if (semCanonicalEditableFields.includes(banned)) {
+      return `${banned} is an implementation term and may not be a canonical CSM field`;
+    }
+  }
+  return true;
+});
+
 check("COS-10", "card number is not projected; numerical rarity is", () => {
   // Decided in COS-10 and re-confirmed by Fei on 2026-08-06. Asserted here so
   // it stops being re-argued: it came back three times in one session, each
