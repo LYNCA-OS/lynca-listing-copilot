@@ -17,7 +17,7 @@ import {
   checkNumberBrackets, unknownFieldNames,
   SEM_OBSERVATION_LAYER, SEM_FEEDBACK_LAYER
 } from "../lib/listing/thin/csm-emit.mjs";
-import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
+import { SEM_STANDARD_VERSION, semTcgTitleOrder } from "../lib/listing/csm/sem-definition.mjs";
 import { buildSemValidationEvent } from "../lib/listing/csm/sem-validation.mjs";
 import {
   WRITER_TITLE_SEM_PARSER_VERSION,
@@ -52,7 +52,15 @@ const fields = (overrides = {}) => parseCanonicalFields({
 
 // Growth has to come from the contract, not from a hunch: every semantic field
 // here is one CSM already defines.
-assert.ok(Object.keys(CANONICAL_FIELDS_SCHEMA.properties).length <= 21);
+//
+// 21 -> 23 on 2026-08-06 for `special_stamp` and `description`, both brackets
+// TCG Grammar already names and neither of which this schema could carry. The
+// number is a brake on invention, not on the contract: raise it only alongside
+// the CSM clause that requires the field.
+assert.ok(Object.keys(CANONICAL_FIELDS_SCHEMA.properties).length <= 23);
+for (const field of ["special_stamp", "description"]) {
+  assert.ok(semTcgTitleOrder.includes(field), `${field} is only here because TCG Grammar names it`);
+}
 for (const field of ["year", "manufacturer", "product", "set", "card_name",
   "release_variant", "print_finish", "descriptive_rarity", "card_number"]) {
   assert.ok(semCanonicalEditableFields.includes(field), `${field} must be a CSM canonical field`);

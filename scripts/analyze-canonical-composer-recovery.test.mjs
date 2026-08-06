@@ -41,17 +41,30 @@ assert.ok(Math.abs(result.baseline.macro_f1 - 0.7698022907754876) < 1e-12,
 // COS-49's bare-colour rule landed in the same pass and contributes nothing
 // here, as intended: the Composer already refused to project a bare colour, so
 // moving the gate upstream changed the canonical record and no title.
-assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.012349436875523923) < 1e-12);
+// Repinned a fourth time, 2026-08-06, for COS-14's Lot Product/Set expression.
+// The Lot bracket folds Manufacturer, Product and Set into one, and a set that
+// extended neither -- Topps / Chrome / Update -- was dropped, against COS-14's
+// own approved example. Restoring it moved the delta +0.012349 -> +0.013562 and
+// turned the single loss into a win: 14/1/85 -> 15/0/85, p 0.00098 -> 0.000061.
+// The baseline above is byte-identical, so the control is intact and the whole
+// movement belongs to the candidate.
+//
+// The same pass added `special_stamp` and `description` to the TCG order.
+// Neither appears here: this cohort predates the fields, so the rows carry no
+// value for them and every title is unchanged on that account.
+assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.013561558087645031) < 1e-12);
 assert.deepEqual(
   [result.paired.wins, result.paired.losses, result.paired.ties],
-  [14, 1, 85]
+  [15, 0, 85]
 );
-assert.equal(result.paired.p_two_sided, 0.0009765625);
+assert.equal(result.paired.p_two_sided, 0.00006103515625);
+// Same repin, same cause: the restored Lot set is a real token the downstream
+// measure was looking for. 12 -> 13 cards, 16 -> 18 occurrences, 0.302 -> 0.340.
 assert.deepEqual(result.downstream_53, {
-  recovered_occurrences: 16,
+  recovered_occurrences: 18,
   total_occurrences: 53,
-  recovered_share: 16 / 53,
-  recovered_cards: 12
+  recovered_share: 18 / 53,
+  recovered_cards: 13
 });
 // The one lost reference token is "Refractor" on a lot card, displaced by two
 // subject names the reclaimed budget made room for -- COS-8 ranks Subject
