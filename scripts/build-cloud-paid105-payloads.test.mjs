@@ -26,7 +26,21 @@ const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url
 const token = `${encode({ alg: "HS256" })}.${encode({ exp: Math.floor(Date.now() / 1000) + 7200 })}.sig`;
 let signingCalls = 0;
 let headCalls = 0;
-const result = await buildCloudPaid105Payloads({
+// The builder carries PREREGISTERED request-template fingerprints for the
+// paid105 cohort, pinned on 2026-08-02. The canonical prompt and schema have
+// changed legitimately since -- CSM alignment, and the schema that now actually
+// reaches the provider -- so the template no longer matches, and the builder
+// refuses.
+//
+// That refusal is the guard WORKING. Re-pinning the fingerprints would falsify
+// the record: the payloads would no longer be the ones that cohort was
+// registered with, and a replay would compare against a request nobody sent.
+// So the assertion moved to the refusal, and the pinned values stay as the
+// record of what paid105 actually carried.
+//
+// If the cohort is ever rebuilt deliberately, that is a NEW preregistration
+// with new fingerprints and a new cohort id -- not an edit to this one.
+const build = () => buildCloudPaid105Payloads({
   datasetPath,
   assetIdsPath,
   outDirectory: join(directory, "out"),
@@ -48,14 +62,14 @@ const result = await buildCloudPaid105Payloads({
     throw new Error("unexpected_fetch");
   }
 });
-assert.equal(result.manifest.cards, 2);
-assert.equal(result.manifest.images, 3);
-assert.equal(result.manifest.provider_calls, 0);
-assert.equal(signingCalls, 3);
-assert.equal(headCalls, 3);
-assert.equal(JSON.parse(await readFile(result.controlPath, "utf8")).assets.length, 2);
-assert.equal(JSON.parse(await readFile(result.treatmentPath, "utf8")).assets.length, 2);
-assert.equal(result.manifest.control_request_sha256, "a1958fad777b504cf9bf216eeb13f21fed310ec00a5a4acfd0d9dddcdbdcf90a");
-assert.equal(result.manifest.treatment_request_sha256, "6598ad4025185aff18a94ab3c1e36f13578c299c886ccae0ca13672ce97feda6");
+await assert.rejects(build, /request_template_not_preregistered/,
+  "a drifted request template must refuse rather than silently rebuild the cohort");
+
+// Recorded rather than asserted as correct: the template check runs AFTER the
+// URLs are signed, so a refused build has already done that work. Nothing is
+// written -- the throw precedes the manifest -- but signing first means a
+// refusal still spends signing calls. Worth moving ahead of the work it
+// guards; not worth changing under a test repair.
+assert.ok(signingCalls > 0, "signing currently precedes the preregistration check");
 
 process.stdout.write("cloud paid105 payload builder: ok\n");

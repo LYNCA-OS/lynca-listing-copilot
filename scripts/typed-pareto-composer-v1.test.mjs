@@ -28,7 +28,11 @@ const base = {
 const replay = composeTypedParetoV1(base);
 assert.equal(replay.candidate.title,
   "2001 Donruss Elite B. Bonds W. Mays Passing the Torch 22/50 Auto PSA AUTH/9");
-assert.deepEqual(replay.candidate.restored_vs_baseline, ["product", "observable_components"]);
+// COS-41 (Fei, 2026-08-04) REJECTED `observable_components` as a canonical
+// bracket: Auto, RC, Patch and Relic stay under [Search Optimization], and the
+// grouping is "an implementation-level grouping, not approved semantic truth".
+// The composer follows the decision; this assertion was written before it.
+assert.deepEqual(replay.candidate.restored_vs_baseline, ["product", "search_optimization"]);
 assert.deepEqual(replay.candidate.displaced_vs_baseline, []);
 assert.ok(replay.candidate.normalizations.includes("grading_info:auth_auto_slash"));
 assert.ok(replay.candidate.length <= 80);

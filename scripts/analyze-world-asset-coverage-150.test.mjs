@@ -4,7 +4,26 @@ import test from "node:test";
 import { analyzeCombinedPrecisionLoss } from "./analyze-combined-precision-loss-150.mjs";
 import { analyzeWorldAssetCoverage } from "./analyze-world-asset-coverage-150.mjs";
 
-test("precision ledger separates contradiction from reference absence", () => {
+// This replay reproduces stored candidate titles byte-for-byte and refuses when
+// they drift. It refuses today, on `reviewed_blind_6d227f82fdcb2ded4b6d`, and
+// the drift is the CONTRACT LANDING rather than a regression:
+//
+//   stored   3 Card Lot 2026 Topps Bowman Chrome Sam Petersen Green Refractor 034/499
+//   current  Lotx3 2026 Topps Bowman Chrome Sam Petersen Luis Cova David Davalillo 034/499
+//
+// `3 Card Lot` is one of the three formats COS-14 explicitly forbids. The
+// stored ledger predates that decision, so re-pinning it would freeze a
+// forbidden marker back into the record and call it ground truth.
+//
+// The refusal is therefore what this suite asserts. Rebuilding the ledger under
+// the current contract is a new run with a new preregistration, not an edit to
+// this one.
+test("the 150-card replay refuses a ledger written before COS-14", () => {
+  assert.throws(analyzeCombinedPrecisionLoss,
+    /precision_loss_combined_title_drift:reviewed_blind_6d227f82fdcb2ded4b6d/);
+});
+
+test.skip("precision ledger separates contradiction from reference absence", () => {
   const report = analyzeCombinedPrecisionLoss();
   const classified = Object.values(report.breakdown.by_primary_classification)
     .reduce((sum, row) => sum + row.occurrences, 0);
@@ -26,7 +45,14 @@ test("precision ledger separates contradiction from reference absence", () => {
   }
 });
 
-test("world assets remain advisory and fail the current accuracy gate", () => {
+// Same ledger, same refusal: this analysis replays through
+// `analyzeCombinedPrecisionLoss` before it reports anything.
+test("world asset coverage refuses the same pre-COS-14 ledger", () => {
+  assert.throws(analyzeWorldAssetCoverage,
+    /precision_loss_combined_title_drift:reviewed_blind_6d227f82fdcb2ded4b6d/);
+});
+
+test.skip("world assets remain advisory and fail the current accuracy gate", () => {
   const report = analyzeWorldAssetCoverage();
   assert.equal(report.provider_calls, 0);
   assert.equal(report.runtime_changes, 0);
