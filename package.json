@@ -213,7 +213,10 @@
     "check:retired-catalog-vector": "npm run check:catalog && npm run check:cold-start && npm run check:catalog-flywheel && npm run check:cardsight-external && npm run check:visual-vector-index && npm run check:visual-vector-recall && npm run check:vector-production && npm run check:advanced-retrieval",
     "test:retired-catalog-vector": "npm run test:catalog && npm run test:cold-start && npm run test:catalog-flywheel && npm run test:cardsight-external && npm run test:visual-vector-index && npm run test:visual-vector-recall && npm run test:vector-production && npm run test:advanced-retrieval",
     "test:e2e:production-batch-20": "playwright test e2e/production-batch-20-journey.spec.mjs --project=chromium",
-    "check:e2e:production-batch-20": "node --check e2e/production-batch-20-journey.spec.mjs"
+    "check:e2e:production-batch-20": "node --check e2e/production-batch-20-journey.spec.mjs",
+    "test:e2e:batch-navigation:chrome": "playwright test e2e/batch-navigation.spec.mjs --project=chrome",
+    "test:e2e:production-batch-20:chrome": "playwright test e2e/production-batch-20-journey.spec.mjs --project=chrome",
+    "test:e2e:production-writer-journey:chrome": "playwright test e2e/production-writer-journey.spec.mjs --project=chrome"
   },
   "dependencies": {
     "@vercel/functions": "latest",
