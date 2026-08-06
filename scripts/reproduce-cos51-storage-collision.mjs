@@ -35,10 +35,15 @@
 //      someone else's image behind this card's title.
 
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 
 const STAGING_TENANT = "tenant_staging_cos51";
 const STAGING_USER = "user_staging_cos51";
+// `normalizeListingSessionClaims` rejects a session without an email, so the
+// synthetic principal carries one. It is a `.test` address by design: it can
+// never receive mail and can never collide with a real operator.
+const STAGING_EMAIL = "staging-cos51@listing.lynca.test";
 
 const required = (name) => {
   const value = String(process.env[name] || "").trim();
@@ -60,21 +65,39 @@ const secret = required("METAVERSE_AUTH_SECRET");
 // this run deliberately breaks things, and it must not be able to break them
 // anywhere a real listing lives.
 const token = createListingSessionToken(
-  { user_id: STAGING_USER, tenant_id: STAGING_TENANT, session_version: 1 },
+  { user_id: STAGING_USER, tenant_id: STAGING_TENANT, email: STAGING_EMAIL, session_version: 1 },
   secret
 );
 const cookie = `${cookieName}=${token}`;
 
-const jpeg = Buffer.concat([
-  Buffer.from("ffd8ffe000104a464946000101000001", "hex"),
-  crypto.randomBytes(1_984)
-]);
+// A REAL JPEG, because verify-existing reads dimensions out of the stored
+// bytes. A synthetic header plus random padding signs and uploads fine and then
+// fails verification with "dimensions could not be read" -- which looks like a
+// product defect and is a fixture defect. `COS51_IMAGE` overrides the default.
+const imagePath = String(process.env.COS51_IMAGE || "").trim()
+  || "artifacts/finish-sheets/cards-1.jpg";
+const jpeg = readFileSync(imagePath);
 const jpegSha256 = crypto.createHash("sha256").update(jpeg).digest("hex");
-const otherJpeg = Buffer.concat([
-  Buffer.from("ffd8ffe000104a464946000101000001", "hex"),
-  crypto.randomBytes(1_984)
-]);
-const otherSha256 = crypto.createHash("sha256").update(otherJpeg).digest("hex");
+
+/** Read width/height out of the JPEG's SOF marker, so the declared dimensions
+ *  match the bytes verify-existing will decode. */
+function jpegDimensions(buffer) {
+  let offset = 2;
+  while (offset < buffer.length) {
+    if (buffer[offset] !== 0xff) { offset += 1; continue; }
+    const marker = buffer[offset + 1];
+    const length = buffer.readUInt16BE(offset + 2);
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+    }
+    offset += 2 + length;
+  }
+  throw new Error(`could not read JPEG dimensions from ${imagePath}`);
+}
+const { width: imageWidth, height: imageHeight } = jpegDimensions(jpeg);
+// A DIFFERENT sha for the mismatch case. The bytes never reach storage -- only
+// the hash is compared -- so a derived value is enough and avoids a second file.
+const otherSha256 = crypto.createHash("sha256").update(Buffer.concat([jpeg, Buffer.from("x")])).digest("hex");
 
 async function api(path, body, { method = "POST" } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -101,28 +124,28 @@ const signBody = (assetId, imageId, sha256) => ({
   fileName: "front.jpg",
   contentType: "image/jpeg",
   size: jpeg.length,
-  width: 1200,
-  height: 900,
+  width: imageWidth,
+  height: imageHeight,
   signatureHex: jpeg.subarray(0, 16).toString("hex"),
   contentSha256: sha256
 });
 
 let assetId = null;
 try {
-  const health = await api("/api/health", undefined, { method: "GET" });
-  if (health.status !== 200) {
-    process.stderr.write(`health check failed: ${health.status}\n`);
-    process.exit(1);
-  }
-
-  const created = await api("/api/listing-asset-create", {
-    clientAssetRef: `cos51-collision-${Date.now()}`
-  });
-  // `/api/listing-asset-create` answers 201 and spreads the asset at the top
-  // level, so the id is `payload.id` -- not nested under `asset`.
-  assetId = created.payload?.id || created.payload?.asset_id || created.payload?.asset?.id;
+  // The asset is SETUP, not the thing under test, so it is created directly
+  // rather than through the API. The local dev server routes the two endpoints
+  // this reproduction exercises -- signing and verify-existing -- and does not
+  // route `listing-asset-create` or `health`; against production both exist and
+  // `COS51_ASSET_ID` can be left unset only there.
+  assetId = String(process.env.COS51_ASSET_ID || "").trim();
   if (!assetId) {
-    process.stderr.write(`could not create a staging asset: ${created.status} ${JSON.stringify(created.payload).slice(0, 300)}\n`);
+    const created = await api("/api/listing-asset-create", {
+      clientAssetRef: `cos51-collision-${Date.now()}`
+    });
+    assetId = created.payload?.id || created.payload?.asset_id || created.payload?.asset?.id;
+  }
+  if (!assetId) {
+    process.stderr.write("no staging asset: set COS51_ASSET_ID, or run against an instance that routes /api/listing-asset-create\n");
     process.exit(1);
   }
   process.stdout.write(`staging asset ${assetId} in ${STAGING_TENANT}\n\n`);
@@ -131,12 +154,36 @@ try {
   const first = await api("/api/listing-image-upload-url", signBody(assetId, "front-1", jpegSha256));
   record("first signing succeeds", first.status === 200 && first.payload?.ok === true,
     `${first.status} ${JSON.stringify(first.payload).slice(0, 200)}`);
+  // The field is `signed_upload_url`. Getting this name wrong made the PUT
+  // silently skip, so the object was never written and the second signing
+  // could not collide -- the reproduction reported "no collision" when what it
+  // had actually done was nothing.
   const upload = first.payload?.upload || first.payload?.uploads?.[0];
-  if (upload?.signed_url || upload?.url) {
-    const put = await fetch(upload.signed_url || upload.url, {
+  const signedUrl = upload?.signed_upload_url;
+  if (!signedUrl) {
+    record("the signing response carries an upload URL", false, JSON.stringify(Object.keys(upload || {})));
+  } else {
+    const put = await fetch(signedUrl, {
       method: "PUT", headers: { "content-type": "image/jpeg" }, body: jpeg
     });
-    record("the object is actually written", put.ok, `PUT ${put.status}`);
+    record("the object is actually written", put.ok, `PUT ${put.status} ${(await put.text()).slice(0, 160)}`);
+
+    // The real client calls verify-upload after the PUT. Skipping it leaves the
+    // object present but UNVERIFIED, and verify-existing then refuses with
+    // "content is not fully verified for canonical recognition" -- which reads
+    // like the recovery path is broken when the fixture simply never completed
+    // the upload it is recovering from.
+    const verifiedUpload = await api("/api/listing-image-verify-upload", {
+      assetId, imageId: "front-1", role: "front_original", fileName: "front.jpg",
+      contentType: "image/jpeg", objectPath: upload.object_path,
+      bucket: upload.bucket, size: jpeg.length,
+      width: imageWidth, height: imageHeight,
+      signatureHex: jpeg.subarray(0, 16).toString("hex"), contentSha256: jpegSha256,
+      verificationToken: upload.verification_token
+    });
+    record("the first upload is verified, as the real client does",
+      verifiedUpload.status === 200 && verifiedUpload.payload?.ok === true,
+      `${verifiedUpload.status} ${JSON.stringify(verifiedUpload.payload).slice(0, 220)}`);
   }
 
   // 2. THE REPRODUCTION. Same asset, same image identity, same deterministic
