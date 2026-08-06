@@ -7,16 +7,23 @@
 // the operator sees on production carries every index. This spec does, and it
 // is the reason the COS-50 checklist still has an unticked box.
 //
-// It needs credentials, so it does NOT run in CI. Run it yourself:
+// It needs a signed-in session, so it does NOT run in CI. Run it yourself.
 //
+// NO LOGIN PAGE NEEDED. Paste the `lynca_metaverse_session` cookie
+// from a browser you are already signed in to -- DevTools > Application >
+// Cookies -- and the run reuses that session:
+//
+//   WRITER_JOURNEY_SESSION_COOKIE=... \
 //   WRITER_JOURNEY_BASE_URL=https://listing.lyncafei.team \
-//   METAVERSE_USERNAME=... METAVERSE_PASSWORD=... \
 //   WRITER_JOURNEY_LOCAL_IMAGES=/path/to/40-images \
-//   npx playwright test e2e/production-batch-20-journey.spec.mjs --project=chromium
+//   npm run test:e2e:production-batch-20:chrome
 //
-// Credentials are typed in a context that is closed before HAR or tracing
-// starts, the same isolation `production-writer-journey.spec.mjs` uses, so they
-// cannot reach an uploaded artifact.
+// No password is typed, stored, or handed to a process, and the session expires
+// on its own. The username/password path below stays for an unattended run.
+//
+// Either way credentials never reach an artifact: the login context is closed
+// before HAR or tracing starts, the same isolation
+// `production-writer-journey.spec.mjs` uses.
 //
 // NOT covered, deliberately: COS-51's failure paths. A storage collision and a
 // manual-after-failure save need a card to FAIL, and a failure cannot be forced
@@ -67,9 +74,18 @@ test("a live 20-card batch is fully navigable before anything is saved", async (
   await mkdir(artifactDir, { recursive: true });
 
   const baseUrl = cleanBaseUrl(process.env.WRITER_JOURNEY_BASE_URL);
-  const username = requiredEnv("METAVERSE_USERNAME");
-  const password = requiredEnv("METAVERSE_PASSWORD");
   const files = await localSourceImages(process.env.WRITER_JOURNEY_LOCAL_IMAGES);
+
+  // Two ways in, and the cookie is the better one.
+  //
+  // `WRITER_JOURNEY_SESSION_COOKIE` takes the `lynca_metaverse_session` value
+  // from a browser that is ALREADY signed in -- DevTools > Application >
+  // Cookies. It is a session you already hold, it expires on its own, and it
+  // means no password is typed, stored, or passed to a process. Prefer it.
+  //
+  // The username/password path stays for an unattended run where no session
+  // exists yet. It is the fallback, not the default.
+  const sessionCookie = String(process.env.WRITER_JOURNEY_SESSION_COOKIE || "").trim();
 
   const evidence = {
     schema_version: "production-batch-20-journey-evidence-v1",
@@ -83,20 +99,40 @@ test("a live 20-card batch is fully navigable before anything is saved", async (
   let loginContext = null;
   let journeyContext = null;
   try {
-    // Login is isolated: this context never records HAR or a trace, and is
-    // closed before the recorded one opens.
-    loginContext = await browser.newContext({ baseURL: baseUrl, viewport: { width: 1440, height: 1000 } });
-    const loginPage = await loginContext.newPage();
-    await loginPage.goto("/app/login.html?next=%2Fapp%2F", { waitUntil: "domcontentloaded" });
-    await loginPage.getByTestId("login-username").fill(username);
-    await loginPage.getByTestId("login-password").fill(password);
-    await loginPage.getByTestId("login-submit").click();
-    await loginPage.waitForURL((url) => !url.pathname.endsWith("/login.html"), { timeout: 45_000 });
-    await expect(loginPage.getByTestId("image-upload-input")).toBeAttached();
-    const storageState = await loginContext.storageState();
-    evidence.stages.login = { passed: true };
-    await loginContext.close();
-    loginContext = null;
+    let storageState;
+    if (sessionCookie) {
+      storageState = {
+        cookies: [{
+          name: "lynca_metaverse_session",
+          value: sessionCookie,
+          domain: new URL(baseUrl).hostname,
+          path: "/",
+          httpOnly: true,
+          secure: baseUrl.startsWith("https://"),
+          sameSite: "Lax",
+          expires: -1
+        }],
+        origins: []
+      };
+      evidence.stages.login = { passed: true, method: "supplied_session_cookie" };
+    } else {
+      const username = requiredEnv("METAVERSE_USERNAME");
+      const password = requiredEnv("METAVERSE_PASSWORD");
+      // Isolated: this context never records HAR or a trace, and is closed
+      // before the recorded one opens.
+      loginContext = await browser.newContext({ baseURL: baseUrl, viewport: { width: 1440, height: 1000 } });
+      const loginPage = await loginContext.newPage();
+      await loginPage.goto("/app/login.html?next=%2Fapp%2F", { waitUntil: "domcontentloaded" });
+      await loginPage.getByTestId("login-username").fill(username);
+      await loginPage.getByTestId("login-password").fill(password);
+      await loginPage.getByTestId("login-submit").click();
+      await loginPage.waitForURL((url) => !url.pathname.endsWith("/login.html"), { timeout: 45_000 });
+      await expect(loginPage.getByTestId("image-upload-input")).toBeAttached();
+      storageState = await loginContext.storageState();
+      evidence.stages.login = { passed: true, method: "login_page" };
+      await loginContext.close();
+      loginContext = null;
+    }
 
     journeyContext = await browser.newContext({
       baseURL: baseUrl, viewport: { width: 1440, height: 1000 }, storageState
