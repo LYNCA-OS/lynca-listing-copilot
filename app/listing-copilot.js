@@ -1666,6 +1666,21 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // and can only answer "is anything retrying?".
   if (asset.originalStorageUploadPromise) return asset.originalStorageUploadPromise;
 
+  // The direct path's blind spot, measured.
+  //
+  // Recognition awaits this before it calls the title endpoint, and originals
+  // are uploaded verbatim up to 25MB -- so on a phone photo this is where the
+  // wall clock goes. Eight production cards on 2026-08-07 reported 3.4-7.6s of
+  // server work against a writer-observed ~23s, and the difference was here,
+  // unmeasured: the stage timers lived inside the ingest fast path's own local
+  // accumulator, which this path never touches.
+  //
+  // One coarse number on purpose. It answers the question actually being asked
+  // -- how many seconds pass before recognition can start -- without adding
+  // timing calls to a hot loop.
+  const originalUploadStartedAt = performance.now();
+  const timing = asset.clientTiming || (asset.clientTiming = {});
+
   const attempt = (async () => {
     await ensureDurableAssetIdentity(asset);
     assertCurrentAssetLifecycle(asset);
@@ -1742,7 +1757,19 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // asset permanently claimed while a successful one stays memoised. The
   // identity check keeps a stale rejection from clearing a NEWER claim that a
   // successor generation already installed.
-  const guarded = attempt.catch((error) => {
+  // Record on both outcomes. A failed upload still consumed the writer's time,
+  // and a stage that only reports on success is the shape that made the
+  // original latency gap invisible in the first place.
+  const guarded = attempt.then((value) => {
+    timing.client_original_upload_ms = Math.round(performance.now() - originalUploadStartedAt);
+    timing.client_upload_bytes = (asset.providerImages || asset.images || [])
+      .reduce((total, image) => {
+        const source = storageSourceForImage(image);
+        return total + (source && source.size ? source.size : 0);
+      }, 0);
+    return value;
+  }).catch((error) => {
+    timing.client_original_upload_ms = Math.round(performance.now() - originalUploadStartedAt);
     if (asset.originalStorageUploadPromise === guarded) asset.originalStorageUploadPromise = null;
     throw error;
   });
@@ -1875,7 +1902,10 @@ async function requestCsmIngestFastPath(asset, intentId) {
   //
   // These ride the metadata header the request already carries, so they cost
   // no round trip and add no latency to the thing being measured.
-  const clientTiming = {};
+  // The asset's accumulator, not a local one. As a local it was invisible to
+  // the direct path, which is why that path had no client stages to send even
+  // after it was wired to send them.
+  const clientTiming = asset.clientTiming || (asset.clientTiming = {});
   const clientStage = async (name, work) => {
     const startedAt = performance.now();
     try {

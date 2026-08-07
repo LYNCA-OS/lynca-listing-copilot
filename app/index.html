@@ -89,7 +89,9 @@
               </span>
             </label>
             <div class="primary-actions">
-              <label class="secondary-button" for="imageInput">添加图片</label>
+              <!-- The [添加图片] label that stood here pointed at #imageInput, the
+                   same input the drop zone above already wraps: two triggers for
+                   one file picker, and uploading happens from the drop zone. -->
               <button class="primary-button" type="button" id="processButton" data-testid="start-recognition" hidden aria-hidden="true" tabindex="-1" disabled>开始识别</button>
             </div>
           </div>
