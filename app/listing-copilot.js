@@ -1687,6 +1687,14 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // timing calls to a hot loop.
   const originalUploadStartedAt = performance.now();
   const timing = asset.clientTiming || (asset.clientTiming = {});
+  const recordOriginalUploadTiming = () => {
+    timing.client_original_upload_ms = Math.round(performance.now() - originalUploadStartedAt);
+    timing.client_upload_bytes = (asset.providerImages || asset.images || [])
+      .reduce((total, image) => {
+        const source = storageSourceForImage(image);
+        return total + (source && source.size ? source.size : 0);
+      }, 0);
+  };
 
   const attempt = (async () => {
     await ensureDurableAssetIdentity(asset);
@@ -1757,6 +1765,12 @@ function ensureAssetOriginalImagesUploaded(asset) {
     if (!originalsReady) {
       throw new Error("listing_original_verification_incomplete");
     }
+    // Recorded here rather than by wrapping the promise. A `.then()` around the
+    // single-flight claim inserts a microtask between the upload settling and
+    // the claim being observed, and `progressive-handle-files` caught the
+    // consequence on CI while every local run passed: a card was recognized
+    // twice. Measurement must not change the shape of what it measures.
+    recordOriginalUploadTiming();
     return phases.originalOutcomes.some((outcome) => outcome.uploaded === true);
   })();
 
@@ -1767,16 +1781,11 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // Record on both outcomes. A failed upload still consumed the writer's time,
   // and a stage that only reports on success is the shape that made the
   // original latency gap invisible in the first place.
-  const guarded = attempt.then((value) => {
-    timing.client_original_upload_ms = Math.round(performance.now() - originalUploadStartedAt);
-    timing.client_upload_bytes = (asset.providerImages || asset.images || [])
-      .reduce((total, image) => {
-        const source = storageSourceForImage(image);
-        return total + (source && source.size ? source.size : 0);
-      }, 0);
-    return value;
-  }).catch((error) => {
-    timing.client_original_upload_ms = Math.round(performance.now() - originalUploadStartedAt);
+  const guarded = attempt.catch((error) => {
+    // In the catch the chain already had, not a new link. A failed upload still
+    // consumed the writer's time, and a stage recorded only on success is the
+    // shape that made this gap invisible to begin with.
+    recordOriginalUploadTiming();
     if (asset.originalStorageUploadPromise === guarded) asset.originalStorageUploadPromise = null;
     throw error;
   });

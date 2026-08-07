@@ -34,12 +34,19 @@ jobs:
         # version rather than pinned, so a runner image bump does not silently
         # return the suites to skipping.
         run: |
-          dir="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+          # 17+ only: csm-product-projection asserts a minimum server version,
+          # so exposing an older one turns a skip into a red build without
+          # testing anything more than the version check.
+          dir=""
+          for candidate in $(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V); do
+            major="$(basename "$(dirname "$candidate")")"
+            if [ "${major%%.*}" -ge 17 ] 2>/dev/null; then dir="$candidate"; fi
+          done
           if [ -n "$dir" ]; then
             echo "$dir" >> "$GITHUB_PATH"
             echo "PostgreSQL on PATH: $dir"
           else
-            echo "::warning::no PostgreSQL on this runner; the CSM postgres suites will skip"
+            echo "::warning::no PostgreSQL 17+ on this runner; the CSM postgres suites will skip"
           fi
 
       - name: Run offline test suites
