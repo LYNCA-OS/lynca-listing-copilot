@@ -13,7 +13,7 @@ import {
   isSemCardNumberText, classifySemNumberBoundary, semCanonicalEditableFields
 } from "../csm/ontology/sem-definition.mjs";
 import { csmFieldLabels } from "../csm/ontology/field-labels.mjs";
-import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { parseCanonicalFields, CANONICAL_FIELDS_SCHEMA, CANONICAL_FIELDS_PROMPT } from "../lib/listing/thin/canonical-fields.mjs";
 import { BRACKET_ORDER, DROP_ORDER, composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { MARKETPLACE_PROFILES } from "../lib/listing/thin/marketplace-composer-rules.mjs";
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
@@ -21,9 +21,23 @@ import { routeReviewPatterns, OWNING_LAYER, CORRECTION_REASON } from "../csm/con
 import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
 
 const results = [];
+// A clause may fail by throwing OR by returning the reason as a string. The
+// return path was here and unread: two clauses (COS-21's field-list drift
+// guard, COS-10's projection guard) reported their failure by returning a
+// message that nothing looked at, so they could not fail. A verifier whose
+// checks cannot fail is worse than no verifier -- it reports 23 green clauses
+// and two of them are decorative.
 const check = (decision, clause, fn) => {
-  try { fn(); results.push({ decision, clause, ok: true }); }
-  catch (error) { results.push({ decision, clause, ok: false, why: error.message.split("\n")[0].slice(0, 110) }); }
+  try {
+    const failure = fn();
+    if (typeof failure === "string" && failure) {
+      results.push({ decision, clause, ok: false, why: failure.slice(0, 110) });
+      return;
+    }
+    results.push({ decision, clause, ok: true });
+  } catch (error) {
+    results.push({ decision, clause, ok: false, why: error.message.split("\n")[0].slice(0, 110) });
+  }
 };
 
 const card = (over = {}) => ({
@@ -292,6 +306,30 @@ check("COS-42", "every bracket including EMPTY is exposed", () => {
   const v = buildCsmResolutionView({ fields: card({ set: "" }), composed: composeFromCanonicalFields(card({ set: "" })) });
   assert.ok(v.brackets.some((b) => b.state === "ABSENT"));
   assert.ok(v.brackets.every((b) => b.alternate_candidates.length === 0));
+});
+
+check("COS-56", "Product > Set > Card Name, with Card Name EMPTY when exhausted", () => {
+  // Approved 2026-08-07. The rule has to be stated where the MODEL reads it,
+  // which is the schema description, so that is what is asserted -- not a
+  // constant elsewhere that happens to spell the words.
+  const { properties } = CANONICAL_FIELDS_SCHEMA;
+  assert.match(properties.product.description, /Read `product`, then `set`, then `card_name`/,
+    "the precedence is stated on `product`");
+  assert.match(properties.set.description, /named insert or subset WITHIN that product/);
+  assert.match(properties.card_name.description, /is EMPTY/,
+    "empty is the correct answer when the phrase is exhausted, not a gap");
+  // The decision's own counter-examples, so the rule cannot be over-applied
+  // into "card_name is always empty". Downtown names one card; Jersey Numbers
+  // and Logoman Autographs name sets. Downtown was `set`'s example before this.
+  assert.ok(properties.card_name.description.includes("Downtown!"));
+  assert.ok(!properties.set.description.includes("Downtown"));
+  assert.match(properties.card_name.description, /"Jersey Numbers" and "Logoman Autographs" are sets/);
+  // The prompt states the same boundary. It used to define `card_name` as "the
+  // printed card-title segment", which is exactly the phrase a product and its
+  // insert also answer to -- a schema deciding what the prompt leaves open is
+  // the oscillation COS-56 was opened about.
+  assert.match(CANONICAL_FIELDS_PROMPT, /Read `product`, `set` and `card_name` in that order/);
+  assert.ok(!CANONICAL_FIELDS_PROMPT.includes("`card_name` is the printed card-title segment"));
 });
 
 // Clauses that are NOT implemented, listed so a full green run is not read as

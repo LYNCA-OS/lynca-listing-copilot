@@ -1,0 +1,2841 @@
+{
+  "decision": "COS-56",
+  "status": "complete",
+  "cards": 14,
+  "per_card": 1,
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "before": {
+    "total": 23,
+    "agreed": 3,
+    "cards": 14,
+    "by_field": {
+      "card_number": 2,
+      "set": 4,
+      "card_name": 6,
+      "serial": 3,
+      "manufacturer": 3,
+      "subjects": 1,
+      "grade": 1,
+      "product": 3
+    }
+  },
+  "after": {
+    "total": 11,
+    "agreed": 7,
+    "cards": 14,
+    "by_field": {
+      "manufacturer": 3,
+      "set": 3,
+      "card_name": 2,
+      "card_number": 1,
+      "product": 1,
+      "grade": 1
+    }
+  },
+  "wins": 8,
+  "losses": 3,
+  "ties": 3,
+  "sign_test": {
+    "n": 11,
+    "p": 0.2265625
+  },
+  "rows": [
+    {
+      "card": 1,
+      "files": [
+        "微信图片_20260807122331_1382_4921.jpg"
+      ],
+      "order": [
+        "baseline",
+        "cos56",
+        "baseline",
+        "cos56"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2023",
+            "manufacturer": "",
+            "product": "Flawless",
+            "set": "",
+            "subjects": [
+              "Shai Gilgeous-Alexander"
+            ],
+            "team": "Clippers",
+            "card_name": "Logoman Autographs",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "LAUSGA",
+            "serial": "1/1",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "PSA 9/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2023",
+            "manufacturer": "",
+            "product": "Flawless",
+            "set": "",
+            "subjects": [
+              "Shai Gilgeous-Alexander"
+            ],
+            "team": "Clippers",
+            "card_name": "Logoman Autographs",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "LAUSGA",
+            "serial": "1/1",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "PSA 9/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2023",
+            "manufacturer": "",
+            "product": "Flawless",
+            "set": "Logoman Autographs",
+            "subjects": [
+              "Shai Gilgeous-Alexander"
+            ],
+            "team": "Clippers",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "LAUSGA",
+            "serial": "1/1",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "PSA 9/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2023",
+            "manufacturer": "Panini",
+            "product": "Flawless",
+            "set": "Logoman Autographs",
+            "subjects": [
+              "Shai Gilgeous-Alexander"
+            ],
+            "team": "Clippers",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "LAUSGA",
+            "serial": "1/1",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "PSA 9/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "manufacturer"
+        ]
+      }
+    },
+    {
+      "card": 2,
+      "files": [
+        "微信图片_20260807122331_1383_4921.jpg"
+      ],
+      "order": [
+        "cos56",
+        "baseline",
+        "cos56",
+        "baseline"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2009-10",
+            "manufacturer": "Upper Deck",
+            "product": "Exquisite Collection",
+            "set": "",
+            "subjects": [
+              "LeBron James"
+            ],
+            "team": "Cavaliers",
+            "card_name": "Noble Nameplates",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "N-LJ",
+            "serial": "09/18",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "BGS 9.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "9.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2009-10",
+            "manufacturer": "Upper Deck",
+            "product": "Exquisite Collection",
+            "set": "",
+            "subjects": [
+              "LeBron James"
+            ],
+            "team": "Cavaliers",
+            "card_name": "Noble Nameplates",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "NLJLEBRONJAMES18",
+            "serial": "09/18",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "BGS 9.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "9.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "card_number"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2009-10",
+            "manufacturer": "Upper Deck",
+            "product": "Exquisite Collection",
+            "set": "Noble Nameplates",
+            "subjects": [
+              "LeBron James"
+            ],
+            "team": "Cavaliers",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "N-LJ",
+            "serial": "09/18",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "BGS 9.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "9.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2009-10",
+            "manufacturer": "Upper Deck",
+            "product": "Exquisite Collection",
+            "set": "Noble Nameplates",
+            "subjects": [
+              "LeBron James"
+            ],
+            "team": "Cavaliers",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "N-LJ",
+            "serial": "09/18",
+            "attributes": [
+              "Auto",
+              "Patch"
+            ],
+            "grade": "BGS 9.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "9.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto",
+              "Patch"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      }
+    },
+    {
+      "card": 3,
+      "files": [
+        "微信图片_20260807122331_1384_4921.jpg"
+      ],
+      "order": [
+        "baseline",
+        "cos56",
+        "baseline",
+        "cos56"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "Panini",
+            "product": "One and One",
+            "set": "",
+            "subjects": [
+              "Klay Thompson",
+              "Stephen Curry"
+            ],
+            "team": "Warriors",
+            "card_name": "Duals",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "Panini",
+            "product": "One and One",
+            "set": "Duals",
+            "subjects": [
+              "Klay Thompson",
+              "Stephen Curry"
+            ],
+            "team": "Warriors",
+            "card_name": "Timeless Moments",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "year",
+              "card_number",
+              "serial"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "set",
+          "card_name"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "Panini",
+            "product": "One and One",
+            "set": "Timeless Moments",
+            "subjects": [
+              "Klay Thompson",
+              "Stephen Curry"
+            ],
+            "team": "Warriors",
+            "card_name": "Duals",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "year",
+              "card_number",
+              "serial"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "Panini",
+            "product": "One and One",
+            "set": "Duals",
+            "subjects": [
+              "Klay Thompson",
+              "Stephen Curry"
+            ],
+            "team": "Warriors",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "set",
+          "card_name"
+        ]
+      }
+    },
+    {
+      "card": 4,
+      "files": [
+        "微信图片_20260807122331_1385_4921.jpg"
+      ],
+      "order": [
+        "cos56",
+        "baseline",
+        "cos56",
+        "baseline"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2023-24",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Impeccable Draft Pick Autographs",
+            "subjects": [
+              "Anthony Edwards"
+            ],
+            "team": "Timberwolves",
+            "card_name": "Draft Pick Number",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "10",
+            "serial": "1/1",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Silver",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Silver",
+                "reason": "BASE_APPEARANCE_NOT_PARALLEL"
+              }
+            ]
+          },
+          {
+            "year": "2023-24",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Anthony Edwards"
+            ],
+            "team": "Timberwolves",
+            "card_name": "Draft Pick Autographs",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "10",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "set",
+          "card_name",
+          "serial"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2023-24",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Draft Pick Autographs",
+            "subjects": [
+              "Anthony Edwards"
+            ],
+            "team": "Timberwolves",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "10",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "serial"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2023-24",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Draft Pick Autographs",
+            "subjects": [
+              "Anthony Edwards"
+            ],
+            "team": "Wolves",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "10",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "serial"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      }
+    },
+    {
+      "card": 5,
+      "files": [
+        "微信图片_20260807122331_1386_4921.jpg"
+      ],
+      "order": [
+        "baseline",
+        "cos56",
+        "baseline",
+        "cos56"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2023",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Stephen Curry"
+            ],
+            "team": "Golden State Warriors",
+            "card_name": "Stats Autograph",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "ISACUR",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA Authentic/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "Authentic",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2023",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Stephen Curry"
+            ],
+            "team": "Warriors",
+            "card_name": "Stats Autograph",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "ISACUR",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA Authentic/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "Authentic",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Gold",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Gold",
+                "reason": "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED"
+              }
+            ]
+          }
+        ],
+        "disagreements": []
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2023",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Stats Autograph",
+            "subjects": [
+              "Stephen Curry"
+            ],
+            "team": "Warriors",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "ISACUR",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA Authentic/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "Authentic",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [
+              "manufacturer"
+            ],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2023",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "Stats Autograph",
+            "subjects": [
+              "Stephen Curry"
+            ],
+            "team": "Golden State Warriors",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "ISACUR",
+            "serial": "",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA Authentic/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "Authentic",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "manufacturer"
+        ]
+      }
+    },
+    {
+      "card": 6,
+      "files": [
+        "微信图片_20260807122331_1387_4921.jpg"
+      ],
+      "order": [
+        "cos56",
+        "baseline",
+        "cos56",
+        "baseline"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2016",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Impeccable Numbers",
+            "subjects": [
+              "Kyrie Irving"
+            ],
+            "team": "Cavaliers",
+            "card_name": "Jersey Numbers Auto.",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IJ-KI",
+            "serial": "1/2",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA 9",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2016",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Impeccable Numbers",
+            "subjects": [
+              "Kyrie Irving"
+            ],
+            "team": "Cavaliers",
+            "card_name": "Jersey Numbers",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IJ-KI",
+            "serial": "1/2",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA 9",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "card_name"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2016",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Jersey Numbers Auto.",
+            "subjects": [
+              "Kyrie Irving"
+            ],
+            "team": "Cavaliers",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IJ-KI",
+            "serial": "1/2",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA 9",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2016",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Jersey Numbers Auto",
+            "subjects": [
+              "Kyrie Irving"
+            ],
+            "team": "Cavaliers",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IJ-KI",
+            "serial": "1/2",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA 9",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "9",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "set"
+        ]
+      }
+    },
+    {
+      "card": 7,
+      "files": [
+        "微信图片_20260807122331_1388_4921.jpg"
+      ],
+      "order": [
+        "baseline",
+        "cos56",
+        "baseline",
+        "cos56"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2022",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Luka Dončić"
+            ],
+            "team": "Mavericks",
+            "card_name": "Draft Pick Number",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "DPN-LD",
+            "serial": "1/3",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA Authentic/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "Authentic",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [
+              "card_number"
+            ],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2022",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Luka Doncic"
+            ],
+            "team": "Mavericks",
+            "card_name": "Draft Pick Number",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "1DPLKD",
+            "serial": "1/3",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA/DNA Authentic/10",
+            "grading_info": {
+              "company": "PSA/DNA",
+              "card_grade": "AUTHENTIC",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Silver",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Silver",
+                "reason": "BASE_APPEARANCE_NOT_PARALLEL"
+              }
+            ]
+          }
+        ],
+        "disagreements": [
+          "manufacturer",
+          "subjects",
+          "card_number",
+          "grade"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2022",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Draft Pick Number",
+            "subjects": [
+              "Luka Doncic"
+            ],
+            "team": "Mavericks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IDPLKD",
+            "serial": "1/3",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA Authentic/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "Authentic",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2022",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Draft Pick Number",
+            "subjects": [
+              "Luka Doncic"
+            ],
+            "team": "Mavericks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "1/3",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA Authentic/10",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "Authentic",
+              "auto_grade": "10",
+              "grade_type": "AUTHENTIC_WITH_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "card_number"
+        ]
+      }
+    },
+    {
+      "card": 8,
+      "files": [
+        "微信图片_20260807122438_1389_4921.jpg"
+      ],
+      "order": [
+        "cos56",
+        "baseline",
+        "cos56",
+        "baseline"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Steve Kerr"
+            ],
+            "team": "Spurs",
+            "card_name": "Jersey Numbers",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "4/4",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "Jersey Numbers",
+            "subjects": [
+              "Steve Kerr"
+            ],
+            "team": "Spurs",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "4/4",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "year",
+              "manufacturer",
+              "card_number"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "manufacturer",
+          "set",
+          "card_name"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "Jersey Numbers",
+            "subjects": [
+              "Steve Kerr"
+            ],
+            "team": "Spurs",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "4/4",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "Jersey Numbers",
+            "subjects": [
+              "Steve Kerr"
+            ],
+            "team": "Spurs",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "4/4",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Rainbow",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Rainbow",
+                "reason": "BASE_APPEARANCE_NOT_PARALLEL"
+              }
+            ]
+          }
+        ],
+        "disagreements": []
+      }
+    },
+    {
+      "card": 9,
+      "files": [
+        "微信图片_20260807122438_1390_4921.jpg"
+      ],
+      "order": [
+        "baseline",
+        "cos56",
+        "baseline",
+        "cos56"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Vince Carter"
+            ],
+            "team": "Raptors",
+            "card_name": "Draft Pick Number",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "5/5",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Vince Carter"
+            ],
+            "team": "Raptors",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "1/5",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "card_name",
+          "serial"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "Draft Pick Number",
+            "subjects": [
+              "Vince Carter"
+            ],
+            "team": "Raptors",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "15/15",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [
+              "surface_color"
+            ],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Gold",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Gold",
+                "reason": "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED"
+              }
+            ]
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "Draft Pick Number",
+            "subjects": [
+              "Vince Carter"
+            ],
+            "team": "Raptors",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "15/15",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      }
+    },
+    {
+      "card": 10,
+      "files": [
+        "微信图片_20260807122438_1391_4921.jpg"
+      ],
+      "order": [
+        "cos56",
+        "baseline",
+        "cos56",
+        "baseline"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2020-21",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Jersey Number Autographs",
+            "subjects": [
+              "Bill Russell"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "18",
+            "serial": "6/6",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2020-21",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Impeccable Jersey Number Autographs",
+            "subjects": [
+              "Bill Russell"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "18",
+            "serial": "6/6",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "set"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2020-21",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Jersey Number Autographs",
+            "subjects": [
+              "Bill Russell"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "18",
+            "serial": "6/6",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2020-21",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Jersey Number Autographs",
+            "subjects": [
+              "Bill Russell"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "18",
+            "serial": "6/6",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "BGS 8.5/10",
+            "grading_info": {
+              "company": "BGS",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      }
+    },
+    {
+      "card": 11,
+      "files": [
+        "微信图片_20260807122438_1392_4921.jpg"
+      ],
+      "order": [
+        "baseline",
+        "cos56",
+        "baseline",
+        "cos56"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "2017-18",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Lauri Markkanen"
+            ],
+            "team": "Bulls",
+            "card_name": "Draft Picks Auto",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IDP-LMK",
+            "serial": "7/7",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "SGC 8.5/10",
+            "grading_info": {
+              "company": "SGC",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2017-18",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Lauri Markkanen"
+            ],
+            "team": "Bulls",
+            "card_name": "Draft Picks Auto",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IDP-LMK",
+            "serial": "7/7",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "SGC 8.5/10",
+            "grading_info": {
+              "company": "SGC",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "2017-18",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Draft Picks Autographs",
+            "subjects": [
+              "Lauri Markkanen"
+            ],
+            "team": "Bulls",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IDP-LMK",
+            "serial": "7/7",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "SGC 8.5/10",
+            "grading_info": {
+              "company": "SGC",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "2017-18",
+            "manufacturer": "Panini",
+            "product": "Impeccable",
+            "set": "Draft Picks Autographs",
+            "subjects": [
+              "Lauri Markkanen"
+            ],
+            "team": "Bulls",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "IDP-LMK",
+            "serial": "7/7",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "SGC 8.5/10",
+            "grading_info": {
+              "company": "SGC",
+              "card_grade": "8.5",
+              "auto_grade": "10",
+              "grade_type": "CARD_AND_AUTO"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      }
+    },
+    {
+      "card": 12,
+      "files": [
+        "微信图片_20260807122438_1394_4921.jpg"
+      ],
+      "order": [
+        "cos56",
+        "baseline",
+        "cos56",
+        "baseline"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "Obsidian",
+            "set": "",
+            "subjects": [
+              "Ray Allen"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "Green",
+            "parallel_family": "Geometric",
+            "parallel_exact": "",
+            "print_finish": "Green Geometric",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "8/8",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [
+              "product",
+              "parallel_family"
+            ],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Green",
+            "observed_parallel_family": "Geometric",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Ray Allen"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "8/8",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "year",
+              "manufacturer",
+              "product",
+              "card_number"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "product"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Ray Allen"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "8/8",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Green",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Green",
+                "reason": "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED"
+              }
+            ]
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Ray Allen"
+            ],
+            "team": "Celtics",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "Green",
+            "parallel_family": "Geometric",
+            "parallel_exact": "",
+            "print_finish": "Green Geometric",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "8/8",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [
+              "surface_color",
+              "parallel_family"
+            ],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Green",
+            "observed_parallel_family": "Geometric",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": []
+      }
+    },
+    {
+      "card": 13,
+      "files": [
+        "微信图片_20260807122438_1395_4921.jpg"
+      ],
+      "order": [
+        "baseline",
+        "cos56",
+        "baseline",
+        "cos56"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Trae Young"
+            ],
+            "team": "Hawks",
+            "card_name": "Rookie",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "09/10",
+            "attributes": [
+              "Auto",
+              "RC"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "RC",
+              "Auto"
+            ],
+            "observed_surface_color": "Red",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Red",
+                "reason": "BARE_COLOUR_NOT_TAXONOMY_CONFIRMED"
+              }
+            ]
+          },
+          {
+            "year": "",
+            "manufacturer": "Panini",
+            "product": "National Treasures",
+            "set": "",
+            "subjects": [
+              "Trae Young"
+            ],
+            "team": "Hawks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "",
+            "attributes": [
+              "Auto",
+              "RC"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "serial"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "RC",
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          }
+        ],
+        "disagreements": [
+          "manufacturer",
+          "product",
+          "card_name",
+          "serial"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "Leaf",
+            "product": "Leaf Metal",
+            "set": "",
+            "subjects": [
+              "Trae Young"
+            ],
+            "team": "Hawks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "09/10",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [
+              "manufacturer",
+              "product"
+            ],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Trae Young"
+            ],
+            "team": "Hawks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "09/10",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Silver",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Silver",
+                "reason": "BASE_APPEARANCE_NOT_PARALLEL"
+              }
+            ]
+          }
+        ],
+        "disagreements": [
+          "manufacturer",
+          "product"
+        ]
+      }
+    },
+    {
+      "card": 14,
+      "files": [
+        "微信图片_20260807122438_1396_4921.jpg"
+      ],
+      "order": [
+        "cos56",
+        "baseline",
+        "cos56",
+        "baseline"
+      ],
+      "baseline": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Dirk Nowitzki"
+            ],
+            "team": "Mavericks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "06/11",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "Impeccable",
+            "set": "",
+            "subjects": [
+              "Dirk Nowitzki"
+            ],
+            "team": "Mavericks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "06/11",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Silver",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Silver",
+                "reason": "BASE_APPEARANCE_NOT_PARALLEL"
+              }
+            ]
+          }
+        ],
+        "disagreements": [
+          "product"
+        ]
+      },
+      "cos56": {
+        "runs": [
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "",
+            "subjects": [
+              "Dirk Nowitzki"
+            ],
+            "team": "Mavericks",
+            "card_name": "MVP",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "06/11",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "",
+            "grading_info": null,
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [
+              "year",
+              "manufacturer",
+              "product",
+              "card_number",
+              "grading_info"
+            ],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "",
+            "observed_parallel_family": "",
+            "withheld_finish_terms": []
+          },
+          {
+            "year": "",
+            "manufacturer": "",
+            "product": "",
+            "set": "HOF",
+            "subjects": [
+              "Dirk Nowitzki"
+            ],
+            "team": "Mavericks",
+            "card_name": "",
+            "release_variant": "",
+            "surface_color": "",
+            "parallel_family": "",
+            "parallel_exact": "",
+            "print_finish": "",
+            "descriptive_rarity": "",
+            "card_number": "",
+            "serial": "06/11",
+            "attributes": [
+              "Auto"
+            ],
+            "grade": "PSA",
+            "grading_info": {
+              "company": "PSA",
+              "card_grade": "",
+              "auto_grade": "",
+              "grade_type": "CARD_ONLY"
+            },
+            "grammar": "standard",
+            "special_stamp": "",
+            "description": "",
+            "lot_count": "",
+            "unreadable": [],
+            "low_confidence": [],
+            "ip": "",
+            "language": "",
+            "components": [
+              "Auto"
+            ],
+            "observed_surface_color": "Silver",
+            "observed_parallel_family": "Foil",
+            "withheld_finish_terms": [
+              {
+                "layer": "surface_color",
+                "value": "Silver",
+                "reason": "BASE_APPEARANCE_NOT_PARALLEL"
+              },
+              {
+                "layer": "parallel_family",
+                "value": "Foil",
+                "reason": "DESCRIBES_SURFACE_NOT_PARALLEL"
+              }
+            ]
+          }
+        ],
+        "disagreements": [
+          "set",
+          "card_name",
+          "grade"
+        ]
+      }
+    }
+  ]
+}
