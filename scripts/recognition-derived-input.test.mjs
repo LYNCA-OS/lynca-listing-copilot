@@ -229,6 +229,16 @@ await assert.rejects(() => canonicalListingCropMetadataForVerification({
   assert.match(app, /RECOGNITION_DOWNSCALE_LONG_EDGE = 1600/);
   assert.match(app, /blob\.size >= Number\(source\.size \|\| 0\)\) return null/,
     "a downscale that is not smaller is not produced at all");
+  // The derived budget is finite and crops are attached first, so plain array
+  // order drops the asset the model is meant to READ before it drops a crop --
+  // and only once a retry pushes past the cap.
+  assert.match(app, /image\.recognitionInput === true\),\s*\n\s*\.\.\.allImages\.filter/,
+    "recognition inputs must rank ahead of field crops in the derived budget");
+  // The downscales are produced after `images` is bounded, so the metadata sync
+  // has to be handed a list that actually contains them.
+  assert.ok(!/syncDerivedImageSourceMetadata\(asset, images\)/.test(app),
+    "metadata sync must receive the list including recognition inputs");
+  assert.match(app, /syncDerivedImageSourceMetadata\(asset, uploadableImages\)/);
 }
 
 console.log("COS-53 recognition derived input tests passed");

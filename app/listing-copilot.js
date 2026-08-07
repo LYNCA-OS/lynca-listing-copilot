@@ -972,7 +972,15 @@ function imageIsDerivedForRequest(image = {}) {
 function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_BATCH_LIMIT) {
   const allImages = Array.isArray(images) ? images : [];
   const primaryImages = allImages.filter((image) => !imageIsDerivedForRequest(image));
-  const derivedImages = allImages.filter(imageIsDerivedForRequest);
+  // COS-53 recognition inputs rank ahead of field crops when the derived budget
+  // is tight. Crops are attached at intake and downscales are appended later,
+  // so plain array order would drop the asset the model is meant to READ in
+  // favour of crops nothing reads at recognition time -- and only on a retry,
+  // which is the worst place to find it.
+  const derivedImages = [
+    ...allImages.filter((image) => imageIsDerivedForRequest(image) && image.recognitionInput === true),
+    ...allImages.filter((image) => imageIsDerivedForRequest(image) && image.recognitionInput !== true)
+  ];
   const maxDerived = Math.max(0, Math.max(2, Number(maxImages) || REQUEST_IMAGE_BATCH_LIMIT) - primaryImages.length);
   return [
     ...primaryImages,
@@ -1807,6 +1815,15 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // verified, which `readCanonicalListingImageReferences` currently forbids.
     const recognitionInputs = await ensureRecognitionDownscales(asset, images);
     const recognitionInputIds = new Set(recognitionInputs.map((image) => image.id));
+    // The downscales are produced after `images` was bounded, so the metadata
+    // sync must be given a list that contains them. Passing the stale `images`
+    // silently skipped them: harmless only because the server recomputes
+    // downscale lineage from the verified source row, which is not a reason to
+    // hand a sync function a list missing the rows it is meant to sync.
+    const uploadableImages = [
+      ...images.filter((image) => !recognitionInputIds.has(image.id)),
+      ...recognitionInputs
+    ];
     const indexedImages = images
       .filter((image) => !recognitionInputIds.has(image.id))
       .map((image, imageIndex) => ({ image, imageIndex }));
@@ -1831,7 +1848,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
       entries: indexedImages,
       isDerived: ({ image }) => imageIsDerivedForRequest(image),
       uploadPhase,
-      beforeDerived: () => syncDerivedImageSourceMetadata(asset, images)
+      beforeDerived: () => syncDerivedImageSourceMetadata(asset, uploadableImages)
     });
     assertCurrentAssetLifecycle(asset);
     // The originals are up and verified, so the recognition downscales can be
@@ -1842,7 +1859,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // which is the behaviour that shipped before this decision, so a downscale
     // that cannot be stored costs latency and nothing else.
     if (recognitionInputs.length) {
-      syncDerivedImageSourceMetadata(asset, images);
+      syncDerivedImageSourceMetadata(asset, uploadableImages);
       const recognitionOutcomes = await uploadPhase(recognitionInputs
         .map((image, imageIndex) => ({ image, imageIndex })));
       const recognitionSummary = summarizeDerivedUploadOutcomes(recognitionOutcomes);
@@ -1850,7 +1867,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
       asset.recognitionDownscaleError = recognitionSummary.first_error
         ? String(recognitionSummary.first_error.message || recognitionSummary.first_error).slice(0, 160)
         : "";
-      syncDerivedImageSourceMetadata(asset, images);
+      syncDerivedImageSourceMetadata(asset, uploadableImages);
     } else {
       asset.recognitionDownscaleStatus = "not_required";
     }
@@ -1863,7 +1880,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
         asset.derivedStorageUploadError = summary.first_error
           ? String(summary.first_error.message || summary.first_error).slice(0, 160)
           : "";
-        syncDerivedImageSourceMetadata(asset, images);
+        syncDerivedImageSourceMetadata(asset, uploadableImages);
         return summary;
       })
       .catch((error) => {

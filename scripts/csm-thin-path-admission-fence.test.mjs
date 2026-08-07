@@ -30,7 +30,11 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // The production CSM thin path, both endpoints.
 const ENTRY_POINTS = [
   "api/csm-listing-title.js",
-  "api/csm-listing-title-ingest.js"
+  "api/csm-listing-title-ingest.js",
+  // The client too. Admission is a server decision, but the browser bundle is
+  // where a catalog module would be imported for a display convenience and
+  // quietly ship the capability with it.
+  "app/listing-copilot.js"
 ];
 
 // Directories the production path must not be able to reach. Each is a
