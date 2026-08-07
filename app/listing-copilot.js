@@ -62,6 +62,12 @@ const heicUnsupportedMessage = "当前浏览器暂不支持 HEIC/HEIF 预览，�
 
 const state = {
   files: [],
+  // Wall clock for the whole batch, from the moment images enter it to the
+  // moment the last card resolves. The per-card stages answer where time goes;
+  // this answers the question a writer actually asks, which is how long the
+  // batch took.
+  batchStartedAt: 0,
+  batchFinishedAt: 0,
   mode: "pair",
   assets: [],
   results: [],
@@ -153,6 +159,7 @@ const elements = {
     medium: document.querySelector("#statMedium"),
     low: document.querySelector("#statLow"),
     failed: document.querySelector("#statFailed"),
+    elapsed: document.querySelector("#statElapsed"),
     requests: document.querySelector("#statRequests"),
     cost: document.querySelector("#statCost")
   }
@@ -2978,6 +2985,15 @@ function updatePreviewSummary() {
   elements.previewSummary.textContent = `${state.files.length} 张图片，${state.assets.length} 张卡。${orphanNote}`;
 }
 
+/** "48 秒" under a minute, "2 分 05 秒" beyond it. Seconds alone stop being
+ *  readable at the batch sizes this is for. */
+function formatBatchElapsed(milliseconds) {
+  const totalSeconds = Math.max(0, Math.round(milliseconds / 1000));
+  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  return `${minutes} 分 ${String(totalSeconds % 60).padStart(2, "0")} 秒`;
+}
+
 function updateStats() {
   const high = state.results.filter((result) => normalizeConfidence(result.confidence) === "HIGH").length;
   const medium = state.results.filter((result) => normalizeConfidence(result.confidence) === "MEDIUM").length;
@@ -2991,6 +3007,20 @@ function updateStats() {
   elements.stats.medium.textContent = medium;
   elements.stats.low.textContent = low;
   elements.stats.failed.textContent = failed;
+
+  // Only once every card in the batch has resolved. A running total would
+  // change on every render and read as a stopwatch nobody asked for; the
+  // finished total is the number worth showing.
+  const complete = state.assets.length > 0 && state.results.length >= state.assets.length;
+  if (complete && state.batchStartedAt && !state.batchFinishedAt) {
+    state.batchFinishedAt = Date.now();
+  }
+  if (!complete) state.batchFinishedAt = 0;
+  if (elements.stats.elapsed) {
+    elements.stats.elapsed.textContent = state.batchFinishedAt && state.batchStartedAt
+      ? formatBatchElapsed(state.batchFinishedAt - state.batchStartedAt)
+      : "—";
+  }
   elements.stats.requests.textContent = state.assets.length;
   elements.stats.cost.textContent = formatCost(state.assets.length);
 }
@@ -3744,6 +3774,11 @@ async function handleFiles(
       // Slow files later in the batch no longer hold earlier cards at a
       // whole-batch barrier.
       const asset = createClientAsset(images, group.index);
+      // The batch clock starts when its first card appears, not when
+      // recognition is dispatched: the upload and preparation before that are
+      // part of what the writer waits through.
+      if (!state.batchStartedAt) state.batchStartedAt = Date.now();
+      state.batchFinishedAt = 0;
       state.assets.push(asset);
       state.assets.sort((left, right) => left.index - right.index);
       state.files = state.assets.flatMap((entry) => entry.images);
@@ -4592,6 +4627,8 @@ function resetTool() {
   releaseIntakePreviewRecords();
   releaseImagePreviewUrls(state.files);
   state.files = [];
+  state.batchStartedAt = 0;
+  state.batchFinishedAt = 0;
   state.assets = [];
   state.results = [];
   state.processing = false;

@@ -21,6 +21,27 @@ jobs:
         run: |
           npm ls --omit=dev --all
           node scripts/npm-audit-gate.mjs
+      - name: Put PostgreSQL on PATH
+        # The two CSM postgres suites exit 0 when initdb/pg_ctl are missing, so
+        # on a runner without them they reported PASS while testing nothing.
+        # That is how a persistence defect survived: `buildCsmStageRows` wrote an
+        # `evidence` key that `csm_marketplace_structured_check` forbids, which
+        # would have failed every atomic write, and the only suite covering it
+        # skipped here and could not start a server locally either. A gate that
+        # cannot fail is not a gate.
+        #
+        # ubuntu-latest ships PostgreSQL; it is simply not on PATH. Resolved by
+        # version rather than pinned, so a runner image bump does not silently
+        # return the suites to skipping.
+        run: |
+          dir="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
+          if [ -n "$dir" ]; then
+            echo "$dir" >> "$GITHUB_PATH"
+            echo "PostgreSQL on PATH: $dir"
+          else
+            echo "::warning::no PostgreSQL on this runner; the CSM postgres suites will skip"
+          fi
+
       - name: Run offline test suites
         # Every scripts/**/*.test.mjs runs with no credentials; suites that
         # need runtime credentials are excluded explicitly below.
