@@ -25,6 +25,7 @@ import {
   requireTenantAccess,
   TENANT_PERMISSIONS
 } from "../lib/tenant/index.mjs";
+import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
 import { runDirectCsmAsset } from "./csm-listing-title.js";
 import { verifyListingImagePayload } from "./listing-image-verify-upload.js";
 import {
@@ -94,6 +95,49 @@ function normalizeImages(metadata, body) {
     }
     return image;
   });
+}
+
+/**
+ * COS-53 clauses 1-2 (founder, 2026-08-08): recognition may begin while the
+ * original is still uploading.
+ *
+ * This endpoint already ran the model on inline bytes while storage happened in
+ * the background -- 2 of 6 production cards on 2026-08-08 recorded 0ms of
+ * blocking upload here, against 3.7-9.1s on the direct path. The only thing
+ * keeping a large card off it was the inline size limit, so the fix is to send
+ * the bounded DOWNSCALE inline and let the originals upload separately.
+ *
+ * In that mode the inline bytes are the recognition input and NOT the record:
+ * they are never persisted as originals. The originals arrive on the client's
+ * own non-blocking uploads, and everything downstream waits for them exactly as
+ * it does today -- same verification, same lineage, same canonical invariant.
+ * Nothing is declared or trusted; the wait simply overlaps the model call
+ * instead of preceding it.
+ *
+ * The deadline is the reason this cannot hang: if the client's uploads never
+ * complete, the request fails rather than holding a function open, and the
+ * asset is recoverable through the same path a failed upload already uses.
+ */
+async function awaitClientUploadedOriginals({
+  tenantId, assetId, env, fetchImpl, deadlineMs = 90_000, pollMs = 400
+}) {
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < deadlineMs) {
+    try {
+      return await readCanonicalListingImageReferences({ tenantId, assetId, env, fetchImpl });
+    } catch (error) {
+      // Only "not there yet" is worth waiting on. A tenant, path or hash
+      // failure is a decision, not a race, and must surface immediately.
+      if (error?.retryable !== true) throw error;
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  }
+  throw Object.assign(
+    new Error(`ingest_original_upload_timeout:${String(lastError?.code || "unknown")}`),
+    { statusCode: 504, retryable: true }
+  );
 }
 
 function buildCanonical({ tenantId, assetId, images, bucket, now }) {
@@ -261,12 +305,32 @@ export default async function handler(req, res) {
     const now = new Date();
     const bucket = listingImageStorageReadiness(process.env).bucket;
     const canonical = buildCanonical({ tenantId: context.tenantId, assetId, images, bucket, now });
+    // COS-53 clauses 1-2. When the inline bytes are the recognition input
+    // rather than the record, the client says so and declares how many
+    // originals it is uploading on its own.
+    const derivedInline = metadata.recognitionInputOnly === true
+      || metadata.recognition_input_only === true;
+    const declaredOriginalCount = derivedInline
+      ? Number(metadata.expectedOriginalCount ?? metadata.expected_original_count)
+      : images.length;
+    if (derivedInline) {
+      if (!Number.isInteger(declaredOriginalCount)
+        || declaredOriginalCount < 1 || declaredOriginalCount > MAX_IMAGES) {
+        throw Object.assign(new Error("ingest_expected_original_count_invalid"), { statusCode: 400 });
+      }
+      // A run must not be able to claim derived input and quietly ship the
+      // original as the record, or the two paths stop being distinguishable
+      // in the row afterwards.
+      if (images.some((image) => image.role !== "readability_derived")) {
+        throw Object.assign(new Error("ingest_recognition_input_role_invalid"), { statusCode: 400 });
+      }
+    }
     recoveryIdentity = {
       asset_id: assetId,
       tenant_id: context.tenantId,
       client_asset_ref: clientAssetRef,
       image_generation_id: assetId,
-      expected_original_count: images.length
+      expected_original_count: declaredOriginalCount
     };
 
     const assetPromise = createTenantListingAsset({
@@ -275,15 +339,25 @@ export default async function handler(req, res) {
       idempotencyKey,
       captureProfileId: metadata.captureProfileId || metadata.capture_profile_id,
       category: metadata.category,
-      expectedOriginalCount: images.length
+      expectedOriginalCount: declaredOriginalCount
     });
-    storagePromise = assetPromise.then(() => Promise.all(images.map((image) => persistImage({
-      image,
-      tenantId: context.tenantId,
-      assetId,
-      context,
-      now
-    }))));
+    // Derived-inline mode persists NOTHING from the body: the originals are
+    // uploading on the client's own connection and are the record. This wait
+    // is what used to happen before the model call and now happens beside it.
+    storagePromise = assetPromise.then(() => (derivedInline
+      ? awaitClientUploadedOriginals({
+        tenantId: context.tenantId,
+        assetId,
+        env: process.env,
+        fetchImpl: globalThis.fetch
+      })
+      : Promise.all(images.map((image) => persistImage({
+        image,
+        tenantId: context.tenantId,
+        assetId,
+        context,
+        now
+      })))));
     // The provider precondition can fail before persistPath awaits this branch.
     // Observe the rejection immediately so a concurrent Storage error cannot
     // terminate the function before the structured CSM response is returned.
@@ -311,7 +385,11 @@ export default async function handler(req, res) {
       // latency question turns on, so it goes in rather than being added to
       // the reply. `ingest_total_ms` stays out: it measures the request that
       // contains the persistence, so it cannot precede it.
-      serverPrologueStages: { ingest_body_bytes: body.length },
+      serverPrologueStages: {
+        ingest_body_bytes: body.length,
+        // COS-53 clause 4: the run states what the model read.
+        ...(derivedInline ? { recognition_input_readability_derived: 1 } : {})
+      },
       dependencies: {
         readImages: async () => canonical,
         signImage: async ({ objectPath }) => {
@@ -354,7 +432,8 @@ export default async function handler(req, res) {
       tenant_id: context.tenantId,
       client_asset_ref: clientAssetRef,
       image_generation_id: assetId,
-      expected_original_count: images.length,
+      expected_original_count: declaredOriginalCount,
+      recognition_input: derivedInline ? "readability_derived_inline" : "original_inline",
       verifications,
       recognition_session_id: result.csm_rows.resolution.recognition_session_id,
       trace_status: "PERSISTED",
