@@ -52,6 +52,14 @@ assert.ok(Math.abs(result.baseline.macro_f1 - 0.7698022907754876) < 1e-12,
 // The same pass added `special_stamp` and `description` to the TCG order.
 // Neither appears here: this cohort predates the fields, so the rows carry no
 // value for them and every title is unchanged on that account.
+// UNCHANGED through COS-14's 2026-08-08 amendment to `Lot*N`, and that is the
+// point. Printing `*` instead of `x` first moved this to +0.009613, purely
+// because the tokeniser split `lot*4` into `lot` + `4` while `lotx4` stayed one
+// token -- a spelling difference scored as a missing token. Wins, losses, ties
+// and p were byte-identical throughout, which is what said it was the scorer
+// and not the titles. `x` and `*` are the same marker and both are correct;
+// only what we PRINT changed. `normaliseLotMarker` now collapses them, and the
+// number returned here exactly.
 assert.ok(Math.abs(result.paired.delta_macro_f1 - 0.013561558087645031) < 1e-12);
 assert.deepEqual(
   [result.paired.wins, result.paired.losses, result.paired.ties],
@@ -123,10 +131,9 @@ const replay = (path) => JSON.parse(execFileSync(process.execPath, [
 // 100 as the only surface on which the rule must work.
 const currentSchema = replay("artifacts/canonical-v4/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(currentSchema.population, 148);
-// Repinned 2026-08-05 for COS-49's `LotxN`: +0.005352 -> +0.009619. Same
-// +0.004 shift as the diagnostic 100 and the v3 cohort, and wins/losses/ties
-// hold at 12/0/136 -- the marker is the same five characters, so no budget
-// moves and no card changes side.
+// Repinned 2026-08-05 for COS-49's `LotxN`: +0.005352 -> +0.009619. Unmoved by
+// the 2026-08-08 switch to printing `*`, once the scorer stopped treating the
+// two separators as different tokens.
 assert.ok(Math.abs(currentSchema.paired.delta_macro_f1 - 0.00961934545458576) < 1e-12);
 assert.deepEqual(
   // The loss is gone as of the COS-41 and COS-39 decisions: 11-1 became 12-0.
@@ -147,7 +154,8 @@ assert.equal(currentSchema.safety.critical_wrong_proxy, currentSchema.safety.car
 
 const priorSchema = replay("artifacts/canonical-v3/thin-path-gpt-5.6-luna.jsonl");
 assert.equal(priorSchema.population, 150);
-// Repinned 2026-08-05, same COS-49 change: +0.004951 -> +0.009269.
+// Repinned 2026-08-05, same COS-49 change: +0.004951 -> +0.009269. Also unmoved
+// by the 2026-08-08 separator change, third cohort agreeing.
 assert.ok(Math.abs(priorSchema.paired.delta_macro_f1 - 0.009268500395273827) < 1e-12);
 assert.deepEqual(
   [priorSchema.paired.wins, priorSchema.paired.losses, priorSchema.paired.ties],

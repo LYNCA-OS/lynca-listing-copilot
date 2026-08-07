@@ -330,7 +330,7 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
 
 // ------------------------------------------------------------- lot structure
 
-// "[LotxN][Year][Manufacturer Product Set][Subjects up to 3]", and CSM's Lot
+// "[Lot*N][Year][Manufacturer Product Set][Subjects up to 3]", and CSM's Lot
 // grammar DOES carry [Shared Numerical Rarity] -- the hand-written version
 // dropped it on the reasoning that a lot has no single copy number.
 {
@@ -339,11 +339,11 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
     subjects: ["Victor Wembanyama", "Chet Holmgren", "Scoot Henderson"],
     card_number: "1", serial: "17/50", lot_count: "12", grammar: "lot"
   }));
-  // LotxN per COS-49 (Fei, 2026-08-04): the one merchant-facing quantity
+  // Lot*N per COS-14 as amended 2026-08-08 (COS-49 named LotxN; superseded):
   // marker, and the spelling the reviewed corpus actually uses (`lotx4`,
-  // `Lotx16`). The interim `Lot*n` form is retired; "n Card Lot" before it was
+  // `Lot*16`). The interim `Lot*n` form is retired; "n Card Lot" before it was
   // written by no writer at all.
-  assert.ok(composed.title.startsWith("Lotx12"));
+  assert.ok(composed.title.startsWith("Lot*12"));
   assert.ok(!composed.title.includes("#1"));
   assert.ok(composed.title.includes("17/50"));
   // The combined bracket carries the product, not just the manufacturer.
@@ -351,7 +351,7 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
 }
 // An uncounted lot ABSTAINS from the quantity bracket. This assertion used to
 // require a bare "Lot", which was the behaviour rather than the contract:
-// COS-14 names `LotxN` as the ONE approved quantity format and requires
+// COS-14 names `Lot*N` as the ONE approved quantity format and requires
 // "route for review or abstain rather than inventing N" when the count cannot
 // be established. A bare "Lot" invents nothing, but it is a fourth marker
 // beside the three the decision forbids, and it ships a title instead of
@@ -360,17 +360,17 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
 {
   const uncounted = composeFromCanonicalFields(fields({ subjects: ["A", "B"], grammar: "lot" }));
   assert.ok(!/\bLot\b/i.test(uncounted.title), "an unread count must not ship a quantity marker");
-  assert.ok(!/^Lotx/.test(uncounted.title), "an unread count must not be fabricated");
+  assert.ok(!/^Lot\*/.test(uncounted.title), "an unread count must not be fabricated");
   assert.equal(uncounted.lot_quantity_unresolved, true, "the caller must be told to route for review");
 
-  // "0" arrives as a string and used to be truthy, rendering `Lotx0` -- a lot
+  // "0" arrives as a string and used to be truthy, rendering `Lot*0` -- a lot
   // of no cards. N is "the number of cards uploaded or visibly represented".
   const zero = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 0 }));
-  assert.ok(!/Lotx0/.test(zero.title), "zero cards is not a lot");
+  assert.ok(!/Lot\*0/.test(zero.title), "zero cards is not a lot");
   assert.equal(zero.lot_quantity_unresolved, true);
 
   const counted = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 4 }));
-  assert.ok(counted.title.startsWith("Lotx4"));
+  assert.ok(counted.title.startsWith("Lot*4"));
   assert.equal(counted.lot_quantity_unresolved, false);
 }
 

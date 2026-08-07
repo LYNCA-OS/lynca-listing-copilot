@@ -16,7 +16,25 @@ const valueFor = (argv, name, fallback = null) => {
   return index >= 0 ? argv[index + 1] : fallback;
 };
 
-const tokenise = (value) => new Set(String(value ?? "")
+/**
+ * `Lot*3` and `lotx3` are the SAME marker with the same meaning. We write `*`
+ * (COS-14 as amended 2026-08-08); writers typed `x`; both are correct.
+ *
+ * The tokeniser splits on non-alphanumerics, so `lot*3` became `lot` + `3`
+ * while `lotx3` stayed one token -- and the scorer read a spelling difference
+ * as a missing token. It is not a quality difference and must not be scored as
+ * one: measured on three frozen cohorts, changing only the separator moved the
+ * delta by -0.0039 / -0.0043 / -0.0043 with wins, losses, ties and p all
+ * byte-identical. The same cards won; the scorer just stopped recognising the
+ * marker.
+ *
+ * Both spellings collapse to one scoring token here, so the marker is compared
+ * on what it means rather than on which character we happen to print.
+ */
+const normaliseLotMarker = (value) => String(value ?? "")
+  .replace(/\blot\s*[x*]\s*(\d+)/gi, "lotx$1");
+
+const tokenise = (value) => new Set(normaliseLotMarker(value)
   .normalize("NFD").replace(/[̀-ͯ]/g, "")
   .replace(/[‘’ʼ]/g, "'")
   .toLowerCase().split(/[^a-z0-9/']+/).filter(Boolean));
@@ -106,16 +124,15 @@ export function analyzeCanonicalComposerRecovery(rows, diagnosis = null, {
       .filter((token) => isSanctionedNormalization(token, candidateTokens));
     const lostReferenceTokens = rawLostReferenceTokens
       .filter((token) => !normalizedReferenceTokens.includes(token));
-    // `LotxN` is ONE token, and `lot_count` holds only the digits, so a literal
-    // set-membership check reads the marker as invented. It is not: the count
-    // came off the images, and three of the five cards this fired on have
-    // `lotx4` / `lotx3` written in the reviewed reference itself.
+    // The marker is ONE token after normalisation (`lotx3`, whichever separator
+    // was printed), and `lot_count` holds only the digits, so a literal
+    // set-membership check reads it as invented. It is not: the count came off
+    // the images, and three of the five cards this fired on have `lotx4` /
+    // `lotx3` written in the reviewed reference itself.
     //
-    // The previous `Lot*N` spelling split on the `*` into `lot` + `N`, both
-    // backed, which is the only reason this gate stayed quiet through that
-    // change. The mechanism was never the difference; the tokeniser was. Teach
-    // the backing check the marker's morphology rather than lower the gate --
-    // fabrication has to stay absolute, so it must keep meaning what it says.
+    // Teach the backing check the marker's morphology rather than lower the
+    // gate -- fabrication has to stay absolute, so it must keep meaning what it
+    // says.
     const lotCount = String((row.fields || {}).lot_count ?? "").trim();
     const backedLotMarker = lotCount ? `lotx${lotCount}`.toLowerCase() : null;
     const unbackedNewTokens = newTokens.filter((token) => (
