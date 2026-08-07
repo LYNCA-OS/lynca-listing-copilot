@@ -6,7 +6,10 @@ import { createHash } from "node:crypto";
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { readJsonPayload, sendJson } from "../lib/http-handler-utils.mjs";
 import { instrumentProductionRequest, bindProductionRequestContext, safeClientTiming, safeLatencyStages } from "../lib/observability/production-events.mjs";
-import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
+import {
+  readCanonicalListingImageReferences,
+  selectRecognitionImages
+} from "../lib/listing/storage/canonical-image-references.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import {
   persistPreparedCanonicalListingPath,
@@ -325,6 +328,17 @@ export async function runDirectCsmAsset({
   if (!originals.length) {
     throw Object.assign(new Error("canonical_original_image_missing"), { statusCode: 409 });
   }
+  // COS-53: Recognition may read a stored bounded DOWNSCALE when one exists for
+  // an original and is actually smaller. The originals remain the system of
+  // record and are still what must exist -- the check above is unchanged and
+  // deliberately still asks for them.
+  //
+  // The operation key and payload hash stay keyed on the ORIGINALS' bytes. The
+  // derived image is a function of its original, so keying on it would make a
+  // retry that fell back to the original look like a different task and buy a
+  // second model call for the same card.
+  const recognition = selectRecognitionImages(canonical.images, { slots: 2 });
+  const recognitionImages = recognition.images.length ? recognition.images : originals;
 
   const task = {
     tenant_id: tenant,
@@ -387,7 +401,7 @@ export async function runDirectCsmAsset({
       const [signedUrls, session] = await Promise.all([
         (async () => {
           const signedUrlStartedAt = Date.now();
-          const urls = await Promise.all(originals.map((image) => signImage({
+          const urls = await Promise.all(recognitionImages.map((image) => signImage({
             objectPath: image.objectPath,
             bucket: image.bucket,
             tenantId: tenant,
@@ -412,6 +426,9 @@ export async function runDirectCsmAsset({
               image_generation_id: canonical.image_generation_id,
               image_set_sha256: canonical.image_set_sha256,
               expected_original_count: canonical.expected_original_count,
+              // COS-53 clause 4: a run states which asset the model read, per
+              // slot, rather than leaving it to be inferred from byte counts.
+              recognition_input: recognition.read,
               provider: MODEL,
               mode: "csm_thin_direct"
             },
