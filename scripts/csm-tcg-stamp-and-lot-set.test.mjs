@@ -164,3 +164,74 @@ assert.deepEqual(
 );
 
 console.log("csm-tcg-stamp-and-lot-set.test.mjs OK");
+
+// --- COS-14 clause 6: only attributes shared by EVERY card ------------------
+//
+// Six lots published on 2026-08-08 broke this, and both shapes are detectable
+// without per-card evidence, which is why they are rules rather than review
+// notes. The values below are the production ones.
+{
+  const merged = compose({
+    manufacturer: "Panini", product: "Impeccable",
+    set: "Stats Autograph; Jersey Numbers Auto",
+    subjects: ["Stephen Curry", "Kyrie Irving"],
+    serial: "1/2", grade: "PSA Authentic; 9", team: "Warriors; Cavaliers",
+    attributes: ["Auto"], components: ["Auto"],
+    lot_count: "2", grammar: "lot"
+  });
+  // A value carrying a separator between two cards' answers is, by
+  // construction, not shared. It is withheld and NAMED -- the caller routes
+  // what it hears about, and a silent drop turns a false claim into a missing
+  // field with nobody told the model saw two different answers.
+  assert.deepEqual(merged.lot_unshared_attributes.sort(), ["grade", "set", "team"]);
+  assert.ok(!/;/.test(merged.title), `no merged value may reach the title: ${merged.title}`);
+  // `1/2` on a two-card lot is NOT withheld: a two-card print run could
+  // genuinely cover both, and CSM's Lot grammar carries a shared numerical
+  // rarity bracket. Only the provable contradiction goes.
+  assert.match(merged.title, /^Lot\*2 /);
+  // What IS shared survives: both cards are Impeccable and both are autographed.
+  assert.match(merged.title, /Panini Impeccable/);
+  assert.match(merged.title, /Auto/);
+
+  // The other production shape: no merge marker anywhere, and a 1/1 that can
+  // only belong to one of the two cards.
+  const oneOfOne = compose({
+    manufacturer: "Panini", product: "Flawless", set: "Logoman Autographs",
+    subjects: ["Shai Gilgeous-Alexander", "LeBron James"],
+    serial: "1/1", attributes: ["Auto", "Patch"], components: ["Auto", "Patch"],
+    lot_count: "2", grammar: "lot"
+  });
+  assert.deepEqual(oneOfOne.lot_unshared_attributes, ["serial"]);
+  assert.ok(!/1\/1/.test(oneOfOne.title), `a 1/1 shared by two cards is a contradiction: ${oneOfOne.title}`);
+  // And the case the contract protects: /50 across twelve cards is shareable
+  // and must survive, which is why the rule is denominator-vs-count and not
+  // "lots have no serial".
+  assert.match(oneOfOne.title, /Logoman Autographs/, "an unmerged set is genuinely shared and stays");
+}
+
+// A single card keeps its serial: this rule is about lots, not about serials.
+{
+  const single = compose({
+    year: "2024", manufacturer: "Topps", product: "Chrome",
+    subjects: ["Shohei Ohtani"], serial: "17/50", grammar: "standard"
+  });
+  assert.match(single.title, /17\/50/, "outside lot grammar the print run is identity");
+  assert.deepEqual(single.lot_unshared_attributes, []);
+  const shareable = compose({
+    manufacturer: "Topps", product: "Chrome", subjects: ["A", "B"],
+    serial: "17/50", lot_count: "12", grammar: "lot"
+  });
+  assert.match(shareable.title, /17\/50/, "a /50 run can cover twelve cards");
+  assert.deepEqual(shareable.lot_unshared_attributes, []);
+}
+
+// A slash is not a merge marker: serials and card numbers legitimately contain
+// one, and treating "/" as per-card would withhold every serial in existence.
+{
+  const slashed = compose({
+    manufacturer: "Topps", product: "Chrome", set: "Update",
+    subjects: ["A", "B"], card_number: "TG22/TG30",
+    lot_count: "2", grammar: "lot"
+  });
+  assert.ok(!slashed.lot_unshared_attributes.includes("card_number"));
+}
