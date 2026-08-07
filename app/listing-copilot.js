@@ -3708,6 +3708,13 @@ async function handleFiles(
   if (!imageFiles.length) return;
 
   const batchWasEmpty = state.assets.length === 0;
+  // The batch clock starts HERE -- the moment the writer's files arrive -- not
+  // when the first card object appears. Decoding and preparing the selection
+  // happens in between, and the writer is waiting through it; a clock that
+  // starts after it reports a number smaller than the wait it claims to
+  // describe.
+  if (!state.batchStartedAt) state.batchStartedAt = Date.now();
+  state.batchFinishedAt = 0;
   // A lifecycle represents the whole visible workspace, not one file-picker
   // selection. Additional selections inherit the original recognition intent.
   const lifecycleGeneration = batchWasEmpty
@@ -3783,11 +3790,6 @@ async function handleFiles(
       // Slow files later in the batch no longer hold earlier cards at a
       // whole-batch barrier.
       const asset = createClientAsset(images, group.index);
-      // The batch clock starts when its first card appears, not when
-      // recognition is dispatched: the upload and preparation before that are
-      // part of what the writer waits through.
-      if (!state.batchStartedAt) state.batchStartedAt = Date.now();
-      state.batchFinishedAt = 0;
       state.assets.push(asset);
       state.assets.sort((left, right) => left.index - right.index);
       state.files = state.assets.flatMap((entry) => entry.images);
