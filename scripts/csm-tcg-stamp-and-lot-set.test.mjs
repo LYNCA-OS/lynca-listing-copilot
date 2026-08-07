@@ -105,6 +105,28 @@ const four = parseCanonicalFields(JSON.stringify({
 }));
 assert.equal((four.fields || four).subjects.length, 3, "at most three Subjects");
 
+// COS-14: a lot of ONE is not a lot. The count was read correctly and the
+// grammar was wrong, so the marker is withheld -- and the caller is TOLD, since
+// it cannot route what it never hears about. Production carries the case: three
+// lot compositions, two of them "1 Card Lot", all three the same
+// dual-signature card, which the schema names explicitly as not a lot.
+{
+  const single = compose({
+    year: "2024", manufacturer: "Topps", product: "Stadium Club",
+    subjects: ["Ichiro", "Shohei Ohtani"], card_name: "Co-Signers",
+    lot_count: 1, grammar: "lot"
+  });
+  assert.ok(!/Lotx/.test(single.title), "Lotx1 is a lot of one card and must not be published");
+  assert.equal(single.lot_single_card, true, "the caller must be told the grammar disagreed with the count");
+  assert.equal(single.lot_quantity_unresolved, false, "the count was known; it is the grammar that was wrong");
+  const pair = compose({
+    year: "2024", manufacturer: "Topps", product: "Stadium Club",
+    subjects: ["Ichiro", "Shohei Ohtani"], lot_count: 2, grammar: "lot"
+  });
+  assert.match(pair.title, /^Lotx2 /, "two cards is a lot");
+  assert.equal(pair.lot_single_card, false);
+}
+
 // COS-14: never invent N. The caller is told to route for review instead.
 const uncounted = compose({
   year: "2024", manufacturer: "Topps", product: "Chrome",

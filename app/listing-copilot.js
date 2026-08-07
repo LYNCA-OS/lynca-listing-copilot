@@ -2016,6 +2016,15 @@ async function processAssetViaCsmThinPath(asset, {
         intent_id: durableIntentId,
         image_detail: "high",
         manual_retry: manualRetry === true,
+        // What the browser already measured about its OWN work -- image
+        // metadata, signature, sha256, upload bytes and network retries -- sent
+        // where it can be recorded. It was accumulated on the asset and thrown
+        // away on this path, which is the path the writer flow takes, so the
+        // gap between the server's few seconds and the ~23s a writer waits had
+        // no measurement behind it at all.
+        ...(asset.clientTiming && Object.keys(asset.clientTiming).length
+          ? { client_timing: asset.clientTiming }
+          : {}),
         ...(retrySubmissionId ? { retry_submission_id: retrySubmissionId } : {})
       })
     }, {

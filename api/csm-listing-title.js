@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { readJsonPayload, sendJson } from "../lib/http-handler-utils.mjs";
-import { instrumentProductionRequest, bindProductionRequestContext } from "../lib/observability/production-events.mjs";
+import { instrumentProductionRequest, bindProductionRequestContext, safeClientTiming } from "../lib/observability/production-events.mjs";
 import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import {
@@ -279,6 +279,7 @@ export async function checkCachedCsmPersistenceReadiness({
 
 export async function runDirectCsmAsset({
   tenantId, userId, assetId, intentId, imageDetail = "high", manualRetry = false,
+  clientTiming = null,
   env = process.env, fetchImpl = globalThis.fetch, callProvider = null,
   dependencies = {}
 } = {}) {
@@ -305,7 +306,14 @@ export async function runDirectCsmAsset({
     ? await checkReadiness({ env, fetchImpl })
     : await checkCachedCsmPersistenceReadiness({ env, fetchImpl });
   if (!readiness.ready) throw Object.assign(new Error(`csm_persistence_not_ready:${readiness.reason}`), { statusCode: 503 });
+  // The client's own stages come first, so the record covers the whole journey
+  // rather than only the part that happens after the request arrives. Without
+  // them the six production cards run on 2026-08-06 reported 6.1-9.6s of server
+  // work against a writer-observed ~23s, and the difference had nowhere to be.
+  // The ingest endpoint already accepted these; this one -- the endpoint the
+  // writer flow actually calls -- did not.
   const latencyStages = {
+    ...safeClientTiming(clientTiming),
     preflight_ms: Date.now() - readinessStartedAt
   };
 
@@ -622,7 +630,8 @@ export default async function handler(req, res) {
       assetId: payload.asset_id || payload.assetId,
       intentId: payload.intent_id || payload.intentId,
       imageDetail: payload.image_detail || "high",
-      manualRetry: payload.manual_retry === true
+      manualRetry: payload.manual_retry === true,
+      clientTiming: payload.client_timing || payload.clientTiming || null
     });
     return sendJson(res, 200, {
       ok: true,
