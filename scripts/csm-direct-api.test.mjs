@@ -587,6 +587,25 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.equal(withClient.latency_stages_ms.client_negative_ms, undefined, "negative values are refused");
   // Server stages still land alongside them.
   assert.ok(withClient.latency_stages_ms.provider_prepare_ms >= 0);
+
+  // The ingest endpoint must pass client timings INTO the run, not merge them
+  // onto the reply afterwards.
+  //
+  // This is the defect class, not just one line. `runDirectCsmAsset` writes
+  // latency_stages_ms to the session itself, so anything merged after it
+  // returns decorates the HTTP response and never reaches a column. Three
+  // consecutive production batches recorded ten server stages and no client
+  // stages for exactly this reason, and the absence was misdiagnosed twice
+  // before the ordering was checked -- once as the client not sending, once as
+  // the request taking the other endpoint. That second conclusion came from
+  // "the row carries no ingest_ keys", which proves nothing: those keys are
+  // added after the row is written too.
+  const ingestSource = await readFile(new URL("../api/csm-listing-title-ingest.js", import.meta.url), "utf8");
+  const callIndex = ingestSource.indexOf("runDirectCsmAsset({");
+  assert.ok(callIndex > -1, "the ingest endpoint runs the direct asset path");
+  const callBlock = ingestSource.slice(callIndex, ingestSource.indexOf("dependencies:", callIndex));
+  assert.match(callBlock, /clientTiming:/,
+    "client timings must be an argument to the run, since the run is what persists them");
   assert.ok(result.latency_stages_ms.request_total_ms >= 0);
   assert.equal(result.provider_attempt_number, 1);
   assert.equal(result.provider_retry_count, 0);

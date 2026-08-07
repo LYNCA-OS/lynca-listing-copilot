@@ -296,6 +296,22 @@ export default async function handler(req, res) {
       assetId,
       intentId,
       imageDetail: metadata.imageDetail || metadata.image_detail || "high",
+      // Into the run, not merged onto the response afterwards.
+      //
+      // The merge below happens after `runDirectCsmAsset` has already written
+      // `latency_stages_ms` to the session, so it only ever decorated the HTTP
+      // reply and never reached a column. Three consecutive production batches
+      // recorded ten server stages and no client stages because of this, and
+      // the absence was misread twice: first as the client not sending them,
+      // then as the request taking the other endpoint -- a conclusion drawn
+      // from "the row has no ingest_ keys", which is not evidence of the path,
+      // since those keys are added after the row is written too.
+      clientTiming: metadata.clientTiming || metadata.client_timing || null,
+      // The uploaded size is known before the run and is the number the
+      // latency question turns on, so it goes in rather than being added to
+      // the reply. `ingest_total_ms` stays out: it measures the request that
+      // contains the persistence, so it cannot precede it.
+      serverPrologueStages: { ingest_body_bytes: body.length },
       dependencies: {
         readImages: async () => canonical,
         signImage: async ({ objectPath }) => {

@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { readJsonPayload, sendJson } from "../lib/http-handler-utils.mjs";
-import { instrumentProductionRequest, bindProductionRequestContext, safeClientTiming } from "../lib/observability/production-events.mjs";
+import { instrumentProductionRequest, bindProductionRequestContext, safeClientTiming, safeLatencyStages } from "../lib/observability/production-events.mjs";
 import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
 import { createListingImageSignedReadUrl } from "../lib/listing/storage/supabase-image-storage.mjs";
 import {
@@ -279,7 +279,7 @@ export async function checkCachedCsmPersistenceReadiness({
 
 export async function runDirectCsmAsset({
   tenantId, userId, assetId, intentId, imageDetail = "high", manualRetry = false,
-  clientTiming = null,
+  clientTiming = null, serverPrologueStages = null,
   env = process.env, fetchImpl = globalThis.fetch, callProvider = null,
   dependencies = {}
 } = {}) {
@@ -314,6 +314,7 @@ export async function runDirectCsmAsset({
   // writer flow actually calls -- did not.
   const latencyStages = {
     ...safeClientTiming(clientTiming),
+    ...safeLatencyStages(serverPrologueStages),
     preflight_ms: Date.now() - readinessStartedAt
   };
 
@@ -631,7 +632,16 @@ export default async function handler(req, res) {
       intentId: payload.intent_id || payload.intentId,
       imageDetail: payload.image_detail || "high",
       manualRetry: payload.manual_retry === true,
-      clientTiming: payload.client_timing || payload.clientTiming || null
+      clientTiming: payload.client_timing || payload.clientTiming || null,
+      // Same reason as clientTiming: everything below is assembled AFTER the
+      // run has already written latency_stages_ms to the session, so stages
+      // added there decorate the reply and never reach a column. These three
+      // were added earlier in the same sitting and never landed once --
+      // `with_prologue_stages` was 0 across every row in production.
+      //
+      // `handler_total_ms` stays out on purpose: it cannot be known before
+      // persistence, because it measures the request that contains it.
+      serverPrologueStages: { ...prologueStages }
     });
     return sendJson(res, 200, {
       ok: true,
