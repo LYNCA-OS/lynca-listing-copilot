@@ -13,7 +13,7 @@ import {
   isSemCardNumberText, classifySemNumberBoundary, semCanonicalEditableFields
 } from "../csm/ontology/sem-definition.mjs";
 import { csmFieldLabels } from "../csm/ontology/field-labels.mjs";
-import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { parseCanonicalFields, CANONICAL_FIELDS_SCHEMA, CANONICAL_FIELDS_PROMPT } from "../lib/listing/thin/canonical-fields.mjs";
 import { BRACKET_ORDER, DROP_ORDER, composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { MARKETPLACE_PROFILES } from "../lib/listing/thin/marketplace-composer-rules.mjs";
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
@@ -21,9 +21,23 @@ import { routeReviewPatterns, OWNING_LAYER, CORRECTION_REASON } from "../csm/con
 import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
 
 const results = [];
+// A clause may fail by throwing OR by returning the reason as a string. The
+// return path was here and unread: two clauses (COS-21's field-list drift
+// guard, COS-10's projection guard) reported their failure by returning a
+// message that nothing looked at, so they could not fail. A verifier whose
+// checks cannot fail is worse than no verifier -- it reports 23 green clauses
+// and two of them are decorative.
 const check = (decision, clause, fn) => {
-  try { fn(); results.push({ decision, clause, ok: true }); }
-  catch (error) { results.push({ decision, clause, ok: false, why: error.message.split("\n")[0].slice(0, 110) }); }
+  try {
+    const failure = fn();
+    if (typeof failure === "string" && failure) {
+      results.push({ decision, clause, ok: false, why: failure.slice(0, 110) });
+      return;
+    }
+    results.push({ decision, clause, ok: true });
+  } catch (error) {
+    results.push({ decision, clause, ok: false, why: error.message.split("\n")[0].slice(0, 110) });
+  }
 };
 
 const card = (over = {}) => ({
@@ -294,10 +308,85 @@ check("COS-42", "every bracket including EMPTY is exposed", () => {
   assert.ok(v.brackets.every((b) => b.alternate_candidates.length === 0));
 });
 
+check("COS-56", "Product > Set > Card Name, with Card Name EMPTY when exhausted", () => {
+  // Approved 2026-08-07. The rule has to be stated where the MODEL reads it,
+  // which is the schema description, so that is what is asserted -- not a
+  // constant elsewhere that happens to spell the words.
+  const { properties } = CANONICAL_FIELDS_SCHEMA;
+  assert.match(properties.product.description, /Read `product`, then `set`, then `card_name`/,
+    "the precedence is stated on `product`");
+  assert.match(properties.set.description, /named insert or subset WITHIN that product/);
+  assert.match(properties.card_name.description, /is EMPTY/,
+    "empty is the correct answer when the phrase is exhausted, not a gap");
+  // The decision's own counter-examples, so the rule cannot be over-applied
+  // into "card_name is always empty". Downtown names one card; Jersey Numbers
+  // and Logoman Autographs name sets. Downtown was `set`'s example before this.
+  assert.ok(properties.card_name.description.includes("Downtown!"));
+  assert.ok(!properties.set.description.includes("Downtown"));
+  assert.match(properties.card_name.description, /"Jersey Numbers" and "Logoman Autographs" are sets/);
+  // The prompt states the same boundary. It used to define `card_name` as "the
+  // printed card-title segment", which is exactly the phrase a product and its
+  // insert also answer to -- a schema deciding what the prompt leaves open is
+  // the oscillation COS-56 was opened about.
+  assert.match(CANONICAL_FIELDS_PROMPT, /Read `product`, `set` and `card_name` in that order/);
+  assert.ok(!CANONICAL_FIELDS_PROMPT.includes("`card_name` is the printed card-title segment"));
+});
+
 // Clauses that are NOT implemented, listed so a full green run is not read as
 // a decision being finished. A verifier that only lists what it checks reports
 // completeness it never measured.
 const UNIMPLEMENTED = [
+  {
+    decision: "COS-20",
+    clause: "per-field catalog/vector admission (clauses 3 and 4)",
+    why: [
+      "Admission is capability-level: catalog and vector are off, globally,",
+      "and there is no per-field gate to point at. Clauses 3 and 4 ask for a",
+      "field to be admitted only after a frozen evaluation proves positive",
+      "value FOR THAT FIELD, and no such gate exists in either direction --",
+      "nothing can be admitted, and nothing records what would admit it.",
+      "",
+      "What IS now guarded is the hazard: `provider-options.mjs` defaults",
+      "`ENABLE_CATALOG_ASSIST_DEFAULT` to true, in a module the production",
+      "path does not load. `scripts/csm-thin-path-admission-fence.test.mjs`",
+      "walks the real import graph from both production endpoints and fails",
+      "if catalog, vector retrieval, candidate scoring, or that module ever",
+      "becomes reachable -- so a superseded default cannot become production",
+      "policy through one import and no decision.",
+      "",
+      "A fence is not the implementation. This stays listed until the",
+      "per-field gate exists."
+    ].join("\n        ")
+  },
+  {
+    decision: "COS-14",
+    clause: "mixed-finish lots: \"shared by every card\" is prompt-only",
+    why: [
+      "The Lot grammar may only assert an attribute shared by EVERY card in",
+      "the lot. That rule lives in a prompt sentence and nothing verifies it,",
+      "because verifying it needs per-card evidence the system does not have:",
+      "a lot is one set of images of several cards, and the model reports one",
+      "finish for the group.",
+      "",
+      "So this may not be verifiable at all in the current shape, and saying",
+      "that plainly is better than a clause that asserts the sentence exists.",
+      "Making it verifiable means per-card observation within a lot image,",
+      "which is a capability decision, not a test."
+    ].join("\n        ")
+  },
+  {
+    decision: "COS-42",
+    clause: "read-only Resolution View is built but unreleased",
+    why: [
+      "`buildCsmResolutionView` is asserted by the clauses above and is not",
+      "reachable by an operator: the read-only view is not released in the",
+      "demo, and the TCG / NON_TCG operator journeys have not been run.",
+      "",
+      "The clauses that pass here are the contract's shape, not evidence that",
+      "a writer can see it. `Listing Copilot Verified` on COS-42 needs a real",
+      "session, not a green suite."
+    ].join("\n        ")
+  },
   {
     decision: "COS-39",
     clause: "the Print Finish Registry was seeded, not governed",
