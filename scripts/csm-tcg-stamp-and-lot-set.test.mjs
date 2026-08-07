@@ -85,8 +85,13 @@ const lot = compose({
   parallel_family: "Refractor", parallel_exact: "Refractor",
   lot_count: 3, grammar: "lot"
 });
+// COS-14's approved example, as amended 2026-08-08: the separator is `*`, not
+// `x`. This assertion is the reason the change could not be made in code alone
+// -- it failed, correctly, because the decision still said `Lotx3`, and a test
+// repinned before the contract is a test that has stopped guarding anything.
+// The decision was amended first; this followed.
 assert.equal(lot.title,
-  "Lotx3 2024 Topps Chrome Update Shohei Ohtani Aaron Judge Juan Soto Refractor",
+  "Lot*3 2024 Topps Chrome Update Shohei Ohtani Aaron Judge Juan Soto Refractor",
   "COS-14's approved example must be reproduced exactly");
 
 // The counterexample the same branch exists for: an insert line BESIDE the
@@ -96,7 +101,7 @@ const beside = compose({
   year: "2024", manufacturer: "Topps", product: "Bowman Chrome", set: "Bowman Briefing",
   subjects: ["Paul Skenes"], lot_count: 2, grammar: "lot"
 });
-assert.match(beside.title, /^Lotx2 2024 Topps Bowman Chrome Paul Skenes$/,
+assert.match(beside.title, /^Lot\*2 2024 Topps Bowman Chrome Paul Skenes$/,
   "a set that echoes the product stays out");
 
 // COS-14: at most three commercially salient Subjects.
@@ -116,14 +121,14 @@ assert.equal((four.fields || four).subjects.length, 3, "at most three Subjects")
     subjects: ["Ichiro", "Shohei Ohtani"], card_name: "Co-Signers",
     lot_count: 1, grammar: "lot"
   });
-  assert.ok(!/Lotx/.test(single.title), "Lotx1 is a lot of one card and must not be published");
+  assert.ok(!/Lot\*/.test(single.title), "Lot*1 is a lot of one card and must not be published");
   assert.equal(single.lot_single_card, true, "the caller must be told the grammar disagreed with the count");
   assert.equal(single.lot_quantity_unresolved, false, "the count was known; it is the grammar that was wrong");
   const pair = compose({
     year: "2024", manufacturer: "Topps", product: "Stadium Club",
     subjects: ["Ichiro", "Shohei Ohtani"], lot_count: 2, grammar: "lot"
   });
-  assert.match(pair.title, /^Lotx2 /, "two cards is a lot");
+  assert.match(pair.title, /^Lot\*2 /, "two cards is a lot");
   assert.equal(pair.lot_single_card, false);
 }
 
@@ -133,7 +138,7 @@ const uncounted = compose({
   subjects: ["Shohei Ohtani"], grammar: "lot"
 });
 assert.equal(uncounted.lot_quantity_unresolved, true);
-assert.ok(!/Lotx/.test(uncounted.title), "no quantity marker is invented");
+assert.ok(!/Lot\*/.test(uncounted.title), "no quantity marker is invented");
 
 // Every bracket each grammar NAMES must be reachable -- compared through
 // `semCanonicalBracket`, the same translation the Composer filters with. The

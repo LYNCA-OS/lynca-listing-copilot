@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// COS-49 names `LotxN` as the one merchant-facing quantity marker, retiring the
+// COS-49 names `Lot*N` as the one merchant-facing quantity marker, retiring the
 // interim `Lot*N`. The decision is Fei's and does not need a number to stand.
 // This supplies one anyway, because the change is cheap to measure and a
 // decision that also happens to score better is worth knowing about -- and a
@@ -53,11 +53,11 @@ for (const [label, path, arm] of COHORTS) {
     // Only lot titles can move. Scoring the other 95% would bury a real effect
     // under cards the change cannot touch, which is how a per-bracket edit gets
     // reported as "no measurable difference".
-    if (!/^Lotx\d+\b/.test(composed.title)) continue;
+    if (!/^Lot\*\d+\b/.test(composed.title)) continue;
     lotCards += 1;
 
     const withX = composed.title;
-    const withStar = composed.title.replace(/^Lotx(\d+)\b/, "Lot*$1");
+    const withStar = composed.title.replace(/^Lot\*(\d+)\b/, "Lot*$1");
     lotPairs.push({
       x: scoreWithEquivalence(withX, reference),
       star: scoreWithEquivalence(withStar, reference),
@@ -86,7 +86,7 @@ for (const [label, path, arm] of COHORTS) {
     const delta = mean(x) - mean(star);
     console.log(
       `${label} [${scale}] n=${lotCards} lot 卡  `
-      + `Lotx=${mean(x).toFixed(6)}  Lot*=${mean(star).toFixed(6)}  `
+      + `Lot*=${mean(x).toFixed(6)}  Lot*=${mean(star).toFixed(6)}  `
       + `Δ=${delta >= 0 ? "+" : ""}${delta.toFixed(6)}  `
       + `${wins}W/${losses}L  p=${signTest(wins, losses).toFixed(4)}`
     );

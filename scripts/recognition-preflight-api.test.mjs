@@ -186,7 +186,7 @@ const multiCardGated = applyIdentityResolutionGate({
   route: "RECOGNITION_WORKER_PREFLIGHT"
 }, { providerId: "recognition_worker" });
 assert.equal(multiCardGated.identity_resolution_status, "RESOLVED");
-assert.match(multiCardGated.final_title, /^Lotx2\b/);
+assert.match(multiCardGated.final_title, /^Lot\*2\b/);
 assert.equal(multiCardGated.publication_gate?.writer_review_ready, true);
 assert.equal(multiCardGated.publication_gate?.workflow_route, "DEEP_REVIEW");
 assert.ok(multiCardGated.unresolved.includes("multi-card lot requires writer review"));
@@ -224,7 +224,7 @@ const confirmedGridCopyrightPayload = {
 };
 const confirmedGridCopyrightDocument = recognitionResponseToEvidenceDocument(confirmedGridCopyrightPayload, { images });
 const copyrightCorrectedLot = withRecognitionEvidence({
-  rendered_title: "Lotx4 2025 Bowman Chrome Xavier Neyens",
+  rendered_title: "Lot*4 2025 Bowman Chrome Xavier Neyens",
   fields: { players: ["Xavier Neyens"], multi_card: true, card_count: 4 },
   resolved: {
     year: "2025",
@@ -276,12 +276,12 @@ assert.equal(copyrightCorrectedLot.resolved_fields.year, "2026");
 assert.equal(copyrightCorrectedLot.rendered_fields.year, "2026");
 assert.equal(copyrightCorrectedLot.rendered_fields.fields.year, "2026");
 assert.equal(copyrightCorrectedLot.evidence.year.value, "2026");
-assert.match(copyrightCorrectedLot.rendered_title, /^Lotx4 2026 Bowman Chrome Xavier Neyens/);
+assert.match(copyrightCorrectedLot.rendered_title, /^Lot\*4 2026 Bowman Chrome Xavier Neyens/);
 const finalizedCopyrightLot = __listingCopilotTitleTestHooks.finalizeDeterministicPresentation(
   copyrightCorrectedLot,
   { maxTitleLength: 80 }
 );
-assert.match(finalizedCopyrightLot.final_title, /^Lotx4 2026 Bowman Chrome Xavier Neyens/);
+assert.match(finalizedCopyrightLot.final_title, /^Lot\*4 2026 Bowman Chrome Xavier Neyens/);
 assert.equal(
   copyrightCorrectedLot.resolution_trace.some((item) => item.step === "prefer_confirmed_grid_copyright_year"),
   true

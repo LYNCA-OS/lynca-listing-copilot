@@ -40,7 +40,7 @@ function cleanText(value) {
 const norm = (value) => cleanText(value).toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
 export function isMultiCardLot(title = "") {
-  return /\blotx\s*\d/i.test(String(title));
+  return /\blot[x*]\s*\d/i.test(String(title));
 }
 
 // Sealed product is not a card. "2025 Topps Baseball Series 1 & 2 Base Set
