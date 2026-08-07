@@ -212,16 +212,48 @@ await assert.rejects(() => canonicalListingCropMetadataForVerification({
   objectPath: sourcePath, env, fetchImpl
 }), /cannot carry crop provenance/);
 
-// The client-side producer is NOT on this branch. Nothing yet uploads a
-// `readability_derived` asset, so everything above is inert in production: the
-// selector sees no downscale and returns the originals, exactly as before. That
-// is deliberate -- the read side and its byte rule land first, and the change
-// to the writer's upload path ships separately, after a real large-image upload
-// has been run through the demo.
+// ─── The client half: which bytes go inline, and when the original starts ───
+//
+// The failure mode is silent in both directions. Choose the path on the
+// ORIGINAL's size and the downscale never gets used; start the original upload
+// after the request instead of before it and the two stop overlapping, which
+// is the entire saving. Neither breaks a test that only checks outputs.
 {
   const app = await readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
-  assert.ok(!/ensureRecognitionDownscales/.test(app),
-    "the client producer belongs to the follow-up change, not this one");
+
+  // Built before the path is chosen, and the choice is made on the downscale.
+  assert.match(app, /recognitionInputs = await ensureRecognitionDownscales\(asset, asset\.images \|\| \[\]\)/);
+  assert.match(app, /csmIngestRecognitionInputEligible\(asset, recognitionInputs\)/);
+  // Eligibility reads bytes that exist rather than predicting them: a wrong
+  // prediction ships a body the endpoint rejects and the card pays twice.
+  assert.match(app, /const sources = recognitionInputs\.map\(storageSourceForImage\)/);
+  // One downscale per original, or the model reads fewer sides than the card has.
+  assert.match(app, /recognitionInputs\.length !== primaries\.length\) return false/);
+
+  // The original upload starts BEFORE the request. This line is the change.
+  assert.match(app, /if \(recognitionInputs\?\.length\) ensureAssetOriginalImagesUploaded\(asset\);/);
+  const uploadAt = app.indexOf("if (recognitionInputs?.length) ensureAssetOriginalImagesUploaded(asset);");
+  // The fetch CALL, not the endpoint constant near the top of the file. The
+  // first version of this assertion compared against the constant's
+  // declaration and would have passed with the upload started anywhere at all.
+  const fetchAt = app.indexOf("fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT");
+  assert.ok(uploadAt > 0 && fetchAt > uploadAt,
+    "the original upload must be started before the ingest request, not after it");
+
+  // The inline bytes declare what they are, so the row afterwards can tell the
+  // two paths apart.
+  assert.match(app, /role: recognitionInputs\?\.length \? "readability_derived"/);
+  assert.match(app, /recognitionInputOnly: true/);
+  assert.match(app, /expectedOriginalCount: \(asset\.images \|\| \[\]\)/);
+
+  // Nothing from the body is persisted in this mode, so demanding
+  // verifications for it would fail a run that worked.
+  assert.ok(/&& !recognitionInputs\?\.length[\s\S]{0,40}Array\.isArray\(payload\.verifications\)/.test(app));
+  // Identity is still checked; it is carried by the originals instead.
+  assert.match(app, /csm_ingest_asset_identity_mismatch/);
+
+  // A downscale that is not smaller is still never produced.
+  assert.match(app, /blob\.size >= Number\(source\.size \|\| 0\)\) return null/);
 }
 
 console.log("COS-53 recognition derived input tests passed");
