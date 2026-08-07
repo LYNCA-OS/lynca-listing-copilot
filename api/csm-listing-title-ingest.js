@@ -4,7 +4,8 @@ import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import {
   bindProductionRequestContext,
   instrumentProductionRequest,
-  sanitizeOperationalText
+  sanitizeOperationalText,
+  safeClientTiming
 } from "../lib/observability/production-events.mjs";
 import { listingImageStorageReadiness } from "../lib/listing/storage/storage-config.mjs";
 import {
@@ -227,19 +228,6 @@ async function persistImage({ image, tenantId, assetId, context, now }) {
  * only, and a bounded count. They describe the client's own work and are never
  * read back as truth about the server.
  */
-function safeClientTiming(timing) {
-  if (!timing || typeof timing !== "object" || Array.isArray(timing)) return {};
-  const out = {};
-  for (const [key, value] of Object.entries(timing)) {
-    if (Object.keys(out).length >= 12) break;
-    if (!/^client_[a-z0-9_]{1,48}$/.test(key)) continue;
-    const number = Number(value);
-    if (!Number.isFinite(number) || number < 0) continue;
-    out[key] = Math.min(Math.round(number), 3_600_000);
-  }
-  return out;
-}
-
 export default async function handler(req, res) {
   const startedAt = Date.now();
   let recoveryIdentity = null;
