@@ -530,6 +530,99 @@ function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
   });
 }
 
+// COS-53 (approved 2026-08-07): Recognition may read a stored bounded DOWNSCALE
+// when the original is large, provided the original is still stored in full.
+//
+// 1600px / q80 is not a guess. It is the arm measured for fine print on
+// 2026-08-07 (`scripts/measure-downscaled-image-parity.mjs`): against a
+// same-image control that disagreed on 21 fields, the downscale arm disagreed
+// on 20, carrying 16.5% of the bytes. Serials and card numbers are a few pixels
+// tall and they survived it.
+const RECOGNITION_DOWNSCALE_LONG_EDGE = 1600;
+const RECOGNITION_DOWNSCALE_QUALITY = 0.8;
+
+/**
+ * Returns null when there is nothing to gain, which is the common case:
+ *
+ *  - the original is already under the inline threshold, so it never blocked;
+ *  - the re-encode came out BIGGER. Measured: a 237KB webp re-encoded to
+ *    1600px JPEG produced 478KB. Fewer pixels, more bytes. The rule is byte
+ *    count, not resolution, and it is applied here, again at verification, and
+ *    again when Recognition chooses which asset to read.
+ */
+async function buildRecognitionDownscale(image = {}) {
+  const source = image.sourceFile || image.sourceBlob;
+  if (!source || Number(source.size || 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES) return null;
+  const decodable = image.previewUrl || image.dataUrl || "";
+  if (!decodable) return null;
+
+  let compressed;
+  try {
+    compressed = await compressImageDataUrl(
+      decodable, RECOGNITION_DOWNSCALE_LONG_EDGE, RECOGNITION_DOWNSCALE_QUALITY);
+  } catch {
+    // A downscale that cannot be produced is not an error. Recognition reads
+    // the original, which is what it did before this decision.
+    return null;
+  }
+  delete compressed.sourceCanvas;
+  const blob = dataUrlToBlob(compressed.dataUrl);
+  if (!blob || blob.size >= Number(source.size || 0)) return null;
+
+  const id = `${image.id}-recognition-${RECOGNITION_DOWNSCALE_LONG_EDGE}`;
+  return {
+    id,
+    name: `${image.name} recognition ${RECOGNITION_DOWNSCALE_LONG_EDGE}`,
+    originalType: "image/jpeg",
+    type: "image/jpeg",
+    size: blob.size,
+    originalSize: blob.size,
+    width: compressed.width,
+    height: compressed.height,
+    originalWidth: compressed.width,
+    originalHeight: compressed.height,
+    dataUrl: compressed.dataUrl,
+    captureProfileId: defaultCaptureProfileId,
+    imageQuality: compressed.imageQuality,
+    sourceBlob: blob,
+    sourceImageId: image.id,
+    // Deliberately not a crop: no source region, no bounds. The server
+    // completes the rest of the lineage from the VERIFIED source row, so
+    // nothing here is taken on the client's word.
+    sourceRegion: "",
+    storageRole: "readability_derived",
+    cropMetadata: {
+      source_image_id: image.id,
+      derived_role: "readability_derived",
+      long_edge: RECOGNITION_DOWNSCALE_LONG_EDGE,
+      transform_version: "readability-downscale-v1"
+    },
+    derived: true,
+    recognitionInput: true,
+    contentSha256: "",
+    objectPath: ""
+  };
+}
+
+/** One downscale per large primary, produced once and reused across retries. */
+async function ensureRecognitionDownscales(asset, images = []) {
+  const primaries = images.filter((image) => !imageIsDerivedForRequest(image));
+  const existing = new Set(images
+    .filter((image) => image.recognitionInput)
+    .map((image) => image.sourceImageId));
+  const built = [];
+  for (const primary of primaries) {
+    if (existing.has(primary.id)) continue;
+    const downscale = await buildRecognitionDownscale(primary);
+    if (downscale) built.push(downscale);
+  }
+  if (built.length) {
+    asset.images = [...(asset.images || []), ...built];
+    if (Array.isArray(asset.providerImages)) asset.providerImages = [...asset.providerImages, ...built];
+  }
+  return [...images.filter((image) => image.recognitionInput), ...built];
+}
+
 async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
   const image = await loadImage(originalDataUrl);
   const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
@@ -1702,7 +1795,21 @@ function ensureAssetOriginalImagesUploaded(asset) {
     if (!storageReady()) throw new Error("listing_storage_not_ready");
     const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
     asset.providerImages = images;
-    const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
+    // COS-53. Recognition inputs are produced before the upload phases and are
+    // kept OUT of the non-blocking derived phase: a downscale that lands after
+    // recognition has started is a downscale nothing reads. They upload after
+    // the originals because the server completes their lineage from the
+    // verified source row, which does not exist until the original is verified.
+    //
+    // This is the implementable half of the decision. Clauses 1-2 -- recognition
+    // starting while the original is still in flight -- need a decision on
+    // whether Recognition may proceed before every expected original is
+    // verified, which `readCanonicalListingImageReferences` currently forbids.
+    const recognitionInputs = await ensureRecognitionDownscales(asset, images);
+    const recognitionInputIds = new Set(recognitionInputs.map((image) => image.id));
+    const indexedImages = images
+      .filter((image) => !recognitionInputIds.has(image.id))
+      .map((image, imageIndex) => ({ image, imageIndex }));
     const uploadPhase = async (entries) => {
       const originalsOnly = entries.length > 1 && entries.every(({ image }) => !imageIsDerivedForRequest(image));
       if (originalsOnly) {
@@ -1727,6 +1834,26 @@ function ensureAssetOriginalImagesUploaded(asset) {
       beforeDerived: () => syncDerivedImageSourceMetadata(asset, images)
     });
     assertCurrentAssetLifecycle(asset);
+    // The originals are up and verified, so the recognition downscales can be
+    // uploaded and their lineage completed. Awaited: this is the asset the
+    // model is meant to read, and it must exist before recognition asks.
+    //
+    // A failure here is NOT fatal. Recognition falls back to the original,
+    // which is the behaviour that shipped before this decision, so a downscale
+    // that cannot be stored costs latency and nothing else.
+    if (recognitionInputs.length) {
+      syncDerivedImageSourceMetadata(asset, images);
+      const recognitionOutcomes = await uploadPhase(recognitionInputs
+        .map((image, imageIndex) => ({ image, imageIndex })));
+      const recognitionSummary = summarizeDerivedUploadOutcomes(recognitionOutcomes);
+      asset.recognitionDownscaleStatus = recognitionSummary.status;
+      asset.recognitionDownscaleError = recognitionSummary.first_error
+        ? String(recognitionSummary.first_error.message || recognitionSummary.first_error).slice(0, 160)
+        : "";
+      syncDerivedImageSourceMetadata(asset, images);
+    } else {
+      asset.recognitionDownscaleStatus = "not_required";
+    }
     asset.derivedStorageUploadStatus = phases.derived.length ? "uploading" : "not_required";
     asset.derivedStorageUploadPromise = phases.derivedPromise
       .then((outcomes) => {

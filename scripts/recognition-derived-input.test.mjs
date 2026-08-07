@@ -5,8 +5,10 @@
 // original it came from (a 237KB webp re-encoded to 1600px JPEG produced
 // 478KB). Resolution is not the rule; bytes are.
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import { selectRecognitionImages } from "../lib/listing/storage/canonical-image-references.mjs";
+import { canonicalListingCropMetadataForVerification } from "../lib/listing/storage/storage-verification-store.mjs";
 
 const original = (slot, size) => ({
   image_id: `img_${slot}`,
@@ -100,6 +102,133 @@ assert.deepEqual(selectRecognitionImages([downscale("img_0", 10)]).images, []);
     downscale("img_0", 700_000, "b")
   ]);
   assert.equal(images.length, 1);
+}
+
+// ─── Admission: a downscale earns canonical eligibility the way a crop does ──
+//
+// Before COS-53 this returned `canonical_role: false` for every role outside
+// `cropRolesByRegion`, so a stored downscale could never be read however well
+// formed it was. The lineage it gets now is completed from the VERIFIED source
+// row, not from what the client claimed.
+const tenantId = "tenant_test";
+const assetId = "asset_cos53";
+const day = "2026-08-08";
+const sourcePath = `tenants/${tenantId}/listing-assets/${day}/${assetId}/front.jpg`;
+const derivedPath = `tenants/${tenantId}/listing-assets/${day}/${assetId}/front-1600.jpg`;
+const env = { SUPABASE_URL: "https://example.supabase.co", SUPABASE_SECRET_KEY: "k" };
+const sourceRow = {
+  tenant_id: tenantId,
+  asset_id: assetId,
+  image_id: "img_front",
+  storage_role: "image_1_original",
+  image_generation_id: assetId,
+  object_path: sourcePath,
+  content_sha256: "a".repeat(64),
+  content_hash_verified: true,
+  object_verified: true,
+  canonical_eligible: true,
+  width: 3024,
+  height: 4032,
+  size: 7_444_587
+};
+const fetchImpl = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => [sourceRow],
+  text: async () => JSON.stringify([sourceRow])
+});
+const downscaleLineage = (over = {}) => canonicalListingCropMetadataForVerification({
+  cropMetadata: {
+    source_image_id: "img_front",
+    derived_role: "readability_derived",
+    long_edge: 1600,
+    transform_version: "readability-downscale-v1",
+    ...over
+  },
+  tenantId,
+  assetId,
+  imageId: "img_front_small",
+  role: "readability_derived",
+  objectPath: derivedPath,
+  env,
+  fetchImpl
+});
+
+{
+  const lineage = await downscaleLineage();
+  assert.equal(lineage.canonical_role, true, "a downscale is canonical, not a stray object");
+  assert.equal(lineage.image_generation_id, assetId);
+  // Everything about the source comes from the verified row. A client claiming
+  // a different sha, size or path cannot put it here.
+  assert.deepEqual(lineage.crop_metadata, {
+    derived_id: "img_front_small",
+    generation_id: assetId,
+    asset_id: assetId,
+    source_image_id: "img_front",
+    source_object_path: sourcePath,
+    source_content_sha256: "a".repeat(64),
+    source_side: "front",
+    source_width: 3024,
+    source_height: 4032,
+    source_size: 7_444_587,
+    derived_role: "readability_derived",
+    derived_object_path: derivedPath,
+    long_edge: 1600,
+    transform_version: "readability-downscale-v1"
+  });
+  // No crop vocabulary leaks in: a downscale has no region and no bounds.
+  assert.ok(!("source_region" in lineage.crop_metadata));
+  assert.ok(!("normalized_bounds" in lineage.crop_metadata));
+}
+
+// A downscale must declare what it is and how far it was bounded.
+await assert.rejects(() => downscaleLineage({ long_edge: 0 }), /long_edge/);
+await assert.rejects(() => downscaleLineage({ long_edge: 99_999 }), /long_edge/);
+await assert.rejects(() => downscaleLineage({ derived_role: "" }), /derived_role/);
+await assert.rejects(() => downscaleLineage({ derived_role: "serial_crop" }), /derived_role/);
+
+// A derived image may not name itself as its own source.
+await assert.rejects(
+  () => downscaleLineage({ source_image_id: "img_front_small" }),
+  /different original image/
+);
+
+// Roles that are neither a crop nor a downscale stay non-canonical, unchanged.
+{
+  const lineage = await canonicalListingCropMetadataForVerification({
+    cropMetadata: null, tenantId, assetId, imageId: "img_alt",
+    role: "front_alternate",
+    objectPath: `tenants/${tenantId}/listing-assets/${day}/${assetId}/alt.jpg`,
+    env, fetchImpl
+  });
+  assert.equal(lineage.canonical_role, false);
+  assert.equal(lineage.crop_metadata, null);
+}
+
+// An original still refuses to carry derived provenance.
+await assert.rejects(() => canonicalListingCropMetadataForVerification({
+  cropMetadata: { source_image_id: "img_front" },
+  tenantId, assetId, imageId: "img_front", role: "image_1_original",
+  objectPath: sourcePath, env, fetchImpl
+}), /cannot carry crop provenance/);
+
+// ─── The client's ordering, asserted on the source ──────────────────────────
+//
+// The whole point is WHICH upload blocks. A recognition downscale that rides
+// the non-blocking derived phase lands after recognition has already asked,
+// and then nothing reads it -- a change that measures as "no effect" while
+// looking correct in review.
+{
+  const app = await readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
+  assert.match(app, /const recognitionInputs = await ensureRecognitionDownscales\(asset, images\)/,
+    "recognition downscales are produced before the upload phases");
+  assert.match(app, /\.filter\(\(image\) => !recognitionInputIds\.has\(image\.id\)\)/,
+    "recognition downscales must be kept out of the non-blocking derived phase");
+  assert.match(app, /const recognitionOutcomes = await uploadPhase\(recognitionInputs/,
+    "the recognition downscale upload is awaited, not fired and forgotten");
+  assert.match(app, /RECOGNITION_DOWNSCALE_LONG_EDGE = 1600/);
+  assert.match(app, /blob\.size >= Number\(source\.size \|\| 0\)\) return null/,
+    "a downscale that is not smaller is not produced at all");
 }
 
 console.log("COS-53 recognition derived input tests passed");
