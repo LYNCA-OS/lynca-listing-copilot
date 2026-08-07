@@ -558,6 +558,35 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.ok(result.latency_stages_ms.provider_prepare_ms >= 0);
   assert.ok(result.latency_stages_ms.authority_dispatch_ms >= 0);
   assert.ok(result.latency_stages_ms.csm_persistence_ms >= 0);
+
+  // The client's own stages must reach the record through THIS endpoint, not
+  // only through ingest. Six production cards on 2026-08-06 recorded ten server
+  // stages and zero client stages, so 6.1-9.6s of measured server work sat
+  // against a writer-observed ~23s with the larger half unattributable. The
+  // helper was private to the ingest handler, and the writer flow calls this
+  // one.
+  const withClient = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1", intentId: "intent-2",
+    imageDetail: "original",
+    clientTiming: {
+      client_preparation_ms: 8_400,
+      client_sha256_ms: 610,
+      client_upload_bytes: 11_238_422,
+      not_a_client_key: 5,
+      client_negative_ms: -1
+    },
+    callProvider: async () => ({ ok: true }),
+    dependencies: successfulDependencies({ events: [], authority: passthroughAuthority({ events: [] }) })
+  });
+  assert.equal(withClient.latency_stages_ms.client_preparation_ms, 8_400);
+  assert.equal(withClient.latency_stages_ms.client_sha256_ms, 610);
+  // A byte count is not a duration. An hour-in-milliseconds ceiling silently
+  // rewrote this exact upload to 3,600,000 and stored it as a size.
+  assert.equal(withClient.latency_stages_ms.client_upload_bytes, 11_238_422);
+  assert.equal(withClient.latency_stages_ms.not_a_client_key, undefined, "only client_ keys are accepted");
+  assert.equal(withClient.latency_stages_ms.client_negative_ms, undefined, "negative values are refused");
+  // Server stages still land alongside them.
+  assert.ok(withClient.latency_stages_ms.provider_prepare_ms >= 0);
   assert.ok(result.latency_stages_ms.request_total_ms >= 0);
   assert.equal(result.provider_attempt_number, 1);
   assert.equal(result.provider_retry_count, 0);
