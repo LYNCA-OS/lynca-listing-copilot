@@ -223,6 +223,23 @@ await assert.rejects(() => canonicalListingCropMetadataForVerification({
 
   // Built before the path is chosen, and the choice is made on the downscale.
   assert.match(app, /recognitionInputs = await ensureRecognitionDownscales\(asset, asset\.images \|\| \[\]\)/);
+
+  // The downscales must NOT join `asset.images`. That list is what the card
+  // view renders and what the upload phase walks: the first version put them
+  // there and production showed the operator every card twice while uploading
+  // both copies -- 2 storage attempts became 4 and the original upload went
+  // from ~9s to ~20s.
+  assert.match(app, /asset\.recognitionInputs = \[\.\.\.\(asset\.recognitionInputs \|\| \[\]\), \.\.\.built\]/);
+  assert.ok(!/asset\.images = \[\.\.\.\(asset\.images \|\| \[\]\), \.\.\.built\]/.test(app),
+    "recognition downscales must never be appended to the asset's images");
+  assert.ok(!/uploadPhase\(recognitionInputs/.test(app),
+    "the client never stores a recognition downscale -- it is sent inline");
+
+  // And the gate must not inherit the plain fast path's upload check. Background
+  // preparation starts the originals BEFORE recognition runs, so disqualifying
+  // on `originalStorageUploadPromise` meant the derived path never engaged: every
+  // large card built a downscale, discarded it, and paid for both.
+  assert.match(app, /if \(asset\.durableAssetId\) return false;/);
   assert.match(app, /csmIngestRecognitionInputEligible\(asset, recognitionInputs\)/);
   // Eligibility reads bytes that exist rather than predicting them: a wrong
   // prediction ships a body the endpoint rejects and the card pays twice.

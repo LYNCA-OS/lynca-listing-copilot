@@ -607,20 +607,21 @@ async function buildRecognitionDownscale(image = {}) {
 /** One downscale per large primary, produced once and reused across retries. */
 async function ensureRecognitionDownscales(asset, images = []) {
   const primaries = images.filter((image) => !imageIsDerivedForRequest(image));
-  const existing = new Set(images
-    .filter((image) => image.recognitionInput)
-    .map((image) => image.sourceImageId));
+  const existing = new Set((asset.recognitionInputs || []).map((image) => image.sourceImageId));
   const built = [];
   for (const primary of primaries) {
     if (existing.has(primary.id)) continue;
     const downscale = await buildRecognitionDownscale(primary);
     if (downscale) built.push(downscale);
   }
-  if (built.length) {
-    asset.images = [...(asset.images || []), ...built];
-    if (Array.isArray(asset.providerImages)) asset.providerImages = [...asset.providerImages, ...built];
-  }
-  return [...images.filter((image) => image.recognitionInput), ...built];
+  // NOT into `asset.images`. That list is what the writer's card view renders
+  // and what the upload phase walks, so putting recognition inputs in it showed
+  // the operator every card twice and uploaded both the original AND the
+  // downscale -- 2 storage attempts became 4 and the original upload went from
+  // ~9s to ~20s. The downscale exists to be sent inline; it is never stored by
+  // the client and must not appear anywhere that means "the asset's images".
+  asset.recognitionInputs = [...(asset.recognitionInputs || []), ...built];
+  return asset.recognitionInputs;
 }
 
 async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
@@ -1803,30 +1804,11 @@ function ensureAssetOriginalImagesUploaded(asset) {
     if (!storageReady()) throw new Error("listing_storage_not_ready");
     const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
     asset.providerImages = images;
-    // COS-53. Recognition inputs are produced before the upload phases and are
-    // kept OUT of the non-blocking derived phase: a downscale that lands after
-    // recognition has started is a downscale nothing reads. They upload after
-    // the originals because the server completes their lineage from the
-    // verified source row, which does not exist until the original is verified.
-    //
-    // This is the implementable half of the decision. Clauses 1-2 -- recognition
-    // starting while the original is still in flight -- need a decision on
-    // whether Recognition may proceed before every expected original is
-    // verified, which `readCanonicalListingImageReferences` currently forbids.
-    const recognitionInputs = await ensureRecognitionDownscales(asset, images);
-    const recognitionInputIds = new Set(recognitionInputs.map((image) => image.id));
-    // The downscales are produced after `images` was bounded, so the metadata
-    // sync must be given a list that contains them. Passing the stale `images`
-    // silently skipped them: harmless only because the server recomputes
-    // downscale lineage from the verified source row, which is not a reason to
-    // hand a sync function a list missing the rows it is meant to sync.
-    const uploadableImages = [
-      ...images.filter((image) => !recognitionInputIds.has(image.id)),
-      ...recognitionInputs
-    ];
-    const indexedImages = images
-      .filter((image) => !recognitionInputIds.has(image.id))
-      .map((image, imageIndex) => ({ image, imageIndex }));
+    // COS-53: recognition downscales are NOT uploaded here. They are sent
+    // inline on the ingest path and the client never stores them, so this
+    // phase walks the asset's real images only -- which is also why they do
+    // not live in `asset.images`.
+    const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
     const uploadPhase = async (entries) => {
       const originalsOnly = entries.length > 1 && entries.every(({ image }) => !imageIsDerivedForRequest(image));
       if (originalsOnly) {
@@ -1848,29 +1830,9 @@ function ensureAssetOriginalImagesUploaded(asset) {
       entries: indexedImages,
       isDerived: ({ image }) => imageIsDerivedForRequest(image),
       uploadPhase,
-      beforeDerived: () => syncDerivedImageSourceMetadata(asset, uploadableImages)
+      beforeDerived: () => syncDerivedImageSourceMetadata(asset, images)
     });
     assertCurrentAssetLifecycle(asset);
-    // The originals are up and verified, so the recognition downscales can be
-    // uploaded and their lineage completed. Awaited: this is the asset the
-    // model is meant to read, and it must exist before recognition asks.
-    //
-    // A failure here is NOT fatal. Recognition falls back to the original,
-    // which is the behaviour that shipped before this decision, so a downscale
-    // that cannot be stored costs latency and nothing else.
-    if (recognitionInputs.length) {
-      syncDerivedImageSourceMetadata(asset, uploadableImages);
-      const recognitionOutcomes = await uploadPhase(recognitionInputs
-        .map((image, imageIndex) => ({ image, imageIndex })));
-      const recognitionSummary = summarizeDerivedUploadOutcomes(recognitionOutcomes);
-      asset.recognitionDownscaleStatus = recognitionSummary.status;
-      asset.recognitionDownscaleError = recognitionSummary.first_error
-        ? String(recognitionSummary.first_error.message || recognitionSummary.first_error).slice(0, 160)
-        : "";
-      syncDerivedImageSourceMetadata(asset, uploadableImages);
-    } else {
-      asset.recognitionDownscaleStatus = "not_required";
-    }
     asset.derivedStorageUploadStatus = phases.derived.length ? "uploading" : "not_required";
     asset.derivedStorageUploadPromise = phases.derivedPromise
       .then((outcomes) => {
@@ -1880,7 +1842,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
         asset.derivedStorageUploadError = summary.first_error
           ? String(summary.first_error.message || summary.first_error).slice(0, 160)
           : "";
-        syncDerivedImageSourceMetadata(asset, uploadableImages);
+        syncDerivedImageSourceMetadata(asset, images);
         return summary;
       })
       .catch((error) => {
@@ -2067,7 +2029,14 @@ function csmIngestFastPathEligible(asset = {}) {
  * paid for both.
  */
 function csmIngestRecognitionInputEligible(asset = {}, recognitionInputs = []) {
-  if (asset.durableAssetId || asset.originalStorageUploadPromise) return false;
+  // Deliberately NOT disqualified by `originalStorageUploadPromise`. The plain
+  // fast path checks it because it carries the ORIGINALS inline and must not
+  // race an upload of the same bytes. Here the originals uploading beside the
+  // request is the point of the change, and inheriting that check is why the
+  // first version never engaged: background preparation starts the upload
+  // before recognition is called, so every large card built a downscale, threw
+  // it away, and fell back to the direct path having paid for both.
+  if (asset.durableAssetId) return false;
   const primaries = (Array.isArray(asset.images) ? asset.images : [])
     .filter((image) => !imageIsDerivedForRequest(image));
   if (!primaries.length || primaries.length > 2) return false;
