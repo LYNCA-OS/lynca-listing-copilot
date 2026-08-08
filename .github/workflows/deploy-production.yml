@@ -95,13 +95,18 @@ jobs:
         run: |
           node - <<'NODE' >> "$GITHUB_ENV"
           const context = require('./docs/operations/active-service-context.json');
+          const scopeSlug = String(context?.vercel?.scope?.slug || '');
           const orgId = String(context?.vercel?.scope?.id || '');
           const projectId = String(context?.vercel?.production?.project_id || '');
           const projectName = String(context?.vercel?.production?.project || '');
-          if (!/^team_[A-Za-z0-9]+$/.test(orgId)
+          if (scopeSlug !== 'lyncafei-s-projects'
+            || scopeSlug === String(context?.vercel?.forbidden_scope || '')
+            || !/^team_[A-Za-z0-9]+$/.test(orgId)
             || !/^prj_[A-Za-z0-9]+$/.test(projectId)
             || projectName !== 'lynca-listing-copilot') process.exit(1);
-          process.stdout.write(`VERCEL_ORG_ID=${orgId}\nVERCEL_PROJECT_ID=${projectId}\n`);
+          process.stdout.write(
+            `VERCEL_SCOPE_SLUG=${scopeSlug}\nVERCEL_ORG_ID=${orgId}\nVERCEL_PROJECT_ID=${projectId}\n`
+          );
           NODE
       - name: Build and deploy the exact dispatched checkout
         env:
@@ -115,6 +120,7 @@ jobs:
           test -n "$OPENAI_API_KEY"
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$VERCEL_SCOPE_SLUG"
           test -n "$VERCEL_ORG_ID"
           test -n "$VERCEL_PROJECT_ID"
           test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
@@ -163,7 +169,8 @@ jobs:
         run: |
           test -n "$VERCEL_TOKEN"
           test -n "$DEPLOYMENT_URL"
-          npx --yes vercel@54.14.5 promote "$DEPLOYMENT_URL" --yes
+          npx --yes vercel@54.14.5 promote "$DEPLOYMENT_URL" --yes \
+            --scope "$VERCEL_SCOPE_SLUG"
       - name: Wait for the exact CSM thin main commit to reach production
         run: |
           for _attempt in $(seq 1 60); do

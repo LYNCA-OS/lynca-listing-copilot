@@ -131,14 +131,23 @@ for (const name of ["OPENAI_API_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY
     `${name} must fail closed before the immutable build`);
 }
 assert.match(workflow, /active-service-context\.json/);
+assert.match(workflow, /VERCEL_SCOPE_SLUG=\$\{scopeSlug\}/);
 assert.match(workflow, /VERCEL_ORG_ID=\$\{orgId\}/);
 assert.match(workflow, /VERCEL_PROJECT_ID=\$\{projectId\}/);
+assert.equal(
+  [...workflow.matchAll(/--scope "\$VERCEL_SCOPE_SLUG"/g)].length,
+  1,
+  "promotion must bind the canonical tenant instead of using the CLI default scope"
+);
+assert.doesNotMatch(workflow, /--scope "leon-using-s-projects"/,
+  "production controls must never fall back to the forbidden Vercel scope");
 assert.match(workflow, /vercel@54\.14\.5 build --prod/,
   "the release must build the already checked-out immutable dispatch SHA");
 assert.match(workflow, /vercel@54\.14\.5 deploy --prebuilt --prod --skip-domain --yes/,
   "the exact prebuilt artifact must remain unpromoted until its deployment URL is healthy");
 assert.match(workflow, /vercel@54\.14\.5 curl \/api\/health --deployment "\$DEPLOYMENT_URL"/);
-assert.match(workflow, /vercel@54\.14\.5 promote "\$DEPLOYMENT_URL" --yes/);
+assert.match(workflow,
+  /vercel@54\.14\.5 promote "\$DEPLOYMENT_URL" --yes \\\n\s*--scope "\$VERCEL_SCOPE_SLUG"/);
 assert.match(workflow, /--env "LYNCA_RELEASE_GIT_SHA=\$DISPATCH_SHA"/);
 assert.doesNotMatch(workflow, /--token\b/,
   "the Vercel token must stay in the protected environment, not process arguments");
