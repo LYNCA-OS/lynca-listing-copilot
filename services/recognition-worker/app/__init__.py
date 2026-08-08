@@ -1,1 +1,0 @@
-"""LYNCA Recognition Worker."""
