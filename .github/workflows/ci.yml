@@ -46,7 +46,8 @@ jobs:
             echo "$dir" >> "$GITHUB_PATH"
             echo "PostgreSQL on PATH: $dir"
           else
-            echo "::warning::no PostgreSQL 17+ on this runner; the CSM postgres suites will skip"
+            echo "::error::PostgreSQL 17+ is required; refusing to let persistence suites skip"
+            exit 1
           fi
 
       - name: Check the production import graph and contracts

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import { readFile, readdir } from "node:fs/promises";
+import { buildAccuracyLossLedger } from "../lib/listing/thin/accuracy-loss-ledger.mjs";
 
 import {
   CSM_DIRECT_ESTIMATED_TOKENS,
@@ -435,9 +436,29 @@ function passthroughAuthority({ events = [], lookup = async () => ({ status: "no
 }
 
 function preparedResult(recognitionSessionId, title = "Test title") {
-  return {
+  const rawProviderOutput = "{}";
+  const ledgerResult = {
     title,
     fields: { low_confidence: [] },
+    field_defects: [],
+    sanitised: false,
+    brackets: [],
+    dropped_brackets: [],
+    suppressed_brackets: [],
+    restored_brackets: [],
+    truncated: false,
+    input_empty_fields: [],
+    normalization_reasons: [],
+    character_budget: 80,
+    length: title.length
+  };
+  const accuracyLossLedger = buildAccuracyLossLedger({
+    rawProviderOutput,
+    result: ledgerResult
+  });
+  return {
+    ...ledgerResult,
+    accuracy_loss_ledger: accuracyLossLedger,
     input_tokens: 4_000,
     output_tokens: 120,
     csm_rows: {
