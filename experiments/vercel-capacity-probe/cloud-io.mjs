@@ -127,21 +127,26 @@ export async function invokePreview({ deployment, body, runToken }) {
   }
 }
 
-export async function runTokenFromKeychain() {
-  return new Promise((resolve, reject) => {
-    const child = spawn("security", [
+function childResult(spawnImpl, command, args, options) {
+  return new Promise((resolve) => {
+    let child;
+    try { child = spawnImpl(command, args, options); }
+    catch (error) { resolve({ code: null, stdout: "", error }); return; }
+    const stdout = [];
+    child.stdout?.on("data", (chunk) => stdout.push(chunk));
+    child.once("error", (error) => resolve({ code: null, stdout: "", error }));
+    child.once("close", (code) => resolve({ code, stdout: Buffer.concat(stdout).toString("utf8") }));
+  });
+}
+
+export async function runTokenFromKeychain({ spawnImpl = spawn } = {}) {
+  const keychain = await childResult(spawnImpl, "security", [
       "find-generic-password",
       "-a", "lynca-cloud-sim",
       "-s", "lynca-cloud-sim-preview-run-token",
       "-w"
     ], { stdio: ["ignore", "pipe", "ignore"] });
-    const stdout = [];
-    child.stdout.on("data", (chunk) => stdout.push(chunk));
-    child.once("error", reject);
-    child.once("close", (code) => {
-      const token = Buffer.concat(stdout).toString("utf8").trim();
-      if (code !== 0 || !token) reject(new Error("cloud_sim_run_token_keychain_missing"));
-      else resolve(token);
-    });
-  });
+  const keychainToken = keychain.stdout.trim();
+  if (keychain.code === 0 && keychainToken) return keychainToken;
+  throw new Error("cloud_sim_run_token_unavailable");
 }

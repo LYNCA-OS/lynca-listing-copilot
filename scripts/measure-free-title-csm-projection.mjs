@@ -18,6 +18,17 @@ import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-compos
 const clean = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
 const tokens = (value) => clean(value).normalize("NFD").replace(/[̀-ͯ]/g, "")
   .toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const FREE_ARM = "thin_budgeted";
+const CANONICAL_ARMS = new Set(["thin_canonical", "thin_canonical_high"]);
+
+function normalizedNumericSegment(value) {
+  const normalized = String(value).replace(/^0+(?=\d)/, "");
+  return normalized || "0";
+}
+
+function tokenIdentity(token) {
+  return /^\d+$/.test(token) ? `n:${normalizedNumericSegment(token)}` : `t:${token}`;
+}
 
 function anchored(source, value) {
   const sourceTokens = new Set(tokens(source));
@@ -126,6 +137,148 @@ function score(reference, candidate) {
   return { recall, precision, f1: recall + precision ? 2 * recall * precision / (recall + precision) : 0 };
 }
 
+function addedTokens(source, candidate) {
+  const sourceTokens = new Set(tokens(source).map(tokenIdentity));
+  return [...new Set(tokens(candidate))].filter((token) => !sourceTokens.has(tokenIdentity(token)));
+}
+
+function numericClaims(value) {
+  return [...new Set((clean(value).match(/#?\/\d+(?:\/\d+)*|\b\d+(?:\/\d+)+|\b\d+\b/g) || [])
+    .map((claim) => claim.replace(/^#/, "").split("/")
+      .map((part) => part ? normalizedNumericSegment(part) : "")
+      .join("/")))];
+}
+
+function numericClaimIsBacked(claim, sourceClaims) {
+  // Stay role-agnostic and conservative: 2024/25 -> #/25 and #136 + /175
+  // -> 136/175 are mutations even though every digit existed in the source.
+  // Prefix '#' and leading zero changes are normalized by numericClaims().
+  return sourceClaims.has(claim);
+}
+
+function summarizeProjectionSafety(projected) {
+  const cards = projected.map(({ row, output }) => {
+    const unbacked = addedTokens(row.title, output.title);
+    const sourceNumeric = new Set(numericClaims(row.title));
+    const newNumericClaims = numericClaims(output.title)
+      .filter((claim) => !numericClaimIsBacked(claim, sourceNumeric));
+    return {
+      asset_id: row.asset_id,
+      unbacked_new_tokens: unbacked,
+      new_numeric_claims: newNumericClaims,
+      input: row.title,
+      output: output.title
+    };
+  });
+  return {
+    cards_with_unbacked_new_tokens: cards.filter((row) => row.unbacked_new_tokens.length).length,
+    cards_with_new_numeric_claims: cards.filter((row) => row.new_numeric_claims.length).length,
+    numeric_check: "normalized numeric-expression equality; conservative across role or specificity changes",
+    rows: cards.filter((row) => row.unbacked_new_tokens.length || row.new_numeric_claims.length)
+  };
+}
+
+function validateAndIndexRows(rows) {
+  if (!Array.isArray(rows)) throw new Error("free_title_projection_rows_not_array");
+  const budgetedRows = rows.filter((row) => row?.arm === FREE_ARM);
+  if (!budgetedRows.length) throw new Error("free_title_projection_missing_budgeted_arm");
+  const canonicalRows = rows.filter((row) => CANONICAL_ARMS.has(row?.arm));
+  const canonicalArms = [...new Set(canonicalRows.map((row) => row.arm))];
+  if (canonicalArms.length > 1) {
+    throw new Error(`free_title_projection_ambiguous_canonical_arms:${canonicalArms.sort().join(",")}`);
+  }
+
+  const indexUnique = (armRows, arm) => {
+    const index = new Map();
+    for (const row of armRows) {
+      const assetId = clean(row.asset_id);
+      if (!assetId) throw new Error(`free_title_projection_missing_asset_id:${arm}`);
+      if (index.has(assetId)) throw new Error(`free_title_projection_duplicate_asset:${arm}:${assetId}`);
+      if (!clean(row.reference)) throw new Error(`free_title_projection_missing_reference:${arm}:${assetId}`);
+      index.set(assetId, row);
+    }
+    return index;
+  };
+
+  const budgetedByAsset = indexUnique(budgetedRows, FREE_ARM);
+  const canonicalArm = canonicalArms[0] || null;
+  const canonicalByAsset = indexUnique(canonicalRows, canonicalArm || "canonical");
+  if (canonicalRows.some((row) => !row.fields || typeof row.fields !== "object" || Array.isArray(row.fields))) {
+    throw new Error(`free_title_projection_missing_canonical_fields:${canonicalArm}`);
+  }
+
+  let imageSetVerifiedPairs = 0;
+  let runFingerprintVerifiedPairs = 0;
+  let configurationVerifiedPairs = 0;
+  if (canonicalRows.length) {
+    if (canonicalRows.length !== budgetedRows.length) {
+      throw new Error(`free_title_projection_pair_count_mismatch:${budgetedRows.length}/${canonicalRows.length}`);
+    }
+    for (const [assetId, budgeted] of budgetedByAsset) {
+      const canonical = canonicalByAsset.get(assetId);
+      if (!canonical) throw new Error(`free_title_projection_unpaired_asset:${assetId}`);
+      if (canonical.reference !== budgeted.reference) {
+        throw new Error(`free_title_projection_reference_mismatch:${assetId}`);
+      }
+      const budgetedHasImageSet = Boolean(clean(budgeted.image_set_sha256));
+      const canonicalHasImageSet = Boolean(clean(canonical.image_set_sha256));
+      if (budgetedHasImageSet !== canonicalHasImageSet) {
+        throw new Error(`free_title_projection_image_set_presence_mismatch:${assetId}`);
+      }
+      if (budgetedHasImageSet) {
+        if (budgeted.image_set_sha256 !== canonical.image_set_sha256) {
+          throw new Error(`free_title_projection_image_set_mismatch:${assetId}`);
+        }
+        imageSetVerifiedPairs += 1;
+      }
+      const budgetedHasRun = Boolean(clean(budgeted.run_fingerprint));
+      const canonicalHasRun = Boolean(clean(canonical.run_fingerprint));
+      if (budgetedHasRun !== canonicalHasRun) {
+        throw new Error(`free_title_projection_run_fingerprint_presence_mismatch:${assetId}`);
+      }
+      if (budgetedHasRun) {
+        if (budgeted.run_fingerprint !== canonical.run_fingerprint) {
+          throw new Error(`free_title_projection_run_fingerprint_mismatch:${assetId}`);
+        }
+        runFingerprintVerifiedPairs += 1;
+      }
+      const nuisanceFields = ["image_detail", "image_count", "model", "served_model",
+        "requested_effort", "served_effort"];
+      const comparableFields = [];
+      for (const field of nuisanceFields) {
+        const budgetedHasField = budgeted[field] !== null && budgeted[field] !== undefined;
+        const canonicalHasField = canonical[field] !== null && canonical[field] !== undefined;
+        if (budgetedHasField !== canonicalHasField) {
+          throw new Error(`free_title_projection_nuisance_presence_mismatch:${field}:${assetId}`);
+        }
+        if (budgetedHasField) comparableFields.push(field);
+      }
+      for (const field of comparableFields) {
+        if (budgeted[field] !== canonical[field]) {
+          throw new Error(`free_title_projection_nuisance_mismatch:${field}:${assetId}`);
+        }
+      }
+      if (comparableFields.length === nuisanceFields.length) configurationVerifiedPairs += 1;
+    }
+  }
+
+  return {
+    budgetedRows,
+    canonicalByAsset,
+    audit: {
+      free_arm: FREE_ARM,
+      canonical_arm: canonicalArm,
+      budgeted_rows: budgetedRows.length,
+      canonical_rows: canonicalRows.length,
+      paired_rows: canonicalRows.length,
+      reference_verified_pairs: canonicalRows.length,
+      image_set_verified_pairs: imageSetVerifiedPairs,
+      run_fingerprint_verified_pairs: runFingerprintVerifiedPairs,
+      configuration_verified_pairs: configurationVerifiedPairs
+    }
+  };
+}
+
 function allValueTokens(value) {
   if (Array.isArray(value)) return value.flatMap(allValueTokens);
   if (value && typeof value === "object") return Object.values(value).flatMap(allValueTokens);
@@ -206,6 +359,23 @@ function summarizeLosses(projected) {
     const ledger = losslessTitleDerivedSem(row.input).token_ledger;
     return ledger.some((entry) => tokens(entry.text).includes(token));
   });
+  const finalMacroF1 = projected.reduce((sum, row) => sum + row.after.f1, 0) / (projected.length || 1);
+  const boundaryOracle = Object.fromEntries(stages.map((stage) => {
+    const deltas = projected.map((entry) => {
+      const loss = rows.find((row) => row.asset_id === entry.row.asset_id);
+      const restored = loss?.causes?.[stage] || [];
+      const candidate = [...new Set([...tokens(entry.output.title), ...restored])].join(" ");
+      return score(entry.row.reference, candidate).f1 - entry.after.f1;
+    });
+    return [stage, {
+      macro_f1: finalMacroF1 + deltas.reduce((sum, value) => sum + value, 0) / (deltas.length || 1),
+      delta_f1: deltas.reduce((sum, value) => sum + value, 0) / (deltas.length || 1),
+      sign_test: signTest(deltas),
+      scope: "net_f1_loss_rows",
+      scope_rows: rows.length,
+      interpretation: "reference-reading token restoration oracle on net-loss rows; not a deployable mechanism"
+    }];
+  }));
   return {
     loss_rows: rows.length,
     by_stage: byStage,
@@ -215,6 +385,7 @@ function summarizeLosses(projected) {
       promoted_to_canonical: 0,
       interpretation: "information recovery only; no F1 credit until a later resolver assigns the span"
     },
+    boundary_reference_oracles: boundaryOracle,
     rows
   };
 }
@@ -233,9 +404,8 @@ function signTest(deltas) {
 }
 
 export function measure(rows = []) {
-  const canonicalByAsset = new Map(rows.filter((row) => row.arm === "thin_canonical" && row.fields)
-    .map((row) => [row.asset_id, row]));
-  const projected = rows.filter((row) => row.arm === "thin_budgeted").map((row) => {
+  const { budgetedRows, canonicalByAsset, audit: pairing } = validateAndIndexRows(rows);
+  const projected = budgetedRows.map((row) => {
     const output = projectFreeTitleThroughCsm(row.title);
     const canonical = canonicalByAsset.get(row.asset_id);
     const canonicalComposed = canonical ? composeFromCanonicalFields(canonical.fields) : null;
@@ -279,6 +449,7 @@ export function measure(rows = []) {
   }));
   return {
     n: projected.length,
+    pairing,
     before: {
       f1: average(projected.map(({ before }) => before.f1)),
       recall: average(projected.map(({ before }) => before.recall)),
@@ -299,6 +470,7 @@ export function measure(rows = []) {
       sign_test: signTest(mergeDeltas),
       field_ablation: mergeFieldAblation
     },
+    projection_safety: summarizeProjectionSafety(projected),
     loss_diagnosis: summarizeLosses(projected),
     examples: [...projected].sort((a, b) => (b.after.f1 - b.before.f1) - (a.after.f1 - a.before.f1))
       .slice(0, 5).map(({ row, output, before, after }) => ({
@@ -311,5 +483,6 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   const path = process.argv[2];
   if (!path) throw new Error("usage: measure-free-title-csm-projection.mjs <checkpoint.jsonl>");
   const rows = readFileSync(path, "utf8").split("\n").filter(Boolean).map(JSON.parse);
-  process.stdout.write(`${JSON.stringify(measure(rows), null, 2)}\n`);
+  const result = measure(rows);
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

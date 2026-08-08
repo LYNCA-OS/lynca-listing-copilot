@@ -1,0 +1,258 @@
+{
+  "schema_version": "model-residual-big-head-v2-replay",
+  "authority": "evaluation_only",
+  "production_promoted": false,
+  "provider_calls": 0,
+  "decision": "STOP_CAPTURE_GATE",
+  "gate_definition": ">=+0.003, >=8 wins, 0 losses, 0 critical/unbacked/>80",
+  "current_150_context": {
+    "baseline_macro_f1": 0.7811418978836755,
+    "boundaries": {
+      "pre_schema": 254,
+      "schema": 109,
+      "downstream": 63
+    },
+    "generalizable_downstream_delta": 0.0023589743589743587
+  },
+  "historical_150_utility_gate": {
+    "cards": 150,
+    "baseline_macro_f1": 0.7703784584216817,
+    "candidate_macro_f1": 0.7764589329107212,
+    "delta_macro_f1": 0.0060804744890394025,
+    "wins": 11,
+    "losses": 0,
+    "ties": 139,
+    "changed_cards": 11,
+    "baseline_token_loss_cards": 3,
+    "reference_loss_cards": 0,
+    "unbacked_new_token_cards": 0,
+    "unsupported_numeric_change_cards": 0,
+    "over_80_cards": 0,
+    "gate_passed": true,
+    "mechanisms": [
+      "finish_family_color_only",
+      "serial_single_digit",
+      "rarity_sar_only",
+      "printed_trainer_gallery",
+      "printed_first_bowman",
+      "product_known_manufacturer_extension",
+      "attested_insert",
+      "tcg_ip_logo_exact"
+    ],
+    "interpretation": "label-blind safe-bundle utility; not candidate-lane capture proof"
+  },
+  "current_candidate_lane_capture_gate": {
+    "cards": 105,
+    "baseline_macro_f1": 0.7807321202878894,
+    "candidate_macro_f1": 0.7836501239926427,
+    "delta_macro_f1": 0.0029180037047531852,
+    "wins": 4,
+    "losses": 0,
+    "ties": 101,
+    "changed_cards": 5,
+    "baseline_token_loss_cards": 3,
+    "reference_loss_cards": 2,
+    "unbacked_new_token_cards": 0,
+    "unsupported_numeric_change_cards": 0,
+    "over_80_cards": 0,
+    "candidate_rows": 25,
+    "gate_passed": false
+  },
+  "changed_cards": [
+    {
+      "asset_id": "reviewed_blind_ced894c69f355380019a",
+      "baseline_title": "2024 Topps Bowman Chrome Nick Kurtz Prospect Auto 049/150 1st Edition PSA 10",
+      "candidate_title": "2024 Topps Bowman Draft Chrome Nick Kurtz Prospect Auto Blue 049/150 PSA 10",
+      "before_f1": 0.7692307692307693,
+      "after_f1": 0.8461538461538461,
+      "delta_f1": 0.07692307692307687,
+      "outcome": "WIN",
+      "lost_baseline_tokens": [
+        "1st",
+        "edition"
+      ],
+      "lost_reference_tokens": [
+        "1st"
+      ],
+      "added_tokens": [
+        "draft",
+        "blue"
+      ],
+      "unbacked_new_tokens": [],
+      "unsupported_numeric_changes": [],
+      "over_80": false,
+      "admitted": [
+        {
+          "index": 0,
+          "text": "2024 BOWMAN DRAFT NICK KURTZ CHR PROSPECT AUTO-BLUE REF",
+          "role": "identity_phrase",
+          "disposition": "admitted",
+          "reason": "compatible_complete_identity_phrase",
+          "candidate_field": "product",
+          "before_value": "Bowman Chrome",
+          "after_value": "Bowman Draft Chrome",
+          "source_phrase": "Bowman Draft"
+        }
+      ],
+      "downstream": [
+        {
+          "kind": "exact_parallel_color_compaction",
+          "restored_bracket": "print_finish"
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_0a34c5b695ecd1365836",
+      "baseline_title": "2021 Topps Chrome Rafael Devers Red Refractor 5/5 Auto PSA/DNA CERT PSA 9",
+      "candidate_title": "2021 Topps Ben Baller Chrome Rafael Devers 5/5 Auto PSA/DNA CERT PSA 9",
+      "before_f1": 0.8461538461538461,
+      "after_f1": 0.8461538461538461,
+      "delta_f1": 0,
+      "outcome": "TIE",
+      "lost_baseline_tokens": [
+        "red",
+        "refractor"
+      ],
+      "lost_reference_tokens": [
+        "red",
+        "refractor"
+      ],
+      "added_tokens": [
+        "ben",
+        "baller"
+      ],
+      "unbacked_new_tokens": [],
+      "unsupported_numeric_changes": [],
+      "over_80": false,
+      "admitted": [
+        {
+          "index": 0,
+          "text": "2021 BEN BALLER CHROME RAFAEL DEVERS",
+          "role": "identity_phrase",
+          "disposition": "admitted",
+          "reason": "compatible_complete_identity_phrase",
+          "candidate_field": "product",
+          "before_value": "Chrome",
+          "after_value": "Ben Baller Chrome",
+          "source_phrase": "Ben Baller Chrome"
+        }
+      ],
+      "downstream": []
+    },
+    {
+      "asset_id": "reviewed_blind_67fd6051b9ef8af44c7f",
+      "baseline_title": "2025 Topps Finest Rookie Finest Autographs Cooper Flagg Auto RC PSA 10",
+      "candidate_title": "2025 Topps Finest Rookie Finest Autographs Cooper Flagg Auto Green RC PSA 10",
+      "before_f1": 0.8,
+      "after_f1": 0.8461538461538461,
+      "delta_f1": 0.0461538461538461,
+      "outcome": "WIN",
+      "lost_baseline_tokens": [],
+      "lost_reference_tokens": [],
+      "added_tokens": [
+        "green"
+      ],
+      "unbacked_new_tokens": [],
+      "unsupported_numeric_changes": [],
+      "over_80": false,
+      "admitted": [],
+      "downstream": [
+        {
+          "kind": "exact_parallel_color_compaction",
+          "restored_bracket": "print_finish"
+        }
+      ]
+    },
+    {
+      "asset_id": "reviewed_blind_4b7f85614378b77cfcd1",
+      "baseline_title": "2025 Topps Chrome Shohei Ohtani Variation Gold Prismatic 5/50 PSA 9",
+      "candidate_title": "2025 Topps Chrome Sapphire Shohei Ohtani Variation Gold Prismatic 05/50 PSA 9",
+      "before_f1": 0.8181818181818182,
+      "after_f1": 0.9565217391304348,
+      "delta_f1": 0.13833992094861658,
+      "outcome": "WIN",
+      "lost_baseline_tokens": [
+        "5/50"
+      ],
+      "lost_reference_tokens": [],
+      "added_tokens": [
+        "sapphire",
+        "05/50"
+      ],
+      "unbacked_new_tokens": [],
+      "unsupported_numeric_changes": [],
+      "over_80": false,
+      "admitted": [
+        {
+          "resolver_schema_version": "field-observation-resolver-v1",
+          "authority": "evaluation_only",
+          "production_promoted": false,
+          "index": 1,
+          "text": "05/50",
+          "role": "exact_code",
+          "region": "card_front",
+          "basis": "printed_text",
+          "disposition": "admitted",
+          "reason": "same_numeric_pair_format_only",
+          "candidate_field": "serial",
+          "before_value": "5/50",
+          "after_value": "05/50"
+        },
+        {
+          "index": 0,
+          "text": "2025 TOPPS SAPPHIRE VARIATION-GOLD",
+          "role": "identity_phrase",
+          "disposition": "admitted",
+          "reason": "compatible_complete_identity_phrase",
+          "candidate_field": "product",
+          "before_value": "Topps Chrome",
+          "after_value": "Topps Chrome Sapphire",
+          "source_phrase": "Topps Sapphire"
+        }
+      ],
+      "downstream": []
+    },
+    {
+      "asset_id": "reviewed_blind_de36e62d7865ce584079",
+      "baseline_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal Auto RC PSA 9",
+      "candidate_title": "2023-24 Topps Chrome UEFA Club Competitions Lamine Yamal Auto Orange RC PSA 9",
+      "before_f1": 0.7407407407407408,
+      "after_f1": 0.7857142857142857,
+      "delta_f1": 0.04497354497354489,
+      "outcome": "WIN",
+      "lost_baseline_tokens": [],
+      "lost_reference_tokens": [],
+      "added_tokens": [
+        "orange"
+      ],
+      "unbacked_new_tokens": [],
+      "unsupported_numeric_changes": [],
+      "over_80": false,
+      "admitted": [],
+      "downstream": [
+        {
+          "kind": "exact_parallel_color_compaction",
+          "restored_bracket": "print_finish"
+        }
+      ]
+    }
+  ],
+  "sources": {
+    "canonical": {
+      "path": "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "2701f77cef30c0f7d409b8ec8c08ff92015fc1e19f76ff13ef2b5421798844b5"
+    },
+    "exhaustive": {
+      "path": "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "96f71ae0956e1c7defde2579ad7448d955c0f7c33b69c908207855052faad1f9"
+    },
+    "capture": {
+      "path": "artifacts/accuracy-field-observation-v2-105-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "b844dc7edcdbefdee41ca84dc2786772dd3b487b00fbe88444b905b58029b560"
+    },
+    "current_150": {
+      "path": "docs/evaluation/post-luna-current-main-150-2026-08-08.json",
+      "sha256": "ab1413e3e8ec11e511201c71ab86a941f5dd3419d9d2abf0b57fc65dcdc6aedb"
+    }
+  }
+}

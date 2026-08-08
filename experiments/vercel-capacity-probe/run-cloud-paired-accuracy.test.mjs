@@ -130,6 +130,7 @@ function cloudReport(body, { dryRun, ok = true, responseId = "response-1" } = {}
     arm_id: body.arm_id,
     model: "gpt-5.6-luna",
     reasoning_effort: "none",
+    requested_effort: "none",
     image_detail: "high",
     tasks: 1,
     concurrency: 1,
@@ -160,6 +161,7 @@ function cloudReport(body, { dryRun, ok = true, responseId = "response-1" } = {}
       provider_status: ok ? "completed" : "failed",
       incomplete_details: null,
       served_model: ok ? "gpt-5.6-luna" : null,
+      requested_effort: "none",
       served_effort: ok ? "none" : null,
       structured_output: ok ? { year: "2024" } : null,
       structured_output_error: ok ? null : "provider_error"

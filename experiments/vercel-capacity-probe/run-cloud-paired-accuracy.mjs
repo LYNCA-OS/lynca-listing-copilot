@@ -272,6 +272,7 @@ function validateCloudReport(report, {
   }
   if (report.run_id !== body.run_id || report.arm_id !== body.arm_id
       || report.model !== MODEL || report.reasoning_effort !== REASONING_EFFORT
+      || report.requested_effort !== REASONING_EFFORT
       || report.image_detail !== IMAGE_DETAIL || Number(report.tasks) !== 1
       || Number(report.concurrency) !== 1 || Number(report.provider_retries) !== 0) {
     throw new Error("cloud_report_request_identity_mismatch");
@@ -305,7 +306,8 @@ function validateCloudReport(report, {
   }
   if (report.ok === true && (Number(report.succeeded_count) !== 1
       || Number(report.failed_count) !== 0 || row.ok !== true
-      || row.served_model !== MODEL || row.served_effort !== REASONING_EFFORT
+      || row.served_model !== MODEL || row.requested_effort !== REASONING_EFFORT
+      || row.served_effort !== REASONING_EFFORT
       || !row.provider_response_id || !row.structured_output
       || row.provider_status !== "completed" || row.incomplete_details !== null
       || row.structured_output_error !== null)) {

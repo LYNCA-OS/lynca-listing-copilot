@@ -1,0 +1,44 @@
+{
+  "schema_version": "post-luna-current-main-150-corpus-manifest-v1",
+  "authority": "evaluation_only",
+  "contains_raw_provider_output": false,
+  "portability": {
+    "clean_checkout_replayable": false,
+    "raw_corpora_git_tracked": false,
+    "raw_corpora_distribution": "authorized_local_workspace_only",
+    "missing_or_mismatched_input_behavior": "fail_closed",
+    "production_copy_allowed": false,
+    "gitignore_rule": ".gitignore:18:artifacts/"
+  },
+  "corpora": {
+    "canonical": {
+      "path": "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "2701f77cef30c0f7d409b8ec8c08ff92015fc1e19f76ff13ef2b5421798844b5",
+      "expected_total_rows": 300,
+      "selected_arm": "thin_canonical_high",
+      "expected_selected_rows": 150,
+      "raw_provider_field": "raw_title"
+    },
+    "exhaustive": {
+      "path": "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl",
+      "sha256": "96f71ae0956e1c7defde2579ad7448d955c0f7c33b69c908207855052faad1f9",
+      "expected_total_rows": 150,
+      "selected_arm": "exhaustive_observation_high",
+      "expected_selected_rows": 150,
+      "raw_provider_field": "observations"
+    }
+  },
+  "pairing_contract": {
+    "primary_key": "asset_id",
+    "required_equal_fields": [
+      "reference",
+      "image_set_sha256",
+      "image_count",
+      "image_detail",
+      "model",
+      "served_model",
+      "requested_effort",
+      "served_effort"
+    ]
+  }
+}

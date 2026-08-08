@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import {
+  ARM_REQUEST_SPECS,
   FROZEN_REQUEST_CONTRACTS,
   IMAGE_DETAIL,
   MODEL,
@@ -17,11 +18,10 @@ const MAX_CONCURRENCY = 1;
 const DEFAULT_TIMEOUT_MS = 120_000;
 const ALLOWED_ARMS = new Set([
   "canonical_high",
-  "canonical_residual_v1_high"
-]);
-const ALLOWED_FORMATS = new Map([
-  ["canonical_high", "canonical_card_fields"],
-  ["canonical_residual_v1_high", "canonical_card_fields_residual_v1"]
+  "canonical_residual_v1_high",
+  "control_a",
+  "control_b",
+  "residual_c"
 ]);
 
 const plainObject = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -65,6 +65,10 @@ function normalizedAssets(value, allowedStorageHost) {
   }
   const seen = new Set();
   return value.map((asset, assetIndex) => {
+    if (!plainObject(asset)
+      || Object.keys(asset).sort().join("\0") !== ["asset_id", "image_set_sha256", "image_urls"].sort().join("\0")) {
+      throw new Error(`asset_shape_invalid_at_${assetIndex + 1}`);
+    }
     const assetId = String(asset?.asset_id || "").trim();
     if (!assetId || assetId.length > 160 || seen.has(assetId)) {
       throw new Error(`asset_id_invalid_at_${assetIndex + 1}`);
@@ -103,10 +107,11 @@ function contractIdentity(value) {
 }
 
 function normalizedTemplate(value, armId, frozenContracts = FROZEN_REQUEST_CONTRACTS) {
-  if (!plainObject(value) || value.model !== MODEL || value.reasoning?.effort !== EFFORT) {
+  const armSpec = ARM_REQUEST_SPECS[armId];
+  if (!armSpec || !plainObject(value) || value.model !== MODEL || value.reasoning?.effort !== armSpec.effort) {
     throw new Error("request_template_model_invalid");
   }
-  if (value.max_output_tokens !== 4096) {
+  if (value.max_output_tokens !== armSpec.max_output_tokens) {
     throw new Error("request_template_output_limit_invalid");
   }
   const input = value.input;
@@ -120,14 +125,17 @@ function normalizedTemplate(value, armId, frozenContracts = FROZEN_REQUEST_CONTR
   }
   const format = value.text?.format;
   if (format?.type !== "json_schema" || format.strict !== true
-      || format.name !== ALLOWED_FORMATS.get(armId)
+      || format.name !== armSpec.format_name
       || !plainObject(format.schema) || JSON.stringify(format.schema).length > 36_000) {
     throw new Error("request_template_schema_invalid");
   }
-  const expectedResidual = armId === "canonical_residual_v1_high";
-  const hasResidual = Object.hasOwn(format.schema.properties || {}, "residual_evidence")
-    && (format.schema.required || []).includes("residual_evidence");
-  if (hasResidual !== expectedResidual) throw new Error("request_template_residual_contract_invalid");
+  for (const property of ["residual_evidence", "residual_visible_evidence"]) {
+    const present = Object.hasOwn(format.schema.properties || {}, property)
+      && (format.schema.required || []).includes(property);
+    if (present !== (armSpec.residual_property === property)) {
+      throw new Error("request_template_residual_contract_invalid");
+    }
+  }
   const normalized = clone(value);
   const actual = contractIdentity(normalized);
   const expected = frozenContracts[armId];
@@ -178,6 +186,11 @@ async function mapConcurrent(items, concurrency, mapper) {
 }
 
 function normalizedPayload(body, env, { frozenContracts = FROZEN_REQUEST_CONTRACTS } = {}) {
+  const allowedBodyKeys = new Set(["arm_id", "run_id", "request_template", "assets",
+    "dry_run", "concurrency", "timeout_ms"]);
+  if (!plainObject(body) || Object.keys(body).some((key) => !allowedBodyKeys.has(key))) {
+    throw new Error("request_body_shape_invalid");
+  }
   const armId = String(body?.arm_id || "").trim();
   if (!ALLOWED_ARMS.has(armId)) throw new Error("arm_id_invalid");
   const runId = String(body?.run_id || "").trim();
@@ -190,6 +203,8 @@ function normalizedPayload(body, env, { frozenContracts = FROZEN_REQUEST_CONTRAC
     runId,
     allowedStorageHost,
     requestTemplate,
+    effort: ARM_REQUEST_SPECS[armId].effort,
+    maxOutputTokens: ARM_REQUEST_SPECS[armId].max_output_tokens,
     assets,
     dryRun: body.dry_run === true,
     concurrency: boundedInteger(body.concurrency, 1, { max: MAX_CONCURRENCY }),
@@ -239,11 +254,20 @@ function structuredOutput(parsed, armId) {
   if (!plainObject(value)) {
     return { ok: false, raw: texts[0], parsed: value, error: "structured_output_not_object" };
   }
-  const hasResidual = Object.hasOwn(value, "residual_evidence");
-  if (hasResidual !== (armId === "canonical_residual_v1_high")) {
-    return { ok: false, raw: texts[0], parsed: value, error: "structured_output_arm_mismatch" };
+  const expected = ARM_REQUEST_SPECS[armId]?.residual_property;
+  for (const property of ["residual_evidence", "residual_visible_evidence"]) {
+    if (Object.hasOwn(value, property) !== (expected === property)) {
+      return { ok: false, raw: texts[0], parsed: value, error: "structured_output_arm_mismatch" };
+    }
   }
   return { ok: true, raw: texts[0], parsed: value, error: null };
+}
+
+function providerServedEffort(parsed) {
+  const top = typeof parsed?.reasoning_effort === "string" ? parsed.reasoning_effort : null;
+  const nested = typeof parsed?.reasoning?.effort === "string" ? parsed.reasoning.effort : null;
+  if (top && nested && top !== nested) return null;
+  return top || nested || null;
 }
 
 async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now = () => performance.now() }) {
@@ -258,7 +282,8 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
       run_id: payload.runId,
       arm_id: payload.armId,
       model: MODEL,
-      reasoning_effort: EFFORT,
+      reasoning_effort: payload.effort,
+      requested_effort: payload.effort,
       image_detail: IMAGE_DETAIL,
       tasks: payload.assets.length,
       concurrency: payload.concurrency,
@@ -276,6 +301,7 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
     try {
       const response = await fetchImpl(OPENAI_RESPONSES_URL, {
         method: "POST",
+        redirect: "error",
         signal: AbortSignal.timeout(payload.timeoutMs),
         headers: {
           authorization: `Bearer ${env.OPENAI_API_KEY}`,
@@ -287,10 +313,10 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
       let parsed = null;
       try { parsed = JSON.parse(raw); } catch {}
       const structured = structuredOutput(parsed, payload.armId);
-      const servedEffort = parsed?.reasoning?.effort ?? EFFORT;
+      const servedEffort = providerServedEffort(parsed);
       const responseOk = response.ok && !parsed?.error
         && parsed?.status === "completed" && !parsed?.incomplete_details
-        && parsed?.model === MODEL && servedEffort === EFFORT && structured.ok;
+        && parsed?.model === MODEL && servedEffort === payload.effort && structured.ok;
       const completedOffsetMs = Math.round(now() - startedAt);
       return {
         index: index + 1,
@@ -310,6 +336,7 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
         provider_status: parsed?.status || null,
         incomplete_details: parsed?.incomplete_details || null,
         served_model: parsed?.model || null,
+        requested_effort: payload.effort,
         served_effort: servedEffort,
         structured_output: structured.parsed,
         structured_output_raw_sha256: structured.raw === null ? null : sha256(structured.raw),
@@ -342,6 +369,7 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
         provider_status: null,
         incomplete_details: null,
         served_model: null,
+        requested_effort: payload.effort,
         served_effort: null,
         structured_output: null,
         structured_output_raw_sha256: null,
@@ -370,7 +398,8 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
     run_id: payload.runId,
     arm_id: payload.armId,
     model: MODEL,
-    reasoning_effort: EFFORT,
+    reasoning_effort: payload.effort,
+    requested_effort: payload.effort,
     image_detail: IMAGE_DETAIL,
     storage_host: payload.allowedStorageHost,
     tasks: rows.length,
@@ -422,14 +451,17 @@ export default async function handler(req, res) {
       ok: true,
       ready,
       reason,
-      schema_version: "lynca-cloud-accuracy-readiness-v1",
+      schema_version: "lynca-cloud-accuracy-readiness-v2",
       environment: process.env.VERCEL_ENV || null,
       region: process.env.VERCEL_REGION || null,
       deployment_id: process.env.VERCEL_DEPLOYMENT_ID || null,
       deployment_hostname: process.env.VERCEL_URL || null,
       model: MODEL,
-      reasoning_effort: EFFORT,
+      reasoning_effort: null,
+      reasoning_effort_mode: "per_arm",
       image_detail: IMAGE_DETAIL,
+      arm_request_specs: ARM_REQUEST_SPECS,
+      frozen_request_contracts: FROZEN_REQUEST_CONTRACTS,
       openai_configured: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
       run_token_configured: Boolean(String(process.env.LYNCA_CLOUD_SIM_RUN_TOKEN || "").trim()),
       storage_host_configured: Boolean(String(process.env.LYNCA_CLOUD_SIM_STORAGE_HOST || "").trim()),

@@ -191,6 +191,7 @@ const liveReport = await runAccuracyArm(live, {
     return new Response(JSON.stringify({
       id: `resp_${fetchCalls}`,
       model: "gpt-5.6-luna",
+      reasoning_effort: "none",
       status: "completed",
       incomplete_details: null,
       output: [{ type: "message", content: [{ type: "output_text", text: "{\"year\":\"2024\"}" }] }],
@@ -214,7 +215,44 @@ assert.equal(liveReport.input_tokens, 5000);
 assert.equal(liveReport.cached_input_tokens, 4000);
 assert.match(liveReport.rows[0].provider_response_raw, /2024/);
 assert.equal(liveReport.rows[0].served_model, "gpt-5.6-luna");
+assert.equal(liveReport.requested_effort, "none");
+assert.equal(liveReport.rows[0].requested_effort, "none");
+assert.equal(liveReport.rows[0].served_effort, "none");
 assert.match(liveReport.rows[0].provider_response_sha256, /^[0-9a-f]{64}$/);
+
+const missingEffortEcho = await runAccuracyArm(live, { env,
+  fetchImpl: async () => new Response(JSON.stringify({ id: "resp_no_effort_echo",
+    model: "gpt-5.6-luna", status: "completed", incomplete_details: null,
+    output: [{ type: "message", content: [{ type: "output_text", text: "{\"year\":\"2024\"}" }] }],
+    usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 }) });
+assert.equal(missingEffortEcho.ok, false);
+assert.equal(missingEffortEcho.rows[0].requested_effort, "none");
+assert.equal(missingEffortEcho.rows[0].served_effort, null);
+
+const nestedEffortEcho = await runAccuracyArm(live, { env,
+  fetchImpl: async () => new Response(JSON.stringify({ id: "resp_nested_effort_echo",
+    model: "gpt-5.6-luna", reasoning: { effort: "none" }, status: "completed",
+    incomplete_details: null,
+    output: [{ type: "message", content: [{ type: "output_text", text: "{\"year\":\"2024\"}" }] }],
+    usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 }) });
+assert.equal(nestedEffortEcho.ok, true);
+assert.equal(nestedEffortEcho.rows[0].served_effort, "none");
+
+const conflictingEffortEcho = await runAccuracyArm(live, { env,
+  fetchImpl: async () => new Response(JSON.stringify({ id: "resp_conflicting_effort_echo",
+    model: "gpt-5.6-luna", reasoning_effort: "none", reasoning: { effort: "low" },
+    status: "completed", incomplete_details: null,
+    output: [{ type: "message", content: [{ type: "output_text", text: "{\"year\":\"2024\"}" }] }],
+    usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 }) });
+assert.equal(conflictingEffortEcho.ok, false);
+assert.equal(conflictingEffortEcho.rows[0].served_effort, null);
+
+assert.throws(() => normalizedPayload({ run_id: "body-label-injection", arm_id: "canonical_high",
+  request_template: canonicalTemplate, assets: [asset], reviewed_title: "forbidden" },
+env, { frozenContracts }), /request_body_shape_invalid/);
+assert.throws(() => normalizedPayload({ run_id: "asset-label-injection", arm_id: "canonical_high",
+  request_template: canonicalTemplate, assets: [{ ...asset, sealed_labels: [] }] },
+env, { frozenContracts }), /asset_shape_invalid/);
 
 const oneImagePayload = normalizedPayload({
   run_id: "canonical-one-image",
