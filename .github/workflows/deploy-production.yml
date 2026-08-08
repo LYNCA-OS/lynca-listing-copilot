@@ -44,17 +44,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends postgresql-17
       - name: Require PostgreSQL 17+ for non-skipping persistence tests
         run: |
-          dir=""
-          for candidate in $(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V); do
-            major="$(basename "$(dirname "$candidate")")"
-            if [ "${major%%.*}" -ge 17 ] 2>/dev/null; then dir="$candidate"; fi
+          pg_bin=/usr/lib/postgresql/17/bin
+          for binary in initdb pg_ctl psql postgres; do
+            if [ ! -x "$pg_bin/$binary" ]; then
+              echo "::error::missing PostgreSQL 17 binary: $binary"
+              exit 1
+            fi
           done
-          if [ -z "$dir" ]; then
-            echo "::error::PostgreSQL 17+ is required; refusing to let persistence suites skip"
+          if ! "$pg_bin/postgres" --version | grep -Eq '^postgres \(PostgreSQL\) 17\.'; then
+            echo "::error::PostgreSQL 17 version check failed"
             exit 1
           fi
-          echo "$dir" >> "$GITHUB_PATH"
-          echo "PostgreSQL on PATH: $dir"
+          echo "$pg_bin" >> "$GITHUB_PATH"
+          echo "PostgreSQL on PATH: $pg_bin"
       - name: Verify the CSM thin release artifact
         run: |
           npm ci --no-audit --no-fund

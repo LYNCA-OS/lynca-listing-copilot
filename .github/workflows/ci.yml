@@ -41,24 +41,22 @@ jobs:
         # skipped here and could not start a server locally either. A gate that
         # cannot fail is not a gate.
         #
-        # Resolve the installed version rather than assuming a runner path, so
-        # a runner image bump cannot silently return the suites to skipping.
+        # Pin the exact major installed above. Selecting the newest runner
+        # version would silently change the persistence test environment.
         run: |
-          # 17+ only: csm-product-projection asserts a minimum server version,
-          # so exposing an older one turns a skip into a red build without
-          # testing anything more than the version check.
-          dir=""
-          for candidate in $(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V); do
-            major="$(basename "$(dirname "$candidate")")"
-            if [ "${major%%.*}" -ge 17 ] 2>/dev/null; then dir="$candidate"; fi
+          pg_bin=/usr/lib/postgresql/17/bin
+          for binary in initdb pg_ctl psql postgres; do
+            if [ ! -x "$pg_bin/$binary" ]; then
+              echo "::error::missing PostgreSQL 17 binary: $binary"
+              exit 1
+            fi
           done
-          if [ -n "$dir" ]; then
-            echo "$dir" >> "$GITHUB_PATH"
-            echo "PostgreSQL on PATH: $dir"
-          else
-            echo "::error::PostgreSQL 17+ is required; refusing to let persistence suites skip"
+          if ! "$pg_bin/postgres" --version | grep -Eq '^postgres \(PostgreSQL\) 17\.'; then
+            echo "::error::PostgreSQL 17 version check failed"
             exit 1
           fi
+          echo "$pg_bin" >> "$GITHUB_PATH"
+          echo "PostgreSQL on PATH: $pg_bin"
 
       - name: Check the production import graph and contracts
         run: npm run check
