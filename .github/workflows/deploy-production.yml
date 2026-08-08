@@ -88,13 +88,16 @@ jobs:
           for _attempt in $(seq 1 60); do
             if curl -fsS --max-time 30 https://listing.lyncafei.team/api/health \
               -o /tmp/csm-thin-health.json \
-              && node - <<'NODE'
-          const h = require('/tmp/csm-thin-health.json');
+              && node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { CSM_THIN_RUNTIME_CONTRACT } from './lib/listing/thin/csm-runtime-contract.mjs';
+
+          const h = JSON.parse(readFileSync('/tmp/csm-thin-health.json', 'utf8'));
           const ok = h.ready === true
             && h.deployment?.git_commit_sha === process.env.GITHUB_SHA
-            && h.active_path === 'CSM_THIN_DIRECT'
-            && h.model === 'gpt-5.6-luna'
-            && h.reasoning_effort === 'none'
+            && h.active_path === CSM_THIN_RUNTIME_CONTRACT.route
+            && h.model === CSM_THIN_RUNTIME_CONTRACT.model
+            && h.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT.reasoningEffort
             && h.runtime?.cloud_run_calls === 0
             && h.runtime?.vector_calls === 0
             && h.runtime?.generic_ocr_calls === 0

@@ -112,9 +112,14 @@ assert.doesNotMatch(
 assert.doesNotMatch(workflow, /\/api\/admin-apply-/, "code deploy must not invoke runtime migration routes");
 assert.doesNotMatch(workflow, /google-github-actions|setup-gcloud|deploy-vision-ocr|Cloud Run/i);
 assert.doesNotMatch(workflow, /listing-provider-status|writer-assisted-production-readiness/);
-assert.match(workflow, /active_path === 'CSM_THIN_DIRECT'/);
-assert.match(workflow, /h\.model === 'gpt-5\.6-luna'/);
-assert.match(workflow, /h\.reasoning_effort === 'none'/);
+assert.match(
+  workflow,
+  /import \{ CSM_THIN_RUNTIME_CONTRACT \} from '\.\/lib\/listing\/thin\/csm-runtime-contract\.mjs'/,
+  "the release gate must read the checked-out runtime contract instead of restating it"
+);
+assert.match(workflow, /h\.active_path === CSM_THIN_RUNTIME_CONTRACT\.route/);
+assert.match(workflow, /h\.model === CSM_THIN_RUNTIME_CONTRACT\.model/);
+assert.match(workflow, /h\.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT\.reasoningEffort/);
 assert.match(workflow, /scheduler_attempt_slots === 120/);
 assert.match(workflow, /baseline_working_attempts === 43/);
 assert.match(workflow, /pacer_estimated_tokens_per_second === 60000/);
