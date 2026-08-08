@@ -21,6 +21,17 @@ jobs:
         run: |
           npm ls --omit=dev --all
           node scripts/npm-audit-gate.mjs
+      - name: Install PostgreSQL 17 from the official PGDG repository
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor --yes -o /usr/share/keyrings/postgresql.gpg
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-17
       - name: Put PostgreSQL on PATH
         # The two CSM postgres suites exit 0 when initdb/pg_ctl are missing, so
         # on a runner without them they reported PASS while testing nothing.
@@ -30,9 +41,8 @@ jobs:
         # skipped here and could not start a server locally either. A gate that
         # cannot fail is not a gate.
         #
-        # ubuntu-latest ships PostgreSQL; it is simply not on PATH. Resolved by
-        # version rather than pinned, so a runner image bump does not silently
-        # return the suites to skipping.
+        # Resolve the installed version rather than assuming a runner path, so
+        # a runner image bump cannot silently return the suites to skipping.
         run: |
           # 17+ only: csm-product-projection asserts a minimum server version,
           # so exposing an older one turns a skip into a red build without
