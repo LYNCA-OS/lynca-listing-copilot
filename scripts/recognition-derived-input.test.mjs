@@ -261,7 +261,7 @@ await assert.rejects(() => canonicalListingCropMetadataForVerification({
   // two paths apart.
   assert.match(app, /role: recognitionInputs\?\.length \? "readability_derived"/);
   assert.match(app, /recognitionInputOnly: true/);
-  assert.match(app, /expectedOriginalCount: \(asset\.images \|\| \[\]\)/);
+  assert.match(app, /expectedOriginalCount: originalFingerprints\.length/);
 
   // Nothing from the body is persisted in this mode, so demanding
   // verifications for it would fail a run that worked.

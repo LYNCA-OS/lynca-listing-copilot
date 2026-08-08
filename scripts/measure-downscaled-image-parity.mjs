@@ -68,6 +68,7 @@ async function downscale(path, workDir, longEdge) {
 }
 
 async function askProvider(imageUrls, apiKey) {
+  const startedAt = Date.now();
   const body = buildCanonicalFieldsRequest({
     imageUrls,
     model: CSM_THIN_RUNTIME_CONTRACT.model,
@@ -87,7 +88,14 @@ async function askProvider(imageUrls, apiKey) {
     .map((part) => part.text)
     .join("");
   const parsed = parseCanonicalFields(text);
-  return parsed.fields || parsed;
+  const fields = parsed.fields || parsed;
+  // Latency is the point of COS-53, so it is measured here rather than
+  // inferred: production shows provider time rising with bytes even though
+  // `detail: "high"` bounds what the model consumes, and that claim is a
+  // correlation across DIFFERENT cards. Same card, both sizes, same session
+  // is the paired version of it.
+  Object.defineProperty(fields, "__provider_ms", { value: Date.now() - startedAt, enumerable: false });
+  return fields;
 }
 
 export const COMPARED_FIELDS = Object.freeze(["year", "manufacturer", "product", "set", "subjects",
@@ -153,12 +161,28 @@ async function main() {
     originalBytes += originalSizes.reduce((a, b) => a + b, 0);
     smallBytes += smallSizes.reduce((a, b) => a + b, 0);
 
-    const [full, reduced] = await Promise.all([
-      askProvider(await Promise.all(pair.map(dataUrl)), apiKey),
-      askProvider(await Promise.all(small.map(dataUrl)), apiKey)
-    ]);
+    // Sequential, and alternating which arm goes first. Concurrent calls were
+    // fine while this only compared FIELDS, but they cannot measure latency:
+    // two in-flight requests contend, and whichever finishes second wears the
+    // wait. Alternating keeps any drift over the run off one arm.
+    const originalUrls = await Promise.all(pair.map(dataUrl));
+    const reducedUrls = await Promise.all(small.map(dataUrl));
+    let full;
+    let reduced;
+    if (index % 2 === 0) {
+      full = await askProvider(originalUrls, apiKey);
+      reduced = await askProvider(reducedUrls, apiKey);
+    } else {
+      reduced = await askProvider(reducedUrls, apiKey);
+      full = await askProvider(originalUrls, apiKey);
+    }
     const disagreements = disagreeingFields(full, reduced);
-    rows.push({ card: index + 1, files: pair.map((p) => basename(p)), disagreements, full, reduced });
+    rows.push({
+      card: index + 1, files: pair.map((p) => basename(p)), disagreements, full, reduced,
+      original_ms: full.__provider_ms, reduced_ms: reduced.__provider_ms,
+      original_bytes: originalSizes.reduce((a, b) => a + b, 0),
+      reduced_bytes: smallSizes.reduce((a, b) => a + b, 0)
+    });
     process.stdout.write(`${index + 1}/${cards.length} ${disagreements.length ? `≠ ${disagreements.join(",")}` : "= 一致"}\n`);
     for (const field of disagreements) {
       process.stdout.write(`      ${field}: A=${JSON.stringify(full[field])}  B=${JSON.stringify(reduced[field])}\n`);
@@ -166,6 +190,23 @@ async function main() {
   }
 
   const summary = summarizeParityRows(rows);
+  const ms = (key) => rows.map((row) => row[key]).filter((value) => Number.isFinite(value));
+  const mean = (values) => (values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0);
+  const median = (values) => {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    return Math.round(sorted[Math.floor(sorted.length / 2)]);
+  };
+  const originalMs = ms("original_ms");
+  const reducedMs = ms("reduced_ms");
+  const faster = rows.filter((row) => row.reduced_ms < row.original_ms).length;
+  process.stdout.write([
+    "",
+    `provider 耗时  原图 mean ${mean(originalMs)}ms / median ${median(originalMs)}ms`,
+    `               缩图 mean ${mean(reducedMs)}ms / median ${median(reducedMs)}ms`,
+    `               缩图更快的卡 ${faster}/${rows.length}`,
+    ""
+  ].join("\n"));
   process.stdout.write([
     "",
     `模式              ${control ? "control（两臂同为原图）" : `downscale（长边 ${longEdge}）`}`,

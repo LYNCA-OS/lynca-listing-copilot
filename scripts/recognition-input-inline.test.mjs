@@ -51,4 +51,27 @@ assert.match(source, /persistPath: async \(args\) => \{\s*\n\s*await storageProm
 // COS-53 clause 4: the run states what it read.
 assert.match(source, /recognition_input: derivedInline \? "readability_derived_inline" : "original_inline"/);
 
+// ─── The conflict that blocked a queue at 0/7, pinned ───────────────────────
+//
+// The provider authority keys an operation on tenant+intent+asset and hashes
+// the PAYLOAD with the fingerprints of whatever was sent. Two attempts on one
+// card with different bytes therefore collide at 409. Sending downscales while
+// reporting the ORIGINALS' hashes is what makes both routes the same task, so
+// a fallback reuses the completed call instead of being rejected.
+assert.match(source, /imageFingerprints: metadata\.originalFingerprints\.map/);
+// Refused, never defaulted. Falling back to the inline images' hashes
+// reintroduces the conflict, and it would surface on the NEXT request rather
+// than this one.
+assert.match(source, /ingest_original_fingerprints_invalid/);
+assert.match(source, /\^sha256:\[0-9a-f\]\{64\}\$/);
+
+{
+  const app = await readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
+  assert.match(app, /const originalFingerprints = recognitionInputs\?\.length/);
+  assert.match(app, /originalFingerprints\n/, "the request must carry them");
+  // Awaited: a fingerprint that arrives after the request is one the request
+  // did not carry.
+  assert.match(app, /\? await Promise\.all\(\(asset\.images \|\| \[\]\)/);
+}
+
 console.log("COS-53 inline recognition input tests passed");

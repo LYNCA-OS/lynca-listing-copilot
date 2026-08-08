@@ -324,6 +324,15 @@ export default async function handler(req, res) {
       if (images.some((image) => image.role !== "readability_derived")) {
         throw Object.assign(new Error("ingest_recognition_input_role_invalid"), { statusCode: 400 });
       }
+      // Refused rather than defaulted. Falling back to the inline images'
+      // hashes is exactly the state that produced `operation_payload_conflict`,
+      // and it fails at the NEXT request rather than this one -- the worst
+      // place to put it.
+      if (!Array.isArray(metadata.originalFingerprints)
+        || metadata.originalFingerprints.length !== declaredOriginalCount
+        || metadata.originalFingerprints.some((value) => !/^sha256:[0-9a-f]{64}$/.test(String(value)))) {
+        throw Object.assign(new Error("ingest_original_fingerprints_invalid"), { statusCode: 400 });
+      }
     }
     recoveryIdentity = {
       asset_id: assetId,
@@ -391,6 +400,14 @@ export default async function handler(req, res) {
         ...(derivedInline ? { recognition_input_readability_derived: 1 } : {})
       },
       dependencies: {
+        // COS-53: the model reads downscales, but the TASK is the card, and the
+        // card is identified by its originals. Without this the payload hash
+        // differs between this route and the direct one and the authority
+        // rejects the second with `operation_payload_conflict`.
+        ...(derivedInline && Array.isArray(metadata.originalFingerprints)
+          && metadata.originalFingerprints.length === declaredOriginalCount
+          ? { imageFingerprints: metadata.originalFingerprints.map((value) => String(value)) }
+          : {}),
         readImages: async () => canonical,
         signImage: async ({ objectPath }) => {
           const image = imageByPath.get(objectPath);

@@ -2111,6 +2111,21 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
   }));
   clientTiming.client_preparation_ms = Math.round(performance.now() - preparationStartedAt);
   clientTiming.client_upload_bytes = images.reduce((total, image) => total + (image.size || 0), 0);
+  // Hashing the originals costs ~0.7s per phone photo and is charged anyway by
+  // the upload starting below; doing it here makes both routes name the same
+  // task. It is awaited because a fingerprint that arrives after the request is
+  // a fingerprint the request did not carry.
+  const originalFingerprints = recognitionInputs?.length
+    ? await Promise.all((asset.images || [])
+      .filter((image) => !imageIsDerivedForRequest(image))
+      .map(async (image) => {
+        await ensureImageUploadMetadata(image);
+        const source = storageSourceForImage(image);
+        const sha = image.contentSha256 || await contentSha256Hex(source);
+        image.contentSha256 = sha;
+        return `sha256:${String(sha).toLowerCase()}`;
+      }))
+    : [];
   const metadata = {
     clientTiming,
     clientAssetRef: asset.clientAssetRef || asset.id,
@@ -2120,8 +2135,18 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
     imageDetail: "high",
     ...(recognitionInputs?.length ? {
       recognitionInputOnly: true,
-      expectedOriginalCount: (asset.images || [])
-        .filter((image) => !imageIsDerivedForRequest(image)).length
+      expectedOriginalCount: originalFingerprints.length,
+      // The ORIGINALS' hashes, sent with a request whose body is downscales.
+      //
+      // The provider authority keys an operation on tenant+intent+asset and
+      // hashes the PAYLOAD with the fingerprints of whatever was sent. Two
+      // attempts on one card with different bytes therefore collide as
+      // `operation_payload_conflict` -- which is what blocked a writer queue at
+      // 0/7 on 2026-08-08, because this route reported the downscales' hashes
+      // and any fallback to the direct route reported the originals'. Reporting
+      // the originals from both routes makes them the SAME task: a fallback
+      // reuses the completed call instead of paying for a second one.
+      originalFingerprints
     } : {}),
     images: images.map(({ source: _source, image: _image, ...image }) => image)
   };
