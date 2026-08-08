@@ -70,6 +70,8 @@ jobs:
           node scripts/upload-safety-layer.test.mjs
           node scripts/writer-wheel-mode.test.mjs
           node scripts/production-release-boundaries.test.mjs
+          node scripts/materialize-writer-journey-source.test.mjs
+          npm run test:e2e:production-writer-journey:contract
       - name: Verify CSM persistence and global provider authority before deploy
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}

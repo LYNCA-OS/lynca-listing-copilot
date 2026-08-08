@@ -1,13 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { launchGateImageSourceRecords } from "../lib/listing/evaluation/launch-gate-image-source-index.generated.mjs";
 
 const artifactDir = path.resolve("artifacts/production-writer-journey");
 const evidencePath = path.join(artifactDir, "evidence.json");
-const screenshotPath = path.join(artifactDir, "failure.png");
-const tracePath = path.join(artifactDir, "failure-trace.zip");
-const harPath = path.join(artifactDir, "journey.har");
 
 function requiredEnv(name) {
   const value = String(process.env[name] || "").trim();
@@ -58,34 +54,6 @@ async function jsonOrNull(response) {
   }
 }
 
-async function materializeRealSourceImages(baseUrl, secret) {
-  const source = launchGateImageSourceRecords[0];
-  const sourceResponse = await fetch(`${baseUrl}/api/v4/launch-gate-source-images`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-lynca-launch-gate-secret": secret
-    },
-    body: JSON.stringify({ source_feedback_ids: [source.source_feedback_id] })
-  });
-  const sourcePayload = await sourceResponse.json();
-  if (!sourceResponse.ok || sourcePayload.ok === false) {
-    throw new Error(`real source materialization failed: HTTP ${sourceResponse.status}`);
-  }
-  const images = sourcePayload.sources?.[0]?.images || [];
-  if (!images.length) throw new Error("real source materialization returned no images");
-  return Promise.all(images.map(async (image, index) => {
-    const response = await fetch(image.signed_url);
-    if (!response.ok) throw new Error(`source image ${index + 1} download failed: HTTP ${response.status}`);
-    const mimeType = response.headers.get("content-type") || "image/jpeg";
-    return {
-      name: `${image.role || `image-${index + 1}`}.jpg`,
-      mimeType,
-      buffer: Buffer.from(await response.arrayBuffer())
-    };
-  }));
-}
-
 async function localSourceImages(value) {
   const paths = String(value || "").split(",").map((item) => item.trim()).filter(Boolean);
   if (!paths.length) return null;
@@ -108,14 +76,14 @@ async function cookieHeaderFromStorageState(filePath) {
 test("production writer journey reaches persisted L2 through the real UI", async ({ browser }, testInfo) => {
   await mkdir(artifactDir, { recursive: true });
   const baseUrl = cleanBaseUrl(process.env.WRITER_JOURNEY_BASE_URL);
+  const expectedSha = requiredEnv("WRITER_JOURNEY_EXPECTED_SHA");
   const username = requiredEnv("METAVERSE_USERNAME");
   const password = requiredEnv("METAVERSE_PASSWORD");
   const initialStorageState = String(
     process.env.WRITER_JOURNEY_INITIAL_STORAGE_STATE || ""
   ).trim() || undefined;
   const initialCookieHeader = await cookieHeaderFromStorageState(initialStorageState);
-  const localImages = await localSourceImages(process.env.WRITER_JOURNEY_LOCAL_IMAGES);
-  const launchGateSecret = localImages ? "" : requiredEnv("LAUNCH_GATE_EVAL_SECRET");
+  const localImages = await localSourceImages(requiredEnv("WRITER_JOURNEY_LOCAL_IMAGES"));
   const evidence = {
     schema_version: "production-writer-journey-evidence-v1",
     passed: false,
@@ -143,7 +111,6 @@ test("production writer journey reaches persisted L2 through the real UI", async
   let loginPage;
   let journeyContext;
   let journeyPage;
-  let journeyTracing = false;
 
   try {
     const healthResponse = await fetch(`${baseUrl}/api/health`, {
@@ -154,7 +121,10 @@ test("production writer journey reaches persisted L2 through the real UI", async
     });
     const health = await healthResponse.json();
     expect(healthResponse.ok, "production health must be reachable").toBeTruthy();
+    expect(health?.deployment?.git_commit_sha, "production must match the release under test")
+      .toBe(expectedSha);
     evidence.deployment_id = deploymentId(health);
+    evidence.deployment_git_commit_sha = health.deployment.git_commit_sha;
     const healthRequestId = healthResponse.headers.get("x-request-id") || healthResponse.headers.get("x-vercel-id");
     if (healthRequestId) requestIds.add(healthRequestId);
     evidence.stages.health = { passed: true, http_status: healthResponse.status };
@@ -173,7 +143,7 @@ test("production writer journey reaches persisted L2 through the real UI", async
     await loginPage.getByTestId("login-submit").click();
     await loginPage.waitForURL((url) => !url.pathname.endsWith("/login.html"), { timeout: 45_000 });
     await expect(loginPage.getByTestId("image-upload-input")).toBeAttached();
-    const files = localImages || await materializeRealSourceImages(baseUrl, launchGateSecret);
+    const files = localImages;
     evidence.stages.real_image_materialization = { passed: true, image_count: files.length };
     const storageState = await loginContext.storageState();
     evidence.stages.login = { passed: true, final_path: new URL(loginPage.url()).pathname };
@@ -184,11 +154,8 @@ test("production writer journey reaches persisted L2 through the real UI", async
     journeyContext = await browser.newContext({
       baseURL: baseUrl,
       viewport: { width: 1440, height: 1000 },
-      storageState,
-      recordHar: { path: harPath, mode: "full", content: "attach" }
+      storageState
     });
-    await journeyContext.tracing.start({ screenshots: true, snapshots: true, sources: true });
-    journeyTracing = true;
     journeyPage = await journeyContext.newPage();
     journeyPage.on("response", (response) => {
       const task = (async () => {
@@ -246,6 +213,15 @@ test("production writer journey reaches persisted L2 through the real UI", async
     expect(persistencePayload?.v4_persistence?.transaction?.saved, "feedback transaction must be durable").toBe(true);
     evidence.stages.persistence = { passed: true, http_status: persistenceResponse.status() };
 
+    const finalHealthResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: { accept: "application/json" }
+    });
+    const finalHealth = await finalHealthResponse.json();
+    expect(finalHealthResponse.ok, "production health must remain reachable").toBeTruthy();
+    expect(finalHealth?.deployment?.git_commit_sha, "production changed during Writer Journey")
+      .toBe(expectedSha);
+    evidence.stages.release_stability = { passed: true, git_commit_sha: expectedSha };
+
     // A persisted writer card intentionally leaves the visible eight-card
     // workbench immediately, so its transient status node may already be gone.
     // The HTTP transaction proof above is the durable persistence assertion.
@@ -260,8 +236,6 @@ test("production writer journey reaches persisted L2 through the real UI", async
     evidence.passed = true;
   } catch (error) {
     evidence.error = String(error?.message || error).slice(0, 1000);
-    const page = journeyPage || loginPage;
-    if (page) await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
     throw error;
   } finally {
     evidence.finished_at = new Date().toISOString();
@@ -271,10 +245,6 @@ test("production writer journey reaches persisted L2 through the real UI", async
     evidence.batch_ids = [...ids.batch_id];
     evidence.job_ids = [...ids.job_id];
     evidence.session_ids = [...ids.session_id];
-    if (journeyContext && journeyTracing) {
-      if (evidence.passed) await journeyContext.tracing.stop().catch(() => {});
-      else await journeyContext.tracing.stop({ path: tracePath }).catch(() => {});
-    }
     await journeyContext?.close().catch(() => {});
     await loginContext?.close().catch(() => {});
     await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
