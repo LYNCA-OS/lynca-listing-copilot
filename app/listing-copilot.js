@@ -1,5 +1,6 @@
 import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
 import { claimAssetSingleFlight, nextRetrySubmissionId } from "./asset-single-flight.mjs";
+import { storageVerificationTimeoutMs } from "./storage-verification-budget.mjs";
 import {
   analyzeImageQualityFromImageData,
   batchReviewWindow,
@@ -34,7 +35,6 @@ const STORAGE_UPLOAD_RELAY_TIMEOUT_MS = 12_000;
 const STORAGE_API_RETRY_DELAYS_MS = Object.freeze([250, 750, 1500]);
 const STORAGE_CONTROL_RECOVERY_TIMEOUT_MS = 3500;
 const STORAGE_CONTROL_RECOVERY_DELAYS_MS = Object.freeze([0]);
-const STORAGE_VERIFY_TIMEOUT_MS = STORAGE_CONTROL_RECOVERY_TIMEOUT_MS;
 const STORAGE_VERIFY_RETRY_DELAYS_MS = STORAGE_CONTROL_RECOVERY_DELAYS_MS;
 const ASSET_CREATE_REQUEST_TIMEOUT_MS = 3500;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
@@ -1074,7 +1074,10 @@ async function recoverCollidedStorageObjects(asset, rows, collisions) {
           bucket: collision.bucket || undefined,
           cropMetadata: row.image.cropMetadata || row.image.crop_metadata || null
         })
-      }, { timeoutMs: STORAGE_VERIFY_TIMEOUT_MS, retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS });
+      }, {
+        timeoutMs: storageVerificationTimeoutMs([row.source?.size]),
+        retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS
+      });
       if (!verify.response.ok || verify.payload?.ok !== true) throw new Error("verify_existing_failed");
 
       // The bytes must be OUR bytes. Same path with different content is a
@@ -1204,7 +1207,7 @@ async function verifyUploadedAssetImage({
       // Verification is idempotent and the uploaded object is preserved on
       // transient errors. Bound this stage separately so one dead storage read
       // cannot pin a writer card for minutes.
-      timeoutMs: STORAGE_VERIFY_TIMEOUT_MS,
+      timeoutMs: storageVerificationTimeoutMs([source.size]),
       retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS
     });
   } catch (error) {
@@ -1601,7 +1604,10 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
           cropMetadata: row.image.cropMetadata || row.image.crop_metadata || null
         }))
       })
-    }, { timeoutMs: STORAGE_VERIFY_TIMEOUT_MS, retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS });
+    }, {
+      timeoutMs: storageVerificationTimeoutMs(pending.map((row) => row.source?.size)),
+      retryDelaysMs: STORAGE_VERIFY_RETRY_DELAYS_MS
+    });
   } catch (error) {
     pending.forEach((row) => notePendingStorageConfirmationFailure(row.image));
     throw error;
