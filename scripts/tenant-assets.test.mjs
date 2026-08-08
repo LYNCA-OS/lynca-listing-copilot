@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   createIdempotentListingAssetId,
   createTenantListingAsset,
@@ -18,7 +19,7 @@ const saved = await ensureTenantListingAsset({
     SUPABASE_SERVICE_ROLE_KEY: "service-role"
   },
   fetchImpl: async (url, init) => {
-    writes.push({ url: new URL(url), body: JSON.parse(init.body) });
+    writes.push({ url: new URL(url), body: JSON.parse(init.body), redirect: init.redirect });
     return {
       ok: true,
       status: 201,
@@ -30,6 +31,8 @@ const saved = await ensureTenantListingAsset({
 assert.equal(saved.saved, true);
 assert.equal(writes[0].url.pathname, "/rest/v1/listing_assets");
 assert.equal(writes[0].url.searchParams.get("on_conflict"), "tenant_id,id");
+assert.equal(writes[0].redirect, "error",
+  "tenant persistence must not redirect its server-only apikey");
 assert.deepEqual(writes[0].body, {
   id: "asset_001",
   tenant_id: "tenant_alpha",
@@ -83,6 +86,7 @@ const replayedCreates = [];
 for (let attempt = 0; attempt < 2; attempt += 1) {
   replayedCreates.push(await createTenantListingAsset({
     tenantId: "tenant_alpha",
+    ownerUserId: "user_writer_1",
     clientAssetRef: "asset-1",
     idempotencyKey,
     expectedOriginalCount: 2,
@@ -101,6 +105,20 @@ for (let attempt = 0; attempt < 2; attempt += 1) {
   }));
 }
 assert.equal(replayedCreates[0].asset_id, replayedCreates[1].asset_id);
+assert.equal(replayedCreates[0].owner_user_id, "user_writer_1");
+
+const ownerMigration = await readFile(
+  "infrastructure/supabase-production/supabase/migrations/20260808114900_listing_asset_owner_v1.sql",
+  "utf8"
+);
+assert.match(ownerMigration, /add column if not exists owner_user_id text/);
+assert.match(ownerMigration, /having count\(\*\) = count\(owner_user_id\)[\s\S]*count\(distinct owner_user_id\) = 1/,
+  "legacy ownership may be backfilled only from unambiguous persisted sessions");
+assert.match(ownerMigration, /listing_asset_owner_immutable/,
+  "a second actor must never overwrite established asset ownership");
+assert.match(await readFile("api/csm-listing-title-ingest.js", "utf8"), /ownerUserId: context\.userId/,
+  "integrated ingest must persist owner before its deferred session exists");
+assert.match(await readFile("api/listing-asset-create.js", "utf8"), /ownerUserId: context\.userId/);
 assert.equal(replayedCreates[0].idempotency_key, idempotencyKey);
 
 const bulkWrites = [];

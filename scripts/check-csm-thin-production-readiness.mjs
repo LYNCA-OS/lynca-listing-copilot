@@ -61,9 +61,23 @@ export async function checkCsmThinProductionReadiness({
   }
 
   const baseUrl = String(env.SUPABASE_URL).replace(/\/+$/, "");
+  // The application reads and writes durable ownership before allowing
+  // assigned-scope recovery. Probe the deployed schema explicitly so a code
+  // release cannot get ahead of its additive database migration.
+  const assetOwnerResponse = await fetchImpl(
+    `${baseUrl}/rest/v1/listing_assets?select=owner_user_id&limit=0`,
+    {
+      headers: supabaseServiceHeaders(serviceKey(env)),
+      redirect: "error"
+    }
+  );
+  if (!assetOwnerResponse.ok) {
+    throw readinessError("listing_asset_owner_not_ready", String(assetOwnerResponse.status));
+  }
   const response = await fetchImpl(`${baseUrl}/rest/v1/rpc/${LOOKUP_RPC}`, {
     method: "POST",
     headers: supabaseServiceHeaders(serviceKey(env), { "content-type": "application/json" }),
+    redirect: "error",
     body: JSON.stringify({
       p_tenant_id: "__csm_readiness__",
       p_operation_key: "__csm_readiness__",
@@ -80,6 +94,7 @@ export async function checkCsmThinProductionReadiness({
     {
       method: "POST",
       headers: supabaseServiceHeaders(serviceKey(env), { "content-type": "application/json" }),
+      redirect: "error",
       body: JSON.stringify({
         p_provider: CSM_PROVIDER_AUTHORITY_SCOPE.provider,
         p_account_scope: CSM_PROVIDER_AUTHORITY_SCOPE.accountScope,
@@ -117,6 +132,7 @@ export async function checkCsmThinProductionReadiness({
     reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
     provider_configuration_checked: requireProviderKey,
     csm_registry_and_atomic_persistence_ready: true,
+    listing_asset_owner_ready: true,
     durable_provider_authority_ready: true,
     durable_provider_pacer_ready: true,
     retired_capabilities_disabled: true,

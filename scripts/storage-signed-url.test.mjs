@@ -33,6 +33,22 @@ assert.equal(listingImageStorageReadiness({
   SUPABASE_URL: env.SUPABASE_URL,
   SUPABASE_SECRET_KEY: "sb_secret_modern"
 }).configured, true, "modern Supabase secret keys must configure server-side storage");
+for (const invalidUrl of [
+  "http://example.supabase.co",
+  "https://user:password@example.supabase.co",
+  "https://example.supabase.co/attacker-path",
+  "not-a-url"
+]) {
+  assert.equal(listingImageStorageReadiness({
+    SUPABASE_URL: invalidUrl,
+    SUPABASE_SECRET_KEY: "sb_secret_modern"
+  }).configured, false, `invalid Storage origin must fail closed: ${invalidUrl}`);
+}
+assert.equal(listingImageStorageReadiness({
+  SUPABASE_URL: env.SUPABASE_URL,
+  SUPABASE_SECRET_KEY: "sb_secret_modern",
+  LISTING_IMAGE_SIGNED_URL_TTL_SECONDS: "31536000"
+}).signed_url_ttl_seconds, 7200, "signed read access must remain short-lived under env drift");
 
 const jpegSignatureHex = "ffd8ffe000104a464946000101000001";
 const pngSignatureHex = "89504e470d0a1a0a0000000d49484452";
@@ -223,6 +239,7 @@ assert.match(uploadRequest.url, /\/storage\/v1\/object\/upload\/sign\/listing-ca
 assert.equal(uploadRequest.init.method, "POST");
 assert.equal(uploadRequest.init.headers.apikey, "test-service-role");
 assert.equal(uploadRequest.init.headers.authorization, undefined);
+assert.equal(uploadRequest.init.redirect, "error");
 assert.equal(
   supabaseServiceHeaders("eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.signature").authorization,
   "Bearer eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.signature"
@@ -270,6 +287,28 @@ const transientUpload = await createListingImageSignedUpload({
 });
 assert.equal(transientUploadCalls, 2);
 assert.match(transientUpload.signed_upload_url, /token=signed/);
+await assert.rejects(
+  () => createListingImageSignedUpload({
+    tenantId,
+    assetId: "asset-cross-origin",
+    imageId: "front-cross-origin",
+    role: "front_original",
+    fileName: "front.jpg",
+    contentType: "image/jpeg",
+    size: 1000,
+    width: 1200,
+    height: 900,
+    signatureHex: jpegSignatureHex,
+    env,
+    now: new Date("2026-06-22T08:00:00Z"),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ url: "https://attacker.example/upload?token=stolen" })
+    })
+  }),
+  /did not match the requested Storage object/
+);
 await assert.rejects(
   () => createListingImageSignedUpload({
     tenantId,
@@ -343,9 +382,24 @@ const readUrl = await createListingImageSignedReadUrl({
 
 assert.match(readRequest.url, /\/storage\/v1\/object\/sign\/listing-card-images\//);
 assert.equal(JSON.parse(readRequest.init.body).expiresIn, 600);
+assert.equal(readRequest.init.redirect, "error");
 assert.equal(
   readUrl,
   "https://example.supabase.co/storage/v1/object/sign/listing-card-images/tenants/tenant_legacy/listing-assets/2026-06-22/asset-1/front_original-front-1.jpg?token=read"
+);
+await assert.rejects(
+  () => createListingImageSignedReadUrl({
+    objectPath: upload.object_path,
+    env,
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        signedURL: "https://example.supabase.co/storage/v1/object/sign/listing-card-images/tenants/tenant_other/listing-assets/2026-06-22/asset-1/front.jpg?token=wrong-object"
+      })
+    })
+  }),
+  /did not match the requested Storage object/
 );
 assert.rejects(
   () => createListingImageSignedReadUrl({ objectPath: "../secret.jpg", env, fetchImpl: async () => ({}) }),
@@ -375,6 +429,7 @@ assert.match(verifyRequest.url, /\/storage\/v1\/object\/listing-card-images\//);
 assert.equal(verifyRequest.init.method, "GET");
 assert.equal(verifyRequest.init.headers.apikey, "test-service-role");
 assert.equal(verifyRequest.init.headers.authorization, undefined);
+assert.equal(verifyRequest.init.redirect, "error");
 assert.equal(verifyRequest.init.headers.range, undefined, "durable upload verification must read the complete object");
 assert.equal(verification.object_verified, true);
 assert.equal(verification.dimension_source, "object_bytes");
@@ -543,6 +598,7 @@ assert.match(deleteRequest.url, /\/storage\/v1\/object\/listing-card-images\//);
 assert.equal(deleteRequest.init.method, "DELETE");
 assert.equal(deleteRequest.init.headers.apikey, "test-service-role");
 assert.equal(deleteRequest.init.headers.authorization, undefined);
+assert.equal(deleteRequest.init.redirect, "error");
 assert.equal(deleteResult.deleted, true);
 await assert.rejects(
   () => deleteListingImageObject({
@@ -556,11 +612,11 @@ await assert.rejects(
 const originalEnv = { ...process.env };
 const originalFetch = globalThis.fetch;
 Object.assign(process.env, env);
-globalThis.fetch = tenantAwareFetch(async () => ({
+globalThis.fetch = tenantAwareFetch(async (input) => ({
   ok: true,
   status: 200,
   text: async () => JSON.stringify({
-    url: `/object/upload/sign/listing-card-images/tenants/tenant_legacy/listing-assets/2026-06-22/${durableAssetId}/front_original-front-api.jpg?token=signed`
+    url: `${new URL(String(input)).pathname.replace("/storage/v1", "")}?token=signed`
   })
 }));
 

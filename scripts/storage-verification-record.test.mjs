@@ -91,6 +91,7 @@ const fetchImpl = async (url, init = {}) => {
     search: Object.fromEntries(parsed.searchParams.entries()),
     method,
     headers: init.headers,
+    redirect: init.redirect,
     body: init.body ? JSON.parse(init.body) : null
   });
 
@@ -118,6 +119,32 @@ const fetchImpl = async (url, init = {}) => {
   };
 };
 
+let invalidOriginFetches = 0;
+const invalidOriginResult = await readListingImageVerificationRecord({
+  tenantId,
+  assetId: "asset-1",
+  objectPath: verification.object_path,
+  bucket: verification.bucket,
+  contentType: verification.content_type,
+  size: verification.size,
+  width: verification.width,
+  height: verification.height,
+  env: {
+    SUPABASE_URL: "https://supabase.test/credential-sink",
+    SUPABASE_SERVICE_ROLE_KEY: "must-not-leave-process"
+  },
+  fetchImpl: async () => {
+    invalidOriginFetches += 1;
+    throw new Error("must not fetch an invalid Supabase origin");
+  }
+});
+assert.deepEqual(invalidOriginResult, {
+  verified: false,
+  durable: false,
+  reason: "supabase_not_configured"
+});
+assert.equal(invalidOriginFetches, 0);
+
 const saveResult = await saveListingImageVerificationRecord({
   verification,
   assetId: "asset-1",
@@ -138,6 +165,8 @@ assert.equal(calls[1].path, "/rest/v1/listing_image_verifications");
 assert.equal(calls[1].search.on_conflict, "tenant_id,object_path");
 assert.equal(calls[1].headers.apikey, "test-service-role");
 assert.equal(calls[1].headers.authorization, undefined);
+assert.equal(calls[1].redirect, "error",
+  "verification writes must not follow a redirect with the server-only apikey");
 assert.equal(calls[1].body.object_path, verification.object_path);
 assert.equal(calls[1].body.image_generation_id, "asset-1");
 assert.equal(calls[1].body.canonical_eligible, true);
@@ -161,6 +190,8 @@ assert.equal(calls[2].search.object_path, `eq.${verification.object_path}`);
 assert.equal(calls[2].search.tenant_id, `eq.${tenantId}`);
 assert.equal(calls[2].search.asset_id, "eq.asset-1");
 assert.equal(calls[2].search.limit, "1");
+assert.equal(calls[2].redirect, "error",
+  "verification reads must not follow a redirect with the server-only apikey");
 
 const modernSecretRead = await readListingImageVerificationRecord({
   tenantId,

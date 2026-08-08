@@ -62,15 +62,8 @@ jobs:
           npm ci --no-audit --no-fund
           npm ls --omit=dev --all
           node scripts/npm-audit-gate.mjs
-          npm run check:csm-thin
-          npm run test:csm-thin
-          npm run test:accuracy
-          node scripts/auth-production-entrypoint.test.mjs
-          node scripts/api-access-contract.test.mjs
-          node scripts/upload-safety-layer.test.mjs
-          node scripts/writer-wheel-mode.test.mjs
-          node scripts/production-release-boundaries.test.mjs
-          node scripts/materialize-writer-journey-source.test.mjs
+          npm run check
+          npm run test:release
           npm run test:e2e:production-writer-journey:contract
       - name: Verify CSM persistence and global provider authority before deploy
         env:
@@ -92,26 +85,79 @@ jobs:
           node scripts/check-csm-thin-production-readiness.mjs \
             --database-only \
             --out /tmp/csm-thin-schema-preflight.json
-      - name: Re-confirm the exact main commit before the deploy hook
+      - name: Re-confirm the exact main commit before building the immutable release
         env:
           DISPATCH_SHA: ${{ github.sha }}
         run: |
           git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
-      - name: Trigger current main through the Vercel Deploy Hook
-        env:
-          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+      - name: Bind the canonical Vercel project from tracked service context
         run: |
-          test -n "$VERCEL_DEPLOY_HOOK_URL"
-          curl -fsS --max-time 30 -X POST "$VERCEL_DEPLOY_HOOK_URL" \
-            -o /tmp/vercel-deploy-hook.json
-          node - <<'NODE'
-          const response = require('/tmp/vercel-deploy-hook.json');
-          if (!response.job?.id || !['PENDING', 'RUNNING', 'BUILDING'].includes(response.job?.state)) {
-            process.exit(1);
-          }
-          console.log(JSON.stringify({ deploy_hook_accepted: true, state: response.job.state }));
+          node - <<'NODE' >> "$GITHUB_ENV"
+          const context = require('./docs/operations/active-service-context.json');
+          const orgId = String(context?.vercel?.scope?.id || '');
+          const projectId = String(context?.vercel?.production?.project_id || '');
+          const projectName = String(context?.vercel?.production?.project || '');
+          if (!/^team_[A-Za-z0-9]+$/.test(orgId)
+            || !/^prj_[A-Za-z0-9]+$/.test(projectId)
+            || projectName !== 'lynca-listing-copilot') process.exit(1);
+          process.stdout.write(`VERCEL_ORG_ID=${orgId}\nVERCEL_PROJECT_ID=${projectId}\n`);
           NODE
+      - name: Build and deploy the exact dispatched checkout
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$VERCEL_ORG_ID"
+          test -n "$VERCEL_PROJECT_ID"
+          test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
+          npx --yes vercel@54.14.5 pull --yes --environment=production
+          test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
+          npx --yes vercel@54.14.5 build --prod
+          test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
+          deployment_url="$(npx --yes vercel@54.14.5 deploy --prebuilt --prod --skip-domain --yes \
+            --env "LYNCA_RELEASE_GIT_SHA=$DISPATCH_SHA" \
+            --env "LYNCA_RELEASE_GIT_REF=main")"
+          DEPLOYMENT_URL="$deployment_url" node -e '
+            const raw=process.env.DEPLOYMENT_URL||""; const url=new URL(raw);
+            if(raw!==url.origin || !/^[a-z0-9-]+\.vercel\.app$/.test(url.hostname)) process.exit(1);
+          '
+          export DEPLOYMENT_URL="$deployment_url"
+          printf 'DEPLOYMENT_URL=%s\n' "$deployment_url" >> "$GITHUB_ENV"
+          node -e 'process.stdout.write(JSON.stringify({mode:"exact_checkout_prebuilt_unpromoted",git_sha:process.env.DISPATCH_SHA,deployment_url:process.env.DEPLOYMENT_URL||null}))' \
+            > /tmp/vercel-prebuilt-release.json
+      - name: Verify the immutable deployment before production promotion
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$DEPLOYMENT_URL"
+          npx --yes vercel@54.14.5 curl /api/health --deployment "$DEPLOYMENT_URL" \
+            > /tmp/csm-thin-health-prepromotion.json
+          node --input-type=module - <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { CSM_THIN_RUNTIME_CONTRACT } from './lib/listing/thin/csm-runtime-contract.mjs';
+
+          const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
+          const ok = h.ready === true
+            && h.deployment?.git_commit_sha === process.env.DISPATCH_SHA
+            && h.active_path === CSM_THIN_RUNTIME_CONTRACT.route
+            && h.model === CSM_THIN_RUNTIME_CONTRACT.model
+            && h.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT.reasoningEffort
+            && h.runtime?.cloud_run_calls === 0
+            && h.runtime?.vector_calls === 0
+            && h.runtime?.generic_ocr_calls === 0;
+          process.exit(ok ? 0 : 1);
+          NODE
+      - name: Promote the verified immutable deployment to production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$DEPLOYMENT_URL"
+          npx --yes vercel@54.14.5 promote "$DEPLOYMENT_URL" --yes
       - name: Wait for the exact CSM thin main commit to reach production
         run: |
           for _attempt in $(seq 1 60); do
@@ -168,9 +214,10 @@ jobs:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: |
-          curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
+          node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))' \
+          | curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
             -H 'content-type: application/json' \
-            --data "$(node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))')" \
+            --data-binary @- \
             https://listing.lyncafei.team/api/login -o /tmp/login.json
           curl -fsS --max-time 30 -b /tmp/lynca-cookies.txt \
             https://listing.lyncafei.team/app/listing-copilot.js \
@@ -191,7 +238,8 @@ jobs:
           path: |
             /tmp/csm-thin-schema-preflight.json
             /tmp/csm-thin-schema-postdeploy.json
+            /tmp/csm-thin-health-prepromotion.json
             /tmp/csm-thin-health.json
-            /tmp/vercel-deploy-hook.json
+            /tmp/vercel-prebuilt-release.json
             /tmp/retired-route.json
             /tmp/csm-noop.json

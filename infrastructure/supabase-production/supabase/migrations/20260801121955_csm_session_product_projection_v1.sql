@@ -111,12 +111,10 @@ begin
   return new;
 end;
 $csm_product_projection$;
-
 revoke all on function private.project_csm_session_product_read_model_v1()
   from public, anon, authenticated;
 grant execute on function private.project_csm_session_product_read_model_v1()
   to service_role;
-
 drop trigger if exists project_csm_session_product_read_model_v1
   on public.v4_recognition_sessions;
 create trigger project_csm_session_product_read_model_v1
@@ -128,7 +126,6 @@ when (
   and new.csm_composition_stage_status = 'COMPLETE'
 )
 execute function private.project_csm_session_product_read_model_v1();
-
 -- Backfill is fail-closed.  It may populate a pristine CSM session or attach
 -- the tag to an already-identical projection, but it never overwrites a title,
 -- SEM object, or workflow state that could have been changed by a writer.
@@ -184,7 +181,6 @@ begin
   end if;
 end;
 $csm_product_projection_backfill_preflight$;
-
 -- Mentioning the column in SET fires the projection trigger even though the
 -- stage is already COMPLETE.  The preflight above proves this is non-lossy.
 update public.v4_recognition_sessions session_row
@@ -193,10 +189,8 @@ where session_row.schema_version = 'csm-recognition-session-v1'
   and session_row.csm_composition_stage_status = 'COMPLETE'
   and session_row.provider_result_summary ->> 'csm_product_projection_version'
     is distinct from 'csm-session-product-projection-v1';
-
 comment on function private.project_csm_session_product_read_model_v1() is
   'Atomically projects one completed CSM marketplace output into the writer-facing recognition-session read model.';
-
 -- Fail before the paid provider boundary when the schema was not activated.
 -- This is deliberately a live catalog check rather than a hard-coded version
 -- flag: a disabled trigger or a same-name trigger rebound to another function
@@ -276,11 +270,9 @@ begin
   );
 end;
 $csm_product_projection_readiness$;
-
 revoke all on function public.check_csm_session_product_projection_v1()
   from public, anon, authenticated;
 grant execute on function public.check_csm_session_product_projection_v1()
   to service_role;
-
 comment on function public.check_csm_session_product_projection_v1() is
   'Service-role readiness probe that verifies the live CSM product projection trigger binding before provider spend.';

@@ -61,7 +61,7 @@ jobs:
       - name: Check the production import graph and contracts
         run: npm run check
       - name: Run the retained thin-path and production suites
-        run: npm run test:csm-thin && npm run test:production && npm run test:accuracy
+        run: npm run test:release
       - name: Syntax-check API handlers and app bundle
         run: |
           set -e

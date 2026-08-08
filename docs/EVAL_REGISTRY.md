@@ -1,8 +1,16 @@
-# Eval Registry
+# Eval Registry (historical, through 2026-07-11)
 
-Single source of truth for evaluation datasets, ground-truth policy, and
-tracked baselines. Update this file whenever a smoke establishes a new
-baseline or a dataset version changes.
+> **Retired operational authority.** This file preserves evidence from the old
+> V4/queue/catalog/vector path; its smoke commands, launch thresholds and
+> production baselines must not be used for the current CSM thin path. The
+> referenced V4 smoke entrypoint no longer exists. Current accuracy policy and
+> waterline live in `docs/HANDOFF-20260803-CLAUDE.md` and
+> `docs/evaluation/ruler-design-review-2026-08-03.md`. Current releases run only
+> through `.github/workflows/deploy-production.yml`, followed by
+> `.github/workflows/production-writer-journey.yml`.
+
+The material below is append-only historical evidence. Do not update it with
+new thin-path results or infer current Production behavior from it.
 
 ## Ground-truth policy
 

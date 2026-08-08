@@ -26,10 +26,13 @@ assert.equal(retryAfterDelayMs(response(429, { "retry-after": "2" }), { maxDelay
 {
   let calls = 0;
   const delays = [];
+  let cancelled = 0;
   const result = await fetchWithBoundedRetry("/retryable", {}, {
     fetchImpl: async () => {
       calls += 1;
-      return calls === 1 ? response(503) : response(200);
+      return calls === 1
+        ? { ...response(503), body: { async cancel() { cancelled += 1; } } }
+        : response(200);
     },
     sleep: async (delay) => delays.push(delay),
     random: () => 0.5,
@@ -39,6 +42,7 @@ assert.equal(retryAfterDelayMs(response(429, { "retry-after": "2" }), { maxDelay
   assert.equal(result.attempts, 2);
   assert.equal(result.response.status, 200);
   assert.deepEqual(delays, [250]);
+  assert.equal(cancelled, 1, "an unread retry response must release its body before the next attempt");
 }
 
 {

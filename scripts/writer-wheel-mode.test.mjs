@@ -173,6 +173,28 @@ assert.equal(
   "a visual saved status without the transaction acknowledgement must fail closed"
 );
 assert.equal(
+  writerFeedbackPersisted({
+    feedbackStatus: "saved",
+    persistenceStatus: "persisted",
+    manualRecoverySource: "MANUAL_AFTER_RECOGNITION_FAILURE"
+  }),
+  true,
+  "a durably acknowledged manual recovery must leave the outstanding queue"
+);
+assert.equal(
+  nextWriterOutstandingIndex({
+    assets,
+    results: [
+      { index: 1, feedbackStatus: "saved", persistenceStatus: "persisted", manualRecoverySource: "MANUAL_AFTER_RECOGNITION_FAILURE" },
+      { index: 2, feedbackStatus: "saved", persistenceStatus: "persisted" },
+      { index: 3, feedbackStatus: "skipped", persistenceStatus: "persisted" }
+    ],
+    currentIndex: 1
+  }),
+  null,
+  "manual recovery must not wrap the writer back into an already persisted card"
+);
+assert.equal(
   nextWriterOutstandingIndex({
     assets,
     results: [

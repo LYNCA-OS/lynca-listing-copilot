@@ -31,6 +31,30 @@ const registry = new Map();
 const normalizeKey = (scope, assetKey) => `${String(scope || "op")}:${String(assetKey ?? "")}`;
 
 /**
+ * A retry can be needed before durable asset creation succeeds. Keep the
+ * browser identity stable across that transition; use the canonical id only
+ * when no browser identity exists.
+ */
+export function assetSingleFlightKey(asset = {}, fallback = "asset") {
+  // Browser identity is created before any durable server identity and remains
+  // immutable for the asset's whole lifecycle. If we switched to the durable
+  // id when it arrived, a second click could use a different registry key and
+  // bypass the still-running claim that created it.
+  const browserAssetId = String(asset.clientAssetRef || asset.id || "").trim();
+  if (browserAssetId) {
+    const generation = Number(asset.lifecycleGeneration);
+    return Number.isInteger(generation) && generation >= 0
+      ? `${browserAssetId}@${generation}`
+      : browserAssetId;
+  }
+  const durableAssetId = String(asset.durableAssetId || "").trim();
+  if (/^asset_[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(durableAssetId)) {
+    return durableAssetId;
+  }
+  return String(fallback).trim() || "asset";
+}
+
+/**
  * Run `operation` for this asset, or join the one already running.
  *
  * @param scope    what is being single-flighted ("retry", "prepare_images")
@@ -44,23 +68,17 @@ export function claimAssetSingleFlight(scope, assetKey, operation) {
   const existing = registry.get(key);
   if (existing) return { promise: existing.promise, joined: true };
 
-  // The entry is registered BEFORE `operation` is invoked. Invoking first and
-  // registering after leaves a synchronous window in which a second call sees
-  // an empty registry -- the same shape of hole this replaces.
-  let promise;
+  // Defer invocation by one microtask so the entry can hold its final shared
+  // promise before operation code runs. Without this, a synchronous reentrant
+  // claim observes the registry entry while its promise is still null.
   const entry = { promise: null };
-  registry.set(key, entry);
-  try {
-    promise = Promise.resolve(operation());
-  } catch (error) {
-    registry.delete(key);
-    throw error;
-  }
+  const operationPromise = Promise.resolve().then(operation);
   // Released only on a terminal outcome, success or failure, so a failed
   // attempt does not leave the asset permanently claimed.
-  entry.promise = promise.finally(() => {
+  entry.promise = operationPromise.finally(() => {
     if (registry.get(key) === entry) registry.delete(key);
   });
+  registry.set(key, entry);
   return { promise: entry.promise, joined: false };
 }
 

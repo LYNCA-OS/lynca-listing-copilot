@@ -193,70 +193,6 @@ function analyzeImageQualityFromImageData(imageData, profile = defaultCapturePro
     glare_route: route
   };
 }
-function summarizeAssetImageQuality(images = []) {
-  const qualities = images.map((image) => image.imageQuality || image.image_quality).filter(Boolean);
-  const degraded = qualities.some((quality) => quality.image_quality_degraded);
-  const regionNames = /* @__PURE__ */ new Set();
-  qualities.forEach((quality) => {
-    Object.keys(quality.critical_region_occlusion || {}).forEach((regionName) => regionNames.add(regionName));
-  });
-  const criticalRegionOcclusion = {};
-  const recoveredRegions = [];
-  const unresolvedRegions = [];
-  regionNames.forEach((regionName) => {
-    const regionQualities = qualities.map((quality, imageIndex) => ({
-      image_index: imageIndex,
-      ...quality.critical_region_occlusion?.[regionName] || {}
-    })).filter((region) => region.status);
-    const clearRegion = regionQualities.find((region) => region.status === criticalRegionStatus.CLEAR);
-    const occludedRegions = regionQualities.filter((region) => region.status === criticalRegionStatus.OCCLUDED);
-    const reviewRegion = regionQualities.find((region) => region.status === criticalRegionStatus.REVIEW);
-    if (occludedRegions.length && clearRegion) {
-      recoveredRegions.push(regionName);
-      criticalRegionOcclusion[regionName] = {
-        status: criticalRegionStatus.CLEAR,
-        recovered: true,
-        recovery_method: "alternate_view",
-        clear_image_index: clearRegion.image_index,
-        occluded_image_indices: occludedRegions.map((region) => region.image_index)
-      };
-      return;
-    }
-    if (occludedRegions.length) {
-      unresolvedRegions.push(regionName);
-      criticalRegionOcclusion[regionName] = {
-        status: criticalRegionStatus.OCCLUDED,
-        recovered: false,
-        occluded_image_indices: occludedRegions.map((region) => region.image_index),
-        glare_score: Math.max(...occludedRegions.map((region) => Number(region.glare_score || 0))),
-        readability_score: Math.min(...occludedRegions.map((region) => Number(region.readability_score ?? 1)))
-      };
-      return;
-    }
-    if (clearRegion || reviewRegion) {
-      const representative = clearRegion || reviewRegion;
-      criticalRegionOcclusion[regionName] = {
-        status: representative.status,
-        recovered: false,
-        image_index: representative.image_index,
-        glare_score: representative.glare_score ?? null,
-        readability_score: representative.readability_score ?? null
-      };
-    }
-  });
-  const route = unresolvedRegions.length ? glareRoutes.TARGETED_RESCAN_REQUIRED : recoveredRegions.length ? glareRoutes.RECOVERED : glareRoutes.CLEAR;
-  return {
-    capture_profile_id: qualities[0]?.capture_profile_id || defaultCaptureProfileId,
-    image_count: qualities.length,
-    image_quality_degraded: degraded,
-    route,
-    glare_route: route,
-    recovered_regions: recoveredRegions,
-    unresolved_regions: unresolvedRegions,
-    critical_region_occlusion: criticalRegionOcclusion,
-    images: qualities
-  };
-}
 
 // lib/listing/image-quality/crop-planner.mjs
 var cropRolesByRegion = Object.freeze({
@@ -466,177 +402,58 @@ function planTargetedCrops({
   }).filter(Boolean).sort((a, b) => b.priority - a.priority).slice(0, maxCrops);
 }
 
-// csm/ontology/field-labels.mjs
-function cleanText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
+// lib/listing/client/batch-recognition-intent.mjs
+var INTAKE_PREVIEW_CARD_WINDOW = 8;
+function claimNextBatchAsset(assets = [], claimedAssetIndexes = /* @__PURE__ */ new Set()) {
+  for (const asset of Array.isArray(assets) ? assets : []) {
+    const index = Number(asset?.index);
+    if (!Number.isFinite(index) || claimedAssetIndexes.has(index)) continue;
+    claimedAssetIndexes.add(index);
+    return asset;
+  }
+  return null;
 }
-function fallbackLabel(field = "") {
-  return cleanText(field).replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-var csmFieldLabels = Object.freeze({
-  year: "Year",
-  season_year: "Season Year",
-  product_year: "Product Year",
-  copyright_year: "Copyright Year",
-  slab_year: "Slab Year",
-  event_year: "Event Year",
-  display_year: "Display Year",
-  brand: "Brand",
-  manufacturer: "Manufacturer",
-  product: "Product",
-  product_or_set: "Product / Set",
-  set: "Set",
-  subset: "Subset",
-  ip: "IP",
-  language: "Language",
-  subject: "Subject",
-  subjects: "Subject",
-  player: "Player",
-  players: "Subject",
-  character: "Subject",
-  card_type: "Card Type",
-  official_card_type: "Card Type",
-  card_name: "Card Name",
-  insert: "Card Name",
-  release_variant: "Release Variant",
-  design_variation: "Design Variation",
-  variant: "Variant",
-  variation: "Variant",
-  product_finish: "Product Finish",
-  print_finish: "Print Finish",
-  surface_color: "Color",
-  parallel_family: "Parallel Family",
-  parallel_exact: "Exact Parallel",
-  variant_or_parallel: "Variant / Parallel",
-  parallel: "Parallel",
-  descriptive_rarity: "Descriptive Rarity",
-  numerical_rarity: "Numbered / Print Run / \u6570\u5B57\u9650\u7F16",
-  print_run_number: "Numbered / Print Run / \u6570\u5B57\u9650\u7F16",
-  print_run_numerator: "Print Run Numerator",
-  print_run_denominator: "Numbered To",
-  numbered_to: "Numbered To",
-  serial_denominator: "Numbered To (Legacy)",
-  serial_number: "Numbered / Print Run / \u6570\u5B57\u9650\u7F16 (Legacy)",
-  card_number: "Card Number",
-  collector_number: "Card Number",
-  checklist_code: "Checklist Code",
-  grade_company: "Grade Company",
-  card_grade: "Card Grade",
-  auto_grade: "Auto Grade",
-  grade_type: "Grade Type",
-  grade: "Grade",
-  rc: "RC",
-  first_bowman: "1st Bowman",
-  ssp: "SSP",
-  case_hit: "Case Hit",
-  auto: "Auto",
-  patch: "Patch",
-  relic: "Relic",
-  sketch: "Sketch",
-  redemption: "Redemption",
-  // COS-21 and COS-23 name this field "IP / Sport". Without an entry the
-  // humanizer renders "Ip Sport", so the review surface showed a name the
-  // contract does not use.
-  ip_sport: "IP / Sport",
-  special_stamp: "Special Stamp",
-  // COS-21 and COS-23 both list [Description] among the seventeen canonical
-  // editable fields, and COS-42's review surface renders "canonical bracket key
-  // AND label" -- so a bracket with no label here draws blank in the Glass Box.
-  // It went unnoticed while nothing could emit the bracket.
-  description: "Description",
-  search_optimization: "Search Optimization",
-  team: "Team",
-  teams: "Team",
-  lot_quantity: "Lot Quantity",
-  lot_type: "Lot Type",
-  // COS-41 (founder, 2026-08-04): NOT a CSM semantic field. Auto, RC, Patch
-  // and Relic belong to [Search Optimization]; `observable_components` is an
-  // implementation-level grouping that recognition and identity resolution may
-  // keep, and a label here declared it as one of CSM's own.
-  //   observable_components: "Visible Components",
-  cert_number: "Cert Number",
-  one_of_one: "1/1"
-});
-function labelForCsmField(field, fallback = "") {
-  const key = cleanText(field);
-  if (!key && fallback) return cleanText(fallback);
-  return csmFieldLabels[key] || fallbackLabel(fallback || key) || "Field";
-}
-
-// lib/listing/v4/jobs/client-poll-policy.mjs
-var terminalStatuses = /* @__PURE__ */ new Set([
-  "L2_READY",
-  "FAILED",
-  "CANCELLED"
-]);
-var queueWaitStatuses = /* @__PURE__ */ new Set([
-  "PENDING",
-  "QUEUED",
-  "RETRYING"
-]);
-function normalizedStatus(value) {
-  return String(value || "PENDING").trim().toUpperCase() || "PENDING";
-}
-function nonNegativeNumber(value) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-}
-function observeClientJobPoll({
-  status,
-  elapsedMs = 0,
-  warningAfterMs = 12e4
-} = {}) {
-  const normalized = normalizedStatus(status);
-  const elapsed = nonNegativeNumber(elapsedMs);
-  const warningBoundary = Math.max(1e3, nonNegativeNumber(warningAfterMs) || 12e4);
-  const terminal = terminalStatuses.has(normalized);
-  const delayed = !terminal && elapsed >= warningBoundary;
-  const phase = queueWaitStatuses.has(normalized) ? "QUEUE_WAIT" : normalized === "RUNNING" ? "ACTIVE_EXECUTION" : terminal ? "TERMINAL" : "SERVER_PENDING";
+function windowIntakePreviewGroups(groups = [], limit = INTAKE_PREVIEW_CARD_WINDOW) {
+  const source = Array.isArray(groups) ? groups : [];
+  const boundedLimit = Math.max(1, Math.trunc(Number(limit) || INTAKE_PREVIEW_CARD_WINDOW));
   return {
-    status: normalized,
-    phase,
-    terminal,
-    delayed,
-    elapsed_ms: elapsed,
-    warning_code: delayed ? phase === "QUEUE_WAIT" ? "QUEUE_WAIT_LONG" : phase === "ACTIVE_EXECUTION" ? "ACTIVE_EXECUTION_LONG" : "SERVER_PENDING_LONG" : null,
-    // Durable queue/session state is authoritative. A browser wall clock may
-    // warn the writer, but it must never manufacture a failed recognition.
-    should_continue_polling: !terminal,
-    should_mark_failed: false
+    visible: source.slice(0, boundedLimit),
+    remaining: Math.max(0, source.length - boundedLimit)
   };
 }
-function groupClientResultsByJobId(results = []) {
-  const grouped = /* @__PURE__ */ new Map();
-  for (const result of Array.isArray(results) ? results : []) {
-    const jobId = String(result?.v4_job_id || "").trim();
-    if (!jobId) continue;
-    const linked = grouped.get(jobId) || [];
-    linked.push(result);
-    grouped.set(jobId, linked);
-  }
-  return grouped;
-}
-function isClientStatusNotFound(error = null) {
-  const status = Number(error?.http_status || error?.statusCode || error?.status || 0);
-  const code = String(error?.error_code || error?.code || "").trim().toUpperCase();
-  const message = String(error?.message || error || "").trim();
-  return status === 404 || code === "V4_JOB_STATUS_NOT_FOUND" || /(?:status_poll_)?job_missing|recognition jobs? not found/i.test(message);
-}
-function shouldDeclareClientStatusOrphan({
-  jobNotFoundCount = 0,
-  sessionNotFoundCount = 0,
-  elapsedMs = 0,
-  minimumFailures = 3,
-  minimumElapsedMs = 2e4
+function batchReviewWindow(items = [], {
+  start = 0,
+  size = INTAKE_PREVIEW_CARD_WINDOW,
+  focusIndex = null
 } = {}) {
-  return Math.floor(nonNegativeNumber(jobNotFoundCount)) >= Math.max(1, Math.floor(nonNegativeNumber(minimumFailures))) && Math.floor(nonNegativeNumber(sessionNotFoundCount)) >= Math.max(1, Math.floor(nonNegativeNumber(minimumFailures))) && nonNegativeNumber(elapsedMs) >= Math.max(1e3, nonNegativeNumber(minimumElapsedMs));
-}
-function queuedStatusPollDelay(elapsedMs = 0, pendingCount = 0) {
-  const elapsed = nonNegativeNumber(elapsedMs);
-  const pending = Math.floor(nonNegativeNumber(pendingCount));
-  const scaleFloor = pending > 1e3 ? 3e3 : pending > 300 ? 2e3 : pending > 100 ? 1200 : 0;
-  const elapsedDelay = elapsed < 3e4 ? 800 : elapsed < 9e4 ? 1200 : 1800;
-  return Math.max(scaleFloor, elapsedDelay);
+  const source = Array.isArray(items) ? items : [];
+  const boundedSize = Math.max(1, Math.trunc(Number(size) || INTAKE_PREVIEW_CARD_WINDOW));
+  const total = source.length;
+  let desiredStart = Math.trunc(Number(start) || 0);
+  if (focusIndex !== null && focusIndex !== void 0) {
+    const position = source.findIndex((item) => Number(item?.index) === Number(focusIndex));
+    if (position >= 0 && (position < desiredStart || position >= desiredStart + boundedSize)) {
+      desiredStart = Math.floor(position / boundedSize) * boundedSize;
+    }
+  }
+  const maxStart = Math.max(0, Math.ceil(Math.max(total, 1) / boundedSize) * boundedSize - boundedSize);
+  const clampedStart = Math.min(Math.max(0, desiredStart), Math.min(maxStart, Math.max(0, total - 1)));
+  const normalizedStart = total ? Math.floor(clampedStart / boundedSize) * boundedSize : 0;
+  const visible = source.slice(normalizedStart, normalizedStart + boundedSize);
+  return {
+    visible,
+    start: normalizedStart,
+    size: boundedSize,
+    total,
+    // 1-based and inclusive, because these are the numbers shown to a person.
+    from: total ? normalizedStart + 1 : 0,
+    to: total ? normalizedStart + visible.length : 0,
+    page: total ? Math.floor(normalizedStart / boundedSize) + 1 : 0,
+    pages: total ? Math.ceil(total / boundedSize) : 0,
+    hasPrevious: normalizedStart > 0,
+    hasNext: normalizedStart + boundedSize < total,
+    remaining: Math.max(0, total - (normalizedStart + visible.length))
+  };
 }
 
 // lib/listing/client/bounded-fetch.mjs
@@ -744,6 +561,10 @@ async function fetchWithBoundedRetry(url, init = {}, {
           retried: attempt > 1
         };
       }
+      try {
+        await response.body?.cancel?.();
+      } catch {
+      }
       const exponentialDelay = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));
       const retryDelay2 = retryAfterDelayMs(response, {
         now: now(),
@@ -770,60 +591,6 @@ async function fetchWithBoundedRetry(url, init = {}, {
     elapsedMs: Math.max(0, now() - startedAt),
     timedOut: false
   });
-}
-
-// lib/listing/client/batch-recognition-intent.mjs
-var INTAKE_PREVIEW_CARD_WINDOW = 8;
-function claimNextBatchAsset(assets = [], claimedAssetIndexes = /* @__PURE__ */ new Set()) {
-  for (const asset of Array.isArray(assets) ? assets : []) {
-    const index = Number(asset?.index);
-    if (!Number.isFinite(index) || claimedAssetIndexes.has(index)) continue;
-    claimedAssetIndexes.add(index);
-    return asset;
-  }
-  return null;
-}
-function windowIntakePreviewGroups(groups = [], limit = INTAKE_PREVIEW_CARD_WINDOW) {
-  const source = Array.isArray(groups) ? groups : [];
-  const boundedLimit = Math.max(1, Math.trunc(Number(limit) || INTAKE_PREVIEW_CARD_WINDOW));
-  return {
-    visible: source.slice(0, boundedLimit),
-    remaining: Math.max(0, source.length - boundedLimit)
-  };
-}
-function batchReviewWindow(items = [], {
-  start = 0,
-  size = INTAKE_PREVIEW_CARD_WINDOW,
-  focusIndex = null
-} = {}) {
-  const source = Array.isArray(items) ? items : [];
-  const boundedSize = Math.max(1, Math.trunc(Number(size) || INTAKE_PREVIEW_CARD_WINDOW));
-  const total = source.length;
-  let desiredStart = Math.trunc(Number(start) || 0);
-  if (focusIndex !== null && focusIndex !== void 0) {
-    const position = source.findIndex((item) => Number(item?.index) === Number(focusIndex));
-    if (position >= 0 && (position < desiredStart || position >= desiredStart + boundedSize)) {
-      desiredStart = Math.floor(position / boundedSize) * boundedSize;
-    }
-  }
-  const maxStart = Math.max(0, Math.ceil(Math.max(total, 1) / boundedSize) * boundedSize - boundedSize);
-  const clampedStart = Math.min(Math.max(0, desiredStart), Math.min(maxStart, Math.max(0, total - 1)));
-  const normalizedStart = total ? Math.floor(clampedStart / boundedSize) * boundedSize : 0;
-  const visible = source.slice(normalizedStart, normalizedStart + boundedSize);
-  return {
-    visible,
-    start: normalizedStart,
-    size: boundedSize,
-    total,
-    // 1-based and inclusive, because these are the numbers shown to a person.
-    from: total ? normalizedStart + 1 : 0,
-    to: total ? normalizedStart + visible.length : 0,
-    page: total ? Math.floor(normalizedStart / boundedSize) + 1 : 0,
-    pages: total ? Math.ceil(total / boundedSize) : 0,
-    hasPrevious: normalizedStart > 0,
-    hasNext: normalizedStart + boundedSize < total,
-    remaining: Math.max(0, total - (normalizedStart + visible.length))
-  };
 }
 
 // lib/listing/client/upload-phases.mjs
@@ -866,7 +633,6 @@ function summarizeDerivedUploadOutcomes(outcomes = []) {
 }
 
 // lib/listing/client/upload-recovery-policy.mjs
-var WRITER_IMAGE_INTAKE_CONTRACT_VERSION = "writer-image-intake-v1";
 var SIGNED_UPLOAD_URL_GENERATION_LIMIT = 2;
 var retryableSignedUploadStatuses = /* @__PURE__ */ new Set([401, 403, 408, 425, 429, 500, 502, 503, 504]);
 function shouldRefreshSignedUpload({ generation = 1, status = 0, networkError = false } = {}) {
@@ -874,163 +640,17 @@ function shouldRefreshSignedUpload({ generation = 1, status = 0, networkError = 
   if (networkError) return true;
   return retryableSignedUploadStatuses.has(Number(status));
 }
-
-// lib/listing/v4/assets/asset-lifecycle-contract.mjs
-var assetLifecycleStates = Object.freeze({
-  LOCAL: "LOCAL",
-  ASSET_CREATED: "ASSET_CREATED",
-  ORIGINALS_UPLOADING: "ORIGINALS_UPLOADING",
-  ORIGINALS_VERIFIED: "ORIGINALS_VERIFIED",
-  IMAGE_SET_READY: "IMAGE_SET_READY",
-  ENQUEUE_READY: "ENQUEUE_READY",
-  QUEUED: "QUEUED",
-  RUNNING: "RUNNING",
-  L2_READY: "L2_READY",
-  WRITER_REVIEWED: "WRITER_REVIEWED"
-});
-var assetRecoveryActions = Object.freeze({
-  EXECUTION_RETRY: "EXECUTION_RETRY",
-  INPUT_REBIND: "INPUT_REBIND",
-  NONE: "NONE"
-});
-var clientForbiddenImageTransportKeys = Object.freeze([
-  "images",
-  "asset_images",
-  "assetImages",
-  "image_references",
-  "imageReferences",
-  "front_object_path",
-  "frontObjectPath",
-  "back_object_path",
-  "backObjectPath",
-  "additional_image_paths",
-  "additionalImagePaths",
-  "front_bucket",
-  "frontBucket",
-  "back_bucket",
-  "backBucket",
-  "front_content_sha256",
-  "frontContentSha256",
-  "back_content_sha256",
-  "backContentSha256",
-  "front_image_url",
-  "frontImageUrl",
-  "back_image_url",
-  "backImageUrl",
-  "image_urls",
-  "imageUrls",
-  "image_set_sha256",
-  "imageSetSha256",
-  "expected_original_count",
-  "expectedOriginalCount"
-]);
-function stripClientImageTransport(value = {}) {
-  const scoped = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
-  for (const key of clientForbiddenImageTransportKeys) delete scoped[key];
-  return scoped;
-}
-
-// lib/listing/v4/contracts/recognition-request.mjs
-var recognitionRequestContractVersion = "recognition-request-v1";
-var recognitionProfileIds = Object.freeze({
-  WRITER_ASSISTED: "writer-assisted-v1"
-});
-var defaultRecognitionProfileId = recognitionProfileIds.WRITER_ASSISTED;
-var clientForbiddenAlgorithmControlKeys = Object.freeze([
-  "provider",
-  "provider_id",
-  "providerId",
-  "vision_provider",
-  "visionProvider",
-  "provider_options",
-  "providerOptions",
-  "explicit_emergency",
-  "explicitEmergency",
-  "model",
-  "model_id",
-  "modelId",
-  "force_l2_only",
-  "forceL2Only",
-  "create_l1_job",
-  "createL1Job",
-  "create_l2_job",
-  "createL2Job",
-  "disable_fast_scout_l1",
-  "disableFastScoutL1",
-  "v4_force_l2_direct",
-  "v4ForceL2Direct",
-  "v4_queue_l1_only",
-  "v4QueueL1Only"
-]);
-var knownRecognitionProfiles = new Set(Object.values(recognitionProfileIds));
-function cleanText2(value) {
-  return String(value ?? "").trim();
-}
-var RecognitionRequestContractError = class extends Error {
-  constructor(code, { statusCode = 400 } = {}) {
-    super(code);
-    this.name = "RecognitionRequestContractError";
-    this.code = code;
-    this.statusCode = statusCode;
-  }
-};
-function recognitionProfileIdFromPayload(value = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
-  return cleanText2(
-    value.recognition_profile || value.recognitionProfile
-  );
-}
-function normalizeRecognitionProfileId(value, fallback = defaultRecognitionProfileId) {
-  const profileId = cleanText2(value || fallback).toLowerCase();
-  if (!knownRecognitionProfiles.has(profileId)) {
-    throw new RecognitionRequestContractError("unsupported_recognition_profile");
-  }
-  return profileId;
-}
-function stripClientAlgorithmControls(value = {}) {
-  return stripClientAlgorithmControlsReporting(value).value;
-}
-function stripClientAlgorithmControlsReporting(value = {}) {
-  const scoped = value && typeof value === "object" && !Array.isArray(value) ? { ...value } : {};
-  const removed = [];
-  for (const key of clientForbiddenAlgorithmControlKeys) {
-    if (Object.hasOwn(scoped, key)) removed.push(key);
-    delete scoped[key];
-  }
-  return { value: scoped, removed };
-}
-function withRecognitionRequestIntent(value = {}, {
-  profileId = recognitionProfileIdFromPayload(value) || defaultRecognitionProfileId
-} = {}) {
-  const scoped = stripClientAlgorithmControls(value);
-  return {
-    ...scoped,
-    recognition_contract_version: recognitionRequestContractVersion,
-    recognition_profile: normalizeRecognitionProfileId(profileId)
-  };
-}
 export {
   INTAKE_PREVIEW_CARD_WINDOW,
   SIGNED_UPLOAD_URL_GENERATION_LIMIT,
-  WRITER_IMAGE_INTAKE_CONTRACT_VERSION,
   analyzeImageQualityFromImageData,
   batchReviewWindow,
   claimNextBatchAsset,
   defaultCaptureProfileId,
-  defaultRecognitionProfileId,
   fetchWithBoundedRetry,
-  groupClientResultsByJobId,
-  isClientStatusNotFound,
-  labelForCsmField,
-  observeClientJobPoll,
   planTargetedCrops,
-  queuedStatusPollDelay,
-  shouldDeclareClientStatusOrphan,
   shouldRefreshSignedUpload,
   startNonBlockingDerivedUpload,
-  stripClientImageTransport,
-  summarizeAssetImageQuality,
   summarizeDerivedUploadOutcomes,
-  windowIntakePreviewGroups,
-  withRecognitionRequestIntent
+  windowIntakePreviewGroups
 };

@@ -1,5 +1,5 @@
 import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
-import { claimAssetSingleFlight, nextRetrySubmissionId } from "./asset-single-flight.mjs";
+import { assetSingleFlightKey, claimAssetSingleFlight, nextRetrySubmissionId } from "./asset-single-flight.mjs";
 import {
   analyzeImageQualityFromImageData,
   batchReviewWindow,
@@ -2018,13 +2018,26 @@ async function requestCsmIngestFastPath(asset, intentId) {
   if (request.error || request.payload?.ok !== true) {
     const error = new Error(request.payload?.message || `CSM 一体化链路失败：${request.response?.status || "network"}`);
     error.code = String(request.payload?.code || "").trim();
-    error.retryable = request.payload?.retryable === true;
+    applyServerRetryability(error, request.payload);
     throw error;
   }
   if (!canRecoverUpload) {
     throw new Error("csm_ingest_asset_identity_mismatch");
   }
   return payload;
+}
+
+function applyServerRetryability(error, payload = {}) {
+  // `retryable` is intentionally tri-state. A server-declared false is a
+  // definitive receipt; an absent field is not evidence that recovery is
+  // unsafe. Collapsing absence to false disables both the authority-backed
+  // fallback and the writer's manual recovery after an empty HTTP receipt.
+  if (typeof payload?.retryable === "boolean") error.retryable = payload.retryable;
+  return error;
+}
+
+function shouldFallbackFastIngest(error) {
+  return error?.retryable !== false;
 }
 
 async function processAssetViaCsmThinPath(asset, {
@@ -2043,6 +2056,12 @@ async function processAssetViaCsmThinPath(asset, {
     try {
       payload = await requestCsmIngestFastPath(asset, durableIntentId);
     } catch (fastPathError) {
+      // A complete provider response can fail its output contract after the
+      // paid attempt is durably settled FAILED. Retrying the route cannot
+      // recover that result; it only adds another round trip before showing
+      // the same failure. Undefined/true remains eligible for the direct
+      // durability recovery used by transport and Storage failures.
+      if (!shouldFallbackFastIngest(fastPathError)) throw fastPathError;
       // The durable operation key is asset/intent/image based, so falling back
       // can safely recover a lost response without buying a second model call.
       asset.fastIngestFallbackReason = String(fastPathError?.code || fastPathError?.message || "fast_ingest_failed").slice(0, 160);
@@ -2083,7 +2102,7 @@ async function processAssetViaCsmThinPath(asset, {
     if (request.error || request.payload?.ok !== true) {
       const error = new Error(request.payload?.message || `CSM 薄链路失败：${request.response?.status || "network"}`);
       error.code = String(request.payload?.code || "").trim();
-      error.retryable = request.payload?.retryable === true;
+      applyServerRetryability(error, request.payload);
       throw error;
     }
     payload = request.payload;
@@ -2693,6 +2712,7 @@ function imagesForProvider(assetImages) {
 }
 
 export const __listingCopilotAppTestHooks = {
+  applyServerRetryability,
   assetCreateIdempotencyKey,
   assetLifecycleMatches,
   boundedProviderImagesForRequest,
@@ -2715,6 +2735,7 @@ export const __listingCopilotAppTestHooks = {
   resetAssetPreparationForRetry,
   retryStateForResult,
   shouldUseStorageFirstImage,
+  shouldFallbackFastIngest,
   startCsmWarmup,
   storageDimensionsForImage,
   storageSourceForImage,
@@ -4051,13 +4072,13 @@ function retryFailedAsset(button) {
   // Collapse onto the running attempt rather than starting a second one. The
   // operator asked for the result, so they get the result; rejecting would show
   // an error for an action that is in fact underway.
-  const claim = claimAssetSingleFlight("retry", canonicalAssetId(asset) || assetIndex,
+  const claim = claimAssetSingleFlight("retry", assetSingleFlightKey(asset, assetIndex),
     () => runAssetRetry({ button, asset, current, retryState, assetIndex }));
   return claim.promise;
 }
 
 async function runAssetRetry({ asset, current, retryState, assetIndex }) {
-  const retrySubmissionId = nextRetrySubmissionId(canonicalAssetId(asset) || assetIndex);
+  const retrySubmissionId = nextRetrySubmissionId(assetSingleFlightKey(asset, assetIndex));
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   const intentId = String(current.csm_intent_id || state.backgroundRecognitionBatchId || createClientBatchId());
@@ -4220,6 +4241,12 @@ async function saveManualRecoveryForResult(result, asset, { deferFinalRender = f
   const assetId = canonicalAssetId(asset) || String(result.asset_id || "").trim();
   const rejected = result.explicitReviewOutcome === "REJECTED";
   const manualTitle = String(result.correctedTitle ?? result.final_title ?? result.title ?? "").trim();
+  const source = rejected ? "REJECTED_AFTER_RECOGNITION_FAILURE" : "MANUAL_AFTER_RECOGNITION_FAILURE";
+  const failureCode = String(result.error_code || "").trim();
+  const failureStage = String(result.failure_stage || "recognition").trim();
+  const submissionSignature = JSON.stringify([
+    assetId, source, rejected ? "" : manualTitle, failureCode, failureStage
+  ]);
 
   if (!assetId || (!rejected && !manualTitle)) {
     result.feedbackStatus = "";
@@ -4233,6 +4260,20 @@ async function saveManualRecoveryForResult(result, asset, { deferFinalRender = f
 
   result.feedbackStatus = "saving";
   result.persistenceStatus = "saving";
+  if (!result.pendingManualRecoverySubmissionId
+      || result.pendingManualRecoverySubmissionSignature !== submissionSignature) {
+    const submissionId = globalThis.crypto?.randomUUID?.();
+    if (!submissionId) {
+      result.feedbackStatus = "";
+      result.persistenceStatus = "failed";
+      result.feedbackMessage = "无法建立人工恢复幂等标识，请刷新浏览器后重试。";
+      if (!deferFinalRender) renderResults();
+      return false;
+    }
+    result.pendingManualRecoverySubmissionId = submissionId;
+    result.pendingManualRecoverySubmissionSignature = submissionSignature;
+    result.pendingManualRecoveryOccurredAt = new Date().toISOString();
+  }
   if (!deferFinalRender) renderResults();
 
   try {
@@ -4241,21 +4282,27 @@ async function saveManualRecoveryForResult(result, asset, { deferFinalRender = f
       headers: { "content-type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify({
+        manual_recovery_submission_id: result.pendingManualRecoverySubmissionId,
+        client_occurred_at: result.pendingManualRecoveryOccurredAt,
         asset_id: assetId,
         client_asset_ref: asset?.clientAssetRef || asset?.id || result.client_asset_ref || "",
         manual_title: rejected ? "" : manualTitle,
-        source: rejected ? "REJECTED_AFTER_RECOGNITION_FAILURE" : "MANUAL_AFTER_RECOGNITION_FAILURE",
-        failure_code: String(result.error_code || "").trim(),
-        failure_stage: String(result.failure_stage || "recognition").trim()
+        source,
+        failure_code: failureCode,
+        failure_stage: failureStage
       })
     }, { timeoutMs: 20000, maxAttempts: 2, asset, stage: "manual_recovery" });
 
     if (request.error || request.payload?.ok !== true) {
-      throw new Error(request.payload?.error || `保存失败：${request.response?.status || "network"}`);
+      throw new Error(request.payload?.message || request.payload?.error || `保存失败：${request.response?.status || "network"}`);
     }
     result.feedbackStatus = "saved";
-    result.persistenceStatus = "saved";
+    result.persistenceStatus = "persisted";
     result.manualRecoverySource = request.payload.source;
+    result.manualRecoverySubmissionId = request.payload.manual_recovery_submission_id;
+    delete result.pendingManualRecoverySubmissionId;
+    delete result.pendingManualRecoverySubmissionSignature;
+    delete result.pendingManualRecoveryOccurredAt;
     // Shown so the operator can tell this card apart from an AI-reviewed one.
     // A workaround that looks identical to a good result is how a batch is
     // signed off without anyone noticing what happened.
@@ -4381,6 +4428,7 @@ async function saveFeedbackForResult(result, asset, { deferFinalRender = false }
 async function saveTitleFeedback(button, { animate = true } = {}) {
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
+  if (!result || !asset || result.feedbackStatus === "saving" || writerFeedbackPersisted(result)) return false;
   const beforeIndexes = visibleOutstandingAssetIndexes();
   const persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
   if (persisted) renderQueueAdvance(beforeIndexes, { animate });
@@ -4626,7 +4674,7 @@ function resetTool() {
     return;
   }
   const hasPendingWork = state.results.some((result) => {
-    return finalTitleForResult(result) && !writerFeedbackPersisted(result);
+    return !writerFeedbackPersisted(result);
   });
   if (hasPendingWork && typeof globalThis.confirm === "function") {
     const confirmed = globalThis.confirm("仍有生成中或未入库的卡片。确定清空本轮内容吗？");
@@ -4903,9 +4951,13 @@ function bindEvents() {
 
   globalThis.window?.addEventListener("beforeunload", (event) => {
     if (globalThis.__LYNCA_CONFIRMED_NAVIGATION__ === true) return;
-    const pending = state.processing;
+    const pending = state.processing
+      || state.preparingFiles
+      || state.retryInFlight > 0
+      || state.writerSaveInFlight
+      || state.exportingWorkbook;
     const unsaved = state.results.some((result) => {
-      return finalTitleForResult(result) && !writerFeedbackPersisted(result);
+      return !writerFeedbackPersisted(result);
     });
     if (!pending && !unsaved) return;
     event.preventDefault();

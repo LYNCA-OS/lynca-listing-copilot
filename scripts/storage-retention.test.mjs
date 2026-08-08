@@ -143,6 +143,7 @@ function retentionFetch(url, init = {}) {
     url,
     method: init.method,
     headers: init.headers,
+    redirect: init.redirect,
     body: init.body ? JSON.parse(init.body) : null
   });
 
@@ -332,6 +333,11 @@ assert.equal(applied.deleted_count, 5);
 assert.equal(applied.verification_invalidation_confirmed, true);
 assert.equal(applied.verification_invalidated_count, 5);
 const appliedCalls = calls.slice(appliedCallStart);
+assert.equal(
+  appliedCalls.every((call) => call.headers?.apikey !== "test-service-role" || call.redirect === "error"),
+  true,
+  "every retention request carrying the server-only apikey must reject redirects"
+);
 const firstPatchIndex = appliedCalls.findIndex((call) => call.method === "PATCH");
 const firstDeleteIndex = appliedCalls.findIndex((call) => call.method === "DELETE");
 const lastDeleteIndex = appliedCalls.findLastIndex((call) => call.method === "DELETE");
@@ -355,6 +361,8 @@ verificationCalls.forEach((call) => {
   assert.equal(call.headers.apikey, "test-service-role");
   assert.equal(call.headers.authorization, undefined);
   assert.equal(call.headers.prefer, "return=representation");
+  assert.equal(call.redirect, "error",
+    "verification invalidation must not redirect the server-only apikey");
   assert.equal(call.body.object_verified, false);
   assert.equal(call.body.canonical_eligible, false);
 });
@@ -364,6 +372,8 @@ deleteCalls.forEach((call) => {
   assert.match(call.url, /\/storage\/v1\/object\/listing-card-images$/);
   assert.equal(call.headers.apikey, "test-service-role");
   assert.equal(call.headers.authorization, undefined, "opaque Supabase service keys must not be sent as JWT bearer tokens");
+  assert.equal(call.redirect, "error",
+    "Storage deletion must not redirect the server-only apikey");
 });
 assert.deepEqual(deleteCalls.flatMap((call) => call.body.prefixes), [
   "listing-assets/2026-05-20/asset-old/front_original-front.jpg",

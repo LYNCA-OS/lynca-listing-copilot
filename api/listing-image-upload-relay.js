@@ -47,21 +47,35 @@ export function readBoundedBinaryBody(req, maxBytes = LISTING_IMAGE_RELAY_MAX_BY
   return new Promise((resolve, reject) => {
     const declared = Number(headerValue(req, "content-length") || 0);
     if (declared > maxBytes) {
+      req.resume?.();
       reject(Object.assign(new Error("Image is too large for the upload relay."), { code: "relay_body_too_large" }));
       return;
     }
     const chunks = [];
     let size = 0;
+    let settled = false;
     req.on("data", (chunk) => {
+      if (settled) return;
       size += chunk.length;
       if (size > maxBytes) {
+        settled = true;
+        chunks.length = 0;
         reject(Object.assign(new Error("Image is too large for the upload relay."), { code: "relay_body_too_large" }));
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks, size)));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks, size));
+    });
+    req.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      chunks.length = 0;
+      reject(error);
+    });
   });
 }
 

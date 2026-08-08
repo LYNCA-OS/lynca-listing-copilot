@@ -56,6 +56,8 @@ assert.match(directRecognitionSource, /manual_retry:\s*manualRetry === true/);
 assert.match(directRecognitionSource, /timeoutMs:\s*CSM_THIN_REQUEST_TIMEOUT_MS/);
 assert.match(directRecognitionSource, /maxAttempts:\s*1/);
 assert.match(directRecognitionSource, /retryNetworkErrors:\s*false/, "the browser must not duplicate a paid operation behind the server authority");
+assert.match(directRecognitionSource, /if \(!shouldFallbackFastIngest\(fastPathError\)\) throw fastPathError;/,
+  "a definitive ingest failure must not pay an extra direct-route latency penalty");
 assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobject_path\s*:|\bdata_url\s*:/, "the browser must not send image transport in the recognition body");
 
 const handleFilesSource = js.slice(
@@ -199,6 +201,25 @@ const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js
 
 assert.equal(__listingCopilotAppTestHooks.directRecognitionConcurrencyLimit(), 6);
 assert.equal(__listingCopilotAppTestHooks.directRecognitionConcurrencyLimit({ maxWorkers: 3 }), 3);
+
+{
+  const transportFailure = new Error("empty_http_receipt");
+  __listingCopilotAppTestHooks.applyServerRetryability(transportFailure, {});
+  assert.equal(transportFailure.retryable, undefined,
+    "an absent retryability receipt must remain unknown, not become terminal");
+  assert.equal(__listingCopilotAppTestHooks.shouldFallbackFastIngest(transportFailure), true,
+    "an empty/network receipt must enter the authority-backed direct fallback");
+
+  const definitiveFailure = new Error("malformed_provider_output");
+  __listingCopilotAppTestHooks.applyServerRetryability(definitiveFailure, { retryable: false });
+  assert.equal(__listingCopilotAppTestHooks.shouldFallbackFastIngest(definitiveFailure), false,
+    "a server-declared terminal provider receipt must not add a direct-route round trip");
+  assert.equal(
+    __listingCopilotAppTestHooks.retryStateForResult({ confidence: "FAILED", retryable: transportFailure.retryable }).disabled,
+    false,
+    "a transport failure without a definitive receipt must remain manually recoverable"
+  );
+}
 
 assert.deepEqual(
   __listingCopilotAppTestHooks.retryStateForResult({
