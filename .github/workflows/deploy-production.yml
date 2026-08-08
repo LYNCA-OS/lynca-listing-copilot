@@ -107,8 +107,14 @@ jobs:
         env:
           DISPATCH_SHA: ${{ github.sha }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           test -n "$VERCEL_TOKEN"
+          test -n "$OPENAI_API_KEY"
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$VERCEL_ORG_ID"
           test -n "$VERCEL_PROJECT_ID"
           test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"

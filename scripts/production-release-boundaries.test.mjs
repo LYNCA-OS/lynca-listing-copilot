@@ -120,6 +120,16 @@ assert.equal(
   3,
   "build, prepromotion health, and promotion must authenticate independently"
 );
+const immutableBuildStep = workflow.slice(vercelDeploy, prepromotionHealth);
+assert.match(immutableBuildStep, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \}\}/,
+  "encrypted provider credentials must be injected into the local prebuild explicitly");
+assert.match(immutableBuildStep, /SUPABASE_URL: \$\{\{ vars\.SUPABASE_URL \}\}/);
+assert.match(immutableBuildStep,
+  /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
+for (const name of ["OPENAI_API_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]) {
+  assert.match(immutableBuildStep, new RegExp(`test -n "\\$${name}"`),
+    `${name} must fail closed before the immutable build`);
+}
 assert.match(workflow, /active-service-context\.json/);
 assert.match(workflow, /VERCEL_ORG_ID=\$\{orgId\}/);
 assert.match(workflow, /VERCEL_PROJECT_ID=\$\{projectId\}/);
