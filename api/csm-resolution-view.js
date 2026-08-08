@@ -14,7 +14,10 @@ import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { instrumentProductionRequest, bindProductionRequestContext } from "../lib/observability/production-events.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
-import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
+import {
+  composeCanonicalFieldsForStoredOutput,
+  replayFromRows
+} from "../lib/listing/thin/csm-replay.mjs";
 import { buildCsmResolutionView, CSM_RESOLUTION_VIEW_VERSION } from "../lib/listing/csm/resolution-view.mjs";
 import {
   buildCsmResolutionReview, CSM_RESOLUTION_REVIEW_VERSION
@@ -23,11 +26,6 @@ import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listi
 import { THIN_COMPOSER_VERSION, THIN_RESOLVER_VERSION } from "../lib/listing/thin/csm-persistence.mjs";
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { readJsonPayload, sendJson } from "../lib/listing/v4/session/http-handler-utils.mjs";
-
-// The versions come from the persistence contract, not from a literal here --
-// a second copy would drift from the one the run was stored under, and the
-// whole point of stamping them is that a reader can tell when they disagree.
-const COMPOSER_VERSION = THIN_COMPOSER_VERSION;
 
 /**
  * Compose the read model for one stored run.
@@ -48,10 +46,30 @@ export function composeResolutionView(record) {
   // `replayFromRows` is the reverse mapping the replay verifier already uses;
   // reimplementing it here would be a second copy free to drift from the one
   // that guards persistence.
-  const { fields } = record.replay_rows
-    ? replayFromRows(record.replay_rows)
-    : parseCanonicalFields(record.canonical_payload);
-  const composed = composeFromCanonicalFields(fields);
+  let fields;
+  let composed;
+  let composerVersion;
+  let composeCorrectedTitle;
+  if (record.replay_rows) {
+    const replayed = replayFromRows(record.replay_rows);
+    fields = replayed.fields;
+    composed = replayed.composed;
+    composerVersion = record.replay_rows.output?.composer_version;
+    composeCorrectedTitle = (correctedFields) =>
+      composeCanonicalFieldsForStoredOutput(correctedFields, record.replay_rows.output).title;
+  } else {
+    // Compatibility for injected/legacy flat records that predate the stored
+    // replay bundle. They can only be interpreted as the current contract;
+    // claiming an older version without its executable row identity would be
+    // an unauditable guess.
+    if (record.composer_version && record.composer_version !== THIN_COMPOSER_VERSION) {
+      throw Object.assign(new Error("csm_resolution_replay_rows_required"), { statusCode: 409 });
+    }
+    fields = parseCanonicalFields(record.canonical_payload).fields;
+    composed = composeFromCanonicalFields(fields);
+    composerVersion = THIN_COMPOSER_VERSION;
+    composeCorrectedTitle = (correctedFields) => composeFromCanonicalFields(correctedFields).title;
+  }
   return {
     view: buildCsmResolutionView({
       fields,
@@ -61,7 +79,9 @@ export function composeResolutionView(record) {
       resolverVersion: record.resolver_version || THIN_RESOLVER_VERSION
     }),
     fields,
-    composed
+    composed,
+    composer_version: composerVersion,
+    compose_corrected_title: composeCorrectedTitle
   };
 }
 
@@ -73,7 +93,7 @@ export async function handleResolutionViewRequest({
   if (!record) {
     throw Object.assign(new Error("csm_resolution_not_found"), { statusCode: 404 });
   }
-  const { view, composed } = composeResolutionView(record);
+  const { view, composed, composer_version: composerVersion } = composeResolutionView(record);
   // If the stored title and the recomposed one disagree, the explanation does
   // not describe what shipped. Say so rather than presenting it as the trace.
   const storedTitle = String(record.output_title || "").trim();
@@ -82,7 +102,7 @@ export async function handleResolutionViewRequest({
     ...view,
     composer: {
       ...view.composer,
-      composer_version: COMPOSER_VERSION,
+      composer_version: composerVersion,
       stored_title: storedTitle || null,
       recomposed_matches_stored: !drift,
       // An operator must not be told a bracket was dropped for budget when the
@@ -102,7 +122,12 @@ export async function handleResolutionReviewRequest({
 
   const record = await readRecord({ tenantId, assetId, env, fetchImpl });
   if (!record) throw Object.assign(new Error("csm_resolution_not_found"), { statusCode: 404 });
-  const { fields, composed } = composeResolutionView(record);
+  const {
+    fields,
+    composed,
+    composer_version: composerVersion,
+    compose_corrected_title: composeCorrectedTitle
+  } = composeResolutionView(record);
 
   const review = buildCsmResolutionReview({
     provenance: {
@@ -111,7 +136,7 @@ export async function handleResolutionReviewRequest({
       resolution_id: record.resolution_id,
       output_id: record.output_id,
       resolver_version: record.resolver_version || THIN_RESOLVER_VERSION,
-      composer_version: COMPOSER_VERSION,
+      composer_version: composerVersion,
       view_version: CSM_RESOLUTION_VIEW_VERSION,
       reviewer_id: reviewerId,
       tenant_id: tenantId
@@ -119,11 +144,11 @@ export async function handleResolutionReviewRequest({
     verdict: payload.verdict,
     corrections: Array.isArray(payload.corrections) ? payload.corrections : [],
     originalFields: fields,
-    originalTitle: composed.title,
+    originalTitle: String(record.output_title || composed.title).trim(),
     // The ONLY way a corrected title comes into existence. A title in the
     // payload is ignored: parsing a reviewer's string back into fields is the
     // one thing this contract exists to prevent.
-    recomposeTitle: (correctedFields) => composeFromCanonicalFields(correctedFields).title,
+    recomposeTitle: composeCorrectedTitle,
     reviewedAt: new Date().toISOString(),
     note: String(payload.note || "")
   });

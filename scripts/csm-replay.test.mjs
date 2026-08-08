@@ -6,7 +6,9 @@ import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import {
   buildCsmStageRows,
-  computeCsmPacketHashes
+  computeCsmPacketHashes,
+  THIN_COMPOSER_VERSION,
+  THIN_COMPOSER_VERSION_V1
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   replayFromRows,
@@ -89,6 +91,55 @@ assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
   assert.ok(checked.ok, JSON.stringify(checked.problems));
   assert.equal(checked.replayed.grammar, "lot");
   assert.match(checked.replayed.title, /^Lot\*2 /);
+}
+
+// Composer versions are executable behavior. New rows use v2's display-only
+// exact-parallel colour compaction, while a persisted v1 row must keep the old
+// dropped-finish title forever.
+{
+  const versionedFields = {
+    ...base,
+    year: "2018",
+    manufacturer: "Topps",
+    product: "Topps Silver Pack",
+    subjects: ["Shohei Ohtani"],
+    card_name: "1983 Chrome Promo",
+    surface_color: "Blue",
+    parallel_family: "Refractor",
+    parallel_exact: "Blue Refractor",
+    print_finish: "Blue Refractor",
+    serial: "018/150",
+    attributes: ["RC"],
+    grading_info: { company: "PSA", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY" }
+  };
+  const current = stage(versionedFields, "session-composer-v2");
+  assert.equal(current.rows.output.composer_version, THIN_COMPOSER_VERSION);
+  assert.match(current.composed.title, /\bBlue\b/);
+  assert.ok(verifyReplay(current.rows, current.composed.title).ok);
+
+  const parsed = parseCanonicalFields(versionedFields).fields;
+  const legacyComposed = composeFromCanonicalFields(parsed, {
+    features: { exact_parallel_color_compaction: false }
+  });
+  assert.doesNotMatch(legacyComposed.title, /\bBlue\b/);
+  const legacy = clone(current.rows);
+  legacy.output.composer_version = THIN_COMPOSER_VERSION_V1;
+  legacy.output.title = legacyComposed.title;
+  legacy.output.included_brackets = legacyComposed.brackets;
+  legacy.output.dropped_trace = {
+    dropped_for_budget: legacyComposed.dropped,
+    suppressed_by_profile: legacyComposed.suppressed,
+    restored: legacyComposed.restored,
+    truncated: legacyComposed.truncated,
+    empty_at_input: legacyComposed.input_empty_fields,
+    normalization_reason_codes: legacyComposed.normalization_reasons,
+    character_budget: legacyComposed.character_budget,
+    rendered_length: legacyComposed.length
+  };
+  reseal(legacy);
+  const checked = verifyReplay(legacy, legacyComposed.title);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.equal(checked.replayed.composed.title_render_source, "csm_marketplace_composer_v1");
 }
 
 // Legacy rows can be replayed only when old persisted facts make the grammar

@@ -294,7 +294,7 @@ check("COS-39", "Subject precedes Card Name at the writer-visible boundary", () 
       `${grammar}: ${composed.title}`);
     // The same comment asks for provenance saying which source produced the
     // title, so a second one reappearing is visible rather than inferred.
-    assert.equal(composed.title_render_source, "csm_marketplace_composer_v1", grammar);
+    assert.equal(composed.title_render_source, "csm_marketplace_composer_v2", grammar);
   }
   for (const [grammar, order] of Object.entries(BRACKET_ORDER)) {
     const s = order.indexOf("subject");
