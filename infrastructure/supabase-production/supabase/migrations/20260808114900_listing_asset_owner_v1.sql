@@ -5,7 +5,6 @@
 
 alter table public.listing_assets
   add column if not exists owner_user_id text;
-
 -- Historical compatibility is evidence-only. Backfill solely where every
 -- persisted session for the tenant/asset names one and the same non-empty user.
 -- Ambiguous or sessionless assets remain NULL and fail closed for assigned-
@@ -39,7 +38,6 @@ from unambiguous_owner owner
 where asset.owner_user_id is null
   and asset.tenant_id = owner.tenant_id
   and asset.id = owner.asset_id;
-
 alter table public.listing_assets
   drop constraint if exists listing_assets_owner_user_id_nonempty,
   add constraint listing_assets_owner_user_id_nonempty
@@ -47,11 +45,9 @@ alter table public.listing_assets
     not valid;
 alter table public.listing_assets
   validate constraint listing_assets_owner_user_id_nonempty;
-
 create index if not exists listing_assets_tenant_owner_idx
   on public.listing_assets (tenant_id, owner_user_id, id)
   where owner_user_id is not null;
-
 create or replace function public.guard_listing_asset_owner_immutable_v1()
 returns trigger
 language plpgsql
@@ -66,13 +62,10 @@ begin
   return new;
 end;
 $$;
-
 revoke all on function public.guard_listing_asset_owner_immutable_v1() from public, anon, authenticated;
-
 drop trigger if exists listing_assets_owner_immutable_v1 on public.listing_assets;
 create trigger listing_assets_owner_immutable_v1
 before update of owner_user_id on public.listing_assets
 for each row execute function public.guard_listing_asset_owner_immutable_v1();
-
 comment on column public.listing_assets.owner_user_id is
   'Authenticated creator and assigned-scope authority for this durable asset. Immutable once set; NULL only for unresolved legacy ownership.';
