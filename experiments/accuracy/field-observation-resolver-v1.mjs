@@ -72,11 +72,15 @@ export function resolveFieldObservationCandidatesV1(fields = {}, observations = 
   return { schema_version: FIELD_OBSERVATION_RESOLVER_V1, authority: "evaluation_only", production_promoted: false, fields: virtual, decisions };
 }
 
-export function applyFieldObservationResolverV1(fields = {}, observations = {}, { baselineTitle = "" } = {}) {
+export function applyFieldObservationResolverV1(fields = {}, observations = {}, {
+  baselineTitle = "",
+  composerFeatures
+} = {}) {
   const beforeFields = clone(fields);
-  const beforeRender = composeFromCanonicalFields(beforeFields);
+  const composeOptions = composerFeatures === undefined ? {} : { features: composerFeatures };
+  const beforeRender = composeFromCanonicalFields(beforeFields, composeOptions);
   const resolved = resolveFieldObservationCandidatesV1(beforeFields, observations);
-  const afterRender = composeFromCanonicalFields(resolved.fields);
+  const afterRender = composeFromCanonicalFields(resolved.fields, composeOptions);
   const changedFields = Object.keys({ ...beforeFields, ...resolved.fields })
     .filter((field) => JSON.stringify(beforeFields[field] ?? null) !== JSON.stringify(resolved.fields[field] ?? null));
   const beforeTitle = clean(baselineTitle) || beforeRender.title;
@@ -116,4 +120,3 @@ export function applyFieldObservationResolverV1(fields = {}, observations = {}, 
     attempted: null
   };
 }
-

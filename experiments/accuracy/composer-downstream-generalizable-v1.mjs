@@ -51,9 +51,11 @@ function exactColorInsideParallel(fields) {
 }
 
 export function composeWithGeneralizableDownstreamRecoveryV1(sourceFields, {
-  enabledMechanisms = null
+  enabledMechanisms = null,
+  composerFeatures
 } = {}) {
-  const baseline = composeFromCanonicalFields(sourceFields ?? {});
+  const composeOptions = composerFeatures === undefined ? {} : { features: composerFeatures };
+  const baseline = composeFromCanonicalFields(sourceFields ?? {}, composeOptions);
   const fields = structuredClone(sourceFields ?? {});
   const enabled = enabledMechanisms ? new Set(enabledMechanisms) : null;
   const applied = [];
@@ -65,7 +67,7 @@ export function composeWithGeneralizableDownstreamRecoveryV1(sourceFields, {
     const candidateFields = structuredClone(fields);
     const sourceGate = mutate(candidateFields);
     if (!sourceGate) return;
-    const candidate = composeFromCanonicalFields(candidateFields);
+    const candidate = composeFromCanonicalFields(candidateFields, composeOptions);
     if (!structurallyAccept(current, candidate, restoredBracket)) {
       rejected.push({ kind, reason: "structural_acceptance_failed" });
       return;

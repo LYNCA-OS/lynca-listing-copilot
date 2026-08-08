@@ -1,0 +1,57 @@
+{
+  "schema_version": "exact-parallel-color-compaction-runtime-replay-v1",
+  "authority": "evaluation_only",
+  "runtime_entrypoint": "finishCanonicalTitle",
+  "mechanism": "exact_parallel_color_compaction",
+  "provider_calls": 0,
+  "population": 150,
+  "baseline": {
+    "macro_f1": 0.7803049570467346
+  },
+  "candidate": {
+    "macro_f1": 0.780612649354427
+  },
+  "paired": {
+    "wins": 1,
+    "losses": 0,
+    "ties": 149,
+    "changed_cards": 1,
+    "delta_macro_f1": 0.0003076923076923421
+  },
+  "safety": {
+    "field_byte_change_cards": 0,
+    "new_drop_cards": 0,
+    "truncated_cards": 0,
+    "over_80_cards": 0,
+    "lost_reference_token_cards": 0,
+    "unbacked_new_token_cards": 0,
+    "numeric_mutation_cards": 0
+  },
+  "changed_cards": [
+    {
+      "asset_id": "reviewed_blind_70559ba85193165a2f95",
+      "outcome": "WIN",
+      "delta_f1": 0.0461538461538461,
+      "baseline_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo 018/150 RC PSA 10",
+      "candidate_title": "2018 Topps Silver Pack Shohei Ohtani 1983 Chrome Promo Blue 018/150 RC PSA 10",
+      "baseline_dropped": [
+        "print_finish"
+      ],
+      "candidate_dropped": [],
+      "safety": {
+        "fields_byte_identical": true,
+        "new_drops": [],
+        "truncated": false,
+        "over_80": false,
+        "lost_reference_tokens": [],
+        "unbacked_new_tokens": [],
+        "numeric_mutation": false
+      }
+    }
+  ],
+  "input": {
+    "path": "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl",
+    "sha256": "2701f77cef30c0f7d409b8ec8c08ff92015fc1e19f76ff13ef2b5421798844b5",
+    "selected_arm": "thin_canonical_high"
+  }
+}

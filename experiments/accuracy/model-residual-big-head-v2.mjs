@@ -54,9 +54,11 @@ function finishTrigger(fields, candidate) {
     && exact.split(/[^a-z0-9]+/).filter(Boolean).some((token) => text.includes(token)));
 }
 
-export function resolveCapturedModelResidualV2(fields = {}, candidates = []) {
+export function resolveCapturedModelResidualV2(fields = {}, candidates = [], {
+  composerFeatures
+} = {}) {
   const before = clone(fields);
-  const serial = applyFieldObservationResolverV1(before, candidates);
+  const serial = applyFieldObservationResolverV1(before, candidates, { composerFeatures });
   let current = clone(serial.fields);
   const decisions = [...serial.decisions];
   let allowFinishRecovery = false;
@@ -85,7 +87,7 @@ export function resolveCapturedModelResidualV2(fields = {}, candidates = []) {
   }
 
   const composed = allowFinishRecovery
-    ? composeWithGeneralizableDownstreamRecoveryV1(current)
+    ? composeWithGeneralizableDownstreamRecoveryV1(current, { composerFeatures })
     : { fields: current, candidate: null, applied: [], rejected: [] };
   const finalFields = clone(composed.fields);
   return {
@@ -94,7 +96,8 @@ export function resolveCapturedModelResidualV2(fields = {}, candidates = []) {
     production_promoted: false,
     provider_calls: 0,
     fields: finalFields,
-    title: composed.candidate?.title || composeFromCanonicalFields(finalFields).title,
+    title: composed.candidate?.title || composeFromCanonicalFields(finalFields,
+      composerFeatures === undefined ? {} : { features: composerFeatures }).title,
     decisions,
     downstream: { applied: composed.applied, rejected: composed.rejected },
     source_only: true

@@ -1,0 +1,634 @@
+{
+  "schema_version": "model-residual-compact-v4-cloud-prereg-v1",
+  "date": "2026-08-09",
+  "authority": "evaluation_only",
+  "status": "PREREGISTERED_NOT_AUTHORIZED",
+  "execution_authorized": false,
+  "provider_calls_made": 0,
+  "labels_bytes_read_by_preregistration": false,
+  "run_fingerprint": "a1c162f93c80af493d5a7d0acc828a3106e44885bd575cb0089d85a7e1fa6a30",
+  "cheapest_valid_sequence": {
+    "now": 0,
+    "next_provider_calls_after_independent_authorization": 105,
+    "design": "70 treatment plus a fixed contemporaneous control on 35 of those cards",
+    "production_gate_bundle": 300
+  },
+  "old_control_reuse_decision": {
+    "decision": "REUSE_FOR_DEVELOPMENT_CONTEXT_ONLY",
+    "reason": "old A/B and a later compact C are separated by provider time, cache, and deployment state",
+    "valid_estimands_with_new_c_only": [
+      "compact capture",
+      "within-response resolver utility",
+      "absolute token and latency"
+    ],
+    "invalid_estimands_against_old_a_b": [
+      "causal canonical interference",
+      "causal latency ratio",
+      "strict promotion"
+    ]
+  },
+  "frozen_contract": {
+    "provider": {
+      "model": "gpt-5.6-luna",
+      "reasoning_effort": "low",
+      "image_detail": "high",
+      "max_output_tokens": 8192,
+      "prompt_sha256": "fa248c5cd3b0f52bfa3554bbe96d4a84d80de94f6cc3e003494e09d75793efc7",
+      "response_format_name": "canonical_card_fields",
+      "compact_property": "residual_printed_phrase",
+      "compact_property_schema_sha256": "2ec797216b90df9c8d4ab634325f6a1dee4959cc58f4064dca4c5f7b4e5b628b",
+      "request_contracts_by_image_count": {
+        "1": {
+          "control_request_sha256": "7d2b1758fb85535b8984b81f21c973c3e16b2d7eca03c6f28f5c9f0cef37cbca",
+          "treatment_request_sha256": "734c01ef9d94e6784160a4874e52806baad34554e562a544709defa32568480b",
+          "control_schema_sha256": "ec1f0851a88c41a73858fc657cc6f7611d030b3fdaf08ae9e0d390fde5be3197",
+          "treatment_schema_sha256": "bfa4d35240bfb61152139a76ae92b4c46e7fe31d9cea34f8c44f5e800068fa35"
+        },
+        "2": {
+          "control_request_sha256": "7a74eeb8e9b70bafe2f0e0307fed0f2e89d662653c6e96a1e2e9a5c46ae59910",
+          "treatment_request_sha256": "0ae60ea13f16e35164ac57dfc35e4ee350c0f34422a30c3372aed8becfbd4bf4",
+          "control_schema_sha256": "ec1f0851a88c41a73858fc657cc6f7611d030b3fdaf08ae9e0d390fde5be3197",
+          "treatment_schema_sha256": "bfa4d35240bfb61152139a76ae92b4c46e7fe31d9cea34f8c44f5e800068fa35"
+        }
+      },
+      "treatment_changes_response_schema_only": true,
+      "no_second_call": true
+    },
+    "execution": {
+      "environment": "preview",
+      "project": "lynca-capacity-lab",
+      "region": "sin1",
+      "concurrency": 1,
+      "retry_policy": "none",
+      "max_attempts_per_job": 1,
+      "checkpoint_before_next_job": true,
+      "durable_attempt_ledger_fsynced_before_invoke": true,
+      "attempted_or_ambiguous_resume_policy": "STOP_FOR_RECONCILIATION; never reinvoke",
+      "one_process_out_dir_lock": true,
+      "production_endpoint_forbidden": true
+    },
+    "execution_hard_blockers_before_authorization": [
+      "exact physical assets-only manifest with asset, image role, object path, and image-set hash",
+      "dataset-to-label-ref mapping and sealed-label bytes hash frozen outside the execution process",
+      "immutable Preview deployment, hostname, project, and sin1 receipt",
+      "signed-URL payload hash plus per-job remaining-TTL proof",
+      "authorization receipt hash persisted in every checkpoint event",
+      "existing COMPLETE events verify response id, served model and effort, request and raw response hashes",
+      "full structured output and raw provider hashes retained for deterministic zero-call replay"
+    ]
+  },
+  "stages": {
+    "zero_call_precondition": {
+      "status": "PASS",
+      "source": "model-residual-compact-v4-zero-call-screen-v1",
+      "exact_title_fidelity_vs_wide_v3": "35/35",
+      "exact_field_fidelity_vs_wide_v3": "35/35",
+      "required_exact_title_fidelity": "35/35",
+      "required_exact_field_fidelity": "35/35",
+      "previously_blocking_asset_id": "reviewed_blind_a9aadb9c5ddd197c1cb8",
+      "recovered_field": "Product Chrome -> Topps Chrome through a strict printed token-superset route",
+      "decision_role": "title and field compression fidelity pass; this does not prove provider capture"
+    },
+    "budgeted_strict_70t_35c": {
+      "status": "READY_AWAITING_INDEPENDENT_AUTHORIZATION",
+      "cohort_role": "fixed-hash label-blind 70-card reserve outside v3 development35",
+      "selection_salt": "model-residual-compact-v4-confirmatory-2026-08-09-v1",
+      "treatment_cards": 70,
+      "contemporaneous_paired_control_cards": 35,
+      "arms": [
+        "compact_treatment_on_all_70",
+        "fresh_control_on_fixed_35_subset"
+      ],
+      "planned_provider_calls": 105,
+      "max_provider_attempts": 105,
+      "balanced_order": {
+        "paired_control>paired_treatment>unpaired_treatment": 6,
+        "paired_control>unpaired_treatment>paired_treatment": 6,
+        "paired_treatment>paired_control>unpaired_treatment": 6,
+        "paired_treatment>unpaired_treatment>paired_control": 6,
+        "unpaired_treatment>paired_control>paired_treatment": 6,
+        "unpaired_treatment>paired_treatment>paired_control": 5
+      },
+      "decision_role": "strict budgeted mechanism confirmation; may enter a fresh150 bundle only",
+      "design_reason": "utility is paired within each treatment response; controls are needed only for schema interference and relative latency"
+    }
+  },
+  "gates": {
+    "zero_call_precondition": {
+      "exact_title_fidelity_cards": 35,
+      "exact_field_fidelity_cards": 35,
+      "resolver_losses": 0,
+      "reference_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unsupported_numeric_change_cards": 0,
+      "titles_over_80": 0
+    },
+    "budgeted_strict_70t_35c": {
+      "resolver_delta_macro_f1_at_least": 0.003,
+      "resolver_wins_at_least": 6,
+      "resolver_losses": 0,
+      "two_sided_exact_sign_p_at_most": 0.05,
+      "critical_error_cards": 0,
+      "reference_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unsupported_numeric_change_cards": 0,
+      "invalid_compact_value_cards": 0,
+      "ambiguous_route_applied_cards": 0,
+      "titles_over_80": 0,
+      "treatment_canonical_delta_f1_vs_fresh_paired_control_at_least": -0.002,
+      "treatment_resolved_field_regressions": 0,
+      "treatment_canonical_critical_field_regressions_vs_fresh_paired_control": 0,
+      "canonical_shape_defect_cards": 0,
+      "treatment_to_control_total_tokens_p50_at_most": 1.06,
+      "treatment_to_control_output_tokens_p50_at_most": 1.2,
+      "treatment_to_control_latency_p50_at_most": 1.15,
+      "treatment_to_control_latency_p95_at_most": 1.2,
+      "provider_failures": 0,
+      "provider_retries": 0
+    }
+  },
+  "production_boundary": {
+    "authorized_by_this_prereg": false,
+    "reason": "the budgeted 70-treatment/35-control mechanism screen is not an independent fresh150 release gate",
+    "required_next_if_budgeted_strict_gate_passes": {
+      "cohort": "new image-backed fresh150 outside the current 255-card development population",
+      "design": "shared fresh canonical control150 plus frozen 5-8-mechanism treatment150",
+      "total_provider_calls": 300,
+      "marginal_compact_v4_calls_when_bundled": 150,
+      "absolute_treatment_macro_f1_at_least": 0.9,
+      "critical_factual_error_cards": 0,
+      "unsupported_factual_addition_cards": 0,
+      "titles_over_80": 0,
+      "full_protected_release_gates_required": true
+    }
+  },
+  "sources": {
+    "population_105": {
+      "path": "artifacts/accuracy-mechanism-confirmatory-2026-08-02/outside-development-105.asset-ids.json",
+      "sha256": "2e834df556ac1b8b6c9d929e6da3c77764a27f4aa05856f04453db6b7ca3769f"
+    },
+    "development_35": {
+      "path": "experiments/accuracy/model-residual-candidate-v3-35.asset-ids.json",
+      "sha256": "0fef6bcf50d32914f1e93323eccef02f240aec90d08f2c5a0a309d9df77a5386"
+    },
+    "v3_prereg": {
+      "path": "experiments/accuracy/model-residual-candidate-v3-35x3-prereg.json",
+      "sha256": "bb6c651acef754beb7ed260614d4017af981057b7eda3bddeb3e775a7b5590e8"
+    },
+    "v3_payload": {
+      "path": "artifacts/model-residual-v3-paid105-2026-08-08/payload.json",
+      "sha256": "26684cd3bac9a5dec7748af3cc831afb22bf9b8011ed150a4044def0bb83f843"
+    },
+    "v3_checkpoint": {
+      "path": "artifacts/model-residual-v3-paid105-2026-08-08/checkpoint.json",
+      "sha256": "5e51bf36f1a8ed444cf2269668821c53abbad594eea286615cae974b69aad0dd"
+    }
+  },
+  "power": {
+    "assumed_win_rate_from_development": "4/35",
+    "utility_treatment_cards": 70,
+    "pass_threshold": "at least 6 wins and 0 losses",
+    "exact_two_sided_sign_p_for_6_wins_0_losses": 0.03125,
+    "probability_of_at_least_6_wins_at_4_over_35_rate": 0.8252286319156475,
+    "probability_of_at_least_8_wins_at_4_over_35_rate": 0.5555774689704569,
+    "minimum_treatment_cards_for_80_percent_power_at_6_wins": 68,
+    "minimum_treatment_cards_for_80_percent_power_at_8_wins": 88,
+    "minimum_fully_paired_calls_for_8_win_80_percent_power": 176,
+    "budget_limit": 105,
+    "decision_contract": {
+      "pass": "all utility, field, safety, interference, latency, token, and execution gates pass",
+      "hold": "fewer than 6 wins or an inconclusive interference margin with no factual loss",
+      "stop": "any factual/reference/field regression, critical error, retry, request drift, or contract defect"
+    }
+  },
+  "confirmatory_70": {
+    "asset_ids_path": "experiments/accuracy/model-residual-compact-v4-confirmatory-70.asset-ids.json",
+    "asset_ids": [
+      "reviewed_blind_ec8f8aef8c314f5d0e10",
+      "reviewed_blind_8a3efd378fa8d266fb90",
+      "reviewed_blind_fd92e05f4f3c8deedb75",
+      "reviewed_blind_3385eddd91f914fefec3",
+      "reviewed_blind_e2422ad7d50c22e2c74f",
+      "reviewed_blind_41593163b19d69f7ee47",
+      "reviewed_blind_c7e86fe768345f5f6ec0",
+      "reviewed_blind_2d76df9a350dae4a44cb",
+      "reviewed_blind_36b24f98010b17306656",
+      "reviewed_blind_2fa2fac78c6d7b7f8a07",
+      "reviewed_blind_bcff5ed6d851e06f7179",
+      "reviewed_blind_979ea63a7bb0b6d8a3d2",
+      "reviewed_blind_50a394cce25794fee5d1",
+      "reviewed_blind_faf672269e51f56599f2",
+      "reviewed_blind_b686dc0760f47a4446b5",
+      "reviewed_blind_4a3f506a9032e77db987",
+      "reviewed_blind_4593281b580d1ca91c1a",
+      "reviewed_blind_7fe541fb14811d014345",
+      "reviewed_blind_6065f2882ab7c63f3da3",
+      "reviewed_blind_7c248cf2c9761172d21f",
+      "reviewed_blind_65f8bb4ac09ff3871288",
+      "reviewed_blind_57c5b23d1445383f0e2b",
+      "reviewed_blind_78ebf6a043f8033c20ed",
+      "reviewed_blind_803ceffb69fbcf769b39",
+      "reviewed_blind_f1bf2590d770803bae76",
+      "reviewed_blind_a9d1875f87d8ae6e3386",
+      "reviewed_blind_00a74b3ddbc7472af8fa",
+      "reviewed_blind_949fb71eb10b36b2ac63",
+      "reviewed_blind_2d4d8efb67aa97cbbe4e",
+      "reviewed_blind_bc0fc781a67a4a388e1c",
+      "reviewed_blind_8085c0e5409f8e06ac6d",
+      "reviewed_blind_685c0bc669fcd6a00886",
+      "reviewed_blind_4cd4f9bb96d0baf53f96",
+      "reviewed_blind_283ec5db7623fd3aa0ce",
+      "reviewed_blind_9b64a7f207237c35f8d2",
+      "reviewed_blind_83c5d6639485836926ee",
+      "reviewed_blind_38cbd553634330d04e61",
+      "reviewed_blind_f752e32989cb9a7464b6",
+      "reviewed_blind_ea202190c1fbad52def7",
+      "reviewed_blind_162b4c3da2368456087c",
+      "reviewed_blind_f0ae8659c82aed946e8f",
+      "reviewed_blind_855fcbbbaf060e7aeb7e",
+      "reviewed_blind_96387896d100f98c17d4",
+      "reviewed_blind_211ddd7d38d8e04d73f4",
+      "reviewed_blind_de36e62d7865ce584079",
+      "reviewed_blind_b96f4c32f7eab646e573",
+      "reviewed_blind_808ad8a46431052efe77",
+      "reviewed_blind_f1978e38c443b164acbc",
+      "reviewed_blind_4edce94773f65449d575",
+      "reviewed_blind_91e57cac9de2bca03dde",
+      "reviewed_blind_635d86bfa508e9b53854",
+      "reviewed_blind_30f22194ba3be973cf36",
+      "reviewed_blind_e130dcb3d1d192e14a6b",
+      "reviewed_blind_149a0cd1e43676a0d217",
+      "reviewed_blind_a2d0c0b493d239b69bea",
+      "reviewed_blind_5a79cde60b2eed56884d",
+      "reviewed_blind_5f3113c46e748aab27db",
+      "reviewed_blind_934d7a86f13f42d70fa3",
+      "reviewed_blind_0d0d4ac00ee1cbeb57e3",
+      "reviewed_blind_b8cb75bc90f94acfb421",
+      "reviewed_blind_f1ae8e8f0639a1bda4e9",
+      "reviewed_blind_9dcedd966ca5702f1a0d",
+      "reviewed_blind_417e5bfd9374f5b48e27",
+      "reviewed_blind_079db68c00432ffb70be",
+      "reviewed_blind_0c6a0f4942d24b58e42b",
+      "reviewed_blind_3e3abffca099ba4257b4",
+      "reviewed_blind_fcb29a1735ef1a44f559",
+      "reviewed_blind_d3ecdbd16bd684c8f13a",
+      "reviewed_blind_06dda93c75cfa01f9a2f",
+      "reviewed_blind_ebf1f6eb40fb7597b330"
+    ],
+    "ordered_asset_ids_sha256": "8dbb34db829379075aba6ebb2f866c5832ad0a90f2e85093635a29ad80b4091b",
+    "population_after_exclusion": 70,
+    "overlap_with_v3_development_35": 0,
+    "schedule": [
+      {
+        "block_index": 1,
+        "paired_asset_id": "reviewed_blind_149a0cd1e43676a0d217",
+        "unpaired_asset_id": "reviewed_blind_0d0d4ac00ee1cbeb57e3",
+        "order": [
+          "paired_control",
+          "paired_treatment",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 2,
+        "paired_asset_id": "reviewed_blind_2fa2fac78c6d7b7f8a07",
+        "unpaired_asset_id": "reviewed_blind_934d7a86f13f42d70fa3",
+        "order": [
+          "paired_control",
+          "unpaired_treatment",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 3,
+        "paired_asset_id": "reviewed_blind_d3ecdbd16bd684c8f13a",
+        "unpaired_asset_id": "reviewed_blind_5a79cde60b2eed56884d",
+        "order": [
+          "paired_treatment",
+          "paired_control",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 4,
+        "paired_asset_id": "reviewed_blind_a2d0c0b493d239b69bea",
+        "unpaired_asset_id": "reviewed_blind_e130dcb3d1d192e14a6b",
+        "order": [
+          "paired_treatment",
+          "unpaired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 5,
+        "paired_asset_id": "reviewed_blind_3e3abffca099ba4257b4",
+        "unpaired_asset_id": "reviewed_blind_65f8bb4ac09ff3871288",
+        "order": [
+          "unpaired_treatment",
+          "paired_control",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 6,
+        "paired_asset_id": "reviewed_blind_30f22194ba3be973cf36",
+        "unpaired_asset_id": "reviewed_blind_f0ae8659c82aed946e8f",
+        "order": [
+          "unpaired_treatment",
+          "paired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 7,
+        "paired_asset_id": "reviewed_blind_c7e86fe768345f5f6ec0",
+        "unpaired_asset_id": "reviewed_blind_4a3f506a9032e77db987",
+        "order": [
+          "paired_control",
+          "paired_treatment",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 8,
+        "paired_asset_id": "reviewed_blind_83c5d6639485836926ee",
+        "unpaired_asset_id": "reviewed_blind_de36e62d7865ce584079",
+        "order": [
+          "paired_control",
+          "unpaired_treatment",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 9,
+        "paired_asset_id": "reviewed_blind_979ea63a7bb0b6d8a3d2",
+        "unpaired_asset_id": "reviewed_blind_4cd4f9bb96d0baf53f96",
+        "order": [
+          "paired_treatment",
+          "paired_control",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 10,
+        "paired_asset_id": "reviewed_blind_bcff5ed6d851e06f7179",
+        "unpaired_asset_id": "reviewed_blind_f752e32989cb9a7464b6",
+        "order": [
+          "paired_treatment",
+          "unpaired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 11,
+        "paired_asset_id": "reviewed_blind_41593163b19d69f7ee47",
+        "unpaired_asset_id": "reviewed_blind_fcb29a1735ef1a44f559",
+        "order": [
+          "unpaired_treatment",
+          "paired_control",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 12,
+        "paired_asset_id": "reviewed_blind_7fe541fb14811d014345",
+        "unpaired_asset_id": "reviewed_blind_685c0bc669fcd6a00886",
+        "order": [
+          "unpaired_treatment",
+          "paired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 13,
+        "paired_asset_id": "reviewed_blind_283ec5db7623fd3aa0ce",
+        "unpaired_asset_id": "reviewed_blind_f1978e38c443b164acbc",
+        "order": [
+          "paired_control",
+          "paired_treatment",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 14,
+        "paired_asset_id": "reviewed_blind_635d86bfa508e9b53854",
+        "unpaired_asset_id": "reviewed_blind_faf672269e51f56599f2",
+        "order": [
+          "paired_control",
+          "unpaired_treatment",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 15,
+        "paired_asset_id": "reviewed_blind_5f3113c46e748aab27db",
+        "unpaired_asset_id": "reviewed_blind_96387896d100f98c17d4",
+        "order": [
+          "paired_treatment",
+          "paired_control",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 16,
+        "paired_asset_id": "reviewed_blind_3385eddd91f914fefec3",
+        "unpaired_asset_id": "reviewed_blind_417e5bfd9374f5b48e27",
+        "order": [
+          "paired_treatment",
+          "unpaired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 17,
+        "paired_asset_id": "reviewed_blind_079db68c00432ffb70be",
+        "unpaired_asset_id": "reviewed_blind_f1ae8e8f0639a1bda4e9",
+        "order": [
+          "unpaired_treatment",
+          "paired_control",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 18,
+        "paired_asset_id": "reviewed_blind_91e57cac9de2bca03dde",
+        "unpaired_asset_id": "reviewed_blind_fd92e05f4f3c8deedb75",
+        "order": [
+          "unpaired_treatment",
+          "paired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 19,
+        "paired_asset_id": "reviewed_blind_a9d1875f87d8ae6e3386",
+        "unpaired_asset_id": "reviewed_blind_803ceffb69fbcf769b39",
+        "order": [
+          "paired_control",
+          "paired_treatment",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 20,
+        "paired_asset_id": "reviewed_blind_808ad8a46431052efe77",
+        "unpaired_asset_id": "reviewed_blind_ebf1f6eb40fb7597b330",
+        "order": [
+          "paired_control",
+          "unpaired_treatment",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 21,
+        "paired_asset_id": "reviewed_blind_50a394cce25794fee5d1",
+        "unpaired_asset_id": "reviewed_blind_6065f2882ab7c63f3da3",
+        "order": [
+          "paired_treatment",
+          "paired_control",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 22,
+        "paired_asset_id": "reviewed_blind_b8cb75bc90f94acfb421",
+        "unpaired_asset_id": "reviewed_blind_2d76df9a350dae4a44cb",
+        "order": [
+          "paired_treatment",
+          "unpaired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 23,
+        "paired_asset_id": "reviewed_blind_e2422ad7d50c22e2c74f",
+        "unpaired_asset_id": "reviewed_blind_0c6a0f4942d24b58e42b",
+        "order": [
+          "unpaired_treatment",
+          "paired_control",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 24,
+        "paired_asset_id": "reviewed_blind_7c248cf2c9761172d21f",
+        "unpaired_asset_id": "reviewed_blind_06dda93c75cfa01f9a2f",
+        "order": [
+          "unpaired_treatment",
+          "paired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 25,
+        "paired_asset_id": "reviewed_blind_949fb71eb10b36b2ac63",
+        "unpaired_asset_id": "reviewed_blind_4593281b580d1ca91c1a",
+        "order": [
+          "paired_control",
+          "paired_treatment",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 26,
+        "paired_asset_id": "reviewed_blind_9b64a7f207237c35f8d2",
+        "unpaired_asset_id": "reviewed_blind_b686dc0760f47a4446b5",
+        "order": [
+          "paired_control",
+          "unpaired_treatment",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 27,
+        "paired_asset_id": "reviewed_blind_855fcbbbaf060e7aeb7e",
+        "unpaired_asset_id": "reviewed_blind_57c5b23d1445383f0e2b",
+        "order": [
+          "paired_treatment",
+          "paired_control",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 28,
+        "paired_asset_id": "reviewed_blind_38cbd553634330d04e61",
+        "unpaired_asset_id": "reviewed_blind_211ddd7d38d8e04d73f4",
+        "order": [
+          "paired_treatment",
+          "unpaired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 29,
+        "paired_asset_id": "reviewed_blind_8085c0e5409f8e06ac6d",
+        "unpaired_asset_id": "reviewed_blind_9dcedd966ca5702f1a0d",
+        "order": [
+          "unpaired_treatment",
+          "paired_control",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 30,
+        "paired_asset_id": "reviewed_blind_ec8f8aef8c314f5d0e10",
+        "unpaired_asset_id": "reviewed_blind_162b4c3da2368456087c",
+        "order": [
+          "unpaired_treatment",
+          "paired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 31,
+        "paired_asset_id": "reviewed_blind_8a3efd378fa8d266fb90",
+        "unpaired_asset_id": "reviewed_blind_ea202190c1fbad52def7",
+        "order": [
+          "paired_control",
+          "paired_treatment",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 32,
+        "paired_asset_id": "reviewed_blind_b96f4c32f7eab646e573",
+        "unpaired_asset_id": "reviewed_blind_78ebf6a043f8033c20ed",
+        "order": [
+          "paired_control",
+          "unpaired_treatment",
+          "paired_treatment"
+        ]
+      },
+      {
+        "block_index": 33,
+        "paired_asset_id": "reviewed_blind_f1bf2590d770803bae76",
+        "unpaired_asset_id": "reviewed_blind_bc0fc781a67a4a388e1c",
+        "order": [
+          "paired_treatment",
+          "paired_control",
+          "unpaired_treatment"
+        ]
+      },
+      {
+        "block_index": 34,
+        "paired_asset_id": "reviewed_blind_36b24f98010b17306656",
+        "unpaired_asset_id": "reviewed_blind_4edce94773f65449d575",
+        "order": [
+          "paired_treatment",
+          "unpaired_treatment",
+          "paired_control"
+        ]
+      },
+      {
+        "block_index": 35,
+        "paired_asset_id": "reviewed_blind_00a74b3ddbc7472af8fa",
+        "unpaired_asset_id": "reviewed_blind_2d4d8efb67aa97cbbe4e",
+        "order": [
+          "unpaired_treatment",
+          "paired_control",
+          "paired_treatment"
+        ]
+      }
+    ]
+  }
+}

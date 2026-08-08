@@ -198,9 +198,12 @@ function allowedFieldChange(field, before, after, sourceText) {
   return false;
 }
 
-export function resolveModelResidualVisibleEvidenceV3(canonicalFields = {}, candidates = []) {
+export function resolveModelResidualVisibleEvidenceV3(canonicalFields = {}, candidates = [], {
+  composerFeatures
+} = {}) {
   const baselineFields = clone(canonicalFields);
-  const baseline = composeFromCanonicalFields(baselineFields);
+  const composeOptions = composerFeatures === undefined ? {} : { features: composerFeatures };
+  const baseline = composeFromCanonicalFields(baselineFields, composeOptions);
   const normalized = normalizeCandidates(candidates);
   if (normalized.defects.length) {
     return {
@@ -230,7 +233,8 @@ export function resolveModelResidualVisibleEvidenceV3(canonicalFields = {}, cand
     const fields = detail.fields.filter(({ field }) => trueBundleFields.has(field));
     return fields.length ? [{ ...detail, fields }] : [];
   });
-  const residual = resolveCapturedModelResidualV2(safeBundle.fields, normalized.rows);
+  const residual = resolveCapturedModelResidualV2(safeBundle.fields, normalized.rows,
+    { composerFeatures });
   const attemptedFields = clone(residual.fields);
   const attemptedTitle = residual.title;
   const sourceText = [

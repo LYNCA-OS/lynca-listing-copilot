@@ -9,6 +9,10 @@ import { titleTokens } from "../experiments/accuracy/composer-downstream-recover
 import { ACCURACY_MECHANISM_NAMES_V3, applyAccuracyMechanismBundleV3 } from "../lib/listing/thin/accuracy-mechanism-bundle-v3.mjs";
 import { projectFreeTitleThroughCsm } from "./measure-free-title-csm-projection.mjs";
 
+const FROZEN_COMPOSER_FEATURES = Object.freeze({ exact_parallel_color_compaction: false });
+const composeFrozen = (fields) => composeFromCanonicalFields(fields,
+  { features: FROZEN_COMPOSER_FEATURES });
+
 const CANONICAL = "artifacts/accuracy-bundle-confirmatory-150-2026-08-02/thin-path-gpt-5.6-luna.jsonl";
 const EXHAUSTIVE = "artifacts/extreme-observation-2026-08-02/high-150/thin-path-gpt-5.6-luna.jsonl";
 const CAPTURE = "artifacts/accuracy-field-observation-v2-105-2026-08-02/thin-path-gpt-5.6-luna.jsonl";
@@ -103,15 +107,16 @@ export function buildReport({ canonicalRows, exhaustiveRows, captureRows, curren
     const freeFields = projectFreeTitleThroughCsm(expression.title).fields;
     const resolved = applyAccuracyMechanismBundleV3(row.fields, { freeFields,
       freeTitle: expression.title, observations: paired.observations });
-    return cardMetrics(row, composeFromCanonicalFields(row.fields).title,
-      composeFromCanonicalFields(resolved.fields).title,
+    return cardMetrics(row, composeFrozen(row.fields).title,
+      composeFrozen(resolved.fields).title,
       `${sourceText(row.fields, paired.observations)} ${sourceText(freeFields, [])} ${expression.title}`);
   });
   const utility = summarize(utilityCards);
   const treatment = captureRows.filter((row) => row.arm === "thin_canonical_field_observation_v2_high");
   const cards = treatment.map((row) => {
-    const baseline = composeFromCanonicalFields(row.fields).title;
-    const replay = resolveCapturedModelResidualV2(row.fields, row.observations || []);
+    const baseline = composeFrozen(row.fields).title;
+    const replay = resolveCapturedModelResidualV2(row.fields, row.observations || [],
+      { composerFeatures: FROZEN_COMPOSER_FEATURES });
     return { ...cardMetrics(row, baseline, replay.title, sourceText(row.fields, row.observations)),
       admitted: replay.decisions.filter((item) => item.disposition === "admitted"),
       downstream: replay.downstream.applied

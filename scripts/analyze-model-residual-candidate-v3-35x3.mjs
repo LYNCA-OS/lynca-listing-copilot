@@ -27,6 +27,7 @@ import { assertThreeArmRequestIsolation } from
 const EXPECTED_CARDS = 35;
 const EXPECTED_JOBS = 105;
 const ARMS = Object.freeze(["control_a", "control_b", "residual_c"]);
+const FROZEN_COMPOSER_FEATURES = Object.freeze({ exact_parallel_color_compaction: false });
 const EPSILON = 1e-12;
 const HEX_256 = /^[0-9a-f]{64}$/;
 
@@ -319,11 +320,13 @@ function validateResult(row) {
     : { canonical_payload: structuredClone(rawEnvelope), defect: null };
   invariant(!replayEnvelope.defect && replayEnvelope.canonical_payload,
     `v3_provider_envelope_invalid:${row.job_key}`);
-  const replayCanonical = finishCanonicalTitle(JSON.stringify(replayEnvelope.canonical_payload));
+  const replayCanonical = finishCanonicalTitle(JSON.stringify(replayEnvelope.canonical_payload),
+    { exactParallelColorCompaction: false });
   const replayCapture = row.arm === "residual_c"
     ? captureModelResidualCandidatesV3(rawEnvelope, { canonicalFields: replayCanonical.fields }) : null;
   const replayResolved = row.arm === "residual_c"
-    ? resolveModelResidualVisibleEvidenceV3(replayCanonical.fields, replayCapture.candidates) : null;
+    ? resolveModelResidualVisibleEvidenceV3(replayCanonical.fields, replayCapture.candidates,
+      { composerFeatures: FROZEN_COMPOSER_FEATURES }) : null;
   for (const [field, actual, expected] of [
     ["canonical_payload", result.canonical_payload, replayEnvelope.canonical_payload],
     ["canonical_fields", result.canonical_fields, replayCanonical.fields],
@@ -338,7 +341,8 @@ function validateResult(row) {
     `v3_canonical_title_invalid:${row.job_key}`);
   invariant(result.canonical_fields && typeof result.canonical_fields === "object"
     && !Array.isArray(result.canonical_fields), `v3_canonical_fields_invalid:${row.job_key}`);
-  invariant(result.canonical_title === composeFromCanonicalFields(result.canonical_fields).title,
+  invariant(result.canonical_title === composeFromCanonicalFields(result.canonical_fields,
+    { features: FROZEN_COMPOSER_FEATURES }).title,
     `v3_canonical_title_fields_mismatch:${row.job_key}`);
   invariant(Array.isArray(result.canonical_field_defects),
     `v3_canonical_defects_invalid:${row.job_key}`);
@@ -360,7 +364,8 @@ function validateResult(row) {
   invariant(result.resolved && typeof result.resolved === "object",
     `v3_resolved_result_invalid:${row.job_key}`);
   const replay = resolveModelResidualVisibleEvidenceV3(
-    result.canonical_fields, result.candidate_capture.candidates
+    result.canonical_fields, result.candidate_capture.candidates,
+    { composerFeatures: FROZEN_COMPOSER_FEATURES }
   );
   for (const field of ["accepted", "applied", "fields", "title", "defects", "guards", "safety"]) {
     invariant(sameValue(result.resolved[field], replay[field]),
@@ -521,7 +526,8 @@ export function analyzeValidatedModelResidualV3({ frozen, datasetBody, labelsBod
     const c = arms.get("residual_c");
     const reference = references.get(asset_id);
     const replay = resolveModelResidualVisibleEvidenceV3(
-      c.result.canonical_fields, c.result.candidate_capture.candidates
+      c.result.canonical_fields, c.result.candidate_capture.candidates,
+      { composerFeatures: FROZEN_COMPOSER_FEATURES }
     );
     const titles = { control_a: a.result.canonical_title, control_b: b.result.canonical_title,
       residual_c_canonical: c.result.canonical_title, residual_c_resolved: replay.title };

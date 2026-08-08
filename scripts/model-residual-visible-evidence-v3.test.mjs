@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { resolveModelResidualVisibleEvidenceV3 } from "../experiments/accuracy/model-residual-visible-evidence-v3.mjs";
+import { resolveModelResidualVisibleEvidenceV3 as resolveModelResidualVisibleEvidenceV3Unfrozen } from "../experiments/accuracy/model-residual-visible-evidence-v3.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
 
 const candidate = (text, role, region = "card_front", basis = "printed_text") => ({
   text, role, region, basis, authority: "candidate_only", automatic_csm_admission: false,
   automatic_renderer_admission: false, persistence_authority: false
 });
+const resolveModelResidualVisibleEvidenceV3 = (fields, candidates) =>
+  resolveModelResidualVisibleEvidenceV3Unfrozen(fields, candidates, {
+    composerFeatures: { exact_parallel_color_compaction: false }
+  });
 const base = (extra = {}) => ({
   year: "2025", manufacturer: "Topps", product: "Topps Chrome", set: "",
   subjects: ["Test Player"], surface_color: "", parallel_family: "", parallel_exact: "",

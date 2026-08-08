@@ -1,0 +1,484 @@
+{
+  "schema_version": "model-residual-compact-v4-zero-call-screen-v1",
+  "date": "2026-08-08",
+  "authority": "evaluation_only",
+  "decision": "HOLD_PRODUCTION",
+  "screen_result": "TITLE_AND_FIELD_FIDELITY_PRESERVED_HOLD_INDEPENDENT_GATE",
+  "production_promotion_allowed": false,
+  "provider_calls": 0,
+  "claim_boundary": "reuses wide-v3 model capture; cannot estimate compact-schema capture, latency, or independent accuracy",
+  "source": {
+    "run_fingerprint": "ca4d90b7cf21581097f11d202779bf1df8d91a596bac19046f2cab693ac3670d",
+    "cards": 35,
+    "wide_v3_candidate_rows": 71,
+    "wide_v3_cards_with_rows": 31,
+    "wide_v3_candidate_output_bytes": 7987,
+    "wide_v3_approximate_candidate_output_tokens_at_4_bytes": 1997,
+    "prereg_sha256": "bb6c651acef754beb7ed260614d4017af981057b7eda3bddeb3e775a7b5590e8",
+    "payload_sha256": "26684cd3bac9a5dec7748af3cc831afb22bf9b8011ed150a4044def0bb83f843",
+    "checkpoint_sha256": "5e51bf36f1a8ed444cf2269668821c53abbad594eea286615cae974b69aad0dd",
+    "dataset_sha256": "5aebd6a4bb08665d6601801258e39a5954ec82b7187f71f577f18c71bd27adca",
+    "labels_sha256": "59669f166180aab0bef24b5133b3cc92b06366f955eae54af0c43f7247436646"
+  },
+  "selection": {
+    "label_bytes_read_before_selection": false,
+    "criteria": [
+      "exact full-v3 resolved-title fidelity on all cards",
+      "exact full-v3 canonical-field fidelity on all cards",
+      "zero resolver rejection, contract defect, ambiguous route, and over-80 title",
+      "minimum serialized candidate bytes",
+      "minimum selected rows as deterministic tie-break"
+    ],
+    "recommended_variant": "single_printed_phrase",
+    "recommended_scope": "paired_general_candidate_only",
+    "exact_lane_fidelity": true,
+    "minimum_exact_lane_fidelity_variant": "single_printed_phrase",
+    "mechanism_family_selected_after_paid105_outcomes": true
+  },
+  "contract_status": {
+    "zero_call_schema_fingerprints": {
+      "single_printed_phrase": "2ec797216b90df9c8d4ab634325f6a1dee4959cc58f4064dca4c5f7b4e5b628b",
+      "ranked_max1": "6a91b810f270a47fa0fbd11738b000d31823f8c46f842f8ce347d7d2fba59e62",
+      "ranked_max2": "b7e152928640cbe587b0f43745225bc35ead7a97789a07fc31238a4cd20274ed",
+      "explicit_short_fields": "1aa8e1b04a0168ecbbd42ca84c1d822f0dd0245c834883d345054043e9e4b01d"
+    },
+    "independent_paid_prereg_exists": false,
+    "schema_frozen_for_provider_run": false,
+    "reason": "posthoc compression screen; next paired cloud treatment needs a new frozen prereg before any call"
+  },
+  "static_cost_proxy": {
+    "single_printed_phrase": {
+      "property_schema_bytes": 277,
+      "maximum_candidate_json_bytes": 94,
+      "maximum_candidate_json_tokens_at_4_bytes": 24
+    },
+    "ranked_max1": {
+      "property_schema_bytes": 419,
+      "maximum_candidate_json_bytes": 168,
+      "maximum_candidate_json_tokens_at_4_bytes": 42
+    },
+    "ranked_max2": {
+      "property_schema_bytes": 419,
+      "maximum_candidate_json_bytes": 316,
+      "maximum_candidate_json_tokens_at_4_bytes": 79
+    },
+    "explicit_short_fields": {
+      "property_schema_bytes": 465,
+      "maximum_candidate_json_bytes": 112,
+      "maximum_candidate_json_tokens_at_4_bytes": 28
+    }
+  },
+  "variants": {
+    "single_printed_phrase": {
+      "full_v3_exact_title_fidelity_cards": 35,
+      "full_v3_exact_field_fidelity_cards": 35,
+      "full_v3_field_mismatch_cards": [],
+      "selected_rows": 31,
+      "cards_with_selected_rows": 31,
+      "ambiguous_route_cards": 0,
+      "ambiguous_routes": [],
+      "candidate_output_bytes": 1597,
+      "approximate_candidate_output_tokens_at_4_bytes": 400,
+      "candidate_output_byte_reduction_vs_wide_v3": 0.8000500813822462,
+      "resolver_contract_defect_cards": 0,
+      "resolver_rejected_cards": 0,
+      "resolver_guard_failure_cards": {
+        "valid_candidate_contract": 0,
+        "no_baseline_title_displacement": 0,
+        "all_new_tokens_source_backed": 0,
+        "field_changes_allowlisted": 0,
+        "within_80_characters": 0
+      },
+      "titles_over_80": 0,
+      "canonical_macro_f1": 0.8085961992633915,
+      "resolved_macro_f1": 0.815703478538738,
+      "delta_macro_f1": 0.007107279275346499,
+      "wins": 4,
+      "losses": 0,
+      "ties": 31,
+      "reference_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unsupported_numeric_change_cards": 0,
+      "wins_per_100_approximate_candidate_output_tokens": 1.0018785222291797,
+      "changed_cards": [
+        {
+          "asset_id": "reviewed_blind_91524cd34d828cf14e2a",
+          "delta_f1": 0.06190476190476191,
+          "canonical_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99",
+          "compact_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "front_symbol",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_bc2c2931beff23b68561",
+          "delta_f1": 0.08823529411764708,
+          "canonical_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25",
+          "compact_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1ST BOWMAN",
+              "role": "identity_phrase",
+              "region": "front_symbol",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_87df03b12ad481b4f5f7",
+          "delta_f1": 0.051948051948051854,
+          "canonical_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto Auto PSA 10",
+          "compact_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto 1st Bowman Auto PSA 10",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "front_symbol",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_0a34c5b695ecd1365836",
+          "delta_f1": 0.046666666666666634,
+          "canonical_title": "2021 Topps Ben Baller Chrome Rafael Devers 5/5 Auto PSA Authentic/9",
+          "compact_title": "2021 Topps Ben Baller Chrome Rafael Devers Red 5/5 Auto PSA Authentic/9",
+          "selected_candidates": [
+            {
+              "text": "AUTO-RED REFRACTOR",
+              "role": "finish_phrase",
+              "region": "slab_label",
+              "basis": "printed_text"
+            }
+          ]
+        }
+      ]
+    },
+    "ranked_max1": {
+      "full_v3_exact_title_fidelity_cards": 35,
+      "full_v3_exact_field_fidelity_cards": 35,
+      "full_v3_field_mismatch_cards": [],
+      "selected_rows": 31,
+      "cards_with_selected_rows": 31,
+      "ambiguous_route_cards": 0,
+      "ambiguous_routes": [],
+      "candidate_output_bytes": 3729,
+      "approximate_candidate_output_tokens_at_4_bytes": 933,
+      "candidate_output_byte_reduction_vs_wide_v3": 0.5331163140102666,
+      "resolver_contract_defect_cards": 0,
+      "resolver_rejected_cards": 0,
+      "resolver_guard_failure_cards": {
+        "valid_candidate_contract": 0,
+        "no_baseline_title_displacement": 0,
+        "all_new_tokens_source_backed": 0,
+        "field_changes_allowlisted": 0,
+        "within_80_characters": 0
+      },
+      "titles_over_80": 0,
+      "canonical_macro_f1": 0.8085961992633915,
+      "resolved_macro_f1": 0.815703478538738,
+      "delta_macro_f1": 0.007107279275346499,
+      "wins": 4,
+      "losses": 0,
+      "ties": 31,
+      "reference_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unsupported_numeric_change_cards": 0,
+      "wins_per_100_approximate_candidate_output_tokens": 0.4290694556181282,
+      "changed_cards": [
+        {
+          "asset_id": "reviewed_blind_91524cd34d828cf14e2a",
+          "delta_f1": 0.06190476190476191,
+          "canonical_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99",
+          "compact_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_bc2c2931beff23b68561",
+          "delta_f1": 0.08823529411764708,
+          "canonical_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25",
+          "compact_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1ST BOWMAN",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_87df03b12ad481b4f5f7",
+          "delta_f1": 0.051948051948051854,
+          "canonical_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto Auto PSA 10",
+          "compact_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto 1st Bowman Auto PSA 10",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "front_symbol",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_0a34c5b695ecd1365836",
+          "delta_f1": 0.046666666666666634,
+          "canonical_title": "2021 Topps Ben Baller Chrome Rafael Devers 5/5 Auto PSA Authentic/9",
+          "compact_title": "2021 Topps Ben Baller Chrome Rafael Devers Red 5/5 Auto PSA Authentic/9",
+          "selected_candidates": [
+            {
+              "text": "AUTO-RED REFRACTOR",
+              "role": "finish_phrase",
+              "region": "slab_label",
+              "basis": "printed_text"
+            }
+          ]
+        }
+      ]
+    },
+    "ranked_max2": {
+      "full_v3_exact_title_fidelity_cards": 35,
+      "full_v3_exact_field_fidelity_cards": 35,
+      "full_v3_field_mismatch_cards": [],
+      "selected_rows": 54,
+      "cards_with_selected_rows": 31,
+      "ambiguous_route_cards": 0,
+      "ambiguous_routes": [],
+      "candidate_output_bytes": 5960,
+      "approximate_candidate_output_tokens_at_4_bytes": 1490,
+      "candidate_output_byte_reduction_vs_wide_v3": 0.25378740453236515,
+      "resolver_contract_defect_cards": 0,
+      "resolver_rejected_cards": 0,
+      "resolver_guard_failure_cards": {
+        "valid_candidate_contract": 0,
+        "no_baseline_title_displacement": 0,
+        "all_new_tokens_source_backed": 0,
+        "field_changes_allowlisted": 0,
+        "within_80_characters": 0
+      },
+      "titles_over_80": 0,
+      "canonical_macro_f1": 0.8085961992633915,
+      "resolved_macro_f1": 0.815703478538738,
+      "delta_macro_f1": 0.007107279275346499,
+      "wins": 4,
+      "losses": 0,
+      "ties": 31,
+      "reference_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unsupported_numeric_change_cards": 0,
+      "wins_per_100_approximate_candidate_output_tokens": 0.2684563758389262,
+      "changed_cards": [
+        {
+          "asset_id": "reviewed_blind_91524cd34d828cf14e2a",
+          "delta_f1": 0.06190476190476191,
+          "canonical_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99",
+          "compact_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_bc2c2931beff23b68561",
+          "delta_f1": 0.08823529411764708,
+          "canonical_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25",
+          "compact_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1ST BOWMAN",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            },
+            {
+              "text": "SHORTSTOP",
+              "role": "other_visible",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_87df03b12ad481b4f5f7",
+          "delta_f1": 0.051948051948051854,
+          "canonical_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto Auto PSA 10",
+          "compact_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto 1st Bowman Auto PSA 10",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "front_symbol",
+              "basis": "printed_text"
+            },
+            {
+              "text": "Certified Autograph Issue",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_0a34c5b695ecd1365836",
+          "delta_f1": 0.046666666666666634,
+          "canonical_title": "2021 Topps Ben Baller Chrome Rafael Devers 5/5 Auto PSA Authentic/9",
+          "compact_title": "2021 Topps Ben Baller Chrome Rafael Devers Red 5/5 Auto PSA Authentic/9",
+          "selected_candidates": [
+            {
+              "text": "AUTO-RED REFRACTOR",
+              "role": "finish_phrase",
+              "region": "slab_label",
+              "basis": "printed_text"
+            },
+            {
+              "text": "PSA/DNA CERT",
+              "role": "commercial_marker",
+              "region": "slab_label",
+              "basis": "printed_text"
+            }
+          ]
+        }
+      ]
+    },
+    "explicit_short_fields": {
+      "full_v3_exact_title_fidelity_cards": 35,
+      "full_v3_exact_field_fidelity_cards": 34,
+      "full_v3_field_mismatch_cards": [
+        {
+          "asset_id": "reviewed_blind_a9aadb9c5ddd197c1cb8",
+          "changed_fields": [
+            "product"
+          ],
+          "full_v3_values": {
+            "product": "Topps Chrome"
+          },
+          "compact_values": {
+            "product": "Chrome"
+          },
+          "exact_title_equal": true
+        }
+      ],
+      "selected_rows": 7,
+      "cards_with_selected_rows": 6,
+      "ambiguous_route_cards": 0,
+      "ambiguous_routes": [],
+      "candidate_output_bytes": 1507,
+      "approximate_candidate_output_tokens_at_4_bytes": 377,
+      "candidate_output_byte_reduction_vs_wide_v3": 0.8113183923876299,
+      "resolver_contract_defect_cards": 0,
+      "resolver_rejected_cards": 0,
+      "resolver_guard_failure_cards": {
+        "valid_candidate_contract": 0,
+        "no_baseline_title_displacement": 0,
+        "all_new_tokens_source_backed": 0,
+        "field_changes_allowlisted": 0,
+        "within_80_characters": 0
+      },
+      "titles_over_80": 0,
+      "canonical_macro_f1": 0.8085961992633915,
+      "resolved_macro_f1": 0.815703478538738,
+      "delta_macro_f1": 0.007107279275346499,
+      "wins": 4,
+      "losses": 0,
+      "ties": 31,
+      "reference_loss_cards": 0,
+      "unbacked_new_token_cards": 0,
+      "unsupported_numeric_change_cards": 0,
+      "wins_per_100_approximate_candidate_output_tokens": 1.06171201061712,
+      "changed_cards": [
+        {
+          "asset_id": "reviewed_blind_91524cd34d828cf14e2a",
+          "delta_f1": 0.06190476190476191,
+          "canonical_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99",
+          "compact_title": "2026 Topps Bowman Chrome Aiva Arquette Green Geometric 15/99 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_bc2c2931beff23b68561",
+          "delta_f1": 0.08823529411764708,
+          "canonical_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25",
+          "compact_title": "2026 Topps Bowman Briefing Gabriel Rodriguez 06/25 1st Bowman",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_87df03b12ad481b4f5f7",
+          "delta_f1": 0.051948051948051854,
+          "canonical_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto Auto PSA 10",
+          "compact_title": "2016 Topps Bowman Chrome Prospect Autograph Juan Soto 1st Bowman Auto PSA 10",
+          "selected_candidates": [
+            {
+              "text": "1st Bowman",
+              "role": "identity_phrase",
+              "region": "card_front",
+              "basis": "printed_text"
+            }
+          ]
+        },
+        {
+          "asset_id": "reviewed_blind_0a34c5b695ecd1365836",
+          "delta_f1": 0.046666666666666634,
+          "canonical_title": "2021 Topps Ben Baller Chrome Rafael Devers 5/5 Auto PSA Authentic/9",
+          "compact_title": "2021 Topps Ben Baller Chrome Rafael Devers Red 5/5 Auto PSA Authentic/9",
+          "selected_candidates": [
+            {
+              "text": "AUTO-RED REFRACTOR",
+              "role": "finish_phrase",
+              "region": "slab_label",
+              "basis": "printed_text"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "safety": {
+    "selected_variant_exact_title_fidelity_cards": 35,
+    "selected_variant_exact_field_fidelity_cards": 35,
+    "selected_variant_field_mismatch_cards": [],
+    "selected_variant_resolver_contract_defect_cards": 0,
+    "selected_variant_resolver_rejected_cards": 0,
+    "selected_variant_titles_over_80": 0,
+    "selected_variant_losses": 0
+  },
+  "next_gate": {
+    "zero_call_conclusion": "one general printed phrase preserves full-v3 titles and canonical fields",
+    "not_proven": [
+      "the model will populate the compact field at the same capture rate",
+      "the compact field will not interfere with canonical output",
+      "real output tokens and writer-path latency",
+      "independent fresh150 accuracy"
+    ],
+    "required_before_production": "frozen paired cloud control versus compact treatment on an independent cohort"
+  }
+}
