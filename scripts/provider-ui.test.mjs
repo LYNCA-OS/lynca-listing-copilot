@@ -19,7 +19,7 @@ const providerControlSource = js.slice(
 );
 assert.match(providerControlSource, /<strong>Luna 5\.6<\/strong>/, "the production route must identify Luna 5.6");
 assert.match(providerControlSource, /CSM \/ SEM 单次识别/, "the provider control must describe the thin CSM/SEM route");
-assert.match(providerControlSource, /上传后自动识别/, "the provider control must state the upload intent");
+assert.match(providerControlSource, /上传即识别/, "the provider control must state the upload intent");
 assert.doesNotMatch(js, /state\.selectedProvider|loadProviderStatus|providerStatusReadyPromise/, "the browser must not own provider selection or readiness polling");
 
 assert.match(js, /const CSM_THIN_API_ENDPOINT = "\/api\/csm-listing-title"/);

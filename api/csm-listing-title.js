@@ -48,7 +48,9 @@ export const CSM_DIRECT_CLAIM_POLL_MS = CSM_THIN_RUNTIME_CONTRACT.claimPollMs;
 export const CSM_DIRECT_CLAIM_TIMEOUT_MS = CSM_THIN_RUNTIME_CONTRACT.claimTimeoutMs;
 export const CSM_DIRECT_PROVIDER_TIMEOUT_MS = CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs;
 export const CSM_PERSISTENCE_CHECKPOINT_VERSION = "csm-persistence-checkpoint-v1";
+export const CSM_CHECKPOINT_RECEIPT_VERSION = "csm-checkpoint-receipt-v1";
 export const CSM_PERSISTENCE_READINESS_CACHE_TTL_MS = 30_000;
+export const CSM_CHECKPOINT_STATE = "STAGED";
 const CSM_PACKET_HASH_KEYS = Object.freeze([
   "csm_recognition_packet_sha256",
   "csm_resolution_packet_sha256",
@@ -92,8 +94,166 @@ function exactPacketHashes(value) {
     && CSM_PACKET_HASH_KEYS.every((name) => /^[0-9a-f]{64}$/.test(String(value[name] || "")));
 }
 
+function normalizedFingerprint(value) {
+  const fingerprint = String(value || "").trim().toLowerCase();
+  if (!/^sha256:[0-9a-f]{64}$/.test(fingerprint)) {
+    throw Object.assign(new Error("invalid_image_fingerprint"), { statusCode: 400 });
+  }
+  return fingerprint;
+}
+
+function imageFingerprints(images = []) {
+  return Array.from(images, (image) => normalizedFingerprint(`sha256:${requiredText(
+    image?.content_sha256 || image?.contentSha256,
+    "image_content_sha256"
+  )}`));
+}
+
+function normalizedCheckpointTaskIdentity(value = {}) {
+  const fingerprints = Array.isArray(value.image_fingerprints)
+    ? value.image_fingerprints.map(normalizedFingerprint)
+    : [];
+  if (!fingerprints.length || fingerprints.length > 2) {
+    throw persistenceCheckpointError("receipt_image_fingerprints_invalid");
+  }
+  const operationScope = String(value.operation_scope || "").trim();
+  if (operationScope && operationScope !== "derived_checkpoint") {
+    throw persistenceCheckpointError("receipt_operation_scope_invalid");
+  }
+  const laneVersion = String(value.lane_version || "").trim();
+  if (operationScope === "derived_checkpoint" && !laneVersion) {
+    throw persistenceCheckpointError("receipt_lane_version_missing");
+  }
+  return {
+    asset_id: requiredText(value.asset_id, "receipt_asset_id"),
+    intent_id: requiredText(value.intent_id, "receipt_intent_id"),
+    model: requiredText(value.model, "receipt_model"),
+    reasoning_effort: requiredText(value.reasoning_effort, "receipt_reasoning_effort"),
+    detail: normalizedDetail(requiredText(value.detail, "receipt_detail")),
+    prompt_version: requiredText(value.prompt_version, "receipt_prompt_version"),
+    image_fingerprints: fingerprints,
+    ...(operationScope ? { operation_scope: operationScope, lane_version: laneVersion } : {})
+  };
+}
+
+function checkpointTask({ tenantId, identity }) {
+  return {
+    tenant_id: requiredText(tenantId, "tenant_id"),
+    ...normalizedCheckpointTaskIdentity(identity),
+    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS
+  };
+}
+
+export function buildCsmCheckpointReceipt({
+  tenantId, taskIdentity, operationKey = null, payloadHash = null
+} = {}) {
+  const identity = normalizedCheckpointTaskIdentity(taskIdentity);
+  const task = checkpointTask({ tenantId, identity });
+  const computedOperationKey = buildLunaDirectOperationKey(task);
+  const computedPayloadHash = buildLunaDirectPayloadHash(task);
+  if (operationKey !== null && requiredText(operationKey, "operation_key") !== computedOperationKey) {
+    throw persistenceCheckpointError("receipt_operation_key_mismatch");
+  }
+  if (payloadHash !== null
+      && requiredText(payloadHash, "payload_hash").toLowerCase() !== computedPayloadHash) {
+    throw persistenceCheckpointError("receipt_payload_sha256_mismatch");
+  }
+  return {
+    schema_version: CSM_CHECKPOINT_RECEIPT_VERSION,
+    operation_key: computedOperationKey,
+    payload_sha256: computedPayloadHash,
+    task: identity
+  };
+}
+
+function validatePresentedCheckpointReceipt(value, {
+  tenantId, assetId, intentId, detail, imageFingerprints: expectedFingerprints
+} = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+      || value.schema_version !== CSM_CHECKPOINT_RECEIPT_VERSION) {
+    throw persistenceCheckpointError("receipt_missing_or_invalid");
+  }
+  const receipt = buildCsmCheckpointReceipt({
+    tenantId,
+    taskIdentity: value.task,
+    operationKey: value.operation_key,
+    payloadHash: value.payload_sha256
+  });
+  if (receipt.task.asset_id !== assetId
+      || receipt.task.intent_id !== intentId
+      || receipt.task.detail !== detail
+      || receipt.task.image_fingerprints.join("\u001f") !== expectedFingerprints.join("\u001f")) {
+    throw persistenceCheckpointError("receipt_request_identity_mismatch");
+  }
+  return receipt;
+}
+
+function normalizedRecognitionInput(value, expectedCount) {
+  if (!Array.isArray(value) || value.length !== expectedCount || expectedCount < 1) {
+    throw persistenceCheckpointError("recognition_input_count_mismatch");
+  }
+  const expectedRoles = ["front_original", "back_original"];
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw persistenceCheckpointError("recognition_input_invalid");
+    }
+    const role = String(entry.image_role || "").trim();
+    const read = String(entry.read || "").trim();
+    const bytes = Number(entry.bytes);
+    if (role !== expectedRoles[index]
+        || !["original", "readability_derived", "readability_derived_inline"].includes(read)
+        || !Number.isInteger(bytes)
+        || bytes < 1) {
+      throw persistenceCheckpointError("recognition_input_invalid");
+    }
+    const originalBytes = entry.original_bytes === null || entry.original_bytes === undefined
+      ? null
+      : Number(entry.original_bytes);
+    const derivedBytes = entry.derived_bytes === null || entry.derived_bytes === undefined
+      ? null
+      : Number(entry.derived_bytes);
+    if ((originalBytes !== null && (!Number.isInteger(originalBytes) || originalBytes < 1))
+        || (derivedBytes !== null && (!Number.isInteger(derivedBytes) || derivedBytes < 1))) {
+      throw persistenceCheckpointError("recognition_input_bytes_invalid");
+    }
+    const optionalText = (name) => {
+      const text = String(entry[name] || "").trim();
+      return text ? { [name]: text.slice(0, 240) } : {};
+    };
+    return {
+      image_role: role,
+      read,
+      bytes,
+      original_bytes: originalBytes,
+      derived_available: entry.derived_available === true,
+      derived_bytes: derivedBytes,
+      ...optionalText("source_image_id"),
+      ...optionalText("transform_version"),
+      ...optionalText("lane_version"),
+      ...optionalText("content_sha256"),
+      ...optionalText("original_content_sha256")
+    };
+  });
+}
+
+function validateRecognitionSourceBindings(recognitionInput, originals) {
+  const ledger = normalizedRecognitionInput(recognitionInput, originals.length);
+  for (let index = 0; index < originals.length; index += 1) {
+    const sourceImageId = String(originals[index]?.image_id || originals[index]?.id || "").trim();
+    if (!sourceImageId || ledger[index].source_image_id !== sourceImageId) {
+      throw Object.assign(new Error("csm_recognition_input_source_mismatch"), {
+        code: "csm_recognition_input_source_mismatch",
+        statusCode: 409,
+        retryable: false
+      });
+    }
+  }
+  return ledger;
+}
+
 export function buildCsmPersistenceCheckpoint({
-  prepared, tenantId, operationKey, payloadHash, recognitionSessionId
+  prepared, tenantId, operationKey, payloadHash, recognitionSessionId,
+  recognitionInput, taskIdentity
 } = {}) {
   const tenant = requiredText(tenantId, "tenant_id");
   const operation = requiredText(operationKey, "operation_key");
@@ -104,6 +264,16 @@ export function buildCsmPersistenceCheckpoint({
   if (!exactPacketHashes(hashes)) {
     throw persistenceCheckpointError("packet_hashes_invalid");
   }
+  const recognition = normalizedRecognitionInput(
+    recognitionInput,
+    Number(recognitionInput?.length || 0)
+  );
+  const receipt = buildCsmCheckpointReceipt({
+    tenantId: tenant,
+    taskIdentity,
+    operationKey: operation,
+    payloadHash: payload
+  });
   return {
     ...prepared,
     csm_persistence_checkpoint: {
@@ -113,13 +283,16 @@ export function buildCsmPersistenceCheckpoint({
       operation_key: operation,
       payload_sha256: payload,
       recognition_session_id: session,
-      packet_hashes: hashes
+      packet_hashes: hashes,
+      recognition_input: recognition,
+      checkpoint_receipt: receipt
     }
   };
 }
 
 export function validateCsmPersistenceCheckpoint(result, {
-  tenantId, operationKey, payloadHash, recognitionSessionId
+  tenantId, operationKey, payloadHash, recognitionSessionId,
+  recognitionInputCount = null, checkpointReceipt = null
 } = {}) {
   const checkpoint = result?.csm_persistence_checkpoint;
   const expected = {
@@ -151,6 +324,24 @@ export function validateCsmPersistenceCheckpoint(result, {
       || CSM_PACKET_HASH_KEYS.some((name) => hashes[name] !== checkpointHashes[name])) {
     throw persistenceCheckpointError("packet_hash_mismatch");
   }
+  normalizedRecognitionInput(
+    checkpoint.recognition_input,
+    recognitionInputCount === null
+      ? checkpoint.recognition_input?.length
+      : Number(recognitionInputCount)
+  );
+  const storedReceipt = buildCsmCheckpointReceipt({
+    tenantId: expected.tenant_id,
+    taskIdentity: checkpoint.checkpoint_receipt?.task,
+    operationKey: checkpoint.checkpoint_receipt?.operation_key,
+    payloadHash: checkpoint.checkpoint_receipt?.payload_sha256
+  });
+  if (storedReceipt.operation_key !== expected.operation_key
+      || storedReceipt.payload_sha256 !== expected.payload_sha256
+      || (checkpointReceipt
+        && JSON.stringify(storedReceipt) !== JSON.stringify(checkpointReceipt))) {
+    throw persistenceCheckpointError("checkpoint_receipt_mismatch");
+  }
   return result;
 }
 
@@ -164,6 +355,17 @@ function alreadyPersisted(result, recognitionSessionId) {
 function publicPersistedResult(result) {
   const { csm_persistence_checkpoint: _checkpoint, ...publicResult } = result || {};
   return publicResult;
+}
+
+function publicCheckpointedResult(result) {
+  const { csm_persistence_checkpoint: checkpoint, ...publicResult } = result || {};
+  return {
+    ...publicResult,
+    checkpoint_state: CSM_CHECKPOINT_STATE,
+    trace_status: "CHECKPOINTED",
+    pending_recognition_session_id: checkpoint?.recognition_session_id || null,
+    checkpoint_receipt: checkpoint?.checkpoint_receipt || null
+  };
 }
 
 export function deterministicProviderClientRequestId({ operationKey, payloadHash, attempt } = {}) {
@@ -282,6 +484,7 @@ export async function checkCachedCsmPersistenceReadiness({
 
 export async function runDirectCsmAsset({
   tenantId, userId, assetId, intentId, imageDetail = "high", manualRetry = false,
+  checkpointOnly = false, checkpointRequired = false, checkpointReceipt = null,
   clientTiming = null, serverPrologueStages = null,
   env = process.env, fetchImpl = globalThis.fetch, callProvider = null,
   dependencies = {}
@@ -296,6 +499,7 @@ export async function runDirectCsmAsset({
   const readImages = dependencies.readImages || readCanonicalListingImageReferences;
   const signImage = dependencies.signImage || createListingImageSignedReadUrl;
   const createSession = dependencies.createSession || createCsmRecognitionSession;
+  const readSessionImages = dependencies.readSessionImages || null;
   const preparePath = dependencies.preparePath || prepareCanonicalListingPath;
   const persistPath = dependencies.persistPath || persistPreparedCanonicalListingPath;
   const createAuthority = dependencies.createAuthority || createCsmSupabaseProviderAdmissionAuthority;
@@ -324,8 +528,11 @@ export async function runDirectCsmAsset({
   const imageManifestStartedAt = Date.now();
   const canonical = await readImages({ tenantId: tenant, assetId: asset, env, fetchImpl });
   latencyStages.image_manifest_ms = Date.now() - imageManifestStartedAt;
-  const originals = canonical.images.filter((image) => image.derived !== true).slice(0, 2);
-  if (!originals.length) {
+  const originals = Array.isArray(canonical?.images)
+    ? canonical.images.filter((image) => image.derived !== true).slice(0, 2)
+    : [];
+  const suppliedFingerprints = dependencies.imageFingerprints;
+  if (!originals.length && !Array.isArray(suppliedFingerprints)) {
     throw Object.assign(new Error("canonical_original_image_missing"), { statusCode: 409 });
   }
   // COS-53: Recognition may read a stored bounded DOWNSCALE when one exists for
@@ -337,22 +544,52 @@ export async function runDirectCsmAsset({
   // derived image is a function of its original, so keying on it would make a
   // retry that fell back to the original look like a different task and buy a
   // second model call for the same card.
-  const recognition = selectRecognitionImages(canonical.images, { slots: 2 });
-  const recognitionImages = recognition.images.length ? recognition.images : originals;
+  const recognition = selectRecognitionImages(canonical?.images, { slots: 2 });
+  const recognitionImages = Array.isArray(dependencies.recognitionImages)
+    ? dependencies.recognitionImages
+    : recognition.images.length ? recognition.images : originals;
+  if (!recognitionImages.length || recognitionImages.length > 2) {
+    throw Object.assign(new Error("recognition_image_count_invalid"), { statusCode: 400 });
+  }
+  const fingerprints = Array.isArray(suppliedFingerprints)
+    ? suppliedFingerprints.map(normalizedFingerprint)
+    : imageFingerprints(originals);
+  if (fingerprints.length !== recognitionImages.length) {
+    throw Object.assign(new Error("recognition_image_identity_count_mismatch"), { statusCode: 400 });
+  }
+  const recognitionInput = normalizedRecognitionInput(
+    dependencies.recognitionInput || recognition.read.map((entry, index) => ({
+      ...entry,
+      source_image_id: originals[index]?.image_id || originals[index]?.id || ""
+    })),
+    fingerprints.length
+  );
+  const stageOnly = checkpointOnly === true || dependencies.checkpointOnly === true;
 
-  const task = {
-    tenant_id: tenant,
+  const currentTaskIdentity = {
     intent_id: intent,
     asset_id: canonical.asset_id || asset,
     model: MODEL,
+    reasoning_effort: EFFORT,
     detail,
     prompt_version: CSM_DIRECT_PROMPT_VERSION,
-    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
-    image_fingerprints: originals.map((image) => `sha256:${requiredText(
-      image.content_sha256 || image.contentSha256,
-      "image_content_sha256"
-    ).toLowerCase()}`)
+    image_fingerprints: fingerprints,
+    ...(dependencies.operationScope ? {
+      operation_scope: String(dependencies.operationScope),
+      lane_version: requiredText(dependencies.laneVersion, "lane_version")
+    } : {})
   };
+  const presentedReceipt = checkpointRequired === true
+    ? validatePresentedCheckpointReceipt(checkpointReceipt, {
+        tenantId: tenant,
+        assetId: asset,
+        intentId: intent,
+        detail,
+        imageFingerprints: fingerprints
+      })
+    : null;
+  const taskIdentity = presentedReceipt?.task || currentTaskIdentity;
+  const task = checkpointTask({ tenantId: tenant, identity: taskIdentity });
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
   const authority = dependencies.providerAdmission || createAuthority({
@@ -364,13 +601,38 @@ export async function runDirectCsmAsset({
   });
 
   let durableResult = null;
-  if (manualRetry === true) {
+  const stablePreviewLookup = stageOnly && task.operation_scope === "derived_checkpoint";
+  if (manualRetry === true || checkpointRequired === true || stablePreviewLookup) {
     const durable = await authority.lookupOperationResult({
       tenantId: tenant,
       operationKey,
       payloadHash
     });
     if (durable.status === "found") durableResult = durable.result;
+    const explicitFailedRetry = stablePreviewLookup
+      && durable.status === "failed"
+      && manualRetry === true;
+    if (stablePreviewLookup
+        && !["found", "not_found"].includes(durable.status)
+        && !explicitFailedRetry) {
+      const retryable = ["pending", "ambiguous", "failed"].includes(durable.status);
+      throw Object.assign(new Error(`csm_checkpoint_${durable.status || "not_retriable"}`), {
+        code: `csm_checkpoint_${durable.status || "not_retriable"}`,
+        statusCode: 409,
+        // Retrying the lookup is safe, but this response never authorizes a
+        // new paid attempt. FAILED needs an explicit writer manualRetry.
+        retryable,
+        provider_attempt_started: false
+      });
+    }
+    if (checkpointRequired === true && durable.status !== "found") {
+      throw Object.assign(new Error(`csm_checkpoint_${durable.status || "not_found"}`), {
+        code: `csm_checkpoint_${durable.status || "not_found"}`,
+        statusCode: 409,
+        retryable: false,
+        provider_attempt_started: false
+      });
+    }
     if (durable.status === "failed") {
       if (durable.result?.failure_phase === "CSM_PERSISTENCE") {
         throw Object.assign(new Error("csm_persistence_checkpoint_missing"), {
@@ -388,6 +650,7 @@ export async function runDirectCsmAsset({
     }
   }
 
+  let providerPathExecuted = false;
   const executeTask = async (dispatched) => {
     let imageUrls;
     const attemptStages = { ...latencyStages };
@@ -398,54 +661,16 @@ export async function runDirectCsmAsset({
       attempt: dispatched.attempt
     });
     try {
-      const [signedUrls, session] = await Promise.all([
-        (async () => {
-          const signedUrlStartedAt = Date.now();
-          const urls = await Promise.all(recognitionImages.map((image) => signImage({
-            objectPath: image.objectPath,
-            bucket: image.bucket,
-            tenantId: tenant,
-            env,
-            fetchImpl
-          })));
-          attemptStages.signed_url_ms = Date.now() - signedUrlStartedAt;
-          return urls;
-        })(),
-        (async () => {
-          const recognitionSessionStartedAt = Date.now();
-          const created = await createSession({
-            sessionId,
-            tenantId: tenant,
-            userId: user,
-            operatorId: user,
-            payload: {
-              asset_id: canonical.asset_id,
-              client_asset_ref: canonical.asset_id,
-              images: canonical.image_references,
-              image_references: canonical.image_references,
-              image_generation_id: canonical.image_generation_id,
-              image_set_sha256: canonical.image_set_sha256,
-              expected_original_count: canonical.expected_original_count,
-              // COS-53 clause 4: a run states which asset the model read, per
-              // slot, rather than leaving it to be inferred from byte counts.
-              recognition_input: recognition.read,
-              provider: MODEL,
-              mode: "csm_thin_direct"
-            },
-            routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
-            env,
-            fetchImpl
-          });
-          attemptStages.recognition_session_ms = Date.now() - recognitionSessionStartedAt;
-          return created;
-        })()
-      ]);
-      imageUrls = signedUrls;
-      if (session.persistence?.recognition_session?.saved !== true) {
-        throw Object.assign(new Error("csm_recognition_session_not_persisted"), {
-          statusCode: 503
-        });
-      }
+      const signedUrlStartedAt = Date.now();
+      imageUrls = await Promise.all(recognitionImages.map((image) => signImage({
+        image,
+        objectPath: image.objectPath || image.object_path,
+        bucket: image.bucket,
+        tenantId: tenant,
+        env,
+        fetchImpl
+      })));
+      attemptStages.signed_url_ms = Date.now() - signedUrlStartedAt;
     } catch (error) {
       error.before_request = true;
       error.safe_to_retry = true;
@@ -457,14 +682,15 @@ export async function runDirectCsmAsset({
     const providerStartedAt = Date.now();
     let prepared;
     try {
+      providerPathExecuted = true;
       prepared = await preparePath({
         tenantId: tenant,
         recognitionSessionId: sessionId,
         imageUrls,
-        imageDetail: detail,
-        model: MODEL,
-        effort: EFFORT,
-        promptVersion: CSM_DIRECT_PROMPT_VERSION,
+        imageDetail: task.detail,
+        model: task.model,
+        effort: task.reasoning_effort,
+        promptVersion: task.prompt_version,
         providerClientRequestId,
         callProvider: callProvider || ((request) => createResponsesProviderCaller({
           env,
@@ -500,7 +726,9 @@ export async function runDirectCsmAsset({
       tenantId: tenant,
       operationKey: dispatched.operation_key,
       payloadHash: dispatched.payload_hash,
-      recognitionSessionId: sessionId
+      recognitionSessionId: sessionId,
+      recognitionInput,
+      taskIdentity
     });
   };
 
@@ -518,9 +746,16 @@ export async function runDirectCsmAsset({
       ? dispatcher.manualRetry(task)
       : dispatcher.enqueue(task)
   );
-  if (alreadyPersisted(settled, sessionId)) return publicPersistedResult(settled);
+  if (alreadyPersisted(settled, sessionId)) {
+    return {
+      ...publicPersistedResult(settled),
+      ...(checkpointRequired === true ? { provider_calls: 0, provider_replayed: true } : {})
+    };
+  }
   const preparedWithDispatchStages = {
     ...settled,
+    provider_calls: providerPathExecuted ? 1 : 0,
+    provider_replayed: providerPathExecuted !== true,
     latency_stages_ms: {
       ...(settled.latency_stages_ms || {}),
       authority_dispatch_ms: Date.now() - dispatchStartedAt
@@ -530,17 +765,95 @@ export async function runDirectCsmAsset({
     tenantId: tenant,
     operationKey,
     payloadHash,
-    recognitionSessionId: sessionId
+    recognitionSessionId: sessionId,
+    recognitionInputCount: fingerprints.length,
+    checkpointReceipt: presentedReceipt
   });
+  if (stageOnly) return publicCheckpointedResult(prepared);
+
+  const sessionCanonical = readSessionImages
+    ? await readSessionImages({
+        tenantId: tenant,
+        assetId: asset,
+        env,
+        fetchImpl,
+        canonical
+      })
+    : canonical;
+  const sessionOriginals = Array.isArray(sessionCanonical?.images)
+    ? sessionCanonical.images.filter((image) => image.derived !== true).slice(0, 2)
+    : [];
+  if (!sessionOriginals.length
+      || imageFingerprints(sessionOriginals).join("\u001f") !== fingerprints.join("\u001f")) {
+    throw Object.assign(new Error("csm_session_original_fingerprint_mismatch"), {
+      code: "csm_session_original_fingerprint_mismatch",
+      statusCode: 409,
+      retryable: false
+    });
+  }
+  const checkpointRecognitionInput = validateRecognitionSourceBindings(
+    prepared.csm_persistence_checkpoint.recognition_input,
+    sessionOriginals
+  );
+  const sessionReferences = Array.isArray(sessionCanonical?.image_references)
+    ? sessionCanonical.image_references
+    : [];
+  if (!sessionReferences.length
+      || String(sessionCanonical.asset_id || "") !== asset
+      || Number(sessionCanonical.expected_original_count) !== fingerprints.length) {
+    throw Object.assign(new Error("csm_session_canonical_image_set_invalid"), {
+      code: "csm_session_canonical_image_set_invalid",
+      statusCode: 409,
+      retryable: false
+    });
+  }
+  const recognitionSessionStartedAt = Date.now();
+  const session = await createSession({
+    sessionId,
+    tenantId: tenant,
+    userId: user,
+    operatorId: user,
+    payload: {
+      asset_id: sessionCanonical.asset_id,
+      client_asset_ref: sessionCanonical.asset_id,
+      images: sessionReferences,
+      image_references: sessionReferences,
+      image_generation_id: sessionCanonical.image_generation_id,
+      image_set_sha256: sessionCanonical.image_set_sha256,
+      expected_original_count: sessionCanonical.expected_original_count,
+      // This is the immutable ledger settled with the paid result. A replay may
+      // now see stored originals, but the session must state what Luna actually
+      // read on the paid attempt rather than recomputing that fact.
+      recognition_input: checkpointRecognitionInput,
+      provider: task.model,
+      reasoning_effort: task.reasoning_effort,
+      mode: "csm_thin_direct"
+    },
+    routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
+    env,
+    fetchImpl
+  });
+  const preparedForPersistence = {
+    ...prepared,
+    latency_stages_ms: {
+      ...(prepared.latency_stages_ms || {}),
+      recognition_session_ms: Date.now() - recognitionSessionStartedAt
+    }
+  };
+  if (session.persistence?.recognition_session?.saved !== true) {
+    throw Object.assign(new Error("csm_recognition_session_not_persisted"), {
+      statusCode: 503
+    });
+  }
   const persistenceStartedAt = Date.now();
   const persisted = await persistPath({
     tenantId: tenant,
     recognitionSessionId: sessionId,
-    prepared,
-    imageDetail: detail,
-    model: MODEL,
-    effort: EFFORT,
-    promptVersion: CSM_DIRECT_PROMPT_VERSION,
+    prepared: preparedForPersistence,
+    imageDetail: task.detail,
+    model: task.model,
+    effort: task.reasoning_effort,
+    promptVersion: task.prompt_version,
     env,
     fetchImpl
   });
@@ -548,7 +861,7 @@ export async function runDirectCsmAsset({
     ? {
         ...persisted,
         latency_stages_ms: {
-          ...(persisted.latency_stages_ms || prepared.latency_stages_ms || {}),
+          ...(persisted.latency_stages_ms || preparedForPersistence.latency_stages_ms || {}),
           csm_persistence_ms: Date.now() - persistenceStartedAt,
           request_total_ms: Date.now() - routeStartedAt
         }
@@ -649,6 +962,8 @@ export default async function handler(req, res) {
       intentId: payload.intent_id || payload.intentId,
       imageDetail: payload.image_detail || "high",
       manualRetry: payload.manual_retry === true,
+      checkpointRequired: payload.checkpoint_required === true,
+      checkpointReceipt: payload.checkpoint_receipt || null,
       clientTiming: payload.client_timing || payload.clientTiming || null,
       // Same reason as clientTiming: everything below is assembled AFTER the
       // run has already written latency_stages_ms to the session, so stages

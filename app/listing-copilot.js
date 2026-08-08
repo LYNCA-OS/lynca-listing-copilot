@@ -1,5 +1,13 @@
 import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
 import { claimAssetSingleFlight, nextRetrySubmissionId } from "./asset-single-flight.mjs";
+import {
+  RECOGNITION_DERIVED_LANE_VERSION,
+  RECOGNITION_DOWNSCALE_LONG_EDGE,
+  RECOGNITION_DOWNSCALE_QUALITY,
+  RECOGNITION_DOWNSCALE_TRANSFORM_VERSION,
+  recognitionDerivedInputUseful,
+  recognitionDerivedLaneEligible
+} from "./recognition-derived-contract.mjs";
 import { storageVerificationTimeoutMs } from "./storage-verification-budget.mjs";
 import {
   analyzeImageQualityFromImageData,
@@ -22,11 +30,19 @@ import {
   writerExportWithinLimit,
   writerFeedbackPersisted
 } from "./writer-wheel-mode.mjs";
+import {
+  ORIGINAL_DURABILITY_STATUS,
+  TITLE_FINALIZATION_STATUS,
+  TITLE_TRACE_STATUS,
+  shouldWarnBeforeUnload,
+  titleActionPolicy
+} from "./staged-title-lifecycle.mjs";
 
 const apiCostPerRequest = 0.003;
 const maxTitleLength = 80;
 const MAX_DIRECT_RECOGNITION_WORKERS = 6;
 const MAX_BACKGROUND_PREP_WORKERS = 4;
+const MAX_ORIGINAL_UPLOAD_ASSET_WORKERS = 1;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
@@ -108,6 +124,9 @@ const state = {
 };
 let backgroundPreparationQueue = [];
 let backgroundPreparationActiveCount = 0;
+let originalUploadQueue = [];
+let originalUploadActiveCount = 0;
+let fileIntakeTail = Promise.resolve();
 let csmWarmupStartedAt = 0;
 let csmWarmupPromise = null;
 
@@ -190,6 +209,27 @@ async function mapWithConcurrency(items, limit, worker) {
 
   await Promise.all(Array.from({ length: workerCount }, runWorker));
   return results;
+}
+
+function drainOriginalUploadQueue() {
+  while (originalUploadActiveCount < MAX_ORIGINAL_UPLOAD_ASSET_WORKERS && originalUploadQueue.length) {
+    const entry = originalUploadQueue.shift();
+    originalUploadActiveCount += 1;
+    void Promise.resolve()
+      .then(entry.work)
+      .then(entry.resolve, entry.reject)
+      .finally(() => {
+        originalUploadActiveCount = Math.max(0, originalUploadActiveCount - 1);
+        drainOriginalUploadQueue();
+      });
+  }
+}
+
+function withOriginalUploadAdmission(work) {
+  return new Promise((resolve, reject) => {
+    originalUploadQueue.push({ work, resolve, reject });
+    drainOriginalUploadQueue();
+  });
 }
 
 function recordClientNetworkStage(asset, stage, result = {}) {
@@ -428,7 +468,7 @@ function renderInstantIntakePreviews(records = []) {
   const previewWindow = windowIntakePreviewGroups(groups, INTAKE_PREVIEW_CARD_WINDOW);
 
   elements.processButton.disabled = true;
-  elements.previewSummary.textContent = `${source.length} 张图片已选择，本地预览已显示；正在后台校验原图。`;
+  elements.previewSummary.textContent = `${source.length} 张图片已选择，本地预览已显示；正在并行准备识别与原图留存。`;
   elements.assetPreviewList.innerHTML = previewWindow.visible.map((images, index) => `
     <article class="asset-row-card intake-preview-card" aria-busy="true">
       <div class="asset-source">
@@ -528,6 +568,90 @@ function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
       objectPath: ""
     };
   });
+}
+
+async function buildRecognitionDownscale(image = {}) {
+  // Only decode from the exact source file. Non-storage-first inputs (HEIC or
+  // oversized files) already passed through a lossy 2200px preview, so another
+  // 1600px encode would be a different, unmeasured two-hop transform.
+  if (image.storageFirst !== true) return null;
+  const source = image.sourceFile || image.sourceBlob;
+  const decodable = image.previewUrl || image.dataUrl || "";
+  if (!source || !decodable) return null;
+
+  await ensureImageUploadMetadata(image);
+  if (Math.max(Number(image.originalWidth || image.width), Number(image.originalHeight || image.height))
+      <= RECOGNITION_DOWNSCALE_LONG_EDGE) {
+    return null;
+  }
+
+  let compressed;
+  try {
+    compressed = await compressImageDataUrl(
+      decodable,
+      RECOGNITION_DOWNSCALE_LONG_EDGE,
+      RECOGNITION_DOWNSCALE_QUALITY
+    );
+  } catch {
+    return null;
+  }
+  delete compressed.sourceCanvas;
+  const blob = dataUrlToBlob(compressed.dataUrl);
+  if (!recognitionDerivedInputUseful({
+    sourceBytes: source.size,
+    sourceWidth: image.originalWidth || compressed.originalWidth,
+    sourceHeight: image.originalHeight || compressed.originalHeight,
+    derivedBytes: blob.size
+  })) return null;
+
+  return {
+    id: `${image.id}-recognition-${RECOGNITION_DOWNSCALE_LONG_EDGE}`,
+    name: `${image.name} recognition ${RECOGNITION_DOWNSCALE_LONG_EDGE}`,
+    originalType: "image/jpeg",
+    type: "image/jpeg",
+    size: blob.size,
+    originalSize: blob.size,
+    width: compressed.width,
+    height: compressed.height,
+    originalWidth: compressed.width,
+    originalHeight: compressed.height,
+    dataUrl: compressed.dataUrl,
+    captureProfileId: defaultCaptureProfileId,
+    imageQuality: compressed.imageQuality,
+    sourceBlob: blob,
+    sourceImageId: image.id,
+    sourceRegion: "",
+    storageRole: "readability_derived",
+    cropMetadata: {
+      source_image_id: image.id,
+      derived_role: "readability_derived",
+      long_edge: RECOGNITION_DOWNSCALE_LONG_EDGE,
+      quality: RECOGNITION_DOWNSCALE_QUALITY,
+      transform_version: RECOGNITION_DOWNSCALE_TRANSFORM_VERSION
+    },
+    derived: true,
+    recognitionInput: true,
+    contentSha256: "",
+    objectPath: ""
+  };
+}
+
+async function ensureRecognitionDownscales(asset, images = []) {
+  if (asset.recognitionInputsPromise) return asset.recognitionInputsPromise;
+  const attempt = (async () => {
+    const primaries = images.filter((image) => !imageIsDerivedForRequest(image));
+    const inputs = await Promise.all(primaries.map(buildRecognitionDownscale));
+    if (inputs.some((input) => !input)) return [];
+    asset.recognitionInputs = inputs;
+    return inputs;
+  })();
+  asset.recognitionInputsPromise = attempt;
+  try {
+    return await attempt;
+  } catch (error) {
+    if (asset.recognitionInputsPromise === attempt) asset.recognitionInputsPromise = null;
+    throw error;
+  }
 }
 
 async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
@@ -1678,6 +1802,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // "is this asset already being prepared?"; `state.retryInFlight` is a count
   // and can only answer "is anything retrying?".
   if (asset.originalStorageUploadPromise) return asset.originalStorageUploadPromise;
+  asset.originalDurabilityStatus = ORIGINAL_DURABILITY_STATUS.UPLOADING;
 
   // The direct path's blind spot, measured.
   //
@@ -1702,7 +1827,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
       }, 0);
   };
 
-  const attempt = (async () => {
+  const attempt = withOriginalUploadAdmission(async () => {
     await ensureDurableAssetIdentity(asset);
     assertCurrentAssetLifecycle(asset);
     if (!storageReady()) throw new Error("listing_storage_not_ready");
@@ -1777,8 +1902,10 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // consequence on CI while every local run passed: a card was recognized
     // twice. Measurement must not change the shape of what it measures.
     recordOriginalUploadTiming();
+    asset.originalDurabilityStatus = ORIGINAL_DURABILITY_STATUS.VERIFIED;
+    asset.backgroundPrepareStatus = "ready";
     return phases.originalOutcomes.some((outcome) => outcome.uploaded === true);
-  })();
+  });
 
   // Release the claim on failure only, so a failed attempt does not leave the
   // asset permanently claimed while a successful one stays memoised. The
@@ -1792,6 +1919,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // consumed the writer's time, and a stage recorded only on success is the
     // shape that made this gap invisible to begin with.
     recordOriginalUploadTiming();
+    asset.originalDurabilityStatus = ORIGINAL_DURABILITY_STATUS.FAILED;
     if (asset.originalStorageUploadPromise === guarded) asset.originalStorageUploadPromise = null;
     throw error;
   });
@@ -1911,7 +2039,20 @@ function csmIngestFastPathEligible(asset = {}) {
     && sources.reduce((total, source) => total + source.size, 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES;
 }
 
-async function requestCsmIngestFastPath(asset, intentId) {
+function csmDerivedLanePotential(asset = {}) {
+  if (asset.durableAssetId || asset.originalStorageUploadPromise) return false;
+  const images = Array.isArray(asset.images) ? asset.images : [];
+  if (!images.length || images.length > 2) return false;
+  if (!images.every((image) => image.storageFirst === true)) return false;
+  const sources = images.map(storageSourceForImage);
+  return sources.every((source) => source && source.size > 0)
+    && sources.reduce((total, source) => total + source.size, 0) > STORAGE_UPLOAD_RELAY_MAX_BYTES;
+}
+
+async function requestCsmIngestFastPath(asset, intentId, {
+  recognitionInputs = null,
+  manualRetry = false
+} = {}) {
   // The 18 seconds nobody could see.
   //
   // A production run measured 4,652ms server-side against roughly 23 seconds
@@ -1936,8 +2077,13 @@ async function requestCsmIngestFastPath(asset, intentId) {
       clientTiming[name] = Math.round((clientTiming[name] || 0) + performance.now() - startedAt);
     }
   };
+  const recognitionInputOnly = Array.isArray(recognitionInputs) && recognitionInputs.length > 0;
+  const requestImages = recognitionInputOnly ? recognitionInputs : asset.images;
+  const durableIdentityPromise = recognitionInputOnly
+    ? ensureDurableAssetIdentity(asset)
+    : Promise.resolve("");
   const preparationStartedAt = performance.now();
-  const images = await Promise.all(asset.images.map(async (image, imageIndex) => {
+  const imagesPromise = Promise.all(requestImages.map(async (image, imageIndex) => {
     await clientStage("client_image_metadata_ms", () => ensureImageUploadMetadata(image));
     const source = storageSourceForImage(image);
     const usingOriginalSource = source === image.sourceFile;
@@ -1965,9 +2111,30 @@ async function requestCsmIngestFastPath(asset, intentId) {
       width: dimensions.width,
       height: dimensions.height,
       signatureHex,
-      contentSha256
+      contentSha256,
+      sourceImageId: image.sourceImageId || image.cropMetadata?.source_image_id || "",
+      transformVersion: image.cropMetadata?.transform_version || ""
     };
   }));
+  const originalFingerprintsPromise = recognitionInputOnly
+    ? Promise.all(asset.images.map(async (image) => {
+        await clientStage("client_original_metadata_ms", () => ensureImageUploadMetadata(image));
+        const source = storageSourceForImage(image);
+        const contentSha256 = await clientStage("client_original_sha256_ms", () => (image.contentSha256
+          ? Promise.resolve(image.contentSha256)
+          : contentSha256Hex(source)));
+        if (!/^[0-9a-f]{64}$/.test(String(contentSha256 || ""))) {
+          throw new Error("csm_original_fingerprint_missing");
+        }
+        image.contentSha256 = contentSha256;
+        return `sha256:${contentSha256}`;
+      }))
+    : Promise.resolve([]);
+  const [images, originalFingerprints, durableAssetId] = await Promise.all([
+    imagesPromise,
+    originalFingerprintsPromise,
+    durableIdentityPromise
+  ]);
   clientTiming.client_preparation_ms = Math.round(performance.now() - preparationStartedAt);
   clientTiming.client_upload_bytes = images.reduce((total, image) => total + (image.size || 0), 0);
   const metadata = {
@@ -1977,9 +2144,17 @@ async function requestCsmIngestFastPath(asset, intentId) {
     captureProfileId: defaultCaptureProfileId,
     intentId,
     imageDetail: "high",
+    ...(recognitionInputOnly ? {
+      recognitionInputOnly: true,
+      manualRetry: manualRetry === true,
+      assetId: durableAssetId,
+      expectedOriginalCount: asset.images.length,
+      originalFingerprints,
+      laneVersion: RECOGNITION_DERIVED_LANE_VERSION
+    } : {}),
     images: images.map(({ source: _source, image: _image, ...image }) => image)
   };
-  const request = await fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
+  const requestPromise = fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
     method: "POST",
     headers: {
       "content-type": "application/octet-stream",
@@ -1994,16 +2169,27 @@ async function requestCsmIngestFastPath(asset, intentId) {
     asset,
     stage: "csm_thin_ingest"
   });
+  // The small request is dispatched first; the exact originals then use their
+  // independent single-flight Storage lane while Luna is running. We retain a
+  // rejection handler here only to prevent an unhandled promise -- Finalize or
+  // the writer's single click will retry Storage, never Luna.
+  if (recognitionInputOnly) {
+    const originalUpload = Promise.resolve().then(() => ensureAssetOriginalImagesUploaded(asset));
+    void originalUpload.catch(() => null);
+  }
+  const request = await requestPromise;
   const payload = request.payload || {};
-  const canRecoverUpload = payload.client_asset_ref === metadata.clientAssetRef
+  const canRecoverIdentity = payload.client_asset_ref === metadata.clientAssetRef
     && payload.asset_id
-    && payload.tenant_id
-    && Array.isArray(payload.verifications);
-  if (canRecoverUpload) {
+    && payload.tenant_id;
+  if (canRecoverIdentity) {
     asset.durableAssetId = payload.asset_id;
     asset.durableTenantId = payload.tenant_id;
     asset.imageGenerationId = payload.image_generation_id || payload.asset_id;
     asset.expectedOriginalCount = Number(payload.expected_original_count || images.length);
+  }
+  const canRecoverUpload = canRecoverIdentity && Array.isArray(payload.verifications);
+  if (canRecoverUpload) {
     const verificationByImage = new Map(payload.verifications.map((row) => [row.image_id, row]));
     for (const row of images) {
       const verification = verificationByImage.get(row.imageId);
@@ -2020,6 +2206,7 @@ async function requestCsmIngestFastPath(asset, intentId) {
       });
     }
     asset.backgroundPrepareStatus = "ready";
+    asset.originalDurabilityStatus = ORIGINAL_DURABILITY_STATUS.VERIFIED;
   }
   if (request.error || request.payload?.ok !== true) {
     const error = new Error(request.payload?.message || `CSM 一体化链路失败：${request.response?.status || "network"}`);
@@ -2027,10 +2214,98 @@ async function requestCsmIngestFastPath(asset, intentId) {
     error.retryable = request.payload?.retryable === true;
     throw error;
   }
-  if (!canRecoverUpload) {
+  if (!canRecoverIdentity || (!recognitionInputOnly && !canRecoverUpload)) {
     throw new Error("csm_ingest_asset_identity_mismatch");
   }
+  if (recognitionInputOnly
+      && (payload.trace_status !== TITLE_TRACE_STATUS.CHECKPOINTED
+        || payload.checkpoint_state !== "STAGED"
+        || !payload.pending_recognition_session_id
+        || payload.checkpoint_receipt?.schema_version !== "csm-checkpoint-receipt-v1")) {
+    throw new Error("csm_ingest_checkpoint_identity_missing");
+  }
   return payload;
+}
+
+async function finalizeCheckpointedTitle(asset, result, intentId) {
+  if (String(result?.csm_trace_status || "").toUpperCase() === TITLE_TRACE_STATUS.PERSISTED) {
+    return true;
+  }
+  if (asset.finalizationPromise) return asset.finalizationPromise;
+
+  asset.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.FINALIZING;
+  result.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.FINALIZING;
+  const attempt = (async () => {
+    await ensureAssetOriginalImagesUploaded(asset);
+    const request = await fetchJsonWithRetry(CSM_THIN_API_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        asset_id: canonicalAssetId(asset),
+        intent_id: String(intentId || result.csm_intent_id || "").trim(),
+        image_detail: "high",
+        checkpoint_required: true,
+        checkpoint_receipt: result.checkpoint_receipt,
+        ...(asset.clientTiming && Object.keys(asset.clientTiming).length
+          ? { client_timing: asset.clientTiming }
+          : {})
+      })
+    }, {
+      timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
+      maxAttempts: 1,
+      retryNetworkErrors: false,
+      asset,
+      stage: "csm_thin_finalize"
+    });
+    const payload = request.payload || {};
+    if (request.error || payload.ok !== true) {
+      const error = new Error(payload.message || `CSM 正式入库失败：${request.response?.status || "network"}`);
+      error.code = String(payload.code || "").trim();
+      error.retryable = payload.retryable === true;
+      throw error;
+    }
+    if (payload.trace_status !== TITLE_TRACE_STATUS.PERSISTED
+        || Number(payload.provider_calls) !== 0
+        || !String(payload.recognition_session_id || "").trim()) {
+      throw new Error("csm_checkpoint_finalize_contract_mismatch");
+    }
+
+    asset.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.PERSISTED;
+    result.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.PERSISTED;
+    result.recognitionPersistenceStatus = "PERSISTED";
+    result.recognition_session_id = payload.recognition_session_id;
+    result.csm_trace_status = TITLE_TRACE_STATUS.PERSISTED;
+    result.title_stage = "FINAL";
+    result.pending_recognition_session_id = "";
+    result.checkpoint_receipt = null;
+    result.csm_rows = payload.csm_rows || result.csm_rows;
+    result.route = payload.route || result.route;
+    result.reason = "";
+    result.confidence = (payload.low_confidence_fields || []).length ? "MEDIUM" : "HIGH";
+    if (!result.feedbackStatus && /^原图正在后台保存/.test(String(result.feedbackMessage || ""))) {
+      result.feedbackMessage = "原图与 CSM 已完成入库。";
+    }
+    if (result.asset_id && !result.csmResolutionView) {
+      loadCsmResolutionView(result.asset_id)
+        .then((view) => { if (view) { result.csmResolutionView = view; renderResults(); } })
+        .catch(() => {});
+    }
+    return true;
+  })();
+
+  const guarded = attempt.catch((error) => {
+    asset.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.FAILED;
+    result.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.FAILED;
+    result.recognitionPersistenceStatus = "FAILED";
+    result.feedbackMessage = `标题已保留；原图或正式入库待重试：${error.message || "请稍后重试"}`;
+    if (asset.finalizationPromise === guarded) asset.finalizationPromise = null;
+    throw error;
+  }).finally(() => {
+    if (assetLifecycleMatches(asset, asset.lifecycleGeneration)) renderResults();
+  });
+  asset.finalizationPromise = guarded;
+  return guarded;
 }
 
 async function processAssetViaCsmThinPath(asset, {
@@ -2043,6 +2318,24 @@ async function processAssetViaCsmThinPath(asset, {
   if (!durableIntentId) throw new Error("CSM 识别意图缺失");
   const startedAt = performance.now();
   let payload;
+  if (manualRetry === true && asset.derivedCheckpointReplayRequired === true) {
+    const recognitionInputs = Array.isArray(asset.recognitionInputs) ? asset.recognitionInputs : [];
+    if (!recognitionDerivedLaneEligible({
+      originalCount: asset.images.length,
+      inputs: recognitionInputs
+    })) {
+      throw Object.assign(new Error("csm_checkpoint_replay_input_missing"), {
+        code: "csm_checkpoint_replay_input_missing",
+        retryable: false
+      });
+    }
+    setAssetProgress(asset.index, "恢复已结算的标题 checkpoint", 0.28);
+    payload = await requestCsmIngestFastPath(asset, durableIntentId, {
+      recognitionInputs,
+      manualRetry: true
+    });
+    asset.derivedCheckpointReplayRequired = false;
+  }
   if (manualRetry !== true && csmIngestFastPathEligible(asset)) {
     setAssetProgress(asset.index, "上传与 Luna 并行", 0.28);
     markAssetStarted(asset, Date.now(), "client_csm_ingest_request");
@@ -2052,6 +2345,23 @@ async function processAssetViaCsmThinPath(asset, {
       // The durable operation key is asset/intent/image based, so falling back
       // can safely recover a lost response without buying a second model call.
       asset.fastIngestFallbackReason = String(fastPathError?.code || fastPathError?.message || "fast_ingest_failed").slice(0, 160);
+    }
+  }
+  if (!payload && manualRetry !== true && csmDerivedLanePotential(asset)) {
+    setAssetProgress(asset.index, "准备 1600px 识别图", 0.08);
+    const recognitionInputs = await ensureRecognitionDownscales(asset, asset.images);
+    if (recognitionDerivedLaneEligible({
+      originalCount: asset.images.length,
+      inputs: recognitionInputs
+    })) {
+      setAssetProgress(asset.index, "Luna 识别；原图后台保存", 0.28);
+      markAssetStarted(asset, Date.now(), "client_csm_checkpoint_request");
+      // There is deliberately no automatic direct fallback here. Once this
+      // request is dispatched the provider may have been paid; any recovery
+      // must replay its durable checkpoint under the original fingerprints.
+      asset.derivedCheckpointReplayRequired = true;
+      payload = await requestCsmIngestFastPath(asset, durableIntentId, { recognitionInputs });
+      asset.derivedCheckpointReplayRequired = false;
     }
   }
   if (!payload) {
@@ -2095,6 +2405,7 @@ async function processAssetViaCsmThinPath(asset, {
     payload = request.payload;
   }
   const lowConfidence = payload.low_confidence_fields || [];
+  const checkpointed = payload.trace_status === TITLE_TRACE_STATUS.CHECKPOINTED;
   setAssetProgress(asset.index, "CSM / SEM 组合完成", 0.96);
   const csmResult = attachGenerationTimingToResult({
     index: asset.index,
@@ -2111,31 +2422,46 @@ async function processAssetViaCsmThinPath(asset, {
     // value in the writer UI, not a signal to fall back to generatedTitle.
     correctedTitle: payload.title,
     writerTitlePending: false,
-    confidence: lowConfidence.length || payload.trace_status !== "PERSISTED" ? "MEDIUM" : "HIGH",
+    confidence: lowConfidence.length || checkpointed ? "MEDIUM" : "HIGH",
     provider: "gpt-5.6-luna",
     provider_label: "Luna 5.6",
     model_id: payload.model || "gpt-5.6-luna",
-    reason: payload.trace_status === "PERSISTED" ? "" : "CSM trace persistence failed",
+    reason: checkpointed ? "原图正在后台保存；标题 checkpoint 已持久化。" : "",
     fields: payload.fields || {},
     resolved: payload.fields || {},
     generated_resolved_fields: payload.fields || {},
     unresolved: payload.unreadable_fields || [],
-    recognition_session_id: payload.recognition_session_id || "",
-    title_stage: "FINAL",
+    recognition_session_id: checkpointed ? "" : payload.recognition_session_id || "",
+    pending_recognition_session_id: checkpointed ? payload.pending_recognition_session_id || "" : "",
+    checkpoint_receipt: checkpointed ? payload.checkpoint_receipt || null : null,
+    title_stage: checkpointed ? "PROVISIONAL" : "FINAL",
     assisted_draft_status: "READY",
     csm_trace_status: payload.trace_status,
+    recognitionPersistenceStatus: checkpointed ? "STAGED" : "PERSISTED",
+    titleFinalizationStatus: checkpointed
+      ? TITLE_FINALIZATION_STATUS.PENDING
+      : TITLE_FINALIZATION_STATUS.PERSISTED,
     csm_intent_id: durableIntentId,
     csm_rows: payload.csm_rows,
     route: payload.route || "CSM_THIN_DIRECT",
     timing: { client_total_ms: Math.round(performance.now() - startedAt) }
   });
+  if (checkpointed) {
+    asset.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.PENDING;
+    csmResult.feedbackMessage = "原图正在后台保存；标题现在即可编辑、复制。";
+    void finalizeCheckpointedTitle(asset, csmResult, durableIntentId).catch(() => null);
+  } else {
+    asset.titleFinalizationStatus = TITLE_FINALIZATION_STATUS.PERSISTED;
+  }
   // Glass Box (COS-42): fetch the field-level trace once the title is final.
   // Read-only and fire-and-forget, so a failure here must never disturb the
   // title the writer is waiting on -- an inspector that can break the thing it
   // inspects is worse than no inspector. This hook used to hang off the V4
   // assisted-draft poller, which the direct CSM route retired; the anchor is
   // now the point where the CSM result itself becomes final.
-  if (csmResult.asset_id && !csmResult.csmResolutionView) {
+  if (csmResult.csm_trace_status === TITLE_TRACE_STATUS.PERSISTED
+      && csmResult.asset_id
+      && !csmResult.csmResolutionView) {
     loadCsmResolutionView(csmResult.asset_id)
       .then((view) => { if (view) { csmResult.csmResolutionView = view; renderResults(); } })
       .catch(() => {});
@@ -2174,6 +2500,12 @@ function scheduleAssetBackgroundPreparation(asset, runId = state.backgroundPrepa
   // the legacy upload worker here would recreate the serial boundary and race
   // the same deterministic object paths.
   if (csmIngestFastPathEligible(asset)) return true;
+  // A large original is the only cohort that can benefit from the bounded
+  // recognition lane. Do not occupy the writer's uplink with the original
+  // before the small provider request has even been dispatched. The
+  // recognition worker either starts both lanes, or falls back to this exact
+  // original uploader when downscaling is not useful.
+  if (csmDerivedLanePotential(asset)) return true;
   if (asset.backgroundPrepareStatus === "ready") return true;
   if (asset.backgroundPreparationScheduledRunId === runId) return true;
   asset.backgroundPreparationScheduledRunId = runId;
@@ -2222,7 +2554,7 @@ function renderProviderControl() {
       <small>CSM / SEM 单次识别</small>
     </button>
   `;
-  elements.providerStatusText.textContent = "上传后自动识别 · 原图直达 Luna · CSM / SEM 生成标题";
+  elements.providerStatusText.textContent = "上传即识别 · 大图以清晰轻量输入直达 Luna · 原图后台留存";
   elements.processButton.disabled = !canGenerateTitles();
 }
 
@@ -2705,8 +3037,10 @@ export const __listingCopilotAppTestHooks = {
   clearImageStorageBinding,
   directRecognitionConcurrencyLimit,
   ensureAssetPreparedForRecognition,
+  finalizeCheckpointedTitle,
   generationTimingView,
   handleFiles,
+  queueFileIntake,
   imageHasVerifiedStorageReference,
   imagesForProvider,
   notePendingStorageConfirmationFailure,
@@ -2717,15 +3051,19 @@ export const __listingCopilotAppTestHooks = {
     processing: state.processing,
     resultIndexes: state.results.map((result) => Number(result.index))
   }),
+  processAssetViaCsmThinPath,
   recognitionClockFromServerPayload,
+  requestCsmIngestFastPath,
   resetAssetPreparationForRetry,
   retryStateForResult,
+  saveFeedbackForResult,
   shouldUseStorageFirstImage,
   startCsmWarmup,
   storageDimensionsForImage,
   storageSourceForImage,
   syncAssetGenerationTimingFromServer,
-  uploadOriginalAssetImagesBatch
+  uploadOriginalAssetImagesBatch,
+  withOriginalUploadAdmission
 };
 
 function createClientAsset(images, index) {
@@ -2737,7 +3075,12 @@ function createClientAsset(images, index) {
     lifecycleGeneration: state.assetLifecycleGeneration,
     index,
     images,
-    providerImages: imagesForProvider(images)
+    providerImages: imagesForProvider(images),
+    recognitionInputs: [],
+    recognitionInputsPromise: null,
+    originalDurabilityStatus: ORIGINAL_DURABILITY_STATUS.PENDING,
+    titleFinalizationStatus: TITLE_FINALIZATION_STATUS.IDLE,
+    finalizationPromise: null
   };
 }
 
@@ -2764,8 +3107,7 @@ function writerModeActive() {
 
 function workspaceInteractionLocked() {
   return state.writerSaveInFlight
-    || state.exportingWorkbook
-    || state.preparingFiles;
+    || state.exportingWorkbook;
 }
 
 function destructiveWorkspaceInteractionLocked() {
@@ -2938,18 +3280,26 @@ function runWorkbenchViewTransition({ kind, enabled = true, prepareSharedElement
 
 function updateWorkspaceModeUi() {
   const interactionLocked = workspaceInteractionLocked();
-  const destructiveInteractionLocked = destructiveWorkspaceInteractionLocked() || state.processing;
+  const destructiveInteractionLocked = destructiveWorkspaceInteractionLocked()
+    || state.processing
+    || state.preparingFiles;
+  const intakeInteractionLocked = state.writerSaveInFlight
+    || state.exportingWorkbook
+    || state.retryInFlight > 0;
   elements.workspace?.setAttribute("data-workspace-mode", state.workspaceMode);
   elements.workspace?.setAttribute("data-batch-state", state.assets.length ? "ready" : "empty");
   elements.workspaceModeButtons.forEach((button) => {
     const active = button.dataset.workspaceMode === state.workspaceMode;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
-    button.disabled = interactionLocked;
+    button.disabled = interactionLocked || state.preparingFiles;
   });
-  elements.imageInput.disabled = destructiveInteractionLocked;
+  // Recognition workers and intake are independent pools. A writer can append
+  // the next cards while prior cards are at Luna; the new cards inherit the
+  // same durable intent and the existing titles remain editable.
+  elements.imageInput.disabled = intakeInteractionLocked;
   elements.resetButton.disabled = destructiveInteractionLocked;
-  elements.dropZone.setAttribute("aria-disabled", destructiveInteractionLocked ? "true" : "false");
+  elements.dropZone.setAttribute("aria-disabled", intakeInteractionLocked ? "true" : "false");
   if (elements.workspaceModeHint) {
     elements.workspaceModeHint.textContent = writerModeActive()
       ? "只看当前卡片；Enter 确认入库并推进到下一张。"
@@ -2959,7 +3309,7 @@ function updateWorkspaceModeUi() {
 }
 
 function setWorkspaceMode(mode, { animate = false } = {}) {
-  if (workspaceInteractionLocked()) return;
+  if (workspaceInteractionLocked() || state.preparingFiles) return;
   const nextMode = mode === "writer" ? "writer" : "standard";
   if (state.workspaceMode === nextMode) return;
   let transitionIndexes = writerWheelVisibleAssetIndexes();
@@ -3040,7 +3390,7 @@ function updateStats() {
   elements.stats.cost.textContent = formatCost(state.assets.length);
 }
 
-function renderPreviews({ rebuildAssets = true } = {}) {
+function renderPreviews({ rebuildAssets = true, preserveFocusedTitleInput = false } = {}) {
   if (rebuildAssets) buildAssets();
   updateStats();
   updateWorkspaceModeUi();
@@ -3057,7 +3407,10 @@ function renderPreviews({ rebuildAssets = true } = {}) {
   }
 
   updatePreviewSummary();
-  renderAssetRows();
+  const preserveEditor = preserveFocusedTitleInput
+    && document.activeElement?.matches?.("[data-title-input]")
+    && elements.assetPreviewList.contains(document.activeElement);
+  if (!preserveEditor) renderAssetRows();
 }
 
 function renderResults({ forceWriterRender = false } = {}) {
@@ -3111,7 +3464,12 @@ function completedExportRowsReady() {
   if (state.processing || state.exportingWorkbook || state.preparingFiles) return false;
   return state.assets.every((asset) => {
     const result = resultForAsset(asset);
-    return Boolean(result && finalTitleForResult(result));
+    return Boolean(
+      result
+      && finalTitleForResult(result)
+      && result.csm_trace_status !== TITLE_TRACE_STATUS.CHECKPOINTED
+      && asset.titleFinalizationStatus !== TITLE_FINALIZATION_STATUS.FAILED
+    );
   });
 }
 
@@ -3562,11 +3920,13 @@ function TitleCardComponent(result, asset = null) {
   }[result.feedbackStatus] || (titleEdited ? "保存编辑" : "接受");
   const statusLabel = failed
     ? "失败"
-    : writerReviewWithoutDraft
-      ? "需人工输入"
-      : ["MEDIUM", "LOW"].includes(confidence) || unresolved.length
-        ? "需确认"
-        : "已生成";
+    : result.csm_trace_status === TITLE_TRACE_STATUS.CHECKPOINTED
+      ? "标题已出"
+      : writerReviewWithoutDraft
+        ? "需人工输入"
+        : ["MEDIUM", "LOW"].includes(confidence) || unresolved.length
+          ? "需确认"
+          : "已生成";
   const unavailableTitle = writerReviewWithoutDraft
     ? "证据不足，系统未猜测；请直接输入最终英文标题"
     : failed
@@ -3734,12 +4094,16 @@ async function handleFiles(
   state.preparingFiles = true;
   releaseIntakePreviewRecords();
   state.intakePreviewRecords = intakePreviewRecords;
-  renderInstantIntakePreviews(intakePreviewRecords);
+  // Instant intake owns the empty canvas only. Replacing assetPreviewList
+  // during an append would remove the writer's already generated textarea and
+  // actions for the whole decode window, which is a UI lock even if no button
+  // is technically disabled.
+  if (batchWasEmpty) renderInstantIntakePreviews(intakePreviewRecords);
 
   try {
     setStatus(batchWasEmpty
-      ? "本地预览已显示；正在校验原图，随后自动上传并识别…"
-      : `已追加 ${imageFiles.length} 张图片；正在校验原图并延续当前识别任务…`, { busy: true });
+      ? "本地预览已显示；正在并行准备识别与原图留存…"
+      : `已追加 ${imageFiles.length} 张图片；正在延续当前识别任务并后台留存原图…`, { busy: true });
     closeImageModal();
     if (batchWasEmpty) {
       state.workspaceMode = "writer";
@@ -3835,7 +4199,10 @@ async function handleFiles(
       enabled: animateIntake && batchWasEmpty && images.length > 0,
       update: () => {
         releaseIntakePreviewRecords(intakePreviewRecords);
-        renderPreviews({ rebuildAssets: false });
+        renderPreviews({
+          rebuildAssets: false,
+          preserveFocusedTitleInput: !batchWasEmpty
+        });
         renderResults();
       }
     });
@@ -3850,9 +4217,12 @@ async function handleFiles(
       state.preparingFiles = false;
       if (state.intakePreviewRecords === intakePreviewRecords) {
         releaseIntakePreviewRecords(intakePreviewRecords);
-        renderPreviews({ rebuildAssets: false });
+        renderPreviews({
+          rebuildAssets: false,
+          preserveFocusedTitleInput: !batchWasEmpty
+        });
       }
-      renderResults({ forceWriterRender: true });
+      renderResults({ forceWriterRender: batchWasEmpty });
       syncBackgroundPreparationStatus();
       if (state.assets.length) {
         // Selecting card images is the recognition intent. Asset-ready calls
@@ -3873,6 +4243,22 @@ async function handleFiles(
       }
     }
   }
+}
+
+function queueFileIntake(fileList, options = {}, dependencies = {}) {
+  const files = [...(fileList || [])];
+  if (!files.length) return Promise.resolve();
+  if (state.preparingFiles) {
+    setStatus(`已接收 ${files.length} 张追加图片；当前选择读取完成后自动接续。`, { busy: true });
+  }
+  const task = fileIntakeTail
+    .catch(() => null)
+    .then(async () => {
+      while (destructiveWorkspaceInteractionLocked()) await wait(50);
+      return handleFiles(files, options, dependencies);
+    });
+  fileIntakeTail = task;
+  return task;
 }
 
 function failedResult(asset, error, intentId = state.backgroundRecognitionBatchId) {
@@ -3902,8 +4288,10 @@ function processingCompletionStatus() {
   const total = state.assets.length;
   const failed = state.results.filter((result) => normalizeConfidence(result.confidence) === "FAILED").length;
   const succeeded = Math.max(0, state.results.length - failed);
+  const staged = state.results.filter((result) => result.csm_trace_status === TITLE_TRACE_STATUS.CHECKPOINTED).length;
 
   if (!total) return "";
+  if (staged) return `100% · ${succeeded} 个标题已生成；${staged} 张原图仍在后台完成留存。`;
   if (failed && succeeded) return `100% · 已完成：${succeeded} 个成功，${failed} 个失败。失败项可查看错误后重试。`;
   if (failed) return `100% · 已完成：${failed} 个失败。请查看每张卡错误信息后重试。`;
   return "100% · 已完成，结果保持上传顺序。";
@@ -3929,7 +4317,7 @@ async function processTitles() {
   renderResults();
   elements.processButton.disabled = true;
   setProcessButtonBusy(true);
-  setStatus("图片已上传，正在自动识别卡片名称。", { busy: true });
+  setStatus("图片已读取，正在自动识别；原图在后台并行留存。", { busy: true });
 
   const recognitionBatchId = state.backgroundRecognitionBatchId || createClientBatchId();
   state.backgroundRecognitionBatchId = recognitionBatchId;
@@ -4020,6 +4408,9 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
     asset.durableAssetPromise = null;
     asset.assetCreateIdempotencyKey = "";
     asset.originalStorageUploadPromise = null;
+    asset.derivedCheckpointReplayRequired = false;
+    asset.recognitionInputs = [];
+    asset.recognitionInputsPromise = null;
     asset.backgroundPreparationPromise = null;
     asset.backgroundPreparationRunId = null;
     asset.backgroundPreparationScheduledRunId = null;
@@ -4282,8 +4673,34 @@ async function saveManualRecoveryForResult(result, asset, { deferFinalRender = f
 async function saveFeedbackForResult(result, asset, { deferFinalRender = false } = {}) {
   if (!result) return false;
 
-  const sessionId = String(result.recognition_session_id || "").trim();
+  let sessionId = String(result.recognition_session_id || "").trim();
+  const stagedDecision = titleActionPolicy({
+    action: result.explicitReviewOutcome === "REJECTED" ? "REJECT" : "ACCEPT",
+    traceStatus: result.csm_trace_status
+  });
+  if (!sessionId && stagedDecision.joinFinalization) {
+    result.feedbackStatus = "saving";
+    result.persistenceStatus = "saving";
+    result.feedbackMessage = "标题已确认；正在等待原图并完成正式入库…";
+    if (!deferFinalRender) renderResults();
+    try {
+      await finalizeCheckpointedTitle(asset, result, result.csm_intent_id);
+      sessionId = String(result.recognition_session_id || "").trim();
+    } catch {
+      result.feedbackStatus = "";
+      result.persistenceStatus = "failed";
+      if (!deferFinalRender) renderResults();
+      return false;
+    }
+  }
   if (!sessionId) {
+    if (result.csm_trace_status === TITLE_TRACE_STATUS.CHECKPOINTED) {
+      result.feedbackStatus = "";
+      result.persistenceStatus = "failed";
+      result.feedbackMessage = "标题 checkpoint 已保留，但正式 CSM 尚未就绪；不会转成人工失败记录。";
+      if (!deferFinalRender) renderResults();
+      return false;
+    }
     // COS-51. This used to be a dead end: no session meant no persistence, and
     // a failed recognition can never produce one. The operator could type a
     // complete title and had nowhere to put it, so the card could not advance
@@ -4572,6 +4989,10 @@ async function exportWriterWorkbook() {
   try {
     await mapWithConcurrency(exportAssets, 2, async (asset) => {
       await ensureAssetOriginalImagesUploaded(asset);
+      const result = resultForAsset(asset);
+      if (titleActionPolicy({ action: "EXPORT", traceStatus: result?.csm_trace_status }).joinFinalization) {
+        await finalizeCheckpointedTitle(asset, result, result?.csm_intent_id);
+      }
     });
     const rows = buildWriterExportRows(exportAssets, {
       requireSaved: exportingWriterRows,
@@ -4617,8 +5038,10 @@ async function exportWriterWorkbook() {
 }
 
 function resetTool() {
-  if (state.processing) {
-    setStatus("当前批次正在识别，请等待完成后再清空。", { busy: true });
+  if (state.processing || state.preparingFiles) {
+    setStatus(state.preparingFiles
+      ? "图片正在准备，请等待完成后再清空。"
+      : "当前批次正在识别，请等待完成后再清空。", { busy: true });
     return;
   }
   if (destructiveWorkspaceInteractionLocked()) {
@@ -4698,12 +5121,16 @@ function bindEvents() {
   elements.imageInput.addEventListener("change", (event) => {
     const animateIntake = state.fileSelectionPointerRequested;
     state.fileSelectionPointerRequested = false;
-    void handleFiles(event.target.files, { animateIntake });
+    const files = [...event.target.files];
+    event.target.value = "";
+    void queueFileIntake(files, { animateIntake }).catch((error) => {
+      setStatus(error?.message || "图片读取失败，请重试。");
+    });
   });
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {
     input.addEventListener("change", () => {
-      if (destructiveWorkspaceInteractionLocked() || state.processing) return;
+      if (destructiveWorkspaceInteractionLocked() || state.processing || state.preparingFiles) return;
       state.assetLifecycleGeneration += 1;
       state.backgroundPreparationRunId += 1;
       state.backgroundRecognitionBatchId = "";
@@ -4737,7 +5164,9 @@ function bindEvents() {
   });
 
   elements.dropZone.addEventListener("drop", (event) => {
-    void handleFiles(event.dataTransfer.files, { animateIntake: true });
+    void queueFileIntake(event.dataTransfer.files, { animateIntake: true }).catch((error) => {
+      setStatus(error?.message || "图片读取失败，请重试。");
+    });
   });
 
   elements.processButton.addEventListener("click", processTitles);
@@ -4909,7 +5338,10 @@ function bindEvents() {
 
   globalThis.window?.addEventListener("beforeunload", (event) => {
     if (globalThis.__LYNCA_CONFIRMED_NAVIGATION__ === true) return;
-    const pending = state.processing;
+    const pending = state.processing || state.assets.some((asset) => shouldWarnBeforeUnload({
+      originalDurabilityStatus: asset.originalDurabilityStatus,
+      finalizationStatus: asset.titleFinalizationStatus
+    }));
     const unsaved = state.results.some((result) => {
       return finalTitleForResult(result) && !writerFeedbackPersisted(result);
     });

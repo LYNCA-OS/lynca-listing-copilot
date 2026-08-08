@@ -12,6 +12,7 @@ import {
   CSM_PERSISTENCE_READINESS_CACHE_TTL_MS,
   CSM_DIRECT_PROMPT_VERSION,
   buildProviderFailureReceipt,
+  buildCsmCheckpointReceipt,
   buildCsmPersistenceCheckpoint,
   checkCsmDirectPreSpendReadiness,
   checkCachedCsmPersistenceReadiness,
@@ -344,10 +345,23 @@ const canonicalImages = () => ({
   image_generation_id: "asset-1",
   image_set_sha256: "b".repeat(64),
   expected_original_count: 1,
-  image_references: [{ objectPath: "tenant-1/a.jpg", content_sha256: IMAGE_HASH }],
+  image_references: [{
+    image_id: "image-1",
+    image_role: "front_original",
+    bucket: "cards",
+    object_path: "tenant-1/a.jpg",
+    content_sha256: IMAGE_HASH,
+    derived: false,
+    source_image_id: null,
+    source_region: null,
+    crop_metadata: null
+  }],
   images: [{
+    image_id: "image-1",
     objectPath: "tenant-1/a.jpg",
     bucket: "cards",
+    storageRole: "image_1_original",
+    size: 1_024,
     derived: false,
     content_sha256: IMAGE_HASH
   }]
@@ -550,7 +564,7 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   });
 
   assert.equal(result.title, "Test title");
-  assert.deepEqual(events, ["readiness", "images", "sign", "session", "model_and_csm", "persist_csm"]);
+  assert.deepEqual(events, ["readiness", "images", "sign", "model_and_csm", "session", "persist_csm"]);
   assert.ok(result.latency_stages_ms.preflight_ms >= 0);
   assert.ok(result.latency_stages_ms.image_manifest_ms >= 0);
   assert.ok(result.latency_stages_ms.signed_url_ms >= 0);
@@ -617,27 +631,27 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.equal(paidCalls, 0, "the injected CSM seam must not accidentally call the real provider");
 }
 
-// Signed image reads and the durable recognition-session write are independent
-// pre-provider work. They must start together so writer-visible latency pays
-// for the slower boundary once instead of summing two network round trips.
+// The formal session is not pre-provider work. It may only be created after
+// the paid result has crossed the authority's durable settle boundary.
 {
-  let sessionStarted = false;
+  let authoritySettled = false;
   const authority = passthroughAuthority();
-  const dependencies = successfulDependencies({ authority });
-  dependencies.signImage = async () => {
-    await Promise.resolve();
-    assert.equal(sessionStarted, true, "recognition session creation must overlap signed URL creation");
-    return "https://signed.invalid/a.jpg";
+  authority.runAttempt = async ({ queuedAttempt, execute }) => {
+    await queuedAttempt;
+    const result = await execute();
+    authoritySettled = true;
+    return result;
   };
+  const dependencies = successfulDependencies({ authority });
   dependencies.createSession = async () => {
-    sessionStarted = true;
+    assert.equal(authoritySettled, true, "recognition session must follow durable provider settle");
     return { persistence: { recognition_session: { saved: true } } };
   };
   const result = await runDirectCsmAsset({
     tenantId: "tenant-1",
     userId: "user-1",
     assetId: "asset-1",
-    intentId: "parallel-pre-provider-boundaries",
+    intentId: "session-after-provider-checkpoint",
     dependencies
   });
   assert.equal(result.title, "Test title");
@@ -663,7 +677,7 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
 
   const storedTask = {
     tenant_id: "tenant-1", intent_id: "intent-1", asset_id: "asset-1",
-    model: "gpt-5.6-luna", detail: "high",
+    model: "gpt-5.6-luna", reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort, detail: "high",
     prompt_version: CSM_DIRECT_PROMPT_VERSION,
     estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
     image_fingerprints: [`sha256:${IMAGE_HASH}`]
@@ -731,6 +745,508 @@ await assert.rejects(
   "the API must reject a successful-looking non-atomic transport"
 );
 
+// A derived inline request may settle a displayable provider checkpoint before
+// originals finish uploading. The existing direct endpoint then finalizes that
+// same operation from verified originals without a second provider boundary.
+{
+  let durable = null;
+  let prepareCalls = 0;
+  let sessionCalls = 0;
+  let persistCalls = 0;
+  let lastSessionPayload = null;
+  const authority = passthroughAuthority({
+    lookup: async () => durable
+      ? { status: "found", latestAttempt: 1, result: durable }
+      : { status: "not_found" }
+  });
+  authority.runAttempt = async ({ queuedAttempt, execute }) => {
+    await queuedAttempt;
+    if (durable) return durable;
+    durable = await execute();
+    return durable;
+  };
+  const derivedLedger = [{
+    image_role: "front_original",
+    read: "readability_derived_inline",
+    bytes: 240_000,
+    original_bytes: null,
+    derived_available: true,
+    derived_bytes: 240_000,
+    source_image_id: "image-1",
+    transform_version: "readability-downscale-v1",
+    lane_version: "csm-derived-checkpoint-v1",
+    content_sha256: "d".repeat(64),
+    original_content_sha256: IMAGE_HASH
+  }];
+  const checkpoint = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "derived-checkpoint",
+    checkpointOnly: true,
+    dependencies: {
+      checkReadiness: async () => ({ ready: true }),
+      readImages: async () => ({ asset_id: "asset-1", images: [], image_references: [] }),
+      imageFingerprints: [`sha256:${IMAGE_HASH}`],
+      recognitionImages: [{
+        objectPath: "inline-derived/front",
+        bytes: Buffer.from("derived-front")
+      }],
+      recognitionInput: derivedLedger,
+      operationScope: "derived_checkpoint",
+      laneVersion: "csm-derived-checkpoint-v1",
+      signImage: async () => "data:image/jpeg;base64,ZGVyaXZlZA==",
+      preparePath: async ({ recognitionSessionId }) => {
+        prepareCalls += 1;
+        return preparedResult(recognitionSessionId, "Checkpoint title");
+      },
+      createSession: async () => {
+        sessionCalls += 1;
+        throw new Error("checkpoint_must_not_create_session");
+      },
+      persistPath: async () => {
+        persistCalls += 1;
+        throw new Error("checkpoint_must_not_persist_csm");
+      },
+      providerAdmission: authority
+    }
+  });
+  assert.equal(checkpoint.title, "Checkpoint title");
+  assert.equal(checkpoint.trace_status, "CHECKPOINTED");
+  assert.equal(checkpoint.checkpoint_state, "STAGED");
+  assert.match(checkpoint.pending_recognition_session_id, /^csmsess_[0-9a-f]{40}$/);
+  assert.equal(checkpoint.provider_calls, 1);
+  assert.equal(checkpoint.provider_replayed, false);
+  assert.equal(checkpoint.checkpoint_receipt.schema_version, "csm-checkpoint-receipt-v1");
+  assert.equal(checkpoint.checkpoint_receipt.task.asset_id, "asset-1");
+  assert.equal(checkpoint.checkpoint_receipt.task.intent_id, "derived-checkpoint");
+  assert.deepEqual(checkpoint.checkpoint_receipt.task.image_fingerprints, [`sha256:${IMAGE_HASH}`]);
+  assert.equal(checkpoint.checkpoint_receipt.task.reasoning_effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
+  assert.equal(checkpoint.checkpoint_receipt.task.operation_scope, "derived_checkpoint");
+  assert.equal(sessionCalls, 0);
+  assert.equal(persistCalls, 0);
+  assert.deepEqual(durable.csm_persistence_checkpoint.recognition_input, derivedLedger);
+
+  const finalizeDependencies = successfulDependencies({ authority });
+  finalizeDependencies.preparePath = async () => {
+    prepareCalls += 1;
+    throw new Error("finalize_must_not_prepare_or_call_provider");
+  };
+  finalizeDependencies.createSession = async ({ payload }) => {
+    sessionCalls += 1;
+    lastSessionPayload = payload;
+    return { persistence: { recognition_session: { saved: true } } };
+  };
+  finalizeDependencies.persistPath = async ({ prepared }) => {
+    persistCalls += 1;
+    return {
+      ...prepared,
+      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    };
+  };
+  const finalized = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "derived-checkpoint",
+    checkpointRequired: true,
+    checkpointReceipt: checkpoint.checkpoint_receipt,
+    dependencies: finalizeDependencies
+  });
+  assert.equal(finalized.title, "Checkpoint title");
+  assert.equal(finalized.provider_calls, 0, "checkpoint finalization is provider-incapable");
+  assert.equal(finalized.provider_replayed, true);
+  assert.equal(prepareCalls, 1, "the provider/prepare boundary runs exactly once");
+  assert.equal(sessionCalls, 1, "the formal session exists only during finalize");
+  assert.equal(persistCalls, 1);
+
+  let tamperedReceiptProviderCalls = 0;
+  const tamperedReceipt = structuredClone(checkpoint.checkpoint_receipt);
+  tamperedReceipt.task.prompt_version = `${tamperedReceipt.task.prompt_version}-tampered`;
+  await assert.rejects(
+    runDirectCsmAsset({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      assetId: "asset-1",
+      intentId: "derived-checkpoint",
+      checkpointRequired: true,
+      checkpointReceipt: tamperedReceipt,
+      callProvider: async () => { tamperedReceiptProviderCalls += 1; },
+      dependencies: finalizeDependencies
+    }),
+    (error) => error.code === "csm_persistence_checkpoint_invalid"
+      && error.detail === "checkpoint_receipt_mismatch",
+    "a tampered receipt must fail before lookup, session or provider"
+  );
+  assert.equal(tamperedReceiptProviderCalls, 0);
+  assert.equal(sessionCalls, 1);
+  assert.equal(persistCalls, 1);
+
+  const sourceMismatchDurable = structuredClone(durable);
+  sourceMismatchDurable.csm_persistence_checkpoint.recognition_input[0].source_image_id = "other-image";
+  let sourceMismatchProviderCalls = 0;
+  const sourceMismatchDependencies = {
+    ...finalizeDependencies,
+    providerAdmission: passthroughAuthority({
+      lookup: async () => ({ status: "found", latestAttempt: 1, result: sourceMismatchDurable })
+    })
+  };
+  await assert.rejects(
+    runDirectCsmAsset({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      assetId: "asset-1",
+      intentId: "derived-checkpoint",
+      checkpointRequired: true,
+      checkpointReceipt: checkpoint.checkpoint_receipt,
+      callProvider: async () => { sourceMismatchProviderCalls += 1; },
+      dependencies: sourceMismatchDependencies
+    }),
+    (error) => error.code === "csm_recognition_input_source_mismatch",
+    "the checkpoint slot must still name the verified original image id"
+  );
+  assert.equal(sourceMismatchProviderCalls, 0);
+  assert.equal(sessionCalls, 1, "source mismatch must precede formal session creation");
+  assert.equal(persistCalls, 1);
+  assert.deepEqual(lastSessionPayload.image_references, canonicalImages().image_references,
+    "the formal session uses the final verified originals, never inline derived bytes");
+  assert.deepEqual(lastSessionPayload.recognition_input, derivedLedger,
+    "the formal session preserves what the paid attempt actually read");
+
+  const mismatched = canonicalImages();
+  mismatched.images = mismatched.images.map((image) => ({
+    ...image,
+    content_sha256: "e".repeat(64)
+  }));
+  const mismatchDependencies = {
+    ...finalizeDependencies,
+    readImages: async () => mismatched,
+    createSession: async () => {
+      sessionCalls += 1;
+      throw new Error("hash_mismatch_must_precede_session");
+    }
+  };
+  await assert.rejects(
+    runDirectCsmAsset({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      assetId: "asset-1",
+      intentId: "derived-checkpoint",
+      checkpointRequired: true,
+      checkpointReceipt: checkpoint.checkpoint_receipt,
+      dependencies: mismatchDependencies
+    }),
+    (error) => error.code === "csm_persistence_checkpoint_invalid"
+      && error.detail === "receipt_request_identity_mismatch",
+    "a changed original fingerprint must fail closed against the durable checkpoint"
+  );
+  assert.equal(prepareCalls, 1);
+  assert.equal(sessionCalls, 1);
+  assert.equal(persistCalls, 1);
+
+  let missingCheckpointProviderCalls = 0;
+  const missingCheckpointReceipt = buildCsmCheckpointReceipt({
+    tenantId: "tenant-1",
+    taskIdentity: {
+      asset_id: "asset-1",
+      intent_id: "checkpoint-does-not-exist",
+      model: "gpt-5.6-luna",
+      reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+      detail: "high",
+      prompt_version: CSM_DIRECT_PROMPT_VERSION,
+      image_fingerprints: [`sha256:${IMAGE_HASH}`]
+    }
+  });
+  await assert.rejects(
+    runDirectCsmAsset({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      assetId: "asset-1",
+      intentId: "checkpoint-does-not-exist",
+      checkpointRequired: true,
+      checkpointReceipt: missingCheckpointReceipt,
+      callProvider: async () => { missingCheckpointProviderCalls += 1; },
+      dependencies: successfulDependencies({
+        authority: passthroughAuthority({ lookup: async () => ({ status: "not_found" }) })
+      })
+    }),
+    (error) => error.code === "csm_checkpoint_not_found"
+      && error.statusCode === 409
+      && error.provider_attempt_started === false,
+    "checkpoint-required finalize must be provider-incapable when no checkpoint exists"
+  );
+  assert.equal(missingCheckpointProviderCalls, 0);
+}
+
+// The receipt addresses the exact historical task. A deployment may change the
+// current prompt constant before originals finish, yet finalize must replay the
+// old operation and remain physically incapable of a new provider call.
+{
+  const historicalTask = {
+    asset_id: "asset-1",
+    intent_id: "cross-deploy-finalize",
+    model: "gpt-5.6-luna",
+    reasoning_effort: "none",
+    detail: "high",
+    prompt_version: "csm-canonical-fields-v0-cross-deploy",
+    image_fingerprints: [`sha256:${IMAGE_HASH}`]
+  };
+  assert.notEqual(historicalTask.prompt_version, CSM_DIRECT_PROMPT_VERSION);
+  assert.notEqual(historicalTask.reasoning_effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
+  const receipt = buildCsmCheckpointReceipt({ tenantId: "tenant-1", taskIdentity: historicalTask });
+  const sessionId = deterministicCsmSessionId(receipt.operation_key);
+  const historicalCheckpoint = buildCsmPersistenceCheckpoint({
+    prepared: preparedResult(sessionId, "Historical prompt title"),
+    tenantId: "tenant-1",
+    operationKey: receipt.operation_key,
+    payloadHash: receipt.payload_sha256,
+    recognitionSessionId: sessionId,
+    recognitionInput: [{
+      image_role: "front_original",
+      read: "readability_derived_inline",
+      bytes: 240_000,
+      original_bytes: null,
+      derived_available: true,
+      derived_bytes: 240_000,
+      source_image_id: "image-1"
+    }],
+    taskIdentity: historicalTask
+  });
+  let providerCalls = 0;
+  let persistedPrompt = null;
+  let persistedEffort = null;
+  let sessionProvider = null;
+  let sessionEffort = null;
+  const dependencies = successfulDependencies({
+    authority: passthroughAuthority({
+      lookup: async ({ operationKey, payloadHash }) => {
+        assert.equal(operationKey, receipt.operation_key);
+        assert.equal(payloadHash, receipt.payload_sha256);
+        return { status: "found", latestAttempt: 1, result: historicalCheckpoint };
+      }
+    })
+  });
+  dependencies.preparePath = async () => {
+    providerCalls += 1;
+    throw new Error("cross_deploy_finalize_must_not_prepare");
+  };
+  dependencies.createSession = async ({ payload }) => {
+    sessionProvider = payload.provider;
+    sessionEffort = payload.reasoning_effort;
+    return { persistence: { recognition_session: { saved: true } } };
+  };
+  dependencies.persistPath = async ({ prepared, promptVersion, effort }) => {
+    persistedPrompt = promptVersion;
+    persistedEffort = effort;
+    return {
+      ...prepared,
+      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    };
+  };
+  const finalized = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "cross-deploy-finalize",
+    checkpointRequired: true,
+    checkpointReceipt: receipt,
+    callProvider: async () => { providerCalls += 1; },
+    dependencies
+  });
+  assert.equal(finalized.title, "Historical prompt title");
+  assert.equal(finalized.provider_calls, 0);
+  assert.equal(finalized.provider_replayed, true);
+  assert.equal(providerCalls, 0);
+  assert.equal(sessionProvider, historicalTask.model);
+  assert.equal(sessionEffort, historicalTask.reasoning_effort);
+  assert.equal(persistedPrompt, historicalTask.prompt_version);
+  assert.equal(persistedEffort, historicalTask.reasoning_effort);
+}
+
+// The preview response can disappear after the paid result settles. A later
+// deployment may change model, prompt and effort, but the recognition-only lane
+// first looks up the stable asset/original identity and returns the old receipt.
+{
+  const historicalTask = {
+    asset_id: "asset-1",
+    intent_id: "response-lost-preview",
+    model: "gpt-5.5-luna",
+    reasoning_effort: "none",
+    detail: "high",
+    prompt_version: "csm-canonical-fields-v0-response-lost",
+    image_fingerprints: [`sha256:${IMAGE_HASH}`],
+    operation_scope: "derived_checkpoint",
+    lane_version: "csm-derived-checkpoint-v1"
+  };
+  const historicalReceipt = buildCsmCheckpointReceipt({
+    tenantId: "tenant-1",
+    taskIdentity: historicalTask
+  });
+  const historicalSessionId = deterministicCsmSessionId(historicalReceipt.operation_key);
+  const historicalCheckpoint = buildCsmPersistenceCheckpoint({
+    prepared: preparedResult(historicalSessionId, "Recovered lost preview"),
+    tenantId: "tenant-1",
+    operationKey: historicalReceipt.operation_key,
+    payloadHash: historicalReceipt.payload_sha256,
+    recognitionSessionId: historicalSessionId,
+    recognitionInput: [{
+      image_role: "front_original",
+      read: "readability_derived_inline",
+      bytes: 210_000,
+      original_bytes: null,
+      derived_available: true,
+      derived_bytes: 210_000,
+      source_image_id: "image-1"
+    }],
+    taskIdentity: historicalTask
+  });
+  let providerCalls = 0;
+  let enqueueCalls = 0;
+  const authority = passthroughAuthority({
+    lookup: async ({ operationKey, payloadHash }) => {
+      assert.equal(operationKey, historicalReceipt.operation_key);
+      assert.equal(payloadHash, historicalReceipt.payload_sha256);
+      return { status: "found", latestAttempt: 1, result: historicalCheckpoint };
+    }
+  });
+  authority.enqueueAttempt = async () => {
+    enqueueCalls += 1;
+    throw new Error("stable_preview_replay_must_not_enqueue");
+  };
+  const retriedPreview = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "response-lost-preview",
+    checkpointOnly: true,
+    callProvider: async () => { providerCalls += 1; },
+    dependencies: {
+      checkReadiness: async () => ({ ready: true }),
+      readImages: async () => canonicalImages(),
+      signImage: async () => {
+        providerCalls += 1;
+        throw new Error("stable_preview_replay_must_not_sign");
+      },
+      preparePath: async () => {
+        providerCalls += 1;
+        throw new Error("stable_preview_replay_must_not_prepare");
+      },
+      createSession: async () => { throw new Error("stable_preview_must_not_create_session"); },
+      persistPath: async () => { throw new Error("stable_preview_must_not_persist"); },
+      operationScope: "derived_checkpoint",
+      laneVersion: "csm-derived-checkpoint-v1",
+      providerAdmission: authority
+    }
+  });
+  assert.equal(retriedPreview.title, "Recovered lost preview");
+  assert.equal(retriedPreview.provider_calls, 0);
+  assert.equal(retriedPreview.provider_replayed, true);
+  assert.deepEqual(retriedPreview.checkpoint_receipt, historicalReceipt);
+  assert.equal(providerCalls, 0);
+  assert.equal(enqueueCalls, 0);
+  assert.notEqual(
+    retriedPreview.checkpoint_receipt.task.prompt_version,
+    CSM_DIRECT_PROMPT_VERSION,
+    "the retry returns the historical runtime receipt, not the new deployment runtime"
+  );
+
+  for (const status of ["pending", "ambiguous", "conflict"]) {
+    let blockedProviderCalls = 0;
+    await assert.rejects(
+      runDirectCsmAsset({
+        tenantId: "tenant-1",
+        userId: "user-1",
+        assetId: "asset-1",
+        intentId: `stable-${status}`,
+        checkpointOnly: true,
+        callProvider: async () => { blockedProviderCalls += 1; },
+        dependencies: {
+          ...successfulDependencies({
+            authority: passthroughAuthority({ lookup: async () => ({ status }) })
+          }),
+          operationScope: "derived_checkpoint",
+          laneVersion: "csm-derived-checkpoint-v1"
+        }
+      }),
+      (error) => error.code === `csm_checkpoint_${status}`
+        && error.provider_attempt_started === false
+        && error.retryable === (status !== "conflict"),
+      `a stable ${status} operation must fail closed rather than enqueue a second provider call`
+    );
+    assert.equal(blockedProviderCalls, 0);
+  }
+
+  let failedAutomaticProviderCalls = 0;
+  let failedAutomaticEnqueueCalls = 0;
+  const failedAutomaticAuthority = passthroughAuthority({
+    lookup: async () => ({
+      status: "failed",
+      latestAttempt: 2,
+      result: { code: "provider_failed" }
+    })
+  });
+  failedAutomaticAuthority.enqueueAttempt = async () => {
+    failedAutomaticEnqueueCalls += 1;
+    throw new Error("failed_preview_must_wait_for_writer_retry");
+  };
+  await assert.rejects(
+    runDirectCsmAsset({
+      tenantId: "tenant-1",
+      userId: "user-1",
+      assetId: "asset-1",
+      intentId: "stable-failed-automatic",
+      checkpointOnly: true,
+      callProvider: async () => { failedAutomaticProviderCalls += 1; },
+      dependencies: {
+        ...successfulDependencies({ authority: failedAutomaticAuthority }),
+        operationScope: "derived_checkpoint",
+        laneVersion: "csm-derived-checkpoint-v1"
+      }
+    }),
+    (error) => error.code === "csm_checkpoint_failed"
+      && error.statusCode === 409
+      && error.retryable === true
+      && error.provider_attempt_started === false,
+    "FAILED preview is retryable for the writer but may not buy another attempt automatically"
+  );
+  assert.equal(failedAutomaticProviderCalls, 0);
+  assert.equal(failedAutomaticEnqueueCalls, 0);
+
+  const explicitRetryEvents = [];
+  let explicitRetryPrepareCalls = 0;
+  const failedRetryAuthority = passthroughAuthority({
+    events: explicitRetryEvents,
+    lookup: async () => ({
+      status: "failed",
+      latestAttempt: 2,
+      result: { code: "provider_failed" }
+    })
+  });
+  const explicitRetryDependencies = successfulDependencies({ authority: failedRetryAuthority });
+  explicitRetryDependencies.operationScope = "derived_checkpoint";
+  explicitRetryDependencies.laneVersion = "csm-derived-checkpoint-v1";
+  explicitRetryDependencies.preparePath = async ({ recognitionSessionId }) => {
+    explicitRetryPrepareCalls += 1;
+    return preparedResult(recognitionSessionId, "Writer retry title");
+  };
+  const explicitRetry = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "stable-failed-explicit",
+    checkpointOnly: true,
+    manualRetry: true,
+    dependencies: explicitRetryDependencies
+  });
+  assert.equal(explicitRetry.title, "Writer retry title");
+  assert.equal(explicitRetry.trace_status, "CHECKPOINTED");
+  assert.equal(explicitRetry.provider_calls, 1);
+  assert.equal(explicitRetryPrepareCalls, 1);
+  assert.equal(explicitRetryEvents[0].type, "enqueue");
+  assert.equal(explicitRetryEvents[0].metadata.attempt, 3);
+  assert.equal(explicitRetryEvents[0].metadata.attemptClass, "retry");
+}
+
 // The paid result is settled as a tenant/operation/payload-bound checkpoint
 // before CSM persistence. Both an ordinary request replay and the writer's
 // manual retry can only re-run persistence; neither reaches prepare/model.
@@ -786,7 +1302,8 @@ await assert.rejects(
   assert.equal(prepareCalls, 1, "persistence retries must never call the model/prepare boundary twice");
   assert.equal(persistCalls, 3);
   assert.equal(events.filter((event) => event === "sign").length, 1);
-  assert.equal(events.filter((event) => event === "session").length, 1);
+  assert.equal(events.filter((event) => event === "session").length, 3,
+    "each persistence finalize may idempotently prove the deterministic session, but never rerun Luna");
 }
 
 // An old persistence-shaped FAILED record has no recoverable provider output.
@@ -813,7 +1330,7 @@ await assert.rejects(
 {
   const task = {
     tenant_id: "tenant-1", intent_id: "bound-intent", asset_id: "asset-1",
-    model: "gpt-5.6-luna", detail: "high",
+    model: "gpt-5.6-luna", reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort, detail: "high",
     prompt_version: CSM_DIRECT_PROMPT_VERSION,
     estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
     image_fingerprints: [`sha256:${IMAGE_HASH}`]
@@ -822,7 +1339,21 @@ await assert.rejects(
   const sessionId = deterministicCsmSessionId(operationKey);
   const checkpoint = buildCsmPersistenceCheckpoint({
     prepared: preparedResult(sessionId), tenantId: "tenant-1", operationKey,
-    payloadHash: buildLunaDirectPayloadHash(task), recognitionSessionId: sessionId
+    payloadHash: buildLunaDirectPayloadHash(task), recognitionSessionId: sessionId,
+    recognitionInput: [{
+      image_role: "front_original", read: "original", bytes: 1_024,
+      original_bytes: 1_024, derived_available: false, derived_bytes: null,
+      source_image_id: "image-1"
+    }],
+    taskIdentity: {
+      asset_id: "asset-1",
+      intent_id: "bound-intent",
+      model: "gpt-5.6-luna",
+      reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+      detail: "high",
+      prompt_version: CSM_DIRECT_PROMPT_VERSION,
+      image_fingerprints: [`sha256:${IMAGE_HASH}`]
+    }
   });
   checkpoint.csm_persistence_checkpoint.payload_sha256 = "f".repeat(64);
   await assert.rejects(

@@ -115,8 +115,12 @@ assert.deepEqual(vercel.functions["api/listing-image-upload-relay.js"].regions, 
 assert.deepEqual(vercel.functions["api/csm-listing-title-ingest.js"].regions, ["sin1"]);
 
 const ingestSource = readFileSync(new URL("../api/csm-listing-title-ingest.js", import.meta.url), "utf8");
-assert.match(ingestSource, /deferredSessionArgs = args/);
-assert.match(ingestSource, /await storagePromise;[\s\S]+createCsmRecognitionSession/);
+assert.doesNotMatch(ingestSource, /deferredSessionArgs|deferred:\s*true/,
+  "the ingest route must not fake a persisted recognition session");
+assert.match(ingestSource, /readSessionImages:[\s\S]+await storagePromise;[\s\S]+readCanonicalListingImageReferences/,
+  "the formal session must be built from the final verified image set");
+assert.match(ingestSource, /checkpointOnly:\s*true/,
+  "derived recognition input must stop at a durable provider checkpoint");
 assert.match(ingestSource, /upload_recovered: true/);
 
 console.log("listing image upload relay tests passed");

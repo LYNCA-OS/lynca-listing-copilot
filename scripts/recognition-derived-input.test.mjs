@@ -9,6 +9,16 @@ import { readFile } from "node:fs/promises";
 
 import { selectRecognitionImages } from "../lib/listing/storage/canonical-image-references.mjs";
 import { canonicalListingCropMetadataForVerification } from "../lib/listing/storage/storage-verification-store.mjs";
+import {
+  RECOGNITION_DERIVED_LANE_VERSION,
+  RECOGNITION_DOWNSCALE_TRANSFORM_VERSION
+} from "../app/recognition-derived-contract.mjs";
+import {
+  buildInlineRecognitionInput,
+  normalizeImages,
+  recognitionManualRetry,
+  validateRecognitionInputAssetId
+} from "../api/csm-listing-title-ingest.js";
 
 const original = (slot, size) => ({
   image_id: `img_${slot}`,
@@ -212,24 +222,90 @@ await assert.rejects(() => canonicalListingCropMetadataForVerification({
   objectPath: sourcePath, env, fetchImpl
 }), /cannot carry crop provenance/);
 
-// The client-side producer is deliberately NOT here.
-//
-// It shipped on 2026-08-08 and was rolled back the same day: it doubled the
-// upload, showed the operator every card twice, and then blocked a writer queue
-// at 0/7 with `operation_payload_conflict`. Nothing currently uploads or sends
-// a `readability_derived` asset, so everything above is inert in production --
-// the selector sees no downscale and returns the originals, exactly as before.
-//
-// The read side, the byte rule and the admission stay, because they are the
-// parts that were verified. The upload-path change comes back only after a real
-// large-image upload has been run through it.
+// The new producer is an ephemeral checkpoint lane, not the rolled-back stored
+// derived asset. The server hashes the actual inline bytes, reconstructs the
+// ledger from bounded metadata, and binds operation identity to original hashes.
 {
-  const app = await readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
-  assert.ok(!/ensureRecognitionDownscales/.test(app),
-    "the client producer returns only after a real upload has verified it");
+  const bytes = Buffer.from("bounded-derived-image");
+  const contentSha256 = (await import("node:crypto"))
+    .createHash("sha256").update(bytes).digest("hex");
+  const metadata = {
+    assetId: "asset-deterministic",
+    expectedOriginalCount: 1,
+    originalFingerprints: [`sha256:${"a".repeat(64)}`],
+    laneVersion: RECOGNITION_DERIVED_LANE_VERSION,
+    images: [{
+      size: bytes.length,
+      contentSha256,
+      imageId: "derived-front",
+      fileName: "front-1600.jpg",
+      contentType: "image/jpeg",
+      width: 1_200,
+      height: 1_600,
+      sourceImageId: "source-front",
+      transformVersion: RECOGNITION_DOWNSCALE_TRANSFORM_VERSION
+    }]
+  };
+  const images = normalizeImages(metadata, bytes, { recognitionInputOnly: true });
+  const inline = buildInlineRecognitionInput(metadata, images);
+  assert.equal(
+    validateRecognitionInputAssetId(metadata, "asset-deterministic"),
+    "asset-deterministic"
+  );
+  assert.equal(recognitionManualRetry({ manualRetry: true }), true);
+  assert.equal(recognitionManualRetry({ manual_retry: true }), true);
+  assert.equal(recognitionManualRetry({ manualRetry: "true" }), false,
+    "only the explicit boolean from the writer retry action authorizes another paid attempt");
+  assert.equal(recognitionManualRetry({}), false);
+  assert.throws(
+    () => validateRecognitionInputAssetId(metadata, "asset-other"),
+    /ingest_recognition_asset_id_mismatch/
+  );
+  assert.equal(inline.expectedOriginalCount, 1);
+  assert.deepEqual(inline.originalFingerprints, metadata.originalFingerprints);
+  assert.deepEqual(inline.recognitionInput, [{
+    image_role: "front_original",
+    read: "readability_derived_inline",
+    bytes: bytes.length,
+    original_bytes: null,
+    derived_available: true,
+    derived_bytes: bytes.length,
+    source_image_id: "source-front",
+    transform_version: RECOGNITION_DOWNSCALE_TRANSFORM_VERSION,
+    lane_version: RECOGNITION_DERIVED_LANE_VERSION,
+    content_sha256: contentSha256,
+    original_content_sha256: "a".repeat(64)
+  }]);
+  assert.throws(
+    () => normalizeImages({
+      ...metadata,
+      images: [{ ...metadata.images[0], contentSha256: "f".repeat(64) }]
+    }, bytes, { recognitionInputOnly: true }),
+    /ingest_image_hash_mismatch/
+  );
+  assert.throws(
+    () => buildInlineRecognitionInput({
+      ...metadata,
+      originalFingerprints: [`sha256:${"b".repeat(63)}`]
+    }, images),
+    /ingest_original_fingerprints_invalid/
+  );
   const ingest = await readFile(new URL("../api/csm-listing-title-ingest.js", import.meta.url), "utf8");
-  assert.ok(!/recognitionInputOnly/.test(ingest),
-    "the derived-inline route returns with it");
+  const checkpointBranch = ingest.slice(
+    ingest.indexOf("if (recognitionInputOnly)"),
+    ingest.indexOf("const bucket = listingImageStorageReadiness")
+  );
+  assert.match(checkpointBranch, /checkpointOnly:\s*true/);
+  assert.match(checkpointBranch, /manualRetry:\s*recognitionManualRetry\(metadata\)/);
+  assert.doesNotMatch(checkpointBranch, /persistImage|createListingImageSignedUpload/,
+    "inline derived bytes must never enter Storage");
+  assert.doesNotMatch(checkpointBranch, /createTenantListingAsset/,
+    "recognition-only must use the pre-created deterministic asset without a second upsert");
+  assert.ok(
+    ingest.indexOf("if (recognitionInputOnly) validateRecognitionInputAssetId")
+      < ingest.indexOf("const result = await runDirectCsmAsset", ingest.indexOf("if (recognitionInputOnly)")),
+    "the deterministic asset mismatch must be rejected before the provider-capable run"
+  );
 }
 
 console.log("COS-53 recognition derived input tests passed");

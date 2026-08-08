@@ -14,6 +14,23 @@ const processTitlesSource = source.slice(
 
 assert.doesNotMatch(
   handleFilesSource,
+  /if \(state\.preparingFiles\)[\s\S]{0,180}return;/,
+  "a second intake must not be discarded while the first intake is decoding"
+);
+assert.match(source, /let fileIntakeTail = Promise\.resolve\(\)/);
+assert.match(
+  source,
+  /function queueFileIntake[\s\S]{0,600}fileIntakeTail[\s\S]{0,180}while \(destructiveWorkspaceInteractionLocked\(\)\) await wait\(50\)[\s\S]{0,120}handleFiles\(files, options, dependencies\)/,
+  "file selections must be snapshotted and serialized into the same upload intent"
+);
+assert.match(
+  source,
+  /const files = \[\.\.\.event\.target\.files\];[\s\S]{0,80}event\.target\.value = "";[\s\S]{0,100}queueFileIntake\(files/,
+  "the file input must reset so selecting the same files again still emits change"
+);
+
+assert.doesNotMatch(
+  handleFilesSource,
   /if \(destructiveWorkspaceInteractionLocked\(\) \|\| state\.processing\)/,
   "recognition in progress must not reject a later file selection"
 );
@@ -48,8 +65,33 @@ assert.doesNotMatch(
   /state\.results = \[\]/,
   "starting an incremental run must not clear earlier results"
 );
-assert.match(source, /已追加 \$\{imageFiles\.length\} 张图片；正在校验原图并延续当前识别任务/);
+assert.match(source, /已追加 \$\{imageFiles\.length\} 张图片；正在延续当前识别任务并后台留存原图/);
 assert.match(source, /elements\.processButton\.addEventListener\("click", processTitles\)/);
+assert.match(
+  handleFilesSource,
+  /if \(batchWasEmpty\) renderInstantIntakePreviews\(intakePreviewRecords\)/,
+  "appending files must not replace already editable title cards with intake previews"
+);
+assert.match(
+  handleFilesSource,
+  /preserveFocusedTitleInput:\s*!batchWasEmpty/,
+  "append completion must preserve an active title editor and IME composition"
+);
+assert.match(
+  source,
+  /button\.disabled = interactionLocked \|\| state\.preparingFiles/,
+  "destructive workspace mode switches must be locked while an append intake is decoding"
+);
+assert.match(
+  source,
+  /if \(workspaceInteractionLocked\(\) \|\| state\.preparingFiles\) return;/,
+  "the workspace mode handler must enforce the append-intake lock"
+);
+assert.match(
+  source,
+  /if \(destructiveWorkspaceInteractionLocked\(\) \|\| state\.processing \|\| state\.preparingFiles\) return;/,
+  "single/pair mode changes must not invalidate an in-flight append intake"
+);
 assert.match(
   handleFilesSource,
   /requestRecognitionContinuation\(\{ lifecycleGeneration, filePreparationRunId \}\)/,

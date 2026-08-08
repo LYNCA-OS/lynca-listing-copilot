@@ -36,7 +36,7 @@ assert.match(
 assert.doesNotMatch(source, /const queue = \[\.\.\.state\.assets\];/, "click-time snapshots strand later cards");
 assert.match(
   source,
-  /图片已上传，正在自动识别卡片名称。/,
+  /图片已读取，正在自动识别；原图在后台并行留存。/,
   "writer-facing copy should expose automatic direct recognition"
 );
 

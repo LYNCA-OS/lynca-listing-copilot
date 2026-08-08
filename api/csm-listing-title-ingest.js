@@ -12,9 +12,14 @@ import {
   buildListingImageObjectPath,
   createListingImageSignedUpload
 } from "../lib/listing/storage/supabase-image-storage.mjs";
+import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
 import {
-  persistPreparedCanonicalListingPath
-} from "../lib/listing/thin/csm-orchestration.mjs";
+  RECOGNITION_DERIVED_LANE_VERSION,
+  RECOGNITION_DOWNSCALE_LONG_EDGE,
+  RECOGNITION_DOWNSCALE_TRANSFORM_VERSION,
+  recognitionDerivedLaneEligible,
+  validOriginalFingerprintList
+} from "../app/recognition-derived-contract.mjs";
 import {
   createIdempotentListingAssetId,
   createTenantListingAsset
@@ -59,7 +64,7 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function normalizeImages(metadata, body) {
+export function normalizeImages(metadata, body, { recognitionInputOnly = false } = {}) {
   const input = Array.isArray(metadata.images) ? metadata.images : [];
   if (!input.length || input.length > MAX_IMAGES) {
     throw Object.assign(new Error("ingest_image_count_invalid"), { statusCode: 400 });
@@ -85,8 +90,12 @@ function normalizeImages(metadata, body) {
       size,
       width: Number(image.width),
       height: Number(image.height),
-      signatureHex: requiredText(image.signatureHex || image.signature_hex, "ingest_image_signature_missing"),
-      contentSha256
+      signatureHex: recognitionInputOnly
+        ? String(image.signatureHex || image.signature_hex || "").trim()
+        : requiredText(image.signatureHex || image.signature_hex, "ingest_image_signature_missing"),
+      contentSha256,
+      sourceImageId: String(image.sourceImageId || image.source_image_id || "").trim(),
+      transformVersion: String(image.transformVersion || image.transform_version || "").trim()
     };
   }).map((image, index, images) => {
     if (offset !== body.length && index === images.length - 1) {
@@ -94,6 +103,73 @@ function normalizeImages(metadata, body) {
     }
     return image;
   });
+}
+
+function strictExpectedOriginalCount(metadata = {}) {
+  const count = Number(metadata.expectedOriginalCount || metadata.expected_original_count);
+  if (!Number.isInteger(count) || count < 1 || count > MAX_IMAGES) {
+    throw Object.assign(new Error("ingest_expected_original_count_invalid"), { statusCode: 400 });
+  }
+  return count;
+}
+
+export function buildInlineRecognitionInput(metadata, images) {
+  const expectedOriginalCount = strictExpectedOriginalCount(metadata);
+  const originalFingerprints = metadata.originalFingerprints || metadata.original_fingerprints;
+  const laneVersion = String(metadata.laneVersion || metadata.lane_version || "").trim();
+  if (laneVersion !== RECOGNITION_DERIVED_LANE_VERSION) {
+    throw Object.assign(new Error("ingest_recognition_lane_version_invalid"), { statusCode: 400 });
+  }
+  if (!validOriginalFingerprintList(originalFingerprints, expectedOriginalCount)) {
+    throw Object.assign(new Error("ingest_original_fingerprints_invalid"), { statusCode: 400 });
+  }
+  if (!recognitionDerivedLaneEligible({
+    originalCount: expectedOriginalCount,
+    inputs: images
+  })) {
+    throw Object.assign(new Error("ingest_recognition_input_not_eligible"), { statusCode: 400 });
+  }
+  const expectedRoles = ["front_original", "back_original"];
+  const recognitionInput = images.map((image, index) => {
+    if (!image.sourceImageId
+        || image.transformVersion !== RECOGNITION_DOWNSCALE_TRANSFORM_VERSION
+        || !Number.isFinite(image.width)
+        || !Number.isFinite(image.height)
+        || image.width < 1
+        || image.height < 1
+        || Math.max(image.width, image.height) > RECOGNITION_DOWNSCALE_LONG_EDGE) {
+      throw Object.assign(new Error("ingest_recognition_input_lineage_invalid"), { statusCode: 400 });
+    }
+    return {
+      image_role: expectedRoles[index],
+      read: "readability_derived_inline",
+      bytes: image.size,
+      original_bytes: null,
+      derived_available: true,
+      derived_bytes: image.size,
+      source_image_id: image.sourceImageId,
+      transform_version: image.transformVersion,
+      lane_version: laneVersion,
+      content_sha256: image.contentSha256,
+      original_content_sha256: String(originalFingerprints[index]).slice("sha256:".length)
+    };
+  });
+  return { expectedOriginalCount, originalFingerprints, laneVersion, recognitionInput };
+}
+
+export function validateRecognitionInputAssetId(metadata, deterministicAssetId) {
+  const supplied = requiredText(
+    metadata.assetId || metadata.asset_id,
+    "ingest_recognition_asset_id_missing"
+  );
+  if (supplied !== deterministicAssetId) {
+    throw Object.assign(new Error("ingest_recognition_asset_id_mismatch"), { statusCode: 409 });
+  }
+  return supplied;
+}
+
+export function recognitionManualRetry(metadata = {}) {
+  return metadata.manualRetry === true || metadata.manual_retry === true;
 }
 
 function buildCanonical({ tenantId, assetId, images, bucket, now }) {
@@ -253,14 +329,15 @@ export default async function handler(req, res) {
   try {
     const metadata = decodeRelayMetadata(headerValue(req, "x-lynca-ingest-metadata"));
     const body = await readBoundedBinaryBody(req, MAX_BODY_BYTES);
-    const images = normalizeImages(metadata, body);
+    const recognitionInputOnly = metadata.recognitionInputOnly === true
+      || metadata.recognition_input_only === true;
+    const images = normalizeImages(metadata, body, { recognitionInputOnly });
     const idempotencyKey = requiredText(metadata.idempotencyKey || metadata.idempotency_key, "ingest_idempotency_key_missing");
     const clientAssetRef = requiredText(metadata.clientAssetRef || metadata.client_asset_ref, "ingest_client_asset_ref_missing");
     const intentId = requiredText(metadata.intentId || metadata.intent_id, "ingest_intent_id_missing");
     const assetId = createIdempotentListingAssetId({ tenantId: context.tenantId, idempotencyKey });
+    if (recognitionInputOnly) validateRecognitionInputAssetId(metadata, assetId);
     const now = new Date();
-    const bucket = listingImageStorageReadiness(process.env).bucket;
-    const canonical = buildCanonical({ tenantId: context.tenantId, assetId, images, bucket, now });
     recoveryIdentity = {
       asset_id: assetId,
       tenant_id: context.tenantId,
@@ -268,6 +345,79 @@ export default async function handler(req, res) {
       image_generation_id: assetId,
       expected_original_count: images.length
     };
+
+    if (recognitionInputOnly) {
+      const inline = buildInlineRecognitionInput(metadata, images);
+      if (inline.expectedOriginalCount !== images.length) {
+        throw Object.assign(new Error("ingest_recognition_input_count_mismatch"), { statusCode: 400 });
+      }
+      recoveryIdentity.expected_original_count = inline.expectedOriginalCount;
+      // The browser has already created and awaited this deterministic asset
+      // while preparing the derived bytes. Recognition-only must not race a
+      // second asset upsert after the provider returns.
+      const recognitionImages = images.map((image, index) => ({
+        ...image,
+        objectPath: `inline-derived/${index}/${image.contentSha256}`,
+        object_path: `inline-derived/${index}/${image.contentSha256}`,
+        derived: true
+      }));
+      const result = await runDirectCsmAsset({
+        tenantId: context.tenantId,
+        userId: context.userId,
+        assetId,
+        intentId,
+        imageDetail: metadata.imageDetail || metadata.image_detail || "high",
+        checkpointOnly: true,
+        manualRetry: recognitionManualRetry(metadata),
+        clientTiming: metadata.clientTiming || metadata.client_timing || null,
+        serverPrologueStages: { ingest_body_bytes: body.length },
+        dependencies: {
+          readImages: async () => ({
+            tenant_id: context.tenantId,
+            asset_id: assetId,
+            image_generation_id: assetId,
+            expected_original_count: inline.expectedOriginalCount,
+            images: [],
+            image_references: []
+          }),
+          imageFingerprints: inline.originalFingerprints,
+          recognitionImages,
+          recognitionInput: inline.recognitionInput,
+          operationScope: "derived_checkpoint",
+          laneVersion: inline.laneVersion,
+          signImage: async ({ image }) => {
+            if (!image?.bytes || !Buffer.isBuffer(image.bytes)) {
+              throw new Error("ingest_recognition_inline_bytes_missing");
+            }
+            return `data:${image.contentType};base64,${image.bytes.toString("base64")}`;
+          }
+        }
+      });
+      return sendJson(res, 200, {
+        ok: true,
+        route: "CSM_THIN_DIRECT_INGEST",
+        cloud_run_calls: 0,
+        vector_calls: 0,
+        asset_id: assetId,
+        tenant_id: context.tenantId,
+        client_asset_ref: clientAssetRef,
+        image_generation_id: assetId,
+        expected_original_count: inline.expectedOriginalCount,
+        trace_status: "CHECKPOINTED",
+        checkpoint_state: "STAGED",
+        ingest_timing: { body_bytes: body.length, total_ms: Date.now() - startedAt },
+        ...result,
+        latency_stages_ms: {
+          ...safeClientTiming(metadata.clientTiming || metadata.client_timing),
+          ...(result?.latency_stages_ms || {}),
+          ingest_body_bytes: body.length,
+          ingest_total_ms: Date.now() - startedAt
+        }
+      });
+    }
+
+    const bucket = listingImageStorageReadiness(process.env).bucket;
+    const canonical = buildCanonical({ tenantId: context.tenantId, assetId, images, bucket, now });
 
     const assetPromise = createTenantListingAsset({
       tenantId: context.tenantId,
@@ -289,7 +439,6 @@ export default async function handler(req, res) {
     // terminate the function before the structured CSM response is returned.
     void storagePromise.catch(() => null);
     const imageByPath = new Map(canonical.images.map((image) => [image.object_path, image.source]));
-    let deferredSessionArgs = null;
     const result = await runDirectCsmAsset({
       tenantId: context.tenantId,
       userId: context.userId,
@@ -319,28 +468,14 @@ export default async function handler(req, res) {
           if (!image) throw new Error("ingest_image_reference_missing");
           return `data:${image.contentType};base64,${image.bytes.toString("base64")}`;
         },
-        createSession: async (args) => {
-          // The provider authority has already persisted the immutable
-          // operation/payload identity before executeTask runs. Defer the
-          // formal CSM session until Storage has satisfied the database's
-          // verified_image_set invariant, then create it before CSM rows.
-          deferredSessionArgs = args;
-          return {
-            sessionId: args.sessionId,
-            persistence: { recognition_session: { saved: true, deferred: true } }
-          };
-        },
-        persistPath: async (args) => {
+        readSessionImages: async () => {
           await storagePromise;
-          if (!deferredSessionArgs) throw new Error("ingest_deferred_session_missing");
-          const { createCsmRecognitionSession } = await import("../lib/listing/thin/csm-session-store.mjs");
-          const created = await createCsmRecognitionSession(deferredSessionArgs);
-          if (created.persistence?.recognition_session?.saved !== true) {
-            throw new Error(`ingest_session_persistence_failed:${String(
-              created.persistence?.recognition_session?.error || "unknown"
-            ).slice(0, 160)}`);
-          }
-          return persistPreparedCanonicalListingPath(args);
+          return readCanonicalListingImageReferences({
+            tenantId: context.tenantId,
+            assetId,
+            env: process.env,
+            fetchImpl: globalThis.fetch
+          });
         }
       }
     });

@@ -182,11 +182,16 @@ async function waitFor(predicate, message, timeoutMs = 2000) {
   }
 }
 
-const initialHandle = __listingCopilotAppTestHooks.handleFiles(
+const initialHandle = __listingCopilotAppTestHooks.queueFileIntake(
   [1, 2, 3, 4].map(fakeFile),
   {},
   { prepareFileForIntake: prepareImage }
 ).then(() => { initialHandleSettled = true; });
+const appendedHandle = __listingCopilotAppTestHooks.queueFileIntake(
+  [5, 6].map(fakeFile),
+  {},
+  { prepareFileForIntake: prepareImage }
+);
 
 await waitFor(
   () => csmRequests.length === 1,
@@ -197,13 +202,7 @@ assert.equal(csmRequests[0].initialHandleSettled, false, "recognition must start
 
 secondInitialGroupReleased = true;
 secondInitialGroup.resolve();
-await initialHandle;
-
-await __listingCopilotAppTestHooks.handleFiles(
-  [5, 6].map(fakeFile),
-  {},
-  { prepareFileForIntake: prepareImage }
-);
+await Promise.all([initialHandle, appendedHandle]);
 await waitFor(() => csmRequests.length === 3, "appended card did not join the active recognition intent");
 
 assert.deepEqual(
