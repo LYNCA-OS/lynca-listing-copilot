@@ -348,10 +348,26 @@ export async function runDirectCsmAsset({
     detail,
     prompt_version: CSM_DIRECT_PROMPT_VERSION,
     estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
-    image_fingerprints: originals.map((image) => `sha256:${requiredText(
-      image.content_sha256 || image.contentSha256,
-      "image_content_sha256"
-    ).toLowerCase()}`)
+    // The ORIGINALS' bytes, always -- including when the model is reading a
+    // downscale.
+    //
+    // The operation key is tenant + intent + asset + model + detail + prompt
+    // and does NOT include the images; the payload hash is that identity PLUS
+    // these fingerprints. So two attempts on the same card that send different
+    // bytes collide as `operation_payload_conflict` (409), deterministically.
+    //
+    // That is exactly what shipped on 2026-08-08 and blocked a writer queue at
+    // 0/7: the ingest path builds its canonical from the INLINE images, so on
+    // the derived route these became the downscales' hashes, and the moment a
+    // card fell back to the direct route the same operation key arrived with a
+    // different payload. `dependencies.imageFingerprints` lets that route
+    // supply the originals' hashes, which the client has already computed for
+    // the upload it is running in parallel.
+    image_fingerprints: dependencies.imageFingerprints
+      || originals.map((image) => `sha256:${requiredText(
+        image.content_sha256 || image.contentSha256,
+        "image_content_sha256"
+      ).toLowerCase()}`)
   };
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
