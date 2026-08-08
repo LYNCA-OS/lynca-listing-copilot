@@ -4,22 +4,22 @@ This is a secret-free, read-only audit of project `irpgnhkslrsiucybkufc`. Remote
 
 ## Decision
 
-**DB push is BLOCKED.** The ledger is divergent; receipt `irpgnhkslrsiucybkufc:csm_atomic_stage_packet_v1:20260801094353` is valid.
+**DB push is ALLOWED.** The ledger is exact; receipt `irpgnhkslrsiucybkufc:csm_atomic_stage_packet_v1:20260801094353` is valid.
 
 | Metric | Value |
 |---|---:|
 | `local_file_count` | 92 |
-| `remote_file_count` | 91 |
+| `remote_file_count` | 92 |
 | `local_version_count` | 92 |
-| `remote_version_count` | 91 |
-| `shared_version_count` | 91 |
-| `local_only_version_count` | 1 |
+| `remote_version_count` | 92 |
+| `shared_version_count` | 92 |
+| `local_only_version_count` | 0 |
 | `remote_only_version_count` | 0 |
 | `duplicate_local_version_count` | 0 |
 | `duplicate_remote_version_count` | 0 |
 | `same_name_different_version_mapping_count` | 2 |
-| `ledger_exact` | false |
-| `db_push_allowed` | false |
+| `ledger_exact` | true |
+| `db_push_allowed` | true |
 
 Normalization profile: `sql-line-endings-trailing-space-empty-tail-v1`. It only removes representation noise listed in the JSON audit and is not a general SQL semantic-equivalence claim.
 
@@ -135,12 +135,10 @@ Changed lines are reported as local/remote counts; SQL text is intentionally omi
 | `20260801121955` | exact | `20260801121955_csm_session_product_projection_v1.sql` | `20260801121955_csm_session_product_projection_v1.sql` | byte_identical |
 | `20260805080654` | exact | `20260805080654_csm_resolution_reviews_v1.sql` | `20260805080654_csm_resolution_reviews_v1.sql` | byte_identical |
 | `20260805080709` | exact | `20260805080709_listing_manual_recovery_records_v1.sql` | `20260805080709_listing_manual_recovery_records_v1.sql` | byte_identical |
-| `20260808114900` | local_only | `20260808114900_listing_asset_owner_v1.sql` | — | — |
+| `20260808114900` | exact | `20260808114900_listing_asset_owner_v1.sql` | `20260808114900_listing_asset_owner_v1.sql` | byte_identical |
 
-## Lossless convergence path
+## Canonical deployment boundary
 
-1. Keep this 92-file worktree immutable as historical application evidence; do not rename, move, delete, repair, or replay its divergent migrations.
-2. For every database operation, rebuild an isolated remote-first workdir from `migration list/fetch --linked`. Its fetched 91-file history is the only deployable ledger baseline.
-3. Convert same-name/different-version normalized matches into signed receipts. For mismatches, compare the live schema to the intended contract; never infer unapplied DDL from a filename.
-4. Express only verified schema deltas as new additive migrations with versions later than the remote maximum. The controlled guard may authorize exactly one such file; the divergent worktree may never call `db push`.
-5. After the new migration is applied through a reviewed single-migration runner, fetch again, pin its remote receipt, and require exact remote-first ledger status before enabling ordinary pushes.
+`infrastructure/supabase-production` is the only linked Supabase deployment workdir. The repository-level `supabase/migrations` directory is frozen historical/application-contract material and must never be used with `db push`.
+
+For a new schema delta, add exactly one reviewed, additive migration to the canonical deployment ledger, run the controlled single-migration guard, apply only that file, fetch the remote ledger again, and restore exact status before any ordinary push is allowed.
