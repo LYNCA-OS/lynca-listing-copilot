@@ -151,7 +151,6 @@ and delete the flag.
 | `LABEL_STUDIO_PROJECT_ID` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `LABEL_STUDIO_TOKEN` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `LABEL_STUDIO_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
-| `LAUNCH_GATE_EVAL_SECRET` | api/v4/launch-gate-source-images.js |
 | `LIGHTGBM_RERANKER_TOKEN` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `LIGHTGBM_RERANKER_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs |
 | `LISTING_APPROVED_MEMORY_ENABLED` | lib/supabase-feedback.mjs |
