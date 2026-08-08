@@ -3,12 +3,14 @@
 import assert from "node:assert/strict";
 
 import { checkCsmDeploymentEnvironment } from "./check-csm-deployment-environment.mjs";
+import { CSM_PRODUCTION_SUPABASE_PROJECT_REF } from
+  "../lib/listing/thin/csm-deployment-environment.mjs";
 
 const READY = {
   VERCEL_ENV: "production",
   CSM_PERSISTENCE_ENABLED: "true",
   OPENAI_API_KEY: "test-only",
-  SUPABASE_URL: "https://project.example.test",
+  SUPABASE_URL: `https://${CSM_PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`,
   SUPABASE_SECRET_KEY: "test-only",
   V4_QUEUE_PUMP_DISABLED: "true",
   ENABLE_RECOGNITION_WORKER: "false",
@@ -38,6 +40,26 @@ assert.throws(
 assert.throws(
   () => checkCsmDeploymentEnvironment({ ...READY, V4_QUEUE_PUMP_DISABLED: "false" }),
   (error) => error.failures.includes("V4_QUEUE_PUMP_DISABLED_must_be_true")
+);
+assert.deepEqual(checkCsmDeploymentEnvironment({
+  ...READY,
+  VERCEL_ENV: "preview",
+  SUPABASE_URL: "https://isolatedpreview.supabase.co"
+}), { ok: true, skipped: false, target: "preview" });
+assert.throws(
+  () => checkCsmDeploymentEnvironment({ ...READY, VERCEL_ENV: "preview" }),
+  (error) => error.failures.includes("PREVIEW_SUPABASE_URL_must_not_match_production_project")
+);
+assert.throws(
+  () => checkCsmDeploymentEnvironment({
+    ...READY,
+    SUPABASE_URL: "https://wrongproduction.supabase.co"
+  }),
+  (error) => error.failures.includes("SUPABASE_URL_must_match_production_project")
+);
+assert.throws(
+  () => checkCsmDeploymentEnvironment({ ...READY, SUPABASE_URL: "https://example.test/path" }),
+  (error) => error.failures.includes("SUPABASE_URL_invalid_project_origin")
 );
 
 console.log("CSM deployment environment tests passed");

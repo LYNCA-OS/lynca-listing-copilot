@@ -31,6 +31,32 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Install PostgreSQL 17 from the official PGDG repository
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor --yes -o /usr/share/keyrings/postgresql.gpg
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-17
+      - name: Require PostgreSQL 17+ for non-skipping persistence tests
+        run: |
+          pg_bin=/usr/lib/postgresql/17/bin
+          for binary in initdb pg_ctl psql postgres; do
+            if [ ! -x "$pg_bin/$binary" ]; then
+              echo "::error::missing PostgreSQL 17 binary: $binary"
+              exit 1
+            fi
+          done
+          if ! "$pg_bin/postgres" --version | grep -Eq '^postgres \(PostgreSQL\) 17\.'; then
+            echo "::error::PostgreSQL 17 version check failed"
+            exit 1
+          fi
+          echo "$pg_bin" >> "$GITHUB_PATH"
+          echo "PostgreSQL on PATH: $pg_bin"
       - name: Verify the CSM thin release artifact
         run: |
           npm ci --no-audit --no-fund
@@ -38,6 +64,7 @@ jobs:
           node scripts/npm-audit-gate.mjs
           npm run check:csm-thin
           npm run test:csm-thin
+          npm run test:accuracy
           node scripts/auth-production-entrypoint.test.mjs
           node scripts/api-access-contract.test.mjs
           node scripts/upload-safety-layer.test.mjs

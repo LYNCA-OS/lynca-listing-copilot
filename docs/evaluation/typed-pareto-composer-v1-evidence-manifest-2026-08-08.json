@@ -1,0 +1,10 @@
+{
+  "schema_version": "typed-pareto-composer-v1-evidence-v1",
+  "dataset_id": "accuracy-mechanism-confirmatory-2026-08-02/fresh-budgeted-canonical",
+  "source_checkout_env": "LYNCA_TYPED_PARETO_SOURCE_CHECKOUT",
+  "source_checkout_sibling": "lynca-thin-path",
+  "relative_path": "artifacts/accuracy-mechanism-confirmatory-2026-08-02/fresh-budgeted-canonical/thin-path-gpt-5.6-luna.jsonl",
+  "sha256": "d30df086c2c69384d6e6d9fd43bcc776a6a8cae31c5ca8d45e06ed0fbe8deb89",
+  "arm": "thin_canonical_high",
+  "count": 150
+}

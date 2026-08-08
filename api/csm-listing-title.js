@@ -15,6 +15,7 @@ import {
   persistPreparedCanonicalListingPath,
   prepareCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
+import { validateAccuracyLossLedger } from "../lib/listing/thin/accuracy-loss-ledger.mjs";
 import {
   checkCsmProviderAdmissionReadiness,
   createCsmSupabaseProviderAdmissionAuthority
@@ -47,7 +48,8 @@ export const CSM_DIRECT_MAX_ATTEMPTS = CSM_THIN_RUNTIME_CONTRACT.maximumAttempts
 export const CSM_DIRECT_CLAIM_POLL_MS = CSM_THIN_RUNTIME_CONTRACT.claimPollMs;
 export const CSM_DIRECT_CLAIM_TIMEOUT_MS = CSM_THIN_RUNTIME_CONTRACT.claimTimeoutMs;
 export const CSM_DIRECT_PROVIDER_TIMEOUT_MS = CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs;
-export const CSM_PERSISTENCE_CHECKPOINT_VERSION = "csm-persistence-checkpoint-v1";
+export const CSM_PERSISTENCE_CHECKPOINT_VERSION = "csm-persistence-checkpoint-v2";
+export const CSM_PERSISTENCE_CHECKPOINT_LEGACY_VERSION = "csm-persistence-checkpoint-v1";
 export const CSM_PERSISTENCE_READINESS_CACHE_TTL_MS = 30_000;
 const CSM_PACKET_HASH_KEYS = Object.freeze([
   "csm_recognition_packet_sha256",
@@ -104,6 +106,12 @@ export function buildCsmPersistenceCheckpoint({
   if (!exactPacketHashes(hashes)) {
     throw persistenceCheckpointError("packet_hashes_invalid");
   }
+  let accuracyLossLedger;
+  try {
+    accuracyLossLedger = validateAccuracyLossLedger(prepared?.accuracy_loss_ledger, { result: prepared });
+  } catch {
+    throw persistenceCheckpointError("accuracy_loss_ledger_invalid");
+  }
   return {
     ...prepared,
     csm_persistence_checkpoint: {
@@ -113,7 +121,9 @@ export function buildCsmPersistenceCheckpoint({
       operation_key: operation,
       payload_sha256: payload,
       recognition_session_id: session,
-      packet_hashes: hashes
+      packet_hashes: hashes,
+      accuracy_loss_ledger_version: accuracyLossLedger.version,
+      accuracy_loss_ledger_sha256: accuracyLossLedger.ledger_sha256
     }
   };
 }
@@ -131,8 +141,9 @@ export function validateCsmPersistenceCheckpoint(result, {
   if (!/^[0-9a-f]{64}$/.test(expected.payload_sha256)) {
     throw persistenceCheckpointError("payload_hash_invalid");
   }
-  if (checkpoint?.schema_version !== CSM_PERSISTENCE_CHECKPOINT_VERSION
-      || checkpoint?.state !== "PERSISTENCE_PENDING") {
+  const checkpointVersion = checkpoint?.schema_version;
+  if (![CSM_PERSISTENCE_CHECKPOINT_VERSION, CSM_PERSISTENCE_CHECKPOINT_LEGACY_VERSION]
+    .includes(checkpointVersion) || checkpoint?.state !== "PERSISTENCE_PENDING") {
     throw persistenceCheckpointError("marker_missing");
   }
   for (const [name, value] of Object.entries(expected)) {
@@ -151,6 +162,24 @@ export function validateCsmPersistenceCheckpoint(result, {
       || CSM_PACKET_HASH_KEYS.some((name) => hashes[name] !== checkpointHashes[name])) {
     throw persistenceCheckpointError("packet_hash_mismatch");
   }
+  if (checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_VERSION) {
+    let ledger;
+    try {
+      ledger = validateAccuracyLossLedger(result?.accuracy_loss_ledger, { result });
+    } catch {
+      throw persistenceCheckpointError("accuracy_loss_ledger_invalid");
+    }
+    if (checkpoint.accuracy_loss_ledger_version !== ledger.version) {
+      throw persistenceCheckpointError("accuracy_loss_ledger_version_mismatch");
+    }
+    if (checkpoint.accuracy_loss_ledger_sha256 !== ledger.ledger_sha256) {
+      throw persistenceCheckpointError("accuracy_loss_ledger_mismatch");
+    }
+  } else if (result?.accuracy_loss_ledger != null
+      || checkpoint?.accuracy_loss_ledger_version != null
+      || checkpoint?.accuracy_loss_ledger_sha256 != null) {
+    throw persistenceCheckpointError("legacy_checkpoint_contains_accuracy_loss_ledger");
+  }
   return result;
 }
 
@@ -161,8 +190,12 @@ function alreadyPersisted(result, recognitionSessionId) {
     && result?.csm_rows?.resolution?.recognition_session_id === recognitionSessionId;
 }
 
-function publicPersistedResult(result) {
-  const { csm_persistence_checkpoint: _checkpoint, ...publicResult } = result || {};
+export function publicPersistedResult(result) {
+  const {
+    csm_persistence_checkpoint: _checkpoint,
+    accuracy_loss_ledger: _accuracyLossLedger,
+    ...publicResult
+  } = result || {};
   return publicResult;
 }
 

@@ -96,11 +96,24 @@ async function localSourceImages(value) {
   })));
 }
 
+async function cookieHeaderFromStorageState(filePath) {
+  if (!filePath) return "";
+  const state = JSON.parse(await readFile(filePath, "utf8"));
+  return (state.cookies || []).flatMap(({ name, value }) => (
+    typeof name === "string" && name && typeof value === "string" && value
+      ? [`${name}=${value}`] : []
+  )).join("; ");
+}
+
 test("production writer journey reaches persisted L2 through the real UI", async ({ browser }, testInfo) => {
   await mkdir(artifactDir, { recursive: true });
   const baseUrl = cleanBaseUrl(process.env.WRITER_JOURNEY_BASE_URL);
   const username = requiredEnv("METAVERSE_USERNAME");
   const password = requiredEnv("METAVERSE_PASSWORD");
+  const initialStorageState = String(
+    process.env.WRITER_JOURNEY_INITIAL_STORAGE_STATE || ""
+  ).trim() || undefined;
+  const initialCookieHeader = await cookieHeaderFromStorageState(initialStorageState);
   const localImages = await localSourceImages(process.env.WRITER_JOURNEY_LOCAL_IMAGES);
   const launchGateSecret = localImages ? "" : requiredEnv("LAUNCH_GATE_EVAL_SECRET");
   const evidence = {
@@ -133,7 +146,12 @@ test("production writer journey reaches persisted L2 through the real UI", async
   let journeyTracing = false;
 
   try {
-    const healthResponse = await fetch(`${baseUrl}/api/health`, { headers: { accept: "application/json" } });
+    const healthResponse = await fetch(`${baseUrl}/api/health`, {
+      headers: {
+        accept: "application/json",
+        ...(initialCookieHeader ? { cookie: initialCookieHeader } : {})
+      }
+    });
     const health = await healthResponse.json();
     expect(healthResponse.ok, "production health must be reachable").toBeTruthy();
     evidence.deployment_id = deploymentId(health);
@@ -143,7 +161,11 @@ test("production writer journey reaches persisted L2 through the real UI", async
 
     // Login is a real browser journey, but is intentionally isolated from HAR
     // and trace so administrator credentials can never enter uploaded artifacts.
-    loginContext = await browser.newContext({ baseURL: baseUrl, viewport: { width: 1440, height: 1000 } });
+    loginContext = await browser.newContext({
+      baseURL: baseUrl,
+      viewport: { width: 1440, height: 1000 },
+      ...(initialStorageState ? { storageState: initialStorageState } : {})
+    });
     loginPage = await loginContext.newPage();
     await loginPage.goto("/app/login.html?next=%2Fapp%2F", { waitUntil: "domcontentloaded" });
     await loginPage.getByTestId("login-username").fill(username);
