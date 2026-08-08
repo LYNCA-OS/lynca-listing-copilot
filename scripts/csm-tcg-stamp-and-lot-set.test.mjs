@@ -225,13 +225,36 @@ console.log("csm-tcg-stamp-and-lot-set.test.mjs OK");
   assert.deepEqual(shareable.lot_unshared_attributes, []);
 }
 
-// A slash is not a merge marker: serials and card numbers legitimately contain
-// one, and treating "/" as per-card would withhold every serial in existence.
+// A PADDED slash is a merge marker; a bare one is not. Production settles it:
+// every legitimate slash is unpadded and every merged one is padded.
 {
   const slashed = compose({
     manufacturer: "Topps", product: "Chrome", set: "Update",
     subjects: ["A", "B"], card_number: "TG22/TG30",
     lot_count: "2", grammar: "lot"
   });
-  assert.ok(!slashed.lot_unshared_attributes.includes("card_number"));
+  assert.ok(!slashed.lot_unshared_attributes.includes("card_number"),
+    "a TCG subset code is one value, not two cards' answers");
+
+  // The three shapes that reached published titles because the first rule
+  // matched only "; ".
+  const padded = compose({
+    manufacturer: "Panini", product: "Impeccable",
+    set: "Draft Pick Number / Jersey Numbers",
+    grade: "PSA AUTHENTIC / 9", team: "Mavericks / Spurs",
+    subjects: ["Luka Doncic", "Steve Kerr"],
+    lot_count: "2", grammar: "lot"
+  });
+  assert.deepEqual(padded.lot_unshared_attributes.sort(), ["grade", "set", "team"]);
+  assert.ok(!/ \/ /.test(padded.title), `a merged value reached the title: ${padded.title}`);
+
+  // And the ones that must survive it, unpadded, outside lot grammar too.
+  const single = compose({
+    year: "2022", manufacturer: "Pokemon", set: "Trainer Gallery",
+    subjects: ["Pikachu"], card_number: "089/063", serial: "17/50",
+    grade: "PSA 9/10", grammar: "tcg"
+  });
+  assert.match(single.title, /089\/063/);
+  assert.match(single.title, /17\/50/);
+  assert.match(single.title, /9\/10/, "a card grade and an auto grade share one unpadded slash");
 }

@@ -530,100 +530,6 @@ function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
   });
 }
 
-// COS-53 (approved 2026-08-07): Recognition may read a stored bounded DOWNSCALE
-// when the original is large, provided the original is still stored in full.
-//
-// 1600px / q80 is not a guess. It is the arm measured for fine print on
-// 2026-08-07 (`scripts/measure-downscaled-image-parity.mjs`): against a
-// same-image control that disagreed on 21 fields, the downscale arm disagreed
-// on 20, carrying 16.5% of the bytes. Serials and card numbers are a few pixels
-// tall and they survived it.
-const RECOGNITION_DOWNSCALE_LONG_EDGE = 1600;
-const RECOGNITION_DOWNSCALE_QUALITY = 0.8;
-
-/**
- * Returns null when there is nothing to gain, which is the common case:
- *
- *  - the original is already under the inline threshold, so it never blocked;
- *  - the re-encode came out BIGGER. Measured: a 237KB webp re-encoded to
- *    1600px JPEG produced 478KB. Fewer pixels, more bytes. The rule is byte
- *    count, not resolution, and it is applied here, again at verification, and
- *    again when Recognition chooses which asset to read.
- */
-async function buildRecognitionDownscale(image = {}) {
-  const source = image.sourceFile || image.sourceBlob;
-  if (!source || Number(source.size || 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES) return null;
-  const decodable = image.previewUrl || image.dataUrl || "";
-  if (!decodable) return null;
-
-  let compressed;
-  try {
-    compressed = await compressImageDataUrl(
-      decodable, RECOGNITION_DOWNSCALE_LONG_EDGE, RECOGNITION_DOWNSCALE_QUALITY);
-  } catch {
-    // A downscale that cannot be produced is not an error. Recognition reads
-    // the original, which is what it did before this decision.
-    return null;
-  }
-  delete compressed.sourceCanvas;
-  const blob = dataUrlToBlob(compressed.dataUrl);
-  if (!blob || blob.size >= Number(source.size || 0)) return null;
-
-  const id = `${image.id}-recognition-${RECOGNITION_DOWNSCALE_LONG_EDGE}`;
-  return {
-    id,
-    name: `${image.name} recognition ${RECOGNITION_DOWNSCALE_LONG_EDGE}`,
-    originalType: "image/jpeg",
-    type: "image/jpeg",
-    size: blob.size,
-    originalSize: blob.size,
-    width: compressed.width,
-    height: compressed.height,
-    originalWidth: compressed.width,
-    originalHeight: compressed.height,
-    dataUrl: compressed.dataUrl,
-    captureProfileId: defaultCaptureProfileId,
-    imageQuality: compressed.imageQuality,
-    sourceBlob: blob,
-    sourceImageId: image.id,
-    // Deliberately not a crop: no source region, no bounds. The server
-    // completes the rest of the lineage from the VERIFIED source row, so
-    // nothing here is taken on the client's word.
-    sourceRegion: "",
-    storageRole: "readability_derived",
-    cropMetadata: {
-      source_image_id: image.id,
-      derived_role: "readability_derived",
-      long_edge: RECOGNITION_DOWNSCALE_LONG_EDGE,
-      transform_version: "readability-downscale-v1"
-    },
-    derived: true,
-    recognitionInput: true,
-    contentSha256: "",
-    objectPath: ""
-  };
-}
-
-/** One downscale per large primary, produced once and reused across retries. */
-async function ensureRecognitionDownscales(asset, images = []) {
-  const primaries = images.filter((image) => !imageIsDerivedForRequest(image));
-  const existing = new Set((asset.recognitionInputs || []).map((image) => image.sourceImageId));
-  const built = [];
-  for (const primary of primaries) {
-    if (existing.has(primary.id)) continue;
-    const downscale = await buildRecognitionDownscale(primary);
-    if (downscale) built.push(downscale);
-  }
-  // NOT into `asset.images`. That list is what the writer's card view renders
-  // and what the upload phase walks, so putting recognition inputs in it showed
-  // the operator every card twice and uploaded both the original AND the
-  // downscale -- 2 storage attempts became 4 and the original upload went from
-  // ~9s to ~20s. The downscale exists to be sent inline; it is never stored by
-  // the client and must not appear anywhere that means "the asset's images".
-  asset.recognitionInputs = [...(asset.recognitionInputs || []), ...built];
-  return asset.recognitionInputs;
-}
-
 async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
   const image = await loadImage(originalDataUrl);
   const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
@@ -973,15 +879,7 @@ function imageIsDerivedForRequest(image = {}) {
 function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_BATCH_LIMIT) {
   const allImages = Array.isArray(images) ? images : [];
   const primaryImages = allImages.filter((image) => !imageIsDerivedForRequest(image));
-  // COS-53 recognition inputs rank ahead of field crops when the derived budget
-  // is tight. Crops are attached at intake and downscales are appended later,
-  // so plain array order would drop the asset the model is meant to READ in
-  // favour of crops nothing reads at recognition time -- and only on a retry,
-  // which is the worst place to find it.
-  const derivedImages = [
-    ...allImages.filter((image) => imageIsDerivedForRequest(image) && image.recognitionInput === true),
-    ...allImages.filter((image) => imageIsDerivedForRequest(image) && image.recognitionInput !== true)
-  ];
+  const derivedImages = allImages.filter(imageIsDerivedForRequest);
   const maxDerived = Math.max(0, Math.max(2, Number(maxImages) || REQUEST_IMAGE_BATCH_LIMIT) - primaryImages.length);
   return [
     ...primaryImages,
@@ -1804,10 +1702,6 @@ function ensureAssetOriginalImagesUploaded(asset) {
     if (!storageReady()) throw new Error("listing_storage_not_ready");
     const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
     asset.providerImages = images;
-    // COS-53: recognition downscales are NOT uploaded here. They are sent
-    // inline on the ingest path and the client never stores them, so this
-    // phase walks the asset's real images only -- which is also why they do
-    // not live in `asset.images`.
     const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
     const uploadPhase = async (entries) => {
       const originalsOnly = entries.length > 1 && entries.every(({ image }) => !imageIsDerivedForRequest(image));
@@ -2011,44 +1905,7 @@ function csmIngestFastPathEligible(asset = {}) {
     && sources.reduce((total, source) => total + source.size, 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES;
 }
 
-/**
- * COS-53 clauses 1-2 (founder, 2026-08-08).
- *
- * The inline path never blocked on storage -- it ships the bytes in the request
- * body and stores them afterwards. Measured on 2026-08-08, cards that took it
- * paid 0ms of blocking upload while cards that missed it paid 3.7-9.1s. The
- * only thing keeping a phone photo off it is its size.
- *
- * So the size test is applied to the DOWNSCALE. A 7.4MB pair becomes roughly
- * 750KB at 1600px/q80, which fits comfortably, and the originals upload beside
- * the model call instead of in front of it.
- *
- * Eligibility is decided on bytes that EXIST: the downscales are built before
- * this is asked, never estimated. An eligibility test that predicts a size and
- * is wrong sends a body the endpoint rejects, and the card falls back having
- * paid for both.
- */
-function csmIngestRecognitionInputEligible(asset = {}, recognitionInputs = []) {
-  // Deliberately NOT disqualified by `originalStorageUploadPromise`. The plain
-  // fast path checks it because it carries the ORIGINALS inline and must not
-  // race an upload of the same bytes. Here the originals uploading beside the
-  // request is the point of the change, and inheriting that check is why the
-  // first version never engaged: background preparation starts the upload
-  // before recognition is called, so every large card built a downscale, threw
-  // it away, and fell back to the direct path having paid for both.
-  if (asset.durableAssetId) return false;
-  const primaries = (Array.isArray(asset.images) ? asset.images : [])
-    .filter((image) => !imageIsDerivedForRequest(image));
-  if (!primaries.length || primaries.length > 2) return false;
-  // One downscale per original, or the model would read fewer sides than the
-  // card has.
-  if (recognitionInputs.length !== primaries.length) return false;
-  const sources = recognitionInputs.map(storageSourceForImage);
-  return sources.every((source) => source && source.size > 0)
-    && sources.reduce((total, source) => total + source.size, 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES;
-}
-
-async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = null } = {}) {
+async function requestCsmIngestFastPath(asset, intentId) {
   // The 18 seconds nobody could see.
   //
   // A production run measured 4,652ms server-side against roughly 23 seconds
@@ -2074,11 +1931,7 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
     }
   };
   const preparationStartedAt = performance.now();
-  // COS-53 clauses 1-2: the inline bytes are the RECOGNITION INPUT, and the
-  // originals are the record. They upload on their own connection, started
-  // below before this request goes out so the two overlap.
-  const inlineSource = recognitionInputs?.length ? recognitionInputs : asset.images;
-  const images = await Promise.all(inlineSource.map(async (image, imageIndex) => {
+  const images = await Promise.all(asset.images.map(async (image, imageIndex) => {
     await clientStage("client_image_metadata_ms", () => ensureImageUploadMetadata(image));
     const source = storageSourceForImage(image);
     const usingOriginalSource = source === image.sourceFile;
@@ -2099,7 +1952,7 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
       image,
       source,
       imageId: image.id,
-      role: recognitionInputs?.length ? "readability_derived" : storageRoleForImage(image, imageIndex),
+      role: storageRoleForImage(image, imageIndex),
       fileName: image.name,
       contentType,
       size: source.size,
@@ -2111,21 +1964,6 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
   }));
   clientTiming.client_preparation_ms = Math.round(performance.now() - preparationStartedAt);
   clientTiming.client_upload_bytes = images.reduce((total, image) => total + (image.size || 0), 0);
-  // Hashing the originals costs ~0.7s per phone photo and is charged anyway by
-  // the upload starting below; doing it here makes both routes name the same
-  // task. It is awaited because a fingerprint that arrives after the request is
-  // a fingerprint the request did not carry.
-  const originalFingerprints = recognitionInputs?.length
-    ? await Promise.all((asset.images || [])
-      .filter((image) => !imageIsDerivedForRequest(image))
-      .map(async (image) => {
-        await ensureImageUploadMetadata(image);
-        const source = storageSourceForImage(image);
-        const sha = image.contentSha256 || await contentSha256Hex(source);
-        image.contentSha256 = sha;
-        return `sha256:${String(sha).toLowerCase()}`;
-      }))
-    : [];
   const metadata = {
     clientTiming,
     clientAssetRef: asset.clientAssetRef || asset.id,
@@ -2133,28 +1971,8 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
     captureProfileId: defaultCaptureProfileId,
     intentId,
     imageDetail: "high",
-    ...(recognitionInputs?.length ? {
-      recognitionInputOnly: true,
-      expectedOriginalCount: originalFingerprints.length,
-      // The ORIGINALS' hashes, sent with a request whose body is downscales.
-      //
-      // The provider authority keys an operation on tenant+intent+asset and
-      // hashes the PAYLOAD with the fingerprints of whatever was sent. Two
-      // attempts on one card with different bytes therefore collide as
-      // `operation_payload_conflict` -- which is what blocked a writer queue at
-      // 0/7 on 2026-08-08, because this route reported the downscales' hashes
-      // and any fallback to the direct route reported the originals'. Reporting
-      // the originals from both routes makes them the SAME task: a fallback
-      // reuses the completed call instead of paying for a second one.
-      originalFingerprints
-    } : {}),
     images: images.map(({ source: _source, image: _image, ...image }) => image)
   };
-  // Started BEFORE the fetch, deliberately. This is the whole change: the
-  // upload the writer used to wait through now runs beside the model call.
-  // Not awaited -- the endpoint waits for it server-side before it persists,
-  // which is the point at which the originals genuinely have to exist.
-  if (recognitionInputs?.length) ensureAssetOriginalImagesUploaded(asset);
   const request = await fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
     method: "POST",
     headers: {
@@ -2171,13 +1989,9 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
     stage: "csm_thin_ingest"
   });
   const payload = request.payload || {};
-  // In recognition-input mode the body was never persisted, so there are no
-  // verifications for it to bind -- the originals bind through their own
-  // upload. Asking for them here would fail a run that worked.
   const canRecoverUpload = payload.client_asset_ref === metadata.clientAssetRef
     && payload.asset_id
     && payload.tenant_id
-    && !recognitionInputs?.length
     && Array.isArray(payload.verifications);
   if (canRecoverUpload) {
     asset.durableAssetId = payload.asset_id;
@@ -2207,20 +2021,8 @@ async function requestCsmIngestFastPath(asset, intentId, { recognitionInputs = n
     error.retryable = request.payload?.retryable === true;
     throw error;
   }
-  if (!canRecoverUpload && !recognitionInputs?.length) {
+  if (!canRecoverUpload) {
     throw new Error("csm_ingest_asset_identity_mismatch");
-  }
-  if (recognitionInputs?.length) {
-    // The identity still has to match, it is just carried by the originals
-    // rather than by the inline bytes.
-    if (payload.client_asset_ref !== metadata.clientAssetRef || !payload.asset_id || !payload.tenant_id) {
-      throw new Error("csm_ingest_asset_identity_mismatch");
-    }
-    asset.durableAssetId = payload.asset_id;
-    asset.durableTenantId = payload.tenant_id;
-    asset.imageGenerationId = payload.image_generation_id || payload.asset_id;
-    asset.expectedOriginalCount = Number(payload.expected_original_count || 0) || asset.expectedOriginalCount;
-    asset.recognitionInputMode = payload.recognition_input || "readability_derived_inline";
   }
   return payload;
 }
@@ -2235,21 +2037,11 @@ async function processAssetViaCsmThinPath(asset, {
   if (!durableIntentId) throw new Error("CSM 识别意图缺失");
   const startedAt = performance.now();
   let payload;
-  // COS-53 clauses 1-2. Build the downscale FIRST, then choose the path on ITS
-  // size: a 7.4MB pair that could never take the inline path becomes ~750KB
-  // that can, and the original upload moves beside the model call instead of
-  // in front of it. Producing it costs a canvas re-encode and is skipped
-  // entirely for images already under the threshold.
-  let recognitionInputs = null;
-  if (manualRetry !== true && !csmIngestFastPathEligible(asset)) {
-    recognitionInputs = await ensureRecognitionDownscales(asset, asset.images || []);
-    if (!csmIngestRecognitionInputEligible(asset, recognitionInputs)) recognitionInputs = null;
-  }
-  if (manualRetry !== true && (csmIngestFastPathEligible(asset) || recognitionInputs?.length)) {
+  if (manualRetry !== true && csmIngestFastPathEligible(asset)) {
     setAssetProgress(asset.index, "上传与 Luna 并行", 0.28);
     markAssetStarted(asset, Date.now(), "client_csm_ingest_request");
     try {
-      payload = await requestCsmIngestFastPath(asset, durableIntentId, { recognitionInputs });
+      payload = await requestCsmIngestFastPath(asset, durableIntentId);
     } catch (fastPathError) {
       // The durable operation key is asset/intent/image based, so falling back
       // can safely recover a lost response without buying a second model call.
