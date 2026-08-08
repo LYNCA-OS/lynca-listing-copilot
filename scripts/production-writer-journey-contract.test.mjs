@@ -28,6 +28,8 @@ assert.match(spec, /\/api\/v4\/listing-feedback/);
 assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
 assert.doesNotMatch(spec, /getByTestId\("writer-persistence-status"\).*toBeVisible/);
 assert.match(spec, /deployment_id/);
+assert.match(spec, /WRITER_JOURNEY_INITIAL_STORAGE_STATE/,
+  "protected Preview E2E may start from a short-lived Vercel bypass cookie state");
 assert.equal([...spec.matchAll(/baseURL: baseUrl/g)].length, 2, "both browser contexts must use the normalized production base URL");
 assert.doesNotMatch(spec, /\{\s*baseURL\s*[,}]/, "undefined baseURL shorthand must never reach production E2E");
 for (const id of ["request_ids", "asset_ids", "batch_ids", "job_ids", "session_ids"]) {
