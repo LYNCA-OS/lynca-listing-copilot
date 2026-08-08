@@ -4,15 +4,17 @@ import crypto from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   buildEvaluationSamplePolicy,
   normalizeEvaluationSampleMode
 } from "../lib/listing/evaluation/sample-policy.mjs";
 
-const defaultSource = "data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json";
-const defaultOut = "data/eval/reviewed-title-blind/reviewed-title-image-only.json";
-const defaultLabelsOut = "data/eval/reviewed-title-blind/reviewed-title-sealed-labels.jsonl";
+const evalRoot = resolve(homedir(), "lynca-eval-root");
+const defaultSource = resolve(evalRoot, "data/catalog/vector-seed/feedback-writer-gt-seed-dataset.json");
+const defaultOut = resolve(evalRoot, "data/eval/reviewed-title-blind/reviewed-title-image-only.json");
+const defaultLabelsOut = resolve(evalRoot, "data/eval/reviewed-title-blind/reviewed-title-sealed-labels.jsonl");
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();

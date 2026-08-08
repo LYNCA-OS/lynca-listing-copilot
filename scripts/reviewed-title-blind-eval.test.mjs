@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildReviewedTitleBlindEval } from "./build-reviewed-title-blind-eval.mjs";
-import { attachPostRecognitionScoring, summarize } from "./v4-ebay-smoke.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "lynca-reviewed-title-blind-"));
 try {
@@ -77,32 +76,6 @@ try {
   assert.doesNotMatch(datasetText, /Old Player/);
   const labelText = await readFile(labelsPath, "utf8");
   assert.match(labelText, /New Player Gold/);
-
-  const labelMap = new Map([[labels[0].key, labels[0]]]);
-  const scored = attachPostRecognitionScoring([{
-    asset_id: dataset.items[0].asset_id,
-    ok: true,
-    final_title: "2025 Topps Chrome New Player Gold PSA 10",
-    l1_title: ""
-  }], dataset.items, labelMap);
-  assert.equal(scored[0].reference_title_type, "REVIEWED_INTERNAL_TITLE");
-  assert.equal(scored[0].reference_title_is_reviewed_ground_truth, true);
-  assert.equal(scored[0].final_scoring.policy_fair_token_recall, 1);
-  const metrics = summarize(scored, { runWallMs: 1000 });
-  assert.equal(metrics.reviewed_title_policy_acceptance.eligible, true);
-  assert.equal(metrics.reviewed_title_policy_acceptance.rate, 1);
-
-  const marketplace = attachPostRecognitionScoring([{
-    asset_id: "market",
-    ok: true,
-    final_title: "Seller title"
-  }], [{ asset_id: "market", sealed_eval_label_ref: { key: "market-key" } }], new Map([[
-    "market-key",
-    { key: "market-key", title: "Seller title", policy: { seller_title_is_ground_truth: false } }
-  ]]));
-  assert.equal(marketplace[0].reference_title_type, "MARKETPLACE_WEAK_LABEL");
-  assert.equal(marketplace[0].reference_title_is_reviewed_ground_truth, false);
-  assert.equal(summarize(marketplace).reviewed_title_policy_acceptance.eligible, false);
 
   await assert.rejects(() => buildReviewedTitleBlindEval({
     sourcePath,

@@ -42,12 +42,7 @@ assert.equal(runtimeMigrationAuth({ headers: {} }, {
 }).statusCode, 401, "the rehearsal flag must not replace platform-admin authentication");
 
 const migrationRoutes = [
-  "api/admin-apply-catalog-self-exclusion-migration.js",
-  "api/admin-apply-sem-definition-migration.js",
-  "api/admin-apply-v4-noncritical-persistence-migration.js",
-  "api/admin-apply-v4-production-job-queue-migration.js",
-  "api/admin-apply-v4-writer-export-migration.js",
-  "api/admin-apply-v4-writer-ready-capacity-migration.js"
+  "api/admin-apply-sem-definition-migration.js"
 ];
 for (const route of migrationRoutes) {
   assert.match(
@@ -136,12 +131,6 @@ assert.equal(
   "Vercel must fail the build before promotion when the actual deployment environment is unsafe"
 );
 
-const browserPreingest = readFileSync("api/listing-preingest.js", "utf8");
-assert.doesNotMatch(
-  browserPreingest,
-  /\bwaitUntil\s*\(|\bprocessQueuedPreingestionOcrJobs\b/,
-  "browser pre-ingestion must only persist durable OCR jobs; the independent worker consumes them"
-);
 const vercelConfig = readFileSync("vercel.json", "utf8");
 assert.doesNotMatch(
   vercelConfig,
@@ -158,16 +147,5 @@ assert.match(
   /"path"\s*:\s*"\/api\/listing-storage-retention-cleanup"[\s\S]*?"schedule"\s*:\s*"0 9 \* \* \*"/,
   "storage retention remains an active data-lifecycle responsibility"
 );
-
-for (const runtimeModule of [
-  "api/listing-provider-status.js",
-  "lib/listing/readiness/workflow-readiness-audit.mjs"
-]) {
-  assert.doesNotMatch(
-    readFileSync(runtimeModule, "utf8"),
-    /from\s+["'][^"']*scripts\//,
-    `${runtimeModule} must not depend on CLI scripts that Vercel can omit from the function bundle`
-  );
-}
 
 console.log("production release boundary tests passed");

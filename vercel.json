@@ -105,60 +105,6 @@
       "regions": [
         "sin1"
       ]
-    },
-    "api/listing-copilot-title.js": {
-      "maxDuration": 300
-    },
-    "api/listing-preingest.js": {
-      "maxDuration": 300
-    },
-    "api/v4/listing-copilot-title.js": {
-      "maxDuration": 300
-    },
-    "api/v4/listing-preingest-worker.js": {
-      "maxDuration": 300
-    },
-    "api/v4/listing-job-worker.js": {
-      "maxDuration": 300
-    },
-    "api/v4/listing-job-pump.js": {
-      "maxDuration": 300
-    },
-    "api/v4/listing-job-assign.js": {
-      "maxDuration": 60
-    },
-    "api/v4/fast-scout-prewarm.js": {
-      "maxDuration": 300
-    },
-    "api/v4/launch-gate-source-images.js": {
-      "maxDuration": 120
-    },
-    "api/admin-apply-v4-production-job-queue-migration.js": {
-      "maxDuration": 300,
-      "includeFiles": "supabase/migrations/*.sql"
-    },
-    "api/admin-apply-v4-writer-export-migration.js": {
-      "maxDuration": 300,
-      "includeFiles": "supabase/migrations/20260707130906_v4_writer_export_batches.sql"
-    },
-    "api/admin-apply-v4-noncritical-persistence-migration.js": {
-      "maxDuration": 300,
-      "includeFiles": "supabase/migrations/20260712072310_atomic_v4_noncritical_persistence.sql"
-    },
-    "api/admin-apply-v4-writer-ready-capacity-migration.js": {
-      "maxDuration": 300,
-      "includeFiles": "supabase/migrations/20260712153000_atomic_v4_writer_ready_capacity_release.sql"
-    },
-    "api/admin-import-writer-title-catalog-seed.js": {
-      "maxDuration": 300,
-      "includeFiles": "data/catalog/writer-title-seed/writer-ebay-upload-20260703.xlsx"
-    },
-    "api/admin-import-corrected-title-catalog.js": {
-      "maxDuration": 300
-    },
-    "api/admin-apply-catalog-self-exclusion-migration.js": {
-      "maxDuration": 300,
-      "includeFiles": "supabase/migrations/20260714174210_expose_catalog_source_feedback_for_self_exclusion.sql"
     }
   },
   "crons": [

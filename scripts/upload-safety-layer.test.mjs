@@ -3,8 +3,6 @@ import { readFile } from "node:fs/promises";
 
 const html = await readFile("app/index.html", "utf8");
 const js = await readFile("app/listing-copilot.js", "utf8");
-const enqueue = await readFile("api/v4/listing-job-enqueue.js", "utf8");
-const lifecycleContract = await readFile("lib/listing/v4/assets/asset-lifecycle-contract.mjs", "utf8");
 
 [
   ".jpg",
@@ -47,10 +45,6 @@ assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/, "
 assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/, "the direct request must retain the upload intent identity");
 assert.doesNotMatch(directRecognitionSource, /\bimages\s*:|\bobject_path\s*:|\bdata_url\s*:/, "the browser must not send image bytes or storage paths to recognition");
 assert.doesNotMatch(js, /MAX_ASSET_REQUEST_BYTES|ensureSafeAssetPayload/, "recognition must not revive the legacy Base64 JSON transport path");
-assert.match(enqueue, /canonicalizeQueueJobs/, "the server must own canonical queue input reconstruction");
-assert.match(enqueue, /readCanonicalListingImageReferences/, "the server must reconstruct canonical image input from durable storage state");
-assert.match(enqueue, /stripClientImageTransport/, "the server must fail closed against browser-owned image transport fields");
-assert.match(lifecycleContract, /clientForbiddenImageTransportKeys/, "forbidden browser image transport fields must have one contract owner");
 assert.match(js, /originalWidth/, "original source width should be preserved for storage dimension validation");
 assert.match(js, /originalHeight/, "original source height should be preserved for storage dimension validation");
 assert.match(js, /storageDimensionsForImage/, "storage uploads should include validated image dimensions");

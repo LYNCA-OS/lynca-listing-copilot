@@ -25,70 +25,31 @@ function source(file) {
 const publicRoutes = Object.freeze([
   "api/health.js",
   "api/login.js",
-  "api/logout.js",
-  "api/v4/health.js"
+  "api/logout.js"
 ]);
 
 // Internal routes must authenticate a worker, cron, migration, or sidecar
 // credential. They do not inherit a customer's role or tenant selection.
 const internalSecretRoutes = Object.freeze([
-  "api/admin-apply-catalog-self-exclusion-migration.js",
   "api/admin-apply-sem-definition-migration.js",
-  "api/admin-apply-v4-noncritical-persistence-migration.js",
-  "api/admin-apply-v4-production-job-queue-migration.js",
-  "api/admin-apply-v4-writer-export-migration.js",
-  "api/admin-apply-v4-writer-ready-capacity-migration.js",
-  "api/admin-catalog-candidate-smoke.js",
-  "api/admin-import-corrected-title-catalog.js",
-  "api/admin-import-writer-title-catalog-seed.js",
-  "api/admin-index-visual-vector-seed.js",
-  "api/listing-storage-retention-cleanup.js",
-  "api/v4/listing-job-pump.js",
-  "api/v4/listing-job-worker.js",
-  "api/v4/prewarm.js",
-  "api/workflow-sidecar-cleanlab.js",
-  "api/workflow-sidecar-fiftyone.js",
-  "api/workflow-sidecar-lightgbm.js",
-  "api/workflow-sidecar-phoenix.js",
-  "api/workflow-sidecar-splink.js"
+  "api/listing-storage-retention-cleanup.js"
 ]);
 
 // Commercial customer routes must reconstruct membership from the server and
 // never authorize from a payload tenant id or a signed role claim.
 const tenantAuthRoutes = Object.freeze([
-  "api/ebay-card-listings.js",
-  "api/ebay-dcsports87-listings.js",
-  "api/ebay-seller-listings.js",
   "api/csm-listing-title-ingest.js",
   "api/csm-resolution-view.js",
   "api/csm-listing-title.js",
   "api/listing-asset-create.js",
-  "api/listing-copilot-title.js",
   "api/listing-image-upload-relay.js",
   "api/listing-image-upload-url.js",
   "api/listing-image-verify-existing.js",
   "api/listing-image-verify-upload.js",
   "api/listing-manual-recovery.js",
-  "api/listing-preingest.js",
-  "api/listing-provider-status.js",
-  "api/listing-publish-draft.js",
-  "api/listing-render-title.js",
-  "api/listing-title-feedback.js",
   "api/session.js",
-  "api/v4/bare-model-probe.js",
-  "api/v4/fast-scout-prewarm.js",
-  "api/v4/launch-gate-source-images.js",
-  "api/v4/listing-copilot-title.js",
   "api/v4/listing-export-workbook.js",
   "api/v4/listing-feedback.js",
-  "api/v4/listing-job-assign.js",
-  "api/v4/listing-job-enqueue.js",
-  "api/v4/listing-job-prewarm.js",
-  "api/v4/listing-job-retry.js",
-  "api/v4/listing-job-status.js",
-  "api/v4/listing-preingest-worker.js",
-  "api/v4/listing-preingest.js",
-  "api/v4/listing-session-status.js",
   "api/v4/ops-snapshot.js",
   "api/v4/tenant-members.js",
   "api/v4/tenant-invitations.js",
@@ -111,16 +72,12 @@ assert.deepEqual(
   "every api/**/*.js entrypoint must be explicitly classified before it ships"
 );
 
-const delegatedAccessSource = Object.freeze({
-  "api/ebay-card-listings.js": "api/ebay-dcsports87-listings.js",
-  "api/ebay-seller-listings.js": "api/ebay-dcsports87-listings.js"
-});
 const tenantGuardPatterns = Object.freeze({
   "api/listing-image-upload-relay.js": /\brequireAccess\s*=\s*requireTenantAccess/
 });
 for (const file of tenantAuthRoutes) {
   assert.match(
-    source(delegatedAccessSource[file] || file),
+    source(file),
     tenantGuardPatterns[file] || /\brequireTenantAccess\s*\(/,
     `${file} must call requireTenantAccess()`
   );
@@ -133,7 +90,7 @@ const internalGuardPatterns = Object.freeze({
   "api/v4/prewarm.js": /\b(?:isV4WorkerRequest|isV4CronRequest)\s*\(/
 });
 for (const file of internalSecretRoutes) {
-  const routeSource = source(delegatedAccessSource[file] || file);
+  const routeSource = source(file);
   const expected = internalGuardPatterns[file]
     || (/\bisV4WorkerRequest\s*\(/.test(routeSource)
       ? /\bisV4WorkerRequest\s*\(/
@@ -156,36 +113,21 @@ for (const file of internalSecretRoutes.filter((route) => route.startsWith("api/
   );
 }
 
-const sidecarSource = source("lib/data-loop/internal-sidecar-endpoints.mjs");
-assert.match(sidecarSource, /\brequireInternalSidecarAuth\s*\(/, "sidecar delegate must authenticate its bearer token");
-assert.match(
-  sidecarSource,
-  /const auth = requireInternalSidecarAuth\(req, env\);[\s\S]*if \(!auth\.ok\)/,
-  "sidecar handler must fail closed before reading work"
-);
-
 for (const file of publicRoutes) {
   assert.doesNotMatch(source(file), /\brequireTenantAccess\s*\(/, `${file} is no longer public; reclassify it`);
 }
 
-// 60 as of 2026-08-05: main's 57 plus `csm-resolution-view.js` (COS-42),
-// `listing-manual-recovery.js` (COS-51), and `v4/bare-model-probe.js`. The pin
-// is what forces a new endpoint to be classified above rather than shipped
-// unnoticed -- it is how the COS-42 endpoint's missing classification surfaced.
-assert.equal(actualApiFiles.length, 60);
-assert.equal(publicRoutes.length, 4);
-assert.equal(internalSecretRoutes.length, 19);
+assert.equal(actualApiFiles.length, 21);
+assert.equal(publicRoutes.length, 3);
+assert.equal(internalSecretRoutes.length, 2);
 
 const browserEntrypoint = fs.readFileSync(path.join(repoRoot, "app/listing-copilot.js"), "utf8");
 const publicBrowserSdk = fs.readFileSync(path.join(repoRoot, "app/listing-copilot-sdk.mjs"), "utf8");
-const serverSdkSource = fs.readFileSync(path.join(repoRoot, "lib/listing/client/listing-copilot-sdk.mjs"), "utf8");
 assert.match(browserEntrypoint, /from "\.\/listing-copilot-sdk\.mjs";/, "browser modules must import from the public app tree");
 assert.doesNotMatch(browserEntrypoint, /from "\.\.\/lib\//, "browser modules must not import middleware-protected server paths");
 assert.match(publicBrowserSdk, /Generated by scripts\/build-public-browser-sdk\.mjs/, "the public browser SDK must be a generated bundle");
 assert.doesNotMatch(publicBrowserSdk, /from "\.\.\/lib\//, "the generated browser SDK must not request protected server paths");
-assert.match(serverSdkSource, /Stable browser-facing facade/, "the protected SDK source must remain the only hand-maintained owner");
-// 37: the three additions above are all tenant-authorized routes.
-assert.equal(tenantAuthRoutes.length, 37);
+assert.equal(tenantAuthRoutes.length, 16);
 
 console.log(JSON.stringify({
   ok: true,

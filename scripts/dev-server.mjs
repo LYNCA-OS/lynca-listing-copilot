@@ -125,22 +125,8 @@ async function handleApi(request, response, pathname) {
     return true;
   }
 
-  if (pathname === "/api/listing-render-title") {
-    const moduleUrl = pathToFileURL(join(root, "api/listing-render-title.js")).href;
-    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
-    await handler(request, response);
-    return true;
-  }
-
   if (pathname === "/api/v4/tenant-invitations") {
     const moduleUrl = pathToFileURL(join(root, "api/v4/tenant-invitations.js")).href;
-    const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
-    await handler(request, response);
-    return true;
-  }
-
-  if (pathname === "/api/listing-publish-draft") {
-    const moduleUrl = pathToFileURL(join(root, "api/listing-publish-draft.js")).href;
     const { default: handler } = await import(`${moduleUrl}?t=${Date.now()}`);
     await handler(request, response);
     return true;
