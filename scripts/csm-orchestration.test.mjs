@@ -8,6 +8,10 @@ import {
   runPersistedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
 import { writeCsmStageRows } from "../lib/listing/thin/csm-supabase-writer.mjs";
+import {
+  computeCsmPacketHashes,
+  THIN_COMPOSER_VERSION_V1
+} from "../lib/listing/thin/csm-persistence.mjs";
 import { patchSupabaseRow } from "../lib/supabase-rest.mjs";
 
 const enabledEnv = {
@@ -296,6 +300,43 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     (error) => error.code === "csm_prepared_result_invalid"
   );
   assert.equal(writeCalls, 2, "invalid replay must fail before storage");
+}
+
+// A checkpoint produced under Composer v1 may be persisted after v2 deploys,
+// but its owner receipt must remain v1. Recovery is provider-incapable and
+// must never relabel historical executable behavior as the current version.
+{
+  const prepared = await prepareCanonicalListingPath({
+    tenantId: "tenant-1", recognitionSessionId: "session-v1-resume",
+    imageUrls: ["https://example.test/front.jpg"], callProvider: providerFor(common)
+  });
+  prepared.csm_rows.output.composer_version = THIN_COMPOSER_VERSION_V1;
+  prepared.model = "gpt-5.6-luna-legacy";
+  prepared.requested_effort = "none";
+  prepared.served_effort = "none";
+  prepared.image_detail = "original";
+  prepared.prompt_version = "legacy-prompt-v1";
+  prepared.csm_rows.resolution.recognition_packet_sha256 =
+    computeCsmPacketHashes(prepared.csm_rows).csm_recognition_packet_sha256;
+  prepared.csm_rows.output.resolution_packet_sha256 =
+    computeCsmPacketHashes(prepared.csm_rows).csm_resolution_packet_sha256;
+  prepared.csm_rows.session_hashes = computeCsmPacketHashes(prepared.csm_rows);
+
+  let sessionPatch = null;
+  await persistPreparedCanonicalListingPath({
+    tenantId: "tenant-1", recognitionSessionId: "session-v1-resume", prepared,
+    writeRows: async (_rows, options) => {
+      sessionPatch = options.sessionPatch;
+      return { ok: true, atomic: true, replayed: false, session: { saved: true }, written: {} };
+    }
+  });
+  assert.equal(sessionPatch.csm_owner_versions.composer, THIN_COMPOSER_VERSION_V1);
+  assert.equal(sessionPatch.csm_contract_version, prepared.csm_rows.output.contract_version);
+  assert.equal(sessionPatch.csm_owner_versions.model, "gpt-5.6-luna-legacy");
+  assert.equal(sessionPatch.csm_owner_versions.effort, "none");
+  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort, "none");
+  assert.equal(sessionPatch.csm_owner_versions.image_detail, "original");
+  assert.equal(sessionPatch.csm_owner_versions.prompt_version, "legacy-prompt-v1");
 }
 
 await assert.rejects(

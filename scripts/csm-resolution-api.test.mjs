@@ -5,6 +5,12 @@ import {
   composeResolutionView, handleResolutionViewRequest, handleResolutionReviewRequest
 } from "../api/csm-resolution-view.js";
 import { REVIEW_VERDICT, CORRECTION_REASON } from "../lib/listing/csm/resolution-review.mjs";
+import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import {
+  buildCsmStageRows,
+  THIN_COMPOSER_VERSION_V1
+} from "../lib/listing/thin/csm-persistence.mjs";
 
 const payload = JSON.stringify({
   year: "2025", manufacturer: "Topps", product: "Chrome", set: "", card_name: "",
@@ -20,6 +26,32 @@ const record = {
   resolver_version: "thin-path-observation-only-v1"
 };
 const deps = { readRecord: async () => record, appendReview: async ({ review }) => review };
+
+const legacyPayload = {
+  year: "2018", manufacturer: "Topps", product: "Topps Silver Pack", set: "",
+  subjects: ["Shohei Ohtani"], team: "", card_name: "1983 Chrome Promo",
+  release_variant: "", surface_color: "Blue", parallel_family: "Refractor",
+  parallel_exact: "Blue Refractor", descriptive_rarity: "", card_number: "",
+  serial: "018/150", attributes: ["RC"], grading_info: {
+    company: "PSA", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY"
+  }, grammar: "standard", lot_count: "", language: "", unreadable: [], low_confidence: []
+};
+const legacyFields = parseCanonicalFields(legacyPayload).fields;
+const legacyComposed = composeFromCanonicalFields(legacyFields, {
+  features: { exact_parallel_color_compaction: false }
+});
+const legacyRows = buildCsmStageRows({
+  tenantId: "t1", recognitionSessionId: "legacy-session",
+  fields: legacyFields, composed: legacyComposed, title: legacyComposed.title
+});
+legacyRows.output.composer_version = THIN_COMPOSER_VERSION_V1;
+legacyRows.output.title = legacyComposed.title;
+const legacyRecord = {
+  asset_id: "legacy-asset", recognition_session_id: "legacy-session",
+  resolution_id: legacyRows.resolution.id, output_id: legacyRows.output.id,
+  output_title: legacyComposed.title, composer_version: THIN_COMPOSER_VERSION_V1,
+  resolver_version: "thin-path-observation-only-v1", replay_rows: legacyRows
+};
 
 // --- the view is a pure read -------------------------------------------------
 {
@@ -40,6 +72,40 @@ const deps = { readRecord: async () => record, appendReview: async ({ review }) 
   assert.equal(view.composer.recomposed_matches_stored, false);
   assert.equal(view.composer.trace_reliable, false,
     "an operator must not be told a bracket was dropped for budget when the shipped title came from other code");
+}
+
+// --- stored Composer versions remain executable, including in review --------
+{
+  const replayed = composeResolutionView(legacyRecord);
+  assert.equal(replayed.composer_version, THIN_COMPOSER_VERSION_V1);
+  assert.equal(replayed.composed.title, legacyComposed.title);
+  assert.doesNotMatch(replayed.composed.title, /\bBlue\b/,
+    "the Glass Box must not reinterpret a historical v1 title with v2 compaction");
+  assert.doesNotMatch(replayed.compose_corrected_title({ ...legacyFields, team: "Dodgers" }), /\bBlue\b/,
+    "review recomposition must execute the stored v1 contract as well");
+
+  const view = await handleResolutionViewRequest({
+    tenantId: "t1", assetId: legacyRecord.asset_id,
+    dependencies: { readRecord: async () => legacyRecord }
+  });
+  assert.equal(view.composer.composer_version, THIN_COMPOSER_VERSION_V1);
+  assert.equal(view.composer.recomposed_matches_stored, true);
+  assert.equal(view.composer.trace_reliable, true);
+
+  const review = await handleResolutionReviewRequest({
+    tenantId: "t1", reviewerId: "u1",
+    payload: {
+      asset_id: legacyRecord.asset_id,
+      verdict: REVIEW_VERDICT.CORRECTED,
+      corrections: [{
+        bracket: "set", canonical_field: "set", reason: CORRECTION_REASON.MISSED_VALUE,
+        original_value: "", corrected_value: "Sapphire Selections"
+      }]
+    },
+    dependencies: { readRecord: async () => legacyRecord, appendReview: async ({ review: value }) => value }
+  });
+  assert.equal(review.composer_version, THIN_COMPOSER_VERSION_V1);
+  assert.equal(review.original_title, legacyComposed.title);
 }
 
 // --- a missing run is 404, not an empty view ---------------------------------
