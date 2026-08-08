@@ -143,6 +143,7 @@ function tenantFetch({
     calls.push({ url, method, body, headers: init.headers });
     assert.equal(init.headers.apikey, process.env.SUPABASE_SERVICE_ROLE_KEY);
     assert.equal(init.headers.authorization, undefined, "opaque service keys must never be sent as Bearer JWTs");
+    assert.equal(init.redirect, "error", "service-key member directory calls must refuse redirects");
 
     if (["/rest/v1/request_logs", "/rest/v1/error_logs"].includes(url.pathname)) return jsonResponse([], 201);
 

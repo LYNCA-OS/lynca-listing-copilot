@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 
 const frontend = await readFile("app/listing-copilot.js", "utf8");
-const enqueueApi = await readFile("api/v4/listing-job-enqueue.js", "utf8");
-const statusApi = await readFile("api/v4/listing-job-status.js", "utf8");
+const sdkEntry = await readFile("lib/listing/client/listing-copilot-sdk.mjs", "utf8");
 const clientSdk = await readFile("app/listing-copilot-sdk.mjs", "utf8");
+const clientSdkModule = await import("../app/listing-copilot-sdk.mjs");
 
 const localImports = [...frontend.matchAll(/from\s+["']([^"']+)["']/g)]
   .map((match) => match[1])
@@ -34,6 +34,16 @@ for (const specifier of localImports) {
 assert.ok(localImports.includes("./listing-copilot-sdk.mjs"),
   "the SDK boundary itself must stay in place");
 
+const sdkImportList = frontend.match(
+  /import\s*\{([^}]*)\}\s*from\s*["']\.\/listing-copilot-sdk\.mjs["'];/
+)?.[1]
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean)
+  .sort();
+assert.deepEqual(Object.keys(clientSdkModule).sort(), sdkImportList,
+  "the public SDK must expose exactly the browser's live surface and no retired contracts");
+
 for (const forbidden of [
   "provider_options",
   "providerOptions",
@@ -46,9 +56,27 @@ for (const forbidden of [
   assert.equal(frontend.includes(forbidden), false, `frontend must not own ${forbidden}`);
 }
 
-assert.match(clientSdk, /recognition-request\.mjs/);
-assert.match(enqueueApi, /bindRecognitionProfileToPayload/);
-assert.match(statusApi, /buildWriterViewModel/);
-assert.match(statusApi, /writer_view_model:/);
+for (const activeModule of [
+  "quality-gate.mjs",
+  "crop-planner.mjs",
+  "batch-recognition-intent.mjs",
+  "bounded-fetch.mjs",
+  "upload-phases.mjs",
+  "upload-recovery-policy.mjs"
+]) {
+  assert.match(sdkEntry, new RegExp(activeModule.replace(".", "\\.")),
+    `the browser SDK entry must retain ${activeModule}`);
+}
+
+for (const retiredSurface of [
+  "recognition-request.mjs",
+  "queuedStatusPollDelay",
+  "groupClientResultsByJobId",
+  "assetLifecycleStates",
+  "/api/v4/listing-job"
+]) {
+  assert.equal(clientSdk.includes(retiredSurface), false,
+    `the public browser SDK must not retain ${retiredSurface}`);
+}
 
 console.log("System boundary contract tests passed");

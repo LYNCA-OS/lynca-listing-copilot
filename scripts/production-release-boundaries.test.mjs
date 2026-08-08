@@ -63,22 +63,75 @@ for (const route of retiredVisualReviewRoutes) {
 }
 
 const workflow = readFileSync(".github/workflows/deploy-production.yml", "utf8");
+const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 const health = readFileSync("api/health.js", "utf8");
+for (const [file, minimumRedirects] of Object.entries({
+  "lib/supabase-rest.mjs": 1,
+  "lib/listing/v4/session/supabase-rest.mjs": 1,
+  "lib/listing/thin/csm-provider-admission-authority.mjs": 2,
+  "lib/listing/thin/csm-supabase-writer.mjs": 9,
+  "lib/supabase-feedback.mjs": 2,
+  "lib/listing/storage/storage-retention.mjs": 3,
+  "lib/listing/storage/storage-verification-store.mjs": 2,
+  "lib/listing/storage/supabase-image-storage.mjs": 5,
+  "lib/listing/v4/export/writer-batch-export.mjs": 2,
+  "lib/tenant/access.mjs": 1,
+  "lib/tenant/members.mjs": 1,
+  "scripts/check-csm-thin-production-readiness.mjs": 2
+})) {
+  const source = readFileSync(file, "utf8");
+  const fetchCount = [...source.matchAll(/fetchImpl\s*\(/g)].length;
+  const redirectCount = [...source.matchAll(/redirect:\s*["']error["']/g)].length;
+  assert.ok(redirectCount >= fetchCount && redirectCount >= minimumRedirects,
+    `${file} must fail closed on every service-key fetch redirect`);
+}
+const writerJourneyMaterializer = readFileSync("scripts/materialize-writer-journey-source.mjs", "utf8");
+assert.match(writerJourneyMaterializer,
+  /headers:\s*supabaseServiceHeaders\([^\n]+\),\s*\n\s*redirect:\s*"error"/,
+  "Writer Journey signing must not redirect its server-only apikey");
 const dispatchGate = workflow.indexOf("Fail closed unless this dispatch targets the current main commit");
 const setupNode = workflow.indexOf("actions/setup-node");
 const schemaPreflight = workflow.indexOf("Verify CSM persistence and global provider authority before deploy");
-const preHookCommitGate = workflow.indexOf("Re-confirm the exact main commit before the deploy hook");
-const vercelDeploy = workflow.indexOf("Trigger current main through the Vercel Deploy Hook");
+const immutableReleaseGate = workflow.indexOf("Re-confirm the exact main commit before building the immutable release");
+const vercelProjectBinding = workflow.indexOf("Bind the canonical Vercel project from tracked service context");
+const vercelDeploy = workflow.indexOf("Build and deploy the exact dispatched checkout");
+const prepromotionHealth = workflow.indexOf("Verify the immutable deployment before production promotion");
+const vercelPromote = workflow.indexOf("Promote the verified immutable deployment to production");
+const productionHealth = workflow.indexOf("Wait for the exact CSM thin main commit to reach production");
 assert.ok(dispatchGate >= 0, "production deployment must have an explicit dispatch gate");
 assert.ok(setupNode > dispatchGate, "dispatch validation must run before release setup");
 assert.ok(schemaPreflight > dispatchGate, "dispatch validation must run before production schema access");
-assert.ok(preHookCommitGate > schemaPreflight, "current main must be re-read after tests and schema preflight");
-assert.ok(vercelDeploy > preHookCommitGate, "the final commit gate must run immediately before the Vercel deploy hook");
+assert.ok(immutableReleaseGate > schemaPreflight, "current main must be re-read after tests and schema preflight");
+assert.ok(vercelProjectBinding > immutableReleaseGate, "the canonical Vercel identity must come from tracked service context");
+assert.ok(vercelDeploy > vercelProjectBinding, "the immutable build must follow the final commit and project gates");
+assert.ok(prepromotionHealth > vercelDeploy, "the immutable deployment must be healthy before promotion");
+assert.ok(vercelPromote > prepromotionHealth, "production promotion must follow immutable deployment health");
+assert.ok(productionHealth > vercelPromote, "the promoted production alias must be verified independently");
 assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main/);
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
+assert.doesNotMatch(workflow, /VERCEL_DEPLOY_HOOK_URL|Deploy Hook|vercel-deploy-hook/,
+  "a branch-reading deploy hook can race with main and must not mutate production");
+assert.match(workflow, /VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/);
+assert.equal(
+  [...workflow.matchAll(/VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/g)].length,
+  3,
+  "build, prepromotion health, and promotion must authenticate independently"
+);
+assert.match(workflow, /active-service-context\.json/);
+assert.match(workflow, /VERCEL_ORG_ID=\$\{orgId\}/);
+assert.match(workflow, /VERCEL_PROJECT_ID=\$\{projectId\}/);
+assert.match(workflow, /vercel@54\.14\.5 build --prod/,
+  "the release must build the already checked-out immutable dispatch SHA");
+assert.match(workflow, /vercel@54\.14\.5 deploy --prebuilt --prod --skip-domain --yes/,
+  "the exact prebuilt artifact must remain unpromoted until its deployment URL is healthy");
+assert.match(workflow, /vercel@54\.14\.5 curl \/api\/health --deployment "\$DEPLOYMENT_URL"/);
+assert.match(workflow, /vercel@54\.14\.5 promote "\$DEPLOYMENT_URL" --yes/);
+assert.match(workflow, /--env "LYNCA_RELEASE_GIT_SHA=\$DISPATCH_SHA"/);
+assert.doesNotMatch(workflow, /--token\b/,
+  "the Vercel token must stay in the protected environment, not process arguments");
 assert.equal(
   [...workflow.matchAll(/node scripts\/check-csm-thin-production-readiness\.mjs/g)].length,
   2,
@@ -114,6 +167,25 @@ assert.doesNotMatch(workflow, /google-github-actions|setup-gcloud|deploy-vision-
 assert.doesNotMatch(workflow, /listing-provider-status|writer-assisted-production-readiness/);
 assert.match(
   workflow,
+  /npm run check\s*\n\s*npm run test:release/,
+  "production deploy must run the complete offline check and test gates instead of a hand-picked subset"
+);
+assert.doesNotMatch(
+  workflow,
+  /npm run check:csm-thin|npm run test:csm-thin|node scripts\/system-boundary-contract\.test\.mjs/,
+  "release workflow must not restate a subset that can drift from package.json"
+);
+assert.equal(
+  packageJson.scripts["test:release"],
+  "npm run test:csm-thin && npm run test:production && npm run test:accuracy",
+  "one repository script must own the complete checkout-independent release suite"
+);
+assert.match(ciWorkflow, /run: npm run test:release/,
+  "CI and production deploy must execute the same release suite");
+assert.doesNotMatch(packageJson.scripts["test:release"], /test:internal-library/,
+  "the release runner must not depend on the operator-only protected evaluation checkout");
+assert.match(
+  workflow,
   /import \{ CSM_THIN_RUNTIME_CONTRACT \} from '\.\/lib\/listing\/thin\/csm-runtime-contract\.mjs'/,
   "the release gate must read the checked-out runtime contract instead of restating it"
 );
@@ -128,6 +200,10 @@ assert.match(workflow, /steady_reserved_attempts_per_minute === 679/);
 assert.match(workflow, /effective_reserved_attempt_ceiling === 83/);
 assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);
 assert.match(workflow, /r\.code!=="missing_asset_id"/);
+assert.match(workflow, /--data-binary @-/,
+  "production smoke credentials must flow over stdin instead of process arguments");
+assert.doesNotMatch(workflow, /--data\s+"\$\(node/,
+  "production smoke must not expose the password in curl's process arguments");
 assert.match(health, /LYNCA_RELEASE_GIT_SHA\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_SHA/);
 assert.match(health, /LYNCA_RELEASE_GIT_REF\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_REF/);
 assert.equal(
@@ -137,6 +213,8 @@ assert.equal(
 );
 
 const vercelConfig = readFileSync("vercel.json", "utf8");
+const localDeployEntrypoint = readFileSync("scripts/deploy-production-release.mjs", "utf8");
+assert.match(localDeployEntrypoint, /DIRECT_PRODUCTION_DEPLOY_RETIRED/);
 assert.doesNotMatch(
   vercelConfig,
   /"path"\s*:\s*"\/api\/v4\/listing-preingest-worker"[\s\S]*?"schedule"\s*:\s*"\* \* \* \* \*"/,

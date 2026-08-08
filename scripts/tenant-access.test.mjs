@@ -101,6 +101,7 @@ function membershipFetch(rowsOrFactory, assertions = () => {}) {
     assert.equal(url.pathname, "/rest/v1/tenant_members");
     assert.equal(init.headers.apikey, serviceEnv.SUPABASE_SERVICE_ROLE_KEY);
     assert.equal(init.headers.authorization, undefined, "opaque sb_secret keys are not JWT bearer tokens");
+    assert.equal(init.redirect, "error", "service-key membership reads must refuse redirects");
     const rows = typeof rowsOrFactory === "function" ? rowsOrFactory(url) : rowsOrFactory;
     return jsonResponse(rows);
   };

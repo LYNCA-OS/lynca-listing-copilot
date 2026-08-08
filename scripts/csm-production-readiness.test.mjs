@@ -42,6 +42,7 @@ const fetchImpl = async (url, init = {}) => {
   if (parsed.pathname.endsWith("/persist_csm_stage_packet_v1")) {
     return response({ ok: false, code: "missing_csm_stage_row_identity" });
   }
+  if (parsed.pathname.endsWith("/listing_assets")) return response([]);
   if (parsed.pathname.endsWith(`/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
     return response({
       ok: true,
@@ -80,10 +81,23 @@ assert.deepEqual(calls.map(({ pathname }) => pathname), [
   "/rest/v1/csm_registry_releases",
   "/rest/v1/rpc/persist_csm_stage_packet_v1",
   `/rest/v1/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`,
+  "/rest/v1/listing_assets",
   "/rest/v1/rpc/lookup_csm_thin_provider_operation_v1",
   "/rest/v1/rpc/check_csm_thin_provider_pacer_v1"
 ]);
 assert.ok(calls.every(({ init }) => init.headers.apikey === ENV.SUPABASE_SECRET_KEY));
+assert.equal(ready.listing_asset_owner_ready, true);
+
+await assert.rejects(
+  checkCsmThinProductionReadiness({
+    env: ENV,
+    fetchImpl: async (url, init) => {
+      if (String(url).includes("/listing_assets?")) return response({ code: "42703" }, 400);
+      return fetchImpl(url, init);
+    }
+  }),
+  (error) => error.code === "listing_asset_owner_not_ready"
+);
 
 await assert.rejects(
   checkCsmThinProductionReadiness({

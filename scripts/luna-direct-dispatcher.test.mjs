@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import {
   buildLunaDirectOperationKey,
   buildLunaDirectPayloadHash,
+  buildLegacyLowLunaDirectPayloadHash,
   classifyLunaDirectFailure,
   createLunaDirectDispatcher,
   lunaRetryDelayMs,
@@ -29,6 +30,7 @@ function task(assetId, overrides = {}) {
     asset_id: assetId,
     model: "gpt-5.6-luna",
     detail: "high",
+    reasoning_effort: "low",
     prompt_version: "csm-canonical-v1",
     estimated_tokens: 5_262,
     image_urls: [`https://example.test/${assetId}.jpg`],
@@ -94,6 +96,40 @@ assert.throws(
     "detail normalization must not create a second operation"
   );
   assert.equal(buildLunaDirectPayloadHash(task("asset-1")).length, 64);
+  assert.equal(
+    buildLunaDirectOperationKey(task("asset-1", { reasoning_effort: "none" })),
+    first,
+    "an effort deployment must retain the durable user operation identity"
+  );
+  assert.notEqual(
+    buildLunaDirectPayloadHash(task("asset-1", { reasoning_effort: "none" })),
+    buildLunaDirectPayloadHash(task("asset-1")),
+    "but the execution payload must fail closed rather than replay a different effort"
+  );
+  assert.equal(
+    buildLegacyLowLunaDirectPayloadHash({
+      ...task("asset-1", { image_fingerprints: ["sha256:front"] }),
+      tenant_id: "tenant-1",
+      intent_id: "intent-1",
+      asset_id: "asset-1",
+      model: "gpt-5.6-luna",
+      detail: "high",
+      reasoning_effort: "low",
+      prompt_version: "csm-canonical-v1",
+      estimated_tokens: 5_262
+    }),
+    "b9e933c2e490ba3e47e28c8bd9adf16d1fa9dbd54b22ea95637f0dac4686126c",
+    "legacy recovery must reproduce the exact pre-effort payload digest"
+  );
+  assert.throws(
+    () => buildLegacyLowLunaDirectPayloadHash(task("asset-1", { reasoning_effort: "none" })),
+    (error) => error.code === "LUNA_DIRECT_LEGACY_PAYLOAD_INELIGIBLE"
+  );
+  assert.throws(
+    () => buildLunaDirectOperationKey(task("asset-1", { reasoning_effort: undefined })),
+    /missing_reasoning_effort/,
+    "callers must bind the actual effort instead of inheriting a hidden default"
+  );
   assert.notEqual(
     buildLunaDirectPayloadHash(task("asset-1")),
     buildLunaDirectPayloadHash({ ...task("asset-1"), image_urls: ["https://rotated.test/front.jpg"] })
@@ -123,6 +159,11 @@ assert.throws(
   assert.equal(classifyLunaDirectFailure({ status: 503 }).ambiguous, true);
   assert.equal(classifyLunaDirectFailure({ status: 504 }).ambiguous, true);
   assert.equal(classifyLunaDirectFailure({ status: 503, safe_to_retry: true }).ambiguous, false);
+  assert.deepEqual(
+    classifyLunaDirectFailure({ status: 502, definitive_response: true, retryable: false }),
+    { retryable: false, ambiguous: false, kind: "http", status: 502 },
+    "a complete malformed provider response is not a lost response and must not buy another call"
+  );
   for (const status of [400, 408]) {
     assert.equal(classifyLunaDirectFailure({ status }).retryable, false);
   }
@@ -310,6 +351,21 @@ assert.throws(
   assert.throws(
     () => dispatcher.enqueue(task("conflict", { prompt_version: "csm-canonical-v2" })),
     (error) => error.code === "LUNA_DIRECT_ASSET_OPERATION_CONFLICT"
+  );
+}
+
+// Effort is payload identity, not user-operation identity. A warm dispatcher
+// must still refuse to coalesce low and none into the first result before the
+// durable authority gets a chance to enforce that payload fence.
+{
+  const dispatcher = createTestDispatcher({
+    csmDirectConcurrency: 1,
+    executeTask: async () => ({ ok: true })
+  });
+  await dispatcher.enqueue(task("effort-conflict"));
+  assert.throws(
+    () => dispatcher.enqueue(task("effort-conflict", { reasoning_effort: "none" })),
+    (error) => error.code === "LUNA_DIRECT_OPERATION_PAYLOAD_CONFLICT"
   );
 }
 

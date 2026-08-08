@@ -20,7 +20,6 @@ alter table public.csm_thin_provider_scopes
   add column pacer_burst_tokens integer,
   add column pacer_available_tokens numeric(20,6),
   add column pacer_refilled_at timestamptz;
-
 update public.csm_thin_provider_scopes
 set baseline_working_max_active = least(43, max_active),
     pacer_tokens_per_second = 60000,
@@ -28,7 +27,6 @@ set baseline_working_max_active = least(43, max_active),
     pacer_available_tokens = 65200,
     pacer_refilled_at = pg_catalog.clock_timestamp(),
     effective_max_active = least(effective_max_active, 43, max_active);
-
 alter table public.csm_thin_provider_scopes
   alter column baseline_working_max_active set default 43,
   alter column baseline_working_max_active set not null,
@@ -51,7 +49,6 @@ alter table public.csm_thin_provider_scopes
       and pacer_burst_tokens
     and pacer_tokens_per_second * rolling_window_seconds <= token_window_target
   );
-
 comment on column public.csm_thin_provider_scopes.baseline_working_max_active is
   'AIMD recovery ceiling. Absolute provider count authority remains max_active.';
 comment on column public.csm_thin_provider_scopes.pacer_tokens_per_second is
@@ -62,7 +59,6 @@ comment on column public.csm_thin_provider_scopes.pacer_available_tokens is
   'Current token-bucket balance; a single oversized attempt may create bounded debt.';
 comment on column public.csm_thin_provider_scopes.pacer_refilled_at is
   'Clock timestamp used for atomic token-bucket refill.';
-
 do $csm_thin_provider_pacer_contract$
 begin
   if not exists (
@@ -87,7 +83,6 @@ begin
   end if;
 end;
 $csm_thin_provider_pacer_contract$;
-
 create or replace function public.claim_csm_thin_provider_attempt_v1(
   p_provider text,
   p_account_scope text,
@@ -900,7 +895,6 @@ begin
   );
 end;
 $csm_thin_settle$;
-
 create or replace function public.check_csm_thin_provider_pacer_v1(
   p_provider text,
   p_account_scope text,
@@ -937,7 +931,6 @@ begin
   );
 end;
 $csm_thin_pacer_readiness$;
-
 revoke all on function public.claim_csm_thin_provider_attempt_v1(
   text, text, text, text, text, integer, text, integer
 ) from public, anon, authenticated, service_role;

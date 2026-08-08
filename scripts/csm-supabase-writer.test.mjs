@@ -249,6 +249,8 @@ function fakeStore({ failOnceOn = "" } = {}) {
   const store = fakeStore();
   const result = await writeCsmStageRows(rows, { env: ENV, fetchImpl: store.fetchImpl });
   assert.equal(result.ok, true);
+  assert.equal(store.calls.every(({ init }) => init.redirect === "error"), true,
+    "every CSM persistence request must reject redirects carrying the server-only apikey");
   assert.equal(result.atomic, false, "six REST writes must not masquerade as a transaction");
   const claimIndex = store.calls.findIndex((call) => call.table === "v4_recognition_sessions" && call.method === "PATCH");
   const childWrites = store.calls.filter((call) => CSM_TABLES.includes(call.table) && call.method === "POST");

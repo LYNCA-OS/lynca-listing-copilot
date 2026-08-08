@@ -5,7 +5,8 @@ import { Readable } from "node:stream";
 import {
   createListingImageUploadRelayHandler,
   decodeRelayMetadata,
-  LISTING_IMAGE_RELAY_MAX_BYTES
+  LISTING_IMAGE_RELAY_MAX_BYTES,
+  readBoundedBinaryBody
 } from "../api/listing-image-upload-relay.js";
 
 const bytes = Buffer.from("exact-original-image-bytes");
@@ -25,6 +26,20 @@ const encoded = Buffer.from(JSON.stringify(metadata)).toString("base64url");
 assert.deepEqual(decodeRelayMetadata(encoded), metadata);
 assert.throws(() => decodeRelayMetadata("not+base64"), /Invalid upload relay metadata/);
 assert.equal(LISTING_IMAGE_RELAY_MAX_BYTES, 3_200_000);
+
+{
+  const oversized = Readable.from([
+    Buffer.alloc(4, 1), Buffer.alloc(4, 2), Buffer.alloc(64 * 1024, 3)
+  ]);
+  oversized.headers = {};
+  await assert.rejects(
+    readBoundedBinaryBody(oversized, 6),
+    (error) => error.code === "relay_body_too_large"
+  );
+  if (!oversized.readableEnded) await new Promise((resolve) => oversized.once("end", resolve));
+  assert.equal(oversized.readableEnded, true,
+    "an oversized stream is drained while all bytes after the boundary are discarded");
+}
 
 class ResponseStub {
   constructor() {

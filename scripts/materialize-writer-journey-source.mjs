@@ -6,6 +6,7 @@ import { launchGateImageSourceRecords } from
   "../lib/listing/evaluation/launch-gate-image-source-index.generated.mjs";
 import { CSM_PRODUCTION_SUPABASE_PROJECT_REF } from
   "../lib/listing/thin/csm-deployment-environment.mjs";
+import { supabaseServiceHeaders } from "../lib/supabase-service-headers.mjs";
 
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 export const WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACT = Object.freeze({
@@ -127,11 +128,8 @@ export async function materializeWriterJourneySource({
       `${origin}/storage/v1/object/sign/${bucket}/${objectPath}`,
       {
         method: "POST",
-        headers: {
-          apikey: serviceKey,
-          authorization: `Bearer ${serviceKey}`,
-          "content-type": "application/json"
-        },
+        headers: supabaseServiceHeaders(serviceKey, { "content-type": "application/json" }),
+        redirect: "error",
         body: JSON.stringify({ expiresIn: 60 }),
         signal: AbortSignal.timeout(15_000)
       }

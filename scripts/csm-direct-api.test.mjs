@@ -13,6 +13,7 @@ import {
   CSM_PERSISTENCE_READINESS_CACHE_TTL_MS,
   CSM_DIRECT_PROMPT_VERSION,
   buildProviderFailureReceipt,
+  buildCsmDirectFailureResponse,
   buildCsmPersistenceCheckpoint,
   checkCsmDirectPreSpendReadiness,
   checkCachedCsmPersistenceReadiness,
@@ -23,9 +24,11 @@ import {
   runDirectCsmAsset
 } from "../api/csm-listing-title.js";
 import {
+  buildLegacyLowLunaDirectPayloadHash,
   buildLunaDirectOperationKey,
   buildLunaDirectPayloadHash
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
+import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
 import {
   CSM_SESSION_SCHEMA_VERSION,
   buildCsmRecognitionSessionRow,
@@ -124,6 +127,46 @@ assert.match(CSM_DIRECT_PROMPT_VERSION, /^csm-canonical-fields-v\d+$/);
 assert.equal(CSM_PERSISTENCE_READINESS_CACHE_TTL_MS, 30_000);
 assert.equal(deterministicCsmSessionId("operation-a"), deterministicCsmSessionId("operation-a"));
 assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessionId("operation-b"));
+
+{
+  const malformedProviderResponse = Object.assign(
+    new Error("canonical_path_provider_contract_failed: invalid_json"),
+    {
+      status: 502,
+      statusCode: 502,
+      provider_attempt_started: true,
+      definitive_response: true,
+      retryable: false,
+      provider_error_code: "invalid_json"
+    }
+  );
+  const failure = buildCsmDirectFailureResponse(malformedProviderResponse);
+  assert.equal(failure.status, 502);
+  assert.equal(failure.body.retryable, false,
+    "an explicit definitive failure must not be reopened by the handler's 5xx default");
+  assert.equal(failure.body.route, "CSM_THIN_DIRECT");
+  assert.equal(failure.body.cloud_run_calls, 0);
+  assert.equal(failure.body.vector_calls, 0);
+  assert.equal(failure.body.provider_failure_receipt.outcome, "definitive_response");
+  assert.equal(failure.body.latency_stages_ms !== undefined, true,
+    "the existing receipt body is preserved without a fallback route or second request");
+
+  assert.equal(buildCsmDirectFailureResponse(Object.assign(new Error("unknown"), {
+    statusCode: 503
+  })).body.retryable, true, "unclassified 5xx failures retain the safe default");
+  assert.equal(buildCsmDirectFailureResponse(Object.assign(new Error("explicit"), {
+    statusCode: 400, retryable: true
+  })).body.retryable, true, "an explicit retryable classification remains authoritative");
+
+  assert.equal(buildCsmIngestFailureResponse(malformedProviderResponse).body.retryable, false,
+    "ingest must preserve an explicit definitive failure instead of reopening direct fallback");
+  assert.equal(buildCsmIngestFailureResponse(Object.assign(new Error("unknown"), {
+    statusCode: 503
+  })).body.retryable, true, "an unclassified ingest 503 retains the safe retry default");
+  assert.equal(buildCsmIngestFailureResponse(Object.assign(new Error("explicit"), {
+    statusCode: 400, retryable: true
+  })).body.retryable, true, "an explicit retryable ingest classification remains authoritative");
+}
 
 {
   const receipt = buildProviderFailureReceipt({
@@ -685,6 +728,7 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   const storedTask = {
     tenant_id: "tenant-1", intent_id: "intent-1", asset_id: "asset-1",
     model: "gpt-5.6-luna", detail: "high",
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
     prompt_version: CSM_DIRECT_PROMPT_VERSION,
     estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
     image_fingerprints: [`sha256:${IMAGE_HASH}`]
@@ -810,6 +854,161 @@ await assert.rejects(
   assert.equal(events.filter((event) => event === "session").length, 1);
 }
 
+// The integrated ingest path deliberately defers its formal CSM session until
+// Storage verifies the original bytes. If a cold retry receives the already
+// paid checkpoint, executeTask does not run, so it must recreate that deferred
+// boundary from the checkpoint before persistence rather than fail forever.
+{
+  const task = {
+    tenant_id: "tenant-1", intent_id: "deferred-session-resume", asset_id: "asset-1",
+    model: "gpt-5.6-luna", detail: "high",
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+    prompt_version: CSM_DIRECT_PROMPT_VERSION,
+    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
+    image_fingerprints: [`sha256:${IMAGE_HASH}`]
+  };
+  const operationKey = buildLunaDirectOperationKey(task);
+  const payloadHash = buildLunaDirectPayloadHash(task);
+  const sessionId = deterministicCsmSessionId(operationKey);
+  const durable = buildCsmPersistenceCheckpoint({
+    prepared: preparedResult(sessionId, "Deferred resume title"),
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash,
+    recognitionSessionId: sessionId
+  });
+  const events = [];
+  const authority = passthroughAuthority();
+  authority.runAttempt = async ({ queuedAttempt }) => {
+    await queuedAttempt;
+    return durable;
+  };
+  const dependencies = successfulDependencies({ events, authority });
+  dependencies.deferRecognitionSessionUntilPersistence = true;
+  dependencies.createSession = async () => {
+    events.push("session");
+    return { persistence: { recognition_session: { saved: true, deferred: true } } };
+  };
+  const resumed = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: "deferred-session-resume", dependencies
+  });
+  assert.equal(resumed.title, "Deferred resume title");
+  assert.deepEqual(events, ["readiness", "images", "session", "persist_csm"]);
+  assert.ok(resumed.latency_stages_ms.recognition_session_replay_ms >= 0);
+}
+
+// Cross-deployment compatibility: the operation key did not change when
+// effort entered payload identity. Only an explicit current-hash conflict may
+// trigger one lookup of the exact pre-change low-effort hash. A found paid
+// checkpoint resumes persistence without signing or executing the provider.
+{
+  const task = {
+    tenant_id: "tenant-1", intent_id: "legacy-hash-resume", asset_id: "asset-1",
+    model: "gpt-5.6-luna", detail: "high",
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+    prompt_version: CSM_DIRECT_PROMPT_VERSION,
+    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
+    image_fingerprints: [`sha256:${IMAGE_HASH}`]
+  };
+  const operationKey = buildLunaDirectOperationKey(task);
+  const currentPayloadHash = buildLunaDirectPayloadHash(task);
+  const legacyPayloadHash = buildLegacyLowLunaDirectPayloadHash(task);
+  assert.notEqual(currentPayloadHash, legacyPayloadHash);
+  const sessionId = deterministicCsmSessionId(operationKey);
+  const durable = buildCsmPersistenceCheckpoint({
+    prepared: preparedResult(sessionId, "Legacy paid title"),
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash: legacyPayloadHash,
+    recognitionSessionId: sessionId
+  });
+  const authorityEvents = [];
+  const authority = {
+    globallyEnforced: true,
+    enqueueAttempt: async (metadata) => {
+      authorityEvents.push({ type: "enqueue", payloadHash: metadata.payloadHash });
+      throw Object.assign(new Error("operation_payload_conflict"), {
+        code: "operation_payload_conflict",
+        statusCode: 409,
+        retryable: false,
+        provider_attempt_started: false
+      });
+    },
+    runAttempt: async ({ queuedAttempt }) => {
+      authorityEvents.push({ type: "run" });
+      await queuedAttempt;
+      throw new Error("unreachable");
+    },
+    lookupOperationResult: async ({ payloadHash }) => {
+      authorityEvents.push({ type: "lookup", payloadHash });
+      return { status: "found", result: durable, latestAttempt: 1 };
+    }
+  };
+  const events = [];
+  const resumed = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: "legacy-hash-resume",
+    dependencies: successfulDependencies({ events, authority })
+  });
+  assert.equal(resumed.title, "Legacy paid title");
+  assert.deepEqual(authorityEvents, [
+    { type: "enqueue", payloadHash: currentPayloadHash },
+    { type: "run" },
+    { type: "lookup", payloadHash: legacyPayloadHash }
+  ]);
+  assert.deepEqual(events, ["readiness", "images", "persist_csm"],
+    "legacy recovery must perform zero sign, zero session recreation and zero provider work");
+}
+
+// Pending/ambiguous legacy operations remain provider-incapable and retryable;
+// FAILED has no paid success checkpoint and stays terminal. None may reach the
+// signing/model boundary.
+for (const legacyStatus of ["pending", "ambiguous", "failed"]) {
+  let lookupCalls = 0;
+  let prepareCalls = 0;
+  const authority = {
+    globallyEnforced: true,
+    enqueueAttempt: async () => {
+      throw Object.assign(new Error("operation_payload_conflict"), {
+        code: "operation_payload_conflict", provider_attempt_started: false
+      });
+    },
+    runAttempt: async ({ queuedAttempt }) => queuedAttempt,
+    lookupOperationResult: async () => {
+      lookupCalls += 1;
+      return { status: legacyStatus };
+    }
+  };
+  const dependencies = successfulDependencies({ authority });
+  dependencies.preparePath = async () => { prepareCalls += 1; throw new Error("must_not_prepare"); };
+  await assert.rejects(
+    runDirectCsmAsset({
+      tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+      intentId: `legacy-${legacyStatus}`, dependencies
+    }),
+    (error) => error.code === `csm_legacy_payload_${legacyStatus}`
+      && error.retryable === ["pending", "ambiguous"].includes(legacyStatus)
+      && error.provider_attempt_started === false
+  );
+  assert.equal(lookupCalls, 1);
+  assert.equal(prepareCalls, 0);
+}
+
+// A healthy current-hash request does not pay a compatibility lookup RTT.
+{
+  let lookupCalls = 0;
+  const authority = passthroughAuthority({
+    lookup: async () => { lookupCalls += 1; return { status: "not_found" }; }
+  });
+  await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: "current-hash-clean-path",
+    dependencies: successfulDependencies({ authority })
+  });
+  assert.equal(lookupCalls, 0, "the compatibility branch must add zero RTT to the current path");
+}
+
 // An old persistence-shaped FAILED record has no recoverable provider output.
 // It must remain failed closed rather than turning the writer button into a
 // second paid attempt.
@@ -835,6 +1034,7 @@ await assert.rejects(
   const task = {
     tenant_id: "tenant-1", intent_id: "bound-intent", asset_id: "asset-1",
     model: "gpt-5.6-luna", detail: "high",
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
     prompt_version: CSM_DIRECT_PROMPT_VERSION,
     estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
     image_fingerprints: [`sha256:${IMAGE_HASH}`]

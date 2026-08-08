@@ -83,4 +83,46 @@ await assert.rejects(
   "an explicit provider 500 is safe to retry under the durable idempotency fence"
 );
 
+await assert.rejects(
+  runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    providerClientRequestId: "lynca-client-invalid-json",
+    callProvider: async () => new Response("not-json", {
+      status: 200,
+      headers: { "x-request-id": "req-provider-invalid-json" }
+    })
+  }),
+  (error) => error.name === "CanonicalProviderError"
+    && error.status === 502
+    && error.provider_error_code === "invalid_json"
+    && error.provider_request_id === "req-provider-invalid-json"
+    && error.provider_client_request_id === "lynca-client-invalid-json"
+    && error.provider_attempt_started === true
+    && error.definitive_response === true
+    && error.retryable === false,
+  "a complete malformed 200 response must fail closed instead of persisting an empty title"
+);
+
+for (const body of [
+  { id: "resp-missing-output" },
+  { id: "resp-empty-title", output_text: JSON.stringify({ grammar: "standard" }) }
+]) {
+  await assert.rejects(
+    runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    }),
+    (error) => error.name === "CanonicalProviderError"
+      && error.status === 502
+      && error.definitive_response === true
+      && error.retryable === false,
+    "a 200 response without a usable structured title must not cross the persistence boundary"
+  );
+}
+
 process.stdout.write("thin listing provider boundary: ok\n");

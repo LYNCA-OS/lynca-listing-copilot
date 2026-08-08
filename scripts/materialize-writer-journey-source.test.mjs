@@ -47,7 +47,7 @@ try {
     }
   });
   const result = await materializeWriterJourneySource({
-    env: { SUPABASE_URL: productionUrl, SUPABASE_SERVICE_ROLE_KEY: "service-test" },
+    env: { SUPABASE_URL: productionUrl, SUPABASE_SERVICE_ROLE_KEY: "sb_secret_service-test" },
     outDir,
     source,
     fetchImpl
@@ -58,9 +58,11 @@ try {
   assert.equal((await stat(result.files[0].path)).mode & 0o777, 0o600);
   assert.equal(calls.length, 2);
   assert.match(calls[0].url, /safe%20source\/front\.jpg$/);
-  assert.equal(calls[0].init.headers.apikey, "service-test");
-  assert.equal(calls[0].init.headers.authorization, "Bearer service-test");
-  assert.doesNotMatch(JSON.stringify(result), /service-test/);
+  assert.equal(calls[0].init.headers.apikey, "sb_secret_service-test");
+  assert.equal(calls[0].init.headers.authorization, undefined);
+  assert.equal(calls[0].init.redirect, "error",
+    "a Storage redirect must not receive the server-only apikey");
+  assert.doesNotMatch(JSON.stringify(result), /sb_secret_service-test/);
 
   await assert.rejects(
     materializeWriterJourneySource({

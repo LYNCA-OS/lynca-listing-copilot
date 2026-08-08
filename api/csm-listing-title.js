@@ -26,6 +26,7 @@ import { checkCsmPersistenceReadiness } from "../lib/listing/thin/csm-supabase-w
 import {
   buildLunaDirectOperationKey,
   buildLunaDirectPayloadHash,
+  buildLegacyLowLunaDirectPayloadHash,
   createLunaDirectDispatcher
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
 import { requireTenantAccess } from "../lib/tenant/access.mjs";
@@ -95,7 +96,8 @@ function exactPacketHashes(value) {
 }
 
 export function buildCsmPersistenceCheckpoint({
-  prepared, tenantId, operationKey, payloadHash, recognitionSessionId
+  prepared, tenantId, operationKey, payloadHash, recognitionSessionId,
+  recognitionSessionDeferred = false
 } = {}) {
   const tenant = requiredText(tenantId, "tenant_id");
   const operation = requiredText(operationKey, "operation_key");
@@ -121,6 +123,7 @@ export function buildCsmPersistenceCheckpoint({
       operation_key: operation,
       payload_sha256: payload,
       recognition_session_id: session,
+      recognition_session_deferred: recognitionSessionDeferred === true,
       packet_hashes: hashes,
       accuracy_loss_ledger_version: accuracyLossLedger.version,
       accuracy_loss_ledger_sha256: accuracyLossLedger.ledger_sha256
@@ -148,6 +151,11 @@ export function validateCsmPersistenceCheckpoint(result, {
   }
   for (const [name, value] of Object.entries(expected)) {
     if (checkpoint[name] !== value) throw persistenceCheckpointError(`${name}_mismatch`);
+  }
+  if (checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_VERSION
+      && checkpoint.recognition_session_deferred != null
+      && typeof checkpoint.recognition_session_deferred !== "boolean") {
+    throw persistenceCheckpointError("recognition_session_deferred_invalid");
   }
   const rows = result?.csm_rows;
   if (rows?.resolution?.tenant_id !== expected.tenant_id
@@ -188,6 +196,17 @@ function alreadyPersisted(result, recognitionSessionId) {
     && result?.csm_persistence?.atomic === true
     && result?.csm_persistence?.session?.saved === true
     && result?.csm_rows?.resolution?.recognition_session_id === recognitionSessionId;
+}
+
+function legacyPayloadRecoveryError(status, cause = null) {
+  const normalized = String(status || "unavailable").toLowerCase();
+  return Object.assign(new Error(`csm_legacy_payload_${normalized}`), {
+    code: `csm_legacy_payload_${normalized}`,
+    statusCode: 409,
+    retryable: ["pending", "ambiguous"].includes(normalized),
+    provider_attempt_started: false,
+    ...(cause ? { cause } : {})
+  });
 }
 
 export function publicPersistedResult(result) {
@@ -379,6 +398,7 @@ export async function runDirectCsmAsset({
     asset_id: canonical.asset_id || asset,
     model: MODEL,
     detail,
+    reasoning_effort: EFFORT,
     prompt_version: CSM_DIRECT_PROMPT_VERSION,
     estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
     image_fingerprints: originals.map((image) => `sha256:${requiredText(
@@ -395,14 +415,91 @@ export async function runDirectCsmAsset({
     claimTimeoutMs: CSM_DIRECT_CLAIM_TIMEOUT_MS,
     maximumProviderDurationMs: CSM_DIRECT_PROVIDER_TIMEOUT_MS
   });
+  let sessionInitializedThisRequest = false;
+
+  const initializeRecognitionSession = async (sessionId) => {
+    const created = await createSession({
+      sessionId,
+      tenantId: tenant,
+      userId: user,
+      operatorId: user,
+      payload: {
+        asset_id: canonical.asset_id,
+        client_asset_ref: canonical.asset_id,
+        images: canonical.image_references,
+        image_references: canonical.image_references,
+        image_generation_id: canonical.image_generation_id,
+        image_set_sha256: canonical.image_set_sha256,
+        expected_original_count: canonical.expected_original_count,
+        recognition_input: recognition.read,
+        provider: MODEL,
+        mode: "csm_thin_direct"
+      },
+      routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
+      env,
+      fetchImpl
+    });
+    if (created.persistence?.recognition_session?.saved !== true) {
+      throw Object.assign(new Error("csm_recognition_session_not_persisted"), {
+        statusCode: 503
+      });
+    }
+    sessionInitializedThisRequest = true;
+    return created;
+  };
 
   let durableResult = null;
+  let durablePayloadHash = payloadHash;
+  let legacyPayloadRecovered = false;
+
+  const recoverLegacyPayloadConflict = async (conflictError) => {
+    if (conflictError?.code !== "operation_payload_conflict") throw conflictError;
+    let legacyPayloadHash;
+    try {
+      legacyPayloadHash = buildLegacyLowLunaDirectPayloadHash(task);
+    } catch {
+      // Future efforts are intentionally ineligible and keep the original
+      // authority conflict classification.
+      throw conflictError;
+    }
+    // This lookup is provider-incapable and exists only on the exact conflict
+    // returned for the current hash. The clean path pays no extra Supabase RTT.
+    let legacy;
+    try {
+      legacy = await authority.lookupOperationResult({
+        tenantId: tenant,
+        operationKey,
+        payloadHash: legacyPayloadHash
+      });
+    } catch (error) {
+      throw legacyPayloadRecoveryError("unavailable", error);
+    }
+    if (legacy.status === "found") {
+      return { result: legacy.result, payloadHash: legacyPayloadHash };
+    }
+    if (["pending", "ambiguous"].includes(legacy.status)) {
+      throw legacyPayloadRecoveryError(legacy.status);
+    }
+    // Historical FAILED/CANCELLED states contain no paid success checkpoint.
+    // Recovery remains provider-incapable; an operator may inspect/manual
+    // recover them, but this route will not manufacture another Luna attempt.
+    throw legacyPayloadRecoveryError(legacy.status || "not_found");
+  };
+
   if (manualRetry === true) {
-    const durable = await authority.lookupOperationResult({
-      tenantId: tenant,
-      operationKey,
-      payloadHash
-    });
+    let durable;
+    try {
+      durable = await authority.lookupOperationResult({
+        tenantId: tenant,
+        operationKey,
+        payloadHash
+      });
+    } catch (error) {
+      const recovered = await recoverLegacyPayloadConflict(error);
+      durable = { status: "found", result: recovered.result };
+      durablePayloadHash = recovered.payloadHash;
+      legacyPayloadRecovered = true;
+    }
     if (durable.status === "found") durableResult = durable.result;
     if (durable.status === "failed") {
       if (durable.result?.failure_phase === "CSM_PERSISTENCE") {
@@ -423,6 +520,7 @@ export async function runDirectCsmAsset({
 
   const executeTask = async (dispatched) => {
     let imageUrls;
+    let recognitionSessionDeferred = false;
     const attemptStages = { ...latencyStages };
     const sessionId = deterministicCsmSessionId(dispatched.operation_key);
     const providerClientRequestId = deterministicProviderClientRequestId({
@@ -446,34 +544,13 @@ export async function runDirectCsmAsset({
         })(),
         (async () => {
           const recognitionSessionStartedAt = Date.now();
-          const created = await createSession({
-            sessionId,
-            tenantId: tenant,
-            userId: user,
-            operatorId: user,
-            payload: {
-              asset_id: canonical.asset_id,
-              client_asset_ref: canonical.asset_id,
-              images: canonical.image_references,
-              image_references: canonical.image_references,
-              image_generation_id: canonical.image_generation_id,
-              image_set_sha256: canonical.image_set_sha256,
-              expected_original_count: canonical.expected_original_count,
-              // COS-53 clause 4: a run states which asset the model read, per
-              // slot, rather than leaving it to be inferred from byte counts.
-              recognition_input: recognition.read,
-              provider: MODEL,
-              mode: "csm_thin_direct"
-            },
-            routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
-            env,
-            fetchImpl
-          });
+          const created = await initializeRecognitionSession(sessionId);
           attemptStages.recognition_session_ms = Date.now() - recognitionSessionStartedAt;
           return created;
         })()
       ]);
       imageUrls = signedUrls;
+      recognitionSessionDeferred = session.persistence?.recognition_session?.deferred === true;
       if (session.persistence?.recognition_session?.saved !== true) {
         throw Object.assign(new Error("csm_recognition_session_not_persisted"), {
           statusCode: 503
@@ -533,7 +610,8 @@ export async function runDirectCsmAsset({
       tenantId: tenant,
       operationKey: dispatched.operation_key,
       payloadHash: dispatched.payload_hash,
-      recognitionSessionId: sessionId
+      recognitionSessionId: sessionId,
+      recognitionSessionDeferred
     });
   };
 
@@ -546,12 +624,24 @@ export async function runDirectCsmAsset({
   });
   const sessionId = deterministicCsmSessionId(operationKey);
   const dispatchStartedAt = Date.now();
-  const settled = durableResult || await (
-    manualRetry === true && Number(task.prior_attempts) > 0
-      ? dispatcher.manualRetry(task)
-      : dispatcher.enqueue(task)
-  );
-  if (alreadyPersisted(settled, sessionId)) return publicPersistedResult(settled);
+  let settled = durableResult;
+  if (!settled) {
+    try {
+      settled = await (
+        manualRetry === true && Number(task.prior_attempts) > 0
+          ? dispatcher.manualRetry(task)
+          : dispatcher.enqueue(task)
+      );
+    } catch (error) {
+      const recovered = await recoverLegacyPayloadConflict(error);
+      settled = recovered.result;
+      durablePayloadHash = recovered.payloadHash;
+      legacyPayloadRecovered = true;
+    }
+  }
+  if (!legacyPayloadRecovered && alreadyPersisted(settled, sessionId)) {
+    return publicPersistedResult(settled);
+  }
   const preparedWithDispatchStages = {
     ...settled,
     latency_stages_ms: {
@@ -559,12 +649,25 @@ export async function runDirectCsmAsset({
       authority_dispatch_ms: Date.now() - dispatchStartedAt
     }
   };
-  const prepared = validateCsmPersistenceCheckpoint(preparedWithDispatchStages, {
+  let prepared = validateCsmPersistenceCheckpoint(preparedWithDispatchStages, {
     tenantId: tenant,
     operationKey,
-    payloadHash,
+    payloadHash: durablePayloadHash,
     recognitionSessionId: sessionId
   });
+  if ((prepared.csm_persistence_checkpoint.recognition_session_deferred === true
+        || dependencies.deferRecognitionSessionUntilPersistence === true)
+      && !sessionInitializedThisRequest) {
+    const recognitionSessionReplayStartedAt = Date.now();
+    await initializeRecognitionSession(sessionId);
+    prepared = {
+      ...prepared,
+      latency_stages_ms: {
+        ...(prepared.latency_stages_ms || {}),
+        recognition_session_replay_ms: Date.now() - recognitionSessionReplayStartedAt
+      }
+    };
+  }
   const persistenceStartedAt = Date.now();
   const persisted = await persistPath({
     tenantId: tenant,
@@ -643,6 +746,33 @@ export function buildProviderFailureReceipt(error) {
   };
 }
 
+export function buildCsmDirectFailureResponse(error) {
+  const status = responseStatus(error);
+  const providerFailureReceipt = buildProviderFailureReceipt(error);
+  const retryable = error?.retryable === false
+    ? false
+    : error?.retryable === true || status >= 500;
+  return {
+    status,
+    providerFailureReceipt,
+    body: {
+      ok: false,
+      route: "CSM_THIN_DIRECT",
+      cloud_run_calls: 0,
+      vector_calls: 0,
+      code: String(error?.message || "csm_thin_path_failed").split(":")[0],
+      error_type: providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
+      retryable,
+      message: String(error?.message || "CSM thin path failed").slice(0, 240),
+      recognition_session_id: safeReceiptText(error?.recognition_session_id),
+      ...(providerFailureReceipt ? {
+        provider_failure_receipt: providerFailureReceipt,
+        latency_stages_ms: providerFailureReceipt.latency_stages_ms
+      } : {})
+    }
+  };
+}
+
 export default async function handler(req, res) {
   // Everything before `runDirectCsmAsset` was unmeasured, and it is not free:
   // production request logs put a successful request at ~5.4s p50 while the
@@ -708,8 +838,7 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    const status = responseStatus(error);
-    const providerFailureReceipt = buildProviderFailureReceipt(error);
+    const { status, providerFailureReceipt, body } = buildCsmDirectFailureResponse(error);
     if (providerFailureReceipt) {
       console.error(JSON.stringify({
         event: "csm_provider_attempt_failed",
@@ -718,20 +847,6 @@ export default async function handler(req, res) {
         ...providerFailureReceipt
       }));
     }
-    return sendJson(res, status, {
-      ok: false,
-      route: "CSM_THIN_DIRECT",
-      cloud_run_calls: 0,
-      vector_calls: 0,
-      code: String(error?.message || "csm_thin_path_failed").split(":")[0],
-      error_type: providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
-      retryable: error?.retryable === true || status >= 500,
-      message: String(error?.message || "CSM thin path failed").slice(0, 240),
-      recognition_session_id: safeReceiptText(error?.recognition_session_id),
-      ...(providerFailureReceipt ? {
-        provider_failure_receipt: providerFailureReceipt,
-        latency_stages_ms: providerFailureReceipt.latency_stages_ms
-      } : {})
-    });
+    return sendJson(res, status, body);
   }
 }

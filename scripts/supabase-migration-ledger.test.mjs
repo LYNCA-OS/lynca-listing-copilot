@@ -11,6 +11,7 @@ import {
   controlledMigrationDecision,
   dbPushGuardDecision,
   normalizeFetchedSql,
+  readMigrationDirectory,
   renderMigrationLedgerMarkdown
 } from "./supabase-migration-ledger.mjs";
 
@@ -179,6 +180,12 @@ try {
   const canonicalMigrationDir = join(
     repoRoot,
     "infrastructure/supabase-production/supabase/migrations"
+  );
+  const canonicalEntries = await readMigrationDirectory(canonicalMigrationDir, "local");
+  assert.equal(
+    new Set(canonicalEntries.map((entry) => entry.version)).size,
+    canonicalEntries.length,
+    "the single Production ledger must not contain duplicate migration versions"
   );
   const [providerAdmissionSql, providerPacerSql, productProjectionSql] = await Promise.all([
     readFile(join(canonicalMigrationDir, providerAdmissionMigration), "utf8"),

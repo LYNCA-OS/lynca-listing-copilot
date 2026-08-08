@@ -44,6 +44,32 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+export function buildCsmIngestFailureResponse(error, {
+  recoveryIdentity = null,
+  recoveredVerifications = null
+} = {}) {
+  const status = Number(error?.statusCode || error?.status || 503);
+  const safeStatus = Number.isInteger(status) && status >= 400 && status <= 599 ? status : 503;
+  const retryable = error?.retryable === false
+    ? false
+    : error?.retryable === true || safeStatus >= 500;
+  return {
+    status: safeStatus,
+    body: {
+      ok: false,
+      route: "CSM_THIN_DIRECT_INGEST",
+      code: String(error?.code || error?.message || "csm_ingest_failed").split(":")[0],
+      retryable,
+      message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240),
+      ...(recoveryIdentity && recoveredVerifications ? {
+        ...recoveryIdentity,
+        verifications: recoveredVerifications,
+        upload_recovered: true
+      } : {})
+    }
+  };
+}
+
 function headerValue(req, name) {
   const value = req?.headers?.[String(name).toLowerCase()];
   return String(Array.isArray(value) ? value[0] : value || "").trim();
@@ -271,6 +297,7 @@ export default async function handler(req, res) {
 
     const assetPromise = createTenantListingAsset({
       tenantId: context.tenantId,
+      ownerUserId: context.userId,
       clientAssetRef,
       idempotencyKey,
       captureProfileId: metadata.captureProfileId || metadata.capture_profile_id,
@@ -313,6 +340,10 @@ export default async function handler(req, res) {
       // contains the persistence, so it cannot precede it.
       serverPrologueStages: { ingest_body_bytes: body.length },
       dependencies: {
+        // Also repairs provider checkpoints created before the explicit
+        // `recognition_session_deferred` marker existed. This flag changes no
+        // paid identity and only enables the provider-incapable session step.
+        deferRecognitionSessionUntilPersistence: true,
         readImages: async () => canonical,
         signImage: async ({ objectPath }) => {
           const image = imageByPath.get(objectPath);
@@ -377,22 +408,13 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    const status = Number(error?.statusCode || error?.status || 503);
-    const safeStatus = Number.isInteger(status) && status >= 400 && status <= 599 ? status : 503;
     const recoveredVerifications = storagePromise
       ? await storagePromise.catch(() => null)
       : null;
-    return sendJson(res, safeStatus, {
-      ok: false,
-      route: "CSM_THIN_DIRECT_INGEST",
-      code: String(error?.code || error?.message || "csm_ingest_failed").split(":")[0],
-      retryable: error?.retryable === true || safeStatus >= 500,
-      message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240),
-      ...(recoveryIdentity && recoveredVerifications ? {
-        ...recoveryIdentity,
-        verifications: recoveredVerifications,
-        upload_recovered: true
-      } : {})
+    const failure = buildCsmIngestFailureResponse(error, {
+      recoveryIdentity,
+      recoveredVerifications
     });
+    return sendJson(res, failure.status, failure.body);
   }
 }

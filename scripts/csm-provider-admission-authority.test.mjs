@@ -108,6 +108,8 @@ function authority(store, overrides = {}) {
     CSM_PROVIDER_AUTHORITY_RPCS.lookup,
     CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness
   ]);
+  assert.equal(readyStore.calls.every(({ init }) => init.redirect === "error"), true,
+    "provider authority must not redirect its server-only apikey");
   assert.deepEqual(readyStore.calls[1].body, {
     p_provider: "openai",
     p_account_scope: "lynca-primary",
@@ -568,6 +570,34 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
     (error) => error.ambiguous === true && error.provider_attempt_started === true
   );
   assert.equal(store.calls.at(-1).body.p_outcome, "AMBIGUOUS");
+}
+
+// A complete HTTP response can violate the provider schema without being a
+// lost response. Persist FAILED, not AMBIGUOUS: replaying it would only buy a
+// second call for a response whose outcome is already known.
+{
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: {
+      ok: true, admitted: true, lease_fence: 32, lease_expires_at: "2026-08-01T10:00:30Z"
+    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.settle]: { ok: true, code: "settled" }
+  });
+  const admission = authority(store);
+  const providerError = Object.assign(new Error("provider response contract failed"), {
+    status: 502,
+    definitive_response: true,
+    provider_attempt_started: true,
+    retryable: false
+  });
+  await assert.rejects(
+    admission.runAttempt({
+      queuedAttempt: admission.enqueueAttempt(metadata()),
+      execute: async () => { throw providerError; }
+    }),
+    (error) => error.ambiguous === false && error.provider_attempt_started === true
+  );
+  assert.equal(store.calls.at(-1).body.p_outcome, "FAILED");
 }
 
 // AbortSignal.timeout() uses a DOMException named TimeoutError rather than an
