@@ -13,7 +13,7 @@ import { buildCompactV4DeploymentReceipt } from
 import { reverifyCompactV4AssetBytes } from
   "../../scripts/reverify-model-residual-compact-v4-assets.mjs";
 import { buildResidualCompactV4Inputs } from "./build-residual-compact-v4-inputs.mjs";
-import { materializeResidualCompactV4Payload } from
+import { attachCompactV4ImageByteReceipts, materializeResidualCompactV4Payload } from
   "./materialize-residual-compact-v4-payload.mjs";
 import { validateAssetsOnlyManifest } from "./materialize-residual-v3-payload.mjs";
 import { normalizedPayload, runAccuracyArm } from "./api/accuracy.js";
@@ -91,7 +91,8 @@ assert.throws(() => validateAssetsOnlyManifest(duplicateObjectManifest, {
   schemaVersion: "residual-compact-v4-assets-only-manifest-v1"
 }), /assets_only_image_duplicate/);
 
-let signCalls = 0; let storageReadCalls = 0;
+let signCalls = 0; let storageReadCalls = 0; let storageReadsActive = 0;
+let maximumStorageReadsActive = 0;
 const fixtureImageBytes = (url) => Buffer.from(`fixture-image-bytes:${new URL(url).pathname}`);
 const payload = await materializeResidualCompactV4Payload({ prereg,
   manifest: built.manifest, labelRefReceipt: built.labelRefReceipt,
@@ -104,12 +105,22 @@ const payload = await materializeResidualCompactV4Payload({ prereg,
       return { ok: true, json: async () => ({ signedURL: `${pathname}?token=${token}` }) };
     }
     storageReadCalls += 1;
+    storageReadsActive += 1;
+    maximumStorageReadsActive = Math.max(maximumStorageReadsActive, storageReadsActive);
+    await new Promise((resolve) => setImmediate(resolve));
     const bytes = fixtureImageBytes(url);
+    storageReadsActive -= 1;
     return { ok: true, arrayBuffer: async () => bytes };
   } });
 assert.equal(signCalls, 139);
 assert.equal(storageReadCalls, 139);
+assert(maximumStorageReadsActive > 1);
+assert(maximumStorageReadsActive <= 8);
 assert.deepEqual(payload.control.assets, payload.treatment.assets);
+await assert.rejects(attachCompactV4ImageByteReceipts({ manifest: built.manifest,
+  signedAssets: payload.control.assets, concurrency: 9,
+  fetchImpl: async () => { throw new Error("must_not_fetch"); } }),
+/compact_v4_byte_receipt_concurrency_invalid/);
 const assetReverifyReceipt = await reverifyCompactV4AssetBytes({ payload,
   verifiedAt: new Date(now + 1).toISOString(), fetchImpl: async (url) => ({ ok: true,
     arrayBuffer: async () => fixtureImageBytes(url) }) });

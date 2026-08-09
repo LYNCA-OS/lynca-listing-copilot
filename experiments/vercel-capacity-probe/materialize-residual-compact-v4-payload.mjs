@@ -13,39 +13,59 @@ import { assertSignedUrlMatchesImage, signAssetsOnlyManifest } from
 import { sha256 } from "./request-contract.mjs";
 
 const DEFAULT_TTL_SECONDS = 8 * 60 * 60;
+const DEFAULT_BYTE_RECEIPT_CONCURRENCY = 8;
 const arg = (argv, name) => {
   const index = argv.indexOf(name); return index < 0 ? "" : String(argv[index + 1] || "");
 };
 const load = async (path) => JSON.parse(await readFile(resolve(path), "utf8"));
 
+async function mapConcurrent(items, concurrency, operation) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await operation(items[index], index);
+    }
+  }));
+  return results;
+}
+
 export async function attachCompactV4ImageByteReceipts({ manifest, signedAssets,
-  fetchImpl = globalThis.fetch }) {
+  fetchImpl = globalThis.fetch, concurrency = DEFAULT_BYTE_RECEIPT_CONCURRENCY }) {
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) {
+    throw new Error("compact_v4_byte_receipt_concurrency_invalid");
+  }
   const physicalById = new Map(manifest.assets.map((asset) => [asset.asset_id, asset]));
-  const receipts = [];
-  for (const asset of signedAssets) {
+  const assetContexts = signedAssets.map((asset) => {
     const physical = physicalById.get(asset.asset_id);
     if (!physical || physical.image_set_sha256 !== asset.image_set_sha256
         || physical.images.length !== asset.image_urls.length) {
       throw new Error(`compact_v4_byte_receipt_pairing_invalid:${asset.asset_id}`);
     }
-    const imageReceipts = [];
-    for (const [index, image] of physical.images.entries()) {
-      const url = assertSignedUrlMatchesImage(asset.image_urls[index], image);
-      const response = await fetchImpl(url, { method: "GET", redirect: "error" });
-      if (!response?.ok || typeof response.arrayBuffer !== "function") {
-        throw new Error(`compact_v4_byte_receipt_fetch_failed:${asset.asset_id}:${index + 1}`);
-      }
-      const content = Buffer.from(await response.arrayBuffer());
-      if (!content.length) {
-        throw new Error(`compact_v4_byte_receipt_empty:${asset.asset_id}:${index + 1}`);
-      }
-      imageReceipts.push({ role: image.role, bucket: image.bucket,
-        object_path: image.object_path, content_sha256: sha256(content),
-        byte_length: content.length });
+    return { asset, physical, imageReceipts: new Array(physical.images.length) };
+  });
+  const imageJobs = assetContexts.flatMap((context) =>
+    context.physical.images.map((image, imageIndex) => ({ context, image, imageIndex })));
+  await mapConcurrent(imageJobs, concurrency, async ({ context, image, imageIndex }) => {
+    const url = assertSignedUrlMatchesImage(context.asset.image_urls[imageIndex], image);
+    const response = await fetchImpl(url, { method: "GET", redirect: "error" });
+    if (!response?.ok || typeof response.arrayBuffer !== "function") {
+      throw new Error(
+        `compact_v4_byte_receipt_fetch_failed:${context.asset.asset_id}:${imageIndex + 1}`
+      );
     }
-    receipts.push({ ...structuredClone(asset), image_receipts: imageReceipts });
-  }
-  return receipts;
+    const content = Buffer.from(await response.arrayBuffer());
+    if (!content.length) {
+      throw new Error(`compact_v4_byte_receipt_empty:${context.asset.asset_id}:${imageIndex + 1}`);
+    }
+    context.imageReceipts[imageIndex] = { role: image.role, bucket: image.bucket,
+      object_path: image.object_path, content_sha256: sha256(content),
+      byte_length: content.length };
+  });
+  return assetContexts.map(({ asset, imageReceipts }) => ({
+    ...structuredClone(asset), image_receipts: imageReceipts
+  }));
 }
 
 export async function materializeResidualCompactV4Payload({ prereg, manifest,
