@@ -14,6 +14,24 @@ const pacerSql = await readFile(new URL(
   `../infrastructure/supabase-production/supabase/migrations/${pacerMigrationName}`,
   import.meta.url
 ), "utf8");
+const profileReservationMigrationName =
+  "20260809145100_csm_model_profile_token_reservation_v1.sql";
+const profileReservationSql = await readFile(new URL(
+  `../infrastructure/supabase-production/supabase/migrations/${profileReservationMigrationName}`,
+  import.meta.url
+), "utf8");
+const operationKeyRecoveryMigrationName =
+  "20260809145241_csm_provider_operation_key_recovery_v1.sql";
+const operationKeyRecoverySql = await readFile(new URL(
+  `../infrastructure/supabase-production/supabase/migrations/${operationKeyRecoveryMigrationName}`,
+  import.meta.url
+), "utf8");
+const authorityExecuteHardeningMigrationName =
+  "20260809151333_csm_provider_authority_execute_hardening_v1.sql";
+const authorityExecuteHardeningSql = await readFile(new URL(
+  `../infrastructure/supabase-production/supabase/migrations/${authorityExecuteHardeningMigrationName}`,
+  import.meta.url
+), "utf8");
 
 assert.ok(Number(migrationName.slice(0, 14)) > 20260801094353,
   "the additive authority must follow the last applied remote migration");
@@ -155,4 +173,76 @@ for (const rpc of ["claim", "settle"]) {
 assert.match(pacerSql, /create or replace function public\.check_csm_thin_provider_pacer_v1\([\s\S]*?security definer[\s\S]*?set search_path = ''/);
 assert.match(pacerSql, /revoke all on function public\.check_csm_thin_provider_pacer_v1\([\s\S]*?from public, anon, authenticated, service_role/);
 assert.match(pacerSql, /grant execute on function public\.check_csm_thin_provider_pacer_v1\([\s\S]*?to service_role/);
+
+assert.ok(
+  Number(profileReservationMigrationName.slice(0, 14)) > Number(pacerMigrationName.slice(0, 14)),
+  "the profile reservation update must follow the applied pacer"
+);
+assert.doesNotMatch(profileReservationSql, /^\s*(?:drop|truncate|delete)\b/im);
+assert.match(profileReservationSql, /alter column pacer_burst_tokens set default 66000/);
+assert.match(profileReservationSql, /alter column pacer_available_tokens set default 66000/);
+assert.match(profileReservationSql, /pacer_burst_tokens = 66000/);
+assert.match(profileReservationSql, /and pacer_burst_tokens = 65200/,
+  "the profile migration must stop instead of overwriting an unknown predecessor");
+assert.match(profileReservationSql, /pacer_available_tokens = least\(pacer_available_tokens, 66000\)/,
+  "the migration may raise the ceiling but must not mint live capacity");
+assert.match(profileReservationSql, /changed_rows <> 1/);
+assert.doesNotMatch(profileReservationSql, /set\s+(?:max_active|max_active_tokens|effective_max_active)\s*=/i);
+
+assert.ok(
+  Number(operationKeyRecoveryMigrationName.slice(0, 14))
+    > Number(profileReservationMigrationName.slice(0, 14)),
+  "key-only recovery must follow the exact active-profile reservation"
+);
+assert.doesNotMatch(operationKeyRecoverySql, /^\s*(?:drop|truncate|delete)\b/im);
+assert.match(operationKeyRecoverySql,
+  /to_regprocedure\(\s*'public\.lookup_csm_thin_provider_operation_v1\(text,text,text\)'\s*\)/,
+  "the additive RPC must stop when its exact predecessor is absent");
+assert.match(operationKeyRecoverySql,
+  /PRIMARY KEY \(tenant_id, operation_key\)/,
+  "scope-free recovery depends on one unique tenant operation row");
+assert.match(operationKeyRecoverySql, /and pacer_burst_tokens = 66000/,
+  "the migration must not install on a partially upgraded profile scope");
+assert.match(operationKeyRecoverySql,
+  /create or replace function public\.lookup_csm_thin_provider_operation_by_key_v1\(\s*p_tenant_id text,\s*p_operation_key text\s*\)[\s\S]*?language plpgsql[\s\S]*?stable[\s\S]*?security definer[\s\S]*?set search_path = ''/);
+assert.match(operationKeyRecoverySql,
+  /where tenant_id = pg_catalog\.btrim\(p_tenant_id\)\s+and operation_key = pg_catalog\.btrim\(p_operation_key\)/,
+  "the read is tenant exact and operation exact");
+assert.match(operationKeyRecoverySql,
+  /if operation_row\.status = 'SUCCEEDED'[\s\S]*?'payload_sha256', operation_row\.payload_sha256[\s\S]*?'result', operation_row\.terminal_result/);
+assert.match(operationKeyRecoverySql,
+  /'code', 'found_non_success'[\s\S]*?'operation_status', operation_row\.status[\s\S]*?'latest_attempt_state', latest_attempt\.state\s*\)/,
+  "non-success states may expose state metadata only");
+assert.match(operationKeyRecoverySql,
+  /revoke all on function public\.lookup_csm_thin_provider_operation_by_key_v1\([\s\S]*?from public, anon, authenticated, service_role/);
+assert.match(operationKeyRecoverySql,
+  /grant execute on function public\.lookup_csm_thin_provider_operation_by_key_v1\([\s\S]*?to service_role/);
+
+assert.ok(
+  Number(authorityExecuteHardeningMigrationName.slice(0, 14))
+    > Number(operationKeyRecoveryMigrationName.slice(0, 14)),
+  "execute hardening must follow every authority RPC definition"
+);
+assert.doesNotMatch(authorityExecuteHardeningSql, /^\s*(?:drop|truncate|delete)\b/im);
+for (const rpc of [
+  "enqueue_csm_thin_provider_attempt_v1",
+  "claim_csm_thin_provider_attempt_v1",
+  "heartbeat_csm_thin_provider_attempt_v1",
+  "settle_csm_thin_provider_attempt_v1",
+  "cancel_csm_thin_provider_operation_v1",
+  "lookup_csm_thin_provider_operation_v1",
+  "lookup_csm_thin_provider_operation_by_key_v1",
+  "check_csm_thin_provider_pacer_v1"
+]) {
+  assert.match(authorityExecuteHardeningSql, new RegExp(
+    `revoke all on function public\\.${rpc}\\([\\s\\S]*?from public, anon, authenticated, service_role`
+  ));
+  assert.match(authorityExecuteHardeningSql, new RegExp(
+    `grant execute on function public\\.${rpc}\\([\\s\\S]*?to service_role`
+  ));
+}
+assert.match(authorityExecuteHardeningSql,
+  /alter default privileges for role postgres in schema public\s+revoke execute on functions from public, anon, authenticated/);
+assert.match(authorityExecuteHardeningSql,
+  /alter default privileges for role postgres in schema public\s+grant execute on functions to service_role/);
 console.log("CSM provider admission migration contract tests passed");
