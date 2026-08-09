@@ -136,8 +136,8 @@ assert.match(workflow, /VERCEL_ORG_ID=\$\{orgId\}/);
 assert.match(workflow, /VERCEL_PROJECT_ID=\$\{projectId\}/);
 assert.equal(
   [...workflow.matchAll(/--scope "\$VERCEL_SCOPE_SLUG"/g)].length,
-  5,
-  "every Vercel control must bind the canonical tenant instead of using the CLI default scope"
+  4,
+  "every scope-aware Vercel control must bind the canonical tenant instead of using the CLI default scope"
 );
 assert.doesNotMatch(workflow, /--scope "leon-using-s-projects"/,
   "production controls must never fall back to the forbidden Vercel scope");
@@ -149,9 +149,11 @@ assert.match(workflow, /vercel@54\.14\.5 build --prod \\\n\s*--scope "\$VERCEL_S
 assert.match(workflow,
   /vercel@54\.14\.5 deploy --prebuilt --prod --skip-domain --yes \\\n\s*--scope "\$VERCEL_SCOPE_SLUG"/,
   "the exact prebuilt artifact must remain unpromoted until its deployment URL is healthy");
+assert.doesNotMatch(workflow, /vercel@54\.14\.5 curl/,
+  "the curl subcommand cannot safely bind a non-default team in token mode");
 assert.match(workflow,
-  /vercel@54\.14\.5 curl \/api\/health --deployment "\$DEPLOYMENT_URL" \\\n\s*--scope "\$VERCEL_SCOPE_SLUG"/,
-  "the immutable health probe must not fall back to the CLI account scope");
+  /node scripts\/fetch-vercel-protected-health\.mjs \\\n\s*> \/tmp\/csm-thin-health-prepromotion\.json/,
+  "the immutable health probe must use the team-scoped Vercel API helper");
 assert.match(workflow,
   /vercel@54\.14\.5 promote "\$DEPLOYMENT_URL" --yes \\\n\s*--scope "\$VERCEL_SCOPE_SLUG"/);
 assert.match(workflow, /--env "LYNCA_RELEASE_GIT_SHA=\$DISPATCH_SHA"/);

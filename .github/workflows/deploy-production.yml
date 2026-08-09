@@ -149,8 +149,7 @@ jobs:
         run: |
           test -n "$VERCEL_TOKEN"
           test -n "$DEPLOYMENT_URL"
-          npx --yes vercel@54.14.5 curl /api/health --deployment "$DEPLOYMENT_URL" \
-            --scope "$VERCEL_SCOPE_SLUG" \
+          node scripts/fetch-vercel-protected-health.mjs \
             > /tmp/csm-thin-health-prepromotion.json
           node --input-type=module - <<'NODE'
           import { readFileSync } from 'node:fs';
