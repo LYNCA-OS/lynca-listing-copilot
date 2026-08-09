@@ -394,7 +394,8 @@ export async function runDirectCsmAsset({
   env = process.env, fetchImpl = globalThis.fetch, callProvider = null,
   dependencies = {}
 } = {}) {
-  const routeStartedAt = Date.now();
+  const now = typeof dependencies.now === "function" ? dependencies.now : Date.now;
+  const routeStartedAt = now();
   const tenant = requiredText(tenantId, "tenant_id");
   const user = requiredText(userId, "user_id");
   const asset = requiredText(assetId, "asset_id");
@@ -406,6 +407,7 @@ export async function runDirectCsmAsset({
   const createSession = dependencies.createSession || createCsmRecognitionSession;
   const preparePath = dependencies.preparePath || prepareCanonicalListingPath;
   const persistPath = dependencies.persistPath || persistPreparedCanonicalListingPath;
+  const synchronizeBeforePersistence = dependencies.synchronizeBeforePersistence || null;
   const chooseRecognitionImages = dependencies.chooseRecognitionImages
     || (({ canonical: input }) => selectRecognitionImages(input.images, { slots: 2 }));
   const createAuthority = dependencies.createAuthority || createCsmSupabaseProviderAdmissionAuthority;
@@ -445,7 +447,7 @@ export async function runDirectCsmAsset({
   // Fail before the paid provider boundary unless both the replay store and
   // the durable provider authority/pacer are live. A usable title without its
   // CSM lineage or globally paced claim is not an acceptable production asset.
-  const readinessStartedAt = Date.now();
+  const readinessStartedAt = now();
   let readiness;
   try {
     readiness = checkReadiness
@@ -469,12 +471,12 @@ export async function runDirectCsmAsset({
   const latencyStages = {
     ...safeClientTiming(clientTiming),
     ...safeLatencyStages(serverPrologueStages),
-    preflight_ms: Date.now() - readinessStartedAt
+    preflight_ms: now() - readinessStartedAt
   };
 
-  const imageManifestStartedAt = Date.now();
+  const imageManifestStartedAt = now();
   const canonical = await readImages({ tenantId: tenant, assetId: asset, env, fetchImpl });
-  latencyStages.image_manifest_ms = Date.now() - imageManifestStartedAt;
+  latencyStages.image_manifest_ms = now() - imageManifestStartedAt;
   const originals = canonical.images.filter((image) => image.derived !== true).slice(0, 2);
   if (!originals.length) {
     throw Object.assign(new Error("canonical_original_image_missing"), { statusCode: 409 });
@@ -532,7 +534,8 @@ export async function runDirectCsmAsset({
 
   const initializeRecognitionSession = async (sessionId, {
     recognitionInput = recognition.read,
-    provider = MODEL
+    provider = MODEL,
+    reuseExistingSnapshot = false
   } = {}) => {
     const created = await createSession({
       sessionId,
@@ -552,6 +555,7 @@ export async function runDirectCsmAsset({
         mode: "csm_thin_direct"
       },
       routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
+      reuseExistingSnapshot,
       env,
       fetchImpl
     });
@@ -675,7 +679,7 @@ export async function runDirectCsmAsset({
     try {
       const [signedUrls, session] = await Promise.all([
         (async () => {
-          const signedUrlStartedAt = Date.now();
+          const signedUrlStartedAt = now();
           const urls = await Promise.all(recognitionImages.map((image) => signImage({
             objectPath: image.objectPath,
             bucket: image.bucket,
@@ -683,13 +687,13 @@ export async function runDirectCsmAsset({
             env,
             fetchImpl
           })));
-          attemptStages.signed_url_ms = Date.now() - signedUrlStartedAt;
+          attemptStages.signed_url_ms = now() - signedUrlStartedAt;
           return urls;
         })(),
         (async () => {
-          const recognitionSessionStartedAt = Date.now();
+          const recognitionSessionStartedAt = now();
           const created = await initializeRecognitionSession(sessionId);
-          attemptStages.recognition_session_ms = Date.now() - recognitionSessionStartedAt;
+          attemptStages.recognition_session_ms = now() - recognitionSessionStartedAt;
           return created;
         })()
       ]);
@@ -708,7 +712,7 @@ export async function runDirectCsmAsset({
       throw error;
     }
 
-    const providerStartedAt = Date.now();
+    const providerStartedAt = now();
     let prepared;
     try {
       prepared = await preparePath({
@@ -732,7 +736,7 @@ export async function runDirectCsmAsset({
         fetchImpl
       });
     } catch (error) {
-      attemptStages.provider_prepare_ms = Date.now() - providerStartedAt;
+      attemptStages.provider_prepare_ms = now() - providerStartedAt;
       attemptStages.provider_ms = Number.isFinite(Number(error?.provider_ms))
         ? Number(error.provider_ms)
         : attemptStages.provider_prepare_ms;
@@ -740,7 +744,7 @@ export async function runDirectCsmAsset({
       error.recognition_session_id = sessionId;
       throw error;
     }
-    attemptStages.provider_prepare_ms = Date.now() - providerStartedAt;
+    attemptStages.provider_prepare_ms = now() - providerStartedAt;
     if (Number.isFinite(Number(prepared?.latency_ms))) {
       attemptStages.provider_ms = Number(prepared.latency_ms);
     }
@@ -770,7 +774,7 @@ export async function runDirectCsmAsset({
     maxAttempts: operationScope === "derived_checkpoint" ? 1 : CSM_DIRECT_MAX_ATTEMPTS
   });
   const sessionId = deterministicCsmSessionId(operationKey);
-  const dispatchStartedAt = Date.now();
+  const dispatchStartedAt = now();
   let settled = durableResult;
   if (!settled) {
     try {
@@ -800,7 +804,11 @@ export async function runDirectCsmAsset({
     ...settled,
     latency_stages_ms: {
       ...(settled.latency_stages_ms || {}),
-      authority_dispatch_ms: Date.now() - dispatchStartedAt
+      // A resume request arrives after the same original upload has settled.
+      // Merge its now-final client duration into the durable provider receipt
+      // without replacing the first request's provider/authority stages.
+      ...safeClientTiming(clientTiming),
+      authority_dispatch_ms: now() - dispatchStartedAt
     }
   };
   let prepared = validateCsmPersistenceCheckpoint(preparedWithDispatchStages, {
@@ -809,14 +817,44 @@ export async function runDirectCsmAsset({
     payloadHash: durablePayloadHash,
     recognitionSessionId: sessionId
   });
+  if (typeof synchronizeBeforePersistence === "function") {
+    const originalSyncStartedAt = now();
+    try {
+      await synchronizeBeforePersistence({
+        tenantId: tenant,
+        recognitionSessionId: sessionId,
+        prepared,
+        env,
+        fetchImpl
+      });
+    } catch (error) {
+      error.latency_stages_ms = {
+        ...(prepared.latency_stages_ms || {}),
+        staged_original_sync_ms: now() - originalSyncStartedAt
+      };
+      throw markStagedResumeRecovery(error);
+    }
+    prepared = {
+      ...prepared,
+      latency_stages_ms: {
+        ...(prepared.latency_stages_ms || {}),
+        staged_original_sync_ms: now() - originalSyncStartedAt
+      }
+    };
+  }
   if ((prepared.csm_persistence_checkpoint.recognition_session_deferred === true
         || dependencies.deferRecognitionSessionUntilPersistence === true)
       && !sessionInitializedThisRequest) {
-    const recognitionSessionReplayStartedAt = Date.now();
+    const recognitionSessionReplayStartedAt = now();
     try {
       await initializeRecognitionSession(sessionId, {
         recognitionInput: prepared.csm_persistence_checkpoint.recognition_input || recognition.read,
-        provider: prepared.model || MODEL
+        provider: prepared.model || MODEL,
+        // A durable paid checkpoint must resume against the session identity
+        // first persisted for this deterministic ID. Later support-only crops
+        // may expand the asset's current canonical projection, but cannot
+        // rewrite what the paid operation was bound to.
+        reuseExistingSnapshot: true
       });
     } catch (error) {
       throw markStagedResumeRecovery(error);
@@ -825,11 +863,11 @@ export async function runDirectCsmAsset({
       ...prepared,
       latency_stages_ms: {
         ...(prepared.latency_stages_ms || {}),
-        recognition_session_replay_ms: Date.now() - recognitionSessionReplayStartedAt
+        recognition_session_replay_ms: now() - recognitionSessionReplayStartedAt
       }
     };
   }
-  const persistenceStartedAt = Date.now();
+  const persistenceStartedAt = now();
   let persisted;
   try {
     persisted = await persistPath({
@@ -853,8 +891,8 @@ export async function runDirectCsmAsset({
         ...persisted,
         latency_stages_ms: {
           ...(persisted.latency_stages_ms || prepared.latency_stages_ms || {}),
-          csm_persistence_ms: Date.now() - persistenceStartedAt,
-          request_total_ms: Date.now() - routeStartedAt
+          csm_persistence_ms: now() - persistenceStartedAt,
+          request_total_ms: now() - routeStartedAt
         }
       }
     : persisted;

@@ -458,6 +458,7 @@ function batchReviewWindow(items = [], {
 
 // lib/listing/client/bounded-fetch.mjs
 var retryableStatuses = /* @__PURE__ */ new Set([408, 425, 429]);
+var MAX_CLIENT_FETCH_TIMEOUT_MS = 3e5;
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -497,16 +498,22 @@ function annotatedFetchError(error, { attempts, elapsedMs, timedOut }) {
   }
   return result;
 }
-function attemptSignal(externalSignal, timeoutMs) {
+function attemptSignal(externalSignal, timeoutMs, {
+  setTimeoutImpl = globalThis.setTimeout,
+  clearTimeoutImpl = globalThis.clearTimeout
+} = {}) {
   const controller = new AbortController();
   const forwardAbort = () => controller.abort(externalSignal?.reason);
   if (externalSignal?.aborted) forwardAbort();
   else externalSignal?.addEventListener?.("abort", forwardAbort, { once: true });
-  const timer = setTimeout(() => controller.abort(new Error("client_fetch_timeout")), timeoutMs);
+  const timer = setTimeoutImpl(
+    () => controller.abort(new Error("client_fetch_timeout")),
+    timeoutMs
+  );
   return {
     signal: controller.signal,
     cleanup() {
-      clearTimeout(timer);
+      clearTimeoutImpl(timer);
       externalSignal?.removeEventListener?.("abort", forwardAbort);
     }
   };
@@ -521,11 +528,16 @@ async function fetchWithBoundedRetry(url, init = {}, {
   jitterRatio = 0.15,
   random = Math.random,
   sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
-  now = () => Date.now()
+  now = () => Date.now(),
+  setTimeoutImpl = globalThis.setTimeout,
+  clearTimeoutImpl = globalThis.clearTimeout
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetch implementation is required");
   const attemptsLimit = positiveInteger(maxAttempts, 3, { min: 1, max: 5 });
-  const perAttemptTimeoutMs = positiveInteger(timeoutMs, 15e3, { min: 100, max: 12e4 });
+  const perAttemptTimeoutMs = positiveInteger(timeoutMs, 15e3, {
+    min: 100,
+    max: MAX_CLIENT_FETCH_TIMEOUT_MS
+  });
   const startedAt = now();
   let lastError = null;
   for (let attempt = 1; attempt <= attemptsLimit; attempt += 1) {
@@ -536,7 +548,10 @@ async function fetchWithBoundedRetry(url, init = {}, {
         timedOut: false
       });
     }
-    const boundedSignal = attemptSignal(init.signal, perAttemptTimeoutMs);
+    const boundedSignal = attemptSignal(init.signal, perAttemptTimeoutMs, {
+      setTimeoutImpl,
+      clearTimeoutImpl
+    });
     let response = null;
     let timedOut = false;
     try {

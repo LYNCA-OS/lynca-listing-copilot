@@ -1748,6 +1748,11 @@ function syncDerivedImageSourceMetadata(asset, images = []) {
   });
 }
 
+function durableOriginalImagesForUpload(images = []) {
+  return boundedProviderImagesForRequest(images)
+    .filter((image) => !imageIsDerivedForRequest(image));
+}
+
 function ensureAssetOriginalImagesUploaded(asset) {
   // COS-51: the single-flight claim happens BEFORE any await, and this is the
   // whole fix. The memo below already existed, but it sat after
@@ -1780,9 +1785,12 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // timing calls to a hot loop.
   const originalUploadStartedAt = performance.now();
   const timing = asset.clientTiming || (asset.clientTiming = {});
+  asset.originalStorageUploadStartedAt = originalUploadStartedAt;
+  delete timing.client_original_upload_ms;
+  delete timing.client_original_upload_elapsed_at_dispatch_ms;
   const recordOriginalUploadTiming = () => {
     timing.client_original_upload_ms = Math.round(performance.now() - originalUploadStartedAt);
-    timing.client_upload_bytes = (asset.providerImages || asset.images || [])
+    timing.client_upload_bytes = durableOriginalImagesForUpload(asset.providerImages || asset.images || [])
       .reduce((total, image) => {
         const source = storageSourceForImage(image);
         return total + (source && source.size ? source.size : 0);
@@ -1793,8 +1801,13 @@ function ensureAssetOriginalImagesUploaded(asset) {
     await ensureDurableAssetIdentity(asset);
     assertCurrentAssetLifecycle(asset);
     if (!storageReady()) throw new Error("listing_storage_not_ready");
-    const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
-    asset.providerImages = images;
+    const providerImages = boundedProviderImagesForRequest(asset.providerImages || asset.images);
+    asset.providerImages = providerImages;
+    // Targeted crops are local support artifacts, not durable source identity.
+    // Uploading them after originals made the canonical exact set grow between
+    // session read, insert and checkpoint resume. The thin route does not read
+    // those crops, so keep the verified generation frozen at its originals.
+    const images = durableOriginalImagesForUpload(providerImages);
     const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
     const uploadPhase = async (entries) => {
       const originalsOnly = entries.length > 1 && entries.every(({ image }) => !imageIsDerivedForRequest(image));
@@ -1887,6 +1900,24 @@ function ensureAssetOriginalImagesUploaded(asset) {
   });
   asset.originalStorageUploadPromise = guarded;
   return guarded;
+}
+
+function snapshotOriginalUploadTimingForDispatch(asset = {}, now = () => performance.now()) {
+  if (asset.originalStorageUploadStatus !== "uploading") return asset.clientTiming || {};
+  const startedAt = Number(asset.originalStorageUploadStartedAt);
+  if (!Number.isFinite(startedAt)) return asset.clientTiming || {};
+  const timing = asset.clientTiming || (asset.clientTiming = {});
+  // The upload is still live, so its final duration is unknowable here. Record
+  // only the duration already observed before the staged request leaves the
+  // browser. Presence of this lower-bound field, instead of a fabricated
+  // `client_original_upload_ms: 0`, proves that transform/request preparation
+  // overlapped the same original-upload single flight.
+  timing.client_original_upload_elapsed_at_dispatch_ms = Math.max(
+    0,
+    Math.round(Number(now()) - startedAt)
+  );
+  delete timing.client_original_upload_ms;
+  return timing;
 }
 
 function syncBackgroundPreparationStatus() {
@@ -2158,6 +2189,7 @@ async function requestCsmIngestFastPath(asset, intentId, {
     ? originalImages.reduce((total, image) => total + image.size, 0)
     : images.reduce((total, image) => total + (image.size || 0), 0);
   if (staged) {
+    snapshotOriginalUploadTimingForDispatch(asset);
     clientTiming.client_recognition_body_bytes = images.reduce((total, image) => total + image.size, 0);
     asset.stagedResumeReceipt = computedResumeReceipt;
   }
@@ -3098,6 +3130,7 @@ export const __listingCopilotAppTestHooks = {
   consumeSelectedFiles,
   definitiveOriginalUploadError,
   directRecognitionConcurrencyLimit,
+  durableOriginalImagesForUpload,
   ensureAssetPreparedForRecognition,
   ensureStagedRecognitionInputs,
   generationTimingView,
@@ -3105,6 +3138,7 @@ export const __listingCopilotAppTestHooks = {
   imageHasVerifiedStorageReference,
   imagesForProvider,
   notePendingStorageConfirmationFailure,
+  snapshotOriginalUploadTimingForDispatch,
   listingCopilotStateSnapshot: () => ({
     assetIndexes: state.assets.map((asset) => Number(asset.index)),
     intentId: state.backgroundRecognitionBatchId,
