@@ -106,6 +106,25 @@ const verifierErrorCodes = Object.freeze({
   LARGE_FEEDBACK_POLICY_MISMATCH: "LARGE_FEEDBACK_POLICY_MISMATCH"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
+const liveFailureCaseIds = new Set(["NON_TCG", "TCG", "LARGE_STAGED_TRANSPORT"]);
+const liveFailurePhases = new Set([
+  "HEALTH",
+  "LOGIN",
+  "PAGE_READY",
+  "RECOGNITION_RESPONSE",
+  "EXECUTION_RECEIPT",
+  "ROUTE_COVERAGE",
+  "TITLE_UI",
+  "RESOLUTION_VIEW",
+  "GLASS_BOX",
+  "FEEDBACK",
+  "CASE_COMPLETE",
+  "OWNER_AUTHORIZATION",
+  "LARGE_RECOGNITION",
+  "LARGE_RESOLUTION",
+  "LARGE_FEEDBACK",
+  "FINAL_SEAL"
+]);
 
 function verifierFailure(code) {
   const safeCode = allowedVerifierErrorCodes.has(code) ? code : verifierErrorCodes.GENERIC;
@@ -1365,6 +1384,15 @@ test("production writer journey verifies Glass Box and staged large-image transp
   const requestIds = new Set();
   const resolutionRequests = [];
   const responseCaptureTasks = new Set();
+  const pendingPageWaits = new Set();
+  const ownPageWait = (promise) => {
+    pendingPageWaits.add(promise);
+    void promise.then(
+      () => pendingPageWaits.delete(promise),
+      () => pendingPageWaits.delete(promise)
+    );
+    return promise;
+  };
   let networkSequence = 0;
   const recognitionPosts = [];
   const warmupTransport = {
@@ -1394,6 +1422,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
   let loginContext;
   let loginPage;
   let journeyContext;
+  let failureCaseId = null;
+  let failurePhase = "HEALTH";
 
   try {
     const healthResponse = await fetch(healthUrl, {
@@ -1426,6 +1456,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     evidence.stages.health = { passed: true, http_status: healthResponse.status };
 
     // Login is isolated from uploaded artifacts so credentials never enter a trace.
+    failurePhase = "LOGIN";
     loginContext = await browser.newContext({
       baseURL: baseUrl,
       viewport: { width: 1440, height: 1000 },
@@ -1714,20 +1745,23 @@ test("production writer journey verifies Glass Box and staged large-image transp
 
     await journeyPage.goto("/app/", { waitUntil: "domcontentloaded" });
     await journeyPage.waitForLoadState("networkidle");
+    failurePhase = "PAGE_READY";
     const uploadInput = journeyPage.getByTestId("image-upload-input");
     await expect(journeyPage.getByTestId("start-recognition")).toBeHidden();
 
     for (const sourceCase of sourceCases) {
+      failureCaseId = sourceCase.case_id;
+      failurePhase = "RECOGNITION_RESPONSE";
       normalTransport.active_case_id = sourceCase.case_id;
       const uploadStartedAt = Date.now();
-      const recognitionResponsePromise = journeyPage.waitForResponse((response) => (
+      const recognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "POST"
         && recognitionPaths.has(new URL(response.url()).pathname)
-      ), { timeout: 6 * 60 * 1000 });
-      const resolutionResponsePromise = journeyPage.waitForResponse((response) => (
+      ), { timeout: 6 * 60 * 1000 }));
+      const resolutionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "GET"
         && new URL(response.url()).pathname === "/api/csm-resolution-view"
-      ), { timeout: 6 * 60 * 1000 });
+      ), { timeout: 6 * 60 * 1000 }));
       await uploadInput.setInputFiles(sourceCase.images);
 
       const recognitionResponse = await recognitionResponsePromise;
@@ -1747,12 +1781,14 @@ test("production writer journey verifies Glass Box and staged large-image transp
       expect(recognitionPayload?.provider_retry_count, "live verifier excludes provider retries").toBe(0);
       expect(String(recognitionPayload?.asset_id || "")).not.toBe("");
       expect(String(recognitionPayload?.recognition_session_id || "")).not.toBe("");
+      failurePhase = "EXECUTION_RECEIPT";
       const executionReceipt = liveExecutionReceiptProof(recognitionPayload, {
         imageCount: sourceCase.image_count,
         transportProfile: sourceCase.case_id === "NON_TCG"
           ? CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE
           : CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
       });
+      failurePhase = "ROUTE_COVERAGE";
       const routeCoverage = normalRouteCoverageReceipt({
         sourceCase,
         payload: recognitionPayload,
@@ -1763,6 +1799,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       responseAttempt.provider_response_id_sha256 =
         executionReceipt.provider_response_id_sha256;
 
+      failurePhase = "TITLE_UI";
       const result = journeyPage.getByTestId("writer-title-result").first();
       const titleInput = result.getByTestId("writer-title-input");
       await expect(titleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
@@ -1776,6 +1813,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       requireInvariant(panelTitleSha256 === generatedTitleSha256,
         verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
 
+      failurePhase = "RESOLUTION_VIEW";
       const resolutionResponse = await resolutionResponsePromise;
       const resolutionView = await resolutionResponse.json();
       addIds(resolutionView, ids);
@@ -1794,6 +1832,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       expect(Array.isArray(resolutionView?.brackets)).toBe(true);
       expect(resolutionView.brackets.length).toBeGreaterThan(0);
 
+      failurePhase = "GLASS_BOX";
       const glassBox = result.locator("details.glass-box");
       await expect(glassBox, "Glass Box panel must render after its GET completes").toBeAttached();
       await glassBox.locator("summary").click();
@@ -1811,15 +1850,16 @@ test("production writer journey verifies Glass Box and staged large-image transp
         "the writer journey must never submit a semantic review").toBe(false);
 
       // Persist the unchanged generated title as writer feedback.
+      failurePhase = "FEEDBACK";
       await titleInput.fill(titleBeforePanel);
-      const persistenceRequestPromise = journeyPage.waitForRequest((request) => (
+      const persistenceRequestPromise = ownPageWait(journeyPage.waitForRequest((request) => (
         request.method() === "POST"
         && new URL(request.url()).pathname === "/api/v4/listing-feedback"
-      ), { timeout: 45_000 });
-      const persistenceResponsePromise = journeyPage.waitForResponse((response) => (
+      ), { timeout: 45_000 }));
+      const persistenceResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "POST"
         && new URL(response.url()).pathname === "/api/v4/listing-feedback"
-      ), { timeout: 45_000 });
+      ), { timeout: 45_000 }));
       await result.getByTestId("accept-writer-title").click();
       const [persistenceRequest, persistenceResponse] = await Promise.all([
         persistenceRequestPromise,
@@ -1881,10 +1921,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
         feedback_saved: persistencePayload.v4_persistence.transaction.saved,
         upload_to_feedback_ms: Date.now() - uploadStartedAt
       });
+      failurePhase = "CASE_COMPLETE";
       await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
       normalTransport.active_case_id = null;
     }
 
+    failureCaseId = null;
+    failurePhase = "OWNER_AUTHORIZATION";
     const ownerResponse = await journeyContext.request.get(`${baseUrl}/api/session`, {
       headers: { accept: "application/json" }
     });
@@ -1894,16 +1937,18 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && ownerSession?.role === "OWNER",
     verifierErrorCodes.LARGE_OWNER_REQUIRED);
 
+    failureCaseId = "LARGE_STAGED_TRANSPORT";
+    failurePhase = "LARGE_RECOGNITION";
     const largeUploadStartedAt = Date.now();
     largeTransport.active = true;
-    const largeRecognitionResponsePromise = journeyPage.waitForResponse((response) => (
+    const largeRecognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
       response.request().method() === "POST"
       && new URL(response.url()).pathname === stagedRecognitionPath
-    ), { timeout: 6 * 60 * 1000 });
-    const largeResolutionResponsePromise = journeyPage.waitForResponse((response) => (
+    ), { timeout: 6 * 60 * 1000 }));
+    const largeResolutionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
       response.request().method() === "GET"
       && new URL(response.url()).pathname === "/api/csm-resolution-view"
-    ), { timeout: 6 * 60 * 1000 });
+    ), { timeout: 6 * 60 * 1000 }));
     await uploadInput.setInputFiles(largeFixture.images);
 
     const recognitionOutcome = await Promise.race([
@@ -1964,6 +2009,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     requireInvariant(largePanelTitleSha256 === largeGeneratedTitleSha256,
       verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
 
+    failurePhase = "LARGE_RESOLUTION";
     const largeResolutionResponse = await largeResolutionResponsePromise;
     const largeResolutionView = await largeResolutionResponse.json();
     addIds(largeResolutionView, ids);
@@ -1997,15 +2043,16 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && largeAssetResolutionRequests[0].method === "GET",
     verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
 
+    failurePhase = "LARGE_FEEDBACK";
     await largeTitleInput.fill(largeTitleBeforePanel);
-    const largePersistenceRequestPromise = journeyPage.waitForRequest((request) => (
+    const largePersistenceRequestPromise = ownPageWait(journeyPage.waitForRequest((request) => (
       request.method() === "POST"
       && new URL(request.url()).pathname === "/api/v4/listing-feedback"
-    ), { timeout: 45_000 });
-    const largePersistenceResponsePromise = journeyPage.waitForResponse((response) => (
+    ), { timeout: 45_000 }));
+    const largePersistenceResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
       response.request().method() === "POST"
       && new URL(response.url()).pathname === "/api/v4/listing-feedback"
-    ), { timeout: 45_000 });
+    ), { timeout: 45_000 }));
     await largeResult.getByTestId("accept-writer-title").click();
     const [largePersistenceRequest, largePersistenceResponse] = await Promise.all([
       largePersistenceRequestPromise,
@@ -2069,6 +2116,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       production_promotion_eligible: false,
       upload_to_feedback_ms: Date.now() - largeUploadStartedAt
     });
+    failurePhase = "FINAL_SEAL";
     largeTransport.phase_complete = true;
     await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
     await journeyPage.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => null);
@@ -2193,6 +2241,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
   } catch (error) {
     const errorCode = sanitizedFailureCode(error);
     evidence.error_code = errorCode;
+    evidence.failed_case_id = liveFailureCaseIds.has(failureCaseId) ? failureCaseId : null;
+    evidence.failed_phase = liveFailurePhases.has(failurePhase) ? failurePhase : "UNCLASSIFIED";
     throw verifierFailure(errorCode);
   } finally {
     evidence.finished_at = new Date().toISOString();
@@ -2203,6 +2253,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     evidence.job_ids = [...ids.job_id];
     evidence.session_ids = [...ids.session_id];
     await journeyContext?.close().catch(() => {});
+    await Promise.allSettled([...pendingPageWaits]);
     await loginContext?.close().catch(() => {});
     await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
     if (!evidence.passed) {
@@ -2343,7 +2394,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     { name: "wrong_path", value: "drop", domain: "listing.lyncafei.team", path: "/app", secure: true, expires: nowSeconds + 60 },
     { name: "path_prefix", value: "drop", domain: "listing.lyncafei.team", path: "/apiary", secure: true, expires: nowSeconds + 60 }
   ] };
-  requireInvariant(cookieHeaderForUrl(cookieState, `${productionOrigin}/api/health`, { nowSeconds })
+  requireInvariant(cookieHeaderForUrl(cookieState, `${canonicalProductionOrigin}/api/health`, { nowSeconds })
     === "valid=kept; domain=kept", verifierErrorCodes.GENERIC);
   requireInvariant(cookieHeaderForUrl({ cookies: [{
     name: "secure_only", value: "drop", domain: "listing.lyncafei.team", path: "/api",

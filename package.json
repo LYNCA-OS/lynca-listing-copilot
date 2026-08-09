@@ -22,7 +22,7 @@
     "test": "npm run test:release && npm run test:internal-library",
     "check:e2e:production-writer-journey": "node --check e2e/production-writer-journey.spec.mjs && node --check playwright.config.mjs && node --check scripts/production-writer-journey-contract.test.mjs",
     "test:e2e:production-writer-journey:contract": "node scripts/production-writer-journey-contract.test.mjs",
-    "test:e2e:production-writer-journey": "playwright test e2e/production-writer-journey.spec.mjs --project=chromium",
+    "test:e2e:production-writer-journey": "playwright test e2e/production-writer-journey.spec.mjs --project=chromium --grep-invert @offline",
     "test:large-internal-writer-fixture:contract": "node scripts/build-large-internal-writer-fixture.contract.test.mjs",
     "test:large-internal-writer-fixture:browser": "node scripts/build-large-internal-writer-fixture.browser.test.mjs"
   },
