@@ -167,11 +167,15 @@ export async function handleManualRecoveryRequest({
 }
 
 export default async function handler(request, response) {
-  const context = bindProductionRequestContext(request, { route: "listing-manual-recovery" });
-  return instrumentProductionRequest(context, async () => {
+  instrumentProductionRequest(request, response, { api: "/api/listing-manual-recovery" });
+  bindProductionRequestContext(response, { route: "listing-manual-recovery" });
     if (request.method !== "POST") return sendJson(response, 405, { ok: false, error: "method_not_allowed" });
-    const limited = await enforceApiRateLimit(request, response, { route: "listing-manual-recovery" });
-    if (limited) return limited;
+    if (!enforceApiRateLimit(request, response, {
+      scope: "listing_manual_recovery",
+      limit: 60,
+      windowMs: 60_000,
+      message: "Too many manual recovery requests. Please try again shortly."
+    })) return;
 
     let access;
     try {
@@ -181,6 +185,7 @@ export default async function handler(request, response) {
       // Authenticate first. Assignment authority is read from the durable
       // asset only after the JSON body supplies the asset id.
       access = await requireTenantAccess(request);
+      bindProductionRequestContext(response, access);
     } catch (error) {
       const status = isTenantAuthError(error) ? error.statusCode : 503;
       return sendJson(response, status, publicTenantAuthError(error));
@@ -225,5 +230,4 @@ export default async function handler(request, response) {
       }));
       return sendJson(response, publicError.status, publicError.body);
     }
-  });
 }
