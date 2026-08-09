@@ -18,6 +18,9 @@ import {
   persistPreparedCanonicalListingPath,
   prepareCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
+import {
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
 import { buildCsmStageRows } from "../lib/listing/thin/csm-persistence.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
@@ -45,6 +48,7 @@ const prepared = await prepareCanonicalListingPath({
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   imageUrls: ["https://example.test/card.jpg"],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   providerClientRequestId: "client-ledger-1",
   callProvider: async () => {
     calls += 1;
@@ -147,7 +151,8 @@ const checkpoint = buildCsmPersistenceCheckpoint({
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   operationKey: "csm-ledger-operation-1",
-  payloadHash: "a".repeat(64)
+  payloadHash: "a".repeat(64),
+  executionContractSha256: prepared.execution_contract_sha256
 });
 assert.deepEqual(checkpoint.accuracy_loss_ledger, ledger,
   "the provider authority checkpoint must retain the prepared ledger");
@@ -160,7 +165,8 @@ assert.equal(validateCsmPersistenceCheckpoint(checkpoint, {
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   operationKey: "csm-ledger-operation-1",
-  payloadHash: "a".repeat(64)
+  payloadHash: "a".repeat(64),
+  executionContractSha256: prepared.execution_contract_sha256
 }), checkpoint);
 const corruptedCheckpoint = structuredClone(checkpoint);
 corruptedCheckpoint.accuracy_loss_ledger.stages.raw_provider_output.byte_length = 999_999;
@@ -168,7 +174,8 @@ assert.throws(() => validateCsmPersistenceCheckpoint(corruptedCheckpoint, {
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   operationKey: "csm-ledger-operation-1",
-  payloadHash: "a".repeat(64)
+  payloadHash: "a".repeat(64),
+  executionContractSha256: prepared.execution_contract_sha256
 }), (error) => error.code === "csm_persistence_checkpoint_invalid"
   && error.detail === "accuracy_loss_ledger_invalid");
 const mismatchedCheckpoint = structuredClone(checkpoint);
@@ -177,12 +184,15 @@ assert.throws(() => validateCsmPersistenceCheckpoint(mismatchedCheckpoint, {
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   operationKey: "csm-ledger-operation-1",
-  payloadHash: "a".repeat(64)
+  payloadHash: "a".repeat(64),
+  executionContractSha256: prepared.execution_contract_sha256
 }), (error) => error.code === "csm_persistence_checkpoint_invalid"
   && error.detail === "accuracy_loss_ledger_mismatch");
 const legacyCheckpoint = structuredClone(checkpoint);
+delete legacyCheckpoint.execution_contract_sha256;
 delete legacyCheckpoint.accuracy_loss_ledger;
 legacyCheckpoint.csm_persistence_checkpoint.schema_version = "csm-persistence-checkpoint-v1";
+delete legacyCheckpoint.csm_persistence_checkpoint.execution_contract_sha256;
 delete legacyCheckpoint.csm_persistence_checkpoint.accuracy_loss_ledger_version;
 delete legacyCheckpoint.csm_persistence_checkpoint.accuracy_loss_ledger_sha256;
 assert.equal(validateCsmPersistenceCheckpoint(legacyCheckpoint, {
@@ -208,7 +218,8 @@ assert.throws(() => validateCsmPersistenceCheckpoint(fieldMismatch, {
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   operationKey: "csm-ledger-operation-1",
-  payloadHash: "a".repeat(64)
+  payloadHash: "a".repeat(64),
+  executionContractSha256: prepared.execution_contract_sha256
 }), (error) => error.code === "csm_persistence_checkpoint_invalid"
   && error.detail === "accuracy_loss_ledger_invalid",
 "field-level admitted hashes must remain bound to the actual SEM projection");

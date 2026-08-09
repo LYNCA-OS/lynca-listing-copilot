@@ -93,4 +93,42 @@ assert.equal(retryAfterDelayMs(response(429, { "retry-after": "2" }), { maxDelay
   assert.equal(calls, 1);
 }
 
+async function observeHardTimeout(requestedTimeoutMs) {
+  let scheduledMs = null;
+  let fireTimeout = null;
+  let cleared = 0;
+  const pending = fetchWithBoundedRetry("/slow-authority", {}, {
+    timeoutMs: requestedTimeoutMs,
+    maxAttempts: 1,
+    retryNetworkErrors: false,
+    now: () => 1_000,
+    setTimeoutImpl(callback, delayMs) {
+      scheduledMs = delayMs;
+      fireTimeout = callback;
+      return "fake-timeout";
+    },
+    clearTimeoutImpl(timer) {
+      assert.equal(timer, "fake-timeout");
+      cleared += 1;
+    },
+    fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    })
+  });
+  await Promise.resolve();
+  assert.equal(typeof fireTimeout, "function");
+  fireTimeout();
+  await assert.rejects(
+    pending,
+    (error) => error.code === "CLIENT_FETCH_TIMEOUT" && error.timed_out === true
+  );
+  assert.equal(cleared, 1, "the hard timeout must be cleaned after abort settles");
+  return scheduledMs;
+}
+
+assert.equal(await observeHardTimeout(290_000), 290_000,
+  "the 290s browser contract must not be silently truncated to the 120s provider budget");
+assert.equal(await observeHardTimeout(Number.MAX_SAFE_INTEGER), 300_000,
+  "even an unbounded caller remains capped by the 300s function boundary");
+
 console.log("client network retry tests passed");

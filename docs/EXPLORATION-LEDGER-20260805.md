@@ -1,5 +1,12 @@
 # Exploration Ledger — 2026-08-05
 
+> **Correction — 2026-08-09:** Arm E's live runner passed
+> `asset_id::arm` to a corpus keyed by sealed-label identity. A zero-call audit
+> found exact-self or near-duplicate exposure on 9/255 cards (including eight
+> exact own-title exposures). Its reported `+0.0051`, `9/7/34`, and “zero
+> leaks” conclusion are **VOID and non-promotable**, not a positive signal.
+> See [`evaluation/kfold-few-shot-live-identity-correction-2026-08-09.md`](./evaluation/kfold-few-shot-live-identity-correction-2026-08-09.md).
+
 What was tried to raise recognition accuracy, what it measured, and why each
 thing is not being pursued. Written so someone who was not here can decide
 whether to re-open any of it.
@@ -85,7 +92,7 @@ only variable is the wording.
 | B — loosen "printed" to "visible evidence"; drop "colour alone is a good answer" | **-0.0063** | 5/11/32 | 0.21 | rejected |
 | C — permission to name the parallel family from the product line | **-0.0092** | 9/15/26 | 0.31 | rejected |
 | D — four constructed filled examples | **-0.0017** | 7/11/32 | 0.48 | rejected |
-| E — k-fold few-shot from the real 255 corpus | **+0.0051** | 9/7/34 | 0.80 | only positive; unresolvable |
+| E — k-fold few-shot from the real 255 corpus | +0.0051 (reported) | 9/7/34 | 0.80 | **VOID: live identity leak** |
 
 ### Why B and C failed, and it is the same reason
 
@@ -110,6 +117,12 @@ model spends any licence it is granted globally, not on the field the licence
 named.
 
 ### Why E cannot be resolved on this corpus
+
+**2026-08-09 correction:** this section preserves the original power analysis,
+but it no longer describes admissible evidence. The live identity mismatch
+allowed answer-bearing examples into some prompts, so there is no valid effect
+size to power. Re-running requires the sealed/physical identity and a manifest
+hash over every card-keyed request.
 
 +0.0051 is positive and is the only positive result of the four. It is also
 unreadable: at 9W/7L the win share is 56% and 68% of cards are ties, so

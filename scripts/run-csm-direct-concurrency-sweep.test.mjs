@@ -234,11 +234,16 @@ const direct = createDirectEndpointRequester({
     assert.deepEqual(JSON.parse(init.body), { asset_id: "asset-1" });
     return {
       ok: true, status: 200,
-      json: async () => ({ ok: true, cloud_run_calls: 0, vector_calls: 0, input_tokens: 9, output_tokens: 3 })
+      json: async () => ({ ok: true, input_tokens: 9, output_tokens: 3 })
     };
   }
 });
-assert.equal((await direct({ asset_id: "asset-1" })).provider_call_count, 1);
+const directResult = await direct({ asset_id: "asset-1" });
+assert.equal(directResult.provider_call_count, 1);
+assert.equal(directResult.cloud_run_calls, null,
+  "an absent runtime probe must remain unknown instead of becoming a fake zero");
+assert.equal(directResult.vector_calls, null);
+assert.equal(directResult.ocr_calls, null);
 assert.equal(fetchCalls, 1);
 assert.throws(
   () => createDirectEndpointRequester({ endpoint: "https://example.invalid/api/v4/listing-job-enqueue" }),

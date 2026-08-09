@@ -5,21 +5,122 @@ import assert from "node:assert/strict";
 import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
 
 {
+  let providerCalls = 0;
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    provider: "future-provider",
+    model: "future-model",
+    callProvider: async () => { providerCalls += 1; }
+  }), /unsupported_csm_provider:future-provider/);
+  assert.equal(providerCalls, 0,
+    "an unregistered provider must fail before the paid transport boundary");
+}
+
+{
   const result = await runCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
+    maxOutputTokens: 7_777,
     providerClientRequestId: "lynca-client-receipt",
-    callProvider: async () => new Response(JSON.stringify({
-      id: "resp_provider_receipt",
-      output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" })
-    }), {
-      status: 200,
-      headers: { "content-type": "application/json", "x-request-id": "req_provider_receipt" }
-    })
+    callProvider: async (request) => {
+      assert.equal(request.max_output_tokens, 7_777,
+        "the execution profile's output cap must reach the actual provider request");
+      return new Response(JSON.stringify({
+        id: "resp_provider_receipt",
+        model: "gpt-5.6-luna-2026-08-01",
+        status: "completed",
+        output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" }),
+        usage: {
+          input_tokens: 100,
+          input_tokens_details: { cached_tokens: 40 },
+          output_tokens: 30,
+          output_tokens_details: { reasoning_tokens: 12 },
+          total_tokens: 999
+        }
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json", "x-request-id": "req_provider_receipt" }
+      });
+    }
   });
   assert.equal(result.provider_response_id, "resp_provider_receipt");
   assert.equal(result.provider_request_id, "req_provider_receipt");
   assert.equal(result.provider_client_request_id, "lynca-client-receipt");
+  assert.equal(result.requested_effort, "low");
+  assert.equal(result.served_effort, null,
+    "a successful response without provider reasoning echo must stay UNKNOWN");
+  assert.equal(result.served_effort_attested, false);
+  assert.equal(result.requested_model, "gpt-5.6-luna");
+  assert.equal(result.served_model, "gpt-5.6-luna-2026-08-01");
+  assert.equal(result.served_model_attested, true);
+  assert.equal(result.provider_response_status, "completed");
+  assert.equal(result.provider_response_status_attested, true);
+  assert.equal(result.provider_response_incomplete, false);
+  assert.equal(result.cached_input_tokens, 40);
+  assert.equal(result.reasoning_tokens, 12);
+  assert.equal(result.total_tokens, 999,
+    "provider total is evidence and must not be replaced by input plus output");
+}
+
+for (const body of [
+  {
+    id: "resp-incomplete",
+    status: "incomplete",
+    incomplete_details: { reason: "max_output_tokens" }
+  },
+  { id: "resp-failed", status: "failed" }
+]) {
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify({
+      ...body,
+      output_text: JSON.stringify({ subjects: ["Must Not Persist"], grammar: "standard" })
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.status === 502
+    && error.provider_error_code === "provider_response_incomplete"
+    && error.definitive_response === true
+    && error.retryable === false,
+  "an explicit incomplete/failed provider response is definitive and may not persist partial JSON");
+}
+
+{
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    effort: "low",
+    callProvider: async () => new Response(JSON.stringify({
+      id: "resp_provider_effort_receipt",
+      reasoning: { effort: " LOW " },
+      output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" })
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.served_effort, "low");
+  assert.equal(result.served_effort_attested, true);
+  assert.equal(result.total_tokens, null,
+    "missing usage must remain UNKNOWN rather than becoming a synthetic zero");
+}
+
+{
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    callProvider: async () => new Response(JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" }),
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        total_tokens: Number.MAX_SAFE_INTEGER + 1,
+        input_tokens_details: { cached_tokens: "4" },
+        output_tokens_details: { reasoning_tokens: 1.5 }
+      }
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.total_tokens, null);
+  assert.equal(result.cached_input_tokens, null);
+  assert.equal(result.reasoning_tokens, null,
+    "unsafe, string, and fractional usage values are not exact receipts");
 }
 
 await assert.rejects(

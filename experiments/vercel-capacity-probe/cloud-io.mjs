@@ -77,7 +77,19 @@ export async function acquireCheckpointLock(path) {
   };
 }
 
-export async function invokePreview({ deployment, body, runToken }) {
+export async function invokePreview({
+  deployment,
+  body,
+  runToken,
+  apiPath = "/api/accuracy",
+  maxTimeSeconds = 150
+}) {
+  if (!["/api/accuracy", "/api/prompt-cache"].includes(apiPath)) {
+    throw new Error("preview_api_path_invalid");
+  }
+  if (!Number.isInteger(maxTimeSeconds) || maxTimeSeconds < 1 || maxTimeSeconds > 295) {
+    throw new Error("preview_max_time_invalid");
+  }
   const secretDirectory = await mkdtemp(join(tmpdir(), "lynca-cloud-sim-header-"));
   const headerPath = join(secretDirectory, "header.txt");
   await writeFile(headerPath, `x-lynca-cloud-sim-token: ${runToken}\n`, {
@@ -85,8 +97,8 @@ export async function invokePreview({ deployment, body, runToken }) {
     mode: 0o600
   });
   const args = [
-    "curl", "/api/accuracy", "--deployment", deployment, "--",
-    "--silent", "--show-error", "--max-time", "150", "--request", "POST",
+    "curl", apiPath, "--deployment", deployment, "--",
+    "--silent", "--show-error", "--max-time", String(maxTimeSeconds), "--request", "POST",
     "--header", "content-type: application/json",
     "--header", `@${headerPath}`,
     "--data-binary", "@-"

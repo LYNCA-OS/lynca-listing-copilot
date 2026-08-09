@@ -157,6 +157,7 @@ function report(role, asset, pairIndex) {
       provider_response_sha256: sha256(raw),
       served_model: "gpt-5.6-luna",
       served_effort: "none",
+      served_effort_attested: true,
       structured_output: fields(role),
       structured_output_error: null,
       input_tokens: 5000,
@@ -275,5 +276,28 @@ await assert.rejects(() => importCloudPaid105Checkpoint({
   outDirectory: join(directory, "mutated-out"),
   expectedCards: 2
 }), /cloud_pair_request_identity_mismatch/);
+
+const unattested = structuredClone(checkpoint);
+const unattestedRow = unattested.pairs[0].arms.control.report.rows[0];
+const unattestedBody = JSON.parse(unattestedRow.provider_response_raw);
+delete unattestedBody.reasoning;
+unattestedRow.provider_response_raw = JSON.stringify(unattestedBody);
+unattestedRow.provider_response_sha256 = sha256(unattestedRow.provider_response_raw);
+unattestedRow.served_effort = "none";
+unattestedRow.served_effort_attested = true;
+const unattestedPath = join(directory, "unattested.json");
+await writeFile(unattestedPath, JSON.stringify(unattested));
+await assert.rejects(() => importCloudPaid105Checkpoint({
+  checkpointPath: unattestedPath,
+  preflightPath: paths.preflight,
+  controlPayloadPath: paths.control,
+  treatmentPayloadPath: paths.treatment,
+  datasetPath: paths.dataset,
+  sealedLabelsPath: labelsPath,
+  assetIdsPath: paths.asset_ids,
+  outDirectory: join(directory, "unattested-out"),
+  expectedCards: 2
+}), /cloud_pair_served_contract_invalid/,
+"a row-level claim cannot substitute for the provider response echo");
 
 process.stdout.write("cloud paid105 checkpoint importer: ok\n");

@@ -24,6 +24,7 @@ import {
 } from "../lib/listing/csm/resolution-review.mjs";
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { THIN_COMPOSER_VERSION, THIN_RESOLVER_VERSION } from "../lib/listing/thin/csm-persistence.mjs";
+import { publicCsmOwnerExecutionReceipt } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { readJsonPayload, sendJson } from "../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -98,8 +99,13 @@ export async function handleResolutionViewRequest({
   // not describe what shipped. Say so rather than presenting it as the trace.
   const storedTitle = String(record.output_title || "").trim();
   const drift = storedTitle && storedTitle !== composed.title;
+  const ownerExecutionReceipt = publicCsmOwnerExecutionReceipt(record.owner_execution_receipt);
   return {
     ...view,
+    // This is the only owner-execution projection exposed by the read route.
+    // Raw provider/request ids and the full stored execution contract remain
+    // server-side; the hash is independently recomputed from the DB value.
+    owner_execution_receipt: ownerExecutionReceipt,
     composer: {
       ...view.composer,
       composer_version: composerVersion,

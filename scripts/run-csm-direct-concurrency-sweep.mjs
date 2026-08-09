@@ -558,9 +558,9 @@ export function createDirectEndpointRequester({
         ?? (response.status === 429 ? 0 : (response.ok ? 1 : null)),
       input_tokens: payload.input_tokens,
       output_tokens: payload.output_tokens,
-      cloud_run_calls: payload.cloud_run_calls ?? 0,
-      vector_calls: payload.vector_calls ?? 0,
-      ocr_calls: payload.ocr_calls ?? 0,
+      cloud_run_calls: finiteNumber(payload.cloud_run_calls),
+      vector_calls: finiteNumber(payload.vector_calls),
+      ocr_calls: finiteNumber(payload.ocr_calls),
       rate_limit_headers: rateLimitHeaders,
       retry_after: rateLimitHeaders["retry-after"],
       error: response.ok ? null : payload.code || payload.message || `HTTP ${response.status}`

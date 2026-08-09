@@ -8,7 +8,10 @@ import {
   CSM_PRODUCT_PROJECTION_VERSION,
   THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
-import { CSM_PROVIDER_AUTHORITY_LIMITS } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
+import {
+  CSM_PROVIDER_AUTHORITY_LIMITS,
+  CSM_PROVIDER_AUTHORITY_RPCS
+} from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 
 const ENV = {
@@ -69,6 +72,14 @@ const fetchImpl = async (url, init = {}) => {
   if (parsed.pathname.endsWith("/lookup_csm_thin_provider_operation_v1")) {
     return response({ ok: true, code: "not_found", found: false });
   }
+  if (parsed.pathname.endsWith(`/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`)) {
+    return response({
+      ok: true,
+      code: "not_found",
+      status_code: 200,
+      found: false
+    });
+  }
   if (parsed.pathname.endsWith("/check_csm_thin_provider_pacer_v1")) {
     return response(pacerReceipt());
   }
@@ -98,28 +109,39 @@ assert.deepEqual(calls.map(({ pathname }) => pathname), [
   `/rest/v1/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`,
   "/rest/v1/listing_assets",
   "/rest/v1/rpc/lookup_csm_thin_provider_operation_v1",
+  `/rest/v1/rpc/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`,
   "/rest/v1/rpc/check_csm_thin_provider_pacer_v1"
 ]);
 assert.ok(calls.every(({ init }) => init.headers.apikey === ENV.SUPABASE_SECRET_KEY));
 assert.equal(ready.listing_asset_owner_ready, true);
+assert.equal(ready.durable_provider_operation_key_recovery_ready, true);
+for (const fakeCounter of ["cloud_run_calls", "vector_calls", "generic_ocr_calls"]) {
+  assert.equal(Object.hasOwn(ready, fakeCounter), false,
+    `${fakeCounter} must not masquerade as a measured runtime counter`);
+}
+const operationKeyRecoveryCall = calls.find(({ pathname }) => (
+  pathname.endsWith(`/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`)
+));
+assert.deepEqual(JSON.parse(operationKeyRecoveryCall.init.body), {
+  p_tenant_id: "__csm_readiness__",
+  p_operation_key: "__csm_readiness__"
+});
 
 const databaseOnlyScopes = [];
-for (const pacer_burst_tokens of [65_200, 66_000]) {
-  const databaseOnlyReady = await checkCsmThinProductionReadiness({
-    env: { ...ENV, OPENAI_API_KEY: "" },
-    fetchImpl: fetchWithPacer({ pacer_burst_tokens }, databaseOnlyScopes),
-    requireProviderKey: false
-  });
-  assert.equal(databaseOnlyReady.ok, true);
-  assert.equal(databaseOnlyReady.provider_configuration_checked, false);
-}
-assert.deepEqual(databaseOnlyScopes, [65_200, 66_000].map(() => ({
+const databaseOnlyReady = await checkCsmThinProductionReadiness({
+  env: { ...ENV, OPENAI_API_KEY: "" },
+  fetchImpl: fetchWithPacer({}, databaseOnlyScopes),
+  requireProviderKey: false
+});
+assert.equal(databaseOnlyReady.ok, true);
+assert.equal(databaseOnlyReady.provider_configuration_checked, false);
+assert.deepEqual(databaseOnlyScopes, [{
   p_provider: "openai",
   p_account_scope: "lynca-primary",
   p_model: "gpt-5.6-luna"
-})), "database-only rollout readiness must retain the exact Production scope");
+}], "database-only readiness must retain the exact Production scope");
 
-for (const pacer_burst_tokens of [65_199, 65_201, 65_999, 66_001]) {
+for (const pacer_burst_tokens of [65_200, 65_999, 66_001]) {
   await assert.rejects(
     checkCsmThinProductionReadiness({
       env: { ...ENV, OPENAI_API_KEY: "" },
@@ -127,7 +149,7 @@ for (const pacer_burst_tokens of [65_199, 65_201, 65_999, 66_001]) {
       requireProviderKey: false
     }),
     (error) => error.code === "csm_provider_pacer_not_ready",
-    `database-only readiness must reject non-endpoint burst ${pacer_burst_tokens}`
+    `database-only readiness must reject non-contract burst ${pacer_burst_tokens}`
   );
 }
 
@@ -141,7 +163,7 @@ await assert.rejects(
     requireProviderKey: false
   }),
   (error) => error.code === "csm_provider_pacer_not_ready",
-  "the burst rollout bridge must not relax another database limit"
+  "the exact burst contract must not relax another database limit"
 );
 
 await assert.rejects(
@@ -208,5 +230,45 @@ await assert.rejects(
   }),
   (error) => error.code === "csm_provider_pacer_not_ready"
 );
+
+await assert.rejects(
+  checkCsmThinProductionReadiness({
+    env: ENV,
+    fetchImpl: async (url, init) => {
+      if (String(url).endsWith(`/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`)) {
+        return response({ code: "PGRST202" }, 404);
+      }
+      return fetchImpl(url, init);
+    }
+  }),
+  (error) => error.code === "csm_provider_operation_key_recovery_not_ready"
+);
+
+const validOperationKeyRecoveryReceipt = {
+  ok: true,
+  code: "not_found",
+  status_code: 200,
+  found: false
+};
+for (const invalidReceipt of [
+  { ...validOperationKeyRecoveryReceipt, code: "found_non_success" },
+  { ...validOperationKeyRecoveryReceipt, status_code: 201 },
+  { ...validOperationKeyRecoveryReceipt, found: true },
+  { ...validOperationKeyRecoveryReceipt, payload_sha256: "0".repeat(64) },
+  { ...validOperationKeyRecoveryReceipt, result: {} }
+]) {
+  await assert.rejects(
+    checkCsmThinProductionReadiness({
+      env: ENV,
+      fetchImpl: async (url, init) => {
+        if (String(url).endsWith(`/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`)) {
+          return response(invalidReceipt);
+        }
+        return fetchImpl(url, init);
+      }
+    }),
+    (error) => error.code === "csm_provider_operation_key_recovery_not_ready"
+  );
+}
 
 console.log("CSM production readiness tests passed");

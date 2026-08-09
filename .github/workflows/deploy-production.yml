@@ -10,7 +10,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     environment: production
     permissions:
       contents: read
@@ -108,6 +108,16 @@ jobs:
             `VERCEL_SCOPE_SLUG=${scopeSlug}\nVERCEL_ORG_ID=${orgId}\nVERCEL_PROJECT_ID=${projectId}\n`
           );
           NODE
+      - name: Verify the unique alias writer and capture the current rollback deployment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          rollback_receipt="$RUNNER_TEMP/vercel-production-rollback-receipt.json"
+          umask 077
+          node scripts/vercel-production-rollback-receipt.mjs --out "$rollback_receipt"
+          test "$(stat -c '%a' "$rollback_receipt")" = "600"
+          printf 'VERCEL_ROLLBACK_RECEIPT=%s\n' "$rollback_receipt" >> "$GITHUB_ENV"
       - name: Build and deploy the exact dispatched checkout
         env:
           DISPATCH_SHA: ${{ github.sha }}
@@ -142,31 +152,133 @@ jobs:
           printf 'DEPLOYMENT_URL=%s\n' "$deployment_url" >> "$GITHUB_ENV"
           node -e 'process.stdout.write(JSON.stringify({mode:"exact_checkout_prebuilt_unpromoted",git_sha:process.env.DISPATCH_SHA,deployment_url:process.env.DEPLOYMENT_URL||null}))' \
             > /tmp/vercel-prebuilt-release.json
-      - name: Verify the immutable deployment before production promotion
+      - name: Verify the immutable deployment and prepare candidate-only browser authorization
         env:
           DISPATCH_SHA: ${{ github.sha }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           test -n "$VERCEL_TOKEN"
           test -n "$DEPLOYMENT_URL"
+          candidate_storage_state="$RUNNER_TEMP/vercel-candidate-storage-state.json"
+          {
+            printf 'WRITER_JOURNEY_BASE_URL=%s\n' "$DEPLOYMENT_URL"
+            printf 'WRITER_JOURNEY_EXPECTED_SHA=%s\n' "$DISPATCH_SHA"
+            printf 'WRITER_JOURNEY_INITIAL_STORAGE_STATE=%s\n' "$candidate_storage_state"
+          } >> "$GITHUB_ENV"
+          umask 077
           node scripts/fetch-vercel-protected-health.mjs \
+            --storage-state "$candidate_storage_state" \
             > /tmp/csm-thin-health-prepromotion.json
+          test "$(stat -c '%a' "$candidate_storage_state")" = "600"
           node --input-type=module - <<'NODE'
           import { readFileSync } from 'node:fs';
           import { CSM_THIN_RUNTIME_CONTRACT } from './lib/listing/thin/csm-runtime-contract.mjs';
+          import {
+            buildCsmModelExecutionContractSha256,
+            csmExecutionContractImageUrls,
+            CSM_ACTIVE_MODEL_PROFILE,
+            CSM_RECOGNITION_TRANSPORT_PROFILES,
+            sha256CsmRecognitionTransportReceipt
+          } from './lib/listing/thin/csm-model-execution-contract.mjs';
+          import { resolveCsmProviderAdapter } from './lib/listing/thin/csm-provider-adapter.mjs';
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
+          const expectedProviderAdapterVersion = resolveCsmProviderAdapter(
+            CSM_ACTIVE_MODEL_PROFILE.provider
+          ).contract.id;
+          const recognitionTransportContractsReady = CSM_RECOGNITION_TRANSPORT_PROFILES.every(
+            (transportProfile) => {
+              const lane = transportProfile.lane_version;
+              const expectedProfile = {
+                ...transportProfile,
+                sha256: sha256CsmRecognitionTransportReceipt(transportProfile)
+              };
+              const actualProfile = h.runtime?.recognition_transport_profiles?.[lane];
+              return actualProfile
+                && Object.keys(actualProfile).length === Object.keys(expectedProfile).length
+                && Object.entries(expectedProfile).every(([key, value]) => actualProfile[key] === value)
+                && [1, 2].every((count) => (
+                  h.runtime?.execution_contract_sha256_by_transport_lane_and_image_count
+                    ?.[lane]?.[String(count)] === buildCsmModelExecutionContractSha256({
+                      transportProfile,
+                      imageUrls: csmExecutionContractImageUrls(count)
+                    })
+                ));
+            }
+          );
           const ok = h.ready === true
             && h.deployment?.git_commit_sha === process.env.DISPATCH_SHA
             && h.active_path === CSM_THIN_RUNTIME_CONTRACT.route
             && h.model === CSM_THIN_RUNTIME_CONTRACT.model
             && h.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT.reasoningEffort
-            && h.runtime?.cloud_run_calls === 0
-            && h.runtime?.vector_calls === 0
-            && h.runtime?.generic_ocr_calls === 0;
+            && h.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
+            && h.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+            && recognitionTransportContractsReady
+            && h.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
+            && h.runtime?.retired_capabilities_disabled === true;
           process.exit(ok ? 0 : 1);
           NODE
+      - name: Install the pinned browser for the candidate Writer Journey
+        run: npx playwright install --with-deps chromium
+      - name: Materialize fixed NON_TCG and TCG cases from Production Storage
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          source_dir="$RUNNER_TEMP/writer-journey-source"
+          cases_manifest="$RUNNER_TEMP/writer-journey-cases-v2.json"
+          node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" > "$cases_manifest"
+          node -e 'const x=require(process.argv[1]); if(x.schema_version!=="writer-journey-cases-v2"||x.accuracy_claim!==null||x.cases?.length!==2)process.exit(1)' "$cases_manifest"
+          printf 'WRITER_JOURNEY_CASES_MANIFEST=%s\n' "$cases_manifest" >> "$GITHUB_ENV"
+      - name: Build executor-bound large staged transport fixture
+        run: |
+          fixture_parent="$RUNNER_TEMP/lynca-large-writer-fixture"
+          fixture_dir="$fixture_parent/bundle"
+          install -d -m 700 "$fixture_parent"
+          node scripts/build-large-internal-writer-fixture.mjs \
+            --source-manifest "$WRITER_JOURNEY_CASES_MANIFEST" \
+            --out-dir "$fixture_dir" >/dev/null
+          test -f "$fixture_dir/receipt.json"
+          printf 'WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT=%s\n' "$fixture_dir/receipt.json" >> "$GITHUB_ENV"
+      - name: Run real candidate Writer Journey before production promotion
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          test -n "$METAVERSE_USERNAME"
+          test -n "$METAVERSE_PASSWORD"
+          npm run test:e2e:production-writer-journey
+      - name: Destroy candidate browser authorization
+        if: always()
+        run: |
+          if [ -n "${WRITER_JOURNEY_INITIAL_STORAGE_STATE:-}" ]; then
+            case "$WRITER_JOURNEY_INITIAL_STORAGE_STATE" in
+              "$RUNNER_TEMP"/*) ;;
+              *) exit 1 ;;
+            esac
+            rm -f -- "$WRITER_JOURNEY_INITIAL_STORAGE_STATE"
+          fi
+      - name: Re-verify single-writer authority and canonical ownership before promotion
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$VERCEL_ROLLBACK_RECEIPT"
+          case "$VERCEL_ROLLBACK_RECEIPT" in
+            "$RUNNER_TEMP"/*) ;;
+            *) exit 1 ;;
+          esac
+          test "$(stat -c '%a' "$VERCEL_ROLLBACK_RECEIPT")" = "600"
+          # Vercel exposes no conditional promotion API. Normal Production
+          # writes therefore belong exclusively to this protected workflow.
+          # Fail closed if the staged-only project contract or canonical owner
+          # changed while the candidate Writer Journey was running.
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-writer-authority
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-canonical "$VERCEL_ROLLBACK_RECEIPT"
       - name: Promote the verified immutable deployment to production
+        id: promote
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -181,23 +293,9 @@ jobs:
               -o /tmp/csm-thin-health.json \
               && node --input-type=module - <<'NODE'
           import { readFileSync } from 'node:fs';
-          import { CSM_THIN_RUNTIME_CONTRACT } from './lib/listing/thin/csm-runtime-contract.mjs';
-
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health.json', 'utf8'));
           const ok = h.ready === true
-            && h.deployment?.git_commit_sha === process.env.GITHUB_SHA
-            && h.active_path === CSM_THIN_RUNTIME_CONTRACT.route
-            && h.model === CSM_THIN_RUNTIME_CONTRACT.model
-            && h.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT.reasoningEffort
-            && h.runtime?.cloud_run_calls === 0
-            && h.runtime?.vector_calls === 0
-            && h.runtime?.generic_ocr_calls === 0
-            && h.capacity?.scheduler_attempt_slots === 120
-            && h.capacity?.baseline_working_attempts === 43
-            && h.capacity?.pacer_estimated_tokens_per_second === 60000
-            && h.capacity?.pacer_burst_estimated_tokens === 65200
-            && h.capacity?.steady_reserved_attempts_per_minute === 679
-            && h.capacity?.effective_reserved_attempt_ceiling === 83;
+            && h.deployment?.git_commit_sha === process.env.GITHUB_SHA;
           process.exit(ok ? 0 : 1);
           NODE
             then
@@ -246,6 +344,51 @@ jobs:
             -b /tmp/lynca-cookies.txt -H 'content-type: application/json' \
             --data '{}' https://listing.lyncafei.team/api/csm-listing-title)" = "400"
           node -e 'const r=require("/tmp/csm-noop.json"); if(r.code!=="missing_asset_id") process.exit(1)'
+      - name: Restore the saved Production deployment after release verification failure
+        if: failure() && (steps.promote.outcome == 'success' || steps.promote.outcome == 'failure')
+        timeout-minutes: 12
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$VERCEL_ROLLBACK_RECEIPT"
+          case "$VERCEL_ROLLBACK_RECEIPT" in
+            "$RUNNER_TEMP"/*) ;;
+            *) exit 1 ;;
+          esac
+          test "$(stat -c '%a' "$VERCEL_ROLLBACK_RECEIPT")" = "600"
+          # Roll back only while this single writer still owns the alias.
+          # A Vercel OWNER break-glass action invalidates automatic rollback.
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-writer-authority
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-canonical-deployment "$DEPLOYMENT_URL"
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-deployment "$VERCEL_ROLLBACK_RECEIPT"
+          rollback_url="$(node scripts/vercel-production-rollback-receipt.mjs \
+            --deployment-url "$VERCEL_ROLLBACK_RECEIPT")"
+          rollback_sha="$(node scripts/vercel-production-rollback-receipt.mjs \
+            --git-sha "$VERCEL_ROLLBACK_RECEIPT")"
+          npx --yes vercel@54.14.5 promote "$rollback_url" --yes \
+            --scope "$VERCEL_SCOPE_SLUG"
+          for _attempt in $(seq 1 60); do
+            if curl -fsS --max-time 30 https://listing.lyncafei.team/api/health \
+              -o /tmp/csm-thin-health-rollback.json \
+              && ROLLBACK_SHA="$rollback_sha" node -e '
+                const h=require("/tmp/csm-thin-health-rollback.json");
+                if(h.ready!==true||h.deployment?.git_commit_sha!==process.env.ROLLBACK_SHA)process.exit(1)
+              ' \
+              && node scripts/vercel-production-rollback-receipt.mjs \
+                --verify-canonical "$VERCEL_ROLLBACK_RECEIPT"
+            then
+              touch /tmp/vercel-production-rollback-verified
+              break
+            fi
+            rm -f /tmp/csm-thin-health-rollback.json
+            sleep 10
+          done
+          test -f /tmp/vercel-production-rollback-verified
+          echo "::error::Production release verification failed; the saved deployment was restored and this release remains HOLD."
       - name: Upload release evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -256,6 +399,9 @@ jobs:
             /tmp/csm-thin-schema-postdeploy.json
             /tmp/csm-thin-health-prepromotion.json
             /tmp/csm-thin-health.json
+            /tmp/csm-thin-health-rollback.json
             /tmp/vercel-prebuilt-release.json
             /tmp/retired-route.json
             /tmp/csm-noop.json
+            ${{ runner.temp }}/vercel-production-rollback-receipt.json
+            artifacts/production-writer-journey/evidence.json

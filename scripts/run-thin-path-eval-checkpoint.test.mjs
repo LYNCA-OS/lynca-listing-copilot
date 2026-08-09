@@ -11,12 +11,15 @@ import {
   acquireOutDirLock,
   buildRunManifest,
   callProviderWithRetry,
+  evaluationCardIdentity,
   imageSetFingerprint,
   main,
   requestFingerprint,
+  setReviewedCorpus,
   validateCheckpointRows
 } from "./run-thin-path-eval.mjs";
 import { withResidualEvidenceLaneV1 } from "../lib/listing/thin/residual-evidence-lane-v1.mjs";
+import { foldFor } from "../lib/listing/evaluation/kfold-few-shot.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "thin-eval-checkpoint-adversarial-"));
 const model = "gpt-5.6-luna";
@@ -26,6 +29,7 @@ const armFor = (key) => ({ key, ...ARM_SPECS[key] });
 
 async function fixture(name, items = [{
   asset_id: "asset-a",
+  physical_card_id: "physical-a",
   sealed_eval_label_ref: { key: "label-a" },
   images: []
 }]) {
@@ -41,14 +45,19 @@ async function fixture(name, items = [{
   await writeFile(dataset, `${JSON.stringify({ items })}\n`);
   await writeFile(sealedLabels, `${items.map((item, index) => JSON.stringify({
     key: item.sealed_eval_label_ref.key,
-    title: index ? "Beta" : "Alpha"
+    title: index ? "Beta" : "Alpha",
+    reviewed_title: index ? "Beta" : "Alpha"
   })).join("\n")}\n`);
   await writeFile(assetIdsFile, `${JSON.stringify(items.map(({ asset_id }) => asset_id))}\n`);
   return { evalRoot, outDir, dataset, sealedLabels, assetIdsFile, scorer, items };
 }
 
 function checkpointRow({ item, arm, manifest, reference = "Alpha" }) {
-  const request = arm.buildRequest({ imageUrls: [], model, effort, imageDetail });
+  const armEffort = arm.effort ?? effort;
+  const request = arm.buildRequest({
+    imageUrls: [], model, effort: armEffort, imageDetail,
+    cardKey: evaluationCardIdentity(item)
+  });
   return {
     asset_id: item.asset_id,
     arm: arm.key,
@@ -67,8 +76,9 @@ function checkpointRow({ item, arm, manifest, reference = "Alpha" }) {
     total_tokens: 2,
     model,
     served_model: model,
-    requested_effort: effort,
-    served_effort: effort,
+    requested_effort: armEffort,
+    served_effort: armEffort,
+    served_effort_attested: true,
     request_sha256: requestFingerprint(request),
     image_set_sha256: imageSetFingerprint(item),
     image_count: 0,
@@ -208,6 +218,33 @@ try {
   assert.notEqual((await buildRunManifest({
     ...manifestInput, arms: [canonicalArm], concurrency: 120
   })).fingerprint, canonicalManifest.fingerprint);
+
+  // Every selectable arm must close over an explicit source root. In
+  // particular, all eight pinned-effort arms used to silently contribute no
+  // source files, and their manifest templates were hashed at the run-level
+  // effort instead of the effort actually sent.
+  const allArms = Object.keys(ARM_SPECS).map(armFor);
+  const allArmsManifest = await buildRunManifest({ ...manifestInput, arms: allArms });
+  assert.equal(allArmsManifest.contract.arms.length, allArms.length);
+  for (const armKey of [
+    "thin_canonical_high_effort_none",
+    "thin_canonical_high_effort_low",
+    "thin_canonical_fewshot_low",
+    "thin_canonical_serial_parts_low",
+    "thin_canonical_kfold_fewshot_low",
+    "thin_canonical_low_targeted",
+    "thin_canonical_high_effort_medium",
+    "thin_canonical_high_effort_max"
+  ]) {
+    const arm = armFor(armKey);
+    const actual = arm.buildRequest({
+      imageUrls: [], model, effort: arm.effort ?? effort, imageDetail,
+      cardKey: evaluationCardIdentity(base.items[0])
+    });
+    const frozen = allArmsManifest.contract.arms.find(({ key }) => key === armKey);
+    assert.equal(frozen.request_template_sha256[0], requestFingerprint(actual),
+      `${armKey} must hash the request it actually sends`);
+  }
 
   const item = base.items[0];
   const labels = new Map([["label-a", "Alpha"]]);
@@ -380,6 +417,7 @@ try {
   assert.equal(retryCheckpoint.length, 1, "a retried success must produce exactly one scored row");
   assert.equal(retryCheckpoint[0].request_attempt_count, 2);
   assert.equal(retryCheckpoint[0].provider_attempts.length, 2);
+  assert.equal(retryCheckpoint[0].served_effort_attested, true);
   const retryAttemptLog = (await readFile(
     join(retryIntegration.outDir, `thin-path-${model}.attempts.jsonl`), "utf8"
   )).trim().split("\n").map(JSON.parse);
@@ -387,6 +425,72 @@ try {
     "provider_attempt", "provider_attempt", "final_status"
   ]);
   assert.equal(retryAttemptLog.at(-1).status, "checkpoint_committed");
+
+  // Regression for the live k-fold leak: the old caller passed
+  // `${asset_id}::${arm}` even though the corpus is keyed by sealed label.
+  // Choose an asset whose legacy composite falls in another fold so this one
+  // row corpus would deterministically expose its own reviewed title under the
+  // old implementation.
+  const kfoldLabel = "label-kfold-self";
+  const kfoldArm = armFor("thin_canonical_kfold_fewshot_low");
+  let kfoldAssetId = "asset-kfold-0";
+  for (let candidate = 0; candidate < 100; candidate += 1) {
+    const value = `asset-kfold-${candidate}`;
+    if (foldFor(`${value}::${kfoldArm.key}`) !== foldFor(kfoldLabel)) {
+      kfoldAssetId = value;
+      break;
+    }
+  }
+  const kfold = await fixture("kfold-live-identity", [{
+    asset_id: kfoldAssetId,
+    physical_card_id: "physical-kfold-self",
+    sealed_eval_label_ref: { key: kfoldLabel },
+    images: []
+  }]);
+  const selfTitle = "SELF LEAK SENTINEL 17/50";
+  await writeFile(kfold.sealedLabels, `${JSON.stringify({
+    key: kfoldLabel, reviewed_title: selfTitle
+  })}\n`);
+  let capturedKfoldRequest = null;
+  const kfoldFetch = async (_url, init = {}) => {
+    capturedKfoldRequest = JSON.parse(init.body);
+    return response(200, {
+      id: "resp-kfold-identity",
+      model,
+      reasoning: { effort: "low" },
+      output_text: JSON.stringify({
+        grammar: "standard", product: "Chrome", subjects: ["Player One"]
+      }),
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+    });
+  };
+  process.stdout.write = () => true;
+  process.stderr.write = () => true;
+  try {
+    const kfoldSummary = await main([
+      "--eval-root", kfold.evalRoot,
+      "--dataset", "dataset.json",
+      "--sealed-labels", "labels.jsonl",
+      "--asset-ids-file", kfold.assetIdsFile,
+      "--arms", kfoldArm.key,
+      "--limit", "1",
+      "--out-dir", kfold.outDir
+    ], { fetchImpl: kfoldFetch });
+    assert.equal(kfoldSummary.arms[0].n, 1);
+  } finally {
+    process.stdout.write = previousStdout;
+    process.stderr.write = previousStderr;
+  }
+  assert.equal(capturedKfoldRequest.reasoning.effort, "low");
+  assert.doesNotMatch(capturedKfoldRequest.input[0].content[0].text, new RegExp(selfTitle),
+    "the live request must use sealed identity and exclude its own reviewed title");
+  setReviewedCorpus([{ key: kfoldLabel, reviewed_title: selfTitle }]);
+  const legacyCompositeRequest = kfoldArm.buildRequest({
+    imageUrls: [], model, effort: "low", imageDetail,
+    cardKey: `${kfoldAssetId}::${kfoldArm.key}`
+  });
+  assert.match(legacyCompositeRequest.input[0].content[0].text, new RegExp(selfTitle),
+    "the fixture must prove it would catch the historical composite-key leak");
 
   const candidateIntegration = await fixture("candidate-v3-integration");
   const candidatePayload = {

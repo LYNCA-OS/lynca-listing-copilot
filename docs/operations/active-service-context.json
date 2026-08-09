@@ -1,6 +1,6 @@
 {
   "schema_version": "lynca-active-service-context-v2",
-  "updated_on": "2026-08-02",
+  "updated_on": "2026-08-10",
   "repository": {
     "production_checkout": "/Users/paidaxin/lynca-thin-production-main",
     "experiment_checkout": "/Users/paidaxin/lynca-thin-path",
@@ -30,7 +30,19 @@
       "project": "lynca-listing-copilot",
       "project_id": "prj_ZVgquyNvk3mWodOlftvzlLMVXbRb",
       "cwd": "/Users/paidaxin/lynca-thin-production-main",
-      "link_file": ".vercel/project.json"
+      "link_file": ".vercel/project.json",
+      "release_authority": {
+        "schema_version": "lynca-vercel-single-writer-v1",
+        "workflow": ".github/workflows/deploy-production.yml",
+        "github_environment": "production",
+        "concurrency_group": "production-deploy",
+        "auto_assign_custom_domains": false,
+        "allowed_deploy_hooks": 0,
+        "canonical_domain_git_branch": null,
+        "normal_alias_writer": "protected_github_workflow_only",
+        "provider_conditional_write_supported": false,
+        "owner_break_glass_rule": "Cancel or wait for the protected workflow, record old and new deployment IDs and SHAs, then verify canonical health. Any OWNER mutation invalidates workflow rollback."
+      }
     },
     "capacity_lab": {
       "project": "lynca-capacity-lab",

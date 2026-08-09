@@ -194,214 +194,6 @@ function analyzeImageQualityFromImageData(imageData, profile = defaultCapturePro
   };
 }
 
-// lib/listing/image-quality/crop-planner.mjs
-var cropRolesByRegion = Object.freeze({
-  subject_name: "subject_crop",
-  subject_slot_1: "subject_crop",
-  subject_slot_2: "subject_crop",
-  subject_slot_3: "subject_crop",
-  serial_number: "serial_crop",
-  surface_color: "parallel_crop",
-  parallel_family: "parallel_crop",
-  parallel_exact: "parallel_crop",
-  parallel: "parallel_crop",
-  parallel_surface: "parallel_crop",
-  variation: "parallel_crop",
-  collector_number: "card_code_crop",
-  checklist_code: "card_code_crop",
-  grade_label: "grade_label_crop",
-  year_product: "year_product_crop",
-  card_type: "card_type_crop",
-  autograph: "autograph_crop",
-  patch_relic: "patch_relic_crop"
-});
-var priorityByRegion = Object.freeze({
-  serial_number: 10,
-  year_product: 9,
-  grade_label: 8.5,
-  subject_name: 8,
-  subject_slot_1: 7.9,
-  subject_slot_2: 7.8,
-  subject_slot_3: 7.7,
-  collector_number: 7,
-  checklist_code: 7,
-  card_type: 6,
-  surface_color: 5,
-  parallel_family: 5,
-  parallel_exact: 5,
-  parallel: 5,
-  parallel_surface: 5,
-  variation: 8,
-  autograph: 4,
-  patch_relic: 4
-});
-var fieldCropTransformVersion = "field-crop-v1";
-var defaultHighRiskCropRegions = Object.freeze([
-  "serial_number",
-  "year_product",
-  "grade_label",
-  "subject_name",
-  "collector_number",
-  "checklist_code",
-  "card_type"
-]);
-function cropBoundsForRegion(region, margin = 0.06) {
-  const x = Math.max(0, region.x - margin);
-  const y = Math.max(0, region.y - margin);
-  const right = Math.min(1, region.x + region.width + margin);
-  const bottom = Math.min(1, region.y + region.height + margin);
-  return {
-    x,
-    y,
-    width: Math.max(0.01, right - x),
-    height: Math.max(0.01, bottom - y)
-  };
-}
-function shouldCrop(status) {
-  return status === criticalRegionStatus.OCCLUDED || status === criticalRegionStatus.REVIEW;
-}
-function normalizeFieldSet(fields = []) {
-  return new Set((Array.isArray(fields) ? fields : []).map((field) => String(field || "").trim()).filter(Boolean));
-}
-function stableIdPart(value, fallback) {
-  return String(value || fallback || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || fallback;
-}
-function pixelBoundsForCrop(cropRegion, width = 0, height = 0) {
-  const sourceWidth = Number(width);
-  const sourceHeight = Number(height);
-  if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
-    return {};
-  }
-  const left = Math.max(0, Math.floor(cropRegion.x * sourceWidth));
-  const top = Math.max(0, Math.floor(cropRegion.y * sourceHeight));
-  const cropWidth = Math.max(1, Math.min(sourceWidth - left, Math.ceil(cropRegion.width * sourceWidth)));
-  const cropHeight = Math.max(1, Math.min(sourceHeight - top, Math.ceil(cropRegion.height * sourceHeight)));
-  return {
-    left,
-    top,
-    width: cropWidth,
-    height: cropHeight
-  };
-}
-function reasonForRegion({ quality, regionName, requestedFields, highRiskFields, reviewFields, conflictFields } = {}) {
-  if (quality && shouldCrop(quality.status)) {
-    return quality.status === criticalRegionStatus.OCCLUDED ? "critical_region_occluded" : "critical_region_review";
-  }
-  if (conflictFields.has(regionName)) return "field_conflict";
-  if (reviewFields.has(regionName)) return "field_review";
-  if (requestedFields.has(regionName)) return "field_requested";
-  if (highRiskFields.has(regionName)) return "high_risk_field";
-  return "";
-}
-function sourceSideForImage(sourceSide = "") {
-  const normalized = String(sourceSide || "").trim().toLowerCase();
-  if (normalized.includes("back")) return "back";
-  if (normalized.includes("front")) return "front";
-  return null;
-}
-function createFieldCropMetadata({
-  assetId = "",
-  imageId = "",
-  sourceObjectPath = "",
-  sourceSide = "",
-  sourceRegion = "",
-  cropRole = "",
-  cropRegion = {},
-  sourceWidth = 0,
-  sourceHeight = 0,
-  transformVersion = fieldCropTransformVersion,
-  derivedObjectPath = "",
-  createdAt = null
-} = {}) {
-  const cropId = [
-    stableIdPart(assetId, "asset"),
-    stableIdPart(imageId, "image"),
-    stableIdPart(sourceRegion, "region"),
-    stableIdPart(transformVersion, "transform")
-  ].join("__");
-  return {
-    crop_id: cropId,
-    asset_id: assetId || "",
-    source_image_id: imageId || "",
-    source_object_path: sourceObjectPath || "",
-    source_side: sourceSideForImage(sourceSide),
-    source_width: Number(sourceWidth) > 0 ? Number(sourceWidth) : null,
-    source_height: Number(sourceHeight) > 0 ? Number(sourceHeight) : null,
-    source_region: sourceRegion || "",
-    crop_role: cropRole || "",
-    normalized_bounds: {
-      x: cropRegion.x ?? 0,
-      y: cropRegion.y ?? 0,
-      width: cropRegion.width ?? 0,
-      height: cropRegion.height ?? 0
-    },
-    pixel_bounds: pixelBoundsForCrop(cropRegion, sourceWidth, sourceHeight),
-    derived_object_path: derivedObjectPath || "",
-    transform_version: transformVersion,
-    created_at: createdAt || (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-function planTargetedCrops({
-  assetId = "",
-  imageId,
-  sourceObjectPath = "",
-  sourceSide = "",
-  sourceWidth = 0,
-  sourceHeight = 0,
-  imageQuality,
-  profile = defaultCaptureProfile,
-  requestedFields = [],
-  highRiskFields = defaultHighRiskCropRegions,
-  reviewFields = [],
-  conflictFields = [],
-  maxCrops = 6,
-  transformVersion = fieldCropTransformVersion
-} = {}) {
-  const occlusion = imageQuality?.critical_region_occlusion || {};
-  const requested = normalizeFieldSet(requestedFields);
-  const highRisk = normalizeFieldSet(highRiskFields);
-  const review = normalizeFieldSet(reviewFields);
-  const conflict = normalizeFieldSet(conflictFields);
-  return Object.entries(cropRolesByRegion).map(([regionName, role]) => {
-    const quality = occlusion[regionName];
-    const region = profile.critical_regions[regionName];
-    if (!region) return null;
-    const reason = reasonForRegion({
-      quality,
-      regionName,
-      requestedFields: requested,
-      highRiskFields: highRisk,
-      reviewFields: review,
-      conflictFields: conflict
-    });
-    if (!reason) return null;
-    const cropRegion = cropBoundsForRegion(region);
-    return {
-      source_image_id: imageId || null,
-      source_region: regionName,
-      role,
-      status: quality?.status || null,
-      reason,
-      priority: priorityByRegion[regionName] || 0,
-      crop_region: cropRegion,
-      crop_metadata: createFieldCropMetadata({
-        assetId,
-        imageId,
-        sourceObjectPath,
-        sourceSide,
-        sourceRegion: regionName,
-        cropRole: role,
-        cropRegion,
-        sourceWidth,
-        sourceHeight,
-        transformVersion
-      }),
-      glare_score: quality?.glare_score ?? null,
-      readability_score: quality?.readability_score ?? null
-    };
-  }).filter(Boolean).sort((a, b) => b.priority - a.priority).slice(0, maxCrops);
-}
-
 // lib/listing/client/batch-recognition-intent.mjs
 var INTAKE_PREVIEW_CARD_WINDOW = 8;
 function claimNextBatchAsset(assets = [], claimedAssetIndexes = /* @__PURE__ */ new Set()) {
@@ -458,6 +250,7 @@ function batchReviewWindow(items = [], {
 
 // lib/listing/client/bounded-fetch.mjs
 var retryableStatuses = /* @__PURE__ */ new Set([408, 425, 429]);
+var MAX_CLIENT_FETCH_TIMEOUT_MS = 3e5;
 function positiveInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -497,16 +290,22 @@ function annotatedFetchError(error, { attempts, elapsedMs, timedOut }) {
   }
   return result;
 }
-function attemptSignal(externalSignal, timeoutMs) {
+function attemptSignal(externalSignal, timeoutMs, {
+  setTimeoutImpl = globalThis.setTimeout,
+  clearTimeoutImpl = globalThis.clearTimeout
+} = {}) {
   const controller = new AbortController();
   const forwardAbort = () => controller.abort(externalSignal?.reason);
   if (externalSignal?.aborted) forwardAbort();
   else externalSignal?.addEventListener?.("abort", forwardAbort, { once: true });
-  const timer = setTimeout(() => controller.abort(new Error("client_fetch_timeout")), timeoutMs);
+  const timer = setTimeoutImpl(
+    () => controller.abort(new Error("client_fetch_timeout")),
+    timeoutMs
+  );
   return {
     signal: controller.signal,
     cleanup() {
-      clearTimeout(timer);
+      clearTimeoutImpl(timer);
       externalSignal?.removeEventListener?.("abort", forwardAbort);
     }
   };
@@ -521,11 +320,16 @@ async function fetchWithBoundedRetry(url, init = {}, {
   jitterRatio = 0.15,
   random = Math.random,
   sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
-  now = () => Date.now()
+  now = () => Date.now(),
+  setTimeoutImpl = globalThis.setTimeout,
+  clearTimeoutImpl = globalThis.clearTimeout
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetch implementation is required");
   const attemptsLimit = positiveInteger(maxAttempts, 3, { min: 1, max: 5 });
-  const perAttemptTimeoutMs = positiveInteger(timeoutMs, 15e3, { min: 100, max: 12e4 });
+  const perAttemptTimeoutMs = positiveInteger(timeoutMs, 15e3, {
+    min: 100,
+    max: MAX_CLIENT_FETCH_TIMEOUT_MS
+  });
   const startedAt = now();
   let lastError = null;
   for (let attempt = 1; attempt <= attemptsLimit; attempt += 1) {
@@ -536,7 +340,10 @@ async function fetchWithBoundedRetry(url, init = {}, {
         timedOut: false
       });
     }
-    const boundedSignal = attemptSignal(init.signal, perAttemptTimeoutMs);
+    const boundedSignal = attemptSignal(init.signal, perAttemptTimeoutMs, {
+      setTimeoutImpl,
+      clearTimeoutImpl
+    });
     let response = null;
     let timedOut = false;
     try {
@@ -593,45 +400,6 @@ async function fetchWithBoundedRetry(url, init = {}, {
   });
 }
 
-// lib/listing/client/upload-phases.mjs
-function firstFailedOutcome(outcomes = []) {
-  return (Array.isArray(outcomes) ? outcomes : []).find((outcome) => outcome?.ok === false) || null;
-}
-async function startNonBlockingDerivedUpload({
-  entries = [],
-  isDerived,
-  uploadPhase,
-  beforeDerived
-} = {}) {
-  if (typeof isDerived !== "function") throw new TypeError("isDerived is required");
-  if (typeof uploadPhase !== "function") throw new TypeError("uploadPhase is required");
-  const source = Array.isArray(entries) ? entries : [];
-  const originals = source.filter((entry) => !isDerived(entry));
-  const derived = source.filter((entry) => isDerived(entry));
-  const originalOutcomes = await uploadPhase(originals);
-  const failedOriginal = firstFailedOutcome(originalOutcomes);
-  if (failedOriginal) throw failedOriginal.error || new Error("original_image_upload_failed");
-  await beforeDerived?.({ originals, derived, originalOutcomes });
-  const derivedPromise = derived.length ? Promise.resolve().then(() => uploadPhase(derived)) : Promise.resolve([]);
-  return {
-    originals,
-    derived,
-    originalOutcomes,
-    derivedPromise
-  };
-}
-function summarizeDerivedUploadOutcomes(outcomes = []) {
-  const source = Array.isArray(outcomes) ? outcomes : [];
-  const failed = source.filter((outcome) => outcome?.ok === false);
-  return {
-    total: source.length,
-    uploaded: source.filter((outcome) => outcome?.uploaded === true).length,
-    failed: failed.length,
-    status: !source.length ? "not_required" : failed.length ? "partial" : "ready",
-    first_error: failed[0]?.error || null
-  };
-}
-
 // lib/listing/client/upload-recovery-policy.mjs
 var SIGNED_UPLOAD_URL_GENERATION_LIMIT = 2;
 var retryableSignedUploadStatuses = /* @__PURE__ */ new Set([401, 403, 408, 425, 429, 500, 502, 503, 504]);
@@ -648,9 +416,6 @@ export {
   claimNextBatchAsset,
   defaultCaptureProfileId,
   fetchWithBoundedRetry,
-  planTargetedCrops,
   shouldRefreshSignedUpload,
-  startNonBlockingDerivedUpload,
-  summarizeDerivedUploadOutcomes,
   windowIntakePreviewGroups
 };

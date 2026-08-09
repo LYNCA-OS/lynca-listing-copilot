@@ -18,15 +18,26 @@ import {
 import { validateAccuracyLossLedger } from "../lib/listing/thin/accuracy-loss-ledger.mjs";
 import {
   checkCsmProviderAdmissionReadiness,
-  createCsmSupabaseProviderAdmissionAuthority
+  createCsmSupabaseProviderAdmissionAuthority,
+  validateCsmProviderAuthorityReceipt
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
+import {
+  buildCsmModelExecutionContractSha256,
+  csmExecutionContractImageUrls,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+  CSM_ACTIVE_MODEL_PROFILE,
+  CSM_STAGED_TRANSPORT_PROFILE,
+  resolveCsmRecognitionTransportReceipt,
+  validateCsmModelExecutionContract
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
+import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import { createCsmRecognitionSession } from "../lib/listing/thin/csm-session-store.mjs";
 import { checkCsmPersistenceReadiness } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   buildLunaDirectOperationKey,
   buildLunaDirectPayloadHash,
-  buildLegacyLowLunaDirectPayloadHash,
   createLunaDirectDispatcher
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
 import { requireTenantAccess } from "../lib/tenant/access.mjs";
@@ -35,11 +46,12 @@ import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
 
 const MODEL = CSM_THIN_RUNTIME_CONTRACT.model;
 const EFFORT = CSM_THIN_RUNTIME_CONTRACT.reasoningEffort;
+const activeProviderAdapter = resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider);
 export const CSM_DIRECT_PROMPT_VERSION = CSM_THIN_RUNTIME_CONTRACT.promptVersion;
 export const CSM_DIRECT_ESTIMATED_TOKENS = CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt;
 // The Supabase authority owns the absolute 120-slot / 440k-token ceilings and
-// the 43-attempt working baseline. With this route's 5,300-token reservation,
-// the independent token wall remains an 83-attempt last-resort bound. This
+// the 43-attempt working baseline. The active model profile owns the per-call
+// reservation, so a model swap cannot leave scheduler accounting behind. This
 // local value is only a process/test fallback; one HTTP request normally
 // dispatches one asset.
 export const CSM_DIRECT_LOCAL_FALLBACK_CONCURRENCY = CSM_THIN_RUNTIME_CONTRACT.localFallbackConcurrency;
@@ -51,6 +63,10 @@ export const CSM_DIRECT_CLAIM_TIMEOUT_MS = CSM_THIN_RUNTIME_CONTRACT.claimTimeou
 export const CSM_DIRECT_PROVIDER_TIMEOUT_MS = CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs;
 export const CSM_PERSISTENCE_CHECKPOINT_VERSION = "csm-persistence-checkpoint-v2";
 export const CSM_PERSISTENCE_CHECKPOINT_LEGACY_VERSION = "csm-persistence-checkpoint-v1";
+export const CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION =
+  "csm-persistence-checkpoint-ordinary-execution-v1";
+export const CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION =
+  "csm-persistence-checkpoint-derived-v1";
 export const CSM_PERSISTENCE_READINESS_CACHE_TTL_MS = 30_000;
 const CSM_PACKET_HASH_KEYS = Object.freeze([
   "csm_recognition_packet_sha256",
@@ -95,15 +111,90 @@ function exactPacketHashes(value) {
     && CSM_PACKET_HASH_KEYS.every((name) => /^[0-9a-f]{64}$/.test(String(value[name] || "")));
 }
 
+function optionalSha256(value, name) {
+  if (value == null) return null;
+  const digest = String(value).trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw persistenceCheckpointError(`${name}_invalid`);
+  }
+  return digest;
+}
+
+function normalizedCheckpointRecognitionInput(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 2) {
+    throw persistenceCheckpointError("recognition_input_invalid");
+  }
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw persistenceCheckpointError("recognition_input_invalid");
+    }
+    const expectedRole = index === 0 ? "front_original" : "back_original";
+    const read = String(entry.read || "").trim();
+    const bytes = Number(entry.bytes);
+    const originalBytes = Number(entry.original_bytes);
+    const derivedBytes = entry.derived_bytes == null ? null : Number(entry.derived_bytes);
+    if (String(entry.image_role || "").trim() !== expectedRole
+        || !["original", "readability_derived"].includes(read)
+        || !Number.isInteger(bytes) || bytes < 1
+        || !Number.isInteger(originalBytes) || originalBytes < 1
+        || (derivedBytes !== null && (!Number.isInteger(derivedBytes) || derivedBytes < 1))) {
+      throw persistenceCheckpointError("recognition_input_invalid");
+    }
+    const optional = (name, pattern = null) => {
+      const text = String(entry[name] || "").trim();
+      if (!text) return {};
+      if (pattern && !pattern.test(text)) throw persistenceCheckpointError(`recognition_input_${name}_invalid`);
+      return { [name]: text };
+    };
+    return {
+      image_role: expectedRole,
+      read,
+      bytes,
+      original_bytes: originalBytes,
+      derived_available: entry.derived_available === true,
+      derived_bytes: derivedBytes,
+      ...optional("source_image_id"),
+      ...optional("transform_version"),
+      ...optional("lane_version"),
+      ...optional("content_sha256", /^[0-9a-f]{64}$/),
+      ...optional("original_content_sha256", /^[0-9a-f]{64}$/)
+    };
+  });
+}
+
 export function buildCsmPersistenceCheckpoint({
   prepared, tenantId, operationKey, payloadHash, recognitionSessionId,
-  recognitionSessionDeferred = false
+  recognitionSessionDeferred = false, recognitionInput = null,
+  executionContractSha256 = null, operationScope = ""
 } = {}) {
   const tenant = requiredText(tenantId, "tenant_id");
   const operation = requiredText(operationKey, "operation_key");
   const payload = requiredText(payloadHash, "payload_hash").toLowerCase();
   const session = requiredText(recognitionSessionId, "recognition_session_id");
   if (!/^[0-9a-f]{64}$/.test(payload)) throw persistenceCheckpointError("payload_hash_invalid");
+  const executionContract = optionalSha256(
+    executionContractSha256,
+    "execution_contract_sha256"
+  );
+  const derivedCheckpoint = String(operationScope || "").trim() === "derived_checkpoint";
+  if (operationScope && !derivedCheckpoint) {
+    throw persistenceCheckpointError("operation_scope_invalid");
+  }
+  if (derivedCheckpoint && !executionContract) {
+    throw persistenceCheckpointError("execution_contract_sha256_invalid");
+  }
+  if (executionContract) {
+    const preparedExecutionContract = optionalSha256(
+      prepared?.execution_contract_sha256,
+      "prepared_execution_contract_sha256"
+    );
+    if (preparedExecutionContract !== executionContract) {
+      throw persistenceCheckpointError("prepared_execution_contract_sha256_mismatch");
+    }
+  } else if (prepared?.execution_contract_sha256 != null) {
+    throw persistenceCheckpointError("legacy_result_contains_execution_contract");
+  }
   const hashes = prepared?.csm_rows?.session_hashes;
   if (!exactPacketHashes(hashes)) {
     throw persistenceCheckpointError("packet_hashes_invalid");
@@ -117,13 +208,23 @@ export function buildCsmPersistenceCheckpoint({
   return {
     ...prepared,
     csm_persistence_checkpoint: {
-      schema_version: CSM_PERSISTENCE_CHECKPOINT_VERSION,
+      schema_version: executionContract
+        ? derivedCheckpoint
+          ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
+          : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
+        : CSM_PERSISTENCE_CHECKPOINT_VERSION,
       state: "PERSISTENCE_PENDING",
       tenant_id: tenant,
       operation_key: operation,
       payload_sha256: payload,
       recognition_session_id: session,
       recognition_session_deferred: recognitionSessionDeferred === true,
+      ...(executionContract ? {
+        execution_contract_sha256: executionContract
+      } : {}),
+      ...(recognitionInput ? {
+        recognition_input: normalizedCheckpointRecognitionInput(recognitionInput)
+      } : {}),
       packet_hashes: hashes,
       accuracy_loss_ledger_version: accuracyLossLedger.version,
       accuracy_loss_ledger_sha256: accuracyLossLedger.ledger_sha256
@@ -132,9 +233,18 @@ export function buildCsmPersistenceCheckpoint({
 }
 
 export function validateCsmPersistenceCheckpoint(result, {
-  tenantId, operationKey, payloadHash, recognitionSessionId
+  tenantId, operationKey, payloadHash, recognitionSessionId,
+  executionContractSha256 = null, operationScope = ""
 } = {}) {
   const checkpoint = result?.csm_persistence_checkpoint;
+  const executionContract = optionalSha256(
+    executionContractSha256,
+    "execution_contract_sha256"
+  );
+  const derivedCheckpoint = String(operationScope || "").trim() === "derived_checkpoint";
+  if (operationScope && !derivedCheckpoint) {
+    throw persistenceCheckpointError("operation_scope_invalid");
+  }
   const expected = {
     tenant_id: requiredText(tenantId, "tenant_id"),
     operation_key: requiredText(operationKey, "operation_key"),
@@ -145,18 +255,48 @@ export function validateCsmPersistenceCheckpoint(result, {
     throw persistenceCheckpointError("payload_hash_invalid");
   }
   const checkpointVersion = checkpoint?.schema_version;
-  if (![CSM_PERSISTENCE_CHECKPOINT_VERSION, CSM_PERSISTENCE_CHECKPOINT_LEGACY_VERSION]
-    .includes(checkpointVersion) || checkpoint?.state !== "PERSISTENCE_PENDING") {
+  const allowedCheckpointVersions = executionContract
+    ? [derivedCheckpoint
+        ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
+        : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION]
+    : derivedCheckpoint
+      ? []
+      : [CSM_PERSISTENCE_CHECKPOINT_VERSION, CSM_PERSISTENCE_CHECKPOINT_LEGACY_VERSION];
+  if (!allowedCheckpointVersions.includes(checkpointVersion)
+      || checkpoint?.state !== "PERSISTENCE_PENDING") {
     throw persistenceCheckpointError("marker_missing");
   }
   for (const [name, value] of Object.entries(expected)) {
     if (checkpoint[name] !== value) throw persistenceCheckpointError(`${name}_mismatch`);
   }
-  if (checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_VERSION
+  if (executionContract
+      && checkpoint.execution_contract_sha256 !== executionContract) {
+    throw persistenceCheckpointError("execution_contract_sha256_mismatch");
+  }
+  if (executionContract) {
+    if (optionalSha256(
+      result?.execution_contract_sha256,
+      "result_execution_contract_sha256"
+    ) !== executionContract) {
+      throw persistenceCheckpointError("result_execution_contract_sha256_mismatch");
+    }
+  } else if (result?.execution_contract_sha256 != null) {
+    throw persistenceCheckpointError("legacy_result_contains_execution_contract");
+  }
+  if (!executionContract && checkpoint?.execution_contract_sha256 != null) {
+    throw persistenceCheckpointError("legacy_checkpoint_contains_execution_contract");
+  }
+  const currentCheckpoint = checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_VERSION
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION;
+  if (currentCheckpoint
       && checkpoint.recognition_session_deferred != null
       && typeof checkpoint.recognition_session_deferred !== "boolean") {
     throw persistenceCheckpointError("recognition_session_deferred_invalid");
   }
+  const recognitionInput = checkpoint.recognition_input == null
+    ? null
+    : normalizedCheckpointRecognitionInput(checkpoint.recognition_input);
   const rows = result?.csm_rows;
   if (rows?.resolution?.tenant_id !== expected.tenant_id
       || rows?.resolution?.recognition_session_id !== expected.recognition_session_id
@@ -170,7 +310,7 @@ export function validateCsmPersistenceCheckpoint(result, {
       || CSM_PACKET_HASH_KEYS.some((name) => hashes[name] !== checkpointHashes[name])) {
     throw persistenceCheckpointError("packet_hash_mismatch");
   }
-  if (checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_VERSION) {
+  if (currentCheckpoint) {
     let ledger;
     try {
       ledger = validateAccuracyLossLedger(result?.accuracy_loss_ledger, { result });
@@ -188,7 +328,13 @@ export function validateCsmPersistenceCheckpoint(result, {
       || checkpoint?.accuracy_loss_ledger_sha256 != null) {
     throw persistenceCheckpointError("legacy_checkpoint_contains_accuracy_loss_ledger");
   }
-  return result;
+  return recognitionInput ? {
+    ...result,
+    csm_persistence_checkpoint: {
+      ...checkpoint,
+      recognition_input: recognitionInput
+    }
+  } : result;
 }
 
 function alreadyPersisted(result, recognitionSessionId) {
@@ -198,7 +344,7 @@ function alreadyPersisted(result, recognitionSessionId) {
     && result?.csm_rows?.resolution?.recognition_session_id === recognitionSessionId;
 }
 
-function legacyPayloadRecoveryError(status, cause = null) {
+function historicalPayloadRecoveryError(status, cause = null) {
   const normalized = String(status || "unavailable").toLowerCase();
   return Object.assign(new Error(`csm_legacy_payload_${normalized}`), {
     code: `csm_legacy_payload_${normalized}`,
@@ -209,13 +355,60 @@ function legacyPayloadRecoveryError(status, cause = null) {
   });
 }
 
-export function publicPersistedResult(result) {
+function historicalExecutionContractSha256(result) {
+  const executionContract = result?.execution_contract ?? null;
+  const rawSha256 = result?.execution_contract_sha256 ?? null;
+  if (executionContract === null && rawSha256 === null) return null;
+  if (executionContract === null || rawSha256 === null) {
+    throw persistenceCheckpointError("historical_execution_receipt_incomplete");
+  }
+  const executionContractSha256 = optionalSha256(
+    rawSha256,
+    "historical_execution_contract_sha256"
+  );
+  try {
+    validateCsmModelExecutionContract(executionContract, {
+      expectedSha256: executionContractSha256
+    });
+  } catch {
+    throw persistenceCheckpointError("historical_execution_receipt_invalid");
+  }
+  return executionContractSha256;
+}
+
+export function publicPersistedResult(result, executionOrigin = null) {
   const {
-    csm_persistence_checkpoint: _checkpoint,
+    csm_persistence_checkpoint: checkpoint,
+    provider_authority_receipt: providerAuthorityReceipt,
     accuracy_loss_ledger: _accuracyLossLedger,
     ...publicResult
   } = result || {};
-  return publicResult;
+  let freshAuthorityReceipt = null;
+  if (executionOrigin === "FRESH_CURRENT") {
+    const authorityOperationKey = String(checkpoint?.operation_key || "").trim();
+    const authorityAttempt = Number(result?.provider_attempt_number);
+    if (!authorityOperationKey || !Number.isInteger(authorityAttempt) || authorityAttempt < 1) {
+      throw persistenceCheckpointError("provider_authority_receipt_binding_missing");
+    }
+    try {
+      freshAuthorityReceipt = validateCsmProviderAuthorityReceipt(providerAuthorityReceipt, {
+        operationKey: authorityOperationKey,
+        attempt: authorityAttempt
+      });
+    } catch {
+      throw persistenceCheckpointError("provider_authority_receipt_invalid");
+    }
+  }
+  // This is request provenance, not part of the provider execution contract.
+  // In particular, a later replay must not inherit the original request's
+  // FRESH_CURRENT label or authority claim from its durable checkpoint.
+  return {
+    ...publicResult,
+    ...(freshAuthorityReceipt ? {
+      provider_authority_receipt: freshAuthorityReceipt
+    } : {}),
+    ...(executionOrigin === null ? {} : { execution_origin: executionOrigin })
+  };
 }
 
 export function deterministicProviderClientRequestId({ operationKey, payloadHash, attempt } = {}) {
@@ -242,32 +435,14 @@ export function createResponsesProviderCaller({
   attempt,
   clientRequestId = deterministicProviderClientRequestId({ operationKey, payloadHash, attempt })
 } = {}) {
-  const apiKey = String(env.OPENAI_API_KEY || "").trim();
-  if (!apiKey) throw new Error("openai_api_key_unconfigured");
-  const operation = requiredText(operationKey, "operation_key");
-  const payload = requiredText(payloadHash, "payload_hash").toLowerCase();
-  const attemptNumber = Number(attempt);
-  if (!/^[0-9a-f]{64}$/.test(payload)) throw new TypeError("invalid_payload_hash");
-  if (!Number.isInteger(attemptNumber) || attemptNumber < 1) throw new TypeError("invalid_attempt");
-  const opaqueOperation = createHash("sha256").update(operation).digest("hex");
-  return (request) => fetchImpl("https://api.openai.com/v1/responses", {
-    method: "POST",
-    signal: AbortSignal.timeout(CSM_DIRECT_PROVIDER_TIMEOUT_MS),
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-      "x-client-request-id": requiredText(clientRequestId, "client_request_id")
-    },
-    body: JSON.stringify({
-      ...request,
-      store: true,
-      metadata: {
-        ...(request?.metadata && typeof request.metadata === "object" ? request.metadata : {}),
-        lynca_operation_sha256: opaqueOperation,
-        lynca_payload_sha256: payload,
-        lynca_attempt: String(attemptNumber)
-      }
-    })
+  return activeProviderAdapter.createCaller({
+    env,
+    fetchImpl,
+    operationKey,
+    payloadHash,
+    attempt,
+    clientRequestId,
+    timeoutMs: CSM_DIRECT_PROVIDER_TIMEOUT_MS
   });
 }
 
@@ -334,11 +509,13 @@ export async function checkCachedCsmPersistenceReadiness({
 
 export async function runDirectCsmAsset({
   tenantId, userId, assetId, intentId, imageDetail = "high", manualRetry = false,
+  resumeOnly = false,
   clientTiming = null, serverPrologueStages = null,
   env = process.env, fetchImpl = globalThis.fetch, callProvider = null,
   dependencies = {}
 } = {}) {
-  const routeStartedAt = Date.now();
+  const now = typeof dependencies.now === "function" ? dependencies.now : Date.now;
+  const routeStartedAt = now();
   const tenant = requiredText(tenantId, "tenant_id");
   const user = requiredText(userId, "user_id");
   const asset = requiredText(assetId, "asset_id");
@@ -350,17 +527,78 @@ export async function runDirectCsmAsset({
   const createSession = dependencies.createSession || createCsmRecognitionSession;
   const preparePath = dependencies.preparePath || prepareCanonicalListingPath;
   const persistPath = dependencies.persistPath || persistPreparedCanonicalListingPath;
+  const synchronizeBeforePersistence = dependencies.synchronizeBeforePersistence || null;
+  const chooseRecognitionImages = dependencies.chooseRecognitionImages
+    || (({ canonical: input }) => selectRecognitionImages(input.images, { slots: 2 }));
   const createAuthority = dependencies.createAuthority || createCsmSupabaseProviderAdmissionAuthority;
   const createDispatcher = dependencies.createDispatcher || createLunaDirectDispatcher;
+  const operationScope = String(dependencies.operationScope || "").trim();
+  if (operationScope && operationScope !== "derived_checkpoint") {
+    throw Object.assign(new Error("csm_operation_scope_invalid"), { statusCode: 400, retryable: false });
+  }
+  const transportProfile = resolveCsmRecognitionTransportReceipt(
+    dependencies.transportProfile || CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+  );
+  if (operationScope === "derived_checkpoint") {
+    if (transportProfile.id !== CSM_STAGED_TRANSPORT_PROFILE.id
+        || String(dependencies.laneVersion || "").trim() !== transportProfile.lane_version) {
+      throw Object.assign(new Error("staged_transport_receipt_mismatch"), {
+        statusCode: 400,
+        retryable: false
+      });
+    }
+  } else if (transportProfile.id === CSM_STAGED_TRANSPORT_PROFILE.id) {
+    throw Object.assign(new Error("staged_transport_scope_missing"), {
+      statusCode: 400,
+      retryable: false
+    });
+  }
+  const markStagedResumeRecovery = (error) => {
+    if (operationScope === "derived_checkpoint" && error && typeof error === "object") {
+      error.staged_resume_checkpoint_available = true;
+      error.recovery_action = "STAGED_RESUME_ONLY";
+    }
+    return error;
+  };
+  const markStagedLookupRecovery = (error) => {
+    if (operationScope === "derived_checkpoint" && error && typeof error === "object") {
+      error.recovery_action = "STAGED_RESUME_ONLY";
+    }
+    return error;
+  };
+  const markStagedFreshRecovery = (error) => {
+    if (operationScope === "derived_checkpoint" && error && typeof error === "object") {
+      error.provider_attempt_started = false;
+      error.recovery_action = "STAGED_FRESH_RETRY";
+    }
+    return error;
+  };
+  if (resumeOnly === true && manualRetry === true) {
+    throw Object.assign(new Error("csm_resume_mode_conflict"), {
+      statusCode: 400,
+      retryable: false,
+      provider_attempt_started: false
+    });
+  }
 
   // Fail before the paid provider boundary unless both the replay store and
   // the durable provider authority/pacer are live. A usable title without its
   // CSM lineage or globally paced claim is not an acceptable production asset.
-  const readinessStartedAt = Date.now();
-  const readiness = checkReadiness
-    ? await checkReadiness({ env, fetchImpl })
-    : await checkCachedCsmPersistenceReadiness({ env, fetchImpl });
-  if (!readiness.ready) throw Object.assign(new Error(`csm_persistence_not_ready:${readiness.reason}`), { statusCode: 503 });
+  const readinessStartedAt = now();
+  let readiness;
+  try {
+    readiness = checkReadiness
+      ? await checkReadiness({ env, fetchImpl })
+      : await checkCachedCsmPersistenceReadiness({ env, fetchImpl });
+  } catch (error) {
+    throw markStagedFreshRecovery(error);
+  }
+  if (!readiness.ready) {
+    throw markStagedFreshRecovery(Object.assign(
+      new Error(`csm_persistence_not_ready:${readiness.reason}`),
+      { statusCode: 503, retryable: true }
+    ));
+  }
   // The client's own stages come first, so the record covers the whole journey
   // rather than only the part that happens after the request arrives. Without
   // them the six production cards run on 2026-08-06 reported 6.1-9.6s of server
@@ -370,12 +608,12 @@ export async function runDirectCsmAsset({
   const latencyStages = {
     ...safeClientTiming(clientTiming),
     ...safeLatencyStages(serverPrologueStages),
-    preflight_ms: Date.now() - readinessStartedAt
+    preflight_ms: now() - readinessStartedAt
   };
 
-  const imageManifestStartedAt = Date.now();
+  const imageManifestStartedAt = now();
   const canonical = await readImages({ tenantId: tenant, assetId: asset, env, fetchImpl });
-  latencyStages.image_manifest_ms = Date.now() - imageManifestStartedAt;
+  latencyStages.image_manifest_ms = now() - imageManifestStartedAt;
   const originals = canonical.images.filter((image) => image.derived !== true).slice(0, 2);
   if (!originals.length) {
     throw Object.assign(new Error("canonical_original_image_missing"), { statusCode: 409 });
@@ -385,12 +623,43 @@ export async function runDirectCsmAsset({
   // record and are still what must exist -- the check above is unchanged and
   // deliberately still asks for them.
   //
-  // The operation key and payload hash stay keyed on the ORIGINALS' bytes. The
-  // derived image is a function of its original, so keying on it would make a
-  // retry that fell back to the original look like a different task and buy a
-  // second model call for the same card.
-  const recognition = selectRecognitionImages(canonical.images, { slots: 2 });
+  // The ordinary user-operation key stays in its historical tenant/intent/asset
+  // namespace. Its execution-bound payload hash binds the ordered recognition
+  // fingerprints below, so a transport/profile change conflicts before provider
+  // use without manufacturing a second logical operation for the same card.
+  const recognition = chooseRecognitionImages({ canonical, originals });
+  if (!Array.isArray(recognition?.images) || recognition.images.length !== originals.length) {
+    throw Object.assign(new Error("recognition_image_selection_invalid"), {
+      statusCode: 409,
+      retryable: false
+    });
+  }
   const recognitionImages = recognition.images.length ? recognition.images : originals;
+  const recognitionReads = recognition.read.map((entry) => String(entry?.read || "").trim());
+  if (transportProfile.id === CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE.id
+      && recognitionReads.some((read) => read !== "original")) {
+    throw Object.assign(new Error("original_inline_transport_source_mismatch"), {
+      statusCode: 409,
+      retryable: false
+    });
+  }
+  if (transportProfile.id === CSM_STAGED_TRANSPORT_PROFILE.id
+      && recognitionReads.some((read) => read !== "readability_derived")) {
+    throw Object.assign(new Error("staged_transport_source_mismatch"), {
+      statusCode: 409,
+      retryable: false
+    });
+  }
+  const executionContractSha256 = buildCsmModelExecutionContractSha256({
+    provider: CSM_THIN_RUNTIME_CONTRACT.provider,
+    model: MODEL,
+    requestedEffort: EFFORT,
+    imageDetail: detail,
+    maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
+    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+    transportProfile,
+    imageUrls: csmExecutionContractImageUrls(recognitionImages.length)
+  });
 
   const task = {
     tenant_id: tenant,
@@ -404,7 +673,20 @@ export async function runDirectCsmAsset({
     image_fingerprints: originals.map((image) => `sha256:${requiredText(
       image.content_sha256 || image.contentSha256,
       "image_content_sha256"
-    ).toLowerCase()}`)
+    ).toLowerCase()}`),
+    recognition_fingerprints: recognitionImages.map((image) => `sha256:${requiredText(
+      image.content_sha256 || image.contentSha256,
+      "recognition_image_content_sha256"
+    ).toLowerCase()}`),
+    execution_contract_sha256: executionContractSha256,
+    ...(operationScope ? {
+      operation_scope: operationScope,
+      lane_version: requiredText(dependencies.laneVersion, "lane_version"),
+      original_manifest_sha256: requiredText(
+        dependencies.originalManifestSha256,
+        "original_manifest_sha256"
+      ).toLowerCase()
+    } : {})
   };
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
@@ -417,7 +699,11 @@ export async function runDirectCsmAsset({
   });
   let sessionInitializedThisRequest = false;
 
-  const initializeRecognitionSession = async (sessionId) => {
+  const initializeRecognitionSession = async (sessionId, {
+    recognitionInput = recognition.read,
+    provider = MODEL,
+    reuseExistingSnapshot = false
+  } = {}) => {
     const created = await createSession({
       sessionId,
       tenantId: tenant,
@@ -431,11 +717,12 @@ export async function runDirectCsmAsset({
         image_generation_id: canonical.image_generation_id,
         image_set_sha256: canonical.image_set_sha256,
         expected_original_count: canonical.expected_original_count,
-        recognition_input: recognition.read,
-        provider: MODEL,
+        recognition_input: recognitionInput,
+        provider,
         mode: "csm_thin_direct"
       },
       routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
+      reuseExistingSnapshot,
       env,
       fetchImpl
     });
@@ -450,43 +737,49 @@ export async function runDirectCsmAsset({
 
   let durableResult = null;
   let durablePayloadHash = payloadHash;
-  let legacyPayloadRecovered = false;
+  let durableExecutionContractSha256 = task.execution_contract_sha256;
+  let historicalPayloadRecovered = false;
+  let freshProviderAttemptStarted = false;
+  let currentRequestCheckpoint = null;
 
-  const recoverLegacyPayloadConflict = async (conflictError) => {
+  const recoverHistoricalPayloadConflict = async (conflictError) => {
     if (conflictError?.code !== "operation_payload_conflict") throw conflictError;
-    let legacyPayloadHash;
-    try {
-      legacyPayloadHash = buildLegacyLowLunaDirectPayloadHash(task);
-    } catch {
-      // Future efforts are intentionally ineligible and keep the original
-      // authority conflict classification.
-      throw conflictError;
+    if (typeof authority.lookupOperationResultByKey !== "function") {
+      throw historicalPayloadRecoveryError("unavailable");
     }
-    // This lookup is provider-incapable and exists only on the exact conflict
-    // returned for the current hash. The clean path pays no extra Supabase RTT.
-    let legacy;
+    let historical;
     try {
-      legacy = await authority.lookupOperationResult({
+      historical = await authority.lookupOperationResultByKey({
         tenantId: tenant,
-        operationKey,
-        payloadHash: legacyPayloadHash
+        operationKey
       });
     } catch (error) {
-      throw legacyPayloadRecoveryError("unavailable", error);
+      throw historicalPayloadRecoveryError("unavailable", error);
     }
-    if (legacy.status === "found") {
-      return { result: legacy.result, payloadHash: legacyPayloadHash };
+    if (historical.status === "found") {
+      const storedPayloadHash = optionalSha256(
+        historical.payloadHash,
+        "historical_payload_hash"
+      );
+      if (!storedPayloadHash) {
+        throw persistenceCheckpointError("historical_payload_hash_missing");
+      }
+      if (storedPayloadHash === payloadHash) {
+        throw persistenceCheckpointError("historical_payload_hash_not_conflicting");
+      }
+      return {
+        result: historical.result,
+        payloadHash: storedPayloadHash,
+        executionContractSha256: historicalExecutionContractSha256(historical.result)
+      };
     }
-    if (["pending", "ambiguous"].includes(legacy.status)) {
-      throw legacyPayloadRecoveryError(legacy.status);
-    }
-    // Historical FAILED/CANCELLED states contain no paid success checkpoint.
-    // Recovery remains provider-incapable; an operator may inspect/manual
-    // recover them, but this route will not manufacture another Luna attempt.
-    throw legacyPayloadRecoveryError(legacy.status || "not_found");
+    // Every matched non-success state is authoritative. In particular FAILED,
+    // PENDING and AMBIGUOUS are not a licence to create a fresh execution under
+    // today's profile. This branch has no enqueue/provider capability.
+    throw historicalPayloadRecoveryError(historical.status || "not_found");
   };
 
-  if (manualRetry === true) {
+  if (resumeOnly === true) {
     let durable;
     try {
       durable = await authority.lookupOperationResult({
@@ -495,10 +788,46 @@ export async function runDirectCsmAsset({
         payloadHash
       });
     } catch (error) {
-      const recovered = await recoverLegacyPayloadConflict(error);
+      try {
+        const recovered = await recoverHistoricalPayloadConflict(error);
+        durable = { status: "found", result: recovered.result };
+        durablePayloadHash = recovered.payloadHash;
+        durableExecutionContractSha256 = recovered.executionContractSha256;
+        historicalPayloadRecovered = true;
+      } catch (recoveryError) {
+        throw markStagedLookupRecovery(recoveryError);
+      }
+    }
+    if (durable.status === "found") {
+      durableResult = durable.result;
+    } else {
+      const code = `csm_resume_${durable.status || "not_found"}`;
+      const stagedNotFound = operationScope === "derived_checkpoint"
+        && (durable.status || "not_found") === "not_found";
+      throw Object.assign(new Error(code), {
+        code,
+        statusCode: 409,
+        retryable: stagedNotFound || ["pending", "ambiguous"].includes(durable.status),
+        provider_attempt_started: false,
+        ...(operationScope === "derived_checkpoint" ? {
+          recovery_action: stagedNotFound ? "STAGED_FRESH_RETRY" : "STAGED_RESUME_ONLY"
+        } : {})
+      });
+    }
+  } else if (manualRetry === true) {
+    let durable;
+    try {
+      durable = await authority.lookupOperationResult({
+        tenantId: tenant,
+        operationKey,
+        payloadHash
+      });
+    } catch (error) {
+      const recovered = await recoverHistoricalPayloadConflict(error);
       durable = { status: "found", result: recovered.result };
       durablePayloadHash = recovered.payloadHash;
-      legacyPayloadRecovered = true;
+      durableExecutionContractSha256 = recovered.executionContractSha256;
+      historicalPayloadRecovered = true;
     }
     if (durable.status === "found") durableResult = durable.result;
     if (durable.status === "failed") {
@@ -531,7 +860,7 @@ export async function runDirectCsmAsset({
     try {
       const [signedUrls, session] = await Promise.all([
         (async () => {
-          const signedUrlStartedAt = Date.now();
+          const signedUrlStartedAt = now();
           const urls = await Promise.all(recognitionImages.map((image) => signImage({
             objectPath: image.objectPath,
             bucket: image.bucket,
@@ -539,13 +868,13 @@ export async function runDirectCsmAsset({
             env,
             fetchImpl
           })));
-          attemptStages.signed_url_ms = Date.now() - signedUrlStartedAt;
+          attemptStages.signed_url_ms = now() - signedUrlStartedAt;
           return urls;
         })(),
         (async () => {
-          const recognitionSessionStartedAt = Date.now();
+          const recognitionSessionStartedAt = now();
           const created = await initializeRecognitionSession(sessionId);
-          attemptStages.recognition_session_ms = Date.now() - recognitionSessionStartedAt;
+          attemptStages.recognition_session_ms = now() - recognitionSessionStartedAt;
           return created;
         })()
       ]);
@@ -564,31 +893,43 @@ export async function runDirectCsmAsset({
       throw error;
     }
 
-    const providerStartedAt = Date.now();
+    const providerStartedAt = now();
     let prepared;
     try {
+      // Constructing the caller can still fail before a paid boundary (for
+      // example an absent key).  Mark fresh only immediately before invoking
+      // the already-constructed caller, so a compile/setup failure can never
+      // be reported as a current provider execution.
+      let providerCaller = callProvider;
       prepared = await preparePath({
         tenantId: tenant,
         recognitionSessionId: sessionId,
         imageUrls,
         imageDetail: detail,
+        provider: CSM_THIN_RUNTIME_CONTRACT.provider,
         model: MODEL,
         effort: EFFORT,
+        maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
+        transportProfile,
         promptVersion: CSM_DIRECT_PROMPT_VERSION,
         providerClientRequestId,
-        callProvider: callProvider || ((request) => createResponsesProviderCaller({
-          env,
-          fetchImpl,
-          operationKey: dispatched.operation_key,
-          payloadHash: dispatched.payload_hash,
-          attempt: dispatched.attempt,
-          clientRequestId: providerClientRequestId
-        })(request)),
+        callProvider: async (request) => {
+          providerCaller ||= createResponsesProviderCaller({
+            env,
+            fetchImpl,
+            operationKey: dispatched.operation_key,
+            payloadHash: dispatched.payload_hash,
+            attempt: dispatched.attempt,
+            clientRequestId: providerClientRequestId
+          });
+          freshProviderAttemptStarted = true;
+          return providerCaller(request);
+        },
         env,
         fetchImpl
       });
     } catch (error) {
-      attemptStages.provider_prepare_ms = Date.now() - providerStartedAt;
+      attemptStages.provider_prepare_ms = now() - providerStartedAt;
       attemptStages.provider_ms = Number.isFinite(Number(error?.provider_ms))
         ? Number(error.provider_ms)
         : attemptStages.provider_prepare_ms;
@@ -596,11 +937,11 @@ export async function runDirectCsmAsset({
       error.recognition_session_id = sessionId;
       throw error;
     }
-    attemptStages.provider_prepare_ms = Date.now() - providerStartedAt;
+    attemptStages.provider_prepare_ms = now() - providerStartedAt;
     if (Number.isFinite(Number(prepared?.latency_ms))) {
       attemptStages.provider_ms = Number(prepared.latency_ms);
     }
-    return buildCsmPersistenceCheckpoint({
+    const checkpoint = buildCsmPersistenceCheckpoint({
       prepared: {
         ...prepared,
         provider_attempt_number: Number(dispatched.attempt),
@@ -611,8 +952,13 @@ export async function runDirectCsmAsset({
       operationKey: dispatched.operation_key,
       payloadHash: dispatched.payload_hash,
       recognitionSessionId: sessionId,
-      recognitionSessionDeferred
+      recognitionSessionDeferred,
+      recognitionInput: recognition.read,
+      executionContractSha256: dispatched.execution_contract_sha256 || null,
+      operationScope
     });
+    currentRequestCheckpoint = checkpoint;
+    return checkpoint;
   };
 
   const dispatcher = createDispatcher({
@@ -620,10 +966,12 @@ export async function runDirectCsmAsset({
     providerAdmission: authority,
     lookupOperationResult: authority.lookupOperationResult,
     csmDirectConcurrency: CSM_DIRECT_LOCAL_FALLBACK_CONCURRENCY,
-    maxAttempts: CSM_DIRECT_MAX_ATTEMPTS
+    // The staged lane buys latency with scheduling, never with extra paid
+    // attempts. Its receipt can recover only an already-settled checkpoint.
+    maxAttempts: operationScope === "derived_checkpoint" ? 1 : CSM_DIRECT_MAX_ATTEMPTS
   });
   const sessionId = deterministicCsmSessionId(operationKey);
-  const dispatchStartedAt = Date.now();
+  const dispatchStartedAt = now();
   let settled = durableResult;
   if (!settled) {
     try {
@@ -633,60 +981,142 @@ export async function runDirectCsmAsset({
           : dispatcher.enqueue(task)
       );
     } catch (error) {
-      const recovered = await recoverLegacyPayloadConflict(error);
-      settled = recovered.result;
-      durablePayloadHash = recovered.payloadHash;
-      legacyPayloadRecovered = true;
+      if (operationScope === "derived_checkpoint") {
+        // Once durable admission has been touched, an HTTP/claim/provider
+        // failure cannot prove absence. Recovery first performs the exact
+        // provider-incapable lookup; only its authoritative `not_found` may
+        // later issue a fresh staged receipt.
+        try {
+          const recovered = await recoverHistoricalPayloadConflict(error);
+          settled = recovered.result;
+          durablePayloadHash = recovered.payloadHash;
+          durableExecutionContractSha256 = recovered.executionContractSha256;
+          historicalPayloadRecovered = true;
+        } catch (recoveryError) {
+          throw markStagedLookupRecovery(recoveryError);
+        }
+      } else {
+        const recovered = await recoverHistoricalPayloadConflict(error);
+        settled = recovered.result;
+        durablePayloadHash = recovered.payloadHash;
+        durableExecutionContractSha256 = recovered.executionContractSha256;
+        historicalPayloadRecovered = true;
+      }
     }
   }
-  if (!legacyPayloadRecovered && alreadyPersisted(settled, sessionId)) {
-    return publicPersistedResult(settled);
+  // Production authority appends its own latency stages with a top-level
+  // shallow copy after settlement.  The nested checkpoint identity survives
+  // that copy, while a recovered/JSON-decoded receipt does not.
+  const settledCurrentRequestCheckpoint = Boolean(
+    currentRequestCheckpoint?.csm_persistence_checkpoint
+  ) && settled?.csm_persistence_checkpoint
+    === currentRequestCheckpoint.csm_persistence_checkpoint;
+  const executionOrigin = historicalPayloadRecovered
+    ? "HISTORICAL_KEY_RECOVERY"
+    : freshProviderAttemptStarted && settledCurrentRequestCheckpoint
+      ? "FRESH_CURRENT"
+      : freshProviderAttemptStarted
+        ? "AMBIGUOUS_PROVIDER_RECOVERY"
+      : "EXACT_REPLAY";
+  if (!historicalPayloadRecovered && alreadyPersisted(settled, sessionId)) {
+    return publicPersistedResult(settled, executionOrigin);
   }
   const preparedWithDispatchStages = {
     ...settled,
     latency_stages_ms: {
       ...(settled.latency_stages_ms || {}),
-      authority_dispatch_ms: Date.now() - dispatchStartedAt
+      // A resume request arrives after the same original upload has settled.
+      // Merge its now-final client duration into the durable provider receipt
+      // without replacing the first request's provider/authority stages.
+      ...safeClientTiming(clientTiming),
+      authority_dispatch_ms: now() - dispatchStartedAt
     }
   };
   let prepared = validateCsmPersistenceCheckpoint(preparedWithDispatchStages, {
     tenantId: tenant,
     operationKey,
     payloadHash: durablePayloadHash,
-    recognitionSessionId: sessionId
+    recognitionSessionId: sessionId,
+    executionContractSha256: durableExecutionContractSha256,
+    operationScope
   });
-  if ((prepared.csm_persistence_checkpoint.recognition_session_deferred === true
-        || dependencies.deferRecognitionSessionUntilPersistence === true)
-      && !sessionInitializedThisRequest) {
-    const recognitionSessionReplayStartedAt = Date.now();
-    await initializeRecognitionSession(sessionId);
+  if (typeof synchronizeBeforePersistence === "function") {
+    const originalSyncStartedAt = now();
+    try {
+      await synchronizeBeforePersistence({
+        tenantId: tenant,
+        recognitionSessionId: sessionId,
+        prepared,
+        env,
+        fetchImpl
+      });
+    } catch (error) {
+      error.latency_stages_ms = {
+        ...(prepared.latency_stages_ms || {}),
+        staged_original_sync_ms: now() - originalSyncStartedAt
+      };
+      throw markStagedResumeRecovery(error);
+    }
     prepared = {
       ...prepared,
       latency_stages_ms: {
         ...(prepared.latency_stages_ms || {}),
-        recognition_session_replay_ms: Date.now() - recognitionSessionReplayStartedAt
+        staged_original_sync_ms: now() - originalSyncStartedAt
       }
     };
   }
-  const persistenceStartedAt = Date.now();
-  const persisted = await persistPath({
-    tenantId: tenant,
-    recognitionSessionId: sessionId,
-    prepared,
-    imageDetail: detail,
-    model: MODEL,
-    effort: EFFORT,
-    promptVersion: CSM_DIRECT_PROMPT_VERSION,
-    env,
-    fetchImpl
-  });
+  if ((prepared.csm_persistence_checkpoint.recognition_session_deferred === true
+        || dependencies.deferRecognitionSessionUntilPersistence === true)
+      && !sessionInitializedThisRequest) {
+    const recognitionSessionReplayStartedAt = now();
+    try {
+      await initializeRecognitionSession(sessionId, {
+        recognitionInput: prepared.csm_persistence_checkpoint.recognition_input || recognition.read,
+        provider: prepared.model || MODEL,
+        // A durable paid checkpoint must resume against the session identity
+        // first persisted for this deterministic ID. Later support-only crops
+        // may expand the asset's current canonical projection, but cannot
+        // rewrite what the paid operation was bound to.
+        reuseExistingSnapshot: true
+      });
+    } catch (error) {
+      throw markStagedResumeRecovery(error);
+    }
+    prepared = {
+      ...prepared,
+      latency_stages_ms: {
+        ...(prepared.latency_stages_ms || {}),
+        recognition_session_replay_ms: now() - recognitionSessionReplayStartedAt
+      }
+    };
+  }
+  const persistenceStartedAt = now();
+  let persisted;
+  try {
+    persisted = await persistPath({
+      tenantId: tenant,
+      recognitionSessionId: sessionId,
+      prepared,
+      imageDetail: prepared.image_detail || detail,
+      provider: prepared.provider || CSM_THIN_RUNTIME_CONTRACT.provider,
+      model: prepared.model || MODEL,
+      effort: prepared.requested_effort || EFFORT,
+      promptVersion: Object.prototype.hasOwnProperty.call(prepared, "prompt_version")
+        ? prepared.prompt_version
+        : CSM_DIRECT_PROMPT_VERSION,
+      env,
+      fetchImpl
+    });
+  } catch (error) {
+    throw markStagedResumeRecovery(error);
+  }
   const persistedWithLatency = persisted && typeof persisted === "object"
     ? {
         ...persisted,
         latency_stages_ms: {
           ...(persisted.latency_stages_ms || prepared.latency_stages_ms || {}),
-          csm_persistence_ms: Date.now() - persistenceStartedAt,
-          request_total_ms: Date.now() - routeStartedAt
+          csm_persistence_ms: now() - persistenceStartedAt,
+          request_total_ms: now() - routeStartedAt
         }
       }
     : persisted;
@@ -696,15 +1126,15 @@ export async function runDirectCsmAsset({
     const code = persistedWithLatency?.csm_persistence?.ok === true
       ? "csm_persistence_incomplete"
       : String(persistedWithLatency?.csm_persistence?.code || "csm_persistence_failed");
-    throw Object.assign(new Error(code), {
+    throw markStagedResumeRecovery(Object.assign(new Error(code), {
       code,
       statusCode: persistedWithLatency?.csm_persistence?.ok === true
         ? 503
         : Number(persistedWithLatency?.csm_persistence?.statusCode || 503),
       retryable: Number(persistedWithLatency?.csm_persistence?.statusCode || 503) >= 500
-    });
+    }));
   }
-  return publicPersistedResult(persistedWithLatency);
+  return publicPersistedResult(persistedWithLatency, executionOrigin);
 }
 
 function responseStatus(error) {
@@ -758,8 +1188,6 @@ export function buildCsmDirectFailureResponse(error) {
     body: {
       ok: false,
       route: "CSM_THIN_DIRECT",
-      cloud_run_calls: 0,
-      vector_calls: 0,
       code: String(error?.message || "csm_thin_path_failed").split(":")[0],
       error_type: providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
       retryable,
@@ -810,7 +1238,9 @@ export default async function handler(req, res) {
       userId: context.userId,
       assetId: payload.asset_id || payload.assetId,
       intentId: payload.intent_id || payload.intentId,
-      imageDetail: payload.image_detail || "high",
+      // Production owns model knobs. Client payloads may carry legacy detail
+      // telemetry, but cannot silently create a second execution profile.
+      imageDetail: CSM_THIN_RUNTIME_CONTRACT.imageDetail,
       manualRetry: payload.manual_retry === true,
       clientTiming: payload.client_timing || payload.clientTiming || null,
       // Same reason as clientTiming: everything below is assembled AFTER the
@@ -826,8 +1256,6 @@ export default async function handler(req, res) {
     return sendJson(res, 200, {
       ok: true,
       route: "CSM_THIN_DIRECT",
-      cloud_run_calls: 0,
-      vector_calls: 0,
       recognition_session_id: result.csm_rows.resolution.recognition_session_id,
       trace_status: "PERSISTED",
       ...result,

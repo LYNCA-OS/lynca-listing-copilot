@@ -3,10 +3,84 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT } from "../scripts/build-large-internal-writer-fixture.mjs";
+import {
+  buildCsmModelExecutionContract,
+  buildCsmModelExecutionContractSha256,
+  csmExecutionContractImageUrls,
+  CSM_ACTIVE_MODEL_PROFILE,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+  CSM_RECOGNITION_TRANSPORT_PROFILES,
+  CSM_STAGED_TRANSPORT_PROFILE,
+  sha256CsmRecognitionTransportReceipt,
+  validateCsmModelExecutionContract
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
+import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
+import {
+  validateCsmProviderAuthorityReceipt
+} from "../lib/listing/thin/csm-provider-admission-authority.mjs";
+import {
+  CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+  computeCsmOwnerExecutionReceiptSha256,
+  sealCsmOwnerExecutionReceipt
+} from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
+
+const expectedExecutionContractByTransportLaneAndImageCount = Object.freeze(Object.fromEntries(
+  CSM_RECOGNITION_TRANSPORT_PROFILES.map((transportProfile) => [
+    transportProfile.lane_version,
+    Object.freeze(Object.fromEntries([1, 2].map((count) => [String(count),
+      buildCsmModelExecutionContract({
+        transportProfile,
+        imageUrls: csmExecutionContractImageUrls(count)
+      })
+    ])))
+  ])
+));
+const expectedExecutionContractSha256ByTransportLaneAndImageCount = Object.freeze(
+  Object.fromEntries(CSM_RECOGNITION_TRANSPORT_PROFILES.map((transportProfile) => [
+    transportProfile.lane_version,
+    Object.freeze(Object.fromEntries([1, 2].map((count) => [String(count),
+      buildCsmModelExecutionContractSha256({
+        transportProfile,
+        imageUrls: csmExecutionContractImageUrls(count)
+      })
+    ])))
+  ]))
+);
+const expectedProviderAdapterContract = resolveCsmProviderAdapter(
+  CSM_ACTIVE_MODEL_PROFILE.provider
+).contract;
+const expectedProviderAdapterVersion = expectedProviderAdapterContract.id;
+const expectedMaxOutputTokens = 8192;
+const expectedEstimatedTokensPerAttempt = 6_500;
+const serverStageRoundingToleranceMs = 4;
+
 const artifactDir = path.resolve("artifacts/production-writer-journey");
 const evidencePath = path.join(artifactDir, "evidence.json");
 const recognitionPaths = new Set(["/api/csm-listing-title", "/api/csm-listing-title-ingest"]);
-const productionOrigin = "https://listing.lyncafei.team";
+const canonicalProductionOrigin = "https://listing.lyncafei.team";
+const productionOrigin = (() => {
+  const raw = String(process.env.WRITER_JOURNEY_BASE_URL || canonicalProductionOrigin).trim();
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error("WRITER_JOURNEY_BASE_URL invalid");
+  }
+  const candidate = /^[a-z0-9-]+\.vercel\.app$/.test(url.hostname)
+    && Boolean(String(process.env.WRITER_JOURNEY_INITIAL_STORAGE_STATE || "").trim());
+  if (url.protocol !== "https:" || url.origin !== raw || url.pathname !== "/"
+    || url.search || url.hash || url.username || url.password
+    || (url.origin !== canonicalProductionOrigin && !candidate)) {
+    throw new Error("WRITER_JOURNEY_BASE_URL invalid");
+  }
+  return url.origin;
+})();
+const stagedRecognitionPath = "/api/csm-listing-title-ingest";
+const uploadRelayPath = "/api/listing-image-upload-relay";
+const stagedRecognitionRole = "readability_derived";
+const originalRoles = Object.freeze(["image_1_original", "image_2_original"]);
 const verifierErrorCodes = Object.freeze({
   GENERIC: "WRITER_JOURNEY_FAILED",
   TITLE_NOT_READY: "TITLE_NOT_READY",
@@ -20,7 +94,16 @@ const verifierErrorCodes = Object.freeze({
   FEEDBACK_SESSION_MISMATCH: "FEEDBACK_SESSION_MISMATCH",
   FEEDBACK_ACTION_MISMATCH: "FEEDBACK_ACTION_MISMATCH",
   FEEDBACK_REQUEST_TITLE_MISMATCH: "FEEDBACK_REQUEST_TITLE_MISMATCH",
-  FEEDBACK_RESPONSE_TITLE_MISMATCH: "FEEDBACK_RESPONSE_TITLE_MISMATCH"
+  FEEDBACK_RESPONSE_TITLE_MISMATCH: "FEEDBACK_RESPONSE_TITLE_MISMATCH",
+  RUNTIME_CONTRACT_MISMATCH: "RUNTIME_CONTRACT_MISMATCH",
+  LIVE_EXECUTION_RECEIPT_MISMATCH: "LIVE_EXECUTION_RECEIPT_MISMATCH",
+  ROUTE_COVERAGE_MISMATCH: "ROUTE_COVERAGE_MISMATCH",
+  LARGE_FIXTURE_INVALID: "LARGE_FIXTURE_INVALID",
+  LARGE_OWNER_REQUIRED: "LARGE_OWNER_REQUIRED",
+  LARGE_PRESPEND_GATE_FAILED: "LARGE_PRESPEND_GATE_FAILED",
+  LARGE_RELAY_CONTRACT_MISMATCH: "LARGE_RELAY_CONTRACT_MISMATCH",
+  LARGE_RESPONSE_CONTRACT_MISMATCH: "LARGE_RESPONSE_CONTRACT_MISMATCH",
+  LARGE_FEEDBACK_POLICY_MISMATCH: "LARGE_FEEDBACK_POLICY_MISMATCH"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
 
@@ -40,6 +123,554 @@ function sanitizedFailureCode(error) {
 
 function titleSha256(value) {
   return createHash("sha256").update(String(value ?? ""), "utf8").digest("hex");
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableJson(value[key])}`
+    )).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function healthRecognitionTransportContractMatches(runtime) {
+  return CSM_RECOGNITION_TRANSPORT_PROFILES.every((profile) => {
+    const lane = profile.lane_version;
+    return stableJson(runtime?.recognition_transport_profiles?.[lane]) === stableJson({
+      ...profile,
+      sha256: sha256CsmRecognitionTransportReceipt(profile)
+    })
+      && runtime?.execution_contract_sha256_by_transport_lane_and_image_count?.[lane]?.["1"]
+        === expectedExecutionContractSha256ByTransportLaneAndImageCount[lane]["1"]
+      && runtime?.execution_contract_sha256_by_transport_lane_and_image_count?.[lane]?.["2"]
+        === expectedExecutionContractSha256ByTransportLaneAndImageCount[lane]["2"];
+  });
+}
+
+function decodeBase64UrlJson(value, code) {
+  try {
+    const encoded = String(value || "").trim();
+    if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded)) throw new Error("invalid");
+    const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) throw new Error("invalid");
+    return decoded;
+  } catch {
+    throw verifierFailure(code);
+  }
+}
+
+function exactObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasExactKeys(value, expected) {
+  return exactObject(value)
+    && Object.keys(value).sort().join("\u0000") === [...expected].sort().join("\u0000");
+}
+
+const liveExecutionEvidenceKeys = Object.freeze([
+  "execution_origin",
+  "model_profile_id",
+  "optimization_pack_id",
+  "optimization_pack_sha256",
+  "provider_adapter_version",
+  "request_builder_version",
+  "response_parser_version",
+  "transport_profile_id",
+  "transport_profile_sha256",
+  "execution_contract_sha256",
+  "max_output_tokens",
+  "owner_execution_receipt_version",
+  "owner_execution_receipt_sha256",
+  "provider_authority_receipt",
+  "provider_response_completed",
+  "provider_response_status_attested",
+  "provider_response_incomplete",
+  "provider_response_id_present",
+  "provider_response_id_sha256",
+  "response_session_patch_fields_match",
+  "execution_contract_embedded_valid",
+  "input_tokens",
+  "cached_input_tokens",
+  "output_tokens",
+  "reasoning_tokens",
+  "total_tokens",
+  "safe_token_usage",
+  "positive_token_usage",
+  "provider_attempt_number",
+  "provider_retry_count",
+  "served_model_attested",
+  "served_model_consistent",
+  "served_model_unknown",
+  "served_effort_attested",
+  "served_effort_consistent",
+  "served_effort_unknown",
+  "served_effort_conflict",
+  "server_stages_ms"
+]);
+
+const requiredServerStageNames = Object.freeze([
+  "authority_enqueue_ms",
+  "authority_claim_ms",
+  "authority_settle_ms",
+  "authority_dispatch_ms",
+  "provider_ms",
+  "csm_persistence_ms",
+  "request_total_ms"
+]);
+
+const durableOwnerReadbackEvidenceKeys = Object.freeze([
+  "version", "sha256", "durable_read_after_write"
+]);
+
+const providerAuthorityReceiptEvidenceKeys = Object.freeze([
+  "schema_version",
+  "operation_key_sha256",
+  "attempt",
+  "attempt_class",
+  "estimated_tokens",
+  "claim_code",
+  "settle_code",
+  "operation_status"
+]);
+
+function providerAuthorityReceiptProof(payload, owner, code) {
+  let receipt;
+  try {
+    receipt = validateCsmProviderAuthorityReceipt(payload?.provider_authority_receipt, {
+      attempt: 1
+    });
+  } catch {
+    throw verifierFailure(code);
+  }
+  requireInvariant(CSM_ACTIVE_MODEL_PROFILE.estimated_tokens_per_attempt
+    === expectedEstimatedTokensPerAttempt
+    && hasExactKeys(receipt, providerAuthorityReceiptEvidenceKeys)
+    && receipt.schema_version === "csm-provider-authority-receipt-v1"
+    && /^[0-9a-f]{64}$/.test(receipt.operation_key_sha256)
+    && receipt.attempt === 1
+    && receipt.attempt_class === "fresh"
+    && receipt.estimated_tokens === expectedEstimatedTokensPerAttempt
+    && ["admitted", "claim_receipt_replayed"].includes(receipt.claim_code)
+    && ["settled", "exact_replay"].includes(receipt.settle_code)
+    && receipt.operation_status === "SUCCEEDED"
+    && payload?.recognition_session_id
+      === `csmsess_${receipt.operation_key_sha256.slice(0, 40)}`
+    && !Object.prototype.hasOwnProperty.call(owner, "provider_authority_receipt"),
+  code);
+  return receipt;
+}
+
+function durableOwnerExecutionReadbackProof(executionReceipt, resolutionView) {
+  const code = verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH;
+  const readback = resolutionView?.owner_execution_receipt;
+  requireInvariant(hasExactKeys(readback, ["version", "sha256"])
+    && readback.version === CSM_OWNER_EXECUTION_RECEIPT_VERSION
+    && /^[0-9a-f]{64}$/.test(String(readback.sha256 || ""))
+    && readback.version === executionReceipt?.owner_execution_receipt_version
+    && readback.sha256 === executionReceipt?.owner_execution_receipt_sha256,
+  code);
+  const proof = Object.freeze({
+    version: readback.version,
+    sha256: readback.sha256,
+    durable_read_after_write: true
+  });
+  requireInvariant(hasExactKeys(proof, durableOwnerReadbackEvidenceKeys), code);
+  return proof;
+}
+
+function liveServerStageReceipt(payload, code) {
+  const stages = payload?.latency_stages_ms;
+  requireInvariant(exactObject(stages)
+    && requiredServerStageNames.every((name) => (
+      Object.prototype.hasOwnProperty.call(stages, name)
+    )),
+  code);
+  const receipt = Object.fromEntries(requiredServerStageNames.map((name) => {
+    const value = stages[name];
+    requireInvariant(typeof value === "number" && Number.isFinite(value) && value >= 0, code);
+    return [name, value];
+  }));
+  requireInvariant(hasExactKeys(receipt, requiredServerStageNames), code);
+  const childStageNames = requiredServerStageNames.filter((name) => name !== "request_total_ms");
+  const authoritySequentialMs = [
+    "authority_enqueue_ms", "authority_claim_ms", "provider_ms", "authority_settle_ms"
+  ].reduce((total, name) => total + receipt[name], 0);
+  requireInvariant(childStageNames.every((name) => (
+    receipt.request_total_ms >= receipt[name]
+  ))
+    && receipt.authority_dispatch_ms >= receipt.provider_ms
+    && receipt.authority_dispatch_ms + serverStageRoundingToleranceMs
+      >= authoritySequentialMs
+    && receipt.request_total_ms
+      >= receipt.authority_dispatch_ms + receipt.csm_persistence_ms,
+  code);
+  return Object.freeze(receipt);
+}
+
+function warmupResponseReceipt(requests) {
+  const responses = requests.filter((entry) => (
+    entry.response_observed === true
+    && Number.isInteger(entry.response_status)
+    && entry.response_status >= 100
+    && entry.response_status <= 599
+    && Number.isSafeInteger(entry.request_sequence)
+    && Number.isSafeInteger(entry.response_sequence)
+    && entry.response_sequence > entry.request_sequence
+  ));
+  requireInvariant(responses.length >= 1, verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
+  return Object.freeze({
+    passed: true,
+    request_count: requests.length,
+    response_count: responses.length,
+    http_statuses: [...new Set(responses.map((entry) => entry.response_status))].sort()
+  });
+}
+
+function recognitionPostSeal(recognitionPosts, evidenceCases) {
+  const continued = recognitionPosts.filter((entry) => entry.continued === true);
+  const aborted = recognitionPosts.filter((entry) => entry.aborted_before_network === true);
+  requireInvariant(recognitionPosts.length === 4
+    && continued.length === 3
+    && aborted.length === 1
+    && continued.length + aborted.length === recognitionPosts.length
+    && recognitionPosts.every((entry) => (
+      entry.continued === !entry.aborted_before_network
+    ))
+    && new Set(continued.map((entry) => entry.recognition_session_id)).size === 3
+    && new Set(continued.map((entry) => entry.provider_response_id_sha256)).size === 3
+    && continued.every((entry) => (
+      entry.response_observed === true
+      && entry.response_status === 200
+      && evidenceCases.some((caseEvidence) => (
+        caseEvidence.case_id === entry.case_id
+        && caseEvidence.recognition_session_id === entry.recognition_session_id
+        && caseEvidence.execution_receipt?.provider_response_id_sha256
+          === entry.provider_response_id_sha256
+        ))
+    ))
+    && evidenceCases.every((caseEvidence) => continued.filter((entry) => (
+      caseEvidence.case_id === entry.case_id
+      && caseEvidence.recognition_session_id === entry.recognition_session_id
+      && caseEvidence.execution_receipt?.provider_response_id_sha256
+        === entry.provider_response_id_sha256
+    )).length === 1),
+  verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+  return Object.freeze({
+    recognition_post_count: 4,
+    network_continued_provider_requests: 3,
+    extra_provider_recovery_requests: 0
+  });
+}
+
+function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile } = {}) {
+  const code = verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH;
+  const owner = payload?.csm_owner_versions;
+  const laneVersion = String(transportProfile?.lane_version || "");
+  const expectedExecutionContract =
+    expectedExecutionContractByTransportLaneAndImageCount[laneVersion]?.[String(imageCount)];
+  const expectedExecutionContractSha256 =
+    expectedExecutionContractSha256ByTransportLaneAndImageCount[laneVersion]?.[String(imageCount)];
+  requireInvariant(exactObject(owner)
+    && CSM_RECOGNITION_TRANSPORT_PROFILES.includes(transportProfile)
+    && exactObject(expectedExecutionContract)
+    && /^[0-9a-f]{64}$/.test(String(expectedExecutionContractSha256 || ""))
+    && CSM_ACTIVE_MODEL_PROFILE.max_output_tokens === expectedMaxOutputTokens,
+  code);
+  // Request provenance is deliberately HTTP-only. A replay must never inherit
+  // FRESH_CURRENT from a persisted session patch, so do not compare this to
+  // csm_owner_versions or persist it as an execution-contract field. The
+  // complete model receipt still needs a separate DB readback hash before it
+  // may be described as read-after-write evidence.
+  requireInvariant(payload?.execution_origin === "FRESH_CURRENT"
+    && !Object.prototype.hasOwnProperty.call(owner, "execution_origin"),
+  code);
+  const ownerExecutionReceiptVersion = owner?.owner_execution_receipt_version;
+  const ownerExecutionReceiptSha256 = owner?.owner_execution_receipt_sha256;
+  let computedOwnerExecutionReceiptSha256 = null;
+  try {
+    computedOwnerExecutionReceiptSha256 = computeCsmOwnerExecutionReceiptSha256(owner);
+  } catch {
+    throw verifierFailure(code);
+  }
+  requireInvariant(ownerExecutionReceiptVersion === CSM_OWNER_EXECUTION_RECEIPT_VERSION
+    && /^[0-9a-f]{64}$/.test(String(ownerExecutionReceiptSha256 || ""))
+    && computedOwnerExecutionReceiptSha256 === ownerExecutionReceiptSha256,
+  code);
+  const providerAuthorityReceipt = providerAuthorityReceiptProof(payload, owner, code);
+
+  const expectedVersionFields = {
+    model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
+    optimization_pack_id: CSM_ACTIVE_MODEL_PROFILE.optimization_pack_id,
+    optimization_pack_sha256: CSM_ACTIVE_MODEL_PROFILE.optimization_pack_sha256,
+    provider_adapter_version: expectedProviderAdapterVersion,
+    request_builder_version: expectedProviderAdapterContract.request_builder_version,
+    response_parser_version: expectedProviderAdapterContract.response_parser_version,
+    transport_profile_id: transportProfile.id,
+    transport_profile_sha256: sha256CsmRecognitionTransportReceipt(transportProfile),
+    execution_contract_sha256: expectedExecutionContractSha256,
+    max_output_tokens: expectedMaxOutputTokens
+  };
+  for (const [key, expected] of Object.entries(expectedVersionFields)) {
+    if (key === "transport_profile_id" || key === "transport_profile_sha256") continue;
+    requireInvariant(payload?.[key] === expected && owner?.[key] === expected, code);
+  }
+  requireInvariant(payload?.provider === CSM_ACTIVE_MODEL_PROFILE.provider
+    && owner?.provider === CSM_ACTIVE_MODEL_PROFILE.provider
+    && payload?.model === CSM_ACTIVE_MODEL_PROFILE.model
+    && payload?.requested_model === CSM_ACTIVE_MODEL_PROFILE.model
+    && owner?.model === CSM_ACTIVE_MODEL_PROFILE.model
+    && owner?.requested_model === CSM_ACTIVE_MODEL_PROFILE.model
+    && payload?.requested_effort === CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
+    && owner?.effort === CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
+    && payload?.image_detail === CSM_ACTIVE_MODEL_PROFILE.image_detail
+    && owner?.image_detail === CSM_ACTIVE_MODEL_PROFILE.image_detail,
+  code);
+
+  try {
+    validateCsmModelExecutionContract(payload?.execution_contract, {
+      expectedSha256: expectedExecutionContractSha256
+    });
+    validateCsmModelExecutionContract(owner?.execution_contract, {
+      expectedSha256: expectedExecutionContractSha256
+    });
+  } catch {
+    throw verifierFailure(code);
+  }
+  requireInvariant(stableJson(payload.execution_contract) === stableJson(expectedExecutionContract)
+    && stableJson(owner.execution_contract) === stableJson(expectedExecutionContract),
+  code);
+
+  requireInvariant(payload?.provider_response_status_attested === true
+    && owner?.provider_response_status_attested === true
+    && payload?.provider_response_status === "completed"
+    && owner?.provider_response_status === "completed"
+    && payload?.provider_response_incomplete === false
+    && owner?.provider_response_incomplete === false,
+  code);
+  const providerResponseId = typeof payload?.provider_response_id === "string"
+    ? payload.provider_response_id.trim()
+    : "";
+  requireInvariant(/^\S{1,240}$/.test(providerResponseId)
+    && owner?.provider_response_id === providerResponseId,
+  code);
+
+  const tokenKeys = [
+    "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens", "total_tokens"
+  ];
+  for (const key of tokenKeys) {
+    requireInvariant(Number.isSafeInteger(payload?.[key])
+      && payload[key] >= 0
+      && owner?.[key] === payload[key],
+    code);
+  }
+  requireInvariant(payload.input_tokens > 0
+    && payload.output_tokens > 0
+    && payload.total_tokens > 0
+    && payload.cached_input_tokens <= payload.input_tokens
+    && payload.reasoning_tokens <= payload.output_tokens
+    && Number.isSafeInteger(payload.input_tokens + payload.output_tokens)
+    && payload.total_tokens >= payload.input_tokens + payload.output_tokens,
+  code);
+  requireInvariant(payload?.provider_attempt_number === 1
+    && owner?.provider_attempt_number === 1
+    && payload?.provider_retry_count === 0
+    && owner?.provider_retry_count === 0,
+  code);
+
+  requireInvariant(typeof payload?.served_model_attested === "boolean"
+    && owner?.served_model_attested === payload.served_model_attested,
+  code);
+  if (payload.served_model_attested) {
+    const servedModel = typeof payload?.served_model === "string"
+      ? payload.served_model.trim()
+      : "";
+    requireInvariant(Boolean(servedModel)
+      && owner?.served_model === servedModel
+      && (servedModel === CSM_ACTIVE_MODEL_PROFILE.model
+        || servedModel.startsWith(`${CSM_ACTIVE_MODEL_PROFILE.model}-`)),
+    code);
+  } else {
+    requireInvariant(payload?.served_model === null && owner?.served_model === null, code);
+  }
+
+  requireInvariant(typeof payload?.served_effort_attested === "boolean"
+    && owner?.reasoning_effort_attested === payload.served_effort_attested
+    && typeof payload?.served_effort_conflict === "boolean"
+    && owner?.served_effort_conflict === payload.served_effort_conflict,
+  code);
+  if (payload.served_effort_attested) {
+    requireInvariant(payload?.served_effort === CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
+      && owner?.reasoning_effort === CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
+      && payload.served_effort_conflict === false,
+    code);
+  } else {
+    requireInvariant(payload?.served_effort === null && owner?.reasoning_effort === null, code);
+  }
+
+  const proof = {
+    execution_origin: "FRESH_CURRENT",
+    ...expectedVersionFields,
+    owner_execution_receipt_version: ownerExecutionReceiptVersion,
+    owner_execution_receipt_sha256: ownerExecutionReceiptSha256,
+    provider_authority_receipt: providerAuthorityReceipt,
+    provider_response_completed: true,
+    provider_response_status_attested: true,
+    provider_response_incomplete: false,
+    provider_response_id_present: true,
+    provider_response_id_sha256: sha256(providerResponseId),
+    response_session_patch_fields_match: true,
+    execution_contract_embedded_valid: true,
+    input_tokens: payload.input_tokens,
+    cached_input_tokens: payload.cached_input_tokens,
+    output_tokens: payload.output_tokens,
+    reasoning_tokens: payload.reasoning_tokens,
+    total_tokens: payload.total_tokens,
+    safe_token_usage: true,
+    positive_token_usage: true,
+    provider_attempt_number: 1,
+    provider_retry_count: 0,
+    served_model_attested: payload.served_model_attested,
+    served_model_consistent: true,
+    served_model_unknown: !payload.served_model_attested,
+    served_effort_attested: payload.served_effort_attested,
+    served_effort_consistent: true,
+    served_effort_unknown: !payload.served_effort_attested,
+    served_effort_conflict: payload.served_effort_conflict,
+    server_stages_ms: liveServerStageReceipt(payload, code)
+  };
+  requireInvariant(hasExactKeys(proof, liveExecutionEvidenceKeys), code);
+  return proof;
+}
+
+function assertNoPrivateFixtureKeys(value) {
+  if (Array.isArray(value)) {
+    value.forEach(assertNoPrivateFixtureKeys);
+    return;
+  }
+  if (!exactObject(value)) return;
+  for (const [key, nested] of Object.entries(value)) {
+    if (/^(?:title|writer_title|canonical_title|ground_truth|label|labels|grammar|accuracy_claim)$/i.test(key)) {
+      throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
+    }
+    assertNoPrivateFixtureKeys(nested);
+  }
+}
+
+function relativeFixtureFile(value) {
+  const file = String(value || "").trim();
+  return file && path.basename(file) === file && !file.includes("\0") ? file : null;
+}
+
+function validateFixtureImage(entry, {
+  file, role, sourceRole, width, height, maxBytes
+}) {
+  if (!exactObject(entry)
+    || relativeFixtureFile(entry.file) !== file
+    || entry.file_mode !== "0600"
+    || entry.role !== role
+    || entry.source_role !== sourceRole
+    || entry.content_type !== "image/jpeg"
+    || !Number.isInteger(entry.bytes) || entry.bytes < 1 || entry.bytes > maxBytes
+    || entry.width !== width || entry.height !== height
+    || !/^[0-9a-f]{64}$/.test(String(entry.content_sha256 || ""))) {
+    throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
+  }
+  return entry;
+}
+
+function validateLargeFixtureReceipt(receipt) {
+  const contract = LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT;
+  const receiptKeys = [
+    "allowed_use", "builder", "derived", "derived_total_bytes", "executor", "fixture_id",
+    "forbidden_uses", "limits", "original_total_bytes", "originals", "output_directory_mode",
+    "provider_calls", "receipt_file_mode", "receipt_hash_scope", "receipt_sha256", "schema_version",
+    "source", "source_class", "transform"
+  ];
+  assertNoPrivateFixtureKeys(receipt);
+  if (!hasExactKeys(receipt, receiptKeys)
+    || receipt.schema_version !== contract.schema_version
+    || receipt.fixture_id !== "large-internal-writer-fixture-v1"
+    || receipt.source_class !== contract.source_class
+    || receipt.allowed_use !== contract.allowed_use
+    || receipt.provider_calls !== 0
+    || receipt.receipt_hash_scope !== "LEXICOGRAPHIC_SORTED_JSON_WITHOUT_RECEIPT_SHA256"
+    || !/^[0-9a-f]{64}$/.test(String(receipt.receipt_sha256 || ""))
+    || receipt.executor?.matches_playwright_default_executor !== true
+    || receipt.executor?.playwright_version !== contract.playwright_version
+    || receipt.executor?.chromium_revision !== receipt.executor?.playwright_expected_chromium_revision
+    || receipt.executor?.chromium_version !== receipt.executor?.playwright_expected_chromium_version
+    || receipt.transform?.staged_lane_version !== contract.staged_lane_version
+    || receipt.transform?.staged_long_edge !== contract.staged_long_edge
+    || receipt.transform?.staged_jpeg_quality !== contract.staged_jpeg_quality
+    || receipt.limits?.original_total_min_bytes_exclusive !== contract.original_total_min_bytes_exclusive
+    || receipt.limits?.original_each_max_bytes !== contract.original_each_max_bytes
+    || receipt.limits?.derived_total_max_bytes !== contract.derived_total_max_bytes
+    || !Array.isArray(receipt.originals) || receipt.originals.length !== 2
+    || !Array.isArray(receipt.derived) || receipt.derived.length !== 2) {
+    throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
+  }
+  const { receipt_sha256: claimedReceiptSha256, ...receiptBody } = receipt;
+  if (sha256(Buffer.from(stableJson(receiptBody))) !== claimedReceiptSha256) {
+    throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
+  }
+  const expectedDerivedWidth = Math.round(
+    contract.output_width * contract.staged_long_edge / contract.output_height
+  );
+  const originals = receipt.originals.map((entry, index) => validateFixtureImage(entry, {
+    file: `${index + 1}-${index === 0 ? "front" : "back"}-original.jpg`,
+    role: originalRoles[index],
+    sourceRole: index === 0 ? "front_original" : "back_original",
+    width: contract.output_width,
+    height: contract.output_height,
+    maxBytes: contract.original_each_max_bytes
+  }));
+  const derived = receipt.derived.map((entry, index) => validateFixtureImage(entry, {
+    file: `${index + 1}-${index === 0 ? "front" : "back"}-readability-derived.jpg`,
+    role: stagedRecognitionRole,
+    sourceRole: originalRoles[index],
+    width: expectedDerivedWidth,
+    height: contract.staged_long_edge,
+    maxBytes: contract.derived_total_max_bytes
+  }));
+  const originalTotal = originals.reduce((total, entry) => total + entry.bytes, 0);
+  const derivedTotal = derived.reduce((total, entry) => total + entry.bytes, 0);
+  if (originalTotal !== receipt.original_total_bytes
+    || originalTotal <= contract.original_total_min_bytes_exclusive
+    || derivedTotal !== receipt.derived_total_bytes
+    || derivedTotal > contract.derived_total_max_bytes
+    || derived.some((entry, index) => entry.bytes >= originals[index].bytes)) {
+    throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
+  }
+  return { receipt, originals, derived, originalTotal, derivedTotal };
+}
+
+async function localLargeFixture(receiptPath) {
+  const absoluteReceiptPath = path.resolve(String(receiptPath || ""));
+  const fixture = validateLargeFixtureReceipt(JSON.parse(await readFile(absoluteReceiptPath, "utf8")));
+  const fixtureDirectory = path.dirname(absoluteReceiptPath);
+  const images = [];
+  for (const entry of fixture.originals) {
+    const filePath = path.join(fixtureDirectory, entry.file);
+    const bytes = await readFile(filePath);
+    if (bytes.length !== entry.bytes || sha256(bytes) !== entry.content_sha256) {
+      throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
+    }
+    images.push({ name: entry.file, mimeType: entry.content_type, buffer: bytes });
+  }
+  for (const entry of fixture.derived) {
+    const bytes = await readFile(path.join(fixtureDirectory, entry.file));
+    if (bytes.length !== entry.bytes || sha256(bytes) !== entry.content_sha256) {
+      throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
+    }
+  }
+  return { ...fixture, images };
 }
 
 function requestExchangeReceipt(request) {
@@ -107,6 +738,410 @@ async function jsonOrNull(response) {
   } catch {
     return null;
   }
+}
+
+function markLargeTransportViolation(transport, code) {
+  const safeCode = allowedVerifierErrorCodes.has(code)
+    ? code
+    : verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH;
+  transport.violation ||= safeCode;
+  transport.signal_violation?.(transport.violation);
+}
+
+function validateLargeRecoveryAuthorization(responseReceipt, firstRequest) {
+  const payload = responseReceipt?.payload;
+  if (responseReceipt?.ok === true && payload?.ok === true) {
+    return Object.freeze({ action: "COMPLETE", allows_second_request: false });
+  }
+  const action = String(payload?.recovery_action || "").trim().toUpperCase();
+  if (action === "STAGED_RESUME_ONLY"
+    && payload?.staged_resume_receipt === firstRequest?.identity?.staged_resume_receipt) {
+    return Object.freeze({
+      action,
+      allows_second_request: true,
+      resume_only: true
+    });
+  }
+  if (action === "STAGED_FRESH_RETRY" && payload?.provider_attempt_started === false) {
+    return Object.freeze({
+      action,
+      allows_second_request: true,
+      resume_only: false
+    });
+  }
+  throw verifierFailure(verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+}
+
+function validateLargeIngestRequest(request, fixture, priorRequests, {
+  recoveryAuthorization = null,
+  phaseComplete = false,
+  relayTimelineSnapshot = null
+} = {}) {
+  const url = new URL(request.url());
+  const body = request.postDataBuffer();
+  if (url.origin !== productionOrigin
+    || url.pathname !== stagedRecognitionPath
+    || url.search || url.hash
+    || request.method() !== "POST"
+    || !body?.length
+    || body.length > LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT.derived_total_max_bytes
+    || priorRequests.length >= 2
+    || phaseComplete) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  const metadata = decodeBase64UrlJson(
+    request.headers()["x-lynca-ingest-metadata"],
+    verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED
+  );
+  if (!hasExactKeys(metadata, [
+    "captureProfileId", "clientAssetRef", "clientTiming", "expectedOriginalCount",
+    "idempotencyKey", "images", "intentId", "laneVersion",
+    "originalImages", "recognitionInputOnly", "resumeOnly", "stagedResumeReceipt"
+  ])
+    || metadata.recognitionInputOnly !== true
+    || metadata.laneVersion !== LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT.staged_lane_version
+    || metadata.expectedOriginalCount !== 2
+    || !Array.isArray(metadata.originalImages) || metadata.originalImages.length !== 2
+    || !Array.isArray(metadata.images) || metadata.images.length !== 2) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  const timing = metadata.clientTiming;
+  const firstRequest = priorRequests.length === 0;
+  if (firstRequest && (!exactObject(relayTimelineSnapshot)
+    || !Number.isSafeInteger(relayTimelineSnapshot.started_count)
+    || !Number.isSafeInteger(relayTimelineSnapshot.completed_count)
+    || !Number.isSafeInteger(relayTimelineSnapshot.incomplete_count)
+    || !Number.isSafeInteger(relayTimelineSnapshot.recognition_request_sequence)
+    || relayTimelineSnapshot.started_count < 1
+    || relayTimelineSnapshot.completed_count < 0
+    || relayTimelineSnapshot.incomplete_count < 1
+    || relayTimelineSnapshot.completed_count + relayTimelineSnapshot.incomplete_count
+      !== relayTimelineSnapshot.started_count)) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  if (!exactObject(timing)
+    || timing.client_upload_bytes !== fixture.originalTotal
+    || timing.client_recognition_body_bytes !== body.length
+    || !Number.isFinite(Number(timing.client_staged_transform_ms))
+    || (firstRequest && (!Number.isFinite(Number(timing.client_original_upload_elapsed_at_dispatch_ms))
+      || Number(timing.client_original_upload_elapsed_at_dispatch_ms) <= 0
+      || Object.prototype.hasOwnProperty.call(timing, "client_original_upload_ms")))) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  let offset = 0;
+  const originalImageIds = [];
+  const derivedImageIds = [];
+  const originalManifest = [];
+  const derivedManifest = [];
+  for (let index = 0; index < 2; index += 1) {
+    const original = metadata.originalImages[index];
+    const derived = metadata.images[index];
+    const expectedOriginal = fixture.originals[index];
+    const expectedDerived = fixture.derived[index];
+    if (!hasExactKeys(original, [
+      "contentSha256", "contentType", "height", "imageId", "role", "size",
+      "storageFirst", "width"
+    ])
+      || !hasExactKeys(derived, [
+        "contentSha256", "contentType", "fileName", "height", "imageId", "role",
+        "signatureHex", "size", "sourceImageId", "width"
+      ])
+      || original.storageFirst !== true
+      || original.role !== expectedOriginal.role
+      || original.contentType !== expectedOriginal.content_type
+      || original.size !== expectedOriginal.bytes
+      || original.width !== expectedOriginal.width
+      || original.height !== expectedOriginal.height
+      || original.contentSha256 !== expectedOriginal.content_sha256
+      || !String(original.imageId || "").trim()
+      || derived.role !== stagedRecognitionRole
+      || derived.sourceImageId !== original.imageId
+      || derived.contentType !== expectedDerived.content_type
+      || derived.size !== expectedDerived.bytes
+      || derived.width !== expectedDerived.width
+      || derived.height !== expectedDerived.height
+      || derived.contentSha256 !== expectedDerived.content_sha256
+      || !String(derived.imageId || "").trim()
+      || !String(derived.fileName || "").trim()
+      || !/^[0-9a-f]+$/i.test(String(derived.signatureHex || ""))) {
+      throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+    }
+    originalImageIds.push(original.imageId);
+    derivedImageIds.push(derived.imageId);
+    originalManifest.push({
+      image_id: original.imageId,
+      role: original.role,
+      content_type: original.contentType,
+      bytes: original.size,
+      width: original.width,
+      height: original.height,
+      content_sha256: original.contentSha256
+    });
+    derivedManifest.push({
+      image_id: derived.imageId,
+      source_image_id: derived.sourceImageId,
+      role: derived.role,
+      file_name: derived.fileName,
+      content_type: derived.contentType,
+      bytes: derived.size,
+      width: derived.width,
+      height: derived.height,
+      signature_hex: derived.signatureHex,
+      content_sha256: derived.contentSha256
+    });
+    const segment = body.subarray(offset, offset + derived.size);
+    if (segment.length !== derived.size || sha256(segment) !== expectedDerived.content_sha256) {
+      throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+    }
+    offset += derived.size;
+  }
+  if (offset !== body.length
+    || new Set(originalImageIds).size !== 2
+    || new Set(derivedImageIds).size !== 2
+    || derivedImageIds.some((imageId) => originalImageIds.includes(imageId))) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  const immutableManifest = {
+    body_bytes: body.length,
+    body_sha256: sha256(body),
+    originals: originalManifest,
+    derived: derivedManifest
+  };
+  const identity = {
+    capture_profile_id: String(metadata.captureProfileId || ""),
+    client_asset_ref: String(metadata.clientAssetRef || ""),
+    idempotency_key: String(metadata.idempotencyKey || ""),
+    intent_id: String(metadata.intentId || ""),
+    staged_resume_receipt: String(metadata.stagedResumeReceipt || ""),
+    immutable_manifest_sha256: sha256(Buffer.from(stableJson(immutableManifest)))
+  };
+  if (Object.values(identity).some((value) => !value)) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  if (priorRequests.length && stableJson(priorRequests[0].identity) !== stableJson(identity)) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  if ((firstRequest && metadata.resumeOnly !== false)
+    || (!firstRequest && (recoveryAuthorization?.allows_second_request !== true
+      || metadata.resumeOnly !== recoveryAuthorization.resume_only))) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
+  return {
+    identity,
+    body_bytes: body.length,
+    original_bytes: fixture.originalTotal,
+    original_image_ids: originalImageIds,
+    original_manifest: originalManifest,
+    derived_manifest: derivedManifest,
+    immutable_manifest_sha256: identity.immutable_manifest_sha256,
+    overlap_observed: firstRequest && relayTimelineSnapshot.incomplete_count >= 1,
+    relay_started_at_dispatch: firstRequest ? relayTimelineSnapshot.started_count : null,
+    relay_completed_at_dispatch: firstRequest ? relayTimelineSnapshot.completed_count : null,
+    relay_incomplete_at_dispatch: firstRequest ? relayTimelineSnapshot.incomplete_count : null,
+    recognition_request_sequence: firstRequest
+      ? relayTimelineSnapshot.recognition_request_sequence
+      : null,
+    resume_only: metadata.resumeOnly === true
+  };
+}
+
+async function validateLargeRelayResponse(response, fixture, timeline) {
+  const request = response.request();
+  const url = new URL(response.url());
+  const body = request.postDataBuffer();
+  const metadata = decodeBase64UrlJson(
+    request.headers()["x-lynca-upload-metadata"],
+    verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH
+  );
+  const index = originalRoles.indexOf(metadata.role);
+  if (url.origin !== productionOrigin || url.pathname !== uploadRelayPath || url.search || url.hash
+    || request.method() !== "POST" || index < 0 || !body?.length) {
+    throw verifierFailure(verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH);
+  }
+  const expected = fixture.originals[index];
+  const assetId = String(metadata.assetId || "").trim();
+  const imageId = String(metadata.imageId || "").trim();
+  if (!assetId || !imageId
+    || metadata.contentType !== expected.content_type
+    || metadata.size !== expected.bytes
+    || metadata.width !== expected.width
+    || metadata.height !== expected.height
+    || metadata.contentSha256 !== expected.content_sha256
+    || body.length !== expected.bytes
+    || sha256(body) !== expected.content_sha256) {
+    throw verifierFailure(verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH);
+  }
+  const payload = await response.json();
+  if (!response.ok() || payload?.ok !== true
+    || payload?.asset_id !== assetId
+    || payload?.relay_timing?.browser_body_bytes !== expected.bytes
+    || payload?.upload?.image_id !== imageId
+    || payload?.upload?.storage_role !== expected.role
+    || payload?.verification?.content_sha256 !== expected.content_sha256
+    || payload?.verification?.size !== expected.bytes
+    || payload?.verification?.object_verified !== true
+    || payload?.verification?.content_hash_verified !== true
+    || payload?.verification_record?.saved !== true
+    || payload?.verification_record?.durable !== true) {
+    throw verifierFailure(verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH);
+  }
+  return {
+    role: expected.role,
+    asset_id: assetId,
+    image_id: imageId,
+    browser_body_bytes: expected.bytes,
+    started_sequence: timeline?.started_sequence,
+    durable_response_sequence: timeline?.response_sequence
+  };
+}
+
+function validateLargeRecognitionResponse(payload, fixture, ingestRequests, relayReceipts, {
+  recognitionResponseSequence = null
+} = {}) {
+  const stages = payload?.latency_stages_ms || {};
+  const firstRequest = ingestRequests[0];
+  const relayAssetIds = new Set(relayReceipts.map((entry) => entry.asset_id));
+  const executionReceipt = liveExecutionReceiptProof(payload, {
+    imageCount: 2,
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+  });
+  const relayByRole = new Map(relayReceipts.map((entry) => [entry.role, entry]));
+  const relayMatchesManifest = originalRoles.every((role, index) => {
+    const relay = relayByRole.get(role);
+    const original = firstRequest?.original_manifest?.[index];
+    return relay?.role === role
+      && original?.role === role
+      && relay?.image_id === original?.image_id
+      && relay?.browser_body_bytes === original?.bytes;
+  });
+  const relayDurableBeforeRecognition = Number.isSafeInteger(recognitionResponseSequence)
+    && relayReceipts.every((relay) => Number.isSafeInteger(relay?.started_sequence)
+      && Number.isSafeInteger(relay?.durable_response_sequence)
+      && relay.started_sequence < relay.durable_response_sequence
+      && relay.durable_response_sequence < recognitionResponseSequence);
+  const stagedOriginalSyncMs = Number(stages.staged_original_sync_ms);
+  const stagedServerStages = executionReceipt.server_stages_ms;
+  if (payload?.ok !== true
+    || payload?.route !== "CSM_THIN_DIRECT_INGEST"
+    || payload?.recognition_input !== "readability_derived_inline"
+    || payload?.originals_verified !== true
+    || payload?.trace_status !== "PERSISTED"
+    || payload?.provider_attempt_number !== 1
+    || payload?.provider_retry_count !== 0
+    || payload?.model !== CSM_ACTIVE_MODEL_PROFILE.model
+    || payload?.requested_effort !== CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
+    || payload?.image_detail !== "high"
+    || payload?.csm_persistence?.ok !== true
+    || payload?.csm_persistence?.atomic !== true
+    || payload?.csm_persistence?.session?.saved !== true
+    || payload?.ingest_timing?.body_bytes !== fixture.derivedTotal
+    || stages.ingest_body_bytes !== fixture.derivedTotal
+    || stages.client_recognition_body_bytes !== fixture.derivedTotal
+    || stages.client_upload_bytes !== fixture.originalTotal
+    || !Number.isFinite(stagedOriginalSyncMs)
+    || stagedOriginalSyncMs < 0
+    || !Number.isFinite(Number(stages.csm_persistence_ms))
+    || stagedServerStages.request_total_ms + serverStageRoundingToleranceMs
+      < stagedServerStages.authority_dispatch_ms
+        + stagedOriginalSyncMs
+        + stagedServerStages.csm_persistence_ms
+    || ingestRequests.length < 1 || ingestRequests.length > 2
+    || firstRequest?.body_bytes !== fixture.derivedTotal
+    || firstRequest?.overlap_observed !== true
+    || firstRequest?.relay_started_at_dispatch < 1
+    || firstRequest?.relay_incomplete_at_dispatch < 1
+    || firstRequest?.relay_completed_at_dispatch
+      + firstRequest?.relay_incomplete_at_dispatch !== firstRequest?.relay_started_at_dispatch
+    || payload?.client_asset_ref !== firstRequest?.identity?.client_asset_ref
+    || payload?.staged_resume_receipt !== firstRequest?.identity?.staged_resume_receipt
+    || relayReceipts.length !== 2
+    || relayAssetIds.size !== 1 || !relayAssetIds.has(payload?.asset_id)
+    || relayByRole.size !== 2
+    || !relayMatchesManifest
+    || !relayDurableBeforeRecognition) {
+    throw verifierFailure(verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+  }
+  return {
+    execution_receipt: executionReceipt,
+    original_upload_bytes: fixture.originalTotal,
+    recognition_body_bytes: fixture.derivedTotal,
+    overlap_observed: true,
+    relay_started_at_first_staged_post: firstRequest.relay_started_at_dispatch,
+    relay_completed_at_first_staged_post: firstRequest.relay_completed_at_dispatch,
+    relay_incomplete_at_first_staged_post: firstRequest.relay_incomplete_at_dispatch,
+    relay_durable_before_recognition_response: true,
+    staged_original_sync_ms: stagedOriginalSyncMs,
+    csm_persistence_ms: Number(stages.csm_persistence_ms),
+    client_staged_transform_ms: Number(stages.client_staged_transform_ms),
+    ingest_request_count: ingestRequests.length,
+    recovery: ingestRequests.length === 1
+      ? "CLEAN"
+      : ingestRequests[1].resume_only ? "RESUME_ONLY" : "FRESH_RECEIPT"
+  };
+}
+
+function validateOrdinaryIngestRequest(request, sourceCase) {
+  const url = new URL(request.url());
+  const body = request.postDataBuffer();
+  const metadata = decodeBase64UrlJson(
+    request.headers()["x-lynca-ingest-metadata"],
+    verifierErrorCodes.ROUTE_COVERAGE_MISMATCH
+  );
+  const expectedBytes = sourceCase.images.reduce((total, image) => total + image.buffer.length, 0);
+  requireInvariant(url.origin === productionOrigin
+    && url.pathname === stagedRecognitionPath
+    && !url.search
+    && !url.hash
+    && request.method() === "POST"
+    && body?.length === expectedBytes
+    && metadata?.recognitionInputOnly !== true
+    && !Object.prototype.hasOwnProperty.call(metadata || {}, "originalImages")
+    && !Object.prototype.hasOwnProperty.call(metadata || {}, "laneVersion")
+    && Array.isArray(metadata?.images)
+    && metadata.images.length === sourceCase.image_count
+    && metadata.images.every((image) => !Object.prototype.hasOwnProperty.call(image || {}, "sourceImageId")),
+  verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+  return Object.freeze({ original_inline: true });
+}
+
+function normalRouteCoverageReceipt({ sourceCase, payload, responseUrl, attempts }) {
+  const caseAttempts = attempts.filter((attempt) => attempt.case_id === sourceCase.case_id);
+  const code = verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
+  if (sourceCase.case_id === "NON_TCG") {
+    const [ingest] = caseAttempts;
+    requireInvariant(payload?.recognition_input === "original_inline"
+      && caseAttempts.length === 1
+      && ingest?.recognition_route === stagedRecognitionPath
+      && ingest?.continued === true
+      && ingest?.response_observed === true
+      && ingest?.original_inline === true,
+    code);
+    return Object.freeze({
+      route: "ORDINARY_INGEST_ORIGINAL_INLINE",
+      initial_ordinary_ingest_aborted: false,
+      aborted_ingest_response_observed: false,
+      direct_fallback_observed: false,
+      route_contract_passed: true
+    });
+  }
+  const [abortedIngest, direct] = caseAttempts;
+  requireInvariant(caseAttempts.length === 2
+    && abortedIngest?.recognition_route === stagedRecognitionPath
+    && abortedIngest?.aborted_before_network === true
+    && abortedIngest?.response_observed === false
+    && abortedIngest?.original_inline === true
+    && direct?.recognition_route === "/api/csm-listing-title"
+    && direct?.continued === true
+    && direct?.response_observed === true
+    && new URL(responseUrl).pathname === "/api/csm-listing-title",
+  code);
+  return Object.freeze({
+    route: "DIRECT_AFTER_ABORTED_ORDINARY_INGEST",
+    initial_ordinary_ingest_aborted: true,
+    aborted_ingest_response_observed: false,
+    direct_fallback_observed: true,
+    route_contract_passed: true
+  });
 }
 
 function validateSourceCasesManifest(manifest) {
@@ -190,9 +1225,24 @@ function cookieHeaderForUrl(state, target, { nowSeconds = Date.now() / 1000 } = 
   }).join("; ");
 }
 
+function candidateStorageStateBoundToTarget(state, target) {
+  const url = new URL(target);
+  return url.origin === canonicalProductionOrigin
+    || (Array.isArray(state?.cookies) && state.cookies.length > 0
+      && (state.origins || []).length === 0
+      && state.cookies.every((cookie) => (
+        String(cookie?.domain || "").toLowerCase() === url.hostname
+        && cookie?.path === "/"
+        && cookie?.secure === true
+      )));
+}
+
 async function cookieHeaderFromStorageState(filePath, target) {
   if (!filePath) return "";
   const state = JSON.parse(await readFile(filePath, "utf8"));
+  if (!candidateStorageStateBoundToTarget(state, target)) {
+    throw verifierFailure(verifierErrorCodes.GENERIC);
+  }
   return cookieHeaderForUrl(state, target);
 }
 
@@ -274,8 +1324,8 @@ function titleEvidenceReceipt({ titleBeforePanel, titleAfterPanel, expectedTitle
   };
 }
 
-test("production writer journey renders reliable Glass Box traces for NON_TCG and TCG", async ({ browser }, testInfo) => {
-  test.setTimeout(15 * 60 * 1000);
+test("production writer journey verifies Glass Box and staged large-image transport", async ({ browser }, testInfo) => {
+  test.setTimeout(20 * 60 * 1000);
   await mkdir(artifactDir, { recursive: true });
   const baseUrl = cleanBaseUrl(process.env.WRITER_JOURNEY_BASE_URL);
   const expectedSha = requiredEnv("WRITER_JOURNEY_EXPECTED_SHA");
@@ -287,8 +1337,9 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
   const healthUrl = `${baseUrl}/api/health`;
   const initialCookieHeader = await cookieHeaderFromStorageState(initialStorageState, healthUrl);
   const sourceCases = await localSourceCases(requiredEnv("WRITER_JOURNEY_CASES_MANIFEST"));
+  const largeFixture = await localLargeFixture(requiredEnv("WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT"));
   const evidence = {
-    schema_version: "production-writer-journey-evidence-v2",
+    schema_version: "production-writer-journey-evidence-v4",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     field_ground_truth_available: false,
     accuracy_claim: null,
@@ -312,9 +1363,34 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
     session_id: new Set()
   };
   const requestIds = new Set();
-  const apiPaths = new Set();
   const resolutionRequests = [];
   const responseCaptureTasks = new Set();
+  let networkSequence = 0;
+  const recognitionPosts = [];
+  const warmupTransport = {
+    requests: []
+  };
+  const normalTransport = {
+    active_case_id: null,
+    attempts: [],
+    violation: null
+  };
+  const largeTransport = {
+    active: false,
+    phase_complete: false,
+    violation: null,
+    ingest_requests: [],
+    ingest_responses: [],
+    response_promises: [],
+    relay_requests: [],
+    relay_receipts: [],
+    recognition_response_events: [],
+    external_storage_puts: 0,
+    capture_tasks: new Set()
+  };
+  largeTransport.violation_signal = new Promise((resolve) => {
+    largeTransport.signal_violation = resolve;
+  });
   let loginContext;
   let loginPage;
   let journeyContext;
@@ -332,6 +1408,16 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
       "ordinary Preview deployments are not production-target candidates").toBe("production");
     expect(health?.deployment?.git_commit_sha, "production target must match the release under test")
       .toBe(expectedSha);
+    requireInvariant(health?.ready === true
+      && health?.active_path === "CSM_THIN_DIRECT"
+      && health?.model === CSM_ACTIVE_MODEL_PROFILE.model
+      && health?.reasoning_effort === CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
+      && health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
+      && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+      && healthRecognitionTransportContractMatches(health?.runtime)
+      && health?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
+      && health?.runtime?.retired_capabilities_disabled === true,
+    verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
     evidence.deployment_id = deploymentId(health);
     evidence.deployment_git_commit_sha = health.deployment.git_commit_sha;
     evidence.deployment_environment = health.deployment.environment;
@@ -361,27 +1447,269 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
     journeyContext = await browser.newContext({
       baseURL: baseUrl,
       viewport: { width: 1440, height: 1000 },
-      storageState
+      storageState,
+      serviceWorkers: "block"
+    });
+    await journeyContext.route("**/api/listing-image-upload-relay", async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (largeTransport.active
+        && request.method() === "POST"
+        && url.origin === productionOrigin
+        && url.pathname === uploadRelayPath
+        && !url.search
+        && !url.hash) {
+        if (largeTransport.relay_requests.length >= 2) {
+          markLargeTransportViolation(
+            largeTransport,
+            verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH
+          );
+          await route.abort("blockedbyclient");
+          return;
+        }
+        largeTransport.relay_requests.push({
+          request,
+          started_sequence: ++networkSequence,
+          response_observed: false,
+          response_sequence: null
+        });
+      }
+      await route.continue();
+    });
+    await journeyContext.route("**/api/csm-listing-title**", async (route) => {
+      const request = route.request();
+      const pathname = new URL(request.url()).pathname;
+      const method = request.method();
+      if (pathname === "/api/csm-listing-title" && method === "GET") {
+        warmupTransport.requests.push({
+          request,
+          request_sequence: ++networkSequence,
+          response_observed: false,
+          response_status: null
+        });
+        await route.continue();
+        return;
+      }
+      const recognitionPost = method === "POST" && recognitionPaths.has(pathname)
+        ? {
+            request,
+            recognition_route: pathname,
+            case_id: null,
+            continued: false,
+            aborted_before_network: false,
+            response_observed: false,
+            response_status: null,
+            recognition_session_id: null,
+            provider_response_id_sha256: null
+          }
+        : null;
+      if (recognitionPost) recognitionPosts.push(recognitionPost);
+      const activeCaseId = normalTransport.active_case_id;
+      if (activeCaseId && method === "POST"
+        && (pathname === stagedRecognitionPath || pathname === "/api/csm-listing-title")) {
+        const sourceCase = sourceCases.find((entry) => entry.case_id === activeCaseId);
+        const attempt = Object.assign(recognitionPost, {
+          case_id: activeCaseId,
+          original_inline: false
+        });
+        normalTransport.attempts.push(attempt);
+        try {
+          if (!sourceCase) throw verifierFailure(verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+          if (pathname === stagedRecognitionPath) {
+            attempt.original_inline = validateOrdinaryIngestRequest(route.request(), sourceCase).original_inline;
+            const caseAttempts = normalTransport.attempts.filter((entry) => (
+              entry.case_id === activeCaseId
+            ));
+            if (activeCaseId === "NON_TCG" && caseAttempts.length !== 1) {
+              throw verifierFailure(verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+            }
+            if (activeCaseId === "TCG") {
+              const priorOrdinaryIngests = normalTransport.attempts.filter((entry) => (
+                entry.case_id === activeCaseId && entry.recognition_route === stagedRecognitionPath
+              ));
+              if (priorOrdinaryIngests.length !== 1) {
+                throw verifierFailure(verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+              }
+              attempt.aborted_before_network = true;
+              await route.abort("blockedbyclient");
+              return;
+            }
+          } else if (activeCaseId !== "TCG"
+              || normalTransport.attempts.filter((entry) => (
+                entry.case_id === activeCaseId && entry.aborted_before_network === true
+              )).length !== 1
+              || normalTransport.attempts.filter((entry) => (
+                entry.case_id === activeCaseId && entry.recognition_route === "/api/csm-listing-title"
+              )).length !== 1) {
+            throw verifierFailure(verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+          }
+          attempt.continued = true;
+          await route.continue();
+          return;
+        } catch (error) {
+          normalTransport.violation = sanitizedFailureCode(error);
+          attempt.aborted_before_network = true;
+          await route.abort("blockedbyclient");
+          return;
+        }
+      }
+      if (!largeTransport.active) {
+        if (recognitionPost) {
+          normalTransport.violation ||= verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
+          recognitionPost.aborted_before_network = true;
+          await route.abort("blockedbyclient");
+          return;
+        }
+        await route.continue();
+        return;
+      }
+      if (method !== "POST" || pathname !== stagedRecognitionPath) {
+        if (recognitionPost) {
+          recognitionPost.aborted_before_network = true;
+          markLargeTransportViolation(
+            largeTransport,
+            verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH
+          );
+          await route.abort("blockedbyclient");
+          return;
+        }
+        await route.continue();
+        return;
+      }
+      try {
+        recognitionPost.case_id = "LARGE_STAGED_TRANSPORT";
+        const requestIndex = largeTransport.ingest_requests.length;
+        if (requestIndex !== 0) {
+          throw verifierFailure(verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+        }
+        const responsePromise = route.request().response();
+        const relayStarted = largeTransport.relay_requests.length;
+        const relayCompleted = largeTransport.relay_requests.filter(
+          (entry) => entry.response_observed === true
+        ).length;
+        const receipt = validateLargeIngestRequest(
+          route.request(), largeFixture, largeTransport.ingest_requests, {
+            phaseComplete: largeTransport.phase_complete,
+            relayTimelineSnapshot: {
+              started_count: relayStarted,
+              completed_count: relayCompleted,
+              incomplete_count: relayStarted - relayCompleted,
+              recognition_request_sequence: ++networkSequence
+            }
+          }
+        );
+        largeTransport.ingest_requests.push(receipt);
+        recognitionPost.continued = true;
+        await route.continue();
+        const capturedResponse = (async () => {
+          const response = await responsePromise;
+          if (!response) throw verifierFailure(verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+          const responseReceipt = {
+            ok: response.ok(),
+            status: response.status(),
+            payload: await jsonOrNull(response)
+          };
+          largeTransport.ingest_responses.push(responseReceipt);
+          if (responseReceipt.ok !== true || responseReceipt.payload?.ok !== true) {
+            throw verifierFailure(verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+          }
+          return Object.freeze({ action: "COMPLETE", allows_second_request: false });
+        })().catch((error) => {
+          markLargeTransportViolation(
+            largeTransport,
+            sanitizedFailureCode(error) === verifierErrorCodes.GENERIC
+              ? verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH
+              : sanitizedFailureCode(error)
+          );
+          return null;
+        });
+        largeTransport.response_promises.push(capturedResponse);
+      } catch {
+        if (recognitionPost) recognitionPost.aborted_before_network = true;
+        markLargeTransportViolation(largeTransport, verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+        await route.abort("blockedbyclient");
+      }
     });
     const journeyPage = await journeyContext.newPage();
     journeyPage.on("request", (request) => {
       const url = new URL(request.url());
+      if (largeTransport.active && request.method() === "PUT" && url.origin !== productionOrigin) {
+        largeTransport.external_storage_puts += 1;
+      }
       if (url.pathname === "/api/csm-resolution-view") {
         resolutionRequests.push({ method: request.method(), asset_id: url.searchParams.get("asset_id") });
       }
     });
     journeyPage.on("response", (response) => {
+      const normalAttempt = normalTransport.attempts.find((attempt) => (
+        attempt.request === response.request()
+      ));
+      if (normalAttempt) normalAttempt.response_observed = true;
+      const recognitionPost = recognitionPosts.find((entry) => (
+        entry.request === response.request()
+      ));
+      if (recognitionPost) {
+        recognitionPost.response_observed = true;
+        recognitionPost.response_status = response.status();
+      }
+      const warmupRequest = warmupTransport.requests.find((entry) => (
+        entry.request === response.request()
+      ));
+      if (warmupRequest) {
+        warmupRequest.response_observed = true;
+        warmupRequest.response_status = response.status();
+        warmupRequest.response_sequence = ++networkSequence;
+      }
+      const responsePathname = new URL(response.url()).pathname;
+      if (largeTransport.active
+        && response.request().method() === "POST"
+        && responsePathname === stagedRecognitionPath) {
+        largeTransport.recognition_response_events.push({
+          request: response.request(),
+          status: response.status(),
+          response_sequence: ++networkSequence
+        });
+      }
       const task = (async () => {
         const requestId = responseRequestId(response);
         if (requestId) requestIds.add(requestId);
         const pathname = new URL(response.url()).pathname;
         if (!pathname.startsWith("/api/")) return;
-        apiPaths.add(pathname);
         const payload = await jsonOrNull(response);
         if (payload) addIds(payload, ids);
       })();
       responseCaptureTasks.add(task);
       void task.finally(() => responseCaptureTasks.delete(task));
+
+      if (largeTransport.active) {
+        const pathname = new URL(response.url()).pathname;
+        if (pathname === uploadRelayPath) {
+          const relayTimeline = largeTransport.relay_requests.find((entry) => (
+            entry.request === response.request()
+          ));
+          if (relayTimeline) {
+            relayTimeline.response_observed = true;
+            relayTimeline.response_sequence = ++networkSequence;
+          }
+          const largeTask = (async () => {
+            try {
+              if (!relayTimeline) {
+                throw verifierFailure(verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH);
+              }
+              largeTransport.relay_receipts.push(
+                await validateLargeRelayResponse(response, largeFixture, relayTimeline)
+              );
+            } catch {
+              markLargeTransportViolation(
+                largeTransport,
+                verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH
+              );
+            }
+          })();
+          largeTransport.capture_tasks.add(largeTask);
+          void largeTask.finally(() => largeTransport.capture_tasks.delete(largeTask));
+        }
+      }
     });
 
     await journeyPage.goto("/app/", { waitUntil: "domcontentloaded" });
@@ -390,6 +1718,7 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
     await expect(journeyPage.getByTestId("start-recognition")).toBeHidden();
 
     for (const sourceCase of sourceCases) {
+      normalTransport.active_case_id = sourceCase.case_id;
       const uploadStartedAt = Date.now();
       const recognitionResponsePromise = journeyPage.waitForResponse((response) => (
         response.request().method() === "POST"
@@ -403,6 +1732,13 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
 
       const recognitionResponse = await recognitionResponsePromise;
       const recognitionPayload = await recognitionResponse.json();
+      const responseAttempt = normalTransport.attempts.find((attempt) => (
+        attempt.request === recognitionResponse.request()
+      ));
+      requireInvariant(Boolean(responseAttempt), verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+      responseAttempt.response_observed = true;
+      requireInvariant(!normalTransport.violation,
+        verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
       addIds(recognitionPayload, ids);
       expect(recognitionResponse.ok(), "direct CSM recognition must succeed").toBeTruthy();
       expect(recognitionPayload?.trace_status, "recognition trace must be durable").toBe("PERSISTED");
@@ -411,6 +1747,21 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
       expect(recognitionPayload?.provider_retry_count, "live verifier excludes provider retries").toBe(0);
       expect(String(recognitionPayload?.asset_id || "")).not.toBe("");
       expect(String(recognitionPayload?.recognition_session_id || "")).not.toBe("");
+      const executionReceipt = liveExecutionReceiptProof(recognitionPayload, {
+        imageCount: sourceCase.image_count,
+        transportProfile: sourceCase.case_id === "NON_TCG"
+          ? CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE
+          : CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+      });
+      const routeCoverage = normalRouteCoverageReceipt({
+        sourceCase,
+        payload: recognitionPayload,
+        responseUrl: recognitionResponse.url(),
+        attempts: normalTransport.attempts
+      });
+      responseAttempt.recognition_session_id = recognitionPayload.recognition_session_id;
+      responseAttempt.provider_response_id_sha256 =
+        executionReceipt.provider_response_id_sha256;
 
       const result = journeyPage.getByTestId("writer-title-result").first();
       const titleInput = result.getByTestId("writer-title-input");
@@ -433,6 +1784,9 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
       expect(resolutionView?.recognition_session_id).toBe(recognitionPayload.recognition_session_id);
       expect(resolutionView?.grammar?.value).toBe(sourceCase.expected_grammar);
       const versions = recognitionVersionReceipt(recognitionPayload, resolutionView);
+      const ownerExecutionReadback = durableOwnerExecutionReadbackProof(
+        executionReceipt, resolutionView
+      );
       requireInvariant(titleSha256(resolutionView?.composer?.stored_title) === generatedTitleSha256,
         verifierErrorCodes.TITLE_STORED_UI_MISMATCH);
       expect(resolutionView?.composer?.recomposed_matches_stored).toBe(true);
@@ -503,11 +1857,14 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
           content_sha256: contentSha256
         })),
         recognition_route: new URL(recognitionResponse.url()).pathname,
+        route_coverage: routeCoverage,
         asset_id: recognitionPayload.asset_id,
         recognition_session_id: recognitionPayload.recognition_session_id,
         trace_status: recognitionPayload.trace_status,
         provider_attempt_number: recognitionPayload.provider_attempt_number,
         provider_retry_count: recognitionPayload.provider_retry_count,
+        execution_receipt: executionReceipt,
+        owner_execution_readback: ownerExecutionReadback,
         resolution_http_method: assetResolutionRequests[0].method,
         resolution_request_count: assetResolutionRequests.length,
         glass_box_rendered: true,
@@ -525,7 +1882,204 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
         upload_to_feedback_ms: Date.now() - uploadStartedAt
       });
       await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
+      normalTransport.active_case_id = null;
     }
+
+    const ownerResponse = await journeyContext.request.get(`${baseUrl}/api/session`, {
+      headers: { accept: "application/json" }
+    });
+    const ownerSession = await ownerResponse.json();
+    requireInvariant(ownerResponse.ok()
+      && ownerSession?.authenticated === true
+      && ownerSession?.role === "OWNER",
+    verifierErrorCodes.LARGE_OWNER_REQUIRED);
+
+    const largeUploadStartedAt = Date.now();
+    largeTransport.active = true;
+    const largeRecognitionResponsePromise = journeyPage.waitForResponse((response) => (
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === stagedRecognitionPath
+    ), { timeout: 6 * 60 * 1000 });
+    const largeResolutionResponsePromise = journeyPage.waitForResponse((response) => (
+      response.request().method() === "GET"
+      && new URL(response.url()).pathname === "/api/csm-resolution-view"
+    ), { timeout: 6 * 60 * 1000 });
+    await uploadInput.setInputFiles(largeFixture.images);
+
+    const recognitionOutcome = await Promise.race([
+      largeRecognitionResponsePromise.then((response) => ({ response })),
+      largeTransport.violation_signal.then((code) => ({ violation: code }))
+    ]);
+    if (recognitionOutcome.violation) throw verifierFailure(recognitionOutcome.violation);
+    const largeRecognitionResponse = recognitionOutcome.response;
+    requireInvariant(largeRecognitionResponse.status() === 200 && largeRecognitionResponse.ok(),
+      verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+    const largeRecognitionPayload = await largeRecognitionResponse.json();
+    addIds(largeRecognitionPayload, ids);
+    await Promise.all(largeTransport.response_promises);
+    await Promise.allSettled([...largeTransport.capture_tasks]);
+    await expect.poll(() => largeTransport.relay_receipts.length, {
+      timeout: 30_000,
+      intervals: [100, 250, 500]
+    }).toBe(2).catch(() => {
+      throw verifierFailure(verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH);
+    });
+    requireInvariant(!largeTransport.violation
+      && largeTransport.external_storage_puts === 0
+      && new Set(largeTransport.relay_receipts.map((entry) => entry.role)).size === 2
+      && largeTransport.relay_receipts.reduce(
+        (total, entry) => total + entry.browser_body_bytes, 0
+      ) === largeFixture.originalTotal,
+    verifierErrorCodes.LARGE_RELAY_CONTRACT_MISMATCH);
+    const transportReceipt = validateLargeRecognitionResponse(
+      largeRecognitionPayload,
+      largeFixture,
+      largeTransport.ingest_requests,
+      largeTransport.relay_receipts,
+      {
+        recognitionResponseSequence: largeTransport.recognition_response_events.find((entry) => (
+          entry.request === largeRecognitionResponse.request()
+        ))?.response_sequence
+      }
+    );
+    const largeRecognitionPost = recognitionPosts.find((entry) => (
+      entry.request === largeRecognitionResponse.request()
+    ));
+    requireInvariant(Boolean(largeRecognitionPost),
+      verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+    largeRecognitionPost.recognition_session_id = largeRecognitionPayload.recognition_session_id;
+    largeRecognitionPost.provider_response_id_sha256 =
+      transportReceipt.execution_receipt.provider_response_id_sha256;
+
+    const largeResult = journeyPage.getByTestId("writer-title-result").first();
+    const largeTitleInput = largeResult.getByTestId("writer-title-input");
+    await expect(largeTitleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
+    await expect.poll(
+      async () => /^(?!标题暂不可用$).{1,80}$/.test((await largeTitleInput.inputValue()).trim()),
+      { timeout: 6 * 60 * 1000, intervals: [250, 500, 1_000, 2_000] }
+    ).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
+    const largeTitleBeforePanel = await largeTitleInput.inputValue();
+    const largeGeneratedTitleSha256 = titleSha256(largeRecognitionPayload.title);
+    const largePanelTitleSha256 = titleSha256(largeTitleBeforePanel);
+    requireInvariant(largePanelTitleSha256 === largeGeneratedTitleSha256,
+      verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
+
+    const largeResolutionResponse = await largeResolutionResponsePromise;
+    const largeResolutionView = await largeResolutionResponse.json();
+    addIds(largeResolutionView, ids);
+    requireInvariant(largeResolutionResponse.ok()
+      && largeResolutionView?.asset_id === largeRecognitionPayload.asset_id
+      && largeResolutionView?.recognition_session_id === largeRecognitionPayload.recognition_session_id,
+    verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+    const largeVersions = recognitionVersionReceipt(largeRecognitionPayload, largeResolutionView);
+    const largeOwnerExecutionReadback = durableOwnerExecutionReadbackProof(
+      transportReceipt.execution_receipt, largeResolutionView
+    );
+    requireInvariant(titleSha256(largeResolutionView?.composer?.stored_title) === largeGeneratedTitleSha256,
+      verifierErrorCodes.TITLE_STORED_UI_MISMATCH);
+    requireInvariant(largeResolutionView?.composer?.recomposed_matches_stored === true
+      && largeResolutionView?.composer?.trace_reliable === true
+      && Array.isArray(largeResolutionView?.brackets)
+      && largeResolutionView.brackets.length > 0,
+    verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+    const largeGlassBox = largeResult.locator("details.glass-box");
+    await expect(largeGlassBox).toBeAttached();
+    await largeGlassBox.locator("summary").click();
+    await expect(largeGlassBox.locator("tbody tr")).toHaveCount(largeResolutionView.brackets.length);
+    const largeTitleAfterPanel = await largeTitleInput.inputValue();
+    requireInvariant(titleSha256(largeTitleAfterPanel) === largeGeneratedTitleSha256,
+      verifierErrorCodes.TITLE_CHANGED_AFTER_GLASS_BOX);
+
+    const largeAssetResolutionRequests = resolutionRequests.filter((request) => (
+      request.asset_id === largeRecognitionPayload.asset_id
+    ));
+    requireInvariant(largeAssetResolutionRequests.length === 1
+      && largeAssetResolutionRequests[0].method === "GET",
+    verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+
+    await largeTitleInput.fill(largeTitleBeforePanel);
+    const largePersistenceRequestPromise = journeyPage.waitForRequest((request) => (
+      request.method() === "POST"
+      && new URL(request.url()).pathname === "/api/v4/listing-feedback"
+    ), { timeout: 45_000 });
+    const largePersistenceResponsePromise = journeyPage.waitForResponse((response) => (
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/v4/listing-feedback"
+    ), { timeout: 45_000 });
+    await largeResult.getByTestId("accept-writer-title").click();
+    const [largePersistenceRequest, largePersistenceResponse] = await Promise.all([
+      largePersistenceRequestPromise,
+      largePersistenceResponsePromise
+    ]);
+    let largePersistenceRequestPayload;
+    try {
+      largePersistenceRequestPayload = largePersistenceRequest.postDataJSON();
+    } catch {
+      throw verifierFailure(verifierErrorCodes.FEEDBACK_EXCHANGE_MISMATCH);
+    }
+    const largePersistencePayload = await largePersistenceResponse.json();
+    addIds(largePersistencePayload, ids);
+    const largeResponseRequest = largePersistenceResponse.request();
+    const largeFeedback = feedbackReceipt({
+      requestPayload: largePersistenceRequestPayload,
+      responsePayload: largePersistencePayload,
+      requestMatchesResponse: largePersistenceRequest === largeResponseRequest
+        && stableJson(requestExchangeReceipt(largePersistenceRequest))
+          === stableJson(requestExchangeReceipt(largeResponseRequest)),
+      recognitionSessionId: largeRecognitionPayload.recognition_session_id,
+      expectedTitleSha256: largePanelTitleSha256
+    });
+    requireInvariant(largePersistenceResponse.ok()
+      && largePersistencePayload?.v4_persistence?.transaction?.saved === true
+      && largePersistencePayload?.feedback_data_use === "ADMIN_TEST_ONLY"
+      && largePersistencePayload?.dataset_disposition === "ADMIN_TEST_ONLY"
+      && largePersistencePayload?.training_eligible === false
+      && largePersistencePayload?.production_promotion_eligible === false,
+    verifierErrorCodes.LARGE_FEEDBACK_POLICY_MISMATCH);
+
+    evidence.cases.push({
+      case_id: "LARGE_STAGED_TRANSPORT",
+      transport_only: true,
+      accuracy_claim: null,
+      fixture_id: largeFixture.receipt.fixture_id,
+      fixture_receipt_sha256: largeFixture.receipt.receipt_sha256,
+      recognition_route: new URL(largeRecognitionResponse.url()).pathname,
+      asset_id: largeRecognitionPayload.asset_id,
+      recognition_session_id: largeRecognitionPayload.recognition_session_id,
+      trace_status: largeRecognitionPayload.trace_status,
+      provider_attempt_number: largeRecognitionPayload.provider_attempt_number,
+      provider_retry_count: largeRecognitionPayload.provider_retry_count,
+      glass_box_rendered: true,
+      bracket_count: largeResolutionView.brackets.length,
+      trace_reliable: largeResolutionView.composer.trace_reliable,
+      recomposed_matches_stored: largeResolutionView.composer.recomposed_matches_stored,
+      versions: largeVersions,
+      owner_execution_readback: largeOwnerExecutionReadback,
+      ...titleEvidenceReceipt({
+        titleBeforePanel: largeTitleBeforePanel,
+        titleAfterPanel: largeTitleAfterPanel,
+        expectedTitleSha256: largeGeneratedTitleSha256,
+        feedback: largeFeedback
+      }),
+      ...transportReceipt,
+      relay_request_count: largeTransport.relay_receipts.length,
+      feedback_saved: true,
+      feedback_data_use: "ADMIN_TEST_ONLY",
+      training_eligible: false,
+      production_promotion_eligible: false,
+      upload_to_feedback_ms: Date.now() - largeUploadStartedAt
+    });
+    largeTransport.phase_complete = true;
+    await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
+    await journeyPage.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => null);
+    await Promise.all(largeTransport.response_promises);
+    await Promise.allSettled([...responseCaptureTasks]);
+    await journeyContext.close();
+    journeyContext = null;
+    requireInvariant(!largeTransport.violation
+      && largeTransport.ingest_requests.length === largeTransport.ingest_responses.length
+      && largeTransport.ingest_requests.length === 1,
+    verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
 
     const finalHealthResponse = await fetch(healthUrl, {
       headers: {
@@ -538,17 +2092,102 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
     expect(finalHealth?.deployment?.environment).toBe("production");
     expect(finalHealth?.deployment?.git_commit_sha, "production target changed during Writer Journey")
       .toBe(expectedSha);
+    requireInvariant(finalHealth?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
+      && finalHealth?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+      && healthRecognitionTransportContractMatches(finalHealth?.runtime)
+      && finalHealth?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
+    verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
     evidence.stages.release_stability = { passed: true, git_commit_sha: expectedSha };
 
-    await Promise.allSettled([...responseCaptureTasks]);
-    expect(apiPaths.has("/api/csm-listing-title") || apiPaths.has("/api/csm-listing-title-ingest"),
-      "the UI must receive direct CSM recognition before feedback").toBe(true);
-    expect(resolutionRequests).toHaveLength(2);
+    requireInvariant(!largeTransport.violation
+      && largeTransport.ingest_requests.length === 1
+      && largeTransport.ingest_responses.length === 1
+      && largeTransport.recognition_response_events.length === 1
+      && largeTransport.recognition_response_events[0].status === 200
+      && largeTransport.relay_requests.length === 2
+      && largeTransport.relay_requests.every((entry) => entry.response_observed === true)
+      && largeTransport.relay_receipts.length === 2,
+    verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
+    requireInvariant(!normalTransport.violation
+      && normalTransport.attempts.filter((entry) => entry.aborted_before_network === true).length === 1
+      && normalTransport.attempts.filter((entry) => entry.aborted_before_network === true)
+        .every((entry) => entry.response_observed === false),
+    verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
+    expect(resolutionRequests).toHaveLength(3);
     expect(resolutionRequests.every((request) => request.method === "GET")).toBe(true);
-    expect(evidence.cases.map((entry) => entry.case_id).sort()).toEqual(["NON_TCG", "TCG"]);
-    expect(ids.asset_id.size, "asset_id must be captured").toBeGreaterThanOrEqual(2);
-    expect(ids.session_id.size, "recognition_session_id must be captured").toBeGreaterThanOrEqual(2);
+    expect(evidence.cases.map((entry) => entry.case_id).sort())
+      .toEqual(["LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"]);
+    const providerResponseReceiptHashes = evidence.cases.map(
+      (entry) => entry?.execution_receipt?.provider_response_id_sha256
+    );
+    const providerAuthorityOperationHashes = evidence.cases.map(
+      (entry) => entry?.execution_receipt?.provider_authority_receipt?.operation_key_sha256
+    );
+    requireInvariant(providerResponseReceiptHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
+      && providerResponseReceiptHashes.length === 3
+      && new Set(providerResponseReceiptHashes).size === evidence.cases.length
+      && providerAuthorityOperationHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
+      && new Set(providerAuthorityOperationHashes).size === evidence.cases.length
+      && evidence.cases.every((entry) => entry.provider_attempt_number === 1
+        && entry.provider_retry_count === 0
+        && entry.execution_receipt?.execution_origin === "FRESH_CURRENT"
+        && entry.recognition_session_id === `csmsess_${
+          entry.execution_receipt?.provider_authority_receipt?.operation_key_sha256.slice(0, 40)
+        }`),
+    verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
+    const recognitionPostReceipt = recognitionPostSeal(recognitionPosts, evidence.cases);
+    evidence.stages.warmup = warmupResponseReceipt(warmupTransport.requests);
+    expect(ids.asset_id.size, "asset_id must be captured").toBeGreaterThanOrEqual(3);
+    expect(ids.session_id.size, "recognition_session_id must be captured").toBeGreaterThanOrEqual(3);
     expect(requestIds.size, "request_id must be captured").toBeGreaterThan(0);
+    const largeCaseEvidence = evidence.cases.find((entry) => (
+      entry.case_id === "LARGE_STAGED_TRANSPORT"
+    ));
+    requireInvariant(evidence.cases.every((entry) => (
+      hasExactKeys(entry.execution_receipt?.server_stages_ms, requiredServerStageNames)
+      && Object.values(entry.execution_receipt.server_stages_ms).every(
+        (value) => Number.isFinite(value) && value >= 0
+      )
+      && hasExactKeys(
+        entry.execution_receipt?.provider_authority_receipt,
+        providerAuthorityReceiptEvidenceKeys
+      )
+      && entry.execution_receipt.provider_authority_receipt.schema_version
+        === "csm-provider-authority-receipt-v1"
+      && /^[0-9a-f]{64}$/.test(
+        entry.execution_receipt.provider_authority_receipt.operation_key_sha256
+      )
+      && entry.execution_receipt?.provider_authority_receipt?.estimated_tokens
+        === expectedEstimatedTokensPerAttempt
+      && entry.execution_receipt?.provider_authority_receipt?.attempt === 1
+      && entry.execution_receipt?.provider_authority_receipt?.attempt_class === "fresh"
+      && ["admitted", "claim_receipt_replayed"].includes(
+        entry.execution_receipt?.provider_authority_receipt?.claim_code
+      )
+      && ["settled", "exact_replay"].includes(
+        entry.execution_receipt?.provider_authority_receipt?.settle_code
+      )
+      && entry.execution_receipt?.provider_authority_receipt?.operation_status === "SUCCEEDED"
+      && entry.owner_execution_readback?.durable_read_after_write === true
+      && entry.owner_execution_readback?.sha256
+        === entry.execution_receipt?.owner_execution_receipt_sha256
+    ))
+      && largeCaseEvidence?.overlap_observed === true
+      && largeCaseEvidence?.relay_durable_before_recognition_response === true,
+    verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
+    evidence.final_seal = {
+      provider_case_count: 3,
+      fresh_current_case_count: 3,
+      distinct_provider_response_receipts: true,
+      distinct_provider_authority_operations: true,
+      complete_server_stage_receipts: true,
+      exact_authority_token_reservation: expectedEstimatedTokensPerAttempt,
+      durable_owner_execution_readback_count: 3,
+      warmup_real_response_observed: true,
+      staged_overlap_observed: true,
+      staged_relays_durable_before_recognition_response: true,
+      ...recognitionPostReceipt
+    };
     evidence.stages.live_contract = { passed: true, case_count: evidence.cases.length };
     evidence.passed = true;
   } catch (error) {
@@ -576,6 +2215,84 @@ test("production writer journey renders reliable Glass Box traces for NON_TCG an
 });
 
 test("offline verifier boundaries redact titles and reject identity drift @offline", async () => {
+  const warmupProof = warmupResponseReceipt([{
+    request_sequence: 1,
+    response_sequence: 2,
+    response_observed: true,
+    response_status: 405
+  }]);
+  requireInvariant(warmupProof.response_count === 1
+    && warmupProof.http_statuses[0] === 405,
+  verifierErrorCodes.GENERIC);
+  for (const invalidWarmups of [[], [{
+    request_sequence: 1,
+    response_sequence: null,
+    response_observed: false,
+    response_status: null
+  }]]) {
+    let missingWarmupResponseRejected = false;
+    try { warmupResponseReceipt(invalidWarmups); } catch {
+      missingWarmupResponseRejected = true;
+    }
+    requireInvariant(missingWarmupResponseRejected, verifierErrorCodes.GENERIC);
+  }
+
+  const offlineRecognitionCases = ["NON_TCG", "TCG", "LARGE_STAGED_TRANSPORT"].map(
+    (caseId, index) => ({
+      case_id: caseId,
+      recognition_session_id: `session-${index}`,
+      execution_receipt: { provider_response_id_sha256: String(index + 1).repeat(64) }
+    })
+  );
+  const offlineRecognitionPosts = [
+    ...offlineRecognitionCases.slice(0, 2).map((caseEvidence) => ({
+      case_id: caseEvidence.case_id,
+      continued: true,
+      aborted_before_network: false,
+      response_observed: true,
+      response_status: 200,
+      recognition_session_id: caseEvidence.recognition_session_id,
+      provider_response_id_sha256: caseEvidence.execution_receipt.provider_response_id_sha256
+    })),
+    {
+      case_id: "TCG",
+      continued: false,
+      aborted_before_network: true,
+      response_observed: false,
+      response_status: null,
+      recognition_session_id: null,
+      provider_response_id_sha256: null
+    },
+    {
+      case_id: offlineRecognitionCases[2].case_id,
+      continued: true,
+      aborted_before_network: false,
+      response_observed: true,
+      response_status: 200,
+      recognition_session_id: offlineRecognitionCases[2].recognition_session_id,
+      provider_response_id_sha256:
+        offlineRecognitionCases[2].execution_receipt.provider_response_id_sha256
+    }
+  ];
+  requireInvariant(recognitionPostSeal(
+    offlineRecognitionPosts, offlineRecognitionCases
+  ).network_continued_provider_requests === 3, verifierErrorCodes.GENERIC);
+  for (const invalidPosts of [
+    [...offlineRecognitionPosts, { ...offlineRecognitionPosts[0] }],
+    offlineRecognitionPosts.map((entry, index) => index === 0
+      ? { ...entry, provider_response_id_sha256: "f".repeat(64) }
+      : entry),
+    offlineRecognitionPosts.map((entry, index) => index === 0
+      ? { ...entry, response_status: 500 }
+      : entry)
+  ]) {
+    let recognitionPostDriftRejected = false;
+    try { recognitionPostSeal(invalidPosts, offlineRecognitionCases); } catch {
+      recognitionPostDriftRejected = true;
+    }
+    requireInvariant(recognitionPostDriftRejected, verifierErrorCodes.GENERIC);
+  }
+
   const hash = "a".repeat(64);
   const manifest = {
     schema_version: "writer-journey-cases-v2",
@@ -633,6 +2350,23 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     secure: true, expires: nowSeconds + 60
   }] }, "http://listing.lyncafei.team/api/health", { nowSeconds }) === "",
   verifierErrorCodes.GENERIC);
+  const candidateOrigin = "https://lynca-candidate-team.vercel.app";
+  const exactCandidateState = { cookies: [{
+    name: "candidate", value: "kept", domain: "lynca-candidate-team.vercel.app", path: "/",
+    secure: true, expires: nowSeconds + 60
+  }], origins: [] };
+  requireInvariant(candidateStorageStateBoundToTarget(
+    exactCandidateState, `${candidateOrigin}/api/health`
+  ), verifierErrorCodes.GENERIC);
+  for (const unsafeState of [
+    { ...exactCandidateState, cookies: [{ ...exactCandidateState.cookies[0], domain: ".vercel.app" }] },
+    { ...exactCandidateState, cookies: [{ ...exactCandidateState.cookies[0], domain: "sibling.vercel.app" }] },
+    { ...exactCandidateState, origins: [{ origin: "https://sibling.vercel.app", localStorage: [] }] }
+  ]) {
+    requireInvariant(!candidateStorageStateBoundToTarget(
+      unsafeState, `${candidateOrigin}/api/health`
+    ), verifierErrorCodes.GENERIC);
+  }
   for (const forbiddenBase of [
     "https://listing.lyncafei.team.evil/",
     "https://preview.example.vercel.app/",
@@ -734,4 +2468,638 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && !titleArtifact.includes("writer_final_title")
     && !titleArtifact.includes("stored_title"),
     verifierErrorCodes.GENERIC);
+
+  const derivedBuffers = [Buffer.from("front-derived"), Buffer.from("back-derived")];
+  const fixture = {
+    originalTotal: 6_100_000,
+    derivedTotal: derivedBuffers.reduce((total, bytes) => total + bytes.length, 0),
+    originals: originalRoles.map((role, index) => ({
+      role,
+      source_role: index === 0 ? "front_original" : "back_original",
+      content_type: "image/jpeg",
+      bytes: 3_050_000,
+      width: 3000,
+      height: 4200,
+      content_sha256: String(index + 1).repeat(64)
+    })),
+    derived: derivedBuffers.map((bytes, index) => ({
+      role: stagedRecognitionRole,
+      source_role: originalRoles[index],
+      content_type: "image/jpeg",
+      bytes: bytes.length,
+      width: 1143,
+      height: 1600,
+      content_sha256: sha256(bytes)
+    }))
+  };
+  const ingestMetadata = {
+    clientTiming: {
+      client_upload_bytes: fixture.originalTotal,
+      client_recognition_body_bytes: fixture.derivedTotal,
+      client_staged_transform_ms: 12,
+      client_original_upload_elapsed_at_dispatch_ms: 8
+    },
+    clientAssetRef: "client-asset",
+    idempotencyKey: "idempotency-key",
+    captureProfileId: "capture-profile-test",
+    intentId: "intent-id",
+    recognitionInputOnly: true,
+    laneVersion: LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT.staged_lane_version,
+    expectedOriginalCount: 2,
+    resumeOnly: false,
+    stagedResumeReceipt: `stgr_${"f".repeat(64)}`,
+    originalImages: fixture.originals.map((entry, index) => ({
+      imageId: `original-${index + 1}`,
+      storageFirst: true,
+      role: entry.role,
+      contentType: entry.content_type,
+      size: entry.bytes,
+      width: entry.width,
+      height: entry.height,
+      contentSha256: entry.content_sha256
+    })),
+    images: fixture.derived.map((entry, index) => ({
+      imageId: `derived-${index + 1}`,
+      sourceImageId: `original-${index + 1}`,
+      role: entry.role,
+      fileName: `${index + 1}-derived.jpg`,
+      contentType: entry.content_type,
+      size: entry.bytes,
+      width: entry.width,
+      height: entry.height,
+      contentSha256: entry.content_sha256,
+      signatureHex: "ffd8ffe0"
+    }))
+  };
+  const ingestBody = Buffer.concat(derivedBuffers);
+  const makeIngestRequest = ({
+    pathname = stagedRecognitionPath,
+    metadata = ingestMetadata
+  } = {}) => ({
+    url: () => `${productionOrigin}${pathname}`,
+    method: () => "POST",
+    headers: () => ({
+      "x-lynca-ingest-metadata": Buffer.from(JSON.stringify(metadata)).toString("base64url")
+    }),
+    postDataBuffer: () => ingestBody
+  });
+  const offlineRelayTimelineSnapshot = Object.freeze({
+    started_count: 2,
+    completed_count: 0,
+    incomplete_count: 2,
+    recognition_request_sequence: 3
+  });
+  const accepted = validateLargeIngestRequest(makeIngestRequest(), fixture, [], {
+    relayTimelineSnapshot: offlineRelayTimelineSnapshot
+  });
+  requireInvariant(accepted.overlap_observed === true
+    && accepted.body_bytes === fixture.derivedTotal,
+  verifierErrorCodes.GENERIC);
+  for (const invalidTimeline of [
+    { ...offlineRelayTimelineSnapshot, started_count: 0, incomplete_count: 0 },
+    { ...offlineRelayTimelineSnapshot, completed_count: 2, incomplete_count: 0 }
+  ]) {
+    let falseOverlapRejected = false;
+    try {
+      validateLargeIngestRequest(makeIngestRequest(), fixture, [], {
+        relayTimelineSnapshot: invalidTimeline
+      });
+    } catch {
+      falseOverlapRejected = true;
+    }
+    requireInvariant(falseOverlapRejected, verifierErrorCodes.GENERIC);
+  }
+  let unauthorizedSecondBlocked = false;
+  try {
+    validateLargeIngestRequest(makeIngestRequest({
+      metadata: { ...ingestMetadata, resumeOnly: true }
+    }), fixture, [accepted]);
+  } catch {
+    unauthorizedSecondBlocked = true;
+  }
+  requireInvariant(unauthorizedSecondBlocked, verifierErrorCodes.GENERIC);
+
+  const resumeAuthorization = validateLargeRecoveryAuthorization({
+    ok: false,
+    payload: {
+      ok: false,
+      recovery_action: "STAGED_RESUME_ONLY",
+      staged_resume_receipt: ingestMetadata.stagedResumeReceipt
+    }
+  }, accepted);
+  const authorizedResume = validateLargeIngestRequest(makeIngestRequest({
+    metadata: { ...ingestMetadata, resumeOnly: true }
+  }), fixture, [accepted], { recoveryAuthorization: resumeAuthorization });
+  requireInvariant(authorizedResume.resume_only === true, verifierErrorCodes.GENERIC);
+  let authorizedManifestDriftRejected = false;
+  try {
+    validateLargeIngestRequest(makeIngestRequest({
+      metadata: {
+        ...ingestMetadata,
+        resumeOnly: true,
+        images: [
+          { ...ingestMetadata.images[0], imageId: "derived-drift" },
+          ingestMetadata.images[1]
+        ]
+      }
+    }), fixture, [accepted], { recoveryAuthorization: resumeAuthorization });
+  } catch {
+    authorizedManifestDriftRejected = true;
+  }
+  requireInvariant(authorizedManifestDriftRejected, verifierErrorCodes.GENERIC);
+  for (const invalidAuthorization of [
+    validateLargeRecoveryAuthorization({ ok: true, payload: { ok: true } }, accepted),
+    { ...resumeAuthorization, resume_only: false }
+  ]) {
+    let rejected = false;
+    try {
+      validateLargeIngestRequest(makeIngestRequest({
+        metadata: { ...ingestMetadata, resumeOnly: true }
+      }), fixture, [accepted], { recoveryAuthorization: invalidAuthorization });
+    } catch {
+      rejected = true;
+    }
+    requireInvariant(rejected, verifierErrorCodes.GENERIC);
+  }
+  let completedPhaseRejected = false;
+  try {
+    validateLargeIngestRequest(makeIngestRequest(), fixture, [], { phaseComplete: true });
+  } catch {
+    completedPhaseRejected = true;
+  }
+  requireInvariant(completedPhaseRejected, verifierErrorCodes.GENERIC);
+
+  const relayReceipts = originalRoles.map((role, index) => ({
+    role,
+    asset_id: "asset-test",
+    image_id: `original-${index + 1}`,
+    browser_body_bytes: fixture.originals[index].bytes,
+    started_sequence: index + 1,
+    durable_response_sequence: index + 4
+  }));
+  const offlineRecognitionResponseSequence = 6;
+  const offlineProviderResponseId = "resp_offline_writer_journey";
+  const offlineExecutionContract = structuredClone(
+    expectedExecutionContractByTransportLaneAndImageCount[
+      CSM_STAGED_TRANSPORT_PROFILE.lane_version
+    ]["2"]
+  );
+  const offlineExecutionReceipt = {
+    execution_origin: "FRESH_CURRENT",
+    provider: CSM_ACTIVE_MODEL_PROFILE.provider,
+    model: CSM_ACTIVE_MODEL_PROFILE.model,
+    requested_model: CSM_ACTIVE_MODEL_PROFILE.model,
+    requested_effort: CSM_ACTIVE_MODEL_PROFILE.reasoning_effort,
+    image_detail: CSM_ACTIVE_MODEL_PROFILE.image_detail,
+    model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
+    optimization_pack_id: CSM_ACTIVE_MODEL_PROFILE.optimization_pack_id,
+    optimization_pack_sha256: CSM_ACTIVE_MODEL_PROFILE.optimization_pack_sha256,
+    provider_adapter_version: expectedProviderAdapterVersion,
+    request_builder_version: expectedProviderAdapterContract.request_builder_version,
+    response_parser_version: expectedProviderAdapterContract.response_parser_version,
+    execution_contract_sha256: expectedExecutionContractSha256ByTransportLaneAndImageCount[
+      CSM_STAGED_TRANSPORT_PROFILE.lane_version
+    ]["2"],
+    execution_contract: offlineExecutionContract,
+    max_output_tokens: expectedMaxOutputTokens,
+    provider_response_status: "completed",
+    provider_response_status_attested: true,
+    provider_response_incomplete: false,
+    provider_response_id: offlineProviderResponseId,
+    served_model: null,
+    served_model_attested: false,
+    served_effort: null,
+    served_effort_attested: false,
+    served_effort_conflict: false,
+    input_tokens: 4_100,
+    cached_input_tokens: 1_024,
+    output_tokens: 320,
+    reasoning_tokens: 24,
+    total_tokens: 4_420,
+    provider_attempt_number: 1,
+    provider_retry_count: 0
+  };
+  const recognitionPayload = {
+    ...offlineExecutionReceipt,
+    recognition_session_id: `csmsess_${"a".repeat(40)}`,
+    provider_authority_receipt: {
+      schema_version: "csm-provider-authority-receipt-v1",
+      operation_key_sha256: "a".repeat(64),
+      attempt: 1,
+      attempt_class: "fresh",
+      estimated_tokens: expectedEstimatedTokensPerAttempt,
+      claim_code: "admitted",
+      settle_code: "settled",
+      operation_status: "SUCCEEDED"
+    },
+    ok: true,
+    route: "CSM_THIN_DIRECT_INGEST",
+    recognition_input: "readability_derived_inline",
+    originals_verified: true,
+    trace_status: "PERSISTED",
+    csm_owner_versions: sealCsmOwnerExecutionReceipt({
+      provider: offlineExecutionReceipt.provider,
+      model: offlineExecutionReceipt.model,
+      requested_model: offlineExecutionReceipt.requested_model,
+      served_model: offlineExecutionReceipt.served_model,
+      served_model_attested: offlineExecutionReceipt.served_model_attested,
+      effort: offlineExecutionReceipt.requested_effort,
+      reasoning_effort: null,
+      reasoning_effort_attested: false,
+      provider_response_status: offlineExecutionReceipt.provider_response_status,
+      provider_response_status_attested: offlineExecutionReceipt.provider_response_status_attested,
+      provider_response_incomplete: offlineExecutionReceipt.provider_response_incomplete,
+      served_effort_conflict: offlineExecutionReceipt.served_effort_conflict,
+      provider_http_status: 200,
+      image_detail: offlineExecutionReceipt.image_detail,
+      model_profile_id: offlineExecutionReceipt.model_profile_id,
+      optimization_pack_id: offlineExecutionReceipt.optimization_pack_id,
+      optimization_pack_sha256: offlineExecutionReceipt.optimization_pack_sha256,
+      account_scope: offlineExecutionContract.account_scope,
+      provider_adapter_version: offlineExecutionReceipt.provider_adapter_version,
+      request_builder_version: offlineExecutionReceipt.request_builder_version,
+      response_parser_version: offlineExecutionReceipt.response_parser_version,
+      execution_contract_sha256: offlineExecutionReceipt.execution_contract_sha256,
+      execution_contract: structuredClone(offlineExecutionContract),
+      prompt_version: null,
+      max_output_tokens: offlineExecutionReceipt.max_output_tokens,
+      provider_response_id: offlineExecutionReceipt.provider_response_id,
+      provider_request_id: "request-offline",
+      provider_client_request_id: "client-request-offline",
+      provider_attempt_number: offlineExecutionReceipt.provider_attempt_number,
+      provider_retry_count: offlineExecutionReceipt.provider_retry_count,
+      latency_ms: 4,
+      latency_stages_ms: { provider_ms: 4 },
+      input_tokens: offlineExecutionReceipt.input_tokens,
+      cached_input_tokens: offlineExecutionReceipt.cached_input_tokens,
+      output_tokens: offlineExecutionReceipt.output_tokens,
+      reasoning_tokens: offlineExecutionReceipt.reasoning_tokens,
+      total_tokens: offlineExecutionReceipt.total_tokens,
+      total_tokens_source: "provider",
+      resolver: "resolver-offline",
+      composer: "composer-offline",
+      marketplace_profile: "marketplace-offline",
+      accuracy_loss_ledger_version: null,
+      accuracy_loss_ledger_sha256: null
+    }),
+    asset_id: "asset-test",
+    client_asset_ref: ingestMetadata.clientAssetRef,
+    staged_resume_receipt: ingestMetadata.stagedResumeReceipt,
+    csm_persistence: { ok: true, atomic: true, session: { saved: true } },
+    ingest_timing: { body_bytes: fixture.derivedTotal },
+    latency_stages_ms: {
+      ingest_body_bytes: fixture.derivedTotal,
+      client_recognition_body_bytes: fixture.derivedTotal,
+      client_upload_bytes: fixture.originalTotal,
+      staged_original_sync_ms: 10,
+      authority_enqueue_ms: 1,
+      authority_claim_ms: 2,
+      authority_settle_ms: 1,
+      authority_dispatch_ms: 8,
+      provider_ms: 4,
+      csm_persistence_ms: 5,
+      request_total_ms: 20,
+      client_staged_transform_ms: 3
+    }
+  };
+  const offlineExecutionProof = liveExecutionReceiptProof(recognitionPayload, {
+    imageCount: 2,
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+  });
+  const offlineOwnerReadback = durableOwnerExecutionReadbackProof(offlineExecutionProof, {
+    owner_execution_receipt: {
+      version: offlineExecutionProof.owner_execution_receipt_version,
+      sha256: offlineExecutionProof.owner_execution_receipt_sha256
+    }
+  });
+  requireInvariant(offlineOwnerReadback.durable_read_after_write === true,
+    verifierErrorCodes.GENERIC);
+  for (const driftedReadback of [
+    null,
+    { ...offlineOwnerReadback, sha256: "f".repeat(64) },
+    { ...offlineOwnerReadback, version: "owner-receipt-drift" }
+  ]) {
+    let ownerReadbackDriftRejected = false;
+    try {
+      durableOwnerExecutionReadbackProof(offlineExecutionProof, {
+        owner_execution_receipt: driftedReadback && {
+          version: driftedReadback.version,
+          sha256: driftedReadback.sha256
+        }
+      });
+    } catch {
+      ownerReadbackDriftRejected = true;
+    }
+    requireInvariant(ownerReadbackDriftRejected, verifierErrorCodes.GENERIC);
+  }
+  const attestedExecutionPayload = structuredClone(recognitionPayload);
+  attestedExecutionPayload.served_model = CSM_ACTIVE_MODEL_PROFILE.model;
+  attestedExecutionPayload.served_model_attested = true;
+  attestedExecutionPayload.csm_owner_versions.served_model = CSM_ACTIVE_MODEL_PROFILE.model;
+  attestedExecutionPayload.csm_owner_versions.served_model_attested = true;
+  attestedExecutionPayload.served_effort = CSM_ACTIVE_MODEL_PROFILE.reasoning_effort;
+  attestedExecutionPayload.served_effort_attested = true;
+  attestedExecutionPayload.csm_owner_versions.reasoning_effort =
+    CSM_ACTIVE_MODEL_PROFILE.reasoning_effort;
+  attestedExecutionPayload.csm_owner_versions.reasoning_effort_attested = true;
+  attestedExecutionPayload.csm_owner_versions = sealCsmOwnerExecutionReceipt(
+    attestedExecutionPayload.csm_owner_versions
+  );
+  const attestedExecutionProof = liveExecutionReceiptProof(attestedExecutionPayload, {
+    imageCount: 2,
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+  });
+  requireInvariant(attestedExecutionProof.served_model_attested === true
+    && attestedExecutionProof.served_model_unknown === false
+    && attestedExecutionProof.served_effort_attested === true
+    && attestedExecutionProof.served_effort_unknown === false,
+  verifierErrorCodes.GENERIC);
+  const offlineExecutionArtifact = JSON.stringify(offlineExecutionProof);
+  const executionEvidenceStringKeys = new Set([
+    "execution_origin",
+    "model_profile_id", "optimization_pack_id", "optimization_pack_sha256",
+    "provider_adapter_version", "request_builder_version", "response_parser_version",
+    "transport_profile_id", "transport_profile_sha256",
+    "execution_contract_sha256", "provider_response_id_sha256",
+    "owner_execution_receipt_version", "owner_execution_receipt_sha256"
+  ]);
+  requireInvariant(hasExactKeys(offlineExecutionProof, liveExecutionEvidenceKeys)
+    && Object.entries(offlineExecutionProof).every(([key, value]) => (
+      executionEvidenceStringKeys.has(key)
+        ? typeof value === "string" && Boolean(value)
+        : key === "server_stages_ms"
+          ? hasExactKeys(value, requiredServerStageNames)
+            && Object.values(value).every((stage) => Number.isFinite(stage) && stage >= 0)
+        : key === "provider_authority_receipt"
+          ? value.estimated_tokens === expectedEstimatedTokensPerAttempt
+            && value.attempt === 1
+            && value.attempt_class === "fresh"
+            && value.operation_status === "SUCCEEDED"
+        : typeof value === "boolean" || Number.isSafeInteger(value)
+    ))
+    && !offlineExecutionArtifact.includes(offlineProviderResponseId)
+    && !offlineExecutionArtifact.includes('"provider_response_id":')
+    && !offlineExecutionArtifact.includes('"execution_contract":')
+    && !offlineExecutionArtifact.includes("PRIVATE")
+    && !offlineExecutionArtifact.includes("/not-read/"),
+  verifierErrorCodes.GENERIC);
+  const validateOfflineLargeResponse = (payload, receipts = relayReceipts) => (
+    validateLargeRecognitionResponse(payload, fixture, [accepted], receipts, {
+      recognitionResponseSequence: offlineRecognitionResponseSequence
+    })
+  );
+  requireInvariant(validateOfflineLargeResponse(recognitionPayload).recognition_body_bytes
+    === fixture.derivedTotal, verifierErrorCodes.GENERIC);
+  for (const drifted of [
+    { ...recognitionPayload, asset_id: "asset-drift" },
+    { ...recognitionPayload, served_effort: "low", served_effort_attested: false },
+    {
+      ...recognitionPayload,
+      served_effort: "low",
+      served_effort_attested: true
+    },
+    {
+      ...recognitionPayload,
+      csm_owner_versions: {
+        ...recognitionPayload.csm_owner_versions,
+        reasoning_effort: "low",
+        reasoning_effort_attested: true
+      }
+    },
+    {
+      ...recognitionPayload,
+      latency_stages_ms: {
+        ...recognitionPayload.latency_stages_ms,
+        staged_original_sync_ms: 20
+      }
+    }
+  ]) {
+    let rejected = false;
+    try { validateOfflineLargeResponse(drifted); } catch {
+      rejected = true;
+    }
+    requireInvariant(rejected, verifierErrorCodes.GENERIC);
+  }
+
+  const receiptDriftMutators = [
+    (value) => { value.execution_origin = "EXACT_REPLAY"; },
+    (value) => { delete value.provider_authority_receipt; },
+    (value) => { value.provider_authority_receipt.estimated_tokens = 6_499; },
+    (value) => { value.provider_authority_receipt.attempt_class = "retry"; },
+    (value) => { value.provider_authority_receipt.operation_status = "FAILED"; },
+    (value) => { value.recognition_session_id = `csmsess_${"b".repeat(40)}`; },
+    (value) => { value.csm_owner_versions.owner_execution_receipt_sha256 = "0".repeat(64); },
+    (value) => { value.model_profile_id = "profile-drift"; },
+    (value) => { value.csm_owner_versions.model_profile_id = "profile-drift"; },
+    (value) => { value.optimization_pack_id = "pack-drift"; },
+    (value) => { value.csm_owner_versions.optimization_pack_sha256 = "0".repeat(64); },
+    (value) => { value.provider_adapter_version = "adapter-drift"; },
+    (value) => { value.csm_owner_versions.request_builder_version = "builder-drift"; },
+    (value) => { value.response_parser_version = "parser-drift"; },
+    (value) => { value.csm_owner_versions.execution_contract_sha256 = "0".repeat(64); },
+    (value) => { value.execution_contract.model = "model-drift"; },
+    (value) => { value.max_output_tokens = 8_191; },
+    (value) => { value.csm_owner_versions.max_output_tokens = 8_191; },
+    (value) => { value.provider_response_status = "incomplete"; },
+    (value) => { value.csm_owner_versions.provider_response_status_attested = false; },
+    (value) => { value.csm_owner_versions.provider_response_id = "resp_drift"; },
+    (value) => { value.input_tokens = 0; },
+    (value) => { value.cached_input_tokens = Number.MAX_SAFE_INTEGER + 1; },
+    (value) => { value.csm_owner_versions.output_tokens += 1; },
+    (value) => { value.reasoning_tokens = value.output_tokens + 1; },
+    (value) => { value.total_tokens = value.input_tokens + value.output_tokens - 1; },
+    (value) => { value.provider_attempt_number = 2; },
+    (value) => { value.csm_owner_versions.provider_retry_count = 1; },
+    (value) => { value.served_model = CSM_ACTIVE_MODEL_PROFILE.model; },
+    (value) => {
+      value.served_model = "unrelated-model";
+      value.served_model_attested = true;
+      value.csm_owner_versions.served_model = "unrelated-model";
+      value.csm_owner_versions.served_model_attested = true;
+    },
+    (value) => { value.served_effort = CSM_ACTIVE_MODEL_PROFILE.reasoning_effort; },
+    (value) => { value.csm_owner_versions.served_effort_conflict = true; },
+    (value) => { value.latency_stages_ms.authority_enqueue_ms = -1; },
+    (value) => { delete value.latency_stages_ms.request_total_ms; },
+    (value) => { value.latency_stages_ms.request_total_ms = 3; },
+    (value) => { value.latency_stages_ms.authority_dispatch_ms = 3; },
+    (value) => { value.latency_stages_ms.authority_claim_ms = 20; }
+  ];
+  for (const mutate of receiptDriftMutators) {
+    const drifted = structuredClone(recognitionPayload);
+    mutate(drifted);
+    let receiptDriftCode = "";
+    try {
+      liveExecutionReceiptProof(drifted, {
+        imageCount: 2,
+        transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+      });
+    } catch (error) {
+      receiptDriftCode = sanitizedFailureCode(error);
+    }
+    requireInvariant(receiptDriftCode === verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH,
+      verifierErrorCodes.GENERIC);
+  }
+
+  let swappedRelayRejected = false;
+  try {
+    validateOfflineLargeResponse(recognitionPayload, [
+      { ...relayReceipts[0], image_id: relayReceipts[1].image_id },
+      { ...relayReceipts[1], image_id: relayReceipts[0].image_id }
+    ]);
+  } catch {
+    swappedRelayRejected = true;
+  }
+  requireInvariant(swappedRelayRejected, verifierErrorCodes.GENERIC);
+  let lateRelayRejected = false;
+  try {
+    validateOfflineLargeResponse(recognitionPayload, [
+      relayReceipts[0],
+      { ...relayReceipts[1], durable_response_sequence: offlineRecognitionResponseSequence + 1 }
+    ]);
+  } catch {
+    lateRelayRejected = true;
+  }
+  requireInvariant(lateRelayRejected, verifierErrorCodes.GENERIC);
+
+  const violationState = { violation: null };
+  const violationSignal = new Promise((resolve) => { violationState.signal_violation = resolve; });
+  markLargeTransportViolation(violationState, verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  requireInvariant(await violationSignal === verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED,
+    verifierErrorCodes.GENERIC);
+  for (const request of [
+    makeIngestRequest({ pathname: "/api/csm-listing-title" }),
+    makeIngestRequest({
+      metadata: {
+        ...ingestMetadata,
+        clientTiming: { ...ingestMetadata.clientTiming, client_original_upload_ms: 0 }
+      }
+    }),
+    makeIngestRequest({
+      metadata: {
+        ...ingestMetadata,
+        images: [
+          { ...ingestMetadata.images[0], contentSha256: "0".repeat(64) },
+          ingestMetadata.images[1]
+        ]
+      }
+    }),
+    makeIngestRequest({
+      metadata: {
+        ...ingestMetadata,
+        resumeOnly: true,
+        images: [
+          { ...ingestMetadata.images[0], imageId: "derived-drift" },
+          ingestMetadata.images[1]
+        ]
+      }
+    })
+  ]) {
+    let blocked = false;
+    try {
+      validateLargeIngestRequest(request, fixture, [], {
+        relayTimelineSnapshot: offlineRelayTimelineSnapshot
+      });
+    } catch { blocked = true; }
+    requireInvariant(blocked, verifierErrorCodes.GENERIC);
+  }
+});
+
+test("offline ordinary route coverage rejects an abort that could reach the provider @offline", () => {
+  const sourceCase = {
+    case_id: "NON_TCG",
+    image_count: 2,
+    images: [
+      { buffer: Buffer.from("front") },
+      { buffer: Buffer.from("back") }
+    ]
+  };
+  const ordinaryMetadata = Buffer.from(JSON.stringify({
+    clientAssetRef: "asset-ref",
+    images: [{ imageId: "front" }, { imageId: "back" }]
+  })).toString("base64url");
+  const ordinaryRequest = {
+    url: () => `${productionOrigin}${stagedRecognitionPath}`,
+    method: () => "POST",
+    postDataBuffer: () => Buffer.concat(sourceCase.images.map((image) => image.buffer)),
+    headers: () => ({ "x-lynca-ingest-metadata": ordinaryMetadata })
+  };
+  requireInvariant(validateOrdinaryIngestRequest(ordinaryRequest, sourceCase).original_inline === true,
+    verifierErrorCodes.GENERIC);
+  const stagedMetadata = Buffer.from(JSON.stringify({
+    clientAssetRef: "asset-ref",
+    recognitionInputOnly: true,
+    images: [{ imageId: "front", sourceImageId: "original-front" }, { imageId: "back", sourceImageId: "original-back" }]
+  })).toString("base64url");
+  let stagedRejected = false;
+  try {
+    validateOrdinaryIngestRequest({
+      ...ordinaryRequest,
+      headers: () => ({ "x-lynca-ingest-metadata": stagedMetadata })
+    }, sourceCase);
+  } catch (error) {
+    stagedRejected = sanitizedFailureCode(error) === verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
+  }
+  requireInvariant(stagedRejected, verifierErrorCodes.GENERIC);
+
+  const nonTcgCoverage = normalRouteCoverageReceipt({
+    sourceCase,
+    payload: { recognition_input: "original_inline" },
+    responseUrl: `${productionOrigin}${stagedRecognitionPath}`,
+    attempts: [{
+      case_id: "NON_TCG",
+      recognition_route: stagedRecognitionPath,
+      continued: true,
+      response_observed: true,
+      original_inline: true
+    }]
+  });
+  requireInvariant(nonTcgCoverage.route === "ORDINARY_INGEST_ORIGINAL_INLINE"
+    && nonTcgCoverage.initial_ordinary_ingest_aborted === false,
+  verifierErrorCodes.GENERIC);
+
+  const tcgSourceCase = { ...sourceCase, case_id: "TCG" };
+  const validTcgAttempts = [{
+    case_id: "TCG",
+    recognition_route: stagedRecognitionPath,
+    aborted_before_network: true,
+    response_observed: false,
+    original_inline: true
+  }, {
+    case_id: "TCG",
+    recognition_route: "/api/csm-listing-title",
+    continued: true,
+    response_observed: true,
+    original_inline: false
+  }];
+  const tcgCoverage = normalRouteCoverageReceipt({
+    sourceCase: tcgSourceCase,
+    payload: {},
+    responseUrl: `${productionOrigin}/api/csm-listing-title`,
+    attempts: validTcgAttempts
+  });
+  requireInvariant(tcgCoverage.route === "DIRECT_AFTER_ABORTED_ORDINARY_INGEST"
+    && tcgCoverage.initial_ordinary_ingest_aborted === true
+    && tcgCoverage.aborted_ingest_response_observed === false,
+  verifierErrorCodes.GENERIC);
+  for (const mutate of [
+    (attempts) => { attempts[0].response_observed = true; },
+    (attempts) => { attempts[1].recognition_route = stagedRecognitionPath; },
+    (attempts) => { attempts.push({ ...attempts[1] }); }
+  ]) {
+    let rejected = false;
+    try {
+      const attempts = structuredClone(validTcgAttempts);
+      mutate(attempts);
+      normalRouteCoverageReceipt({
+        sourceCase: tcgSourceCase,
+        payload: {},
+        responseUrl: `${productionOrigin}/api/csm-listing-title`,
+        attempts
+      });
+    } catch (error) {
+      rejected = sanitizedFailureCode(error) === verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
+    }
+    requireInvariant(rejected, verifierErrorCodes.GENERIC);
+  }
 });

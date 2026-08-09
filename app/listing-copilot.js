@@ -1,5 +1,5 @@
 import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
-import { assetSingleFlightKey, claimAssetSingleFlight, nextRetrySubmissionId } from "./asset-single-flight.mjs";
+import { assetSingleFlightKey, claimAssetSingleFlight } from "./asset-single-flight.mjs";
 import {
   analyzeImageQualityFromImageData,
   batchReviewWindow,
@@ -7,16 +7,14 @@ import {
   defaultCaptureProfileId,
   fetchWithBoundedRetry,
   INTAKE_PREVIEW_CARD_WINDOW,
-  planTargetedCrops,
   SIGNED_UPLOAD_URL_GENERATION_LIMIT,
   shouldRefreshSignedUpload,
-  startNonBlockingDerivedUpload,
-  summarizeDerivedUploadOutcomes,
   windowIntakePreviewGroups
 } from "./listing-copilot-sdk.mjs";
 import {
   nextWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,
+  writerFeedbackDecision,
   writerExportRowsReady,
   writerExportWithinLimit,
   writerFeedbackPersisted
@@ -46,10 +44,10 @@ const IMAGE_INITIAL_QUALITY = 0.9;
 const IMAGE_MIN_QUALITY = 0.78;
 const IMAGE_EMERGENCY_MIN_QUALITY = 0.64;
 const TARGET_IMAGE_DATA_URL_CHARS = 2_400_000;
-const REQUEST_IMAGE_BATCH_LIMIT = 14;
-const TARGETED_CROP_QUALITY = 0.88;
-const FIELD_MAX_CROPS_PER_IMAGE = 6;
-const FIELD_MAX_CROPS_PER_ASSET = 8;
+const STAGED_RECOGNITION_LONG_EDGE = 1600;
+const STAGED_RECOGNITION_QUALITY = 0.8;
+const STAGED_RECOGNITION_ROLE = "readability_derived";
+const STAGED_RECOGNITION_LANE_VERSION = "readability-derived-inline-v2";
 const CSM_THIN_API_ENDPOINT = "/api/csm-listing-title";
 const CSM_THIN_INGEST_API_ENDPOINT = "/api/csm-listing-title-ingest";
 const ASSET_CREATE_API_ENDPOINT = "/api/listing-asset-create";
@@ -387,7 +385,6 @@ function releaseImagePreviewUrls(images = []) {
       URL.revokeObjectURL(image.previewUrl);
     }
     image.previewUrl = "";
-    (image.targetedCrops || []).forEach(release);
   };
   images.forEach(release);
 }
@@ -462,74 +459,6 @@ function stringByteLength(value) {
   return new Blob([String(value || "")]).size;
 }
 
-function cropCanvasDataUrl(sourceCanvas, cropRegion, quality = TARGETED_CROP_QUALITY) {
-  const left = Math.max(0, Math.floor(cropRegion.x * sourceCanvas.width));
-  const top = Math.max(0, Math.floor(cropRegion.y * sourceCanvas.height));
-  const width = Math.max(1, Math.min(sourceCanvas.width - left, Math.ceil(cropRegion.width * sourceCanvas.width)));
-  const height = Math.max(1, Math.min(sourceCanvas.height - top, Math.ceil(cropRegion.height * sourceCanvas.height)));
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d", { alpha: false });
-
-  canvas.width = width;
-  canvas.height = height;
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, width, height);
-  context.drawImage(sourceCanvas, left, top, width, height, 0, 0, width, height);
-
-  return {
-    dataUrl: canvasToDataUrl(canvas, quality),
-    width,
-    height
-  };
-}
-
-function buildTargetedCropImages(sourceImage, sourceCanvas, imageQuality) {
-  const cropPlans = planTargetedCrops({
-    imageId: sourceImage.id,
-    sourceObjectPath: sourceImage.objectPath || "",
-    sourceSide: "",
-    sourceWidth: sourceCanvas.width,
-    sourceHeight: sourceCanvas.height,
-    imageQuality,
-    maxCrops: FIELD_MAX_CROPS_PER_IMAGE
-  });
-
-  return cropPlans.map((plan, index) => {
-    const crop = cropCanvasDataUrl(sourceCanvas, plan.crop_region);
-    const blob = dataUrlToBlob(crop.dataUrl);
-    const cropId = `${sourceImage.id}-${plan.source_region}-${index + 1}`;
-
-    return {
-      id: cropId,
-      name: `${sourceImage.name} ${plan.source_region} crop`,
-      originalType: "image/jpeg",
-      type: "image/jpeg",
-      size: stringByteLength(crop.dataUrl),
-      originalSize: blob.size,
-      width: crop.width,
-      height: crop.height,
-      dataUrl: crop.dataUrl,
-      captureProfileId: defaultCaptureProfileId,
-      imageQuality: null,
-      sourceBlob: blob,
-      sourceImageId: sourceImage.id,
-      sourceRegion: plan.source_region,
-      storageRole: plan.role,
-      cropPlan: plan,
-      cropMetadata: {
-        ...(plan.crop_metadata || {}),
-        crop_id: cropId,
-        source_image_id: sourceImage.id,
-        source_region: plan.source_region,
-        crop_role: plan.role
-      },
-      derived: true,
-      contentSha256: "",
-      objectPath: ""
-    };
-  });
-}
-
 async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
   const image = await loadImage(originalDataUrl);
   const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
@@ -552,12 +481,82 @@ async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
     height,
     originalWidth: image.naturalWidth,
     originalHeight: image.naturalHeight,
-    imageQuality,
-    // Keep the final canvas only for the caller's single crop pass. Large
-    // images may be recompressed several times; generating six crops inside
-    // every attempt made local intake do the same expensive work repeatedly.
-    sourceCanvas: canvas
+    imageQuality
   };
+}
+
+async function buildStagedRecognitionImage(image = {}) {
+  const source = storageSourceForImage(image);
+  const decodable = image.previewUrl || image.dataUrl || "";
+  // Only a browser-decodable original whose exact bytes are already eligible
+  // for the canonical Storage path may enter this lane. HEIC/HEIF and >25MB
+  // inputs have already gone through the 2200px fallback; downscaling those a
+  // second time would compound accuracy loss and mislabel transformed bytes as
+  // an original manifest.
+  if (image.storageFirst !== true || source !== image.sourceFile || !source?.size || !decodable) return null;
+  try {
+    const compressed = await compressImageDataUrl(
+      decodable,
+      STAGED_RECOGNITION_LONG_EDGE,
+      STAGED_RECOGNITION_QUALITY
+    );
+    const blob = dataUrlToBlob(compressed.dataUrl);
+    if (!blob?.size || blob.size >= source.size) return null;
+    return {
+      id: `${image.id}-recognition-${STAGED_RECOGNITION_LONG_EDGE}`,
+      name: `${image.name}-recognition-${STAGED_RECOGNITION_LONG_EDGE}.jpg`,
+      originalType: "image/jpeg",
+      type: "image/jpeg",
+      size: blob.size,
+      originalSize: blob.size,
+      width: compressed.width,
+      height: compressed.height,
+      originalWidth: compressed.width,
+      originalHeight: compressed.height,
+      dataUrl: compressed.dataUrl,
+      sourceBlob: blob,
+      sourceImageId: image.id,
+      storageRole: STAGED_RECOGNITION_ROLE,
+      derived: true,
+      contentSha256: ""
+    };
+  } catch {
+    return null;
+  }
+}
+
+function ensureStagedRecognitionInputs(asset = {}) {
+  if (asset.stagedRecognitionInputPromise) return asset.stagedRecognitionInputPromise;
+  const startedAt = performance.now();
+  const timing = asset.clientTiming || (asset.clientTiming = {});
+  // Reserve the bounded client-timing slot before the parallel upload can add
+  // network fields. `safeClientTiming` deliberately retains only 12 keys.
+  timing.client_staged_transform_ms = 0;
+  const attempt = (async () => {
+    const originals = (asset.images || []).filter((image) => !imageIsDerivedForRequest(image));
+    const originalBytes = originals.reduce((total, image) => {
+      return total + Number(storageSourceForImage(image)?.size || 0);
+    }, 0);
+    if (
+      !originals.length
+      || originals.length > 2
+      || originals.some((image) => image.storageFirst !== true)
+      || originalBytes <= STORAGE_UPLOAD_RELAY_MAX_BYTES
+    ) return [];
+    const recognitionInputs = await Promise.all(originals.map(buildStagedRecognitionImage));
+    if (recognitionInputs.some((image) => !image)) return [];
+    const inlineBytes = recognitionInputs.reduce((total, image) => total + image.sourceBlob.size, 0);
+    if (inlineBytes > STORAGE_UPLOAD_RELAY_MAX_BYTES) return [];
+    asset.stagedRecognitionInputs = recognitionInputs;
+    return recognitionInputs;
+  })();
+  asset.stagedRecognitionInputPromise = attempt.finally(() => {
+    timing.client_staged_transform_ms = Math.min(
+      3_600_000,
+      Math.max(0, Math.round(performance.now() - startedAt))
+    );
+  });
+  return asset.stagedRecognitionInputPromise;
 }
 
 async function fileToAssetImage(file) {
@@ -589,15 +588,7 @@ async function fileToAssetImage(file) {
     compressed = await compressImageDataUrl(originalDataUrl, maxEdge, quality);
   }
 
-  compressed.targetedCrops = buildTargetedCropImages({
-    id,
-    name: file.name
-  }, compressed.sourceCanvas, compressed.imageQuality);
-  delete compressed.sourceCanvas;
   const sourceBlob = dataUrlToBlob(compressed.dataUrl);
-  compressed.targetedCrops.forEach((crop) => {
-    crop.previewUrl = createImagePreviewUrl(crop.sourceBlob);
-  });
 
   return {
     id,
@@ -617,8 +608,7 @@ async function fileToAssetImage(file) {
     sourceFile: file,
     sourceBlob,
     contentSha256: "",
-    objectPath: "",
-    targetedCrops: compressed.targetedCrops
+    objectPath: ""
   };
 }
 
@@ -658,7 +648,6 @@ function storageFirstAssetImage(file) {
     sourceBlob: null,
     contentSha256: "",
     objectPath: "",
-    targetedCrops: [],
     storageFirst: true
   };
 
@@ -876,17 +865,6 @@ function imageIsDerivedForRequest(image = {}) {
   return Boolean(image.derived || image.sourceRegion || image.source_region);
 }
 
-function boundedProviderImagesForRequest(images = [], maxImages = REQUEST_IMAGE_BATCH_LIMIT) {
-  const allImages = Array.isArray(images) ? images : [];
-  const primaryImages = allImages.filter((image) => !imageIsDerivedForRequest(image));
-  const derivedImages = allImages.filter(imageIsDerivedForRequest);
-  const maxDerived = Math.max(0, Math.max(2, Number(maxImages) || REQUEST_IMAGE_BATCH_LIMIT) - primaryImages.length);
-  return [
-    ...primaryImages,
-    ...derivedImages.slice(0, maxDerived)
-  ];
-}
-
 function createClientBatchId() {
   const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `web-csm-${random}`;
@@ -946,6 +924,17 @@ async function contentSha256Hex(source) {
 
   const buffer = await source.arrayBuffer();
   const digest = await globalThis.crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function sha256TextHex(value) {
+  if (!globalThis.crypto?.subtle || typeof TextEncoder !== "function") return "";
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(String(value || ""))
+  );
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
@@ -1632,29 +1621,9 @@ async function uploadOriginalAssetImagesBatch(asset, entries = []) {
   return descriptors.map((row) => ({ ok: true, uploaded: row.relayUploaded === true || !row.alreadyVerified }));
 }
 
-function syncDerivedImageSourceMetadata(asset, images = []) {
-  const imagesById = new Map(images.map((image) => [image.id, image]));
-  images.forEach((image) => {
-    const metadata = image.cropMetadata || image.crop_metadata;
-    if (!metadata?.source_image_id) return;
-    const sourceImage = imagesById.get(metadata.source_image_id);
-    const sourceObjectPath = metadata.source_object_path || sourceImage?.objectPath || "";
-    if (!sourceObjectPath) return;
-    const updatedMetadata = {
-      ...metadata,
-      source_object_path: sourceObjectPath,
-      derived_object_path: metadata.derived_object_path || image.objectPath || "",
-      asset_id: canonicalAssetId(asset)
-    };
-    image.cropMetadata = updatedMetadata;
-    image.crop_metadata = updatedMetadata;
-    if (image.cropPlan) {
-      image.cropPlan = {
-        ...image.cropPlan,
-        crop_metadata: updatedMetadata
-      };
-    }
-  });
+function durableOriginalImagesForUpload(images = []) {
+  return (Array.isArray(images) ? images : [])
+    .filter((image) => !imageIsDerivedForRequest(image));
 }
 
 function ensureAssetOriginalImagesUploaded(asset) {
@@ -1672,6 +1641,8 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // "is this asset already being prepared?"; `state.retryInFlight` is a count
   // and can only answer "is anything retrying?".
   if (asset.originalStorageUploadPromise) return asset.originalStorageUploadPromise;
+  asset.originalStorageUploadStatus = "uploading";
+  asset.originalStorageUploadError = null;
 
   // The direct path's blind spot, measured.
   //
@@ -1687,9 +1658,12 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // timing calls to a hot loop.
   const originalUploadStartedAt = performance.now();
   const timing = asset.clientTiming || (asset.clientTiming = {});
+  asset.originalStorageUploadStartedAt = originalUploadStartedAt;
+  delete timing.client_original_upload_ms;
+  delete timing.client_original_upload_elapsed_at_dispatch_ms;
   const recordOriginalUploadTiming = () => {
     timing.client_original_upload_ms = Math.round(performance.now() - originalUploadStartedAt);
-    timing.client_upload_bytes = (asset.providerImages || asset.images || [])
+    timing.client_upload_bytes = durableOriginalImagesForUpload(asset.images || [])
       .reduce((total, image) => {
         const source = storageSourceForImage(image);
         return total + (source && source.size ? source.size : 0);
@@ -1700,10 +1674,9 @@ function ensureAssetOriginalImagesUploaded(asset) {
     await ensureDurableAssetIdentity(asset);
     assertCurrentAssetLifecycle(asset);
     if (!storageReady()) throw new Error("listing_storage_not_ready");
-    const images = boundedProviderImagesForRequest(asset.providerImages || asset.images);
-    asset.providerImages = images;
+    const images = durableOriginalImagesForUpload(asset.images);
     const indexedImages = images.map((image, imageIndex) => ({ image, imageIndex }));
-    const uploadPhase = async (entries) => {
+    const uploadOriginals = async (entries) => {
       const originalsOnly = entries.length > 1 && entries.every(({ image }) => !imageIsDerivedForRequest(image));
       if (originalsOnly) {
         try {
@@ -1720,38 +1693,9 @@ function ensureAssetOriginalImagesUploaded(asset) {
         }
       });
     };
-    const phases = await startNonBlockingDerivedUpload({
-      entries: indexedImages,
-      isDerived: ({ image }) => imageIsDerivedForRequest(image),
-      uploadPhase,
-      beforeDerived: () => syncDerivedImageSourceMetadata(asset, images)
-    });
+    const originalOutcomes = await uploadOriginals(indexedImages);
     assertCurrentAssetLifecycle(asset);
-    asset.derivedStorageUploadStatus = phases.derived.length ? "uploading" : "not_required";
-    asset.derivedStorageUploadPromise = phases.derivedPromise
-      .then((outcomes) => {
-        const summary = summarizeDerivedUploadOutcomes(outcomes);
-        asset.derivedStorageUploadStatus = summary.status;
-        asset.derivedStorageUploadFailureCount = summary.failed;
-        asset.derivedStorageUploadError = summary.first_error
-          ? String(summary.first_error.message || summary.first_error).slice(0, 160)
-          : "";
-        syncDerivedImageSourceMetadata(asset, images);
-        return summary;
-      })
-      .catch((error) => {
-        asset.derivedStorageUploadStatus = "partial";
-        asset.derivedStorageUploadFailureCount = Math.max(1, phases.derived.length);
-        asset.derivedStorageUploadError = String(error?.message || error || "derived_upload_failed").slice(0, 160);
-        return {
-          total: phases.derived.length,
-          uploaded: 0,
-          failed: phases.derived.length,
-          status: "partial",
-          first_error: error
-        };
-      });
-    const failedOriginal = phases.originalOutcomes.find((outcome) => outcome.ok !== true);
+    const failedOriginal = originalOutcomes.find((outcome) => outcome.ok !== true);
     if (failedOriginal) {
       // Throw so the outer guard clears originalStorageUploadPromise. The
       // background preparation loop can then retry only the pending
@@ -1759,9 +1703,11 @@ function ensureAssetOriginalImagesUploaded(asset) {
       // for a second time.
       throw failedOriginal.error || new Error("listing_original_upload_failed");
     }
-    const originalsReady = indexedImages
-      .filter(({ image }) => !imageIsDerivedForRequest(image))
-      .every(({ image }) => imageHasVerifiedStorageReference(image, canonicalAssetId(asset), canonicalAssetTenantId(asset)));
+    const originalsReady = indexedImages.every(({ image }) => imageHasVerifiedStorageReference(
+      image,
+      canonicalAssetId(asset),
+      canonicalAssetTenantId(asset)
+    ));
     if (!originalsReady) {
       throw new Error("listing_original_verification_incomplete");
     }
@@ -1771,7 +1717,8 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // consequence on CI while every local run passed: a card was recognized
     // twice. Measurement must not change the shape of what it measures.
     recordOriginalUploadTiming();
-    return phases.originalOutcomes.some((outcome) => outcome.uploaded === true);
+    asset.originalStorageUploadStatus = "ready";
+    return originalOutcomes.some((outcome) => outcome.uploaded === true);
   })();
 
   // Release the claim on failure only, so a failed attempt does not leave the
@@ -1786,11 +1733,31 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // consumed the writer's time, and a stage recorded only on success is the
     // shape that made this gap invisible to begin with.
     recordOriginalUploadTiming();
+    asset.originalStorageUploadStatus = "failed";
+    asset.originalStorageUploadError = error;
     if (asset.originalStorageUploadPromise === guarded) asset.originalStorageUploadPromise = null;
     throw error;
   });
   asset.originalStorageUploadPromise = guarded;
   return guarded;
+}
+
+function snapshotOriginalUploadTimingForDispatch(asset = {}, now = () => performance.now()) {
+  if (asset.originalStorageUploadStatus !== "uploading") return asset.clientTiming || {};
+  const startedAt = Number(asset.originalStorageUploadStartedAt);
+  if (!Number.isFinite(startedAt)) return asset.clientTiming || {};
+  const timing = asset.clientTiming || (asset.clientTiming = {});
+  // The upload is still live, so its final duration is unknowable here. Record
+  // only the duration already observed before the staged request leaves the
+  // browser. Presence of this lower-bound field, instead of a fabricated
+  // `client_original_upload_ms: 0`, proves that transform/request preparation
+  // overlapped the same original-upload single flight.
+  timing.client_original_upload_elapsed_at_dispatch_ms = Math.max(
+    0,
+    Math.round(Number(now()) - startedAt)
+  );
+  delete timing.client_original_upload_ms;
+  return timing;
 }
 
 function syncBackgroundPreparationStatus() {
@@ -1905,7 +1872,87 @@ function csmIngestFastPathEligible(asset = {}) {
     && sources.reduce((total, source) => total + source.size, 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES;
 }
 
-async function requestCsmIngestFastPath(asset, intentId) {
+function csmStagedRecognitionEligible(asset = {}, recognitionInputs = [], { allowVerified = false } = {}) {
+  const originals = (asset.images || []).filter((image) => !imageIsDerivedForRequest(image));
+  if (
+    !originals.length
+    || originals.length > 2
+    || recognitionInputs.length !== originals.length
+    || originals.some((image) => image.storageFirst !== true
+      || storageSourceForImage(image) !== image.sourceFile)
+  ) return false;
+  const originalsVerified = asset.durableAssetId && asset.durableTenantId
+    && originals.every((image) => imageHasVerifiedStorageReference(
+      image,
+      asset.durableAssetId,
+      asset.durableTenantId
+    ));
+  if (originalsVerified && !allowVerified) return false;
+  const originalBytes = originals.reduce((total, image) => {
+    return total + Number(storageSourceForImage(image)?.size || 0);
+  }, 0);
+  const inlineBytes = recognitionInputs.reduce((total, image) => {
+    return total + Number(storageSourceForImage(image)?.size || 0);
+  }, 0);
+  return originalBytes > STORAGE_UPLOAD_RELAY_MAX_BYTES
+    && inlineBytes > 0
+    && inlineBytes <= STORAGE_UPLOAD_RELAY_MAX_BYTES
+    && recognitionInputs.every((image, index) => (
+      image?.sourceImageId === originals[index]?.id
+      && Number(storageSourceForImage(image)?.size || 0)
+        < Number(storageSourceForImage(originals[index])?.size || 0)
+    ));
+}
+
+async function stagedOriginalManifest(asset = {}) {
+  return Promise.all((asset.images || [])
+    .filter((image) => !imageIsDerivedForRequest(image))
+    .map(async (image, imageIndex) => {
+      await ensureImageUploadMetadata(image);
+      const source = storageSourceForImage(image);
+      if (!source) throw new Error("staged_original_source_missing");
+      const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
+      if (!contentSha256) throw new Error("staged_original_hash_missing");
+      image.contentSha256 = contentSha256;
+      const dimensions = storageDimensionsForImage(image, source);
+      return {
+        imageId: image.id,
+        storageFirst: image.storageFirst === true && source === image.sourceFile,
+        role: storageRoleForImage(image, imageIndex),
+        contentType: image.originalType || source.type || "image/jpeg",
+        size: source.size,
+        width: dimensions.width,
+        height: dimensions.height,
+        contentSha256
+      };
+    }));
+}
+
+async function stagedResumeReceipt(asset, intentId, originals) {
+  const originalManifestSha256 = await sha256TextHex(JSON.stringify(originals.map((image) => [
+    image.imageId,
+    image.role,
+    image.size,
+    image.contentSha256
+  ])));
+  const digest = await sha256TextHex([
+    "staged-recognition-resume-v1",
+    canonicalAssetTenantId(asset),
+    canonicalAssetId(asset),
+    String(intentId || "").trim(),
+    STAGED_RECOGNITION_LANE_VERSION,
+    originalManifestSha256,
+    ...originals.map((image) => `sha256:${image.contentSha256}`)
+  ].join("\u001f"));
+  if (!digest) throw new Error("staged_resume_receipt_unavailable");
+  return `stgr_${digest}`;
+}
+
+async function requestCsmIngestFastPath(asset, intentId, {
+  recognitionInputs = null,
+  resumeOnly = false,
+  resumeReceipt = ""
+} = {}) {
   // The 18 seconds nobody could see.
   //
   // A production run measured 4,652ms server-side against roughly 23 seconds
@@ -1931,7 +1978,9 @@ async function requestCsmIngestFastPath(asset, intentId) {
     }
   };
   const preparationStartedAt = performance.now();
-  const images = await Promise.all(asset.images.map(async (image, imageIndex) => {
+  const staged = Array.isArray(recognitionInputs) && recognitionInputs.length > 0;
+  const inlineSource = staged ? recognitionInputs : asset.images;
+  const images = await Promise.all(inlineSource.map(async (image, imageIndex) => {
     await clientStage("client_image_metadata_ms", () => ensureImageUploadMetadata(image));
     const source = storageSourceForImage(image);
     const usingOriginalSource = source === image.sourceFile;
@@ -1952,46 +2001,88 @@ async function requestCsmIngestFastPath(asset, intentId) {
       image,
       source,
       imageId: image.id,
-      role: storageRoleForImage(image, imageIndex),
+      role: staged ? STAGED_RECOGNITION_ROLE : storageRoleForImage(image, imageIndex),
       fileName: image.name,
       contentType,
       size: source.size,
       width: dimensions.width,
       height: dimensions.height,
       signatureHex,
-      contentSha256
+      contentSha256,
+      ...(staged ? { sourceImageId: image.sourceImageId } : {})
     };
   }));
   clientTiming.client_preparation_ms = Math.round(performance.now() - preparationStartedAt);
-  clientTiming.client_upload_bytes = images.reduce((total, image) => total + (image.size || 0), 0);
+  const originalImages = staged ? await stagedOriginalManifest(asset) : [];
+  if (staged) await ensureDurableAssetIdentity(asset);
+  const computedResumeReceipt = staged
+    ? await stagedResumeReceipt(asset, intentId, originalImages)
+    : "";
+  if (resumeOnly && resumeReceipt !== computedResumeReceipt) {
+    throw Object.assign(new Error("staged_resume_receipt_mismatch"), {
+      code: "staged_resume_receipt_mismatch",
+      retryable: false,
+      stagedRecognition: true
+    });
+  }
+  clientTiming.client_upload_bytes = staged
+    ? originalImages.reduce((total, image) => total + image.size, 0)
+    : images.reduce((total, image) => total + (image.size || 0), 0);
+  if (staged) {
+    snapshotOriginalUploadTimingForDispatch(asset);
+    clientTiming.client_recognition_body_bytes = images.reduce((total, image) => total + image.size, 0);
+    asset.stagedResumeReceipt = computedResumeReceipt;
+  }
   const metadata = {
     clientTiming,
     clientAssetRef: asset.clientAssetRef || asset.id,
     idempotencyKey: assetCreateIdempotencyKey(asset),
     captureProfileId: defaultCaptureProfileId,
     intentId,
-    imageDetail: "high",
+    ...(staged ? {
+      recognitionInputOnly: true,
+      laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+      expectedOriginalCount: originalImages.length,
+      originalImages,
+      resumeOnly: resumeOnly === true,
+      stagedResumeReceipt: computedResumeReceipt
+    } : {}),
     images: images.map(({ source: _source, image: _image, ...image }) => image)
   };
-  const request = await fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/octet-stream",
-      "x-lynca-ingest-metadata": encodeUploadRelayMetadata(metadata)
-    },
-    credentials: "same-origin",
-    body: new Blob(images.map((image) => image.source), { type: "application/octet-stream" })
-  }, {
-    timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
-    maxAttempts: 1,
-    retryNetworkErrors: false,
-    asset,
-    stage: "csm_thin_ingest"
-  });
+  let request;
+  try {
+    request = await fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lynca-ingest-metadata": encodeUploadRelayMetadata(metadata)
+      },
+      credentials: "same-origin",
+      body: new Blob(images.map((image) => image.source), { type: "application/octet-stream" })
+    }, {
+      timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
+      maxAttempts: 1,
+      retryNetworkErrors: false,
+      asset,
+      stage: "csm_thin_ingest"
+    });
+  } catch (error) {
+    if (staged) {
+      // An empty/transport-lost HTTP receipt is ambiguous: the provider may
+      // already have settled. The next user action is lookup-only; it never
+      // falls through to the original direct route or buys a second call.
+      error.stagedRecognition = true;
+      error.staged_resume_receipt = computedResumeReceipt;
+      error.recovery_action = "STAGED_RESUME_ONLY";
+      error.retryable = true;
+    }
+    throw error;
+  }
   const payload = request.payload || {};
   const canRecoverUpload = payload.client_asset_ref === metadata.clientAssetRef
     && payload.asset_id
     && payload.tenant_id
+    && !staged
     && Array.isArray(payload.verifications);
   if (canRecoverUpload) {
     asset.durableAssetId = payload.asset_id;
@@ -2019,10 +2110,56 @@ async function requestCsmIngestFastPath(asset, intentId) {
     const error = new Error(request.payload?.message || `CSM 一体化链路失败：${request.response?.status || "network"}`);
     error.code = String(request.payload?.code || "").trim();
     applyServerRetryability(error, request.payload);
+    if (staged) {
+      error.stagedRecognition = true;
+      const recoveryAction = String(request.payload?.recovery_action || "").trim().toUpperCase();
+      if (recoveryAction === "STAGED_RESUME_ONLY") {
+        if (request.payload?.staged_resume_receipt !== computedResumeReceipt) {
+          error.code = "staged_resume_receipt_invalid";
+          error.retryable = false;
+        } else {
+          error.staged_resume_receipt = computedResumeReceipt;
+          error.recovery_action = recoveryAction;
+        }
+      } else if (recoveryAction === "STAGED_FRESH_RETRY") {
+        if (request.payload?.provider_attempt_started !== false) {
+          error.code = "staged_fresh_retry_receipt_invalid";
+          error.retryable = false;
+        } else {
+          error.recovery_action = recoveryAction;
+          error.provider_attempt_started = false;
+        }
+      } else if (recoveryAction === "INPUT_REBIND") {
+        error.recovery_action = recoveryAction;
+        error.requires_input_rebind = true;
+        error.retryable = true;
+      } else {
+        // A definite staged response without an explicit recovery contract may
+        // be a terminal provider failure. Never silently route it through the
+        // original-pixel direct endpoint.
+        error.retryable = false;
+      }
+    }
     throw error;
   }
-  if (!canRecoverUpload) {
+  if (!canRecoverUpload && !staged) {
     throw new Error("csm_ingest_asset_identity_mismatch");
+  }
+  if (staged) {
+    if (
+      payload.client_asset_ref !== metadata.clientAssetRef
+      || payload.asset_id !== canonicalAssetId(asset)
+      || payload.tenant_id !== canonicalAssetTenantId(asset)
+      || payload.trace_status !== "PERSISTED"
+      || payload.staged_resume_receipt !== computedResumeReceipt
+    ) {
+      throw Object.assign(new Error("csm_staged_ingest_identity_mismatch"), {
+        code: "csm_staged_ingest_identity_mismatch",
+        retryable: false,
+        stagedRecognition: true
+      });
+    }
+    asset.stagedResumeReceipt = payload.staged_resume_receipt;
   }
   return payload;
 }
@@ -2040,37 +2177,147 @@ function shouldFallbackFastIngest(error) {
   return error?.retryable !== false;
 }
 
+function definitiveOriginalUploadError(asset = {}) {
+  const error = asset.originalStorageUploadError;
+  if (!error) return null;
+  return error.requires_input_rebind === true
+    || String(error.recovery_action || "").trim().toUpperCase() === "INPUT_REBIND"
+    || error.retryable === false
+    ? error
+    : null;
+}
+
+async function recoverStagedRequestOnce({
+  error,
+  originalUpload,
+  manualRetry = false,
+  lifecycleGuard = () => {},
+  resumeRequest,
+  freshRequest
+} = {}) {
+  if (manualRetry || !originalUpload || typeof originalUpload.then !== "function") {
+    return { recovered: false };
+  }
+  const action = String(error?.recovery_action || "").trim().toUpperCase();
+  const receipt = String(error?.staged_resume_receipt || "").trim();
+  const resume = action === "STAGED_RESUME_ONLY"
+    && /^stgr_[0-9a-f]{64}$/.test(receipt)
+    && typeof resumeRequest === "function";
+  const fresh = action === "STAGED_FRESH_RETRY"
+    && error?.provider_attempt_started === false
+    && typeof freshRequest === "function";
+  if (!resume && !fresh) return { recovered: false };
+
+  // One continuation, not a retry loop: finish the exact upload already in
+  // flight, re-check lifecycle ownership, then follow only the server receipt.
+  try {
+    await originalUpload;
+  } catch (uploadError) {
+    return { recovered: false, uploadError };
+  }
+  lifecycleGuard();
+  const payload = await (resume ? resumeRequest(receipt) : freshRequest());
+  lifecycleGuard();
+  return { recovered: true, action, payload };
+}
+
+async function settleOriginalUploadBeforeRebind(asset = {}, lifecycleGuard = () => {}) {
+  const activeUpload = asset.originalStorageUploadPromise;
+  if (activeUpload && typeof activeUpload.then === "function") {
+    await activeUpload.catch(() => null);
+  }
+  lifecycleGuard();
+  return { hadActiveUpload: Boolean(activeUpload) };
+}
+
 async function processAssetViaCsmThinPath(asset, {
   intentId = state.backgroundRecognitionBatchId,
   manualRetry = false,
-  retrySubmissionId = ""
+  stagedResumeReceipt: requestedStagedResumeReceipt = "",
+  stagedFreshRetry = false
 } = {}) {
   assertCurrentAssetLifecycle(asset);
   const durableIntentId = String(intentId || "").trim();
   if (!durableIntentId) throw new Error("CSM 识别意图缺失");
   const startedAt = performance.now();
   let payload;
-  if (manualRetry !== true && csmIngestFastPathEligible(asset)) {
-    setAssetProgress(asset.index, "上传与 Luna 并行", 0.28);
+  const stagedResume = manualRetry === true && Boolean(requestedStagedResumeReceipt);
+  const stagedFresh = manualRetry === true && stagedFreshRetry === true;
+  const stagedRecovery = stagedResume || stagedFresh;
+  const priorUploadError = definitiveOriginalUploadError(asset);
+  if (stagedRecovery && priorUploadError) throw priorUploadError;
+  let recognitionInputs = null;
+  let originalUpload = null;
+  if (!csmIngestFastPathEligible(asset) && (manualRetry !== true || stagedRecovery)) {
+    originalUpload = ensureAssetOriginalImagesUploaded(asset);
+    void originalUpload.catch(() => null);
+    recognitionInputs = await ensureStagedRecognitionInputs(asset);
+    if (!csmStagedRecognitionEligible(asset, recognitionInputs, { allowVerified: stagedRecovery })) {
+      recognitionInputs = null;
+    }
+    if (stagedRecovery && !recognitionInputs) {
+      throw Object.assign(new Error("staged_recovery_input_unavailable"), {
+        code: "staged_recovery_input_unavailable",
+        retryable: false,
+        stagedRecognition: true,
+        recovery_action: stagedResume ? "STAGED_RESUME_ONLY" : "STAGED_FRESH_RETRY"
+      });
+    }
+  }
+  if ((manualRetry !== true && csmIngestFastPathEligible(asset)) || recognitionInputs?.length) {
+    setAssetProgress(asset.index, "上传与识别并行", 0.28);
     markAssetStarted(asset, Date.now(), "client_csm_ingest_request");
     try {
-      payload = await requestCsmIngestFastPath(asset, durableIntentId);
+      payload = await requestCsmIngestFastPath(asset, durableIntentId, {
+        recognitionInputs,
+        resumeOnly: stagedResume,
+        resumeReceipt: requestedStagedResumeReceipt
+      });
     } catch (fastPathError) {
-      // A complete provider response can fail its output contract after the
-      // paid attempt is durably settled FAILED. Retrying the route cannot
-      // recover that result; it only adds another round trip before showing
-      // the same failure. Undefined/true remains eligible for the direct
-      // durability recovery used by transport and Storage failures.
-      if (!shouldFallbackFastIngest(fastPathError)) throw fastPathError;
-      // The durable operation key is asset/intent/image based, so falling back
-      // can safely recover a lost response without buying a second model call.
-      asset.fastIngestFallbackReason = String(fastPathError?.code || fastPathError?.message || "fast_ingest_failed").slice(0, 160);
+      if (recognitionInputs?.length) {
+        const uploadError = definitiveOriginalUploadError(asset);
+        if (uploadError) throw uploadError;
+        const recovery = await recoverStagedRequestOnce({
+          error: fastPathError,
+          originalUpload,
+          manualRetry,
+          lifecycleGuard: () => assertCurrentAssetLifecycle(asset),
+          resumeRequest: (receipt) => requestCsmIngestFastPath(asset, durableIntentId, {
+            recognitionInputs,
+            resumeOnly: true,
+            resumeReceipt: receipt
+          }),
+          freshRequest: () => requestCsmIngestFastPath(asset, durableIntentId, {
+            recognitionInputs,
+            resumeOnly: false
+          })
+        });
+        if (recovery.recovered) {
+          payload = recovery.payload;
+        } else if (recovery.uploadError) {
+          const settledUploadError = definitiveOriginalUploadError(asset);
+          if (settledUploadError) throw settledUploadError;
+          throw fastPathError;
+        } else {
+          throw fastPathError;
+        }
+      } else {
+        // A complete provider response can fail its output contract after the
+        // paid attempt is durably settled FAILED. Retrying the route cannot
+        // recover that result; it only adds another round trip before showing
+        // the same failure. Undefined/true remains eligible for the direct
+        // durability recovery used by transport and Storage failures.
+        if (!shouldFallbackFastIngest(fastPathError)) throw fastPathError;
+        // The durable operation key is asset/intent/image based, so falling back
+        // can safely recover a lost response without buying a second model call.
+        asset.fastIngestFallbackReason = String(fastPathError?.code || fastPathError?.message || "fast_ingest_failed").slice(0, 160);
+      }
     }
   }
   if (!payload) {
     setAssetProgress(asset.index, "上传并校验原图", 0.12);
     await ensureAssetPreparedForRecognition(asset);
-    setAssetProgress(asset.index, "Luna 单次识别", 0.45);
+    setAssetProgress(asset.index, "单次模型识别", 0.45);
     markAssetStarted(asset, Date.now(), "client_csm_request");
     const request = await fetchJsonWithRetry(CSM_THIN_API_ENDPOINT, {
       method: "POST",
@@ -2079,7 +2326,6 @@ async function processAssetViaCsmThinPath(asset, {
       body: JSON.stringify({
         asset_id: canonicalAssetId(asset),
         intent_id: durableIntentId,
-        image_detail: "high",
         manual_retry: manualRetry === true,
         // What the browser already measured about its OWN work -- image
         // metadata, signature, sha256, upload bytes and network retries -- sent
@@ -2089,8 +2335,7 @@ async function processAssetViaCsmThinPath(asset, {
         // no measurement behind it at all.
         ...(asset.clientTiming && Object.keys(asset.clientTiming).length
           ? { client_timing: asset.clientTiming }
-          : {}),
-        ...(retrySubmissionId ? { retry_submission_id: retrySubmissionId } : {})
+          : {})
       })
     }, {
       timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
@@ -2125,9 +2370,9 @@ async function processAssetViaCsmThinPath(asset, {
     correctedTitle: payload.title,
     writerTitlePending: false,
     confidence: lowConfidence.length || payload.trace_status !== "PERSISTED" ? "MEDIUM" : "HIGH",
-    provider: "gpt-5.6-luna",
-    provider_label: "Luna 5.6",
-    model_id: payload.model || "gpt-5.6-luna",
+    provider: String(payload.provider || "model").trim() || "model",
+    provider_label: String(payload.model || payload.requested_model || "AI model").trim() || "AI model",
+    model_id: String(payload.model || payload.requested_model || "").trim(),
     reason: payload.trace_status === "PERSISTED" ? "" : "CSM trace persistence failed",
     fields: payload.fields || {},
     resolved: payload.fields || {},
@@ -2231,11 +2476,11 @@ function renderProviderControl() {
       type="button"
       disabled
     >
-      <strong>Luna 5.6</strong>
+      <strong>AI 识别基座</strong>
       <small>CSM / SEM 单次识别</small>
     </button>
   `;
-  elements.providerStatusText.textContent = "上传后自动识别 · 原图直达 Luna · CSM / SEM 生成标题";
+  elements.providerStatusText.textContent = "上传后自动识别 · 单次模型调用 · CSM / SEM 生成标题";
   elements.processButton.disabled = !canGenerateTitles();
 }
 
@@ -2680,50 +2925,23 @@ function assetCountLabel(count) {
   return `${count} 张图片`;
 }
 
-function imagesForProvider(assetImages) {
-  const primaryImages = Array.isArray(assetImages) ? assetImages : [];
-  const cropQueues = primaryImages.map((image) => (Array.isArray(image.targetedCrops) ? image.targetedCrops : [])
-    .map((crop, cropIndex) => ({
-      crop,
-      cropIndex,
-      priority: Number(crop.cropPlan?.priority || crop.crop_plan?.priority || 0)
-    }))
-    .sort((left, right) => right.priority - left.priority || left.cropIndex - right.cropIndex));
-  const targetedCrops = [];
-
-  // Image slots are deliberately neutral. Round-robin the best crops from each
-  // uploaded image so one unknown side cannot consume the whole evidence budget.
-  while (targetedCrops.length < FIELD_MAX_CROPS_PER_ASSET) {
-    let added = false;
-    for (const queue of cropQueues) {
-      const next = queue.shift();
-      if (!next) continue;
-      targetedCrops.push(next.crop);
-      added = true;
-      if (targetedCrops.length >= FIELD_MAX_CROPS_PER_ASSET) break;
-    }
-    if (!added) break;
-  }
-
-  return [
-    ...primaryImages,
-    ...targetedCrops
-  ];
-}
-
 export const __listingCopilotAppTestHooks = {
   applyServerRetryability,
   assetCreateIdempotencyKey,
   assetLifecycleMatches,
-  boundedProviderImagesForRequest,
+  csmStagedRecognitionEligible,
   clearImageStorageBinding,
+  consumeSelectedFiles,
+  definitiveOriginalUploadError,
   directRecognitionConcurrencyLimit,
+  durableOriginalImagesForUpload,
   ensureAssetPreparedForRecognition,
+  ensureStagedRecognitionInputs,
   generationTimingView,
   handleFiles,
   imageHasVerifiedStorageReference,
-  imagesForProvider,
   notePendingStorageConfirmationFailure,
+  snapshotOriginalUploadTimingForDispatch,
   listingCopilotStateSnapshot: () => ({
     assetIndexes: state.assets.map((asset) => Number(asset.index)),
     intentId: state.backgroundRecognitionBatchId,
@@ -2732,6 +2950,8 @@ export const __listingCopilotAppTestHooks = {
     resultIndexes: state.results.map((result) => Number(result.index))
   }),
   recognitionClockFromServerPayload,
+  recoverStagedRequestOnce,
+  settleOriginalUploadBeforeRebind,
   resetAssetPreparationForRetry,
   retryStateForResult,
   shouldUseStorageFirstImage,
@@ -2740,7 +2960,8 @@ export const __listingCopilotAppTestHooks = {
   storageDimensionsForImage,
   storageSourceForImage,
   syncAssetGenerationTimingFromServer,
-  uploadOriginalAssetImagesBatch
+  uploadOriginalAssetImagesBatch,
+  workspaceActionLocks
 };
 
 function createClientAsset(images, index) {
@@ -2751,8 +2972,7 @@ function createClientAsset(images, index) {
     durableTenantId: "",
     lifecycleGeneration: state.assetLifecycleGeneration,
     index,
-    images,
-    providerImages: imagesForProvider(images)
+    images
   };
 }
 
@@ -2777,14 +2997,22 @@ function writerModeActive() {
   return state.workspaceMode === "writer";
 }
 
-function workspaceInteractionLocked() {
-  return state.writerSaveInFlight
-    || state.exportingWorkbook
-    || state.preparingFiles;
+function workspaceInteractionLocked(currentState = state) {
+  return currentState.writerSaveInFlight
+    || currentState.exportingWorkbook
+    || currentState.preparingFiles;
 }
 
-function destructiveWorkspaceInteractionLocked() {
-  return workspaceInteractionLocked() || state.retryInFlight > 0;
+function destructiveWorkspaceInteractionLocked(currentState = state) {
+  return workspaceInteractionLocked(currentState) || currentState.retryInFlight > 0;
+}
+
+function workspaceActionLocks(currentState = state) {
+  const intakeLocked = destructiveWorkspaceInteractionLocked(currentState);
+  return {
+    intakeLocked,
+    resetLocked: intakeLocked || currentState.processing === true
+  };
 }
 
 function writerSavedAssets() {
@@ -2953,7 +3181,7 @@ function runWorkbenchViewTransition({ kind, enabled = true, prepareSharedElement
 
 function updateWorkspaceModeUi() {
   const interactionLocked = workspaceInteractionLocked();
-  const destructiveInteractionLocked = destructiveWorkspaceInteractionLocked() || state.processing;
+  const actionLocks = workspaceActionLocks();
   elements.workspace?.setAttribute("data-workspace-mode", state.workspaceMode);
   elements.workspace?.setAttribute("data-batch-state", state.assets.length ? "ready" : "empty");
   elements.workspaceModeButtons.forEach((button) => {
@@ -2962,9 +3190,12 @@ function updateWorkspaceModeUi() {
     button.setAttribute("aria-pressed", active ? "true" : "false");
     button.disabled = interactionLocked;
   });
-  elements.imageInput.disabled = destructiveInteractionLocked;
-  elements.resetButton.disabled = destructiveInteractionLocked;
-  elements.dropZone.setAttribute("aria-disabled", destructiveInteractionLocked ? "true" : "false");
+  // Recognition is additive: handleFiles intentionally accepts later cards
+  // into the same intent while workers are active. Reset is destructive and
+  // stays locked until those workers settle.
+  elements.imageInput.disabled = actionLocks.intakeLocked;
+  elements.resetButton.disabled = actionLocks.resetLocked;
+  elements.dropZone.setAttribute("aria-disabled", actionLocks.intakeLocked ? "true" : "false");
   if (elements.workspaceModeHint) {
     elements.workspaceModeHint.textContent = writerModeActive()
       ? "只看当前卡片；Enter 确认入库并推进到下一张。"
@@ -3517,13 +3748,17 @@ function retryStateForResult(result = {}) {
   const retryable = requestFailed && result.retryable !== false;
   const submitting = result.retryStatus === "submitting";
   const persistenceLocked = result.feedbackStatus === "saving" || writerFeedbackPersisted(result);
-  const inputRebindRequired = String(
+  const recoveryAction = String(
     result.recoveryAction
     || result.recovery_action
     || result.retry?.recovery_action
     || result.error?.recovery_action
     || ""
-  ).trim().toUpperCase() === "INPUT_REBIND";
+  ).trim().toUpperCase();
+  const inputRebindRequired = recoveryAction === "INPUT_REBIND";
+  const stagedResumeOnly = recoveryAction === "STAGED_RESUME_ONLY"
+    && /^stgr_[0-9a-f]{64}$/.test(String(result.staged_resume_receipt || ""));
+  const stagedFreshRetry = recoveryAction === "STAGED_FRESH_RETRY";
   return {
     retryable,
     submitting,
@@ -3531,7 +3766,13 @@ function retryStateForResult(result = {}) {
     terminal_failure: requestFailed,
     terminal_without_title: requestFailed && !hasVisibleTitle,
     input_rebind_required: inputRebindRequired,
-    recovery_mode: inputRebindRequired ? "INPUT_REBIND" : "CSM_DIRECT_RETRY"
+    staged_resume_only: stagedResumeOnly,
+    staged_fresh_retry: stagedFreshRetry,
+    recovery_mode: inputRebindRequired
+      ? "INPUT_REBIND"
+      : stagedResumeOnly
+        ? "STAGED_RESUME_ONLY"
+        : stagedFreshRetry ? "STAGED_FRESH_RETRY" : "CSM_DIRECT_RETRY"
   };
 }
 
@@ -3567,7 +3808,7 @@ function TitleCardComponent(result, asset = null) {
     ? "正在重新识别…"
     : retryState.input_rebind_required
       ? "重新绑定图片"
-      : "重新识别";
+      : retryState.staged_resume_only ? "恢复识别结果" : "重新识别";
   const titleEdited = String(correctedTitle || "").trim()
     && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
@@ -3903,12 +4144,13 @@ function failedResult(asset, error, intentId = state.backgroundRecognitionBatchI
     confidence: "FAILED",
     reason: error.message,
     recoveryAction: String(error?.recovery_action || error?.recoveryAction || "").trim().toUpperCase(),
+    staged_resume_receipt: String(error?.staged_resume_receipt || asset.stagedResumeReceipt || "").trim(),
     error_code: String(error?.code || error?.error_code || "").trim(),
     retryable: error?.retryable !== false,
     fields: {},
     unresolved: ["request"],
-    provider: "gpt-5.6-luna",
-    provider_label: "Luna 5.6",
+    provider: "model",
+    provider_label: "AI model",
     csm_intent_id: String(intentId || "")
   });
 }
@@ -4035,12 +4277,13 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
     asset.durableAssetPromise = null;
     asset.assetCreateIdempotencyKey = "";
     asset.originalStorageUploadPromise = null;
+    asset.originalStorageUploadStatus = "queued";
+    asset.originalStorageUploadError = null;
     asset.backgroundPreparationPromise = null;
     asset.backgroundPreparationRunId = null;
     asset.backgroundPreparationScheduledRunId = null;
     asset.backgroundPrepareStatus = "queued";
     for (const image of asset.images || []) clearImageStorageBinding(image);
-    for (const image of asset.providerImages || []) clearImageStorageBinding(image);
     return;
   }
 
@@ -4049,7 +4292,6 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
   const originalsVerified = Boolean(assetId && tenantId)
     && (asset.images || []).every((image) => imageHasVerifiedStorageReference(image, assetId, tenantId));
   if (!originalsVerified) {
-    asset.originalStorageUploadPromise = null;
     asset.backgroundPreparationPromise = null;
     asset.backgroundPreparationScheduledRunId = null;
     asset.backgroundPrepareStatus = "queued";
@@ -4078,7 +4320,6 @@ function retryFailedAsset(button) {
 }
 
 async function runAssetRetry({ asset, current, retryState, assetIndex }) {
-  const retrySubmissionId = nextRetrySubmissionId(assetSingleFlightKey(asset, assetIndex));
   const lifecycleGeneration = state.assetLifecycleGeneration;
   const writerEditedTitle = String(current.correctedTitle || "").trim();
   const intentId = String(current.csm_intent_id || state.backgroundRecognitionBatchId || createClientBatchId());
@@ -4092,15 +4333,24 @@ async function runAssetRetry({ asset, current, retryState, assetIndex }) {
   renderResults();
 
   try {
+    if (retryState.input_rebind_required) {
+      // The successor reuses the image objects. Let the old immutable-asset
+      // upload settle before clearing their bindings, or its late completion
+      // could write the retired asset identity onto the successor generation.
+      await settleOriginalUploadBeforeRebind(asset, () => {
+        if (!assetLifecycleMatches(asset, lifecycleGeneration)) throw new Error("stale_asset_lifecycle");
+      });
+    }
     resetAssetPreparationForRetry(asset, {
       inputRebind: retryState.input_rebind_required
     });
     const result = await processAssetViaCsmThinPath(asset, {
       intentId,
       manualRetry: true,
-      // COS-51: one stable key per operator retry action, so the server can be
-      // idempotent for the same tenant + asset + image + intent + submission.
-      retrySubmissionId
+      stagedResumeReceipt: retryState.staged_resume_only
+        ? String(current.staged_resume_receipt || "")
+        : "",
+      stagedFreshRetry: retryState.staged_fresh_retry
     });
     if (!assetLifecycleMatches(asset, lifecycleGeneration)) return;
     markAssetFinished(asset.index);
@@ -4127,6 +4377,9 @@ async function runAssetRetry({ asset, current, retryState, assetIndex }) {
     current.recoveryAction = String(error?.recovery_action || current.recoveryAction || "")
       .trim()
       .toUpperCase();
+    current.staged_resume_receipt = String(
+      error?.staged_resume_receipt || current.staged_resume_receipt || ""
+    ).trim();
     current.error_code = String(error?.code || current.error_code || "").trim();
     current.retryable = error?.retryable !== false;
     current.feedbackMessage = `重新识别失败：${error.message || "请再次重试"}`;
@@ -4193,11 +4446,6 @@ function finalizeTitleOverride(input) {
 
 function finalTitleForResult(result) {
   return String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
-}
-
-function feedbackActionForResult(result, generatedTitle, correctedTitle) {
-  if (result.explicitReviewOutcome === "REJECTED") return "REJECT";
-  return String(generatedTitle || "").trim() === String(correctedTitle || "").trim() ? "ACCEPT" : "EDIT";
 }
 
 function clientFeedbackSubmissionId() {
@@ -4346,9 +4594,20 @@ async function saveFeedbackForResult(result, asset, { deferFinalRender = false }
     ?? ""
   ).trim();
   const explicitReject = result.explicitReviewOutcome === "REJECTED";
-  if ((!correctedTitle && !explicitReject) || (!generatedTitle && !explicitReject)) return false;
+  const decision = writerFeedbackDecision({
+    generatedTitle,
+    correctedTitle,
+    explicitReject
+  });
+  if (!decision.ready) {
+    result.feedbackStatus = "";
+    result.persistenceStatus = "failed";
+    result.feedbackMessage = "标题不能为空，请输入最终英文标题后再保存。";
+    if (!deferFinalRender) renderResults();
+    return false;
+  }
 
-  const action = feedbackActionForResult(result, generatedTitle, correctedTitle);
+  const action = decision.action;
   const submission = pendingFeedbackSubmission(result, {
     action,
     writerTitle: correctedTitle
@@ -4716,6 +4975,12 @@ function resetTool() {
   renderResults();
 }
 
+function consumeSelectedFiles(input) {
+  const files = [...(input?.files || [])];
+  if (input) input.value = "";
+  return files;
+}
+
 function bindEvents() {
   elements.workspaceModeButtons.forEach((button) => {
     button.addEventListener("click", (event) => setWorkspaceMode(button.dataset.workspaceMode, {
@@ -4740,7 +5005,10 @@ function bindEvents() {
   elements.imageInput.addEventListener("change", (event) => {
     const animateIntake = state.fileSelectionPointerRequested;
     state.fileSelectionPointerRequested = false;
-    void handleFiles(event.target.files, { animateIntake });
+    // File inputs do not emit `change` when the same selection is chosen twice.
+    // Consume a stable snapshot and clear the control before async preparation,
+    // so a failed file can be selected again without resetting the workspace.
+    void handleFiles(consumeSelectedFiles(event.target), { animateIntake });
   });
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {

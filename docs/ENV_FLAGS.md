@@ -182,8 +182,6 @@ and delete the flag.
 | `LISTING_STORAGE_RETENTION_CRON_SECRET` | api/listing-storage-retention-cleanup.js |
 | `LYNCA_FUNCTION_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
 | `LYNCA_INTERNAL_BASE_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |
-| `LYNCA_PLATFORM_ADMIN_SECRET` | lib/platform-admin-auth.mjs |
-| `LYNCA_RUNTIME_MIGRATIONS_ENABLED` | lib/platform-admin-auth.mjs |
 | `LYNCA_SUPABASE_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
 | `LYNCA_TRUST_PROXY_PROTO` | lib/listing-session.mjs |
 | `LYNCA_WORKER_SECRET` | lib/listing/v4/jobs/worker-auth.mjs |
@@ -200,7 +198,6 @@ and delete the flag.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | lib/tenant/auth.mjs |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | lib/tenant/auth.mjs |
 | `NEXT_PUBLIC_SUPABASE_URL` | lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/tenant/access.mjs<br>lib/tenant/auth.mjs<br>lib/tenant/members.mjs |
-| `NODE_ENV` | lib/platform-admin-auth.mjs |
 | `OCR_WORKER_API_KEY` | lib/listing/ocr/paddle-ocr-client.mjs |
 | `OCR_WORKER_TOKEN` | lib/listing/ocr/paddle-ocr-client.mjs |
 | `OCR_WORKER_URL` | lib/listing/ocr/paddle-ocr-client.mjs |
@@ -243,8 +240,7 @@ and delete the flag.
 | `PORT` | lib/listing/v4/jobs/internal-service-origin.mjs |
 | `POSTGRES_HYBRID_RETRIEVAL_TIMEOUT_MS` | lib/listing/retrieval/catalog-provider.mjs<br>lib/listing/retrieval/postgres-hybrid-provider.mjs |
 | `POSTGRES_HYBRID_RETRIEVAL_TOP_N` | lib/listing/retrieval/postgres-hybrid-provider.mjs |
-| `POSTGRES_URL` | api/admin-apply-catalog-self-exclusion-migration.js<br>api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-noncritical-persistence-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js<br>api/admin-apply-v4-writer-ready-capacity-migration.js |
-| `POSTGRES_URL_NON_POOLING` | api/admin-apply-catalog-self-exclusion-migration.js<br>api/admin-apply-sem-definition-migration.js<br>api/admin-apply-v4-noncritical-persistence-migration.js<br>api/admin-apply-v4-production-job-queue-migration.js<br>api/admin-apply-v4-writer-export-migration.js<br>api/admin-apply-v4-writer-ready-capacity-migration.js |
+| `POSTGRES_URL_NON_POOLING` | scripts/check-track-c-production-schema.mjs |
 | `POST_OBSERVATION_CATALOG_VECTOR_HEDGE_MS` | lib/listing/pipeline/provider-options.mjs |
 | `POST_OBSERVATION_EXACT_ANCHOR_CATALOG_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
 | `POST_OBSERVATION_RETRIEVAL_CRITICAL_PATH_BUDGET_MS` | lib/listing/pipeline/provider-options.mjs |
@@ -379,7 +375,7 @@ and delete the flag.
 | `VECTOR_WORKER_TOKEN` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VECTOR_WORKER_URL` | lib/listing/retrieval/vector-feature-flags.mjs |
 | `VERCEL_AUTOMATION_BYPASS_SECRET` | api/admin-catalog-candidate-smoke.js<br>api/admin-import-corrected-title-catalog.js<br>api/admin-import-writer-title-catalog-seed.js<br>api/admin-index-visual-vector-seed.js<br>lib/data-loop/internal-sidecar-endpoints.mjs<br>lib/data-loop/workflow-sidecar-dispatcher.mjs<br>lib/listing/v4/jobs/internal-queue-wake.mjs<br>lib/listing/v4/jobs/worker-auth.mjs |
-| `VERCEL_ENV` | lib/listing-session.mjs<br>lib/platform-admin-auth.mjs |
+| `VERCEL_ENV` | lib/listing-session.mjs |
 | `VERCEL_PROJECT_PRODUCTION_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |
 | `VERCEL_REGION` | lib/listing/retrieval/candidate-context-summary.mjs |
 | `VERCEL_URL` | lib/listing/v4/jobs/internal-service-origin.mjs |

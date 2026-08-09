@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import {
   CSM_PROVIDER_AUTHORITY_LIMITS,
+  CSM_PROVIDER_AUTHORITY_RECEIPT_VERSION,
   CSM_PROVIDER_AUTHORITY_RPC_TIMEOUT_MS,
   CSM_PROVIDER_AUTHORITY_RPCS,
   checkCsmProviderAdmissionReadiness,
@@ -20,6 +22,10 @@ const HASH = "a".repeat(64);
 assert.equal(
   CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness,
   "check_csm_thin_provider_pacer_v1"
+);
+assert.equal(
+  CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey,
+  "lookup_csm_thin_provider_operation_by_key_v1"
 );
 
 function pacerReceipt(overrides = {}) {
@@ -45,7 +51,24 @@ function metadata(overrides = {}) {
     payloadHash: HASH,
     attempt: 1,
     attemptClass: "fresh",
-    estimatedTokens: 5_258,
+    estimatedTokens: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
+    ...overrides
+  };
+}
+
+function claimReceipt(overrides = {}) {
+  return {
+    ok: true,
+    code: "admitted",
+    admitted: true,
+    tenant_id: "tenant-a",
+    operation_key: "luna-direct:v2:operation-a",
+    attempt: 1,
+    attempt_class: "FRESH",
+    estimated_tokens: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
+    worker_id: "worker-test",
+    lease_fence: 1,
+    lease_expires_at: "2026-08-01T10:00:30Z",
     ...overrides
   };
 }
@@ -81,6 +104,9 @@ async function readinessForPacer(receipt) {
     [CSM_PROVIDER_AUTHORITY_RPCS.lookup]: {
       ok: true, code: "not_found", found: false
     },
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "not_found", status_code: 200, found: false
+    },
     [CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness]: receipt
   });
   return {
@@ -114,31 +140,27 @@ function authority(store, overrides = {}) {
   assert.deepEqual(readyResult, { ready: true, reason: null });
   assert.deepEqual(readyStore.calls.map(({ name }) => name), [
     CSM_PROVIDER_AUTHORITY_RPCS.lookup,
+    CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey,
     CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness
   ]);
   assert.equal(readyStore.calls.every(({ init }) => init.redirect === "error"), true,
     "provider authority must not redirect its server-only apikey");
   assert.deepEqual(readyStore.calls[1].body, {
+    p_tenant_id: "__csm_readiness__",
+    p_operation_key: "__csm_readiness__"
+  });
+  assert.deepEqual(readyStore.calls[2].body, {
     p_provider: "openai",
     p_account_scope: "lynca-primary",
     p_model: "gpt-5.6-luna"
   });
 
-  for (const pacer_burst_tokens of [65_200, 66_000]) {
-    const { result } = await readinessForPacer(pacerReceipt({
-      pacer_burst_tokens,
-      effective_max_active: 1
-    }));
-    assert.deepEqual(result, { ready: true, reason: null },
-      `rollout endpoint ${pacer_burst_tokens} must remain ready`);
-  }
-
-  for (const pacer_burst_tokens of [65_199, 65_201, 65_999, 66_001]) {
+  for (const pacer_burst_tokens of [65_200, 65_999, 66_001]) {
     const { result } = await readinessForPacer(pacerReceipt({ pacer_burst_tokens }));
     assert.deepEqual(result, {
       ready: false,
       reason: "provider_pacer_probe_contract_mismatch"
-    }, `non-endpoint burst ${pacer_burst_tokens} must fail closed`);
+    }, `non-contract burst ${pacer_burst_tokens} must fail closed`);
   }
 
   for (const overrides of [
@@ -158,8 +180,70 @@ function authority(store, overrides = {}) {
     assert.deepEqual(result, {
       ready: false,
       reason: "provider_pacer_probe_contract_mismatch"
-    }, `the rollout bridge must not relax ${Object.keys(overrides)[0]}`);
+    }, `readiness must not relax ${Object.keys(overrides)[0]}`);
   }
+}
+
+// The key-only recovery RPC is model/profile agnostic but tenant exact. Only a
+// durable SUCCEEDED operation returns its historical payload and checkpoint;
+// every other state remains state-only and cannot seed a fresh attempt.
+{
+  const storedPayloadHash = "b".repeat(64);
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "found_succeeded", status_code: 200, found: true,
+      operation_status: "SUCCEEDED", payload_sha256: storedPayloadHash,
+      latest_attempt_no: 4, latest_attempt_state: "SUCCEEDED",
+      result: { title: "historical checkpoint" }
+    }
+  });
+  const admission = authority(store);
+  assert.deepEqual(await admission.lookupOperationResultByKey(metadata()), {
+    status: "found",
+    payloadHash: storedPayloadHash,
+    result: { title: "historical checkpoint" },
+    latestAttempt: 4,
+    latestAttemptState: "SUCCEEDED"
+  });
+  assert.deepEqual(store.calls[0].body, {
+    p_tenant_id: "tenant-a",
+    p_operation_key: "luna-direct:v2:operation-a"
+  });
+}
+
+for (const [operationStatus, expectedStatus] of [
+  ["QUEUED", "pending"],
+  ["RUNNING", "pending"],
+  ["FAILED", "failed"],
+  ["AMBIGUOUS", "ambiguous"],
+  ["CANCEL_REQUESTED", "ambiguous"],
+  ["CANCELLED", "cancelled"]
+]) {
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "found_non_success", status_code: 200, found: true,
+      operation_status: operationStatus,
+      latest_attempt_no: 2, latest_attempt_state: operationStatus
+    }
+  });
+  const recovered = await authority(store).lookupOperationResultByKey(metadata());
+  assert.equal(recovered.status, expectedStatus);
+  assert.equal(Object.hasOwn(recovered, "payloadHash"), false);
+  assert.equal(Object.hasOwn(recovered, "result"), false);
+}
+
+{
+  const leakedFailure = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "found_non_success", status_code: 200, found: true,
+      operation_status: "FAILED", result: { title: "must not leak" }
+    }
+  });
+  await assert.rejects(
+    authority(leakedFailure).lookupOperationResultByKey(metadata()),
+    (error) => error.code === "operation_key_non_success_contract_mismatch"
+      && error.provider_attempt_started === false
+  );
 }
 
 assert.deepEqual(CSM_PROVIDER_AUTHORITY_LIMITS, {
@@ -167,7 +251,7 @@ assert.deepEqual(CSM_PROVIDER_AUTHORITY_LIMITS, {
   maximumActiveEstimatedTokens: 440_000,
   baselineWorkingActiveAttempts: 43,
   pacerEstimatedTokensPerSecond: 60_000,
-  pacerBurstEstimatedTokens: 65_200,
+  pacerBurstEstimatedTokens: 66_000,
   retryFractionWhileFreshQueued: 0.2,
   rollingWindowSeconds: 60,
   targetRequestsPerWindow: 4_500,
@@ -186,8 +270,8 @@ assert.equal(
     CSM_PROVIDER_AUTHORITY_LIMITS.pacerBurstEstimatedTokens
       / CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt
   ),
-  12,
-  "the lossless bucket must not raise the twelve-attempt microburst ceiling"
+  10,
+  "the p95 reservation keeps the lossless one-second microburst at ten attempts"
 );
 function saturatedPacerTicks(burstTokens, ticks) {
   const counts = [];
@@ -205,34 +289,26 @@ function saturatedPacerTicks(burstTokens, ticks) {
   }
   return { counts, balance, total: counts.reduce((sum, value) => sum + value, 0) };
 }
-const clippedTwelveQuantumBucket = saturatedPacerTicks(63_600, 4);
-assert.deepEqual(clippedTwelveQuantumBucket.counts, [11, 11, 11, 12]);
-assert.equal(
-  clippedTwelveQuantumBucket.total
-    * CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt / 4,
-  59_625,
-  "a twelve-quantum bucket clips carry before consumption and undershoots 60k/s"
-);
 const losslessDiscreteCycle = saturatedPacerTicks(
   CSM_PROVIDER_AUTHORITY_LIMITS.pacerBurstEstimatedTokens,
-  53
+  13
 );
-assert.equal(losslessDiscreteCycle.total, 600);
-assert.equal(Math.max(...losslessDiscreteCycle.counts), 12);
+assert.equal(losslessDiscreteCycle.total, 120);
+assert.equal(Math.max(...losslessDiscreteCycle.counts), 10);
 assert.equal(losslessDiscreteCycle.balance, 0);
 assert.equal(
   Math.floor(
     CSM_PROVIDER_AUTHORITY_LIMITS.pacerEstimatedTokensPerSecond * 60
       / CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt
   ),
-  679
+  553
 );
 assert.equal(
   Math.floor(
     CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveEstimatedTokens
       / CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt
   ),
-  83
+  67
 );
 
 // One logical request is durably enqueued, waits until its global scheduler
@@ -244,10 +320,7 @@ assert.equal(
     },
     [CSM_PROVIDER_AUTHORITY_RPCS.claim]: [
       { ok: true, code: "not_scheduler_turn", admitted: false, retry_after_ms: 1 },
-      {
-        ok: true, code: "admitted", admitted: true,
-        lease_fence: 7, lease_expires_at: "2026-08-01T10:00:30Z"
-      }
+      claimReceipt({ lease_fence: 7 })
     ],
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: {
       ok: true, code: "settled", status_code: 200, operation_status: "SUCCEEDED"
@@ -272,6 +345,18 @@ assert.equal(
   assert.ok(result.latency_stages_ms.authority_enqueue_ms >= 0);
   assert.ok(result.latency_stages_ms.authority_claim_ms >= 0);
   assert.ok(result.latency_stages_ms.authority_settle_ms >= 0);
+  assert.deepEqual(result.provider_authority_receipt, {
+    schema_version: CSM_PROVIDER_AUTHORITY_RECEIPT_VERSION,
+    operation_key_sha256: createHash("sha256")
+      .update("luna-direct:v2:operation-a")
+      .digest("hex"),
+    attempt: 1,
+    attempt_class: "fresh",
+    estimated_tokens: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
+    claim_code: "admitted",
+    settle_code: "settled",
+    operation_status: "SUCCEEDED"
+  });
   assert.deepEqual(store.calls.map(({ name }) => name), [
     CSM_PROVIDER_AUTHORITY_RPCS.enqueue,
     CSM_PROVIDER_AUTHORITY_RPCS.claim,
@@ -287,7 +372,7 @@ assert.equal(
     p_model: "gpt-5.6-luna",
     p_attempt_no: 1,
     p_attempt_class: "fresh",
-    p_estimated_tokens: 5_258,
+    p_estimated_tokens: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
     p_tenant_weight: 1,
     p_not_before: null,
     p_queue_owner: "worker-test",
@@ -302,6 +387,35 @@ assert.equal(
   assert.equal(store.calls.at(-1).body.p_outcome, "SUCCEEDED");
   assert.equal(store.calls.at(-1).body.p_actual_tokens, 4_120,
     "settle must replace the rolling-window estimate with observed usage");
+}
+
+// The public reservation proof must come back from the selected database row.
+// A claim that disagrees with the enqueued estimate fails before provider use;
+// the adapter may not silently substitute the profile's static 6,500 value.
+{
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: {
+      ok: true, code: "enqueued", status_code: 201, replayed: false
+    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({
+      estimated_tokens: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt - 1
+    })
+  });
+  const admission = authority(store);
+  let executed = false;
+  await assert.rejects(
+    admission.runAttempt({
+      queuedAttempt: admission.enqueueAttempt(metadata()),
+      execute: async () => { executed = true; return { title: "must not run" }; }
+    }),
+    (error) => error.code === "claim_receipt_contract_mismatch"
+      && error.provider_attempt_started === false
+  );
+  assert.equal(executed, false);
+  assert.deepEqual(store.calls.map(({ name }) => name), [
+    CSM_PROVIDER_AUTHORITY_RPCS.enqueue,
+    CSM_PROVIDER_AUTHORITY_RPCS.claim
+  ]);
 }
 
 // A PostgREST socket that never answers is a bounded, classified transport
@@ -407,10 +521,11 @@ assert.equal(
     },
     [CSM_PROVIDER_AUTHORITY_RPCS.claim]: [
       new TypeError("claim response lost"),
-      {
-        ok: true, code: "claim_receipt_replayed", admitted: true, replayed: true,
-        lease_fence: 11, lease_expires_at: "2026-08-01T10:00:30Z"
-      }
+      claimReceipt({
+        code: "claim_receipt_replayed",
+        replayed: true,
+        lease_fence: 11
+      })
     ],
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: {
       ok: true, code: "settled", status_code: 200, operation_status: "SUCCEEDED"
@@ -424,6 +539,11 @@ assert.equal(
   });
   assert.equal(result.title, "one call");
   assert.equal(executions, 1);
+  assert.equal(result.provider_authority_receipt.claim_code, "claim_receipt_replayed");
+  assert.equal(
+    result.provider_authority_receipt.estimated_tokens,
+    CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt
+  );
   assert.deepEqual(store.calls.map(({ name }) => name), [
     CSM_PROVIDER_AUTHORITY_RPCS.enqueue,
     CSM_PROVIDER_AUTHORITY_RPCS.claim,
@@ -438,9 +558,7 @@ assert.equal(
 {
   const store = fakeRpc({
     [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
-    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: {
-      ok: true, admitted: true, lease_fence: 2, lease_expires_at: "2026-08-01T10:00:30Z"
-    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({ lease_fence: 2 }),
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: { ok: true, code: "settled" }
   });
   const admission = authority(store);
@@ -561,9 +679,7 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
 {
   const store = fakeRpc({
     [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
-    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: {
-      ok: true, admitted: true, lease_fence: 29, lease_expires_at: "2026-08-01T10:00:30Z"
-    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({ lease_fence: 29 }),
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: { ok: true, code: "settled" }
   });
   const admission = authority(store);
@@ -588,9 +704,7 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
 {
   const store = fakeRpc({
     [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
-    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: {
-      ok: true, admitted: true, lease_fence: 3, lease_expires_at: "2026-08-01T10:00:30Z"
-    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({ lease_fence: 3 }),
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: { ok: true, code: "settled" }
   });
   const admission = authority(store);
@@ -611,9 +725,7 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
 {
   const store = fakeRpc({
     [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
-    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: {
-      ok: true, admitted: true, lease_fence: 32, lease_expires_at: "2026-08-01T10:00:30Z"
-    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({ lease_fence: 32 }),
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: { ok: true, code: "settled" }
   });
   const admission = authority(store);
@@ -638,9 +750,7 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
 {
   const store = fakeRpc({
     [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
-    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: {
-      ok: true, admitted: true, lease_fence: 31, lease_expires_at: "2026-08-01T10:00:30Z"
-    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({ lease_fence: 31 }),
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: { ok: true, code: "settled" }
   });
   const admission = authority(store);
@@ -663,9 +773,7 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
 {
   const store = fakeRpc({
     [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
-    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: {
-      ok: true, admitted: true, lease_fence: 4, lease_expires_at: "2026-08-01T10:00:30Z"
-    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({ lease_fence: 4 }),
     [CSM_PROVIDER_AUTHORITY_RPCS.settle]: new TypeError("response lost")
   });
   const admission = authority(store);

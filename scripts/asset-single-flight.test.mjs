@@ -5,7 +5,6 @@ import {
   assetSingleFlightKey,
   assetSingleFlightActive,
   claimAssetSingleFlight,
-  nextRetrySubmissionId,
   resetAssetSingleFlight
 } from "../app/asset-single-flight.mjs";
 
@@ -127,17 +126,6 @@ assert.notEqual(
   assert.equal(runs, 3, "distinct assets and distinct scopes are independent");
 }
 
-// Two clicks in the same millisecond must not share a submission id by
-// accident. Only the call that actually starts work ever mints one.
-{
-  const ids = new Set([
-    nextRetrySubmissionId("asset_h"),
-    nextRetrySubmissionId("asset_h"),
-    nextRetrySubmissionId("asset_h")
-  ]);
-  assert.equal(ids.size, 3, "submission ids must be unique without depending on the clock");
-}
-
 // The product must actually use it, and must disable the control synchronously.
 // A guard that exists but is not wired is the failure mode this whole issue is
 // an instance of.
@@ -145,8 +133,8 @@ const js = await readFile("app/listing-copilot.js", "utf8");
 assert.match(js, /claimAssetSingleFlight\("retry"/, "the retry control must be single-flighted");
 assert.match(js, /button\.disabled = true;\s*\n\s*button\.setAttribute\("aria-busy", "true"\)/,
   "the clicked control must be disabled synchronously, before any await");
-assert.match(js, /retry_submission_id: retrySubmissionId/,
-  "the retry must carry a stable submission key to the server");
+assert.doesNotMatch(js, /retry_submission_id|retrySubmissionId|nextRetrySubmissionId/,
+  "the browser must not mint or send a retry key the server does not consume");
 assert.match(js, /claimAssetSingleFlight\("retry", assetSingleFlightKey\(asset, assetIndex\)/,
   "a failure before durable asset creation must still have a stable retry key");
 assert.doesNotMatch(js, /claimAssetSingleFlight\("retry", canonicalAssetId\(asset\)/,

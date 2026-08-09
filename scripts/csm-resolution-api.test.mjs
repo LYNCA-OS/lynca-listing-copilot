@@ -11,6 +11,14 @@ import {
   buildCsmStageRows,
   THIN_COMPOSER_VERSION_V1
 } from "../lib/listing/thin/csm-persistence.mjs";
+import { readCsmResolutionRecord } from "../lib/listing/thin/csm-supabase-writer.mjs";
+import {
+  CSM_OWNER_EXECUTION_RECEIPT_KEYS,
+  CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+  sealCsmOwnerExecutionReceipt
+} from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
+
+const OWNER_RECEIPT_SHA256 = "b".repeat(64);
 
 const payload = JSON.stringify({
   year: "2025", manufacturer: "Topps", product: "Chrome", set: "", card_name: "",
@@ -23,7 +31,12 @@ const record = {
   asset_id: "asset-1", recognition_session_id: "sess-1", resolution_id: "res-1",
   output_id: "out-1", canonical_payload: payload,
   output_title: composeResolutionView({ canonical_payload: payload }).composed.title,
-  resolver_version: "thin-path-observation-only-v1"
+  resolver_version: "thin-path-observation-only-v1",
+  owner_execution_receipt: {
+    version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+    sha256: OWNER_RECEIPT_SHA256,
+    provider_response_id: "must-not-leave-the-server"
+  }
 };
 const deps = { readRecord: async () => record, appendReview: async ({ review }) => review };
 
@@ -60,6 +73,103 @@ const legacyRecord = {
   assert.equal(view.composer.recomposed_matches_stored, true);
   assert.equal(view.composer.trace_reliable, true);
   assert.ok(view.composer.composer_version, "the version the trace was produced under travels with it");
+  assert.deepEqual(view.owner_execution_receipt, {
+    version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+    sha256: OWNER_RECEIPT_SHA256
+  });
+  assert.doesNotMatch(JSON.stringify(view.owner_execution_receipt), /must-not-leave-the-server/,
+    "the resolution route exposes only the allow-listed receipt version and hash");
+}
+
+// --- the safe receipt is recomputed from the durable session JSON ------------
+{
+  const rawOwner = Object.fromEntries(
+    CSM_OWNER_EXECUTION_RECEIPT_KEYS.map((key) => [key, null])
+  );
+  Object.assign(rawOwner, {
+    provider: "openai",
+    model: "gpt-5.6-luna",
+    provider_response_id: "resp_private_readback",
+    provider_request_id: "req_private_readback",
+    composer: "thin-marketplace-composer-v2",
+    resolver: "thin-path-observation-only-v1"
+  });
+  const storedOwner = sealCsmOwnerExecutionReceipt(rawOwner);
+  const requested = [];
+  const dbFetch = async (rawUrl) => {
+    const url = new URL(rawUrl);
+    requested.push(url);
+    if (url.pathname.endsWith("/v4_recognition_sessions")) {
+      return new Response(JSON.stringify([{
+        id: "session-db", asset_id: "asset-db", created_at: "2026-08-09T00:00:00Z",
+        csm_owner_versions: storedOwner
+      }]), { status: 200 });
+    }
+    if (url.pathname.endsWith("/csm_marketplace_outputs")) {
+      return new Response(JSON.stringify([{
+        id: "output-db", tenant_id: "tenant-db", recognition_session_id: "session-db",
+        resolution_id: "resolution-db", structured_output: {}, title: "stored-title",
+        composer_version: "thin-marketplace-composer-v2",
+        marketplace: "EBAY", marketplace_profile_version: "ebay-profile-v1",
+        contract_version: "csm-stage-shadow-v2", created_at: "2026-08-09T00:00:00Z"
+      }]), { status: 200 });
+    }
+    if (url.pathname.endsWith("/csm_identity_resolutions")) {
+      return new Response(JSON.stringify([{
+        id: "resolution-db", resolver_version: "thin-path-observation-only-v1",
+        grammar: "NON_TCG", contract_version: "csm-stage-shadow-v2", revision: 1
+      }]), { status: 200 });
+    }
+    if (url.pathname.endsWith("/csm_resolved_brackets")) {
+      return new Response("[]", { status: 200 });
+    }
+    return new Response("[]", { status: 404 });
+  };
+  const durable = await readCsmResolutionRecord({
+    tenantId: "tenant-db",
+    assetId: "asset-db",
+    env: {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role"
+    },
+    fetchImpl: dbFetch
+  });
+  assert.match(
+    requested.find((url) => url.pathname.endsWith("/v4_recognition_sessions"))
+      .searchParams.get("select"),
+    /csm_owner_versions/,
+    "the resolution read must fetch the receipt from the durable session row"
+  );
+  assert.deepEqual(durable.owner_execution_receipt, {
+    version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+    sha256: storedOwner.owner_execution_receipt_sha256
+  });
+  assert.doesNotMatch(JSON.stringify(durable.owner_execution_receipt),
+    /resp_private_readback|req_private_readback|stored-title/,
+    "raw provider ids and title must not enter the public receipt projection");
+
+  const tamperedOwner = { ...storedOwner, output_tokens: 1 };
+  await assert.rejects(
+    () => readCsmResolutionRecord({
+      tenantId: "tenant-db",
+      assetId: "asset-db",
+      env: {
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role"
+      },
+      fetchImpl: async (rawUrl) => {
+        const url = new URL(rawUrl);
+        if (url.pathname.endsWith("/v4_recognition_sessions")) {
+          return new Response(JSON.stringify([{
+            id: "session-db", asset_id: "asset-db", csm_owner_versions: tamperedOwner
+          }]), { status: 200 });
+        }
+        return dbFetch(rawUrl);
+      }
+    }),
+    /csm_owner_execution_receipt_invalid/,
+    "the GET path must fail closed when durable owner bytes no longer match the saved hash"
+  );
 }
 
 // --- a stored title the current composer no longer reproduces is flagged ------
@@ -91,6 +201,8 @@ const legacyRecord = {
   assert.equal(view.composer.composer_version, THIN_COMPOSER_VERSION_V1);
   assert.equal(view.composer.recomposed_matches_stored, true);
   assert.equal(view.composer.trace_reliable, true);
+  assert.equal(view.owner_execution_receipt, null,
+    "pre-v1 persisted runs stay readable without inventing a durable owner receipt");
 
   const review = await handleResolutionReviewRequest({
     tenantId: "t1", reviewerId: "u1",

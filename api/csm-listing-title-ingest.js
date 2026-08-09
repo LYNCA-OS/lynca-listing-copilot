@@ -15,6 +15,22 @@ import {
 import {
   persistPreparedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
+import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
+import {
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+  CSM_STAGED_TRANSPORT_PROFILE
+} from "../lib/listing/thin/csm-recognition-transport.mjs";
+import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
+import {
+  assertStagedVerifiedOriginals,
+  assertStagedResumeReceipt,
+  bindStagedSessionToVerifiedCanonical,
+  buildStagedIdentityCanonical,
+  buildStagedRecognitionContract,
+  buildStagedRecognitionSelection,
+  buildStagedResumeReceipt,
+  waitForStagedVerifiedOriginals
+} from "../lib/listing/thin/staged-recognition-input.mjs";
 import {
   createIdempotentListingAssetId,
   createTenantListingAsset
@@ -37,6 +53,11 @@ const MAX_IMAGES = 2;
 const MAX_BODY_BYTES = LISTING_IMAGE_RELAY_MAX_BYTES;
 const STORAGE_TIMEOUT_MS = 10_000;
 
+if (CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE.recognition_max_body_bytes !== MAX_BODY_BYTES
+    || CSM_STAGED_TRANSPORT_PROFILE.recognition_max_body_bytes !== MAX_BODY_BYTES) {
+  throw new TypeError("ingest_transport_body_limit_mismatch");
+}
+
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.setHeader("cache-control", "no-store");
@@ -46,21 +67,47 @@ function sendJson(res, statusCode, payload) {
 
 export function buildCsmIngestFailureResponse(error, {
   recoveryIdentity = null,
-  recoveredVerifications = null
+  recoveredVerifications = null,
+  stagedResumeReceipt = null
 } = {}) {
   const status = Number(error?.statusCode || error?.status || 503);
   const safeStatus = Number.isInteger(status) && status >= 400 && status <= 599 ? status : 503;
-  const retryable = error?.retryable === false
+  const code = String(error?.code || error?.message || "csm_ingest_failed").split(":")[0];
+  const stagedInputRebind = Boolean(stagedResumeReceipt) && [
+    "staged_verified_original_count_mismatch",
+    "staged_verified_original_reference_count_mismatch",
+    "staged_verified_original_identity_mismatch"
+  ].includes(code);
+  const retryable = stagedInputRebind ? true : error?.retryable === false
     ? false
     : error?.retryable === true || safeStatus >= 500;
+  const requestedRecoveryAction = String(error?.recovery_action || "").trim().toUpperCase();
+  const stagedResumeOnly = !stagedInputRebind && Boolean(stagedResumeReceipt) && (
+    error?.staged_resume_checkpoint_available === true
+    || requestedRecoveryAction === "STAGED_RESUME_ONLY"
+  );
+  const stagedFreshRetry = Boolean(stagedResumeReceipt)
+    && !stagedInputRebind
+    && !stagedResumeOnly
+    && requestedRecoveryAction === "STAGED_FRESH_RETRY"
+    && error?.provider_attempt_started === false;
   return {
     status: safeStatus,
     body: {
       ok: false,
       route: "CSM_THIN_DIRECT_INGEST",
-      code: String(error?.code || error?.message || "csm_ingest_failed").split(":")[0],
+      code,
       retryable,
       message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240),
+      ...(stagedInputRebind ? {
+        recovery_action: "INPUT_REBIND"
+      } : stagedResumeOnly ? {
+        staged_resume_receipt: stagedResumeReceipt,
+        recovery_action: "STAGED_RESUME_ONLY"
+      } : stagedFreshRetry ? {
+        recovery_action: "STAGED_FRESH_RETRY",
+        provider_attempt_started: false
+      } : {}),
       ...(recoveryIdentity && recoveredVerifications ? {
         ...recoveryIdentity,
         verifications: recoveredVerifications,
@@ -112,7 +159,8 @@ function normalizeImages(metadata, body) {
       width: Number(image.width),
       height: Number(image.height),
       signatureHex: requiredText(image.signatureHex || image.signature_hex, "ingest_image_signature_missing"),
-      contentSha256
+      contentSha256,
+      sourceImageId: String(image.sourceImageId || image.source_image_id || "").trim()
     };
   }).map((image, index, images) => {
     if (offset !== body.length && index === images.length - 1) {
@@ -258,6 +306,9 @@ export default async function handler(req, res) {
   const startedAt = Date.now();
   let recoveryIdentity = null;
   let storagePromise = null;
+  let stagedOriginalsPromise = null;
+  let staged = false;
+  let stagedResumeReceipt = null;
   instrumentProductionRequest(req, res, { api: "/api/csm-listing-title-ingest" });
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, message: "Method not allowed" });
   let context;
@@ -287,12 +338,48 @@ export default async function handler(req, res) {
     const now = new Date();
     const bucket = listingImageStorageReadiness(process.env).bucket;
     const canonical = buildCanonical({ tenantId: context.tenantId, assetId, images, bucket, now });
+    const stagedContract = buildStagedRecognitionContract({
+      metadata,
+      inlineImages: images,
+      bodyBytes: body.length,
+      maxBodyBytes: MAX_BODY_BYTES
+    });
+    staged = Boolean(stagedContract);
+    const identityCanonical = staged
+      ? buildStagedIdentityCanonical({
+        tenantId: context.tenantId,
+        assetId,
+        contract: stagedContract
+      })
+      : canonical;
+    const stagedRecognition = staged
+      ? buildStagedRecognitionSelection({ contract: stagedContract, inlineImages: canonical.images })
+      : null;
+    const expectedOriginalCount = stagedContract?.expectedOriginalCount || images.length;
+    const resumeOnly = staged && (metadata.resumeOnly === true || metadata.resume_only === true);
+    if (staged) {
+      stagedResumeReceipt = buildStagedResumeReceipt({
+        tenantId: context.tenantId,
+        assetId,
+        intentId,
+        contract: stagedContract
+      });
+      if (resumeOnly) {
+        assertStagedResumeReceipt({
+          receipt: metadata.stagedResumeReceipt || metadata.staged_resume_receipt,
+          tenantId: context.tenantId,
+          assetId,
+          intentId,
+          contract: stagedContract
+        });
+      }
+    }
     recoveryIdentity = {
       asset_id: assetId,
       tenant_id: context.tenantId,
       client_asset_ref: clientAssetRef,
       image_generation_id: assetId,
-      expected_original_count: images.length
+      expected_original_count: expectedOriginalCount
     };
 
     const assetPromise = createTenantListingAsset({
@@ -302,27 +389,66 @@ export default async function handler(req, res) {
       idempotencyKey,
       captureProfileId: metadata.captureProfileId || metadata.capture_profile_id,
       category: metadata.category,
-      expectedOriginalCount: images.length
+      expectedOriginalCount
     });
-    storagePromise = assetPromise.then(() => Promise.all(images.map((image) => persistImage({
-      image,
-      tenantId: context.tenantId,
-      assetId,
-      context,
-      now
-    }))));
-    // The provider precondition can fail before persistPath awaits this branch.
-    // Observe the rejection immediately so a concurrent Storage error cannot
-    // terminate the function before the structured CSM response is returned.
-    void storagePromise.catch(() => null);
+    // Staged mode does not await this branch until after provider settlement.
+    // Observe it now so an early readiness/provider failure cannot leave an
+    // unhandled asset-creation rejection behind the structured HTTP response.
+    void assetPromise.catch(() => null);
+    const ensureStagedOriginals = () => {
+      if (!stagedOriginalsPromise) {
+        // Deliberately lazy: the provider checkpoint is the first point that
+        // needs the verified set. Starting database polls while the provider is
+        // running adds reads but cannot make the final max(upload, provider)
+        // boundary finish earlier.
+        stagedOriginalsPromise = assetPromise.then(() => waitForStagedVerifiedOriginals({
+          tenantId: context.tenantId,
+          assetId,
+          contract: stagedContract,
+          readCanonical: ({
+            tenantId: readTenantId,
+            assetId: readAssetId,
+            timeoutMs,
+            attempts
+          }) => (
+            readCanonicalListingImageReferences({
+              tenantId: readTenantId,
+              assetId: readAssetId,
+              timeoutMs,
+              attempts,
+              env: process.env,
+              fetchImpl: globalThis.fetch
+            })
+          )
+        }));
+      }
+      return stagedOriginalsPromise;
+    };
+    if (!staged) {
+      storagePromise = assetPromise.then(() => Promise.all(images.map((image) => persistImage({
+        image,
+        tenantId: context.tenantId,
+        assetId,
+        context,
+        now
+      }))));
+      // The provider precondition can fail before persistPath awaits this branch.
+      // Observe the rejection immediately so a concurrent Storage error cannot
+      // terminate the function before the structured CSM response is returned.
+      void storagePromise.catch(() => null);
+    }
     const imageByPath = new Map(canonical.images.map((image) => [image.object_path, image.source]));
     let deferredSessionArgs = null;
+    let stagedVerifiedCanonical = null;
     const result = await runDirectCsmAsset({
       tenantId: context.tenantId,
       userId: context.userId,
       assetId,
       intentId,
-      imageDetail: metadata.imageDetail || metadata.image_detail || "high",
+      // The signed execution profile is server-owned; browser metadata cannot
+      // switch paid model detail independently of its checkpoint identity.
+      imageDetail: CSM_THIN_RUNTIME_CONTRACT.imageDetail,
+      resumeOnly,
       // Into the run, not merged onto the response afterwards.
       //
       // The merge below happens after `runDirectCsmAsset` has already written
@@ -344,7 +470,25 @@ export default async function handler(req, res) {
         // `recognition_session_deferred` marker existed. This flag changes no
         // paid identity and only enables the provider-incapable session step.
         deferRecognitionSessionUntilPersistence: true,
-        readImages: async () => canonical,
+        transportProfile: staged
+          ? CSM_STAGED_TRANSPORT_PROFILE
+          : CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+        readImages: async () => identityCanonical,
+        ...(staged ? {
+          chooseRecognitionImages: () => stagedRecognition,
+          operationScope: "derived_checkpoint",
+          laneVersion: stagedContract.laneVersion,
+          originalManifestSha256: stagedContract.originalManifestSha256,
+          // Timed by the direct route before formal CSM persistence starts, so
+          // original-upload synchronization remains a distinct critical-path
+          // stage instead of inflating `csm_persistence_ms`.
+          synchronizeBeforePersistence: async () => {
+            stagedVerifiedCanonical = assertStagedVerifiedOriginals({
+              contract: stagedContract,
+              canonical: await ensureStagedOriginals()
+            });
+          }
+        } : {}),
         signImage: async ({ objectPath }) => {
           const image = imageByPath.get(objectPath);
           if (!image) throw new Error("ingest_image_reference_missing");
@@ -362,10 +506,19 @@ export default async function handler(req, res) {
           };
         },
         persistPath: async (args) => {
-          await storagePromise;
+          if (!staged) await storagePromise;
+          if (staged && !stagedVerifiedCanonical) throw new Error("staged_original_sync_missing");
           if (!deferredSessionArgs) throw new Error("ingest_deferred_session_missing");
           const { createCsmRecognitionSession } = await import("../lib/listing/thin/csm-session-store.mjs");
-          const created = await createCsmRecognitionSession(deferredSessionArgs);
+          const sessionArgs = staged
+            ? bindStagedSessionToVerifiedCanonical({
+              deferredSessionArgs,
+              verifiedCanonical: stagedVerifiedCanonical,
+              recognitionRead: args.prepared?.csm_persistence_checkpoint?.recognition_input
+                || stagedRecognition.read
+            })
+            : deferredSessionArgs;
+          const created = await createCsmRecognitionSession(sessionArgs);
           if (created.persistence?.recognition_session?.saved !== true) {
             throw new Error(`ingest_session_persistence_failed:${String(
               created.persistence?.recognition_session?.error || "unknown"
@@ -375,18 +528,19 @@ export default async function handler(req, res) {
         }
       }
     });
-    const verifications = await storagePromise;
+    const verifications = staged ? [] : await storagePromise;
     return sendJson(res, 200, {
       ok: true,
       route: "CSM_THIN_DIRECT_INGEST",
-      cloud_run_calls: 0,
-      vector_calls: 0,
       asset_id: assetId,
       tenant_id: context.tenantId,
       client_asset_ref: clientAssetRef,
       image_generation_id: assetId,
-      expected_original_count: images.length,
+      expected_original_count: expectedOriginalCount,
       verifications,
+      recognition_input: staged ? "readability_derived_inline" : "original_inline",
+      originals_verified: true,
+      ...(stagedResumeReceipt ? { staged_resume_receipt: stagedResumeReceipt } : {}),
       recognition_session_id: result.csm_rows.resolution.recognition_session_id,
       trace_status: "PERSISTED",
       ingest_timing: { body_bytes: body.length, total_ms: Date.now() - startedAt },
@@ -408,12 +562,13 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    const recoveredVerifications = storagePromise
+    const recoveredVerifications = !staged && storagePromise
       ? await storagePromise.catch(() => null)
       : null;
     const failure = buildCsmIngestFailureResponse(error, {
       recoveryIdentity,
-      recoveredVerifications
+      recoveredVerifications,
+      stagedResumeReceipt
     });
     return sendJson(res, failure.status, failure.body);
   }

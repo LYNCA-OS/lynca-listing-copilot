@@ -21,7 +21,6 @@ import {
   csmProviderPacerReadinessMatches
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 
-const LOOKUP_RPC = "lookup_csm_thin_provider_operation_v1";
 const LOOKUP_HASH = "0".repeat(64);
 
 function serviceKey(env) {
@@ -74,19 +73,48 @@ export async function checkCsmThinProductionReadiness({
   if (!assetOwnerResponse.ok) {
     throw readinessError("listing_asset_owner_not_ready", String(assetOwnerResponse.status));
   }
-  const response = await fetchImpl(`${baseUrl}/rest/v1/rpc/${LOOKUP_RPC}`, {
-    method: "POST",
-    headers: supabaseServiceHeaders(serviceKey(env), { "content-type": "application/json" }),
-    redirect: "error",
-    body: JSON.stringify({
-      p_tenant_id: "__csm_readiness__",
-      p_operation_key: "__csm_readiness__",
-      p_payload_sha256: LOOKUP_HASH
-    })
-  });
+  const response = await fetchImpl(
+    `${baseUrl}/rest/v1/rpc/${CSM_PROVIDER_AUTHORITY_RPCS.lookup}`,
+    {
+      method: "POST",
+      headers: supabaseServiceHeaders(serviceKey(env), { "content-type": "application/json" }),
+      redirect: "error",
+      body: JSON.stringify({
+        p_tenant_id: "__csm_readiness__",
+        p_operation_key: "__csm_readiness__",
+        p_payload_sha256: LOOKUP_HASH
+      })
+    }
+  );
   const authority = await response.json().catch(() => null);
   if (!response.ok || authority?.ok !== true || authority?.code !== "not_found") {
     throw readinessError("csm_provider_authority_not_ready", String(response.status));
+  }
+
+  const operationKeyRecoveryResponse = await fetchImpl(
+    `${baseUrl}/rest/v1/rpc/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`,
+    {
+      method: "POST",
+      headers: supabaseServiceHeaders(serviceKey(env), { "content-type": "application/json" }),
+      redirect: "error",
+      body: JSON.stringify({
+        p_tenant_id: "__csm_readiness__",
+        p_operation_key: "__csm_readiness__"
+      })
+    }
+  );
+  const operationKeyRecovery = await operationKeyRecoveryResponse.json().catch(() => null);
+  if (!operationKeyRecoveryResponse.ok
+      || operationKeyRecovery?.ok !== true
+      || operationKeyRecovery?.code !== "not_found"
+      || Number(operationKeyRecovery?.status_code) !== 200
+      || operationKeyRecovery?.found !== false
+      || Object.hasOwn(operationKeyRecovery || {}, "payload_sha256")
+      || Object.hasOwn(operationKeyRecovery || {}, "result")) {
+    throw readinessError(
+      "csm_provider_operation_key_recovery_not_ready",
+      String(operationKeyRecoveryResponse.status)
+    );
   }
 
   const pacerResponse = await fetchImpl(
@@ -117,11 +145,9 @@ export async function checkCsmThinProductionReadiness({
     csm_registry_and_atomic_persistence_ready: true,
     listing_asset_owner_ready: true,
     durable_provider_authority_ready: true,
+    durable_provider_operation_key_recovery_ready: true,
     durable_provider_pacer_ready: true,
-    retired_capabilities_disabled: true,
-    cloud_run_calls: 0,
-    vector_calls: 0,
-    generic_ocr_calls: 0
+    retired_capabilities_disabled: true
   });
 }
 

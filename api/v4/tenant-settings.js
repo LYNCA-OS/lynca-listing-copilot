@@ -8,47 +8,10 @@ import {
   TENANT_PERMISSIONS
 } from "../../lib/tenant/index.mjs";
 
-const allowedSettingKeys = new Set([
-  "default_export_format",
-  "require_writer_review",
-  "recognition_mode",
-  "timezone"
-]);
-
-function validatedSettings(value) {
-  if (value === undefined) return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("invalid_tenant_settings");
-  const entries = Object.entries(value);
-  if (entries.some(([key]) => !allowedSettingKeys.has(key))) throw new TypeError("unsupported_tenant_setting");
-  const settings = {};
-  if (value.default_export_format !== undefined) {
-    const format = String(value.default_export_format).trim().toLowerCase();
-    if (!["xlsx", "csv"].includes(format)) throw new TypeError("invalid_default_export_format");
-    settings.default_export_format = format;
-  }
-  if (value.require_writer_review !== undefined) {
-    if (typeof value.require_writer_review !== "boolean") throw new TypeError("invalid_require_writer_review");
-    settings.require_writer_review = value.require_writer_review;
-  }
-  if (value.recognition_mode !== undefined) {
-    const mode = String(value.recognition_mode).trim().toLowerCase();
-    if (!["balanced", "accuracy"].includes(mode)) throw new TypeError("invalid_recognition_mode");
-    settings.recognition_mode = mode;
-  }
-  if (value.timezone !== undefined) {
-    const timezone = String(value.timezone).trim();
-    if (!/^[A-Za-z_]+(?:\/[A-Za-z0-9_+.-]+)+$/.test(timezone) || timezone.length > 80) {
-      throw new TypeError("invalid_timezone");
-    }
-    settings.timezone = timezone;
-  }
-  return settings;
-}
-
 async function readTenant({ tenantId, env = process.env, fetchImpl = globalThis.fetch }) {
   const result = await readV4Rows({
     table: "tenants",
-    select: "id,name,plan,status,settings,created_at,updated_at",
+    select: "id,name,plan,status,created_at,updated_at",
     search: { id: `eq.${tenantId}`, limit: "1" },
     env,
     fetchImpl
@@ -93,17 +56,16 @@ export default async function handler(req, res) {
 
   let patch;
   try {
+    if (payload.settings !== undefined) throw new TypeError("unsupported_tenant_setting");
     patch = {};
     if (payload.name !== undefined) {
       const name = String(payload.name).replace(/\s+/g, " ").trim();
       if (!name || name.length > 120) throw new TypeError("invalid_tenant_name");
       patch.name = name;
     }
-    const settings = validatedSettings(payload.settings);
-    if (settings !== undefined) patch.settings = settings;
-    if (!Object.keys(patch).length) throw new TypeError("empty_tenant_settings_patch");
+    if (!Object.keys(patch).length) throw new TypeError("empty_tenant_profile_patch");
   } catch (error) {
-    sendJson(res, 400, withV4Version({ ok: false, error_code: String(error?.message || "invalid_tenant_settings") }));
+    sendJson(res, 400, withV4Version({ ok: false, error_code: String(error?.message || "invalid_tenant_profile") }));
     return;
   }
 

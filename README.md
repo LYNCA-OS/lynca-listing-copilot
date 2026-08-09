@@ -62,7 +62,7 @@ The default Supabase Storage migration is `supabase/migrations/20260622_listing_
 
 Storage retention cleanup is available as a server-side script and a protected Vercel Cron API route. Set `LISTING_IMAGE_RETENTION_DAYS` and `CRON_SECRET`; `vercel.json` schedules `GET /api/listing-storage-retention-cleanup` daily at `0 9 * * *`, and the route only runs when the `Authorization` header contains the bearer value derived from `CRON_SECRET`. Manual operators can run `node scripts/storage-retention-cleanup.mjs` for a dry run; add `--apply` only when the listed expired `listing-assets/YYYY-MM-DD` objects should be deleted. The script and API route return sanitized summaries and do not print service keys, object-level delete lists, or Authorization headers.
 
-The browser also sends a first-pass `capture_quality` report with blur, glare, crop, readability, resolution, and critical-region occlusion scores. When one view has a glare-occluded critical region but another view has that same region clear, the asset quality summary records `GLARE_RECOVERED`; unresolved critical occlusion still creates targeted crop images for later focused reread and targeted rescan. This is a conservative heuristic gate for routing and future targeted rescan work, not a claim of production-grade glare segmentation.
+The browser also sends a first-pass `capture_quality` report with blur, glare, crop, readability, resolution, and critical-region occlusion scores. When one view has a glare-occluded critical region but another view has that same region clear, the asset quality summary records `GLARE_RECOVERED`. The active browser no longer creates or uploads targeted crops; historical crop lineage remains readable only for evaluation and compatibility. This is a conservative quality receipt, not a claim of production-grade glare segmentation.
 
 The title API now also returns an Evidence First compatibility layer: `evidence`, `resolved`, `model_title_suggestion`, and `evidence_schema_version`. It also returns deterministic renderer output: `modules`, `rendered_title`, `final_title`, `renderer_version`, and `title_length_policy`. Legacy `title`, `fields`, `confidence`, `reason`, and `unresolved` remain available while the resolver and feedback migration continue.
 
@@ -376,7 +376,6 @@ node scripts/storage-verification-record.test.mjs
 node scripts/storage-retention.test.mjs
 node scripts/storage-retention-api.test.mjs
 node scripts/image-quality-gate.test.mjs
-node scripts/image-crop-planner.test.mjs
 ```
 
 ## Documentation

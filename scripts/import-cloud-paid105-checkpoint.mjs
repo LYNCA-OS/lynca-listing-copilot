@@ -208,7 +208,9 @@ function finishRows({ checkpoint, control, treatment, items }) {
       if (body.id !== providerRow.provider_response_id || body.model !== MODEL
           || body.status !== "completed" || body.incomplete_details
           || providerRow.provider_status !== "completed" || providerRow.incomplete_details
-          || (body.reasoning?.effort ?? EFFORT) !== EFFORT) {
+          || body.reasoning?.effort !== EFFORT
+          || providerRow.served_effort !== EFFORT
+          || providerRow.served_effort_attested !== true) {
         throw new Error(`cloud_pair_served_contract_invalid:${pair.asset_id}:${role}`);
       }
       const payload = arm.extract(body);
@@ -236,6 +238,7 @@ function finishRows({ checkpoint, control, treatment, items }) {
         served_model: providerRow.served_model,
         requested_effort: EFFORT,
         served_effort: providerRow.served_effort,
+        served_effort_attested: true,
         request_sha256: expected.normalized_request_sha256,
         image_set_sha256: pair.image_set_sha256,
         image_count: asset.image_urls.length,

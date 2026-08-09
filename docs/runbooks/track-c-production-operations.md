@@ -6,7 +6,7 @@ Status: rollout procedure only. Preview and production are unchanged; see the li
 
 - Production and preview must use different Supabase databases/projects or isolated Supabase branches, including separate service-role credentials and storage configuration. A preview deployment must never inherit the production Supabase URL, database URL, service-role key, or storage namespace.
 - The production deploy workflow does **not** apply schema migrations. Schema maintenance is a separate, approved maintenance-window operation; the workflow only performs read-only schema preflights and fails closed when the schema is not ready.
-- Legacy runtime migration handlers are disabled by default and cannot be enabled in a production runtime. `LYNCA_RUNTIME_MIGRATIONS_ENABLED=true` is only for an isolated non-production rehearsal with separate credentials; it is not a production break-glass path.
+- Runtime HTTP migration handlers are not deployed. Rehearsals and Production maintenance use the approved ephemeral maintenance runner with separate credentials; there is no application-runtime break-glass path.
 - Never run `supabase db reset`, an unscoped migration push, or a destructive down migration against production.
 - Use the direct `POSTGRES_URL_NON_POOLING` connection only from the approved ephemeral maintenance runner. Reference the environment variable in commands; never paste or print its literal value, or copy it into an artifact.
 
@@ -99,6 +99,21 @@ Archive the JSON with the migration checksums and recovery-point timestamp. Any 
 
 The manual workflow repeats code gates and the schema preflight before triggering Vercel. It must not be used to bootstrap the Track C schema.
 
+Vercel does not expose a supported conditional-promotion operation. The normal
+Production alias writer is therefore exactly one protected GitHub workflow:
+`.github/workflows/deploy-production.yml`. The Vercel project must keep custom
+Production-domain auto-assignment disabled and contain zero Deploy Hooks. Git
+integration may create staged artifacts, but the canonical domain must have no
+Git-branch binding and must never move automatically. No other workflow or
+repository secret may hold `VERCEL_TOKEN`.
+
+Vercel OWNER access is break-glass authority, not a second release path. Before
+an OWNER uses the Dashboard or a personal CLI token, wait for or cancel the
+`production-deploy` workflow, record the old and new deployment IDs and Git
+SHAs, and verify canonical health afterward. An OWNER mutation during a run
+invalidates that run's automatic rollback; the workflow must stop rather than
+overwrite it.
+
 ```bash
 export EXPECTED_SHA="$(git rev-parse HEAD)"
 gh workflow run deploy-production.yml --ref main
@@ -136,10 +151,10 @@ node -e '
 
 Using dedicated pilot test accounts, complete all of the following before reopening writes:
 
-- Owner and Manager can upload/enqueue, view team status, and use tenant ops; Writer sees only assigned work.
+- Owner and Manager can upload/enqueue and view team status; Writer sees only assigned work.
 - Tenant A cannot read Tenant B's known job/session/asset IDs; the API returns the same not-found response as an unknown ID.
 - One card completes through upload, durable enqueue, recognition, feedback, and export, with its `request_id`, `tenant_id`, `batch_id`, `job_id`, and `session_id` traceable.
-- `/api/v4/ops-snapshot?window_hours=24` reports plausible queue/failure/latency values for the logged-in tenant. Only Owner cost fields are expected.
+- Do not use the retired `/ops` dashboard or `/api/v4/ops-snapshot` as readiness evidence. Require the Writer Journey's exact request, provider-authority, persistence, and owner-readback receipts.
 
 ## 6. Manually retry a failed job
 
@@ -171,7 +186,7 @@ Never retry by directly patching job status, attempts, leases, or capacity slots
 ## 7. Tenant incident triage
 
 1. Capture customer, tenant, time range, `request_id`, `batch_id`, `job_id`, `session_id`, and observed HTTP status. Do not request API keys, cookies, signed URLs, or raw image payloads in a support ticket.
-2. Reproduce with an authorized account for that tenant and read job status plus `/api/v4/ops-snapshot?window_hours=24`.
+2. Reproduce with an authorized account for that tenant, then correlate the exact job/session/request identifiers with durable records and Production logs. The retired `/ops` snapshot is not an incident signal.
 3. Correlate logs in a read-only database transaction. Always bind the tenant filter; never start with an unscoped customer-data query.
 
 ```bash

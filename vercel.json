@@ -31,14 +31,6 @@
     {
       "source": "/register.html",
       "destination": "/app/register"
-    },
-    {
-      "source": "/ops",
-      "destination": "/app/ops"
-    },
-    {
-      "source": "/ops.html",
-      "destination": "/app/ops"
     }
   ],
   "headers": [
