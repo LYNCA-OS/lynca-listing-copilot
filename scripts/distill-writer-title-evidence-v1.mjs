@@ -87,6 +87,26 @@ export async function writeWriterTitleEvidenceDistillationV1({ datasetPath, labe
     "writer_distillation_requires_label_aware_development_only");
   invariant(datasetPath && labelsPath && outPath && outputPathAllowed(outPath),
     "writer_distillation_inputs_or_output_scope_invalid");
+  const loaded = await loadWriterTitleEvidenceRowsV1({ datasetPath, labelsPath,
+    predictionSpecs, sourceSpecs, labelAwareDevelopmentOnly });
+  const report = distillWriterTitleEvidenceV1(loaded.rows);
+  report.input_receipts = loaded.input_receipts;
+  const target = resolve(outPath);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+  await chmod(target, 0o600);
+  return report;
+}
+
+// Shared evaluation loader. Prediction and observation bytes are opened
+// before sealed labels, and callers receive rows only after the 1:1 cohort
+// binding is proven. It performs no scoring and has no runtime import path.
+export async function loadWriterTitleEvidenceRowsV1({ datasetPath, labelsPath,
+  predictionSpecs, sourceSpecs, labelAwareDevelopmentOnly = false }) {
+  invariant(labelAwareDevelopmentOnly === true,
+    "writer_distillation_requires_label_aware_development_only");
+  invariant(datasetPath && labelsPath,
+    "writer_distillation_inputs_or_output_scope_invalid");
   const [datasetBody, predictions, observations] = await Promise.all([
     readFile(resolve(datasetPath), "utf8"),
     loadArmRows(predictionSpecs, "prediction", (row) => {
@@ -135,19 +155,13 @@ export async function writeWriterTitleEvidenceDistillationV1({ datasetPath, labe
   invariant(labels.size === rows.length && predictions.index.size === rows.length
     && observations.index.size === rows.length,
     "writer_distillation_input_cohort_mismatch");
-  const report = distillWriterTitleEvidenceV1(rows);
-  report.input_receipts = {
+  return { rows, input_receipts: {
     dataset: { path: resolve(datasetPath), sha256: sha256(datasetBody), rows: rows.length },
     sealed_labels: { path: resolve(labelsPath), sha256: sha256(labelsBody), rows: labels.size,
       bytes_opened_after_prediction_files_loaded: true },
     predictions: predictions.receipts,
     source_observations: observations.receipts
-  };
-  const target = resolve(outPath);
-  await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-  await chmod(target, 0o600);
-  return report;
+  } };
 }
 
 const isMain = process.argv[1]
