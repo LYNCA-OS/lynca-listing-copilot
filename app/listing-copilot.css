@@ -3392,6 +3392,19 @@ body.login-shell .input-token {
 .glass-box-grammar { display: flex; gap: 1.2rem; flex-wrap: wrap; margin: .5rem 0; font-size: .78rem; }
 .glass-box-grammar dt { color: #666; display: inline; }
 .glass-box-grammar dd { display: inline; margin: 0 0 0 .3rem; font-weight: 600; }
+.glass-box-external { margin: .55rem 0; padding: .55rem .65rem; border: 1px solid #b9ddc8; border-radius: 7px; background: #f3fbf6; font-size: .76rem; }
+.glass-box-external-heading { display: flex; align-items: center; gap: .45rem; }
+.glass-box-external-heading span { padding: .08rem .35rem; border-radius: 999px; background: #d9f1e2; color: #17633a; font-size: .66rem; font-weight: 700; }
+.glass-box-external p { margin: .3rem 0; color: #3f5c49; }
+.glass-box-external-versions { display: flex; gap: .8rem; flex-wrap: wrap; margin: .35rem 0; }
+.glass-box-external-versions div { min-width: 0; }
+.glass-box-external-versions dt { color: #607267; }
+.glass-box-external-versions dd { margin: .1rem 0 0; max-width: 22rem; overflow-wrap: anywhere; }
+.glass-box-external-sources { margin: .4rem 0 0; padding-left: 1.1rem; }
+.glass-box-external-sources li { margin-top: .25rem; }
+.glass-box-external-sources a { font-weight: 650; color: #17633a; }
+.glass-box-external-sources code { margin-left: .35rem; color: #4c6254; overflow-wrap: anywhere; }
+.glass-box-external-sources small { display: block; color: #6f7f74; }
 .glass-box-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
 .glass-box-table th, .glass-box-table td { text-align: left; padding: .25rem .4rem; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
 .glass-box-table thead th { color: #666; font-weight: 500; }

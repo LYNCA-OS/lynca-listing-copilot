@@ -31,9 +31,13 @@ const live = snapshot.tables;
 const CONTRACT = {
   csm_marketplace_outputs: [
     "id", "tenant_id", "recognition_session_id", "resolution_id",
-    "structured_output", "title", "composer_version", "created_at"
+    "structured_output", "title", "composer_version", "marketplace",
+    "marketplace_profile_version", "contract_version", "created_at"
   ],
-  csm_identity_resolutions: ["id", "resolver_version", "tenant_id"],
+  csm_identity_resolutions: [
+    "id", "resolver_version", "conflict_policy_version", "registry_release_id",
+    "grammar", "contract_version", "revision", "tenant_id"
+  ],
   v4_recognition_sessions: [
     "id", "asset_id", "tenant_id", "created_at", "csm_owner_versions"
   ],

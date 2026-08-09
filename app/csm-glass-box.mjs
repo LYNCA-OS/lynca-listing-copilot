@@ -37,7 +37,18 @@ const RATIONALE_LABEL = Object.freeze({
   MODEL_REPORTED_UNREADABLE: "模型报告读不出",
   MODEL_REPORTED_LOW_CONFIDENCE: "模型报告不确定",
   WITHHELD_BASE_APPEARANCE: "识别到但判为产品基础外观，未晋升",
+  EXACT_EXTERNAL_IDENTITY_SUPPORT: "外部身份来源精确核验",
   NOT_OBSERVED: "未观察到"
+});
+
+const EXTERNAL_FIELD_LABEL = Object.freeze({
+  year: "年份",
+  manufacturer: "厂商",
+  product: "产品",
+  set: "系列",
+  subjects: "人物",
+  team: "球队",
+  card_number: "卡号"
 });
 
 const escape = (value) => String(value ?? "")
@@ -78,6 +89,37 @@ function bracketRowHtml(bracket) {
   `;
 }
 
+function externalIdentityHtml(support) {
+  if (support?.status !== "APPLIED" || !Array.isArray(support.sources) || !support.sources.length) return "";
+  const fields = (Array.isArray(support.supported_fields) ? support.supported_fields : [])
+    .map((field) => EXTERNAL_FIELD_LABEL[field] || field).join("、");
+  const matchBasis = support.match_basis === "VERIFIED_ORIGINAL_SET"
+    ? "已验证原图集合"
+    : support.match_basis === "EXACT_FOUR_ANCHOR" ? "四字段精确锚点" : "";
+  if (!matchBasis) return "";
+  return `
+      <section class="glass-box-external" aria-label="外部身份来源">
+        <div class="glass-box-external-heading">
+          <strong>外部身份已核验</strong>
+          <span>APPLIED</span>
+        </div>
+        <p>以下字段由 source-versioned exact identity receipt 支持：${escape(fields || "—")}。</p>
+        <dl class="glass-box-external-versions">
+          <div><dt>Match basis</dt><dd>${escape(matchBasis)}</dd></div>
+          <div><dt>Registry release</dt><dd><code>${escape(support.registry_release?.id)}</code></dd></div>
+          <div><dt>Index</dt><dd><code>${escape(support.index?.version)}</code></dd></div>
+          <div><dt>Resolver</dt><dd><code>${escape(support.resolver_version)}</code></dd></div>
+        </dl>
+        <ul class="glass-box-external-sources">${support.sources.map((source) => `
+          <li>
+            <a href="${escape(source.url)}" target="_blank" rel="noopener noreferrer">${escape(source.provider)}</a>
+            <code>${escape(source.source_id)}</code>
+            <small>${escape(source.retrieved_at)} · ${escape((Array.isArray(source.fields) ? source.fields : []).map((field) => EXTERNAL_FIELD_LABEL[field] || field).join("、"))}</small>
+          </li>`).join("")}
+        </ul>
+      </section>`;
+}
+
 export function renderCsmGlassBox(view, { assetIndex } = {}) {
   if (!view || !Array.isArray(view.brackets)) return "";
   const s = view.summary || {};
@@ -105,6 +147,8 @@ export function renderCsmGlassBox(view, { assetIndex } = {}) {
         <div><dt>字符预算</dt><dd>${escape(view.composer?.length)} / ${escape(view.composer?.character_budget)}</dd></div>
       </dl>
 
+      ${externalIdentityHtml(view.external_identity_support)}
+
       <table class="glass-box-table">
         <thead>
           <tr><th scope="col">Bracket</th><th scope="col">值</th><th scope="col">Composer</th><th scope="col">依据</th><th scope="col">置信</th></tr>
@@ -113,8 +157,10 @@ export function renderCsmGlassBox(view, { assetIndex } = {}) {
       </table>
 
       <p class="glass-box-footnote">
-        本解析器每张卡只做一次整卡观察，因此没有备选候选可比对
-        （<code>${escape(view.brackets[0]?.alternates_unavailable_reason || "SINGLE_OBSERVATION_RESOLVER")}</code>）。
+        ${view.external_identity_support?.status === "APPLIED"
+          ? "本次解析应用了经过 allowlist 的外部身份来源；页面只展示来源摘要，不展示原始 Registry payload。"
+          : `本解析器每张卡只做一次整卡观察，因此没有备选候选可比对
+        （<code>${escape(view.brackets[0]?.alternates_unavailable_reason || "SINGLE_OBSERVATION_RESOLVER")}</code>）。`}
         这里展示的是决策轨迹，不是模型的内部推理过程。
       </p>
     </details>

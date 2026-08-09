@@ -6,6 +6,8 @@ import path from "node:path";
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 import {
   materializeWriterJourneySources,
+  verifiedExactParitySourceRows,
+  WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
   WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS
 } from "./materialize-writer-journey-source.mjs";
 
@@ -48,11 +50,13 @@ const runAttempt = async ({
   env = productionEnv,
   outDir = null,
   cases: attemptCases = cases,
+  parityCase = null,
   fetchImpl: attemptFetch = fetchImpl
 } = {}) => materializeWriterJourneySources({
   env,
   outDir: outDir || await freshOutDir(),
   cases: attemptCases,
+  parityCase,
   fetchImpl: attemptFetch
 });
 
@@ -87,6 +91,74 @@ try {
   });
   assert.equal(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1].hash_provenance,
     "2026-08-09_DIRECT_EXACT_PATH_BYTE_ACQUISITION");
+  const parityRows = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image, index) => ({
+    object_path: `verified/parity/${index + 1}.jpg`,
+    bucket: "listing-card-images",
+    asset_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_asset_id,
+    image_id: image.image_id,
+    storage_role: image.storage_role,
+    content_type: "image/jpeg",
+    size: 400_000 + index,
+    width: 1085 + index,
+    height: 1429 - index,
+    object_verified: true,
+    content_hash_verified: true,
+    content_sha256: image.content_sha256
+  }));
+  const verifiedParity = verifiedExactParitySourceRows(parityRows);
+  assert.equal(verifiedParity.source_asset_id,
+    WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_asset_id);
+  assert.deepEqual(verifiedParity.images.map((image) => ({
+    image_id: image.image_id,
+    storage_role: image.storage_role,
+    role: image.role,
+    content_sha256: image.content_sha256,
+    object_verified: image.object_verified,
+    content_hash_verified: image.content_hash_verified
+  })), WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image) => ({
+    ...image,
+    object_verified: true,
+    content_hash_verified: true
+  })));
+  for (const mutate of [
+    (rows) => rows.pop(),
+    (rows) => { rows[1].image_id = rows[0].image_id; },
+    (rows) => { rows[0].asset_id = "asset_wrong"; },
+    (rows) => { rows[0].content_sha256 = "0".repeat(64); },
+    (rows) => { rows[0].storage_role = "image_1_original"; },
+    (rows) => { rows[0].object_verified = false; },
+    (rows) => { rows[0].content_hash_verified = false; }
+  ]) {
+    const invalidRows = structuredClone(parityRows);
+    mutate(invalidRows);
+    assert.throws(() => verifiedExactParitySourceRows(invalidRows),
+      /writer_journey_parity_source_invalid/);
+  }
+  let parityRead = null;
+  await assert.rejects(
+    materializeWriterJourneySources({
+      env: productionEnv,
+      outDir: await freshOutDir("invalid-live-parity"),
+      cases,
+      fetchImpl: async (url, init = {}) => {
+        parityRead = { url: String(url), init };
+        return new Response(JSON.stringify([
+          { ...parityRows[0], object_verified: false }, parityRows[1]
+        ]), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    }),
+    /writer_journey_parity_source_invalid/
+  );
+  const parityReadUrl = new URL(parityRead.url);
+  assert.equal(parityReadUrl.pathname, "/rest/v1/listing_image_verifications");
+  assert.equal(parityReadUrl.searchParams.get("asset_id"),
+    `eq.${WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_asset_id}`);
+  assert.equal(parityReadUrl.searchParams.get("image_id"),
+    `in.(${WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image) => image.image_id).join(",")})`);
+  assert.equal(parityReadUrl.searchParams.get("limit"), "3");
+  assert.equal(parityRead.init.headers.apikey, productionEnv.SUPABASE_SERVICE_ROLE_KEY);
+  assert.equal(parityRead.init.headers.authorization, undefined);
+  assert.equal(parityRead.init.redirect, "error");
   const materializerSource = await readFile(new URL("./materialize-writer-journey-source.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(materializerSource, /error:\s*String\(error/,
     "CLI failures must not echo signed URLs, tokens, or service secrets");

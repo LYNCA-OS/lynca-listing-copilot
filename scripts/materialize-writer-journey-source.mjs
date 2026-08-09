@@ -40,6 +40,34 @@ export const WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS = Object.freeze([
   })
 ]);
 
+// The exact card the Owner selected as the Codex-parity acceptance case.
+// Identity and original bytes are pinned here; the title is deliberately not.
+// The release journey must obtain the expected title from the candidate runtime,
+// not from a source manifest that could leak the answer into recognition.
+export const WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT = Object.freeze({
+  case_id: "EXTERNAL_IDENTITY",
+  expected_grammar: "NON_TCG",
+  source_kind: "PRODUCTION_ASSET",
+  source_record_id: "asset_c1ffe54e-8d04-8e8d-ab22-1d333ab3d8a8",
+  source_asset_id: "asset_c1ffe54e-8d04-8e8d-ab22-1d333ab3d8a8",
+  evaluation_cohort: "OWNER_APPROVED_EXACT_PARITY",
+  hash_provenance: "2026-08-10_PRODUCTION_ASSET_EXACT_VERIFICATION",
+  images: Object.freeze([
+    Object.freeze({
+      image_id: "67c4a38b-1bee-4bdc-acfa-8263701e685c",
+      storage_role: "image_2_original",
+      role: "front_original",
+      content_sha256: "8641baae2722318061dc7d9431e8764e4fe72d809bf1d668294c823c1105811a"
+    }),
+    Object.freeze({
+      image_id: "4500648f-c0c3-4222-a408-0bfd7ad988c0",
+      storage_role: "image_1_original",
+      role: "back_original",
+      content_sha256: "7551abbd6a90f94771396eb46f726f20c49b0745d23db4f82a8db5c82296ca01"
+    })
+  ])
+});
+
 function sourceForContract(contract) {
   const indexed = launchGateImageSourceRecords.find((source) => (
     source.source_feedback_id === contract.source_feedback_id
@@ -189,10 +217,66 @@ async function responseJson(response, errorCode) {
   }
 }
 
+export function verifiedExactParitySourceRows(rows, {
+  contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
+} = {}) {
+  if (!Array.isArray(rows) || rows.length !== 2) {
+    throw new Error("writer_journey_parity_source_invalid");
+  }
+  const byImageId = new Map(rows.map((row) => [row?.image_id, row]));
+  const images = contract.images.map((expected) => {
+    const row = byImageId.get(expected.image_id);
+    if (!row
+      || row.asset_id !== contract.source_asset_id
+      || row.storage_role !== expected.storage_role
+      || row.object_verified !== true
+      || row.content_hash_verified !== true
+      || row.content_sha256 !== expected.content_sha256
+      || !["image/jpeg", "image/png", "image/webp"].includes(row.content_type)
+      || !Number.isSafeInteger(row.size) || row.size < 1 || row.size > MAX_SOURCE_BYTES
+      || !Number.isSafeInteger(row.width) || row.width < 1
+      || !Number.isSafeInteger(row.height) || row.height < 1
+      || !row.bucket || !row.object_path) {
+      throw new Error("writer_journey_parity_source_invalid");
+    }
+    return {
+      bucket: row.bucket,
+      object_path: row.object_path,
+      image_id: expected.image_id,
+      storage_role: expected.storage_role,
+      role: expected.role,
+      content_sha256: expected.content_sha256,
+      object_verified: true,
+      content_hash_verified: true
+    };
+  });
+  return { ...contract, images };
+}
+
+async function exactParitySource({ origin, serviceKey, fetchImpl }) {
+  const contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT;
+  const endpoint = new URL(`${origin}/rest/v1/listing_image_verifications`);
+  endpoint.searchParams.set("select", [
+    "object_path", "bucket", "asset_id", "image_id", "storage_role", "content_type",
+    "size", "width", "height", "object_verified", "content_hash_verified", "content_sha256"
+  ].join(","));
+  endpoint.searchParams.set("asset_id", `eq.${contract.source_asset_id}`);
+  endpoint.searchParams.set("image_id", `in.(${contract.images.map((image) => image.image_id).join(",")})`);
+  endpoint.searchParams.set("limit", "3");
+  const response = await fetchImpl(endpoint, {
+    headers: supabaseServiceHeaders(serviceKey),
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000)
+  });
+  const rows = await responseJson(response, "writer_journey_parity_source_read_failed");
+  return verifiedExactParitySourceRows(rows, { contract });
+}
+
 export async function materializeWriterJourneySources({
   env = process.env,
   outDir,
   cases = DEFAULT_CASES,
+  parityCase = undefined,
   fetchImpl = globalThis.fetch
 } = {}) {
   const origin = productionSupabaseOrigin(env.SUPABASE_URL);
@@ -200,6 +284,9 @@ export async function materializeWriterJourneySources({
     env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY,
     "SUPABASE_SERVICE_ROLE_KEY"
   );
+  const resolvedParityCase = parityCase === undefined
+    ? await exactParitySource({ origin, serviceKey, fetchImpl })
+    : parityCase;
   const directory = path.resolve(requiredText(outDir, "out_dir"));
   if (!Array.isArray(cases) || cases.length !== 2
     || new Set(cases.map((source) => source?.case_id)).size !== 2
@@ -214,10 +301,32 @@ export async function materializeWriterJourneySources({
       || source.images[1]?.role !== "back_original")) {
     throw new Error("writer_journey_source_record_invalid");
   }
+  if (resolvedParityCase !== null && (
+    resolvedParityCase?.case_id !== "EXTERNAL_IDENTITY"
+    || resolvedParityCase?.expected_grammar !== "NON_TCG"
+    || resolvedParityCase?.source_kind !== "PRODUCTION_ASSET"
+    || resolvedParityCase?.source_record_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_record_id
+    || resolvedParityCase?.source_asset_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_asset_id
+    || resolvedParityCase?.evaluation_cohort !== "OWNER_APPROVED_EXACT_PARITY"
+    || resolvedParityCase?.hash_provenance !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.hash_provenance
+    || !Array.isArray(resolvedParityCase?.images)
+    || resolvedParityCase.images.length !== 2
+    || resolvedParityCase.images[0]?.role !== "front_original"
+    || resolvedParityCase.images[1]?.role !== "back_original"
+    || resolvedParityCase.images.some((image, index) => (
+      image?.image_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images[index].image_id
+      || image?.storage_role !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images[index].storage_role
+      || image?.content_sha256 !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images[index].content_sha256
+      || image?.object_verified !== true
+      || image?.content_hash_verified !== true
+    ))
+  )) {
+    throw new Error("writer_journey_parity_source_invalid");
+  }
   await secureRootDirectory(directory);
 
   const materializedCases = [];
-  for (const source of cases) {
+  for (const source of resolvedParityCase ? [...cases, resolvedParityCase] : cases) {
     const caseDirectory = path.join(directory, source.case_id.toLowerCase().replace("_", "-"));
     await secureNewCaseDirectory(caseDirectory);
     const files = [];
@@ -278,7 +387,11 @@ export async function materializeWriterJourneySources({
     materializedCases.push({
       case_id: source.case_id,
       expected_grammar: source.expected_grammar,
-      source_feedback_id: source.source_feedback_id,
+      ...(source.source_kind === "PRODUCTION_ASSET" ? {
+        source_kind: source.source_kind,
+        source_record_id: source.source_record_id,
+        source_asset_id: source.source_asset_id
+      } : { source_feedback_id: source.source_feedback_id }),
       evaluation_cohort: source.evaluation_cohort,
       hash_provenance: source.hash_provenance,
       image_count: files.length,
@@ -286,10 +399,11 @@ export async function materializeWriterJourneySources({
     });
   }
   return {
-    schema_version: "writer-journey-cases-v2",
+    schema_version: resolvedParityCase ? "writer-journey-cases-v3" : "writer-journey-cases-v2",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     accuracy_claim: null,
-    cases: materializedCases
+    cases: materializedCases.slice(0, 2),
+    ...(resolvedParityCase ? { parity_case: materializedCases[2] } : {})
   };
 }
 

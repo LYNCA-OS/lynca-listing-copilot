@@ -180,6 +180,9 @@ jobs:
             CSM_RECOGNITION_TRANSPORT_PROFILES,
             sha256CsmRecognitionTransportReceipt
           } from './lib/listing/thin/csm-model-execution-contract.mjs';
+          import {
+            EXTERNAL_IDENTITY_RELEASE_CONTRACT
+          } from './lib/listing/knowledge/csm-external-identity-support.mjs';
           import { resolveCsmProviderAdapter } from './lib/listing/thin/csm-provider-adapter.mjs';
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
@@ -214,29 +217,95 @@ jobs:
             && h.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
             && h.runtime?.provider_adapter_version === expectedProviderAdapterVersion
             && recognitionTransportContractsReady
+            && JSON.stringify(h.runtime?.external_identity)
+              === JSON.stringify(EXTERNAL_IDENTITY_RELEASE_CONTRACT)
             && h.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
             && h.runtime?.retired_capabilities_disabled === true;
           process.exit(ok ? 0 : 1);
           NODE
       - name: Install the pinned browser for the candidate Writer Journey
         run: npx playwright install --with-deps chromium
-      - name: Materialize fixed NON_TCG and TCG cases from Production Storage
+      - name: Materialize fixed NON_TCG TCG and exact parity cases from Production Storage
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           source_dir="$RUNNER_TEMP/writer-journey-source"
-          cases_manifest="$RUNNER_TEMP/writer-journey-cases-v2.json"
+          cases_manifest="$RUNNER_TEMP/writer-journey-cases-v3.json"
+          large_source_manifest="$RUNNER_TEMP/writer-journey-large-source-v2.json"
+          umask 077
           node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" > "$cases_manifest"
-          node -e 'const x=require(process.argv[1]); if(x.schema_version!=="writer-journey-cases-v2"||x.accuracy_claim!==null||x.cases?.length!==2)process.exit(1)' "$cases_manifest"
+          CASES_MANIFEST="$cases_manifest" LARGE_SOURCE_MANIFEST="$large_source_manifest" \
+            node --input-type=module <<'NODE'
+          import { readFile, stat, writeFile } from 'node:fs/promises';
+          import path from 'node:path';
+          import {
+            WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
+          } from './scripts/materialize-writer-journey-source.mjs';
+
+          const sourcePath = process.env.CASES_MANIFEST;
+          const largeSourcePath = process.env.LARGE_SOURCE_MANIFEST;
+          const manifest = JSON.parse(await readFile(sourcePath, 'utf8'));
+          const exactKeys = (value, keys) => value && typeof value === 'object'
+            && !Array.isArray(value)
+            && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+          const contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT;
+          const parity = manifest.parity_case;
+          const validParityFiles = Array.isArray(parity?.files)
+            && parity.files.length === 2
+            && parity.files.every((file, index) => (
+              exactKeys(file, ['path', 'role', 'bytes', 'content_type', 'content_sha256'])
+              && path.isAbsolute(file.path)
+              && file.role === contract.images[index].role
+              && file.content_sha256 === contract.images[index].content_sha256
+              && Number.isSafeInteger(file.bytes) && file.bytes > 0
+              && ['image/jpeg', 'image/png', 'image/webp'].includes(file.content_type)
+            ));
+          if (!exactKeys(manifest, [
+            'schema_version', 'evidence_scope', 'accuracy_claim', 'cases', 'parity_case'
+          ])
+            || manifest.schema_version !== 'writer-journey-cases-v3'
+            || manifest.evidence_scope !== 'LIVE_CONTRACT_RECEIPT_ONLY'
+            || manifest.accuracy_claim !== null
+            || !Array.isArray(manifest.cases) || manifest.cases.length !== 2
+            || !exactKeys(parity, [
+              'case_id', 'expected_grammar', 'source_kind', 'source_record_id',
+              'source_asset_id', 'evaluation_cohort', 'hash_provenance', 'image_count', 'files'
+            ])
+            || parity.case_id !== contract.case_id
+            || parity.expected_grammar !== contract.expected_grammar
+            || parity.source_kind !== contract.source_kind
+            || parity.source_record_id !== contract.source_record_id
+            || parity.source_asset_id !== contract.source_asset_id
+            || parity.evaluation_cohort !== contract.evaluation_cohort
+            || parity.hash_provenance !== contract.hash_provenance
+            || parity.image_count !== 2
+            || !validParityFiles
+            || ((await stat(sourcePath)).mode & 0o077) !== 0) {
+            throw new Error('writer_journey_cases_v3_invalid');
+          }
+          const v2 = {
+            schema_version: 'writer-journey-cases-v2',
+            evidence_scope: manifest.evidence_scope,
+            accuracy_claim: null,
+            cases: manifest.cases
+          };
+          await writeFile(largeSourcePath, `${JSON.stringify(v2)}\n`, {
+            flag: 'wx', mode: 0o600
+          });
+          if (((await stat(largeSourcePath)).mode & 0o777) !== 0o600) {
+            throw new Error('writer_journey_large_source_permissions_invalid');
+          }
+          NODE
           printf 'WRITER_JOURNEY_CASES_MANIFEST=%s\n' "$cases_manifest" >> "$GITHUB_ENV"
+          printf 'WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\n' "$large_source_manifest" >> "$GITHUB_ENV"
       - name: Build executor-bound large staged transport fixture
         run: |
           fixture_parent="$RUNNER_TEMP/lynca-large-writer-fixture"
           fixture_dir="$fixture_parent/bundle"
           install -d -m 700 "$fixture_parent"
           node scripts/build-large-internal-writer-fixture.mjs \
-            --source-manifest "$WRITER_JOURNEY_CASES_MANIFEST" \
+            --source-manifest "$WRITER_JOURNEY_LARGE_SOURCE_MANIFEST" \
             --out-dir "$fixture_dir" >/dev/null
           test -f "$fixture_dir/receipt.json"
           printf 'WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT=%s\n' "$fixture_dir/receipt.json" >> "$GITHUB_ENV"

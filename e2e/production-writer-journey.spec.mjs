@@ -25,6 +25,16 @@ import {
   computeCsmOwnerExecutionReceiptSha256,
   sealCsmOwnerExecutionReceipt
 } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
+import {
+  THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
+} from "../lib/listing/thin/csm-supabase-writer.mjs";
+import {
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  EXTERNAL_IDENTITY_SUPPORT_PACK
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
+  WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
+} from "../scripts/materialize-writer-journey-source.mjs";
 
 const expectedExecutionContractByTransportLaneAndImageCount = Object.freeze(Object.fromEntries(
   CSM_RECOGNITION_TRANSPORT_PROFILES.map((transportProfile) => [
@@ -55,6 +65,8 @@ const expectedProviderAdapterVersion = expectedProviderAdapterContract.id;
 const expectedMaxOutputTokens = 8192;
 const expectedEstimatedTokensPerAttempt = 6_500;
 const serverStageRoundingToleranceMs = 4;
+const CODEX_PARITY_EXPECTED_TITLE =
+  "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls";
 
 const artifactDir = path.resolve("artifacts/production-writer-journey");
 const evidencePath = path.join(artifactDir, "evidence.json");
@@ -97,6 +109,8 @@ const verifierErrorCodes = Object.freeze({
   FEEDBACK_RESPONSE_TITLE_MISMATCH: "FEEDBACK_RESPONSE_TITLE_MISMATCH",
   RUNTIME_CONTRACT_MISMATCH: "RUNTIME_CONTRACT_MISMATCH",
   LIVE_EXECUTION_RECEIPT_MISMATCH: "LIVE_EXECUTION_RECEIPT_MISMATCH",
+  CODEX_PARITY_MISMATCH: "CODEX_PARITY_MISMATCH",
+  EXTERNAL_IDENTITY_SUPPORT_MISMATCH: "EXTERNAL_IDENTITY_SUPPORT_MISMATCH",
   ROUTE_COVERAGE_MISMATCH: "ROUTE_COVERAGE_MISMATCH",
   LARGE_FIXTURE_INVALID: "LARGE_FIXTURE_INVALID",
   LARGE_OWNER_REQUIRED: "LARGE_OWNER_REQUIRED",
@@ -106,7 +120,9 @@ const verifierErrorCodes = Object.freeze({
   LARGE_FEEDBACK_POLICY_MISMATCH: "LARGE_FEEDBACK_POLICY_MISMATCH"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
-const liveFailureCaseIds = new Set(["NON_TCG", "TCG", "LARGE_STAGED_TRANSPORT"]);
+const liveFailureCaseIds = new Set([
+  "NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"
+]);
 const liveFailurePhases = new Set([
   "HEALTH",
   "LOGIN",
@@ -116,6 +132,7 @@ const liveFailurePhases = new Set([
   "ROUTE_COVERAGE",
   "TITLE_UI",
   "RESOLUTION_VIEW",
+  "EXTERNAL_IDENTITY_SUPPORT",
   "GLASS_BOX",
   "FEEDBACK",
   "CASE_COMPLETE",
@@ -133,6 +150,12 @@ function verifierFailure(code) {
 
 function requireInvariant(value, code) {
   if (!value) throw verifierFailure(code);
+}
+
+function codexParityTitleMatches({ recognitionTitle, uiTitle, storedTitle = null } = {}) {
+  return recognitionTitle === CODEX_PARITY_EXPECTED_TITLE
+    && uiTitle === CODEX_PARITY_EXPECTED_TITLE
+    && (storedTitle === null || storedTitle === CODEX_PARITY_EXPECTED_TITLE);
 }
 
 function sanitizedFailureCode(error) {
@@ -170,6 +193,10 @@ function healthRecognitionTransportContractMatches(runtime) {
       && runtime?.execution_contract_sha256_by_transport_lane_and_image_count?.[lane]?.["2"]
         === expectedExecutionContractSha256ByTransportLaneAndImageCount[lane]["2"];
   });
+}
+
+function healthExternalIdentityContractMatches(runtime) {
+  return stableJson(runtime?.external_identity) === stableJson(EXTERNAL_IDENTITY_RELEASE_CONTRACT);
 }
 
 function decodeBase64UrlJson(value, code) {
@@ -304,6 +331,83 @@ function durableOwnerExecutionReadbackProof(executionReceipt, resolutionView) {
   return proof;
 }
 
+function externalIdentityParityProof(resolutionView) {
+  const code = verifierErrorCodes.EXTERNAL_IDENTITY_SUPPORT_MISMATCH;
+  const support = resolutionView?.external_identity_support;
+  const release = EXTERNAL_IDENTITY_RELEASE_CONTRACT;
+  const expectedSources = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => ({
+    provider: source.source_id.startsWith("tcdb.")
+      ? "TCDB"
+      : source.source_id.startsWith("psa.") ? "PSA" : "Beckett",
+    source_id: source.source_id,
+    url: source.url,
+    retrieved_at: source.retrieved_at,
+    fact_sha256: source.fact_sha256
+  }));
+  const actualSources = Array.isArray(support?.sources) ? support.sources : [];
+  const expectedFields = [
+    "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
+  ];
+  requireInvariant(support?.schema_version === "csm-external-identity-public-receipt.v1"
+    && support?.status === "APPLIED"
+    && support?.match_basis === "VERIFIED_ORIGINAL_SET"
+    && !Object.prototype.hasOwnProperty.call(support, "original_set_sha256")
+    && support?.registry_release?.id === release.registry_release.id
+    && support?.registry_release?.registry_version
+      === THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.registry_version
+    && support?.registry_release?.content_sha256 === release.registry_release.content_sha256
+    && support?.registry_release?.sem_standard_version
+      === THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.sem_standard_version
+    && support?.resolver_version === release.resolution_contract.resolver_version
+    && support?.conflict_policy_version === release.resolution_contract.conflict_policy_version
+    && support?.composer_version === release.resolution_contract.composer_version
+    && support?.marketplace_profile_version
+      === release.resolution_contract.marketplace_profile_version
+    && support?.resolution_contract_sha256 === release.resolution_contract.sha256
+    && support?.pack?.id === release.support_pack.id
+    && support?.pack?.version === release.support_pack.version
+    && support?.pack?.sha256 === release.support_pack.sha256
+    && support?.index?.id === release.index.id
+    && support?.index?.version === release.index.version
+    && support?.index?.sha256 === release.index.sha256
+    && support?.record_id === "tcdb-2551-hr14"
+    && support?.field_decisions?.card_number?.action === "FILL"
+    && [...(support?.supported_fields || [])].sort().join("\0") === expectedFields.join("\0")
+    && Object.keys(support?.field_decisions || {}).sort().join("\0")
+      === expectedFields.join("\0")
+    && Object.values(support.field_decisions).every((decision) => (
+      ["FILL", "CORROBORATE", "NORMALIZE_ALIAS"].includes(decision?.action)
+      && Array.isArray(decision?.source_ids)
+      && decision.source_ids.length > 0
+    ))
+    && actualSources.length === expectedSources.length
+    && expectedSources.every((expected) => actualSources.some((actual) => (
+      actual?.provider === expected.provider
+      && actual?.source_id === expected.source_id
+      && actual?.url === expected.url
+      && actual?.retrieved_at === expected.retrieved_at
+      && actual?.fact_sha256 === expected.fact_sha256
+      && Array.isArray(actual?.fields)
+      && actual.fields.length > 0
+    ))),
+  code);
+  return Object.freeze({
+    applied: true,
+    match_basis: support.match_basis,
+    record_id: support.record_id,
+    registry_release_id: support.registry_release.id,
+    registry_release_sha256: support.registry_release.content_sha256,
+    pack_id: support.pack.id,
+    pack_sha256: support.pack.sha256,
+    index_id: support.index.id,
+    index_sha256: support.index.sha256,
+    resolution_contract_sha256: support.resolution_contract_sha256,
+    supported_fields: expectedFields,
+    source_count: actualSources.length,
+    source_ids: actualSources.map((source) => source.source_id).sort()
+  });
+}
+
 function liveServerStageReceipt(payload, code) {
   const stages = payload?.latency_stages_ms;
   requireInvariant(exactObject(stages)
@@ -355,15 +459,15 @@ function warmupResponseReceipt(requests) {
 function recognitionPostSeal(recognitionPosts, evidenceCases) {
   const continued = recognitionPosts.filter((entry) => entry.continued === true);
   const aborted = recognitionPosts.filter((entry) => entry.aborted_before_network === true);
-  requireInvariant(recognitionPosts.length === 4
-    && continued.length === 3
+  requireInvariant(recognitionPosts.length === 5
+    && continued.length === 4
     && aborted.length === 1
     && continued.length + aborted.length === recognitionPosts.length
     && recognitionPosts.every((entry) => (
       entry.continued === !entry.aborted_before_network
     ))
-    && new Set(continued.map((entry) => entry.recognition_session_id)).size === 3
-    && new Set(continued.map((entry) => entry.provider_response_id_sha256)).size === 3
+    && new Set(continued.map((entry) => entry.recognition_session_id)).size === 4
+    && new Set(continued.map((entry) => entry.provider_response_id_sha256)).size === 4
     && continued.every((entry) => (
       entry.response_observed === true
       && entry.response_status === 200
@@ -382,14 +486,38 @@ function recognitionPostSeal(recognitionPosts, evidenceCases) {
     )).length === 1),
   verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
   return Object.freeze({
-    recognition_post_count: 4,
-    network_continued_provider_requests: 3,
+    recognition_post_count: 5,
+    network_continued_provider_requests: 4,
     extra_provider_recovery_requests: 0
   });
 }
 
+function publicRecognitionPayloadBoundary(payload, code) {
+  const forbiddenTopLevel = [
+    "external_identity_support", "csm_persistence_checkpoint", "accuracy_loss_ledger",
+    "observed_fields", "resolution_contract"
+  ];
+  const serialized = JSON.stringify(payload);
+  requireInvariant(exactObject(payload)
+    && forbiddenTopLevel.every((key) => !Object.prototype.hasOwnProperty.call(payload, key))
+    && !serialized.includes('"original_set_sha256"')
+    && !serialized.includes('"source_ref"')
+    && hasExactKeys(payload.csm_rows, ["output", "resolution"])
+    && hasExactKeys(payload.csm_rows.resolution, [
+      "contract_version", "recognition_session_id", "resolver_version"
+    ])
+    && hasExactKeys(payload.csm_rows.output, ["composer_version", "contract_version"])
+    && hasExactKeys(payload.csm_persistence, ["atomic", "ok", "session"])
+    && payload.csm_persistence.ok === true
+    && payload.csm_persistence.atomic === true
+    && hasExactKeys(payload.csm_persistence.session, ["saved"])
+    && payload.csm_persistence.session.saved === true,
+  code);
+}
+
 function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile } = {}) {
   const code = verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH;
+  publicRecognitionPayloadBoundary(payload, code);
   const owner = payload?.csm_owner_versions;
   const laneVersion = String(transportProfile?.lane_version || "");
   const expectedExecutionContract =
@@ -1126,7 +1254,7 @@ function validateOrdinaryIngestRequest(request, sourceCase) {
 function normalRouteCoverageReceipt({ sourceCase, payload, responseUrl, attempts }) {
   const caseAttempts = attempts.filter((attempt) => attempt.case_id === sourceCase.case_id);
   const code = verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
-  if (sourceCase.case_id === "NON_TCG") {
+  if (sourceCase.case_id !== "TCG") {
     const [ingest] = caseAttempts;
     requireInvariant(payload?.recognition_input === "original_inline"
       && caseAttempts.length === 1
@@ -1164,12 +1292,16 @@ function normalRouteCoverageReceipt({ sourceCase, payload, responseUrl, attempts
 }
 
 function validateSourceCasesManifest(manifest) {
-  if (manifest?.schema_version !== "writer-journey-cases-v2"
+  if (manifest?.schema_version !== "writer-journey-cases-v3"
     || manifest?.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
     || manifest?.accuracy_claim !== null
+    || !hasExactKeys(manifest, [
+      "schema_version", "evidence_scope", "accuracy_claim", "cases", "parity_case"
+    ])
     || !Array.isArray(manifest.cases) || manifest.cases.length !== 2
     || new Set(manifest.cases.map((entry) => entry?.case_id)).size !== 2
-    || new Set(manifest.cases.map((entry) => entry?.expected_grammar)).size !== 2) {
+    || new Set(manifest.cases.map((entry) => entry?.expected_grammar)).size !== 2
+    || !exactObject(manifest.parity_case)) {
     throw new Error("WRITER_JOURNEY_CASES_MANIFEST invalid");
   }
   for (const entry of manifest.cases) {
@@ -1185,7 +1317,30 @@ function validateSourceCasesManifest(manifest) {
       throw new Error("WRITER_JOURNEY_CASES_MANIFEST case invalid");
     }
   }
-  return manifest.cases;
+  const parity = manifest.parity_case;
+  if (!hasExactKeys(parity, [
+    "case_id", "expected_grammar", "source_kind", "source_record_id", "source_asset_id",
+    "evaluation_cohort", "hash_provenance", "image_count", "files"
+  ])
+    || parity.case_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.case_id
+    || parity.expected_grammar !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.expected_grammar
+    || parity.source_kind !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_kind
+    || parity.source_record_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_record_id
+    || parity.source_asset_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_asset_id
+    || parity.evaluation_cohort
+      !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.evaluation_cohort
+    || parity.hash_provenance !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.hash_provenance
+    || !Array.isArray(parity.files) || parity.files.length !== 2
+    || parity.image_count !== parity.files.length
+    || parity.files[0]?.role !== "front_original"
+    || parity.files[1]?.role !== "back_original"
+    || parity.files.some((file, index) => (
+      file?.content_sha256
+        !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images[index].content_sha256
+    ))) {
+    throw new Error("WRITER_JOURNEY_CASES_MANIFEST parity case invalid");
+  }
+  return [...manifest.cases, parity];
 }
 
 async function localSourceCases(filePath) {
@@ -1344,7 +1499,7 @@ function titleEvidenceReceipt({ titleBeforePanel, titleAfterPanel, expectedTitle
 }
 
 test("production writer journey verifies Glass Box and staged large-image transport", async ({ browser }, testInfo) => {
-  test.setTimeout(20 * 60 * 1000);
+  test.setTimeout(25 * 60 * 1000);
   await mkdir(artifactDir, { recursive: true });
   const baseUrl = cleanBaseUrl(process.env.WRITER_JOURNEY_BASE_URL);
   const expectedSha = requiredEnv("WRITER_JOURNEY_EXPECTED_SHA");
@@ -1358,7 +1513,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
   const sourceCases = await localSourceCases(requiredEnv("WRITER_JOURNEY_CASES_MANIFEST"));
   const largeFixture = await localLargeFixture(requiredEnv("WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT"));
   const evidence = {
-    schema_version: "production-writer-journey-evidence-v4",
+    schema_version: "production-writer-journey-evidence-v5",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     field_ground_truth_available: false,
     accuracy_claim: null,
@@ -1445,6 +1600,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
       && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
       && healthRecognitionTransportContractMatches(health?.runtime)
+      && healthExternalIdentityContractMatches(health?.runtime)
       && health?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
       && health?.runtime?.retired_capabilities_disabled === true,
     verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
@@ -1551,7 +1707,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
             const caseAttempts = normalTransport.attempts.filter((entry) => (
               entry.case_id === activeCaseId
             ));
-            if (activeCaseId === "NON_TCG" && caseAttempts.length !== 1) {
+            if (activeCaseId !== "TCG" && caseAttempts.length !== 1) {
               throw verifierFailure(verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
             }
             if (activeCaseId === "TCG") {
@@ -1784,7 +1940,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       failurePhase = "EXECUTION_RECEIPT";
       const executionReceipt = liveExecutionReceiptProof(recognitionPayload, {
         imageCount: sourceCase.image_count,
-        transportProfile: sourceCase.case_id === "NON_TCG"
+        transportProfile: sourceCase.case_id !== "TCG"
           ? CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE
           : CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
       });
@@ -1798,6 +1954,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       responseAttempt.recognition_session_id = recognitionPayload.recognition_session_id;
       responseAttempt.provider_response_id_sha256 =
         executionReceipt.provider_response_id_sha256;
+      let externalIdentityReceipt = null;
 
       failurePhase = "TITLE_UI";
       const result = journeyPage.getByTestId("writer-title-result").first();
@@ -1808,6 +1965,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
         { timeout: 6 * 60 * 1000, intervals: [250, 500, 1_000, 2_000] }
       ).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
       const titleBeforePanel = await titleInput.inputValue();
+      if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
+        requireInvariant(codexParityTitleMatches({
+          recognitionTitle: recognitionPayload?.title,
+          uiTitle: titleBeforePanel
+        }),
+        verifierErrorCodes.CODEX_PARITY_MISMATCH);
+      }
       const generatedTitleSha256 = titleSha256(recognitionPayload.title);
       const panelTitleSha256 = titleSha256(titleBeforePanel);
       requireInvariant(panelTitleSha256 === generatedTitleSha256,
@@ -1825,6 +1989,16 @@ test("production writer journey verifies Glass Box and staged large-image transp
       const ownerExecutionReadback = durableOwnerExecutionReadbackProof(
         executionReceipt, resolutionView
       );
+      if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
+        failurePhase = "EXTERNAL_IDENTITY_SUPPORT";
+        requireInvariant(codexParityTitleMatches({
+          recognitionTitle: recognitionPayload?.title,
+          uiTitle: titleBeforePanel,
+          storedTitle: resolutionView?.composer?.stored_title
+        }),
+          verifierErrorCodes.CODEX_PARITY_MISMATCH);
+        externalIdentityReceipt = externalIdentityParityProof(resolutionView);
+      }
       requireInvariant(titleSha256(resolutionView?.composer?.stored_title) === generatedTitleSha256,
         verifierErrorCodes.TITLE_STORED_UI_MISMATCH);
       expect(resolutionView?.composer?.recomposed_matches_stored).toBe(true);
@@ -1837,6 +2011,14 @@ test("production writer journey verifies Glass Box and staged large-image transp
       await expect(glassBox, "Glass Box panel must render after its GET completes").toBeAttached();
       await glassBox.locator("summary").click();
       await expect(glassBox.locator("tbody tr")).toHaveCount(resolutionView.brackets.length);
+      if (externalIdentityReceipt) {
+        const renderedSources = (await glassBox.locator(".glass-box-external-sources a")
+          .evaluateAll((links) => links.map((link) => link.href))).sort();
+        const expectedSources = EXTERNAL_IDENTITY_SUPPORT_PACK.sources
+          .map((source) => source.url).sort();
+        requireInvariant(renderedSources.join("\0") === expectedSources.join("\0"),
+          verifierErrorCodes.EXTERNAL_IDENTITY_SUPPORT_MISMATCH);
+      }
       const titleAfterPanel = await titleInput.inputValue();
       requireInvariant(titleSha256(titleAfterPanel) === generatedTitleSha256,
         verifierErrorCodes.TITLE_CHANGED_AFTER_GLASS_BOX);
@@ -1890,7 +2072,11 @@ test("production writer journey verifies Glass Box and staged large-image transp
       evidence.cases.push({
         case_id: sourceCase.case_id,
         expected_grammar: sourceCase.expected_grammar,
-        source_feedback_id: sourceCase.source_feedback_id,
+        ...(sourceCase.source_kind === "PRODUCTION_ASSET" ? {
+          source_kind: sourceCase.source_kind,
+          source_record_id: sourceCase.source_record_id,
+          source_asset_id: sourceCase.source_asset_id
+        } : { source_feedback_id: sourceCase.source_feedback_id }),
         hash_provenance: sourceCase.hash_provenance,
         image_sha256: sourceCase.files.map(({ role, content_sha256: contentSha256 }) => ({
           role,
@@ -1912,6 +2098,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
         trace_reliable: resolutionView.composer.trace_reliable,
         recomposed_matches_stored: resolutionView.composer.recomposed_matches_stored,
         versions,
+        ...(externalIdentityReceipt ? {
+          codex_parity_exact_match: true,
+          external_identity_support: externalIdentityReceipt
+        } : {}),
         ...titleEvidenceReceipt({
           titleBeforePanel,
           titleAfterPanel,
@@ -2143,6 +2333,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     requireInvariant(finalHealth?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
       && finalHealth?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
       && healthRecognitionTransportContractMatches(finalHealth?.runtime)
+      && healthExternalIdentityContractMatches(finalHealth?.runtime)
       && finalHealth?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
     verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
     evidence.stages.release_stability = { passed: true, git_commit_sha: expectedSha };
@@ -2161,10 +2352,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && normalTransport.attempts.filter((entry) => entry.aborted_before_network === true)
         .every((entry) => entry.response_observed === false),
     verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
-    expect(resolutionRequests).toHaveLength(3);
+    expect(resolutionRequests).toHaveLength(4);
     expect(resolutionRequests.every((request) => request.method === "GET")).toBe(true);
     expect(evidence.cases.map((entry) => entry.case_id).sort())
-      .toEqual(["LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"]);
+      .toEqual(["EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"]);
     const providerResponseReceiptHashes = evidence.cases.map(
       (entry) => entry?.execution_receipt?.provider_response_id_sha256
     );
@@ -2172,7 +2363,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       (entry) => entry?.execution_receipt?.provider_authority_receipt?.operation_key_sha256
     );
     requireInvariant(providerResponseReceiptHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
-      && providerResponseReceiptHashes.length === 3
+      && providerResponseReceiptHashes.length === 4
       && new Set(providerResponseReceiptHashes).size === evidence.cases.length
       && providerAuthorityOperationHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
       && new Set(providerAuthorityOperationHashes).size === evidence.cases.length
@@ -2185,11 +2376,14 @@ test("production writer journey verifies Glass Box and staged large-image transp
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
     const recognitionPostReceipt = recognitionPostSeal(recognitionPosts, evidence.cases);
     evidence.stages.warmup = warmupResponseReceipt(warmupTransport.requests);
-    expect(ids.asset_id.size, "asset_id must be captured").toBeGreaterThanOrEqual(3);
-    expect(ids.session_id.size, "recognition_session_id must be captured").toBeGreaterThanOrEqual(3);
+    expect(ids.asset_id.size, "asset_id must be captured").toBeGreaterThanOrEqual(4);
+    expect(ids.session_id.size, "recognition_session_id must be captured").toBeGreaterThanOrEqual(4);
     expect(requestIds.size, "request_id must be captured").toBeGreaterThan(0);
     const largeCaseEvidence = evidence.cases.find((entry) => (
       entry.case_id === "LARGE_STAGED_TRANSPORT"
+    ));
+    const parityCaseEvidence = evidence.cases.find((entry) => (
+      entry.case_id === "EXTERNAL_IDENTITY"
     ));
     requireInvariant(evidence.cases.every((entry) => (
       hasExactKeys(entry.execution_receipt?.server_stages_ms, requiredServerStageNames)
@@ -2220,17 +2414,23 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && entry.owner_execution_readback?.sha256
         === entry.execution_receipt?.owner_execution_receipt_sha256
     ))
+      && parityCaseEvidence?.codex_parity_exact_match === true
+      && parityCaseEvidence?.external_identity_support?.applied === true
+      && parityCaseEvidence?.external_identity_support?.match_basis === "VERIFIED_ORIGINAL_SET"
+      && parityCaseEvidence?.external_identity_support?.source_count === 3
       && largeCaseEvidence?.overlap_observed === true
       && largeCaseEvidence?.relay_durable_before_recognition_response === true,
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
     evidence.final_seal = {
-      provider_case_count: 3,
-      fresh_current_case_count: 3,
+      provider_case_count: 4,
+      fresh_current_case_count: 4,
       distinct_provider_response_receipts: true,
       distinct_provider_authority_operations: true,
       complete_server_stage_receipts: true,
       exact_authority_token_reservation: expectedEstimatedTokensPerAttempt,
-      durable_owner_execution_readback_count: 3,
+      durable_owner_execution_readback_count: 4,
+      codex_parity_exact_match_count: 1,
+      verified_original_set_match_count: 1,
       warmup_real_response_observed: true,
       staged_overlap_observed: true,
       staged_relays_durable_before_recognition_response: true,
@@ -2288,7 +2488,9 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     requireInvariant(missingWarmupResponseRejected, verifierErrorCodes.GENERIC);
   }
 
-  const offlineRecognitionCases = ["NON_TCG", "TCG", "LARGE_STAGED_TRANSPORT"].map(
+  const offlineRecognitionCases = [
+    "NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"
+  ].map(
     (caseId, index) => ({
       case_id: caseId,
       recognition_session_id: `session-${index}`,
@@ -2296,7 +2498,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     })
   );
   const offlineRecognitionPosts = [
-    ...offlineRecognitionCases.slice(0, 2).map((caseEvidence) => ({
+    ...offlineRecognitionCases.map((caseEvidence) => ({
       case_id: caseEvidence.case_id,
       continued: true,
       aborted_before_network: false,
@@ -2313,21 +2515,11 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       response_status: null,
       recognition_session_id: null,
       provider_response_id_sha256: null
-    },
-    {
-      case_id: offlineRecognitionCases[2].case_id,
-      continued: true,
-      aborted_before_network: false,
-      response_observed: true,
-      response_status: 200,
-      recognition_session_id: offlineRecognitionCases[2].recognition_session_id,
-      provider_response_id_sha256:
-        offlineRecognitionCases[2].execution_receipt.provider_response_id_sha256
     }
   ];
   requireInvariant(recognitionPostSeal(
     offlineRecognitionPosts, offlineRecognitionCases
-  ).network_continued_provider_requests === 3, verifierErrorCodes.GENERIC);
+  ).network_continued_provider_requests === 4, verifierErrorCodes.GENERIC);
   for (const invalidPosts of [
     [...offlineRecognitionPosts, { ...offlineRecognitionPosts[0] }],
     offlineRecognitionPosts.map((entry, index) => index === 0
@@ -2346,7 +2538,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
 
   const hash = "a".repeat(64);
   const manifest = {
-    schema_version: "writer-journey-cases-v2",
+    schema_version: "writer-journey-cases-v3",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     accuracy_claim: null,
     cases: [
@@ -2364,11 +2556,28 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
         content_type: "image/jpeg",
         content_sha256: hash
       }))
-    }))
+    })),
+    parity_case: {
+      case_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.case_id,
+      expected_grammar: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.expected_grammar,
+      source_kind: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_kind,
+      source_record_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_record_id,
+      source_asset_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_asset_id,
+      evaluation_cohort: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.evaluation_cohort,
+      hash_provenance: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.hash_provenance,
+      image_count: 2,
+      files: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image) => ({
+        path: `/not-read/EXTERNAL_IDENTITY/${image.role}.webp`,
+        role: image.role,
+        content_type: "image/webp",
+        content_sha256: image.content_sha256
+      }))
+    }
   };
-  requireInvariant(validateSourceCasesManifest(manifest).every((entry) => (
+  requireInvariant(validateSourceCasesManifest(manifest).length === 3
+    && validateSourceCasesManifest(manifest).every((entry) => (
     entry.files.map((file) => file.role).join(",") === "front_original,back_original"
-  )), verifierErrorCodes.GENERIC);
+    )), verifierErrorCodes.GENERIC);
   for (const invalidFiles of [
     [manifest.cases[0].files[1], manifest.cases[0].files[0]],
     [manifest.cases[0].files[0], manifest.cases[0].files[0]]
@@ -2383,6 +2592,96 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       roleDriftRejected = true;
     }
     requireInvariant(roleDriftRejected, verifierErrorCodes.GENERIC);
+  }
+  for (const parityMutation of [
+    { source_asset_id: "asset-drift" },
+    { files: [manifest.parity_case.files[1], manifest.parity_case.files[0]] },
+    { files: [
+      { ...manifest.parity_case.files[0], content_sha256: "f".repeat(64) },
+      manifest.parity_case.files[1]
+    ] }
+  ]) {
+    let parityDriftRejected = false;
+    try {
+      validateSourceCasesManifest({
+        ...manifest,
+        parity_case: { ...manifest.parity_case, ...parityMutation }
+      });
+    } catch {
+      parityDriftRejected = true;
+    }
+    requireInvariant(parityDriftRejected, verifierErrorCodes.GENERIC);
+  }
+
+  requireInvariant(codexParityTitleMatches({
+    recognitionTitle: CODEX_PARITY_EXPECTED_TITLE,
+    uiTitle: CODEX_PARITY_EXPECTED_TITLE,
+    storedTitle: CODEX_PARITY_EXPECTED_TITLE
+  }) && !codexParityTitleMatches({
+    recognitionTitle: CODEX_PARITY_EXPECTED_TITLE,
+    uiTitle: `${CODEX_PARITY_EXPECTED_TITLE} drift`,
+    storedTitle: CODEX_PARITY_EXPECTED_TITLE
+  }), verifierErrorCodes.GENERIC);
+
+  const externalFields = [
+    "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
+  ];
+  const allSourceIds = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => source.source_id);
+  const publicExternalSupport = {
+    schema_version: "csm-external-identity-public-receipt.v1",
+    status: "APPLIED",
+    match_basis: "VERIFIED_ORIGINAL_SET",
+    registry_release: { ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT },
+    resolver_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.resolver_version,
+    conflict_policy_version:
+      EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.conflict_policy_version,
+    composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+    marketplace_profile_version:
+      EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version,
+    resolution_contract_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.sha256,
+    pack: {
+      id: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.id,
+      version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.version,
+      sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.sha256
+    },
+    index: { ...EXTERNAL_IDENTITY_RELEASE_CONTRACT.index },
+    record_id: "tcdb-2551-hr14",
+    supported_fields: externalFields,
+    field_decisions: Object.fromEntries(externalFields.map((field) => [field, {
+      action: field === "card_number" ? "FILL" : "CORROBORATE",
+      source_ids: allSourceIds
+    }])),
+    sources: EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => ({
+      provider: source.source_id.startsWith("tcdb.")
+        ? "TCDB"
+        : source.source_id.startsWith("psa.") ? "PSA" : "Beckett",
+      source_id: source.source_id,
+      url: source.url,
+      retrieved_at: source.retrieved_at,
+      fact_sha256: source.fact_sha256,
+      fields: ["card_number"]
+    }))
+  };
+  requireInvariant(externalIdentityParityProof({
+    external_identity_support: publicExternalSupport
+  }).source_count === 3, verifierErrorCodes.GENERIC);
+  for (const mutate of [
+    (value) => { value.record_id = "tcdb-2551-hr13"; },
+    (value) => { value.match_basis = "EXACT_FOUR_ANCHOR"; },
+    (value) => { value.original_set_sha256 = "9".repeat(64); },
+    (value) => { value.pack.sha256 = "f".repeat(64); },
+    (value) => { value.sources[0].url = "https://attacker.example/source"; },
+    (value) => { delete value.field_decisions.card_number; }
+  ]) {
+    const value = structuredClone(publicExternalSupport);
+    mutate(value);
+    let externalDriftRejected = false;
+    try {
+      externalIdentityParityProof({ external_identity_support: value });
+    } catch {
+      externalDriftRejected = true;
+    }
+    requireInvariant(externalDriftRejected, verifierErrorCodes.GENERIC);
   }
 
   const nowSeconds = 1_800_000_000;
@@ -2519,6 +2818,23 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && !titleArtifact.includes("writer_final_title")
     && !titleArtifact.includes("stored_title"),
     verifierErrorCodes.GENERIC);
+  const parityArtifact = JSON.stringify({
+    codex_parity_exact_match: true,
+    external_identity_support: externalIdentityParityProof({
+      external_identity_support: publicExternalSupport
+    }),
+    ...titleEvidenceReceipt({
+      titleBeforePanel: CODEX_PARITY_EXPECTED_TITLE,
+      titleAfterPanel: CODEX_PARITY_EXPECTED_TITLE,
+      expectedTitleSha256: titleSha256(CODEX_PARITY_EXPECTED_TITLE),
+      feedback
+    })
+  });
+  requireInvariant(!parityArtifact.includes(CODEX_PARITY_EXPECTED_TITLE)
+    && !parityArtifact.includes("title_sha256")
+    && !parityArtifact.includes("writer_final_title")
+    && !parityArtifact.includes("stored_title"),
+  verifierErrorCodes.GENERIC);
 
   const derivedBuffers = [Buffer.from("front-derived"), Buffer.from("back-derived")];
   const fixture = {
@@ -2796,6 +3112,17 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     asset_id: "asset-test",
     client_asset_ref: ingestMetadata.clientAssetRef,
     staged_resume_receipt: ingestMetadata.stagedResumeReceipt,
+    csm_rows: {
+      resolution: {
+        recognition_session_id: `csmsess_${"a".repeat(40)}`,
+        contract_version: "csm-stage-offline-v1",
+        resolver_version: "resolver-offline"
+      },
+      output: {
+        contract_version: "csm-stage-offline-v1",
+        composer_version: "composer-offline"
+      }
+    },
     csm_persistence: { ok: true, atomic: true, session: { saved: true } },
     ingest_timing: { body_bytes: fixture.derivedTotal },
     latency_stages_ms: {
@@ -3107,6 +3434,21 @@ test("offline ordinary route coverage rejects an abort that could reach the prov
   });
   requireInvariant(nonTcgCoverage.route === "ORDINARY_INGEST_ORIGINAL_INLINE"
     && nonTcgCoverage.initial_ordinary_ingest_aborted === false,
+  verifierErrorCodes.GENERIC);
+  const parityCoverage = normalRouteCoverageReceipt({
+    sourceCase: { ...sourceCase, case_id: "EXTERNAL_IDENTITY" },
+    payload: { recognition_input: "original_inline" },
+    responseUrl: `${productionOrigin}${stagedRecognitionPath}`,
+    attempts: [{
+      case_id: "EXTERNAL_IDENTITY",
+      recognition_route: stagedRecognitionPath,
+      continued: true,
+      response_observed: true,
+      original_inline: true
+    }]
+  });
+  requireInvariant(parityCoverage.route === "ORDINARY_INGEST_ORIGINAL_INLINE"
+    && parityCoverage.initial_ordinary_ingest_aborted === false,
   verifierErrorCodes.GENERIC);
 
   const tcgSourceCase = { ...sourceCase, case_id: "TCG" };

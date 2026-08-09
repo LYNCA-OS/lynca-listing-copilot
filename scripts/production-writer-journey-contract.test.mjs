@@ -32,8 +32,8 @@ assert.match(spec, /\/api\/v4\/listing-feedback/);
 assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
 assert.match(spec, /provider_attempt_number[\s\S]*?\.toBe\(1\)/);
 assert.match(spec, /provider_retry_count[\s\S]*?\.toBe\(0\)/);
-assert.match(spec, /test\.setTimeout\(20 \* 60 \* 1000\)/,
-  "three sequential live cases must fit inside the bounded journey budget");
+assert.match(spec, /test\.setTimeout\(25 \* 60 \* 1000\)/,
+  "four sequential live cases must fit inside the bounded journey budget");
 assert.match(spec, /composer\?\.trace_reliable[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /composer\?\.recomposed_matches_stored[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /panelTitleSha256 === generatedTitleSha256/);
@@ -47,11 +47,21 @@ assert.match(spec, /resolutionRequests\.every\(\(request\) => request\.method ==
 assert.match(spec, /accuracy_claim: null/);
 assert.match(spec, /field_ground_truth_available: false/);
 assert.match(spec, /LIVE_CONTRACT_RECEIPT_ONLY/);
-assert.match(spec, /writer-journey-cases-v2/);
+assert.match(spec, /writer-journey-cases-v3/);
+assert.match(spec, /hasExactKeys\(manifest, \[/,
+  "the live manifest root must reject undeclared fields such as a leaked expected title");
+assert.match(spec, /WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT/);
+assert.match(spec, /parity\.source_asset_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT\.source_asset_id/);
+assert.match(spec, /parity\.files\.some\(\(file, index\) =>/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
 assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
-assert.match(spec, /production-writer-journey-evidence-v4/);
-assert.match(spec, /\["NON_TCG", "TCG"\]/);
+assert.match(spec, /production-writer-journey-evidence-v5/);
+assert.match(spec, /"NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"/);
+assert.match(spec, /CODEX_PARITY_EXPECTED_TITLE/);
+assert.match(spec, /codexParityTitleMatches/);
+assert.match(spec, /CODEX_PARITY_MISMATCH/);
+assert.match(spec, /externalIdentityParityProof/);
+assert.match(spec, /EXTERNAL_IDENTITY_SUPPORT_MISMATCH/);
 assert.match(spec, /entry\.files\[0\]\?\.role !== "front_original"/);
 assert.match(spec, /entry\.files\[1\]\?\.role !== "back_original"/);
 assert.match(spec, /resolution_view_schema/);
@@ -80,6 +90,7 @@ assert.match(normalRouteVerifier, /direct\?\.recognition_route === "\/api\/csm-l
 assert.match(spec, /normalTransport\.active_case_id = sourceCase\.case_id/);
 assert.match(spec, /const recognitionPosts = \[\]/);
 assert.match(spec, /if \(activeCaseId === "TCG"\)/);
+assert.match(spec, /if \(activeCaseId !== "TCG" && caseAttempts\.length !== 1\)/);
 assert.match(spec, /attempt\.aborted_before_network = true;\s*await route\.abort\("blockedbyclient"\)/);
 assert.match(spec, /normalTransport\.attempts\.filter\(\(entry\) => entry\.aborted_before_network === true\)\.length === 1/);
 assert.match(spec, /normalTransport\.attempts\.filter\(\(entry\) => entry\.aborted_before_network === true\)[\s\S]*?entry\.response_observed === false/);
@@ -89,7 +100,7 @@ assert.match(spec,
 assert.match(spec,
   /if \(recognitionPost\) \{\s*normalTransport\.violation \|\|=[\s\S]*?route\.abort\("blockedbyclient"\)/,
   "a late recognition POST after the active normal case must fail closed");
-assert.match(spec, /providerResponseReceiptHashes\.length === 3/);
+assert.match(spec, /providerResponseReceiptHashes\.length === 4/);
 assert.match(spec, /evidence\.cases\.every\(\(entry\) => entry\.provider_attempt_number === 1[\s\S]*?entry\.provider_retry_count === 0/);
 assert.match(spec, /entry\.execution_receipt\?\.execution_origin === "FRESH_CURRENT"/,
   "the final seal must reject replayed, historical, or ambiguous provider results");
@@ -140,10 +151,47 @@ assert.match(durableOwnerReadbackVerifier,
 assert.match(durableOwnerReadbackVerifier,
   /readback\.sha256 === executionReceipt\?\.owner_execution_receipt_sha256/);
 assert.match(durableOwnerReadbackVerifier, /durable_read_after_write: true/);
+const externalIdentityVerifier = spec.match(
+  /function externalIdentityParityProof[\s\S]+?(?=\nfunction liveServerStageReceipt)/
+)?.[0] || "";
+assert.ok(externalIdentityVerifier, "the exact external identity readback verifier must exist");
+for (const field of [
+  "registry_release", "match_basis", "resolver_version", "conflict_policy_version", "composer_version",
+  "marketplace_profile_version", "resolution_contract_sha256", "pack", "index", "record_id",
+  "supported_fields", "field_decisions", "sources"
+]) {
+  assert.match(externalIdentityVerifier, new RegExp(field));
+}
+assert.match(externalIdentityVerifier, /support\?\.record_id === "tcdb-2551-hr14"/);
+assert.match(externalIdentityVerifier, /support\?\.match_basis === "VERIFIED_ORIGINAL_SET"/);
+assert.match(externalIdentityVerifier, /support\?\.field_decisions\?\.card_number\?\.action === "FILL"/);
+assert.match(externalIdentityVerifier,
+  /!Object\.prototype\.hasOwnProperty\.call\(support, "original_set_sha256"\)/);
+assert.match(externalIdentityVerifier, /actualSources\.length === expectedSources\.length/);
+assert.match(externalIdentityVerifier, /EXTERNAL_IDENTITY_SUPPORT_PACK\.sources/);
+assert.match(externalIdentityVerifier, /source_count: actualSources\.length/);
+assert.match(spec, /codex_parity_exact_match: true/);
+assert.match(spec, /parityCaseEvidence\?\.codex_parity_exact_match === true/);
+assert.match(spec, /\.glass-box-external-sources a/);
+assert.doesNotMatch(spec, /codex_parity_title\s*:/,
+  "the exact target title must never enter uploaded evidence");
+const publicPayloadBoundary = spec.match(
+  /function publicRecognitionPayloadBoundary[\s\S]+?(?=\nfunction liveExecutionReceiptProof)/
+)?.[0] || "";
+assert.ok(publicPayloadBoundary, "every live route must verify the public recognition projection");
+for (const forbidden of [
+  "external_identity_support", "csm_persistence_checkpoint", "accuracy_loss_ledger",
+  "observed_fields", "resolution_contract", "original_set_sha256", "source_ref"
+]) {
+  assert.match(publicPayloadBoundary, new RegExp(forbidden));
+}
+assert.match(publicPayloadBoundary, /hasExactKeys\(payload\.csm_rows, \["output", "resolution"\]\)/);
+assert.match(publicPayloadBoundary, /hasExactKeys\(payload\.csm_persistence, \["atomic", "ok", "session"\]\)/);
 const executionReceiptVerifier = spec.match(
   /function liveExecutionReceiptProof[\s\S]+?(?=\nfunction assertNoPrivateFixtureKeys)/
 )?.[0] || "";
 assert.ok(executionReceiptVerifier, "the live execution receipt verifier must exist");
+assert.match(executionReceiptVerifier, /publicRecognitionPayloadBoundary\(payload, code\)/);
 assert.match(executionReceiptVerifier, /payload\?\.execution_origin === "FRESH_CURRENT"/);
 assert.match(executionReceiptVerifier,
   /!Object\.prototype\.hasOwnProperty\.call\(owner, "execution_origin"\)/,
@@ -253,7 +301,7 @@ assert.equal([
 assert.match(spec, /imageCount: sourceCase\.image_count/,
   "each normal case must verify the exact image-count execution contract");
 assert.match(spec, /providerResponseReceiptHashes[\s\S]*?new Set\(providerResponseReceiptHashes\)\.size === evidence\.cases\.length/,
-  "all three cases must carry distinct provider response receipts");
+  "all four cases must carry distinct provider response receipts");
 assert.match(spec, /!offlineExecutionArtifact\.includes\(offlineProviderResponseId\)/);
 assert.match(spec, /!offlineExecutionArtifact\.includes\('\"provider_response_id\":'\)/);
 assert.match(spec, /!offlineExecutionArtifact\.includes\('\"execution_contract\":'\)/);
@@ -292,6 +340,8 @@ assert.doesNotMatch(spec, /title_sha256:\s*generatedTitleSha256/,
 assert.match(spec, /!titleArtifact\.includes\("title_sha256"\)/);
 assert.match(spec, /!titleArtifact\.includes\("writer_final_title"\)/);
 assert.match(spec, /!titleArtifact\.includes\("stored_title"\)/);
+assert.match(spec, /!parityArtifact\.includes\(CODEX_PARITY_EXPECTED_TITLE\)/,
+  "the Codex parity answer may be compared in memory but never uploaded as evidence");
 assert.match(spec, /error_code = errorCode/);
 assert.match(spec, /evidence\.failed_case_id = liveFailureCaseIds\.has\(failureCaseId\)/);
 assert.match(spec, /evidence\.failed_phase = liveFailurePhases\.has\(failurePhase\)/);
@@ -324,6 +374,10 @@ assert.match(spec, /runtime\?\.recognition_transport_profiles\?\.\[lane\]/);
 assert.match(spec,
   /runtime\?\.execution_contract_sha256_by_transport_lane_and_image_count\?\.\[lane\]\?\.\["1"\]/);
 assert.match(spec, /healthRecognitionTransportContractMatches\(health\?\.runtime\)/);
+assert.match(spec, /function healthExternalIdentityContractMatches/);
+assert.match(spec, /runtime\?\.external_identity/);
+assert.match(spec, /healthExternalIdentityContractMatches\(health\?\.runtime\)/);
+assert.match(spec, /healthExternalIdentityContractMatches\(finalHealth\?\.runtime\)/);
 assert.match(spec,
   /const expectedProviderAdapterContract = resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider\s*\)\.contract/,
   "the journey must verify the adapter resolved by the active model profile");
@@ -402,10 +456,10 @@ assert.ok(offlineIngestMetadata, "the offline staged metadata fixture must exist
 assert.doesNotMatch(offlineIngestMetadata, /imageDetail/,
   "the offline fixture must match the metadata emitted by Production");
 assert.match(spec, /function recognitionPostSeal/);
-assert.match(spec, /recognitionPosts\.length === 4/);
-assert.match(spec, /continued\.length === 3/);
+assert.match(spec, /recognitionPosts\.length === 5/);
+assert.match(spec, /continued\.length === 4/);
 assert.match(spec, /aborted\.length === 1/);
-assert.match(spec, /new Set\(continued\.map\(\(entry\) => entry\.recognition_session_id\)\)\.size === 3/);
+assert.match(spec, /new Set\(continued\.map\(\(entry\) => entry\.recognition_session_id\)\)\.size === 4/);
 assert.match(spec, /evidenceCases\.every\(\(caseEvidence\) => continued\.filter/);
 assert.match(spec, /caseEvidence\.recognition_session_id === entry\.recognition_session_id/);
 assert.match(spec,
@@ -441,7 +495,7 @@ assert.match(spec,
   /const providerAuthorityOperationHashes = evidence\.cases\.map/);
 assert.match(spec,
   /new Set\(providerAuthorityOperationHashes\)\.size === evidence\.cases\.length/,
-  "all three cases must bind distinct database authority operations");
+  "all four cases must bind distinct database authority operations");
 assert.match(spec,
   /entry\.recognition_session_id === `csmsess_\$\{[\s\S]*?operation_key_sha256\.slice\(0, 40\)/,
   "the final seal must recompute the session binding instead of trusting a boolean");
@@ -457,7 +511,7 @@ assert.ok(finalCaseReceiptSealStart >= 0 && finalCaseReceiptSealEnd > finalCaseR
 const finalCaseReceiptSeal = spec.slice(finalCaseReceiptSealStart, finalCaseReceiptSealEnd);
 assert.match(finalCaseReceiptSeal,
   /hasExactKeys\([\s\S]*?provider_authority_receipt,[\s\S]*?providerAuthorityReceiptEvidenceKeys/,
-  "all three cases must retain the exact authority receipt projection");
+  "all four cases must retain the exact authority receipt projection");
 assert.match(finalCaseReceiptSeal, /provider_authority_receipt\.schema_version[\s\S]*?csm-provider-authority-receipt-v1/);
 assert.match(finalCaseReceiptSeal,
   /provider_authority_receipt\?\.estimated_tokens[\s\S]*?expectedEstimatedTokensPerAttempt/);
@@ -467,14 +521,16 @@ assert.match(finalCaseReceiptSeal, /provider_authority_receipt\?\.operation_stat
 assert.match(finalCaseReceiptSeal, /owner_execution_readback\?\.durable_read_after_write === true/);
 assert.match(finalCaseReceiptSeal,
   /owner_execution_readback\?\.sha256[\s\S]*?owner_execution_receipt_sha256/,
-  "all three cases must match the database readback hash to the response owner receipt");
+  "all four cases must match the database readback hash to the response owner receipt");
 for (const field of [
-  "provider_case_count: 3",
-  "fresh_current_case_count: 3",
+  "provider_case_count: 4",
+  "fresh_current_case_count: 4",
   "distinct_provider_authority_operations: true",
   "complete_server_stage_receipts: true",
   "exact_authority_token_reservation: expectedEstimatedTokensPerAttempt",
-  "durable_owner_execution_readback_count: 3",
+  "durable_owner_execution_readback_count: 4",
+  "codex_parity_exact_match_count: 1",
+  "verified_original_set_match_count: 1",
   "warmup_real_response_observed: true",
   "staged_overlap_observed: true",
   "staged_relays_durable_before_recognition_response: true",
@@ -520,8 +576,14 @@ assert.match(releaseWorkflow, /Build executor-bound large staged transport fixtu
 assert.match(releaseWorkflow, /build-large-internal-writer-fixture\.mjs/);
 assert.match(releaseWorkflow, /install -d -m 700 "\$fixture_parent"/);
 assert.match(releaseWorkflow, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT=%s\\n/);
-assert.match(releaseWorkflow, /writer-journey-cases-v2\.json/);
-assert.match(releaseWorkflow, /Materialize fixed NON_TCG and TCG cases/);
+assert.match(releaseWorkflow, /writer-journey-cases-v3\.json/);
+assert.match(releaseWorkflow, /writer-journey-large-source-v2\.json/);
+assert.match(releaseWorkflow, /Materialize fixed NON_TCG TCG and exact parity cases/);
+assert.match(releaseWorkflow, /manifest\.schema_version !== 'writer-journey-cases-v3'/);
+assert.match(releaseWorkflow, /parity\.source_asset_id !== contract\.source_asset_id/);
+assert.match(releaseWorkflow, /flag: 'wx', mode: 0o600/,
+  "the large-builder subset must be a newly created owner-only file");
+assert.match(releaseWorkflow, /WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\\n/);
 assert.match(workflow, /--grep @offline/);
 for (const fixturePath of [
   "scripts/build-large-internal-writer-fixture.mjs",
