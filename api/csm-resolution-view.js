@@ -158,13 +158,17 @@ export async function handleResolutionReviewRequest({
 }
 
 export default async function handler(request, response) {
-  const context = bindProductionRequestContext(request, { route: "csm-resolution-view" });
-  return instrumentProductionRequest(context, async () => {
+  instrumentProductionRequest(request, response, { api: "/api/csm-resolution-view" });
+  bindProductionRequestContext(response, { route: "csm-resolution-view" });
     if (!["GET", "POST"].includes(request.method)) {
       return sendJson(response, 405, { error: "method_not_allowed" });
     }
-    const limited = await enforceApiRateLimit(request, response, { route: "csm-resolution-view" });
-    if (limited) return limited;
+    if (!enforceApiRateLimit(request, response, {
+      scope: "csm_resolution_view",
+      limit: 60,
+      windowMs: 60_000,
+      message: "Too many resolution view requests. Please try again shortly."
+    })) return;
 
     let access;
     try {
@@ -179,8 +183,9 @@ export default async function handler(request, response) {
           ? TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS
           : TENANT_PERMISSIONS.VIEW_ASSIGNED_TASK
       });
+      bindProductionRequestContext(response, access);
     } catch (error) {
-      return publicTenantAuthError(response, error);
+      return sendJson(response, error?.statusCode || 503, publicTenantAuthError(error));
     }
 
     try {
@@ -207,5 +212,4 @@ export default async function handler(request, response) {
       const status = error?.statusCode || 500;
       return sendJson(response, status, { error: String(error?.message || "internal_error") });
     }
-  });
 }

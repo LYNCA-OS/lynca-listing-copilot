@@ -5,6 +5,9 @@ import {
   enforceApiRateLimit,
   resetApiRateLimitBuckets
 } from "../lib/api-rate-limit.mjs";
+import { callJsonHandler } from "../lib/listing/v4/session/http-handler-utils.mjs";
+import csmResolutionViewHandler from "../api/csm-resolution-view.js";
+import manualRecoveryHandler from "../api/listing-manual-recovery.js";
 
 function makeRequest(headers = {}) {
   return {
@@ -157,5 +160,52 @@ assert.equal(body.message, "Custom throttle message.");
 assert.equal(body.rate_limit.scope, "listing_feedback");
 assert.equal(body.rate_limit.limit, 1);
 assert.doesNotMatch(res.body, /test-secret|203\.0\.113\.20|session-value/);
+
+// A limiter's boolean means "allowed". These endpoint-level cases lock the
+// termination contract: an allowed request reaches the auth boundary and ends
+// there, while a denied request ends at 429 before auth/body/database work.
+const isolatedEnvKeys = [
+  "API_RATE_LIMIT_CSM_RESOLUTION_VIEW_MAX",
+  "API_RATE_LIMIT_LISTING_MANUAL_RECOVERY_MAX",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "SUPABASE_SECRET_KEY"
+];
+const savedEnv = Object.fromEntries(isolatedEnvKeys.map((key) => [key, process.env[key]]));
+try {
+  process.env.API_RATE_LIMIT_CSM_RESOLUTION_VIEW_MAX = "1";
+  process.env.API_RATE_LIMIT_LISTING_MANUAL_RECOVERY_MAX = "1";
+  // Handler completion invokes best-effort telemetry. Keep this unit test
+  // local even if a developer shell has production credentials configured.
+  process.env.SUPABASE_URL = "";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "";
+  process.env.SUPABASE_SECRET_KEY = "";
+
+  for (const { handler, method, route } of [
+    { handler: csmResolutionViewHandler, method: "GET", route: "/api/csm-resolution-view?asset_id=asset-1" },
+    { handler: manualRecoveryHandler, method: "POST", route: "/api/listing-manual-recovery" }
+  ]) {
+    resetApiRateLimitBuckets();
+    const headers = {
+      "x-forwarded-for": "203.0.113.99",
+      "user-agent": "rate-limit-handler-test"
+    };
+    const allowed = await callJsonHandler(handler, { method, headers });
+    assert.equal(allowed.statusCode, 401,
+      `${route}: allowed request must continue through auth and send a response`);
+    assert.equal(allowed.body?.code, "AUTH_REQUIRED");
+
+    const denied = await callJsonHandler(handler, { method, headers });
+    assert.equal(denied.statusCode, 429,
+      `${route}: denied request must terminate before auth/body/dependency work`);
+    assert.equal(denied.body?.code, "rate_limited");
+  }
+} finally {
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  resetApiRateLimitBuckets();
+}
 
 console.log("api rate limit tests passed");
