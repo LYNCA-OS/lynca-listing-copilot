@@ -142,6 +142,25 @@ globalThis.fetch = async (url, options = {}) => {
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
 
+assert.deepEqual(
+  __listingCopilotAppTestHooks.workspaceActionLocks({
+    processing: true,
+    preparingFiles: false,
+    writerSaveInFlight: false,
+    exportingWorkbook: false,
+    retryInFlight: 0
+  }),
+  { intakeLocked: false, resetLocked: true },
+  "active recognition must still accept appended files while reset remains locked"
+);
+const repeatedSelectionInput = { files: ["same-card.jpg"], value: "same-card.jpg" };
+assert.deepEqual(
+  __listingCopilotAppTestHooks.consumeSelectedFiles(repeatedSelectionInput),
+  ["same-card.jpg"],
+  "file selection must be snapshotted before the input is cleared"
+);
+assert.equal(repeatedSelectionInput.value, "", "the same failed file must be selectable again");
+
 function fakeFile(index) {
   const bytes = new TextEncoder().encode(`card-${index}`);
   return {
