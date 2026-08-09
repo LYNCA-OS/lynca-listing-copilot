@@ -45,9 +45,12 @@ import { publicTenantAuthError } from "../lib/tenant/errors.mjs";
 import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
 import {
   computeVerifiedOriginalSetSha256,
+  externalIdentityReplayReleaseForReceipt,
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
-  EXTERNAL_IDENTITY_SUPPORT_PACK,
+  validateExternalIdentityDecisionObservation,
+  validateExternalIdentityFieldDecisions,
+  validateExternalIdentitySourceProvenance,
   validatePostObservationResolutionContract
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
@@ -196,7 +199,8 @@ function normalizedCheckpointRecognitionInput(value) {
 
 function normalizedExternalIdentityCheckpointReceipt(result, {
   requestOriginalSetSha256 = null,
-  resolutionContractSha256
+  resolutionContractSha256,
+  requireActiveRelease = false
 } = {}) {
   const requestDigest = optionalSha256(requestOriginalSetSha256, "request_original_set_sha256");
   const resolutionDigest = optionalSha256(
@@ -208,16 +212,30 @@ function normalizedExternalIdentityCheckpointReceipt(result, {
   if (!support || !["APPLIED", "ABSTAINED"].includes(support.status)) {
     throw persistenceCheckpointError("external_identity_support_receipt_missing");
   }
+  const release = externalIdentityReplayReleaseForReceipt(support);
+  if (!release) {
+    throw persistenceCheckpointError("external_identity_registry_release_unsupported");
+  }
+  if (requireActiveRelease
+      && release.receipt.registry_release_id !== EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID) {
+    throw persistenceCheckpointError("external_identity_registry_release_not_active");
+  }
+  if (release.receipt.resolution_contract_sha256 !== resolutionDigest) {
+    throw persistenceCheckpointError("external_identity_resolution_contract_sha256_mismatch");
+  }
   const releaseFields = {
-    pack_id: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_id,
-    pack_version: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_version,
-    pack_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_sha256,
-    index_id: EXTERNAL_IDENTITY_SUPPORT_PACK.index_id,
-    index_version: EXTERNAL_IDENTITY_SUPPORT_PACK.index_version,
-    index_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.index_sha256,
-    registry_release_id: EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
-    resolution_contract_sha256: resolutionDigest
+    pack_id: release.receipt.pack_id,
+    pack_version: release.receipt.pack_version,
+    pack_sha256: release.receipt.pack_sha256,
+    index_id: release.receipt.index_id,
+    index_version: release.receipt.index_version,
+    index_sha256: release.receipt.index_sha256,
+    registry_release_id: release.receipt.registry_release_id,
+    resolution_contract_sha256: release.receipt.resolution_contract_sha256
   };
+  if (support.schema_version !== release.receipt.schema_version) {
+    throw persistenceCheckpointError("external_identity_schema_version_mismatch");
+  }
   for (const [field, value] of Object.entries(releaseFields)) {
     if (support[field] !== value) {
       throw persistenceCheckpointError(`external_identity_${field}_mismatch`);
@@ -240,8 +258,21 @@ function normalizedExternalIdentityCheckpointReceipt(result, {
   }
 
   const matchMode = String(support.match_mode || "").trim();
-  if (!["EXACT_FOUR_ANCHOR", "VERIFIED_ORIGINAL_SET"].includes(matchMode)) {
+  if (!release.match_modes.includes(matchMode)) {
     throw persistenceCheckpointError("external_identity_match_mode_invalid");
+  }
+  if (!validateExternalIdentityFieldDecisions(support)) {
+    throw persistenceCheckpointError("external_identity_field_decisions_invalid");
+  }
+  if (!validateExternalIdentitySourceProvenance(support)) {
+    throw persistenceCheckpointError("external_identity_source_provenance_invalid");
+  }
+  if (!validateExternalIdentityDecisionObservation(
+    support,
+    result?.observed_fields,
+    result?.fields
+  )) {
+    throw persistenceCheckpointError("external_identity_decision_observation_mismatch");
   }
   const originalSetSha256 = optionalSha256(
     support.original_set_sha256,
@@ -267,6 +298,10 @@ function normalizedExternalIdentityCheckpointReceipt(result, {
     if (stored?.[field] !== applied[field]) {
       throw persistenceCheckpointError(`external_identity_rows_${field}_mismatch`);
     }
+  }
+  if (stored?.schema_version !== release.receipt.schema_version
+      || JSON.stringify(stored?.field_decisions) !== JSON.stringify(support.field_decisions)) {
+    throw persistenceCheckpointError("external_identity_rows_field_decisions_mismatch");
   }
   if ((stored?.original_set_sha256 ?? null) !== originalSetSha256) {
     throw persistenceCheckpointError("external_identity_rows_original_set_sha256_mismatch");
@@ -331,7 +366,8 @@ export function buildCsmPersistenceCheckpoint({
   const externalIdentityReceipt = resolutionContract
     ? normalizedExternalIdentityCheckpointReceipt(prepared, {
         requestOriginalSetSha256: originalSetSha256,
-        resolutionContractSha256: resolutionContract
+        resolutionContractSha256: resolutionContract,
+        requireActiveRelease: true
       })
     : null;
   const hashes = prepared?.csm_rows?.session_hashes;

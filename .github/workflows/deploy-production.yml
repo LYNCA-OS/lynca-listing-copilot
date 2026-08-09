@@ -2,6 +2,15 @@ name: deploy-production
 
 on:
   workflow_dispatch:
+    inputs:
+      release_class:
+        description: Protected release contract
+        required: true
+        default: ordinary
+        type: choice
+        options:
+          - ordinary
+          - compatibility-bridge
 
 concurrency:
   group: production-deploy
@@ -31,6 +40,22 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Bind the protected release class to this exact commit
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          RELEASE_CLASS: ${{ inputs.release_class }}
+        run: |
+          release_receipt="$RUNNER_TEMP/production-release-selection.json"
+          umask 077
+          node scripts/compatibility-bridge-release.mjs verify-selection \
+            --release-class "$RELEASE_CLASS" \
+            --git-sha "$DISPATCH_SHA" \
+            --out "$release_receipt"
+          test "$(stat -c '%a' "$release_receipt")" = "600"
+          {
+            printf 'PRODUCTION_RELEASE_CLASS=%s\n' "$RELEASE_CLASS"
+            printf 'PRODUCTION_RELEASE_SELECTION_RECEIPT=%s\n' "$release_receipt"
+          } >> "$GITHUB_ENV"
       - name: Install PostgreSQL 17 from the official PGDG repository
         run: |
           sudo apt-get update
@@ -223,19 +248,32 @@ jobs:
             && h.runtime?.retired_capabilities_disabled === true;
           process.exit(ok ? 0 : 1);
           NODE
+      - name: Prove the compatibility bridge is active-v1 and v2 replay-only
+        if: ${{ inputs.release_class == 'compatibility-bridge' }}
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          node scripts/compatibility-bridge-release.mjs verify-health \
+            --release-class "$PRODUCTION_RELEASE_CLASS" \
+            --git-sha "$DISPATCH_SHA" \
+            --health /tmp/csm-thin-health-prepromotion.json \
+            --out /tmp/compatibility-bridge-contract.json
+          test "$(stat -c '%a' /tmp/compatibility-bridge-contract.json)" = "600"
       - name: Install the pinned browser for the candidate Writer Journey
         run: npx playwright install --with-deps chromium
-      - name: Materialize fixed NON_TCG TCG and exact parity cases from Production Storage
+      - name: Materialize release-class-bound Writer Journey cases from Production Storage
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           source_dir="$RUNNER_TEMP/writer-journey-source"
-          cases_manifest="$RUNNER_TEMP/writer-journey-cases-v3.json"
+          canonical_cases_manifest="$RUNNER_TEMP/writer-journey-cases-v3.json"
+          bridge_cases_manifest="$RUNNER_TEMP/writer-journey-compatibility-bridge-cases-v1.json"
           large_source_manifest="$RUNNER_TEMP/writer-journey-large-source-v2.json"
           umask 077
-          node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" > "$cases_manifest"
-          CASES_MANIFEST="$cases_manifest" LARGE_SOURCE_MANIFEST="$large_source_manifest" \
+          node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" \
+            > "$canonical_cases_manifest"
+          CASES_MANIFEST="$canonical_cases_manifest" LARGE_SOURCE_MANIFEST="$large_source_manifest" \
             node --input-type=module <<'NODE'
           import { readFile, stat, writeFile } from 'node:fs/promises';
           import path from 'node:path';
@@ -297,8 +335,23 @@ jobs:
             throw new Error('writer_journey_large_source_permissions_invalid');
           }
           NODE
-          printf 'WRITER_JOURNEY_CASES_MANIFEST=%s\n' "$cases_manifest" >> "$GITHUB_ENV"
-          printf 'WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\n' "$large_source_manifest" >> "$GITHUB_ENV"
+          selected_cases_manifest="$canonical_cases_manifest"
+          if [ "$PRODUCTION_RELEASE_CLASS" = "compatibility-bridge" ]; then
+            node scripts/compatibility-bridge-release.mjs build-manifest \
+              --release-class "$PRODUCTION_RELEASE_CLASS" \
+              --git-sha "$GITHUB_SHA" \
+              --source-manifest "$canonical_cases_manifest" \
+              --out "$bridge_cases_manifest"
+            test "$(stat -c '%a' "$bridge_cases_manifest")" = "600"
+            selected_cases_manifest="$bridge_cases_manifest"
+          else
+            test "$PRODUCTION_RELEASE_CLASS" = "ordinary"
+          fi
+          {
+            printf 'WRITER_JOURNEY_RELEASE_CLASS=%s\n' "$PRODUCTION_RELEASE_CLASS"
+            printf 'WRITER_JOURNEY_CASES_MANIFEST=%s\n' "$selected_cases_manifest"
+            printf 'WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\n' "$large_source_manifest"
+          } >> "$GITHUB_ENV"
       - name: Build executor-bound large staged transport fixture
         run: |
           fixture_parent="$RUNNER_TEMP/lynca-large-writer-fixture"
@@ -467,10 +520,13 @@ jobs:
             /tmp/csm-thin-schema-preflight.json
             /tmp/csm-thin-schema-postdeploy.json
             /tmp/csm-thin-health-prepromotion.json
+            /tmp/compatibility-bridge-contract.json
             /tmp/csm-thin-health.json
             /tmp/csm-thin-health-rollback.json
             /tmp/vercel-prebuilt-release.json
             /tmp/retired-route.json
             /tmp/csm-noop.json
             ${{ runner.temp }}/vercel-production-rollback-receipt.json
+            ${{ runner.temp }}/production-release-selection.json
+            ${{ runner.temp }}/writer-journey-compatibility-bridge-cases-v1.json
             artifacts/production-writer-journey/evidence.json

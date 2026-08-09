@@ -48,6 +48,14 @@ assert.match(spec, /accuracy_claim: null/);
 assert.match(spec, /field_ground_truth_available: false/);
 assert.match(spec, /LIVE_CONTRACT_RECEIPT_ONLY/);
 assert.match(spec, /writer-journey-cases-v3/);
+assert.match(spec, /COMPATIBILITY_BRIDGE_MANIFEST_VERSION/);
+assert.match(spec, /manifest\.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS/);
+assert.match(spec, /manifest\.bridge_marker !== COMPATIBILITY_BRIDGE_MARKER/);
+assert.match(spec, /manifest\.git_sha !== expectedGitSha/,
+  "the reduced manifest must be bound to the exact bridge commit");
+assert.match(spec,
+  /releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS[\s\S]*?return \[\.\.\.manifest\.cases\]/,
+  "only the explicit compatibility class may omit the paid parity case");
 assert.match(spec, /hasExactKeys\(manifest, \[/,
   "the live manifest root must reject undeclared fields such as a leaked expected title");
 assert.match(spec, /WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT/);
@@ -100,7 +108,7 @@ assert.match(spec,
 assert.match(spec,
   /if \(recognitionPost\) \{\s*normalTransport\.violation \|\|=[\s\S]*?route\.abort\("blockedbyclient"\)/,
   "a late recognition POST after the active normal case must fail closed");
-assert.match(spec, /providerResponseReceiptHashes\.length === 4/);
+assert.match(spec, /providerResponseReceiptHashes\.length === expectedProviderCaseCount/);
 assert.match(spec, /evidence\.cases\.every\(\(entry\) => entry\.provider_attempt_number === 1[\s\S]*?entry\.provider_retry_count === 0/);
 assert.match(spec, /entry\.execution_receipt\?\.execution_origin === "FRESH_CURRENT"/,
   "the final seal must reject replayed, historical, or ambiguous provider results");
@@ -523,14 +531,14 @@ assert.match(finalCaseReceiptSeal,
   /owner_execution_readback\?\.sha256[\s\S]*?owner_execution_receipt_sha256/,
   "all four cases must match the database readback hash to the response owner receipt");
 for (const field of [
-  "provider_case_count: 4",
-  "fresh_current_case_count: 4",
+  "provider_case_count: expectedProviderCaseCount",
+  "fresh_current_case_count: expectedProviderCaseCount",
   "distinct_provider_authority_operations: true",
   "complete_server_stage_receipts: true",
   "exact_authority_token_reservation: expectedEstimatedTokensPerAttempt",
-  "durable_owner_execution_readback_count: 4",
-  "codex_parity_exact_match_count: 1",
-  "verified_original_set_match_count: 1",
+  "durable_owner_execution_readback_count: expectedProviderCaseCount",
+  "codex_parity_exact_match_count: parityRequired ? 1 : 0",
+  "verified_original_set_match_count: parityRequired ? 1 : 0",
   "warmup_real_response_observed: true",
   "staged_overlap_observed: true",
   "staged_relays_durable_before_recognition_response: true",
@@ -572,13 +580,15 @@ assert.equal([...releaseWorkflow.matchAll(/METAVERSE_PASSWORD: \$\{\{ secrets\.M
 assert.match(releaseWorkflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
 assert.match(releaseWorkflow, /materialize-writer-journey-source\.mjs/);
 assert.match(releaseWorkflow, /WRITER_JOURNEY_CASES_MANIFEST=%s\\n/);
+assert.match(releaseWorkflow, /WRITER_JOURNEY_RELEASE_CLASS=%s\\n/);
+assert.match(releaseWorkflow, /compatibility-bridge-release\.mjs build-manifest/);
 assert.match(releaseWorkflow, /Build executor-bound large staged transport fixture/);
 assert.match(releaseWorkflow, /build-large-internal-writer-fixture\.mjs/);
 assert.match(releaseWorkflow, /install -d -m 700 "\$fixture_parent"/);
 assert.match(releaseWorkflow, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT=%s\\n/);
 assert.match(releaseWorkflow, /writer-journey-cases-v3\.json/);
 assert.match(releaseWorkflow, /writer-journey-large-source-v2\.json/);
-assert.match(releaseWorkflow, /Materialize fixed NON_TCG TCG and exact parity cases/);
+assert.match(releaseWorkflow, /Materialize release-class-bound Writer Journey cases/);
 assert.match(releaseWorkflow, /manifest\.schema_version !== 'writer-journey-cases-v3'/);
 assert.match(releaseWorkflow, /parity\.source_asset_id !== contract\.source_asset_id/);
 assert.match(releaseWorkflow, /flag: 'wx', mode: 0o600/,
