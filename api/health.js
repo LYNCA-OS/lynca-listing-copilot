@@ -9,21 +9,34 @@ import {
 import {
   csmExecutionContractImageUrls,
   compileCsmModelExecution,
-  CSM_ACTIVE_MODEL_PROFILE
+  CSM_ACTIVE_MODEL_PROFILE,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  CSM_RECOGNITION_TRANSPORT_PROFILES,
+  sha256CsmRecognitionTransportReceipt
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
-import {
-  CSM_STAGED_TRANSPORT_PROFILE
-} from "../lib/listing/thin/staged-recognition-input.mjs";
 
 const activeExecution = compileCsmModelExecution({
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   imageUrls: csmExecutionContractImageUrls(1)
 });
-const activeExecutionContractSha256ByImageCount = Object.freeze(Object.fromEntries(
-  [1, 2].map((count) => [String(count), compileCsmModelExecution({
-    imageUrls: csmExecutionContractImageUrls(count)
-  }).execution_contract_sha256])
+const activeRecognitionTransportProfiles = Object.freeze(Object.fromEntries(
+  CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [profile.lane_version, Object.freeze({
+    ...profile,
+    sha256: sha256CsmRecognitionTransportReceipt(profile)
+  })])
 ));
+const activeExecutionContractSha256ByTransportLaneAndImageCount = Object.freeze(
+  Object.fromEntries(CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [
+    profile.lane_version,
+    Object.freeze(Object.fromEntries([1, 2].map((count) => [String(count),
+      compileCsmModelExecution({
+        transportProfile: profile,
+        imageUrls: csmExecutionContractImageUrls(count)
+      }).execution_contract_sha256
+    ])))
+  ]))
+);
 const activeProviderAdapter = resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider);
 
 export default function handler(req, res) {
@@ -73,16 +86,14 @@ export default function handler(req, res) {
       },
       provider_adapter_version: activeProviderAdapter.contract.id,
       request_builder_version: activeProviderAdapter.contract.request_builder_version,
-      execution_contract_sha256_by_image_count: activeExecutionContractSha256ByImageCount,
+      execution_contract_sha256_by_transport_lane_and_image_count:
+        activeExecutionContractSha256ByTransportLaneAndImageCount,
       max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
       provider_timeout_ms: CSM_ACTIVE_MODEL_PROFILE.provider_timeout_ms,
-      transport_profile: CSM_STAGED_TRANSPORT_PROFILE,
+      recognition_transport_profiles: activeRecognitionTransportProfiles,
       persistence_configured: persistenceConfigured,
       provider_configured: providerConfigured,
-      retired_capabilities_disabled: retiredCapabilitiesDisabled,
-      cloud_run_calls: 0,
-      vector_calls: 0,
-      generic_ocr_calls: 0
+      retired_capabilities_disabled: retiredCapabilitiesDisabled
     },
     capacity: {
       scheduler_attempt_slots: CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveAttempts,

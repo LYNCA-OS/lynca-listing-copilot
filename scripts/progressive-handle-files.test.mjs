@@ -188,8 +188,7 @@ async function prepareImage(file) {
     width: 1200,
     height: 1680,
     previewUrl: "",
-    sourceFile: file,
-    targetedCrops: []
+    sourceFile: file
   };
 }
 

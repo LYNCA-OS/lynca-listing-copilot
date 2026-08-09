@@ -88,8 +88,7 @@ try {
         id: "tenant_a",
         name: tenantPatchBody.name,
         plan: "pilot",
-        status: "ACTIVE",
-        settings: tenantPatchBody.settings
+        status: "ACTIVE"
       }]), { status: 200 });
     }
     if (["/rest/v1/request_logs", "/rest/v1/error_logs", "/rest/v1/production_events"].includes(url.pathname)) {
@@ -98,22 +97,31 @@ try {
     throw new Error(`unexpected tenant settings fetch: ${url.pathname}`);
   };
 
+  for (const [key, value] of Object.entries({
+    default_export_format: "xlsx",
+    require_writer_review: true,
+    recognition_mode: "accuracy",
+    timezone: "Asia/Shanghai"
+  })) {
+    const unsupportedSettings = await callPatch("user_owner", {
+      settings: { [key]: value }
+    });
+    assert.equal(unsupportedSettings.statusCode, 400, `${key} must stay retired`);
+    assert.equal(unsupportedSettings.body.error_code, "unsupported_tenant_setting");
+  }
+  assert.equal(tenantPatchUrl, null, "retired settings knobs must never reach storage");
+
   const saved = await callPatch("user_owner", {
     tenant_id: "tenant_b",
     plan: "enterprise",
-    name: "Tenant A Renamed",
-    settings: {
-      default_export_format: "xlsx",
-      require_writer_review: true,
-      recognition_mode: "accuracy",
-      timezone: "Asia/Shanghai"
-    }
+    name: "Tenant A Renamed"
   });
   assert.equal(saved.statusCode, 200);
   assert.equal(saved.body.tenant.id, "tenant_a");
   assert.equal(tenantPatchUrl.searchParams.get("id"), "eq.tenant_a");
   assert.equal(tenantPatchBody.name, "Tenant A Renamed");
-  assert.equal(tenantPatchBody.settings.recognition_mode, "accuracy");
+  assert.equal(Object.hasOwn(tenantPatchBody, "settings"), false,
+    "tenant rename must not persist disconnected settings knobs");
   assert.equal(Object.hasOwn(tenantPatchBody, "plan"), false, "Owner settings API cannot alter billing plan");
   assert.equal(Object.hasOwn(tenantPatchBody, "tenant_id"), false, "payload tenant_id cannot choose the write scope");
 } finally {

@@ -16,6 +16,10 @@ import {
   persistPreparedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
+import {
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+  CSM_STAGED_TRANSPORT_PROFILE
+} from "../lib/listing/thin/csm-recognition-transport.mjs";
 import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
 import {
   assertStagedVerifiedOriginals,
@@ -48,6 +52,11 @@ import {
 const MAX_IMAGES = 2;
 const MAX_BODY_BYTES = LISTING_IMAGE_RELAY_MAX_BYTES;
 const STORAGE_TIMEOUT_MS = 10_000;
+
+if (CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE.recognition_max_body_bytes !== MAX_BODY_BYTES
+    || CSM_STAGED_TRANSPORT_PROFILE.recognition_max_body_bytes !== MAX_BODY_BYTES) {
+  throw new TypeError("ingest_transport_body_limit_mismatch");
+}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -461,6 +470,9 @@ export default async function handler(req, res) {
         // `recognition_session_deferred` marker existed. This flag changes no
         // paid identity and only enables the provider-incapable session step.
         deferRecognitionSessionUntilPersistence: true,
+        transportProfile: staged
+          ? CSM_STAGED_TRANSPORT_PROFILE
+          : CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
         readImages: async () => identityCanonical,
         ...(staged ? {
           chooseRecognitionImages: () => stagedRecognition,
@@ -520,8 +532,6 @@ export default async function handler(req, res) {
     return sendJson(res, 200, {
       ok: true,
       route: "CSM_THIN_DIRECT_INGEST",
-      cloud_run_calls: 0,
-      vector_calls: 0,
       asset_id: assetId,
       tenant_id: context.tenantId,
       client_asset_ref: clientAssetRef,

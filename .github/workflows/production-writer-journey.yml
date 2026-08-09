@@ -14,10 +14,13 @@ on:
       - "playwright.config.mjs"
       - "package.json"
       - "package-lock.json"
+      - "scripts/fetch-vercel-protected-health.mjs"
+      - "scripts/vercel-protected-health.test.mjs"
+      - "scripts/vercel-production-rollback-receipt.mjs"
+      - "scripts/vercel-production-rollback-receipt.test.mjs"
+      - "scripts/production-release-boundaries.test.mjs"
+      - ".github/workflows/deploy-production.yml"
       - ".github/workflows/production-writer-journey.yml"
-  workflow_run:
-    workflows: ["deploy-production"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -41,89 +44,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run check:e2e:production-writer-journey
       - run: npm run test:e2e:production-writer-journey:contract
+      - run: node scripts/production-release-boundaries.test.mjs && node scripts/vercel-protected-health.test.mjs && node scripts/vercel-production-rollback-receipt.test.mjs
       - run: npm run test:large-internal-writer-fixture:contract
       - run: npm run test:large-internal-writer-fixture:browser
       - run: npx playwright test e2e/production-writer-journey.spec.mjs --project=chromium --grep @offline
-
-  writer-journey:
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    environment: production
-    env:
-      WRITER_JOURNEY_BASE_URL: https://listing.lyncafei.team
-      WRITER_JOURNEY_EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 1
-      - name: Fail closed unless the successful deploy was exact current main
-        env:
-          UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
-          UPSTREAM_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
-          UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          UPSTREAM_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          test "$UPSTREAM_EVENT" = "workflow_dispatch"
-          test "$UPSTREAM_REPOSITORY" = "$GITHUB_REPOSITORY"
-          test "$UPSTREAM_BRANCH" = "main"
-          test "$(git rev-parse HEAD)" = "$UPSTREAM_SHA"
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
-          test "$(git rev-parse origin/main)" = "$UPSTREAM_SHA"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Assert scoped production credentials
-        env:
-          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
-          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
-        run: test -n "$METAVERSE_USERNAME" && test -n "$METAVERSE_PASSWORD"
-      - name: Materialize fixed NON_TCG and TCG cases from Production Storage
-        id: source
-        env:
-          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          source_dir="$RUNNER_TEMP/writer-journey-source"
-          cases_manifest="$RUNNER_TEMP/writer-journey-cases-v2.json"
-          node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" > "$cases_manifest"
-          node -e 'const x=require(process.argv[1]); if(x.schema_version!=="writer-journey-cases-v2"||x.accuracy_claim!==null||x.cases?.length!==2)process.exit(1)' "$cases_manifest"
-          echo "cases_manifest=$cases_manifest" >> "$GITHUB_OUTPUT"
-      - run: npx playwright install --with-deps chromium
-      - name: Build executor-bound large staged transport fixture
-        id: large_fixture
-        env:
-          WRITER_JOURNEY_CASES_MANIFEST: ${{ steps.source.outputs.cases_manifest }}
-        run: |
-          fixture_parent="$RUNNER_TEMP/lynca-large-writer-fixture"
-          fixture_dir="$fixture_parent/bundle"
-          install -d -m 700 "$fixture_parent"
-          node scripts/build-large-internal-writer-fixture.mjs \
-            --source-manifest "$WRITER_JOURNEY_CASES_MANIFEST" \
-            --out-dir "$fixture_dir" >/dev/null
-          test -f "$fixture_dir/receipt.json"
-          echo "receipt=$fixture_dir/receipt.json" >> "$GITHUB_OUTPUT"
-      - name: Run real production Writer Journey
-        env:
-          WRITER_JOURNEY_CASES_MANIFEST: ${{ steps.source.outputs.cases_manifest }}
-          WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT: ${{ steps.large_fixture.outputs.receipt }}
-          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
-          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
-        run: npm run test:e2e:production-writer-journey
-      - name: Upload passing evidence
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-writer-journey-evidence
-          path: artifacts/production-writer-journey/evidence.json
-          retention-days: 14
-      - name: Upload failure evidence without browser credentials or image bytes
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: production-writer-journey-failure
-          path: artifacts/production-writer-journey/evidence.json
-          retention-days: 14

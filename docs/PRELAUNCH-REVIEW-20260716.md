@@ -51,15 +51,14 @@ integration already contains everything it introduced. Nothing was lost.
 
 **Verdict: no blocking issues.**
 
-- **Admin endpoints** (`api/admin-*.js`): every one wires
-  `platformAdminAuth` (`x-lynca-platform-admin-secret` /
-  `LYNCA_PLATFORM_ADMIN_SECRET`, constant-time compare). Runtime migration
-  handlers additionally fail closed in production
-  (`runtimeMigrationAuth` → 403 when `VERCEL_ENV/NODE_ENV=production`),
-  so an admin secret alone cannot run migrations against prod.
+- **Runtime migrations:** the historical HTTP handlers and their platform-admin
+  secret gate have since been removed from the Production surface. Database
+  maintenance uses the approved offline runner; no application route can apply
+  a migration.
 - **Tenant endpoints** (`api/v4/tenant-settings.js`, `tenant-members.js`):
   `requireTenantAccess` + explicit permission (`CONFIGURE_TENANT` etc.) +
-  strict input whitelisting (allowed-keys set, enum/format validation).
+  strict input validation. The settings route now exposes only tenant profile
+  reads and name changes; disconnected operational knobs are rejected.
 - **v4 endpoints**: worker endpoints gate on `isV4WorkerRequest`; job/status
   endpoints on session + `enforceApiRateLimit`; `listing-copilot-title` /
   `listing-preingest` delegate to the session-authed handlers as before.

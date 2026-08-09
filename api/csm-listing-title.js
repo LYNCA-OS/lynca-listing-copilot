@@ -18,13 +18,18 @@ import {
 import { validateAccuracyLossLedger } from "../lib/listing/thin/accuracy-loss-ledger.mjs";
 import {
   checkCsmProviderAdmissionReadiness,
-  createCsmSupabaseProviderAdmissionAuthority
+  createCsmSupabaseProviderAdmissionAuthority,
+  validateCsmProviderAuthorityReceipt
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import {
   buildCsmModelExecutionContractSha256,
   csmExecutionContractImageUrls,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
   CSM_ACTIVE_MODEL_PROFILE,
+  CSM_STAGED_TRANSPORT_PROFILE,
+  resolveCsmRecognitionTransportReceipt,
   validateCsmModelExecutionContract
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
@@ -371,13 +376,39 @@ function historicalExecutionContractSha256(result) {
   return executionContractSha256;
 }
 
-export function publicPersistedResult(result) {
+export function publicPersistedResult(result, executionOrigin = null) {
   const {
-    csm_persistence_checkpoint: _checkpoint,
+    csm_persistence_checkpoint: checkpoint,
+    provider_authority_receipt: providerAuthorityReceipt,
     accuracy_loss_ledger: _accuracyLossLedger,
     ...publicResult
   } = result || {};
-  return publicResult;
+  let freshAuthorityReceipt = null;
+  if (executionOrigin === "FRESH_CURRENT") {
+    const authorityOperationKey = String(checkpoint?.operation_key || "").trim();
+    const authorityAttempt = Number(result?.provider_attempt_number);
+    if (!authorityOperationKey || !Number.isInteger(authorityAttempt) || authorityAttempt < 1) {
+      throw persistenceCheckpointError("provider_authority_receipt_binding_missing");
+    }
+    try {
+      freshAuthorityReceipt = validateCsmProviderAuthorityReceipt(providerAuthorityReceipt, {
+        operationKey: authorityOperationKey,
+        attempt: authorityAttempt
+      });
+    } catch {
+      throw persistenceCheckpointError("provider_authority_receipt_invalid");
+    }
+  }
+  // This is request provenance, not part of the provider execution contract.
+  // In particular, a later replay must not inherit the original request's
+  // FRESH_CURRENT label or authority claim from its durable checkpoint.
+  return {
+    ...publicResult,
+    ...(freshAuthorityReceipt ? {
+      provider_authority_receipt: freshAuthorityReceipt
+    } : {}),
+    ...(executionOrigin === null ? {} : { execution_origin: executionOrigin })
+  };
 }
 
 export function deterministicProviderClientRequestId({ operationKey, payloadHash, attempt } = {}) {
@@ -505,6 +536,23 @@ export async function runDirectCsmAsset({
   if (operationScope && operationScope !== "derived_checkpoint") {
     throw Object.assign(new Error("csm_operation_scope_invalid"), { statusCode: 400, retryable: false });
   }
+  const transportProfile = resolveCsmRecognitionTransportReceipt(
+    dependencies.transportProfile || CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+  );
+  if (operationScope === "derived_checkpoint") {
+    if (transportProfile.id !== CSM_STAGED_TRANSPORT_PROFILE.id
+        || String(dependencies.laneVersion || "").trim() !== transportProfile.lane_version) {
+      throw Object.assign(new Error("staged_transport_receipt_mismatch"), {
+        statusCode: 400,
+        retryable: false
+      });
+    }
+  } else if (transportProfile.id === CSM_STAGED_TRANSPORT_PROFILE.id) {
+    throw Object.assign(new Error("staged_transport_scope_missing"), {
+      statusCode: 400,
+      retryable: false
+    });
+  }
   const markStagedResumeRecovery = (error) => {
     if (operationScope === "derived_checkpoint" && error && typeof error === "object") {
       error.staged_resume_checkpoint_available = true;
@@ -587,6 +635,21 @@ export async function runDirectCsmAsset({
     });
   }
   const recognitionImages = recognition.images.length ? recognition.images : originals;
+  const recognitionReads = recognition.read.map((entry) => String(entry?.read || "").trim());
+  if (transportProfile.id === CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE.id
+      && recognitionReads.some((read) => read !== "original")) {
+    throw Object.assign(new Error("original_inline_transport_source_mismatch"), {
+      statusCode: 409,
+      retryable: false
+    });
+  }
+  if (transportProfile.id === CSM_STAGED_TRANSPORT_PROFILE.id
+      && recognitionReads.some((read) => read !== "readability_derived")) {
+    throw Object.assign(new Error("staged_transport_source_mismatch"), {
+      statusCode: 409,
+      retryable: false
+    });
+  }
   const executionContractSha256 = buildCsmModelExecutionContractSha256({
     provider: CSM_THIN_RUNTIME_CONTRACT.provider,
     model: MODEL,
@@ -594,6 +657,7 @@ export async function runDirectCsmAsset({
     imageDetail: detail,
     maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
     semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+    transportProfile,
     imageUrls: csmExecutionContractImageUrls(recognitionImages.length)
   });
 
@@ -675,6 +739,8 @@ export async function runDirectCsmAsset({
   let durablePayloadHash = payloadHash;
   let durableExecutionContractSha256 = task.execution_contract_sha256;
   let historicalPayloadRecovered = false;
+  let freshProviderAttemptStarted = false;
+  let currentRequestCheckpoint = null;
 
   const recoverHistoricalPayloadConflict = async (conflictError) => {
     if (conflictError?.code !== "operation_payload_conflict") throw conflictError;
@@ -830,6 +896,11 @@ export async function runDirectCsmAsset({
     const providerStartedAt = now();
     let prepared;
     try {
+      // Constructing the caller can still fail before a paid boundary (for
+      // example an absent key).  Mark fresh only immediately before invoking
+      // the already-constructed caller, so a compile/setup failure can never
+      // be reported as a current provider execution.
+      let providerCaller = callProvider;
       prepared = await preparePath({
         tenantId: tenant,
         recognitionSessionId: sessionId,
@@ -839,17 +910,21 @@ export async function runDirectCsmAsset({
         model: MODEL,
         effort: EFFORT,
         maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
+        transportProfile,
         promptVersion: CSM_DIRECT_PROMPT_VERSION,
         providerClientRequestId,
-        callProvider: callProvider || ((request) => activeProviderAdapter.createCaller({
-          env,
-          fetchImpl,
-          operationKey: dispatched.operation_key,
-          payloadHash: dispatched.payload_hash,
-          attempt: dispatched.attempt,
-          clientRequestId: providerClientRequestId,
-          timeoutMs: CSM_DIRECT_PROVIDER_TIMEOUT_MS
-        })(request)),
+        callProvider: async (request) => {
+          providerCaller ||= createResponsesProviderCaller({
+            env,
+            fetchImpl,
+            operationKey: dispatched.operation_key,
+            payloadHash: dispatched.payload_hash,
+            attempt: dispatched.attempt,
+            clientRequestId: providerClientRequestId
+          });
+          freshProviderAttemptStarted = true;
+          return providerCaller(request);
+        },
         env,
         fetchImpl
       });
@@ -866,7 +941,7 @@ export async function runDirectCsmAsset({
     if (Number.isFinite(Number(prepared?.latency_ms))) {
       attemptStages.provider_ms = Number(prepared.latency_ms);
     }
-    return buildCsmPersistenceCheckpoint({
+    const checkpoint = buildCsmPersistenceCheckpoint({
       prepared: {
         ...prepared,
         provider_attempt_number: Number(dispatched.attempt),
@@ -882,6 +957,8 @@ export async function runDirectCsmAsset({
       executionContractSha256: dispatched.execution_contract_sha256 || null,
       operationScope
     });
+    currentRequestCheckpoint = checkpoint;
+    return checkpoint;
   };
 
   const dispatcher = createDispatcher({
@@ -927,8 +1004,22 @@ export async function runDirectCsmAsset({
       }
     }
   }
+  // Production authority appends its own latency stages with a top-level
+  // shallow copy after settlement.  The nested checkpoint identity survives
+  // that copy, while a recovered/JSON-decoded receipt does not.
+  const settledCurrentRequestCheckpoint = Boolean(
+    currentRequestCheckpoint?.csm_persistence_checkpoint
+  ) && settled?.csm_persistence_checkpoint
+    === currentRequestCheckpoint.csm_persistence_checkpoint;
+  const executionOrigin = historicalPayloadRecovered
+    ? "HISTORICAL_KEY_RECOVERY"
+    : freshProviderAttemptStarted && settledCurrentRequestCheckpoint
+      ? "FRESH_CURRENT"
+      : freshProviderAttemptStarted
+        ? "AMBIGUOUS_PROVIDER_RECOVERY"
+      : "EXACT_REPLAY";
   if (!historicalPayloadRecovered && alreadyPersisted(settled, sessionId)) {
-    return publicPersistedResult(settled);
+    return publicPersistedResult(settled, executionOrigin);
   }
   const preparedWithDispatchStages = {
     ...settled,
@@ -1043,7 +1134,7 @@ export async function runDirectCsmAsset({
       retryable: Number(persistedWithLatency?.csm_persistence?.statusCode || 503) >= 500
     }));
   }
-  return publicPersistedResult(persistedWithLatency);
+  return publicPersistedResult(persistedWithLatency, executionOrigin);
 }
 
 function responseStatus(error) {
@@ -1097,8 +1188,6 @@ export function buildCsmDirectFailureResponse(error) {
     body: {
       ok: false,
       route: "CSM_THIN_DIRECT",
-      cloud_run_calls: 0,
-      vector_calls: 0,
       code: String(error?.message || "csm_thin_path_failed").split(":")[0],
       error_type: providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
       retryable,
@@ -1167,8 +1256,6 @@ export default async function handler(req, res) {
     return sendJson(res, 200, {
       ok: true,
       route: "CSM_THIN_DIRECT",
-      cloud_run_calls: 0,
-      vector_calls: 0,
       recognition_session_id: result.csm_rows.resolution.recognition_session_id,
       trace_status: "PERSISTED",
       ...result,

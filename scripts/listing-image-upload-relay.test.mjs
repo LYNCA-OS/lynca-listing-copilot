@@ -123,7 +123,7 @@ assert.match(appSource, /row\.source\.size <= STORAGE_UPLOAD_RELAY_MAX_BYTES/);
 assert.match(appSource, /Any relay failure falls back to the existing signed direct path/);
 assert.match(appSource, /\/api\/csm-listing-title-ingest/);
 assert.match(appSource, /body: new Blob\(images\.map\(\(image\) => image\.source\)/);
-assert.match(appSource, /上传与 Luna 并行/);
+assert.match(appSource, /上传与识别并行/);
 
 const vercel = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
 assert.deepEqual(vercel.functions["api/listing-image-upload-relay.js"].regions, ["sin1"]);

@@ -9,10 +9,16 @@ import {
 } from "../lib/listing/thin/csm-orchestration.mjs";
 import {
   buildCsmModelExecutionContract,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   CSM_LUNA_MODEL_PROFILE,
   CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
   sha256ExecutionContractValue
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
+import {
+  computeCsmOwnerExecutionReceiptSha256,
+  CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+  projectCsmOwnerExecutionReceipt
+} from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
 import { writeCsmStageRows } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   computeCsmPacketHashes,
@@ -120,6 +126,7 @@ const common = {
   const result = await runPersistedCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-tcg",
     imageUrls: ["https://example.test/front.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     promptVersion: "csm-canonical-fields-v1",
     providerClientRequestId: "lynca-client-trace",
     callProvider: providerFor(common), env: enabledEnv, fetchImpl: writes.fetchImpl,
@@ -199,6 +206,43 @@ const common = {
     "the public result must expose the exact owner receipt written with the CSM packet");
   assert.deepEqual(result.csm_owner_versions.execution_contract, result.execution_contract,
     "the durable owner must retain the complete historical execution identity");
+  assert.equal(
+    result.csm_owner_versions.owner_execution_receipt_version,
+    CSM_OWNER_EXECUTION_RECEIPT_VERSION
+  );
+  assert.match(result.csm_owner_versions.owner_execution_receipt_sha256, /^[0-9a-f]{64}$/);
+  assert.equal(
+    computeCsmOwnerExecutionReceiptSha256(result.csm_owner_versions),
+    result.csm_owner_versions.owner_execution_receipt_sha256,
+    "the public expected hash must cover the exact owner receipt atomically saved in the session patch"
+  );
+  assert.equal(Object.prototype.hasOwnProperty.call(
+    result.csm_owner_versions, "latency_stages_ms"
+  ), true, "optional receipt fields stay explicit so the v1 digest has one complete shape");
+  const reorderedOwnerReceipt = Object.fromEntries(
+    Object.entries(result.csm_owner_versions).reverse()
+  );
+  assert.equal(
+    computeCsmOwnerExecutionReceiptSha256(reorderedOwnerReceipt),
+    result.csm_owner_versions.owner_execution_receipt_sha256,
+    "the owner digest is canonical rather than JavaScript insertion-order dependent"
+  );
+  assert.throws(
+    () => projectCsmOwnerExecutionReceipt({
+      ...structuredClone(result.csm_owner_versions),
+      output_tokens: result.csm_owner_versions.output_tokens + 1
+    }),
+    /csm_owner_execution_receipt_invalid/,
+    "a hash-shaped stored value cannot conceal drift in the durable full receipt"
+  );
+  assert.throws(
+    () => computeCsmOwnerExecutionReceiptSha256({
+      ...result.csm_owner_versions,
+      unreviewed_extension: "must-not-enter-the-digest"
+    }),
+    /csm_owner_execution_receipt_invalid/,
+    "future fields require an explicit allow-list review and receipt version bump"
+  );
   assert.deepEqual(patchedHashes, result.csm_rows.session_hashes,
     "the session must persist the exact three hashes verified by replay");
   assert.deepEqual(result.csm_rows.output.dropped_trace, {
@@ -236,6 +280,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   const prepared = await prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort",
     imageUrls: ["https://example.test/front.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: async () => new Response(JSON.stringify({
       id: "resp_without_effort_echo",
       output_text: JSON.stringify(common),
@@ -278,6 +323,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     runPersistedCanonicalListingPath({
       tenantId: "tenant-1", recognitionSessionId: "session-failure",
       imageUrls: ["https://example.test/front.jpg"],
+      transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
       callProvider: providerFor({
         ...common, grammar: "standard", language: "", manufacturer: "Topps",
         product: "Chrome", set: "", subjects: ["Victor Wembanyama"],
@@ -306,6 +352,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     runPersistedCanonicalListingPath({
       tenantId: "tenant-1", recognitionSessionId: "session-conflict",
       imageUrls: ["https://example.test/front.jpg"],
+      transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
       callProvider: providerFor(common),
       writeRows: async () => ({
         ok: false, code: "immutable_session_conflict", statusCode: 409,
@@ -324,6 +371,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   const replay = await runPersistedCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-replay",
     imageUrls: ["https://example.test/front.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: providerFor(common),
     writeRows: async () => ({
       ok: true, replayed: true, skipped: null, written: {
@@ -338,6 +386,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     patchSession: async () => { patchCalls += 1; return { saved: true }; }
   });
   assert.equal(replay.csm_persistence.replayed, true);
+  assert.equal(Object.hasOwn(
+    replay.csm_owner_versions, "owner_execution_receipt_sha256"
+  ), false, "a no-write replay must not manufacture a read-after-write receipt");
   assert.equal(patchCalls, 0);
 }
 
@@ -351,6 +402,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     tenantId: "tenant-1",
     recognitionSessionId: "session-resume",
     imageUrls: ["https://example.test/front.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: async (request) => {
       providerCalls += 1;
       return baseProvider(request);
@@ -489,7 +541,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
 {
   const prepared = await prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-historical-profile",
-    imageUrls: ["https://example.test/front.jpg"], callProvider: providerFor(common)
+    imageUrls: ["https://example.test/front.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    callProvider: providerFor(common)
   });
   const historicalProfile = {
     ...CSM_LUNA_MODEL_PROFILE,
@@ -505,7 +559,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     profile: historicalProfile,
     providerAdapterVersion: historicalAdapterContract.id,
     responseParserVersion: historicalAdapterContract.response_parser_version,
-    providerAdapterContract: historicalAdapterContract
+    providerAdapterContract: historicalAdapterContract,
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: ["https://execution-contract.invalid/image-1"]
   });
   const historicalPrepared = structuredClone(prepared);
   historicalPrepared.model_profile_id = historicalContract.model_profile_id;
@@ -537,7 +593,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
 {
   const prepared = await prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-v1-resume",
-    imageUrls: ["https://example.test/front.jpg"], callProvider: providerFor(common)
+    imageUrls: ["https://example.test/front.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    callProvider: providerFor(common)
   });
   prepared.csm_rows.output.composer_version = THIN_COMPOSER_VERSION_V1;
   prepared.model = "gpt-5.6-luna-legacy";

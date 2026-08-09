@@ -31,7 +31,7 @@ const js = await readFile("app/listing-copilot.js", "utf8");
 });
 
 assert.match(js, /canvas\.toDataURL\("image\/jpeg"/, "images should be normalized to JPEG");
-assert.match(js, /IMAGE_MAX_EDGE\s*=\s*2200/, "preview/crop long edge should preserve high-resolution card text");
+assert.match(js, /IMAGE_MAX_EDGE\s*=\s*2200/, "fallback normalization should preserve high-resolution card text");
 assert.match(js, /IMAGE_INITIAL_QUALITY\s*=\s*0\.9/, "initial adaptive quality should preserve small card text");
 assert.match(js, /IMAGE_MIN_QUALITY\s*=\s*0\.78/, "normal adaptive quality should avoid low-quality recompression");
 assert.match(js, /heicUnsupportedMessage\s*=/, "HEIC unsupported fallback message should be defined");
@@ -73,14 +73,13 @@ assert.match(js, /const groupPreparationConcurrency\s*=\s*state\.mode\s*===\s*"s
 assert.match(js, /mapWithConcurrency\(fileGroups,\s*groupPreparationConcurrency/, "file-group preprocessing should use bounded concurrency");
 assert.match(js, /prepareFileForIntake:\s*prepareFile\s*=\s*prepareFileForIntake/, "production intake should default to the storage-first path before legacy canvas preprocessing");
 assert.match(js, /storageFirstAssetImage/, "browser-native originals should have a storage-first intake path");
-assert.match(js, /targetedCrops:\s*\[\]/, "storage-first originals should avoid altering the original upload payload");
 assert.match(js, /await ensureImageUploadMetadata\(image\)/, "signed upload must wait for lightweight dimensions before validation");
-assert.match(js, /compressed\.targetedCrops\s*=\s*buildTargetedCropImages/, "targeted crops should be generated once after final compression");
-assert.doesNotMatch(js, /targetedCrops:\s*sourceImage\s*\?\s*buildTargetedCropImages/, "recompression attempts must not regenerate the full crop set");
+assert.doesNotMatch(js, /targetedCrops|buildTargetedCropImages|planTargetedCrops|TARGETED_CROP/,
+  "the rejected targeted-crop planner must not consume browser CPU, blobs, or preview URLs");
 assert.match(js, /mapWithConcurrency\(entries,\s*STORAGE_UPLOAD_CONCURRENCY/, "each storage upload phase should use bounded concurrency");
-assert.match(js, /startNonBlockingDerivedUpload/, "derived crop upload must use the non-blocking upload phase boundary");
+assert.doesNotMatch(js, /startNonBlockingDerivedUpload|derivedStorageUpload|summarizeDerivedUploadOutcomes/,
+  "original preparation must not run an empty derived-upload phase or retain dead status");
 assert.match(js, /ensureAssetOriginalImagesUploaded/, "recognition should wait only for canonical originals");
-assert.doesNotMatch(js, /await asset\.derivedStorageUploadPromise/, "derived crop completion must never block recognition");
 assert.match(js, /uploadAssetImage\(asset, image, imageIndex\)/, "bounded storage upload workers should preserve image role assignment");
 assert.match(js, /state\.assets\.sort\(\(left, right\) => left\.index - right\.index\)/, "progressively prepared assets should restore upload order before rendering");
 assert.match(js, /state\.files\s*=\s*state\.assets\.flatMap\(\(entry\) => entry\.images\)/, "optimized images should preserve upload order in state");

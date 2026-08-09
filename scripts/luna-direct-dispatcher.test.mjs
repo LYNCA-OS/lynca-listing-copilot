@@ -23,9 +23,11 @@ import {
   buildCsmModelExecutionContract,
   buildCsmModelExecutionContractSha256,
   canonicalExecutionContractJson,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   CSM_CANONICAL_RESPONSE_PARSER_VERSION,
   CSM_LUNA_MODEL_PROFILE,
   CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
   sha256ExecutionContractValue
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 
@@ -94,10 +96,12 @@ function task(assetId, overrides = {}) {
     semanticPromptVersion: "csm-canonical-fields-v1",
     renderedPrompt: CANONICAL_FIELDS_PROMPT,
     schema: CANONICAL_FIELDS_SCHEMA,
-    promptStyleVersion: "luna-canonical-direct-v1",
+    promptStyleVersion: "canonical-direct-v1",
     providerAdapterVersion: "openai-responses-v1",
     responseParserVersion: CSM_CANONICAL_RESPONSE_PARSER_VERSION,
     capabilities: CSM_LUNA_MODEL_PROFILE.capabilities,
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: ["https://execution-contract.invalid/image-1"],
     providerAdapterContract: CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT
   };
   const baseDigest = buildCsmModelExecutionContractSha256(baseOptions);
@@ -116,10 +120,8 @@ function task(assetId, overrides = {}) {
     { requestedEffort: "none" },
     { imageDetail: "original" },
     { maxOutputTokens: 8191 },
-    { semanticPromptVersion: "csm-canonical-fields-v2" },
-    { renderedPrompt: `${CANONICAL_FIELDS_PROMPT} ` },
     { schema: { ...CANONICAL_FIELDS_SCHEMA, description: "changed" } },
-    { promptStyleVersion: "luna-canonical-direct-v2" },
+    { transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE },
     {
       providerAdapterVersion: "openai-responses-v2",
       providerAdapterContract: {
@@ -144,10 +146,20 @@ function task(assetId, overrides = {}) {
           attested_when_present: false
         }
       }
-    },
-    { capabilities: { ...CSM_LUNA_MODEL_PROFILE.capabilities, sampling_parameters: "future" } }
+    }
   ]) {
     assert.notEqual(buildCsmModelExecutionContractSha256({ ...baseOptions, ...change }), baseDigest);
+  }
+  for (const change of [
+    { semanticPromptVersion: "csm-canonical-fields-v2" },
+    { renderedPrompt: `${CANONICAL_FIELDS_PROMPT} ` },
+    { promptStyleVersion: "luna-canonical-direct-v2" },
+    { capabilities: { ...CSM_LUNA_MODEL_PROFILE.capabilities, sampling_parameters: "future" } }
+  ]) {
+    assert.throws(
+      () => buildCsmModelExecutionContractSha256({ ...baseOptions, ...change }),
+      /prompt_asset_|unsupported_prompt_style_version|model_capability_/
+    );
   }
   assert.equal(
     canonicalExecutionContractJson({ z: 1, a: { y: 2, b: 3 } }),

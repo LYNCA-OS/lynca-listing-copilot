@@ -4,34 +4,40 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
 import healthHandler from "../api/health.js";
-import { buildCanonicalFieldsRequest } from "../lib/listing/thin/canonical-fields.mjs";
+import {
+  buildCanonicalFieldsRequest,
+  CANONICAL_FIELDS_PROMPT,
+  CANONICAL_FIELDS_PROMPT_VERSION
+} from "../lib/listing/thin/canonical-fields.mjs";
 import {
   buildCsmModelExecutionContract,
   buildCsmModelExecutionContractSha256,
   buildCsmModelProfile,
   csmExecutionContractImageUrls,
   compileCsmModelExecution,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   CSM_CANONICAL_REQUEST_BUILDER_VERSION,
   CSM_LUNA_MODEL_PROFILE,
   CSM_LUNA_OPTIMIZATION_PACK,
   CSM_LUNA_OPTIMIZATION_PACK_SHA256,
+  CSM_NEUTRAL_PROMPT_STYLE_VERSION,
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+  CSM_RECOGNITION_TRANSPORT_PROFILES,
+  CSM_MODEL_EXECUTION_CONTRACT_LEGACY_VERSION,
+  resolveCsmPromptAsset,
+  sha256CsmRecognitionTransportReceipt,
   sha256ExecutionContractValue,
   sha256ProviderWireTemplate,
-  sha256OptimizationPack
+  sha256OptimizationPack,
+  validateCsmModelExecutionContract
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 
 function reorderedPack(pack) {
   return {
-    transport_profile_id: pack.transport_profile_id,
     resource_hints: {
       provider_timeout_ms: pack.resource_hints.provider_timeout_ms,
       estimated_tokens_per_attempt: pack.resource_hints.estimated_tokens_per_attempt
-    },
-    request_extensions: {
-      reasoning_context: pack.request_extensions.reasoning_context,
-      text_verbosity: pack.request_extensions.text_verbosity,
-      prompt_cache: pack.request_extensions.prompt_cache
     },
     request_defaults: {
       sampling_parameters: pack.request_defaults.sampling_parameters,
@@ -56,7 +62,6 @@ for (const mutate of [
   (pack) => { pack.request_defaults.image_detail = "original"; },
   (pack) => { pack.request_defaults.max_output_tokens = 8_191; },
   (pack) => { pack.request_defaults.sampling_parameters = "future"; },
-  (pack) => { pack.transport_profile_id = "future-transport-v1"; },
   (pack) => { pack.resource_hints.estimated_tokens_per_attempt = 6_499; },
   (pack) => { pack.resource_hints.provider_timeout_ms = 119_999; }
 ]) {
@@ -79,16 +84,33 @@ assert.equal(
   CSM_LUNA_MODEL_PROFILE.optimization_pack_sha256,
   CSM_LUNA_OPTIMIZATION_PACK_SHA256
 );
-assert.equal(
-  CSM_LUNA_MODEL_PROFILE.transport_profile_id,
-  CSM_LUNA_OPTIMIZATION_PACK.transport_profile_id
+assert.equal(Object.hasOwn(CSM_LUNA_MODEL_PROFILE, "transport_profile_id"), false);
+assert.equal(Object.hasOwn(CSM_LUNA_OPTIMIZATION_PACK, "transport_profile_id"), false);
+assert.equal(Object.hasOwn(CSM_LUNA_OPTIMIZATION_PACK, "request_extensions"), false);
+assert.equal(CSM_LUNA_MODEL_PROFILE.prompt_style_version, CSM_NEUTRAL_PROMPT_STYLE_VERSION,
+  "Luna-specific behavior belongs in the removable pack until distinct prompt bytes pass a gate");
+assert.deepEqual(resolveCsmPromptAsset(CSM_NEUTRAL_PROMPT_STYLE_VERSION), {
+  semantic_prompt_version: CANONICAL_FIELDS_PROMPT_VERSION,
+  rendered_prompt: CANONICAL_FIELDS_PROMPT
+});
+assert.throws(
+  () => resolveCsmPromptAsset("luna-canonical-direct-v1"),
+  /unsupported_prompt_style_version:luna-canonical-direct-v1/,
+  "a cosmetic Luna alias must not change execution identity"
+);
+assert.throws(
+  () => resolveCsmPromptAsset("unknown-prompt-style-v1"),
+  /unsupported_prompt_style_version:unknown-prompt-style-v1/
 );
 
 const imageUrls = [
   "https://example.test/front.jpg",
   "https://example.test/back.jpg"
 ];
-const compiled = compileCsmModelExecution({ imageUrls });
+const compiled = compileCsmModelExecution({
+  imageUrls,
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+});
 const directRequest = buildCanonicalFieldsRequest({
   imageUrls,
   model: "gpt-5.6-luna",
@@ -111,18 +133,6 @@ assert.equal(Object.hasOwn(compiled.provider_request.wire_request, "prompt_cache
 assert.equal(Object.hasOwn(compiled.provider_request.wire_request.text, "verbosity"), false);
 assert.equal(Object.hasOwn(compiled.provider_request.wire_request.reasoning, "context"), false);
 const openAiAdapter = resolveCsmProviderAdapter("openai");
-assert.throws(() => openAiAdapter.compileRequest({
-  imageUrls,
-  model: "gpt-5.6-luna",
-  effort: "low",
-  imageDetail: "high",
-  maxOutputTokens: 8_192,
-  requestExtensions: {
-    prompt_cache: { mode: "explicit" },
-    text_verbosity: null,
-    reasoning_context: null
-  }
-}), /openai_request_extension_unreleased/);
 assert.throws(() => openAiAdapter.compileRequest({
   imageUrls,
   model: "gpt-5.6-luna",
@@ -153,7 +163,8 @@ assert.equal(
   sha256ProviderWireTemplate(compiled.provider_request.wire_request)
 );
 const sameTemplateDifferentUrls = compileCsmModelExecution({
-  imageUrls: ["https://different.test/one", "https://different.test/two"]
+  imageUrls: ["https://different.test/one", "https://different.test/two"],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
 });
 assert.equal(
   sameTemplateDifferentUrls.execution_contract.wire_template_sha256,
@@ -161,7 +172,10 @@ assert.equal(
   "ephemeral image URLs must not change the static provider template identity"
 );
 assert.notEqual(
-  compileCsmModelExecution({ imageUrls: [imageUrls[0]] })
+  compileCsmModelExecution({
+    imageUrls: [imageUrls[0]],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+  })
     .execution_contract.wire_template_sha256,
   compiled.execution_contract.wire_template_sha256,
   "image-slot count must remain part of the provider template identity"
@@ -175,13 +189,57 @@ assert.notEqual(
 );
 
 const baseDigest = compiled.execution_contract_sha256;
+const legacyExecutionContract = {
+  ...compiled.execution_contract,
+  contract_version: CSM_MODEL_EXECUTION_CONTRACT_LEGACY_VERSION
+};
+delete legacyExecutionContract.transport_profile_sha256;
+assert.deepEqual(
+  validateCsmModelExecutionContract(legacyExecutionContract, {
+    expectedSha256: sha256ExecutionContractValue(legacyExecutionContract)
+  }),
+  legacyExecutionContract,
+  "historical v1 receipts remain self-validating and provider-incapable"
+);
+assert.throws(
+  () => compileCsmModelExecution({ imageUrls }),
+  /missing_recognition_transport_receipt/,
+  "compile must receive the actual lane instead of inheriting a model-owned transport"
+);
+assert.throws(() => compileCsmModelExecution({
+  imageUrls: [],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+}), /recognition_transport_image_count_invalid/);
+assert.throws(() => compileCsmModelExecution({
+  imageUrls,
+  transportProfile: {
+    ...CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    image_delivery: "data_url"
+  }
+}), /recognition_transport_receipt_mismatch/);
+assert.throws(() => compileCsmModelExecution({
+  imageUrls,
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  promptStyleVersion: "unknown-prompt-style-v1"
+}), /unsupported_prompt_style_version:unknown-prompt-style-v1/);
+assert.throws(() => compileCsmModelExecution({
+  imageUrls,
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  renderedPrompt: `${CANONICAL_FIELDS_PROMPT} `
+}), /prompt_asset_override_mismatch/);
+assert.throws(() => compileCsmModelExecution({
+  imageUrls,
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  capabilities: { ...CSM_LUNA_MODEL_PROFILE.capabilities, image_input: "bytes" }
+}), /model_capability_image_input_incompatible/);
 for (const change of [
   { requestedEffort: "none" },
   { imageDetail: "original" },
   { maxOutputTokens: 8_191 },
-  { transportProfileId: "future-transport-v1" }
+  { transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE }
 ]) {
   assert.notEqual(buildCsmModelExecutionContractSha256({
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     ...change,
     imageUrls
   }), baseDigest);
@@ -204,12 +262,16 @@ const mismatchedPackProfile = buildCsmModelProfile({
   provider: "openai",
   accountScope: "lynca-primary",
   model: "gpt-5.6-luna",
-  promptStyleVersion: "luna-canonical-direct-v1",
+  promptStyleVersion: CSM_NEUTRAL_PROMPT_STYLE_VERSION,
   optimizationPack: changedKnownPack,
   capabilities: CSM_LUNA_MODEL_PROFILE.capabilities
 });
 assert.throws(
-  () => buildCsmModelExecutionContract({ profile: mismatchedPackProfile }),
+  () => buildCsmModelExecutionContract({
+    profile: mismatchedPackProfile,
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1)
+  }),
   /model_optimization_pack_sha256_mismatch/
 );
 
@@ -220,12 +282,16 @@ const unknownPackProfile = buildCsmModelProfile({
   provider: "openai",
   accountScope: "lynca-primary",
   model: "gpt-5.6-luna",
-  promptStyleVersion: "luna-canonical-direct-v1",
+  promptStyleVersion: CSM_NEUTRAL_PROMPT_STYLE_VERSION,
   optimizationPack: unknownPack,
   capabilities: CSM_LUNA_MODEL_PROFILE.capabilities
 });
 assert.throws(
-  () => buildCsmModelExecutionContract({ profile: unknownPackProfile }),
+  () => buildCsmModelExecutionContract({
+    profile: unknownPackProfile,
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1)
+  }),
   /unsupported_model_optimization_pack:unknown-luna-pack-v1/
 );
 assert.throws(() => buildCsmModelProfile({
@@ -248,7 +314,6 @@ const neutralProfile = buildCsmModelProfile({
   reasoningEffort: "none",
   imageDetail: "high",
   maxOutputTokens: 4_096,
-  transportProfileId: "neutral-inline-v1",
   estimatedTokensPerAttempt: 4_000,
   providerTimeoutMs: 60_000,
   capabilities: {
@@ -258,7 +323,11 @@ const neutralProfile = buildCsmModelProfile({
     sampling_parameters: "unsupported"
   }
 });
-const neutralContract = buildCsmModelExecutionContract({ profile: neutralProfile });
+const neutralContract = buildCsmModelExecutionContract({
+  profile: neutralProfile,
+  transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+  imageUrls: csmExecutionContractImageUrls(1)
+});
 assert.equal(neutralContract.optimization_pack_id, null);
 assert.equal(neutralContract.optimization_pack_sha256, null);
 assert.equal(neutralContract.model, "future-model");
@@ -283,27 +352,42 @@ assert.equal(
   healthBody.runtime.request_builder_version,
   CSM_CANONICAL_REQUEST_BUILDER_VERSION
 );
-assert.equal(
-  healthBody.runtime.transport_profile.id,
-  CSM_LUNA_OPTIMIZATION_PACK.transport_profile_id
+assert.deepEqual(
+  healthBody.runtime.recognition_transport_profiles,
+  Object.fromEntries(CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [
+    profile.lane_version,
+    { ...profile, sha256: sha256CsmRecognitionTransportReceipt(profile) }
+  ]))
 );
 assert.equal(
   healthBody.runtime.provider_timeout_ms,
   CSM_LUNA_OPTIMIZATION_PACK.resource_hints.provider_timeout_ms
 );
 assert.deepEqual(
-  healthBody.runtime.execution_contract_sha256_by_image_count,
-  Object.fromEntries([1, 2].map((count) => [
-    String(count),
-    buildCsmModelExecutionContractSha256({
-      imageUrls: csmExecutionContractImageUrls(count)
-    })
+  healthBody.runtime.execution_contract_sha256_by_transport_lane_and_image_count,
+  Object.fromEntries(CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [
+    profile.lane_version,
+    Object.fromEntries([1, 2].map((count) => [
+      String(count),
+      buildCsmModelExecutionContractSha256({
+        transportProfile: profile,
+        imageUrls: csmExecutionContractImageUrls(count)
+      })
+    ]))
   ])),
-  "health must advertise the exact one- and two-image execution identities"
+  "health must advertise each supported lane's exact one- and two-image execution identities"
 );
 assert.equal(
   healthBody.capacity.estimated_tokens_per_attempt,
   CSM_LUNA_OPTIMIZATION_PACK.resource_hints.estimated_tokens_per_attempt
 );
+for (const cosmeticCounter of ["cloud_run_calls", "vector_calls", "generic_ocr_calls"]) {
+  assert.equal(
+    Object.hasOwn(healthBody.runtime, cosmeticCounter),
+    false,
+    "health must not present a static configuration constant as a measured call count"
+  );
+}
+assert.equal(typeof healthBody.runtime.retired_capabilities_disabled, "boolean");
 
 console.log("csm-model-optimization-pack tests passed");

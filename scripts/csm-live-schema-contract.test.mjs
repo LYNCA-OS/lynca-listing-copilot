@@ -34,7 +34,9 @@ const CONTRACT = {
     "structured_output", "title", "composer_version", "created_at"
   ],
   csm_identity_resolutions: ["id", "resolver_version", "tenant_id"],
-  v4_recognition_sessions: ["id", "asset_id", "tenant_id", "created_at"],
+  v4_recognition_sessions: [
+    "id", "asset_id", "tenant_id", "created_at", "csm_owner_versions"
+  ],
   listing_manual_recovery_records: [
     "schema_version", "tenant_id", "asset_id", "client_asset_ref",
     "failure_code", "failure_stage", "source", "manual_title", "operator_id",

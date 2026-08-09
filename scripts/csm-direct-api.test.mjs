@@ -39,10 +39,15 @@ import {
   buildCsmModelExecutionContractSha256,
   buildCsmModelProfile,
   csmExecutionContractImageUrls,
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   CSM_ACTIVE_MODEL_PROFILE,
+  CSM_NEUTRAL_PROMPT_STYLE_VERSION,
+  CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
+  CSM_STAGED_TRANSPORT_PROFILE,
   sha256ExecutionContractValue
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
+import * as providerResponseAttestation from "../lib/listing/thin/provider-response-attestation.mjs";
 import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
 import {
   STAGED_RECOGNITION_LANE_VERSION,
@@ -60,6 +65,7 @@ import {
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   CSM_PROVIDER_AUTHORITY_LIMITS,
+  CSM_PROVIDER_AUTHORITY_RECEIPT_VERSION,
   CSM_PROVIDER_AUTHORITY_RPCS
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 import {
@@ -71,11 +77,33 @@ import { readSupabaseRows } from "../lib/supabase-rest.mjs";
 
 const source = await readFile(new URL("../api/csm-listing-title.js", import.meta.url), "utf8");
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.deepEqual(Object.keys(providerResponseAttestation).sort(), [
+  "providerReasoningEffortReceipt",
+  "providerResponseAttestation",
+  "providerUsageReceipt"
+], "provider response attestation must expose only live receipt normalizers");
+const CURRENT_DIRECT_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
+  model: CSM_THIN_RUNTIME_CONTRACT.model,
+  requestedEffort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+  imageDetail: "high",
+  semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  imageUrls: csmExecutionContractImageUrls(1)
+});
 const CURRENT_STAGED_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
   model: CSM_THIN_RUNTIME_CONTRACT.model,
   requestedEffort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
   imageDetail: "high",
   semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+  transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
+  imageUrls: csmExecutionContractImageUrls(1)
+});
+const CURRENT_ORIGINAL_INLINE_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
+  model: CSM_THIN_RUNTIME_CONTRACT.model,
+  requestedEffort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+  imageDetail: "high",
+  semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+  transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
   imageUrls: csmExecutionContractImageUrls(1)
 });
 
@@ -131,8 +159,8 @@ assert.deepEqual(
   [],
   "the active CSM endpoint's transitive local dependency graph must not enter the retired V4 tree"
 );
-assert.match(source, /cloud_run_calls:\s*0/, "the endpoint must make its zero Cloud Run boundary observable");
-assert.match(source, /vector_calls:\s*0/, "the endpoint must make its zero vector boundary observable");
+assert.doesNotMatch(source, /cloud_run_calls|vector_calls|generic_ocr_calls/,
+  "static zero counters must not masquerade as runtime probes");
 assert.doesNotMatch(source, /buildLegacy(?:Current|Low)LunaDirectPayloadHash/,
   "portable recovery must not enumerate a finite set of historical profile hashes");
 assert.match(source, /lookupOperationResultByKey/,
@@ -147,6 +175,10 @@ for (const transportOwner of [
   assert.doesNotMatch(source, transportOwner,
     "provider endpoint, auth and dispatch envelope must live in the resolved adapter");
 }
+assert.match(source, /providerCaller \|\|= createResponsesProviderCaller\(/,
+  "the paid production path must use the single exported provider caller seam");
+assert.equal([...source.matchAll(/activeProviderAdapter\.createCaller\(/g)].length, 1,
+  "only createResponsesProviderCaller may invoke the active adapter caller");
 assert.equal(vercel.functions["api/csm-listing-title.js"].maxDuration, 300);
 assert.deepEqual(vercel.regions, ["sin1"]);
 for (const functionPath of [
@@ -185,8 +217,8 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   assert.equal(failure.body.retryable, false,
     "an explicit definitive failure must not be reopened by the handler's 5xx default");
   assert.equal(failure.body.route, "CSM_THIN_DIRECT");
-  assert.equal(failure.body.cloud_run_calls, 0);
-  assert.equal(failure.body.vector_calls, 0);
+  assert.equal(Object.hasOwn(failure.body, "cloud_run_calls"), false);
+  assert.equal(Object.hasOwn(failure.body, "vector_calls"), false);
   assert.equal(failure.body.provider_failure_receipt.outcome, "definitive_response");
   assert.equal(failure.body.latency_stages_ms !== undefined, true,
     "the existing receipt body is preserved without a fallback route or second request");
@@ -504,7 +536,7 @@ const ordinaryTask = (intentId, overrides = {}) => ({
   estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
   image_fingerprints: [`sha256:${IMAGE_HASH}`],
   recognition_fingerprints: [`sha256:${IMAGE_HASH}`],
-  execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
+  execution_contract_sha256: CURRENT_DIRECT_EXECUTION_SHA256,
   ...overrides
 });
 const canonicalImages = () => ({
@@ -670,10 +702,25 @@ const canonicalImages = () => ({
   );
 }
 
+function providerAuthorityReceipt(metadata, overrides = {}) {
+  return Object.freeze({
+    schema_version: CSM_PROVIDER_AUTHORITY_RECEIPT_VERSION,
+    operation_key_sha256: createHash("sha256").update(metadata.operationKey).digest("hex"),
+    attempt: metadata.attempt,
+    attempt_class: metadata.attemptClass,
+    estimated_tokens: metadata.estimatedTokens,
+    claim_code: "admitted",
+    settle_code: "settled",
+    operation_status: "SUCCEEDED",
+    ...overrides
+  });
+}
+
 function passthroughAuthority({
   events = [],
   lookup = async () => ({ status: "not_found" }),
-  lookupByKey = async () => ({ status: "not_found" })
+  lookupByKey = async () => ({ status: "not_found" }),
+  shallowWrapAfterSettle = false
 } = {}) {
   return {
     globallyEnforced: true,
@@ -686,7 +733,24 @@ function passthroughAuthority({
     runAttempt: async ({ queuedAttempt, execute }) => {
       const metadata = await queuedAttempt;
       events.push({ type: "claim", metadata });
-      return execute();
+      const result = await execute();
+      if (shallowWrapAfterSettle && result && typeof result === "object" && !Array.isArray(result)) {
+        // Mirror Production authority: settlement keeps the nested checkpoint
+        // but returns a fresh top-level receipt with authority timing attached.
+        return {
+          ...result,
+          provider_authority_receipt: providerAuthorityReceipt(metadata),
+          latency_stages_ms: {
+            ...(result.latency_stages_ms && typeof result.latency_stages_ms === "object"
+              ? result.latency_stages_ms
+              : {}),
+            authority_claim_ms: 0,
+            authority_settle_ms: 0,
+            authority_enqueue_ms: 0
+          }
+        };
+      }
+      return result;
     }
   };
 }
@@ -732,8 +796,14 @@ function preparedResult(recognitionSessionId, title = "Test title") {
   };
 }
 
-function successfulDependencies({ events = [], authority, signedUrl = "https://signed.invalid/a.jpg" } = {}) {
+function successfulDependencies({
+  events = [],
+  authority,
+  signedUrl = "https://signed.invalid/a.jpg",
+  transportProfile = CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+} = {}) {
   return {
+    transportProfile,
     checkReadiness: async () => { events.push("readiness"); return { ready: true }; },
     readImages: async () => { events.push("images"); return canonicalImages(); },
     signImage: async () => { events.push("sign"); return signedUrl; },
@@ -754,6 +824,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       // since 2026-08-03. Assert against the contract rather than a literal so
       // the tier can only change in one place.
       assert.equal(input.effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
+      assert.equal(input.transportProfile, transportProfile);
       assert.deepEqual(input.imageUrls, [signedUrl]);
       return {
         ...preparedResult(input.recognitionSessionId),
@@ -764,6 +835,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
           imageDetail: input.imageDetail,
           maxOutputTokens: input.maxOutputTokens,
           semanticPromptVersion: input.promptVersion,
+          transportProfile: input.transportProfile,
           imageUrls: input.imageUrls
         })
       };
@@ -777,6 +849,88 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     },
     providerAdmission: authority
   };
+}
+
+function stagedSuccessfulDependencies(options = {}) {
+  return {
+    ...successfulDependencies({
+      ...options,
+      transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+    }),
+    chooseRecognitionImages: ({ originals }) => ({
+      images: originals,
+      read: originals.map((image, index) => ({
+        image_role: index === 0 ? "front_original" : "back_original",
+        read: "readability_derived",
+        bytes: Number(image.size),
+        original_bytes: Number(image.size),
+        derived_available: true,
+        derived_bytes: Number(image.size)
+      }))
+    })
+  };
+}
+
+// Ordinary integrated ingest sends original bytes as data URLs. Its task,
+// prepared packet and checkpoint must bind that lane instead of inheriting the
+// direct signed-URL or staged-derived receipt.
+{
+  const events = [];
+  const authorityEvents = [];
+  const task = ordinaryTask("original-inline-transport", {
+    execution_contract_sha256: CURRENT_ORIGINAL_INLINE_EXECUTION_SHA256
+  });
+  const result = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: task.intent_id,
+    dependencies: successfulDependencies({
+      events,
+      authority: passthroughAuthority({ events: authorityEvents }),
+      signedUrl: "data:image/jpeg;base64,original",
+      transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE
+    })
+  });
+  assert.equal(result.title, "Test title");
+  assert.equal(
+    authorityEvents[0].metadata.payloadHash,
+    buildLunaDirectPayloadHash(task)
+  );
+  assert.equal(
+    result.execution_contract_sha256,
+    CURRENT_ORIGINAL_INLINE_EXECUTION_SHA256
+  );
+
+  let paidBoundaryCalls = 0;
+  await assert.rejects(runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "original-inline-derived-counterexample",
+    dependencies: {
+      ...successfulDependencies({
+        authority: {
+          globallyEnforced: true,
+          enqueueAttempt: async () => { paidBoundaryCalls += 1; },
+          runAttempt: async () => { paidBoundaryCalls += 1; }
+        },
+        transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE
+      }),
+      chooseRecognitionImages: ({ originals }) => ({
+        images: originals,
+        read: [{
+          image_role: "front_original",
+          read: "readability_derived",
+          bytes: 500,
+          original_bytes: 1_000,
+          derived_available: true,
+          derived_bytes: 500
+        }]
+      })
+    }
+  }), /original_inline_transport_source_mismatch/);
+  assert.equal(paidBoundaryCalls, 0);
 }
 
 // Staged large-image input decouples provider pixels from paid-operation
@@ -850,6 +1004,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
           derived_bytes: derived.size
         }]
       }),
+      transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
       operationScope: "derived_checkpoint",
       laneVersion: STAGED_RECOGNITION_LANE_VERSION,
       originalManifestSha256,
@@ -858,8 +1013,9 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
         return "data:image/jpeg;base64,derived";
       },
       createSession: async () => ({ persistence: { recognition_session: { saved: true } } }),
-      preparePath: async ({ recognitionSessionId, imageUrls }) => {
+      preparePath: async ({ recognitionSessionId, imageUrls, transportProfile }) => {
         assert.deepEqual(imageUrls, ["data:image/jpeg;base64,derived"]);
+        assert.equal(transportProfile, CSM_STAGED_TRANSPORT_PROFILE);
         return {
           ...preparedResult(recognitionSessionId, "Staged title"),
           execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
@@ -884,19 +1040,20 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     provider: "openai",
     accountScope: "lynca-primary",
     model: "future-model",
-    promptStyleVersion: "future-canonical-direct-v1",
+    promptStyleVersion: CSM_NEUTRAL_PROMPT_STYLE_VERSION,
     optimizationPack: null,
     reasoningEffort: "future-effort",
     imageDetail: task.detail,
     maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
-    transportProfileId: "future-transport-v1",
     estimatedTokensPerAttempt: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
     providerTimeoutMs: CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs,
     capabilities: CSM_ACTIVE_MODEL_PROFILE.capabilities
   });
   const futureExecutionSha256 = buildCsmModelExecutionContractSha256({
     profile: futureProfile,
-    semanticPromptVersion: "future-prompt"
+    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1)
   });
   assert.equal(
     buildLunaDirectOperationKey(task),
@@ -904,7 +1061,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       ...task,
       model: "future-model",
       reasoning_effort: "future-effort",
-      prompt_version: "future-prompt",
+      prompt_version: CSM_DIRECT_PROMPT_VERSION,
       execution_contract_sha256: futureExecutionSha256
     }),
     "a profile change stays inside the same staged user operation"
@@ -915,7 +1072,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       ...task,
       model: "future-model",
       reasoning_effort: "future-effort",
-      prompt_version: "future-prompt",
+      prompt_version: CSM_DIRECT_PROMPT_VERSION,
       execution_contract_sha256: futureExecutionSha256
     }),
     "but the changed paid execution must conflict instead of replaying the old checkpoint"
@@ -1032,7 +1189,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     enqueueAttempt: async () => { throw new Error("resume_must_not_enqueue"); },
     runAttempt: async () => { throw new Error("resume_must_not_run"); }
   };
-  const dependencies = successfulDependencies({ events, authority });
+  const dependencies = stagedSuccessfulDependencies({ events, authority });
   dependencies.operationScope = "derived_checkpoint";
   dependencies.laneVersion = STAGED_RECOGNITION_LANE_VERSION;
   dependencies.originalManifestSha256 = originalManifestSha256;
@@ -1072,7 +1229,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
     intentId: "resume-missing", resumeOnly: true,
     dependencies: {
-      ...successfulDependencies({
+      ...stagedSuccessfulDependencies({
         authority: {
           globallyEnforced: true,
           lookupOperationResult: async () => ({ status: "not_found" }),
@@ -1097,19 +1254,19 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     provider: "openai",
     accountScope: "historical-account-scope",
     model: "historical-staged-model",
-    promptStyleVersion: "historical-staged-prompt-v1",
+    promptStyleVersion: CSM_NEUTRAL_PROMPT_STYLE_VERSION,
     optimizationPack: null,
     reasoningEffort: "low",
     imageDetail: "original",
     maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
-    transportProfileId: "historical-staged-transport-v1",
     estimatedTokensPerAttempt: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
     providerTimeoutMs: CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs,
     capabilities: CSM_ACTIVE_MODEL_PROFILE.capabilities
   });
   const historicalStagedContract = structuredClone(buildCsmModelExecutionContract({
     profile: historicalStagedProfile,
-    semanticPromptVersion: "historical-staged-prompt-v1",
+    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
     imageUrls: csmExecutionContractImageUrls(1)
   }));
   historicalStagedContract.provider_adapter_version = "historical-openai-adapter-v1";
@@ -1165,7 +1322,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
     intentId: task.intent_id, resumeOnly: true,
     dependencies: {
-      ...successfulDependencies({
+      ...stagedSuccessfulDependencies({
         events: profileConflictEvents,
         authority: {
           globallyEnforced: true,
@@ -1206,7 +1363,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
     intentId: task.intent_id,
     dependencies: {
-      ...successfulDependencies({
+      ...stagedSuccessfulDependencies({
         events: initialProfileConflictEvents,
         authority: {
           globallyEnforced: true,
@@ -1254,7 +1411,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
       intentId: task.intent_id, resumeOnly: true,
       dependencies: {
-        ...successfulDependencies({
+        ...stagedSuccessfulDependencies({
           authority: {
             globallyEnforced: true,
             lookupOperationResult: async () => {
@@ -1290,7 +1447,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
       intentId: `resume-${status}`, resumeOnly: true,
       dependencies: {
-        ...successfulDependencies({
+        ...stagedSuccessfulDependencies({
           authority: {
             globallyEnforced: true,
             lookupOperationResult: async () => ({ status }),
@@ -1321,7 +1478,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
       intentId: `dispatch-throw-${String(providerAttemptStarted)}`,
       dependencies: {
-        ...successfulDependencies({ authority: passthroughAuthority() }),
+        ...stagedSuccessfulDependencies({ authority: passthroughAuthority() }),
         operationScope: "derived_checkpoint",
         laneVersion: STAGED_RECOGNITION_LANE_VERSION,
         originalManifestSha256,
@@ -1566,6 +1723,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       }],
       read: recognitionInput
     }),
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
     operationScope: "derived_checkpoint",
     laneVersion: STAGED_RECOGNITION_LANE_VERSION,
     originalManifestSha256,
@@ -1670,6 +1828,7 @@ await assert.rejects(
     intentId: "staged-readiness",
     callProvider: async () => { paidCalls += 1; },
     dependencies: {
+      transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
       operationScope: "derived_checkpoint",
       laneVersion: STAGED_RECOGNITION_LANE_VERSION,
       originalManifestSha256: "f".repeat(64),
@@ -1725,6 +1884,10 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   });
 
   assert.equal(result.title, "Test title");
+  assert.equal(result.execution_origin, "EXACT_REPLAY",
+    "reaching an injected preparation seam without invoking its provider caller is not fresh");
+  assert.equal(paidCalls, 0,
+    "a synthetic preparation seam must not be mistaken for a provider attempt");
   assert.deepEqual(events, ["readiness", "images", "sign", "session", "model_and_csm", "persist_csm"]);
   assert.ok(result.latency_stages_ms.preflight_ms >= 0);
   assert.ok(result.latency_stages_ms.image_manifest_ms >= 0);
@@ -1733,6 +1896,85 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.ok(result.latency_stages_ms.provider_prepare_ms >= 0);
   assert.ok(result.latency_stages_ms.authority_dispatch_ms >= 0);
   assert.ok(result.latency_stages_ms.csm_persistence_ms >= 0);
+
+  let freshProviderCalls = 0;
+  const freshDependencies = successfulDependencies({
+    authority: passthroughAuthority({ shallowWrapAfterSettle: true })
+  });
+  const syntheticPrepare = freshDependencies.preparePath;
+  freshDependencies.preparePath = async (input) => {
+    await input.callProvider({ type: "provider-boundary-test" });
+    return syntheticPrepare(input);
+  };
+  freshDependencies.persistPath = async ({ prepared }) => {
+    assert.equal(prepared.execution_origin, undefined,
+      "delivery provenance stays HTTP-only and cannot rewrite the durable owner receipt");
+    return {
+      ...prepared,
+      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    };
+  };
+  const fresh = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1", intentId: "fresh-origin",
+    callProvider: async () => { freshProviderCalls += 1; return { ok: true }; },
+    dependencies: freshDependencies
+  });
+  assert.equal(freshProviderCalls, 1, "fresh origin requires exactly one current provider invocation");
+  assert.equal(fresh.execution_origin, "FRESH_CURRENT");
+  assert.deepEqual(fresh.provider_authority_receipt, {
+    schema_version: CSM_PROVIDER_AUTHORITY_RECEIPT_VERSION,
+    operation_key_sha256: createHash("sha256")
+      .update(buildLunaDirectOperationKey(ordinaryTask("fresh-origin")))
+      .digest("hex"),
+    attempt: 1,
+    attempt_class: "fresh",
+    estimated_tokens: 6_500,
+    claim_code: "admitted",
+    settle_code: "settled",
+    operation_status: "SUCCEEDED"
+  }, "fresh HTTP delivery must project the database claim reservation");
+
+  // A provider request may have started while the authority reconciles an
+  // uncertain outcome.  A distinct settled object is intentionally not
+  // promoted to fresh: only the exact checkpoint built by this request earns
+  // that claim.
+  let ambiguousProviderCalls = 0;
+  const ambiguousDependencies = successfulDependencies({ authority: passthroughAuthority() });
+  const ambiguousPrepare = ambiguousDependencies.preparePath;
+  ambiguousDependencies.preparePath = async (input) => {
+    await input.callProvider({ type: "provider-boundary-test" });
+    return ambiguousPrepare(input);
+  };
+  ambiguousDependencies.createDispatcher = ({ executeTask }) => ({
+    enqueue: async (task) => {
+      const metadata = {
+        operationKey: buildLunaDirectOperationKey(task),
+        attempt: 1,
+        attemptClass: "fresh",
+        estimatedTokens: task.estimated_tokens
+      };
+      return {
+        ...structuredClone(await executeTask({
+          ...task,
+          operation_key: metadata.operationKey,
+          payload_hash: buildLunaDirectPayloadHash(task),
+          attempt: metadata.attempt
+        })),
+        provider_authority_receipt: providerAuthorityReceipt(metadata)
+      };
+    },
+    manualRetry: async () => { throw new Error("unexpected_manual_retry"); }
+  });
+  const ambiguousRecovery = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1", intentId: "ambiguous-origin",
+    callProvider: async () => { ambiguousProviderCalls += 1; return { ok: true }; },
+    dependencies: ambiguousDependencies
+  });
+  assert.equal(ambiguousProviderCalls, 1,
+    "ambiguous recovery may reconcile one started provider call, never purchase another");
+  assert.equal(ambiguousRecovery.execution_origin, "AMBIGUOUS_PROVIDER_RECOVERY");
+  assert.equal(ambiguousRecovery.provider_authority_receipt, undefined,
+    "an ambiguous recovered object cannot inherit a fresh authority receipt");
 
   // The client's own stages must reach the record through THIS endpoint, not
   // only through ingest. Six production cards on 2026-08-06 recorded ten server
@@ -1896,7 +2138,13 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   const stored = {
     title: "Stored title",
     csm_rows: { resolution: { recognition_session_id: storedSessionId } },
-    csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    csm_persistence: { ok: true, atomic: true, session: { saved: true } },
+    provider_authority_receipt: providerAuthorityReceipt({
+      operationKey: buildLunaDirectOperationKey(storedTask),
+      attempt: 1,
+      attemptClass: "fresh",
+      estimatedTokens: CSM_DIRECT_ESTIMATED_TOKENS
+    })
   };
   const replayEvents = [];
   const replayAuthority = passthroughAuthority({
@@ -1907,7 +2155,12 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
     manualRetry: true,
     dependencies: successfulDependencies({ events: replayEvents, authority: replayAuthority })
   });
-  assert.deepEqual(replay, stored);
+  const { provider_authority_receipt: _storedAuthorityReceipt, ...publicStored } = stored;
+  assert.deepEqual(replay, { ...publicStored, execution_origin: "EXACT_REPLAY" });
+  assert.equal(replay.provider_authority_receipt, undefined,
+    "an exact replay must not present the original request's claim as current");
+  assert.equal(stored.execution_origin, undefined,
+    "serving a replay must not rewrite its durable historical receipt");
   assert.deepEqual(replayEvents, ["readiness", "images"],
     "an exact durable success must replay before signing or model execution");
 }
@@ -1979,7 +2232,7 @@ await assert.rejects(
     prepareCalls += 1;
     return {
       ...preparedResult(recognitionSessionId, "Resume title"),
-      execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
+      execution_contract_sha256: CURRENT_DIRECT_EXECUTION_SHA256
     };
   };
   dependencies.persistPath = async ({ prepared }) => {
@@ -2188,19 +2441,20 @@ await assert.rejects(
     provider: "openai",
     accountScope: "future-account-scope",
     model: "future-model",
-    promptStyleVersion: "future-canonical-direct-v1",
+    promptStyleVersion: CSM_NEUTRAL_PROMPT_STYLE_VERSION,
     optimizationPack: null,
     reasoningEffort: "low",
     imageDetail: "high",
     maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
-    transportProfileId: "future-transport-v1",
     estimatedTokensPerAttempt: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
     providerTimeoutMs: CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs,
     capabilities: CSM_ACTIVE_MODEL_PROFILE.capabilities
   });
   const futureContractOptions = {
     profile: futureProfile,
-    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION
+    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1)
   };
   const futureExecutionContract = structuredClone(
     buildCsmModelExecutionContract(futureContractOptions)
@@ -2246,6 +2500,12 @@ await assert.rejects(
     recognitionSessionId: sessionId,
     executionContractSha256: futureExecutionSha256
   });
+  durable.provider_authority_receipt = providerAuthorityReceipt({
+    operationKey,
+    attempt: 1,
+    attemptClass: "fresh",
+    estimatedTokens: CSM_DIRECT_ESTIMATED_TOKENS
+  });
   const authorityEvents = [];
   const authority = {
     globallyEnforced: true,
@@ -2277,6 +2537,9 @@ await assert.rejects(
     dependencies: successfulDependencies({ events, authority })
   });
   assert.equal(resumed.title, "Portable historical title");
+  assert.equal(resumed.execution_origin, "HISTORICAL_KEY_RECOVERY");
+  assert.equal(resumed.provider_authority_receipt, undefined,
+    "historical key recovery cannot relabel an old claim as current admission");
   assert.deepEqual(authorityEvents, [
     "enqueue_conflict", "run_without_execute", "lookup_by_key"
   ]);

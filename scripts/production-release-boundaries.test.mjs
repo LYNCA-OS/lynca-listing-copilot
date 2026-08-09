@@ -2,54 +2,14 @@
 
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { runtimeMigrationAuth } from "../lib/platform-admin-auth.mjs";
 
-const adminSecret = "track-c-platform-admin-secret";
-const adminRequest = {
-  headers: { "x-lynca-platform-admin-secret": adminSecret }
-};
-
-assert.deepEqual(runtimeMigrationAuth(adminRequest, {
-  LYNCA_PLATFORM_ADMIN_SECRET: adminSecret
-}), {
-  ok: false,
-  statusCode: 403,
-  error: "runtime_migrations_disabled",
-  mode: ""
-}, "runtime migration endpoints must be disabled by default");
-
-assert.deepEqual(runtimeMigrationAuth(adminRequest, {
-  LYNCA_PLATFORM_ADMIN_SECRET: adminSecret,
-  LYNCA_RUNTIME_MIGRATIONS_ENABLED: "true",
-  VERCEL_ENV: "production"
-}), {
-  ok: false,
-  statusCode: 403,
-  error: "runtime_migrations_disabled",
-  mode: ""
-}, "production must reject runtime migrations even when the rehearsal flag is set");
-
-assert.equal(runtimeMigrationAuth(adminRequest, {
-  LYNCA_PLATFORM_ADMIN_SECRET: adminSecret,
-  LYNCA_RUNTIME_MIGRATIONS_ENABLED: "true",
-  VERCEL_ENV: "preview"
-}).ok, true, "an isolated non-production rehearsal requires both the explicit flag and admin secret");
-
-assert.equal(runtimeMigrationAuth({ headers: {} }, {
-  LYNCA_PLATFORM_ADMIN_SECRET: adminSecret,
-  LYNCA_RUNTIME_MIGRATIONS_ENABLED: "true",
-  VERCEL_ENV: "preview"
-}).statusCode, 401, "the rehearsal flag must not replace platform-admin authentication");
-
-const migrationRoutes = [
-  "api/admin-apply-sem-definition-migration.js"
+const retiredRuntimeMigrationSurface = [
+  "api/admin-apply-sem-definition-migration.js",
+  "lib/platform-admin-auth.mjs"
 ];
-for (const route of migrationRoutes) {
-  assert.match(
-    readFileSync(route, "utf8"),
-    /\bruntimeMigrationAuth\s*\(/,
-    `${route} must fail closed through the shared runtime migration gate`
-  );
+for (const file of retiredRuntimeMigrationSurface) {
+  assert.equal(existsSync(file), false,
+    `${file} must stay outside the Production runtime surface`);
 }
 
 const retiredVisualReviewRoutes = [
@@ -62,10 +22,40 @@ for (const route of retiredVisualReviewRoutes) {
   assert.equal(existsSync(route), false, `${route} was retired on main and must not be reintroduced`);
 }
 
+const retiredOpsSurface = [
+  "app/ops.html",
+  "app/ops.js",
+  "app/ops.css",
+  "api/v4/ops-snapshot.js",
+  "lib/ops/tenant-ops.mjs"
+];
+for (const file of retiredOpsSurface) {
+  assert.equal(existsSync(file), false, `${file} must stay outside the Production surface`);
+}
+const vercelManifest = JSON.parse(readFileSync("vercel.json", "utf8"));
+const publicRewriteSources = (vercelManifest.rewrites || []).map(({ source }) => source);
+assert.equal(publicRewriteSources.includes("/ops"), false,
+  "the false-green /ops dashboard must not be publicly rewritten");
+assert.equal(publicRewriteSources.includes("/ops.html"), false,
+  "the legacy /ops.html alias must not be publicly rewritten");
+for (const file of ["app/listing-copilot.js", "app/listing-copilot-sdk.mjs"]) {
+  const source = readFileSync(file, "utf8");
+  assert.doesNotMatch(source, /track_c_ops_snapshot|\/api\/v4\/ops-snapshot/,
+    `${file} must not call the retired Track C snapshot from the Production UI`);
+}
+
 const workflow = readFileSync(".github/workflows/deploy-production.yml", "utf8");
+const writerJourneyWorkflow = readFileSync(
+  ".github/workflows/production-writer-journey.yml", "utf8"
+);
 const ciWorkflow = readFileSync(".github/workflows/ci.yml", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 const health = readFileSync("api/health.js", "utf8");
+const productionReadiness = readFileSync("scripts/check-csm-thin-production-readiness.mjs", "utf8");
+const protectedHealth = readFileSync("scripts/fetch-vercel-protected-health.mjs", "utf8");
+const rollbackReceipt = readFileSync(
+  "scripts/vercel-production-rollback-receipt.mjs", "utf8"
+);
 for (const [file, minimumRedirects] of Object.entries({
   "lib/supabase-rest.mjs": 1,
   "lib/listing/v4/session/supabase-rest.mjs": 1,
@@ -78,7 +68,7 @@ for (const [file, minimumRedirects] of Object.entries({
   "lib/listing/v4/export/writer-batch-export.mjs": 2,
   "lib/tenant/access.mjs": 1,
   "lib/tenant/members.mjs": 1,
-  "scripts/check-csm-thin-production-readiness.mjs": 2
+  "scripts/check-csm-thin-production-readiness.mjs": 4
 })) {
   const source = readFileSync(file, "utf8");
   const fetchCount = [...source.matchAll(/fetchImpl\s*\(/g)].length;
@@ -86,6 +76,16 @@ for (const [file, minimumRedirects] of Object.entries({
   assert.ok(redirectCount >= fetchCount && redirectCount >= minimumRedirects,
     `${file} must fail closed on every service-key fetch redirect`);
 }
+assert.match(productionReadiness, /CSM_PROVIDER_AUTHORITY_RPCS\.lookupByKey/,
+  "database preflight must probe key-only historical provider recovery before release");
+assert.match(productionReadiness,
+  /Object\.hasOwn\(operationKeyRecovery \|\| \{\}, "payload_sha256"\)/,
+  "a not-found key-only recovery receipt must not expose a payload hash");
+assert.match(productionReadiness,
+  /Object\.hasOwn\(operationKeyRecovery \|\| \{\}, "result"\)/,
+  "a not-found key-only recovery receipt must not expose a provider result");
+assert.match(productionReadiness, /durable_provider_operation_key_recovery_ready: true/,
+  "release evidence must attest the key-only recovery RPC readiness gate");
 const writerJourneyMaterializer = readFileSync("scripts/materialize-writer-journey-source.mjs", "utf8");
 assert.match(writerJourneyMaterializer,
   /headers:\s*supabaseServiceHeaders\([^\n]+\),\s*\n\s*redirect:\s*"error"/,
@@ -95,19 +95,88 @@ const setupNode = workflow.indexOf("actions/setup-node");
 const schemaPreflight = workflow.indexOf("Verify CSM persistence and global provider authority before deploy");
 const immutableReleaseGate = workflow.indexOf("Re-confirm the exact main commit before building the immutable release");
 const vercelProjectBinding = workflow.indexOf("Bind the canonical Vercel project from tracked service context");
+const rollbackCapture = workflow.indexOf(
+  "Capture the current canonical rollback deployment before candidate creation"
+);
 const vercelDeploy = workflow.indexOf("Build and deploy the exact dispatched checkout");
-const prepromotionHealth = workflow.indexOf("Verify the immutable deployment before production promotion");
+const prepromotionHealth = workflow.indexOf(
+  "Verify the immutable deployment and prepare candidate-only browser authorization"
+);
+const candidateSource = workflow.indexOf(
+  "Materialize fixed NON_TCG and TCG cases from Production Storage"
+);
+const candidateJourney = workflow.indexOf(
+  "Run real candidate Writer Journey before production promotion"
+);
+const candidateAuthorizationCleanup = workflow.indexOf(
+  "Destroy candidate browser authorization"
+);
+const canonicalCas = workflow.indexOf(
+  "Verify canonical Production has not changed since rollback capture"
+);
 const vercelPromote = workflow.indexOf("Promote the verified immutable deployment to production");
 const productionHealth = workflow.indexOf("Wait for the exact CSM thin main commit to reach production");
+const productionDatabase = workflow.indexOf("Re-verify CSM persistence after deployment");
+const productionAuth = workflow.indexOf("Verify authenticated UI, active API, and retired boundaries");
+const rollbackRestore = workflow.indexOf(
+  "Restore the saved Production deployment after release verification failure"
+);
+const releaseEvidence = workflow.indexOf("Upload release evidence");
 assert.ok(dispatchGate >= 0, "production deployment must have an explicit dispatch gate");
 assert.ok(setupNode > dispatchGate, "dispatch validation must run before release setup");
 assert.ok(schemaPreflight > dispatchGate, "dispatch validation must run before production schema access");
 assert.ok(immutableReleaseGate > schemaPreflight, "current main must be re-read after tests and schema preflight");
 assert.ok(vercelProjectBinding > immutableReleaseGate, "the canonical Vercel identity must come from tracked service context");
-assert.ok(vercelDeploy > vercelProjectBinding, "the immutable build must follow the final commit and project gates");
+assert.ok(rollbackCapture > vercelProjectBinding,
+  "the rollback identity must be captured only after binding the canonical team and project");
+assert.ok(vercelDeploy > rollbackCapture,
+  "the current canonical deployment must be durably recorded before candidate creation");
 assert.ok(prepromotionHealth > vercelDeploy, "the immutable deployment must be healthy before promotion");
-assert.ok(vercelPromote > prepromotionHealth, "production promotion must follow immutable deployment health");
+assert.ok(candidateSource > prepromotionHealth,
+  "candidate source materialization must follow exact deployment identity and health");
+assert.ok(candidateJourney > candidateSource,
+  "the real Writer Journey must execute against the immutable candidate");
+assert.ok(candidateAuthorizationCleanup > candidateJourney,
+  "candidate browser authorization must be destroyed even when the journey fails");
+assert.ok(canonicalCas > candidateAuthorizationCleanup,
+  "the canonical compare-and-swap guard must remain unreachable until the candidate journey succeeds");
+assert.ok(vercelPromote > canonicalCas,
+  "production promotion must remain unreachable until the compare-and-swap guard succeeds");
 assert.ok(productionHealth > vercelPromote, "the promoted production alias must be verified independently");
+assert.ok(productionDatabase > productionHealth && productionAuth > productionDatabase,
+  "post-promotion verification must remain exact SHA, database, auth, and route checks");
+assert.ok(rollbackRestore > productionAuth && releaseEvidence > rollbackRestore,
+  "failed post-promotion verification must restore Production before evidence upload");
+const candidateJourneyStep = workflow.slice(candidateJourney, candidateAuthorizationCleanup);
+const canonicalCasStep = workflow.slice(canonicalCas, vercelPromote);
+const promotionStep = workflow.slice(vercelPromote, productionHealth);
+const rollbackStep = workflow.slice(rollbackRestore, releaseEvidence);
+const postPromotionHealthStep = workflow.slice(productionHealth, productionDatabase);
+const postPromotion = workflow.slice(vercelPromote);
+assert.doesNotMatch(candidateJourneyStep, /continue-on-error|if:\s*always\(\)/,
+  "a failed candidate journey must preserve the failed job status");
+assert.match(canonicalCasStep,
+  /--verify-canonical "\$VERCEL_ROLLBACK_RECEIPT"/,
+  "promotion must compare-and-swap against the captured canonical deployment");
+assert.doesNotMatch(canonicalCasStep, /id:\s*promote|vercel@54\.14\.5 promote/,
+  "a compare-and-swap failure must not look like an attempted promotion or trigger rollback");
+assert.doesNotMatch(promotionStep, /continue-on-error|if:\s*always\(\)/,
+  "promotion must use the default success guard, never run after a failed journey");
+assert.match(promotionStep, /id: promote/,
+  "rollback eligibility must bind the exact promotion step outcome");
+assert.doesNotMatch(promotionStep, /--verify-canonical/,
+  "the promote step must only represent an actual promotion attempt");
+assert.doesNotMatch(postPromotion,
+  /Run real candidate Writer Journey|npm run test:e2e:production-writer-journey/,
+  "post-promotion verification must not spend another provider call");
+assert.doesNotMatch(postPromotion,
+  /materialize-writer-journey-source|build-large-internal-writer-fixture|OPENAI_API_KEY/,
+  "post-promotion verification is limited to exact SHA, DB, auth, and no-op route checks");
+assert.doesNotMatch(writerJourneyWorkflow, /workflow_run|environment:\s*production/,
+  "the PR workflow must remain offline and must not duplicate paid post-deploy execution");
+assert.doesNotMatch(writerJourneyWorkflow,
+  /METAVERSE_USERNAME|METAVERSE_PASSWORD|SUPABASE_SERVICE_ROLE_KEY/,
+  "the PR-only contract workflow must not receive Production credentials");
 assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main/);
@@ -117,8 +186,8 @@ assert.doesNotMatch(workflow, /VERCEL_DEPLOY_HOOK_URL|Deploy Hook|vercel-deploy-
 assert.match(workflow, /VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/);
 assert.equal(
   [...workflow.matchAll(/VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/g)].length,
-  3,
-  "build, prepromotion health, and promotion must authenticate independently"
+  6,
+  "capture, build, candidate verification, canonical CAS, promotion, and rollback authenticate independently"
 );
 const immutableBuildStep = workflow.slice(vercelDeploy, prepromotionHealth);
 assert.match(immutableBuildStep, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \}\}/,
@@ -136,7 +205,7 @@ assert.match(workflow, /VERCEL_ORG_ID=\$\{orgId\}/);
 assert.match(workflow, /VERCEL_PROJECT_ID=\$\{projectId\}/);
 assert.equal(
   [...workflow.matchAll(/--scope "\$VERCEL_SCOPE_SLUG"/g)].length,
-  4,
+  5,
   "every scope-aware Vercel control must bind the canonical tenant instead of using the CLI default scope"
 );
 assert.doesNotMatch(workflow, /--scope "leon-using-s-projects"/,
@@ -152,10 +221,38 @@ assert.match(workflow,
 assert.doesNotMatch(workflow, /vercel@54\.14\.5 curl/,
   "the curl subcommand cannot safely bind a non-default team in token mode");
 assert.match(workflow,
-  /node scripts\/fetch-vercel-protected-health\.mjs \\\n\s*> \/tmp\/csm-thin-health-prepromotion\.json/,
+  /node scripts\/fetch-vercel-protected-health\.mjs \\\n\s*--storage-state "\$candidate_storage_state" \\\n\s*> \/tmp\/csm-thin-health-prepromotion\.json/,
   "the immutable health probe must use the team-scoped Vercel API helper");
+assert.match(workflow, /stat -c '%a' "\$candidate_storage_state"\)" = "600"/,
+  "candidate browser authorization must be a mode-0600 temporary file");
+assert.match(workflow,
+  /WRITER_JOURNEY_BASE_URL=%s\\n' "\$DEPLOYMENT_URL"/,
+  "the live journey must target the verified immutable candidate URL");
+assert.match(workflow,
+  /WRITER_JOURNEY_INITIAL_STORAGE_STATE=%s\\n' "\$candidate_storage_state"/,
+  "the browser must consume the candidate-only storage state instead of a global bypass header");
+assert.match(workflow, /case "\$WRITER_JOURNEY_INITIAL_STORAGE_STATE" in[\s\S]*?"\$RUNNER_TEMP"\/\*/,
+  "cleanup must refuse to delete outside the runner temporary directory");
+assert.doesNotMatch(workflow,
+  /VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-protection-bypass|x-vercel-set-bypass-cookie/,
+  "the bypass secret must remain inside the protected helper, never workflow state or logs");
+const candidateSourceStep = workflow.slice(candidateSource,
+  workflow.indexOf("Build executor-bound large staged transport fixture", candidateSource));
+assert.doesNotMatch(candidateSourceStep, /VERCEL_TOKEN|VERCEL_AUTOMATION|protection-bypass/i,
+  "Supabase source materialization must never inherit the Vercel bypass credential");
+assert.doesNotMatch(protectedHealth, /supabase/i,
+  "the candidate-scoped bypass helper must have no Supabase transport path");
+assert.match(protectedHealth, /redirect:\s*"manual"/,
+  "the cookie exchange must inspect redirects before any follow-up request");
+assert.match(protectedHealth, /cookie_redirect_origin_mismatch/,
+  "a bypass-cookie redirect may not escape the verified candidate origin");
+assert.match(protectedHealth, /domain:\s*hostname/,
+  "bypass cookies must be narrowed to the exact verified candidate hostname");
 assert.match(workflow,
   /vercel@54\.14\.5 promote "\$DEPLOYMENT_URL" --yes \\\n\s*--scope "\$VERCEL_SCOPE_SLUG"/);
+assert.match(workflow,
+  /vercel@54\.14\.5 promote "\$rollback_url" --yes \\\n\s*--scope "\$VERCEL_SCOPE_SLUG"/,
+  "rollback must re-promote the exact deployment URL loaded from the saved receipt");
 assert.match(workflow, /--env "LYNCA_RELEASE_GIT_SHA=\$DISPATCH_SHA"/);
 assert.doesNotMatch(workflow, /--token\b/,
   "the Vercel token must stay in the protected environment, not process arguments");
@@ -219,40 +316,97 @@ assert.match(
 assert.match(workflow, /h\.active_path === CSM_THIN_RUNTIME_CONTRACT\.route/);
 assert.match(workflow, /h\.model === CSM_THIN_RUNTIME_CONTRACT\.model/);
 assert.match(workflow, /h\.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT\.reasoningEffort/);
-assert.match(workflow, /scheduler_attempt_slots === 120/);
-assert.match(workflow, /baseline_working_attempts === 43/);
-assert.match(workflow, /pacer_estimated_tokens_per_second === 60000/);
-assert.match(workflow, /pacer_burst_estimated_tokens === 66000/);
-assert.match(workflow, /steady_reserved_attempts_per_minute === 553/);
-assert.match(workflow, /effective_reserved_attempt_ceiling === 67/);
-assert.match(
-  health,
-  /pacer_burst_estimated_tokens:\s*CSM_PROVIDER_AUTHORITY_LIMITS\.pacerBurstEstimatedTokens/,
-  "health must report the running runtime contract, not a database rollout compatibility value"
-);
+assert.doesNotMatch(postPromotionHealthStep,
+  /CSM_THIN_RUNTIME_CONTRACT|CSM_ACTIVE_MODEL_PROFILE|capacity|recognition_transport|provider_adapter/,
+  "canonical alias verification needs only readiness and exact SHA after the candidate passed full gates");
+assert.match(postPromotionHealthStep, /h\.ready === true/);
+assert.match(postPromotionHealthStep,
+  /h\.deployment\?\.git_commit_sha === process\.env\.GITHUB_SHA/);
 assert.match(workflow, /h\.runtime\?\.model_profile_id === CSM_ACTIVE_MODEL_PROFILE\.id/);
 assert.equal(
   [...workflow.matchAll(/resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider\s*\)\.contract\.id/g)].length,
-  2,
-  "both release gates must resolve the adapter owned by the active profile"
+  1,
+  "the immutable candidate gate must resolve the adapter owned by the active profile"
 );
 assert.match(workflow, /h\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
 assert.doesNotMatch(workflow, /CSM_OPENAI_RESPONSES_ADAPTER_VERSION/,
   "release verification must not pin the active profile to one provider adapter");
 assert.match(workflow, /csmExecutionContractImageUrls/);
 assert.equal(
-  [...workflow.matchAll(/execution_contract_sha256_by_image_count/g)].length,
-  4,
-  "both release gates must compare the one- and two-image execution contracts"
+  [...workflow.matchAll(/execution_contract_sha256_by_transport_lane_and_image_count/g)].length,
+  1,
+  "the immutable candidate gate must compare execution contracts across every active transport lane"
 );
 assert.equal(
-  [...workflow.matchAll(/buildCsmModelExecutionContractSha256\(\{\s*imageUrls: csmExecutionContractImageUrls\(count\)\s*\}\)/g)].length,
-  2,
-  "both release gates must derive execution receipts from the actual image-slot count"
+  [...workflow.matchAll(/buildCsmModelExecutionContractSha256\(\{\s*transportProfile,\s*imageUrls: csmExecutionContractImageUrls\(count\)\s*\}\)/g)].length,
+  1,
+  "the immutable candidate gate must derive receipts from the exact transport lane and image-slot count"
 );
 assert.match(workflow, /h\.runtime\?\.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE\.max_output_tokens/);
-assert.match(workflow, /h\.runtime\?\.transport_profile\?\.id === CSM_STAGED_TRANSPORT_PROFILE\.id/);
-assert.match(workflow, /h\.runtime\?\.transport_profile\?\.lane_version === CSM_STAGED_TRANSPORT_PROFILE\.lane_version/);
+assert.equal([...workflow.matchAll(/CSM_RECOGNITION_TRANSPORT_PROFILES\.every/g)].length, 1,
+  "the immutable candidate health gate must enumerate the portable transport registry");
+assert.equal([...workflow.matchAll(/sha256CsmRecognitionTransportReceipt\(transportProfile\)/g)].length, 1,
+  "the immutable candidate health gate must verify exact transport profile receipts");
+assert.doesNotMatch(workflow, /CSM_STAGED_TRANSPORT_PROFILE|execution_contract_sha256_by_image_count/,
+  "release health may not reduce the active chain to one staged transport lane");
+assert.match(workflow, /h\.runtime\?\.retired_capabilities_disabled === true/);
+assert.doesNotMatch(workflow, /cloud_run_calls|vector_calls|generic_ocr_calls/,
+  "release gates must not present hard-coded zeroes as measured provider-call telemetry");
+
+assert.match(workflow, /timeout-minutes: 90/,
+  "the job must reserve enough time for failure recovery after the bounded candidate journey");
+assert.match(workflow,
+  /rollback_receipt="\$RUNNER_TEMP\/vercel-production-rollback-receipt\.json"/);
+assert.match(workflow,
+  /node scripts\/vercel-production-rollback-receipt\.mjs --out "\$rollback_receipt"/);
+assert.match(workflow, /stat -c '%a' "\$rollback_receipt"\)" = "600"/,
+  "the rollback receipt must be owner-only before candidate creation");
+assert.match(rollbackReceipt, /\/v4\/aliases\/\$\{encodeURIComponent\(canonicalHostname\)\}/,
+  "capture must resolve the live canonical alias through Vercel's alias API");
+assert.match(rollbackReceipt, /\/v13\/deployments\/\$\{encodeURIComponent\(expectedDeploymentId\)\}/,
+  "capture must re-resolve the saved deployment by immutable ID");
+assert.match(rollbackReceipt, /canonical_alias_changed_during_capture/,
+  "alias double-read must reject a concurrent production change");
+assert.match(rollbackReceipt, /deployment\?\.readyState !== "READY"/);
+assert.match(rollbackReceipt, /deployment\?\.ownerId !== teamId/);
+assert.match(rollbackReceipt, /deployment\?\.projectId !== projectId/);
+assert.match(rollbackReceipt, /open\(outputPath, "wx", 0o600\)/);
+assert.doesNotMatch(rollbackReceipt, /supabase/i,
+  "rollback identity code must have no Supabase credential or transport path");
+assert.match(rollbackStep,
+  /if: failure\(\) && \(steps\.promote\.outcome == 'success' \|\| steps\.promote\.outcome == 'failure'\)/,
+  "rollback runs only after promotion was attempted, including a potentially partial failed promotion");
+assert.match(rollbackStep, /timeout-minutes: 12/);
+assert.match(rollbackStep,
+  /--verify-deployment "\$VERCEL_ROLLBACK_RECEIPT"/,
+  "the saved deployment must still be READY and exact-SHA healthy before any rollback mutation");
+assert.match(rollbackStep,
+  /--verify-canonical-deployment "\$DEPLOYMENT_URL"/,
+  "rollback must preserve a deployment promoted by another control plane after this release");
+assert.ok(
+  rollbackStep.indexOf('--verify-canonical-deployment "$DEPLOYMENT_URL"')
+    < rollbackStep.indexOf('vercel@54.14.5 promote "$rollback_url"'),
+  "the current canonical deployment must be checked before rollback mutation",
+);
+assert.match(rollbackStep, /--deployment-url "\$VERCEL_ROLLBACK_RECEIPT"/);
+assert.match(rollbackStep, /--git-sha "\$VERCEL_ROLLBACK_RECEIPT"/);
+assert.match(rollbackStep, /--verify-canonical "\$VERCEL_ROLLBACK_RECEIPT"/,
+  "rollback completion must verify canonical alias, deployment identity, and saved SHA");
+assert.match(rollbackStep, /h\.deployment\?\.git_commit_sha!==process\.env\.ROLLBACK_SHA/);
+assert.match(rollbackStep, /this release remains HOLD/);
+assert.doesNotMatch(rollbackStep, /continue-on-error|OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/,
+  "recovery must not clear the failed release or acquire unrelated provider credentials");
+assert.doesNotMatch(workflow, /https:\/\/[a-z0-9-]+\.vercel\.app/,
+  "rollback may not hard-code a historical deployment URL");
+const evidenceStep = workflow.slice(releaseEvidence);
+assert.match(evidenceStep,
+  /\$\{\{ runner\.temp \}\}\/vercel-production-rollback-receipt\.json/);
+assert.match(evidenceStep, /\/tmp\/csm-thin-health-rollback\.json/);
+assert.doesNotMatch(evidenceStep, /vercel-candidate-storage-state|WRITER_JOURNEY_INITIAL_STORAGE_STATE/,
+  "candidate browser authorization must never be uploaded as release evidence");
+assert.match(packageJson.scripts["test:production"],
+  /vercel-production-rollback-receipt\.test\.mjs/,
+  "the rollback transaction counterexamples must run in the complete Production suite");
 assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);
 assert.match(workflow, /r\.code!=="missing_asset_id"/);
 assert.match(workflow, /--data-binary @-/,

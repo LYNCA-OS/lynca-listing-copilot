@@ -58,10 +58,8 @@ for (const forbidden of [
 
 for (const activeModule of [
   "quality-gate.mjs",
-  "crop-planner.mjs",
   "batch-recognition-intent.mjs",
   "bounded-fetch.mjs",
-  "upload-phases.mjs",
   "upload-recovery-policy.mjs"
 ]) {
   assert.match(sdkEntry, new RegExp(activeModule.replace(".", "\\.")),

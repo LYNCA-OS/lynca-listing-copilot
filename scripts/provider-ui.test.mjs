@@ -17,7 +17,8 @@ const providerControlSource = js.slice(
   js.indexOf("function renderProviderControl"),
   js.indexOf("function canGenerateTitles")
 );
-assert.match(providerControlSource, /<strong>Luna 5\.6<\/strong>/, "the production route must identify Luna 5.6");
+assert.match(providerControlSource, /<strong>AI 识别基座<\/strong>/,
+  "the browser label must remain valid when the active server profile changes");
 assert.match(providerControlSource, /CSM \/ SEM 单次识别/, "the provider control must describe the thin CSM/SEM route");
 assert.match(providerControlSource, /上传后自动识别/, "the provider control must state the upload intent");
 assert.doesNotMatch(js, /state\.selectedProvider|loadProviderStatus|providerStatusReadyPromise/, "the browser must not own provider selection or readiness polling");
@@ -51,7 +52,8 @@ assert.match(directRecognitionSource, /await ensureAssetPreparedForRecognition\(
 assert.match(directRecognitionSource, /fetchJsonWithRetry\(CSM_THIN_API_ENDPOINT/);
 assert.match(directRecognitionSource, /asset_id:\s*canonicalAssetId\(asset\)/);
 assert.match(directRecognitionSource, /intent_id:\s*durableIntentId/);
-assert.match(directRecognitionSource, /image_detail:\s*"high"/);
+assert.doesNotMatch(js, /\bimage_detail\s*:|\bimageDetail\s*:/,
+  "the browser must not expose a paid image-detail knob owned by the production profile");
 assert.match(directRecognitionSource, /manual_retry:\s*manualRetry === true/);
 assert.match(directRecognitionSource, /timeoutMs:\s*CSM_THIN_REQUEST_TIMEOUT_MS/);
 assert.match(directRecognitionSource, /maxAttempts:\s*1/);
@@ -96,8 +98,10 @@ assert.doesNotMatch(retrySource, /processAssetViaQueue|listing-job|Cloud Run|v4_
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-upload-url"/, "originals must use server-scoped signed upload URLs");
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-verify-upload"/, "recognition must depend on verified storage state");
 assert.match(js, /uploadOriginalAssetImagesBatch/, "paired originals should share bounded signing and verification calls");
-assert.match(js, /const images = durableOriginalImagesForUpload\(providerImages\)/,
+assert.match(js, /const images = durableOriginalImagesForUpload\(asset\.images\)/,
   "background preparation must freeze the durable generation at original images");
+assert.doesNotMatch(js, /targetedCrops|buildTargetedCropImages|derivedStorageUpload|providerImages/,
+  "the active thin-title client must not retain the rejected targeted-crop shadow route");
 assert.match(js, /pendingStorageVerification/, "a successful PUT must retain enough state for verification retry");
 assert.match(js, /throw failedOriginal\.error/, "a verification failure must reopen the original-upload promise");
 assert.match(js, /function createImagePreviewUrl/);
@@ -560,7 +564,6 @@ const rebindImage = {
     durableTenantId: tenantId,
     imageGenerationId: assetId,
     images: [liveImage],
-    providerImages: [liveImage],
     originalStorageUploadStatus: "uploading",
     originalStorageUploadError: null
   };
@@ -603,8 +606,7 @@ const rebindAsset = {
   durableAssetPromise: Promise.resolve(),
   assetCreateIdempotencyKey: "11111111-2222-4333-8444-555555555555",
   originalStorageUploadPromise: Promise.resolve(),
-  images: [rebindImage],
-  providerImages: [rebindImage]
+  images: [rebindImage]
 };
 __listingCopilotAppTestHooks.resetAssetPreparationForRetry(rebindAsset, { inputRebind: true });
 assert.equal(rebindAsset.durableAssetId, "");
@@ -644,28 +646,6 @@ assert.equal(
   firstCreateKey,
   "asset-create retries must retain one idempotency key"
 );
-
-const firstImage = {
-  id: "first",
-  targetedCrops: Array.from({ length: 6 }, (_, index) => ({
-    id: `first-crop-${index}`,
-    derived: true,
-    cropPlan: { priority: 100 - index }
-  }))
-};
-const secondImage = {
-  id: "second",
-  targetedCrops: Array.from({ length: 6 }, (_, index) => ({
-    id: `second-crop-${index}`,
-    derived: true,
-    cropPlan: { priority: 90 - index }
-  }))
-};
-const providerImages = __listingCopilotAppTestHooks.imagesForProvider([firstImage, secondImage]);
-assert.equal(providerImages.length, 10);
-assert.equal(providerImages[0], firstImage);
-assert.equal(providerImages[1], secondImage);
-assert.equal(providerImages.filter((image) => image.derived).length, 8);
 
 {
   const batchAssetId = "asset_aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";

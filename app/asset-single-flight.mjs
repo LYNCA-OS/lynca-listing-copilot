@@ -91,19 +91,3 @@ export function assetSingleFlightActive(scope, assetKey) {
 export function resetAssetSingleFlight() {
   registry.clear();
 }
-
-/**
- * A stable id for one operator retry action.
- *
- * COS-51 asks for one `retry_submission_id` per user action so the server can
- * be idempotent for the same tenant + asset + image + intent + submission key.
- * Derived from the asset and a monotonic counter rather than a timestamp: two
- * clicks in the same millisecond must not share an id by accident, and must not
- * get different ids either -- the collapse happens in the registry above, so
- * only the call that actually starts work ever mints one.
- */
-let submissionSequence = 0;
-export function nextRetrySubmissionId(assetKey) {
-  submissionSequence += 1;
-  return `retry_${String(assetKey ?? "asset")}_${submissionSequence}`;
-}

@@ -18,6 +18,9 @@ import {
   persistPreparedCanonicalListingPath,
   prepareCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
+import {
+  CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
 import { buildCsmStageRows } from "../lib/listing/thin/csm-persistence.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
@@ -45,6 +48,7 @@ const prepared = await prepareCanonicalListingPath({
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   imageUrls: ["https://example.test/card.jpg"],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   providerClientRequestId: "client-ledger-1",
   callProvider: async () => {
     calls += 1;
