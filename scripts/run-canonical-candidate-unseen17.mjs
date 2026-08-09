@@ -15,6 +15,7 @@ import {
   finishCanonicalCandidateV1,
   CANONICAL_CANDIDATE_V1_VERSION
 } from "../lib/listing/thin/canonical-candidate-v1.mjs";
+import { providerReasoningEffortReceipt } from "../lib/listing/thin/provider-response-attestation.mjs";
 
 const arg = (name, fallback) => {
   const index = process.argv.indexOf(name);
@@ -144,6 +145,13 @@ await mapConcurrent(items.filter((item) => !done.has(item.asset_id)), concurrenc
   const reference = labels.get(String(item.sealed_eval_label_ref.key));
   const { request, imageHashes } = await requestFor(item);
   const result = await call(request, item.asset_id);
+  const effortReceipt = providerReasoningEffortReceipt(result.body);
+  if (!effortReceipt.served_effort_attested) {
+    throw new Error(`provider_effort_unattested:${item.asset_id}`);
+  }
+  if (effortReceipt.served_effort !== effort) {
+    throw new Error(`provider_effort_mismatch:${item.asset_id}:${effortReceipt.served_effort}`);
+  }
   const payload = extractCanonicalPayload(result.body);
   const finished = finishCanonicalCandidateV1(payload);
   const quality = score(reference, finished.title);
@@ -172,7 +180,7 @@ await mapConcurrent(items.filter((item) => !done.has(item.asset_id)), concurrenc
     request_attempt_count: result.attemptCount,
     model,
     requested_effort: effort,
-    served_effort: result.body?.reasoning?.effort ?? effort,
+    ...effortReceipt,
     authority: "evaluation_only",
     production_promoted: false
   };

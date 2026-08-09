@@ -306,6 +306,7 @@ function validateCloudReport(report, {
   if (report.ok === true && (Number(report.succeeded_count) !== 1
       || Number(report.failed_count) !== 0 || row.ok !== true
       || row.served_model !== MODEL || row.served_effort !== REASONING_EFFORT
+      || row.served_effort_attested !== true
       || !row.provider_response_id || !row.structured_output
       || row.provider_status !== "completed" || row.incomplete_details !== null
       || row.structured_output_error !== null)) {

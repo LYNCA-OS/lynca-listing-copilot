@@ -20,6 +20,25 @@ import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.m
   assert.equal(result.provider_response_id, "resp_provider_receipt");
   assert.equal(result.provider_request_id, "req_provider_receipt");
   assert.equal(result.provider_client_request_id, "lynca-client-receipt");
+  assert.equal(result.requested_effort, "low");
+  assert.equal(result.served_effort, null,
+    "a successful response without provider reasoning echo must stay UNKNOWN");
+  assert.equal(result.served_effort_attested, false);
+}
+
+{
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    effort: "low",
+    callProvider: async () => new Response(JSON.stringify({
+      id: "resp_provider_effort_receipt",
+      reasoning: { effort: " LOW " },
+      output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" })
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.served_effort, "low");
+  assert.equal(result.served_effort_attested, true);
 }
 
 await assert.rejects(

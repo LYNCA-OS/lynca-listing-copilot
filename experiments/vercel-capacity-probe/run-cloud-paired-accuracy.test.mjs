@@ -161,6 +161,7 @@ function cloudReport(body, { dryRun, ok = true, responseId = "response-1" } = {}
       incomplete_details: null,
       served_model: ok ? "gpt-5.6-luna" : null,
       served_effort: ok ? "none" : null,
+      served_effort_attested: ok,
       structured_output: ok ? { year: "2024" } : null,
       structured_output_error: ok ? null : "provider_error"
     }]

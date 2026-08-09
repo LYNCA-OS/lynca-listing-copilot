@@ -238,6 +238,11 @@ Artifacts: `artifacts/prompt-arm-visible-50-2026-08-05`,
 `artifacts/kfold-fewshot-50-2026-08-05`,
 `artifacts/serial-parts-50-v2-2026-08-05`.
 
+Correction (2026-08-09): `artifacts/kfold-fewshot-50-2026-08-05` is retained
+for audit only and is **VOID/non-promotable**. The live runner addressed the
+reviewed corpus with an asset/arm composite rather than the sealed card key;
+see `docs/evaluation/kfold-few-shot-live-identity-correction-2026-08-09.md`.
+
 The first `serial-parts` run (`artifacts/serial-parts-50-2026-08-05`, without
 `-v2`) is VOID: the arm's schema never reached the model, so the field under
 test could not be returned. It is kept only as the evidence that exposed the

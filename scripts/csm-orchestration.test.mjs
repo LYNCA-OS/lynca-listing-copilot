@@ -124,6 +124,7 @@ const common = {
       assert.equal(patch.csm_owner_versions.provider_retry_count, null);
       assert.equal(patch.csm_owner_versions.provider, "openai");
       assert.equal(patch.csm_owner_versions.reasoning_effort, "low");
+      assert.equal(patch.csm_owner_versions.reasoning_effort_attested, true);
       assert.equal(patch.csm_owner_versions.latency_ms >= 0, true);
       assert.equal(patch.csm_owner_versions.input_tokens, 100);
       assert.equal(patch.csm_owner_versions.output_tokens, 30);
@@ -173,6 +174,36 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     result.csm_rows.resolved.find((row) => row.bracket === "language").canonical_value,
     "JP"
   );
+}
+
+// A syntactically valid provider response may omit the reasoning echo. The
+// title still persists, but neither the API result nor the stored owner receipt
+// may convert requested `low` into observed `low`.
+{
+  const prepared = await prepareCanonicalListingPath({
+    tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort",
+    imageUrls: ["https://example.test/front.jpg"],
+    callProvider: async () => new Response(JSON.stringify({
+      id: "resp_without_effort_echo",
+      output_text: JSON.stringify(common),
+      usage: { input_tokens: 100, output_tokens: 30 }
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(prepared.requested_effort, "low");
+  assert.equal(prepared.served_effort, null);
+  assert.equal(prepared.served_effort_attested, false);
+  let sessionPatch = null;
+  const persisted = await persistPreparedCanonicalListingPath({
+    tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort", prepared,
+    writeRows: async (_rows, options) => {
+      sessionPatch = options.sessionPatch;
+      return { ok: true, atomic: true, replayed: false, session: { saved: true }, written: {} };
+    }
+  });
+  assert.equal(persisted.title, prepared.title);
+  assert.equal(sessionPatch.csm_owner_versions.effort, "low");
+  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort, null);
+  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort_attested, false);
 }
 
 // Persistence failure is isolated to this attempt, but the production
@@ -314,6 +345,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   prepared.model = "gpt-5.6-luna-legacy";
   prepared.requested_effort = "none";
   prepared.served_effort = "none";
+  delete prepared.served_effort_attested;
   prepared.image_detail = "original";
   prepared.prompt_version = "legacy-prompt-v1";
   prepared.csm_rows.resolution.recognition_packet_sha256 =
@@ -334,7 +366,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   assert.equal(sessionPatch.csm_contract_version, prepared.csm_rows.output.contract_version);
   assert.equal(sessionPatch.csm_owner_versions.model, "gpt-5.6-luna-legacy");
   assert.equal(sessionPatch.csm_owner_versions.effort, "none");
-  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort, "none");
+  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort, null,
+    "legacy checkpoints without an explicit attestation bit must be downgraded");
+  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort_attested, false);
   assert.equal(sessionPatch.csm_owner_versions.image_detail, "original");
   assert.equal(sessionPatch.csm_owner_versions.prompt_version, "legacy-prompt-v1");
 }

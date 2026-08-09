@@ -191,6 +191,7 @@ const liveReport = await runAccuracyArm(live, {
     return new Response(JSON.stringify({
       id: `resp_${fetchCalls}`,
       model: "gpt-5.6-luna",
+      reasoning: { effort: "none" },
       status: "completed",
       incomplete_details: null,
       output: [{ type: "message", content: [{ type: "output_text", text: "{\"year\":\"2024\"}" }] }],
@@ -215,6 +216,23 @@ assert.equal(liveReport.cached_input_tokens, 4000);
 assert.match(liveReport.rows[0].provider_response_raw, /2024/);
 assert.equal(liveReport.rows[0].served_model, "gpt-5.6-luna");
 assert.match(liveReport.rows[0].provider_response_sha256, /^[0-9a-f]{64}$/);
+
+const unattested = await runAccuracyArm(live, {
+  env,
+  fetchImpl: async () => new Response(JSON.stringify({
+    id: "resp_missing_effort_echo",
+    model: "gpt-5.6-luna",
+    status: "completed",
+    incomplete_details: null,
+    output: [{ type: "message", content: [{ type: "output_text", text: "{\"year\":\"2024\"}" }] }],
+    usage: { input_tokens: 5000, output_tokens: 100 }
+  }), { status: 200 })
+});
+assert.equal(unattested.ok, false);
+assert.equal(unattested.succeeded_count, 0,
+  "requested effort must not make a missing provider echo look successful");
+assert.equal(unattested.rows[0].served_effort, null);
+assert.equal(unattested.rows[0].served_effort_attested, false);
 
 const oneImagePayload = normalizedPayload({
   run_id: "canonical-one-image",

@@ -96,6 +96,7 @@ import {
 } from "../experiments/accuracy/field-specific-observation-lane-v2.mjs";
 import { summariseSemQuality } from "../lib/listing/thin/csm-sem-score.mjs";
 import { examplesFor, fewShotBlock } from "../lib/listing/evaluation/kfold-few-shot.mjs";
+import { providerReasoningEffortReceipt } from "../lib/listing/thin/provider-response-attestation.mjs";
 import {
   CANONICAL_FIELDS_SCHEMA_SERIAL_PARTS,
   CANONICAL_FIELDS_PROMPT_SERIAL_PARTS,
@@ -222,7 +223,8 @@ function canonicalArm(fixedImageDetail = null, prompt = CANONICAL_FIELDS_PROMPT,
     extract: extractCanonicalPayload,
     finish: (payload) => finishCanonicalTitle(payload),
     imageDetail: fixedImageDetail,
-    effort: fixedEffort
+    effort: fixedEffort,
+    cardKeyed: typeof promptForCard === "function"
   };
 }
 
@@ -454,8 +456,10 @@ export const ARM_SPECS = {
   thin_canonical_fewshot_low: canonicalArm("high", CANONICAL_FIELDS_PROMPT_FEWSHOT, "low", 8192),
   // k-fold few-shot over the REAL reviewed corpus. Examples come only from
   // other folds AND are filtered against the card's own title, because the
-  // corpus contains near-duplicates of itself. Verified on all 255 with zero
-  // leaks before this cost anything.
+  // corpus contains near-duplicates of itself. The 2026-08-05 live caller did
+  // not satisfy that contract: it passed an asset/arm composite instead of the
+  // sealed corpus key. Its result is VOID; the harness now binds the sealed or
+  // physical card identity into both the request and manifest.
   // The research report's recommendation: extend the structured-field
   // treatment that took grading from 33/38 to 38/38 to `serial`. Ceiling
   // measured first at +0.016142 / +0.010885, both above drift. Its companion
@@ -530,7 +534,8 @@ const SOURCE_URLS = Object.freeze({
   candidate_expression_v3: new URL("../lib/listing/thin/candidate-expression-v3.mjs", import.meta.url),
   residual_evidence_v1: new URL("../lib/listing/thin/residual-evidence-lane-v1.mjs", import.meta.url),
   exhaustive_observation: new URL("../lib/listing/thin/exhaustive-observation.mjs", import.meta.url),
-  csm_sem_score: new URL("../lib/listing/thin/csm-sem-score.mjs", import.meta.url)
+  csm_sem_score: new URL("../lib/listing/thin/csm-sem-score.mjs", import.meta.url),
+  kfold_few_shot: new URL("../lib/listing/evaluation/kfold-few-shot.mjs", import.meta.url)
 });
 const ARM_SOURCE_ROOTS = Object.freeze({
   bare_truncated: [SOURCE_URLS.thin_listing_path],
@@ -538,6 +543,14 @@ const ARM_SOURCE_ROOTS = Object.freeze({
   thin_serial: [SOURCE_URLS.thin_listing_path],
   thin_canonical: [SOURCE_URLS.thin_listing_path],
   thin_canonical_high: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_high_effort_none: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_high_effort_low: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_fewshot_low: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_serial_parts_low: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_kfold_fewshot_low: [SOURCE_URLS.thin_listing_path, SOURCE_URLS.kfold_few_shot],
+  thin_canonical_low_targeted: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_high_effort_medium: [SOURCE_URLS.thin_listing_path],
+  thin_canonical_high_effort_max: [SOURCE_URLS.thin_listing_path],
   thin_canonical_original: [SOURCE_URLS.thin_listing_path],
   thin_canonical_serial_exact_high: [SOURCE_URLS.thin_listing_path],
   thin_canonical_finish_rarity_high: [SOURCE_URLS.thin_listing_path],
@@ -589,17 +602,58 @@ async function sourceClosureHashes(rootUrls, { scorerRootPath = null } = {}) {
     .sort(([left], [right]) => left.localeCompare(right));
 }
 
-function providerRequestTemplates(arm, { model, effort, imageDetail }) {
-  return [0, 1, 2].map((imageCount) => requestFingerprint(arm.buildRequest({
-    imageUrls: Array.from({ length: imageCount }, (_, index) => `https://contract.invalid/image-${index + 1}`),
-    model,
-    effort,
-    imageDetail
-  })));
+function signableImage(image) {
+  return Boolean(
+    (String(image?.bucket || "").trim()
+      && String(image?.object_path || image?.objectPath || "").trim())
+    || String(image?.local_path || image?.localPath || "").trim()
+  );
+}
+
+export function evaluationCardIdentity(item) {
+  const identity = String(
+    item?.sealed_eval_label_ref?.key || item?.physical_card_id || ""
+  ).trim();
+  if (!identity) throw new Error("evaluation_card_identity_missing");
+  return identity;
+}
+
+function providerRequestTemplates(arm, { model, effort, imageDetail, selectedItems = [] }) {
+  const effectiveEffort = arm.effort ?? effort;
+  const fingerprint = ({ imageCount, extraImageCount = 0, cardKey = null }) => requestFingerprint(
+    arm.buildRequest({
+      imageUrls: Array.from({ length: imageCount }, (_, index) => `https://contract.invalid/image-${index + 1}`),
+      extraImageUrls: Array.from(
+        { length: extraImageCount },
+        (_, index) => `https://contract.invalid/extra-image-${index + 1}`
+      ),
+      model,
+      effort: effectiveEffort,
+      imageDetail,
+      ...(cardKey ? { cardKey } : {})
+    })
+  );
+  if (arm.cardKeyed) {
+    if (!selectedItems.length) throw new Error(`card_keyed_arm_items_missing:${arm.key}`);
+    return selectedItems.map((item) => fingerprint({
+      imageCount: (item?.images || []).slice(0, 2).filter(signableImage).length,
+      extraImageCount: arm.requiresExtraImages
+        ? (item?.visual_extra_images || []).slice(0, 1).filter(signableImage).length
+        : 0,
+      cardKey: evaluationCardIdentity(item)
+    }));
+  }
+  return [0, 1, 2].map((imageCount) => fingerprint({ imageCount }));
 }
 
 export async function buildFinisherFingerprint({ arms, scorer = null }) {
-  const armRoots = arms.flatMap((arm) => ARM_SOURCE_ROOTS[arm.key] || []);
+  const armRoots = arms.flatMap((arm) => {
+    const roots = ARM_SOURCE_ROOTS[arm.key];
+    if (!Array.isArray(roots) || !roots.length) {
+      throw new Error(`arm_source_roots_missing:${arm.key}`);
+    }
+    return roots;
+  });
   const scorerUrl = scorer ? pathToFileURL(resolve(scorer)) : null;
   const sourceEntries = await sourceClosureHashes([
     SOURCE_URLS.csm_sem_score,
@@ -635,6 +689,25 @@ export async function buildRunManifest({
     setReviewedCorpus([]);
   }
   const assetIdBytes = assetIdsBody ?? (assetIdsFile ? await readFile(assetIdsFile) : null);
+  let selectedItems = [];
+  if (arms.some((arm) => arm.cardKeyed)) {
+    let datasetItems;
+    try {
+      datasetItems = JSON.parse(String(datasetBytes))?.items;
+    } catch {
+      throw new Error("card_keyed_arm_dataset_invalid");
+    }
+    if (!Array.isArray(datasetItems)) throw new Error("card_keyed_arm_dataset_items_missing");
+    if (Array.isArray(selectedAssetIds)) {
+      const byId = new Map(datasetItems.map((item) => [String(item?.asset_id || ""), item]));
+      selectedItems = selectedAssetIds.map((assetId) => byId.get(String(assetId)));
+      if (selectedItems.some((item) => !item)) throw new Error("card_keyed_arm_selected_item_missing");
+    } else {
+      selectedItems = datasetItems.slice(0, limit);
+    }
+    if (selectedItems.length !== limit) throw new Error("card_keyed_arm_selected_item_count_mismatch");
+    selectedItems.forEach(evaluationCardIdentity);
+  }
   const finisher = await buildFinisherFingerprint({ arms, scorer });
   const armContracts = arms.map((arm) => ({
     key: arm.key,
@@ -643,7 +716,9 @@ export async function buildRunManifest({
     response_schema_name: arm.responseSchemaName || null,
     response_schema_sha256: arm.responseSchema ? sha256(JSON.stringify(arm.responseSchema)) : null,
     prompt_sha256: arm.prompt ? sha256(arm.prompt) : null,
-    request_template_sha256: providerRequestTemplates(arm, { model, effort, imageDetail })
+    request_template_sha256: providerRequestTemplates(arm, {
+      model, effort, imageDetail, selectedItems
+    })
   }));
   const contract = {
     schema_version: "thin-path-eval-run-contract-v2",
@@ -849,18 +924,16 @@ function expectedCheckpointIdentity({ item, arm, model, effort, imageDetail }) {
     ...(item?.images || []).slice(0, 2),
     ...(arm.requiresExtraImages ? (item?.visual_extra_images || []).slice(0, 1) : [])
   ];
-  const isSignable = (image) => (
-    (String(image?.bucket || "").trim()
-      && String(image?.object_path || image?.objectPath || "").trim())
-    || String(image?.local_path || image?.localPath || "").trim()
-  );
-  const primarySignable = (item?.images || []).slice(0, 2).filter(isSignable);
+  const primarySignable = (item?.images || []).slice(0, 2).filter(signableImage);
   const extraSignable = arm.requiresExtraImages
-    ? (item?.visual_extra_images || []).slice(0, 1).filter(isSignable)
+    ? (item?.visual_extra_images || []).slice(0, 1).filter(signableImage)
     : [];
   const imageUrls = primarySignable.map((_, index) => `https://checkpoint.invalid/image-${index + 1}`);
   const extraImageUrls = extraSignable.map((_, index) => `https://checkpoint.invalid/extra-image-${index + 1}`);
-  const request = arm.buildRequest({ imageUrls, extraImageUrls, model, effort: armEffort, imageDetail, cardKey: item?.key });
+  const request = arm.buildRequest({
+    imageUrls, extraImageUrls, model, effort: armEffort, imageDetail,
+    cardKey: evaluationCardIdentity(item)
+  });
   return {
     request_sha256: requestFingerprint(request),
     image_set_sha256: imageSetFingerprint(item, sourceImages),
@@ -902,7 +975,8 @@ export function validateCheckpointRows(checkpointBody, {
       if ((row[field] ?? null) !== (expected[field] ?? null)) throw new Error(`checkpoint_request_shape_mismatch:${field}:${key}`);
     }
     const armEffort = arm.effort ?? effort;
-    if (row.model !== model || row.requested_effort !== armEffort || row.served_effort !== armEffort) {
+    if (row.model !== model || row.requested_effort !== armEffort
+        || row.served_effort !== armEffort || row.served_effort_attested !== true) {
       throw new Error(`checkpoint_request_contract_mismatch:${key}`);
     }
     done.set(key, row);
@@ -1220,7 +1294,10 @@ export async function main(argv = process.argv.slice(2), {
       // The arm's pinned tier wins over the run-level default, so two efforts
       // can alternate on the same card within one run.
       const armEffort = arm.effort ?? effort;
-      const request = arm.buildRequest({ imageUrls, extraImageUrls: requestExtraImageUrls, model, effort: armEffort, imageDetail, cardKey: key });
+      const request = arm.buildRequest({
+        imageUrls, extraImageUrls: requestExtraImageUrls, model, effort: armEffort, imageDetail,
+        cardKey: evaluationCardIdentity(item)
+      });
       const requestSha256 = requestFingerprint(request);
       const requestImageEntries = [
         ...(item.images || []).slice(0, 2),
@@ -1251,19 +1328,22 @@ export async function main(argv = process.argv.slice(2), {
       const { body, attemptCount } = providerResult;
       // Read back rather than assumed. One paired evaluation ran both arms on
       // the same configuration and still reported clean-looking numbers.
-      const servedEffort = body?.reasoning?.effort ?? armEffort;
-      if (servedEffort !== armEffort) {
+      const effortReceipt = providerReasoningEffortReceipt(body);
+      if (!effortReceipt.served_effort_attested
+          || effortReceipt.served_effort !== armEffort) {
         await appendDurable(attemptLogPath, {
           schema_version: "thin-path-provider-final-v1",
           event: "final_status",
-          status: "discarded_served_effort",
+          status: effortReceipt.served_effort_attested
+            ? "discarded_served_effort"
+            : "discarded_unattested_effort",
           run_fingerprint: expectedManifest.fingerprint,
           asset_id: item.asset_id,
           arm: arm.key,
           request_sha256: requestSha256,
           completed_at: new Date().toISOString()
         });
-        process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: DISCARDED, provider ran ${servedEffort}\n`);
+        process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: DISCARDED, provider effort ${effortReceipt.served_effort || "unattested"}\n`);
         continue;
       }
 
@@ -1311,7 +1391,7 @@ export async function main(argv = process.argv.slice(2), {
         model,
         served_model: body?.model ?? null,
         requested_effort: armEffort,
-        served_effort: servedEffort,
+        ...effortReceipt,
         request_sha256: requestSha256,
         image_set_sha256: imageSetSha256,
         image_count: imageUrls.length + requestExtraImageUrls.length,

@@ -27,6 +27,16 @@ const ALLOWED_FORMATS = new Map([
 const plainObject = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
+function reasoningEffortReceipt(body) {
+  const servedEffort = typeof body?.reasoning?.effort === "string"
+    ? body.reasoning.effort.trim().toLowerCase() || null
+    : null;
+  return {
+    served_effort: servedEffort,
+    served_effort_attested: servedEffort !== null
+  };
+}
+
 function boundedInteger(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
   const parsed = value === undefined || value === null ? fallback : Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) throw new Error("integer_out_of_range");
@@ -287,10 +297,11 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
       let parsed = null;
       try { parsed = JSON.parse(raw); } catch {}
       const structured = structuredOutput(parsed, payload.armId);
-      const servedEffort = parsed?.reasoning?.effort ?? EFFORT;
+      const effortReceipt = reasoningEffortReceipt(parsed);
       const responseOk = response.ok && !parsed?.error
         && parsed?.status === "completed" && !parsed?.incomplete_details
-        && parsed?.model === MODEL && servedEffort === EFFORT && structured.ok;
+        && parsed?.model === MODEL && effortReceipt.served_effort_attested
+        && effortReceipt.served_effort === EFFORT && structured.ok;
       const completedOffsetMs = Math.round(now() - startedAt);
       return {
         index: index + 1,
@@ -310,7 +321,7 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
         provider_status: parsed?.status || null,
         incomplete_details: parsed?.incomplete_details || null,
         served_model: parsed?.model || null,
-        served_effort: servedEffort,
+        ...effortReceipt,
         structured_output: structured.parsed,
         structured_output_raw_sha256: structured.raw === null ? null : sha256(structured.raw),
         structured_output_error: structured.error,
@@ -343,6 +354,7 @@ async function runAccuracyArm(payload, { env, fetchImpl = globalThis.fetch, now 
         incomplete_details: null,
         served_model: null,
         served_effort: null,
+        served_effort_attested: false,
         structured_output: null,
         structured_output_raw_sha256: null,
         structured_output_error: "provider_transport_error",
