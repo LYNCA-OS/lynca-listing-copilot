@@ -28,6 +28,161 @@ import { publicCsmOwnerExecutionReceipt } from "../lib/listing/thin/csm-owner-ex
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { readJsonPayload, sendJson } from "../lib/listing/v4/session/http-handler-utils.mjs";
 
+const EXTERNAL_IDENTITY_FIELDS = Object.freeze([
+  "year", "manufacturer", "product", "set", "subjects", "team", "card_number"
+]);
+const EXTERNAL_IDENTITY_ACTIONS = new Set(["FILL", "CORROBORATE", "NORMALIZE_ALIAS"]);
+const EXTERNAL_IDENTITY_MATCH_BASES = new Set(["EXACT_FOUR_ANCHOR", "VERIFIED_ORIGINAL_SET"]);
+const EXTERNAL_IDENTITY_SOURCES = Object.freeze({
+  TCDB: Object.freeze({ prefix: "tcdb.", hostname: "www.tcdb.com" }),
+  PSA: Object.freeze({ prefix: "psa.", hostname: "www.psacard.com" }),
+  Beckett: Object.freeze({ prefix: "beckett.", hostname: "www.beckett.com" })
+});
+
+const plainRecord = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
+const publicText = (value, maximum = 200) => {
+  const text = String(value || "").trim();
+  return text && text.length <= maximum && /^[A-Za-z0-9._:/-]+$/.test(text) ? text : "";
+};
+const publicSha256 = (value) => {
+  const text = String(value || "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(text) ? text : "";
+};
+
+function publicExternalSource(source) {
+  const rule = EXTERNAL_IDENTITY_SOURCES[source?.provider];
+  const sourceId = publicText(source?.source_id);
+  if (!rule || !sourceId.startsWith(rule.prefix)) return null;
+  let url;
+  try { url = new URL(String(source?.url || "")); } catch { return null; }
+  if (url.protocol !== "https:" || url.hostname !== rule.hostname
+      || url.username || url.password || url.port) return null;
+  const factSha256 = publicSha256(source.fact_sha256);
+  const retrievedAt = String(source.retrieved_at || "").trim();
+  const fields = [...new Set((Array.isArray(source.fields) ? source.fields : [])
+    .map((field) => publicText(field))
+    .filter((field) => EXTERNAL_IDENTITY_FIELDS.includes(field)))].sort();
+  if (!factSha256 || !/^\d{4}-\d{2}-\d{2}$/.test(retrievedAt) || !fields.length) return null;
+  return {
+    provider: source.provider,
+    source_id: sourceId,
+    url: `${url.origin}${url.pathname}`,
+    retrieved_at: retrievedAt,
+    fact_sha256: factSha256,
+    fields
+  };
+}
+
+/** Defense-in-depth public projection for dependency-injected and DB records. */
+export function publicExternalIdentitySupport(value) {
+  if (!plainRecord(value)
+      || value.schema_version !== "csm-external-identity-public-receipt.v1"
+      || value.status !== "APPLIED") return null;
+  const sources = (Array.isArray(value.sources) ? value.sources : [])
+    .map(publicExternalSource).filter(Boolean);
+  if (!sources.length) return null;
+  const sourceIds = new Set(sources.map((source) => source.source_id));
+  const fieldDecisions = {};
+  for (const field of EXTERNAL_IDENTITY_FIELDS) {
+    const decision = value.field_decisions?.[field];
+    if (!plainRecord(decision) || !EXTERNAL_IDENTITY_ACTIONS.has(decision.action)) continue;
+    const safeSourceIds = [...new Set((Array.isArray(decision.source_ids) ? decision.source_ids : [])
+      .map((sourceId) => publicText(sourceId))
+      .filter((sourceId) => sourceIds.has(sourceId)))].sort();
+    if (safeSourceIds.length) fieldDecisions[field] = {
+      action: decision.action,
+      source_ids: safeSourceIds
+    };
+  }
+  if (!Object.keys(fieldDecisions).length) return null;
+
+  const registryRelease = value.registry_release;
+  const pack = value.pack;
+  const index = value.index;
+  const matchBasis = publicText(value.match_basis);
+  if (!plainRecord(registryRelease) || !plainRecord(pack) || !plainRecord(index)
+      || !EXTERNAL_IDENTITY_MATCH_BASES.has(matchBasis)) return null;
+  const projected = {
+    schema_version: "csm-external-identity-public-receipt.v1",
+    status: "APPLIED",
+    registry_release: {
+      id: publicText(registryRelease.id),
+      registry_version: publicText(registryRelease.registry_version),
+      content_sha256: publicSha256(registryRelease.content_sha256),
+      sem_standard_version: publicText(registryRelease.sem_standard_version)
+    },
+    match_basis: matchBasis,
+    resolver_version: publicText(value.resolver_version),
+    conflict_policy_version: publicText(value.conflict_policy_version),
+    composer_version: publicText(value.composer_version),
+    marketplace_profile_version: publicText(value.marketplace_profile_version),
+    resolution_contract_sha256: publicSha256(value.resolution_contract_sha256),
+    pack: {
+      id: publicText(pack.id), version: publicText(pack.version), sha256: publicSha256(pack.sha256)
+    },
+    index: {
+      id: publicText(index.id), version: publicText(index.version), sha256: publicSha256(index.sha256)
+    },
+    record_id: publicText(value.record_id),
+    supported_fields: Object.keys(fieldDecisions),
+    field_decisions: fieldDecisions,
+    sources
+  };
+  const required = [
+    projected.registry_release.id,
+    projected.registry_release.registry_version,
+    projected.registry_release.content_sha256,
+    projected.registry_release.sem_standard_version,
+    projected.match_basis,
+    projected.resolver_version,
+    projected.conflict_policy_version,
+    projected.composer_version,
+    projected.marketplace_profile_version,
+    projected.resolution_contract_sha256,
+    projected.pack.id, projected.pack.version, projected.pack.sha256,
+    projected.index.id, projected.index.version, projected.index.sha256,
+    projected.record_id
+  ];
+  return required.every(Boolean)
+    && projected.registry_release.content_sha256 === projected.pack.sha256
+    ? projected
+    : null;
+}
+
+function attachExternalIdentitySupport(view, support) {
+  if (!support) return view;
+  const brackets = view.brackets.map((bracket) => {
+    const decision = support.field_decisions[bracket.canonical_field];
+    if (!decision) return bracket;
+    const registryRationale = "EXACT_EXTERNAL_IDENTITY_SUPPORT";
+    const rationaleCodes = decision.action === "FILL"
+      ? [registryRationale]
+      : [...new Set([...bracket.rationale_codes, registryRationale])];
+    return {
+      ...bracket,
+      rationale_codes: rationaleCodes,
+      semantic_confidence: "VERIFIED_EXTERNAL",
+      evidence: {
+        ...bracket.evidence,
+        modality: decision.action === "FILL"
+          ? "REVIEWED_REGISTRY_EXACT"
+          : "WHOLE_CARD_VISUAL+REVIEWED_REGISTRY_EXACT",
+        external_identity: { action: decision.action, source_ids: decision.source_ids }
+      },
+      alternates_unavailable_reason: "EXACT_EXTERNAL_IDENTITY_RESOLUTION"
+    };
+  });
+  return {
+    ...view,
+    brackets,
+    external_identity_support: support,
+    summary: {
+      ...view.summary,
+      external_supported_fields: Object.keys(support.field_decisions).length
+    }
+  };
+}
+
 /**
  * Compose the read model for one stored run.
  *
@@ -95,19 +250,21 @@ export async function handleResolutionViewRequest({
     throw Object.assign(new Error("csm_resolution_not_found"), { statusCode: 404 });
   }
   const { view, composed, composer_version: composerVersion } = composeResolutionView(record);
+  const externalIdentitySupport = publicExternalIdentitySupport(record.external_identity_support);
+  const publicView = attachExternalIdentitySupport(view, externalIdentitySupport);
   // If the stored title and the recomposed one disagree, the explanation does
   // not describe what shipped. Say so rather than presenting it as the trace.
   const storedTitle = String(record.output_title || "").trim();
   const drift = storedTitle && storedTitle !== composed.title;
   const ownerExecutionReceipt = publicCsmOwnerExecutionReceipt(record.owner_execution_receipt);
   return {
-    ...view,
+    ...publicView,
     // This is the only owner-execution projection exposed by the read route.
     // Raw provider/request ids and the full stored execution contract remain
     // server-side; the hash is independently recomputed from the DB value.
     owner_execution_receipt: ownerExecutionReceipt,
     composer: {
-      ...view.composer,
+      ...publicView.composer,
       composer_version: composerVersion,
       stored_title: storedTitle || null,
       recomposed_matches_stored: !drift,

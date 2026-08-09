@@ -6,6 +6,8 @@ import { checkCsmThinProductionReadiness } from "./check-csm-thin-production-rea
 import {
   CSM_PRODUCT_PROJECTION_READINESS_RPC,
   CSM_PRODUCT_PROJECTION_VERSION,
+  THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
+  THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
   THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
@@ -13,6 +15,9 @@ import {
   CSM_PROVIDER_AUTHORITY_RPCS
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
+import {
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 const ENV = {
   CSM_PERSISTENCE_ENABLED: "true",
@@ -53,10 +58,16 @@ const fetchImpl = async (url, init = {}) => {
   const parsed = new URL(String(url));
   calls.push({ pathname: parsed.pathname, init });
   if (parsed.pathname.endsWith("/csm_registry_releases")) {
-    return response([{
-      ...THIN_REGISTRY_RELEASE_CONTRACT,
-      registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
-    }]);
+    return response([
+      {
+        ...THIN_REGISTRY_RELEASE_CONTRACT,
+        registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
+      },
+      {
+        ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+        registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
+      }
+    ]);
   }
   if (parsed.pathname.endsWith("/persist_csm_stage_packet_v1")) {
     return response({ ok: false, code: "missing_csm_stage_row_identity" });
@@ -96,6 +107,25 @@ function fetchWithPacer(overrides, observedScopes = []) {
   };
 }
 
+function fetchWithExternalRegistryPayload(registryPayload) {
+  return async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/csm_registry_releases")) {
+      return response([
+        {
+          ...THIN_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
+        },
+        {
+          ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: registryPayload
+        }
+      ]);
+    }
+    return fetchImpl(url, init);
+  };
+}
+
 const ready = await checkCsmThinProductionReadiness({ env: ENV, fetchImpl });
 assert.equal(ready.ok, true);
 assert.equal(ready.active_path, "CSM_THIN_DIRECT");
@@ -103,6 +133,8 @@ assert.equal(ready.model, "gpt-5.6-luna");
 // `low` since 2026-08-03 (founder). Asserted against the runtime contract so
 // the readiness probe and the endpoint can never disagree about the tier.
 assert.equal(ready.reasoning_effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
+assert.deepEqual(ready.external_identity, EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  "database readiness must attest the same external identity release advertised by health");
 assert.deepEqual(calls.map(({ pathname }) => pathname), [
   "/rest/v1/csm_registry_releases",
   "/rest/v1/rpc/persist_csm_stage_packet_v1",
@@ -126,6 +158,34 @@ assert.deepEqual(JSON.parse(operationKeyRecoveryCall.init.body), {
   p_tenant_id: "__csm_readiness__",
   p_operation_key: "__csm_readiness__"
 });
+
+for (const field of ["pack_id", "pack_version", "index_id"]) {
+  await assert.rejects(
+    checkCsmThinProductionReadiness({
+      env: ENV,
+      fetchImpl: fetchWithExternalRegistryPayload({
+        ...THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
+        [field]: `${THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT[field]}-drift`
+      })
+    }),
+    (error) => error.code === "csm_persistence_not_ready"
+      && error.detail === "registry_release_contract_mismatch",
+    `database readiness must fail closed when external identity ${field} drifts`
+  );
+}
+
+await assert.rejects(
+  checkCsmThinProductionReadiness({
+    env: ENV,
+    fetchImpl: fetchWithExternalRegistryPayload({
+      ...THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
+      unrecognized_future_control: true
+    })
+  }),
+  (error) => error.code === "csm_persistence_not_ready"
+    && error.detail === "registry_release_contract_mismatch",
+  "database readiness must reject extra external identity Registry payload keys"
+);
 
 const databaseOnlyScopes = [];
 const databaseOnlyReady = await checkCsmThinProductionReadiness({

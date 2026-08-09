@@ -50,6 +50,11 @@ import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adap
 import * as providerResponseAttestation from "../lib/listing/thin/provider-response-attestation.mjs";
 import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
 import {
+  EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
+  EXTERNAL_IDENTITY_SUPPORT_PACK
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
   STAGED_RECOGNITION_LANE_VERSION,
   bindStagedSessionToVerifiedCanonical
 } from "../lib/listing/thin/staged-recognition-input.mjs";
@@ -61,6 +66,8 @@ import {
 import {
   CSM_PRODUCT_PROJECTION_READINESS_RPC,
   CSM_PRODUCT_PROJECTION_VERSION,
+  THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
+  THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
   THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
@@ -365,10 +372,16 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
     const pathname = new URL(String(url)).pathname;
     calls.push(pathname);
     if (pathname.endsWith("/csm_registry_releases")) {
-      return new Response(JSON.stringify([{
-        ...THIN_REGISTRY_RELEASE_CONTRACT,
-        registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
-      }]));
+      return new Response(JSON.stringify([
+        {
+          ...THIN_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
+        },
+        {
+          ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
+        }
+      ]));
     }
     if (pathname.endsWith("/persist_csm_stage_packet_v1")) {
       return new Response(JSON.stringify({ code: "missing_csm_stage_row_identity" }));
@@ -541,6 +554,7 @@ const ordinaryTask = (intentId, overrides = {}) => ({
   image_fingerprints: [`sha256:${IMAGE_HASH}`],
   recognition_fingerprints: [`sha256:${IMAGE_HASH}`],
   execution_contract_sha256: CURRENT_DIRECT_EXECUTION_SHA256,
+  resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
   ...overrides
 });
 const canonicalImages = () => ({
@@ -558,6 +572,145 @@ const canonicalImages = () => ({
     content_sha256: IMAGE_HASH
   }]
 });
+
+// The production API, not a client payload, derives the reviewed identity
+// context from tenant-scoped verified originals and carries only its set digest
+// through dispatch/checkpoint identity. The provider still sees one ordinary
+// image request and no tool/hash side channel.
+{
+  const originalSha256 = [
+    "8641baae2722318061dc7d9431e8764e4fe72d809bf1d668294c823c1105811a",
+    "7551abbd6a90f94771396eb46f726f20c49b0745d23db4f82a8db5c82296ca01"
+  ];
+  const originalSetSha256 =
+    "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159";
+  const canonical = {
+    asset_id: "asset-1",
+    image_generation_id: "asset-1",
+    image_set_sha256: "e".repeat(64),
+    expected_original_count: 2,
+    image_references: originalSha256.map((content_sha256, index) => ({
+      image_id: `original-${index + 1}`,
+      image_role: index === 0 ? "front_original" : "back_original",
+      bucket: "cards",
+      object_path: `tenant-1/asset-1/original-${index + 1}.jpg`,
+      content_sha256,
+      derived: false
+    })),
+    images: originalSha256.map((content_sha256, index) => ({
+      image_id: `original-${index + 1}`,
+      objectPath: `tenant-1/asset-1/original-${index + 1}.jpg`,
+      bucket: "cards",
+      size: 1_000 + index,
+      storageRole: index === 0 ? "image_1_original" : "image_2_original",
+      derived: false,
+      content_sha256
+    }))
+  };
+  const observed = {
+    year: "1996-97", manufacturer: "Topps", product: "Stadium Club",
+    set: "High Risers", subjects: ["Michael Jordan"], team: "Chicago Bulls",
+    card_name: "", release_variant: "", surface_color: "", parallel_family: "",
+    parallel_exact: "", descriptive_rarity: "", card_number: "", serial: "",
+    attributes: [], grade: "", grammar: "standard", lot_count: "",
+    unreadable: [], low_confidence: []
+  };
+  let providerCalls = 0;
+  let providerWire = "";
+  let persistenceInput = null;
+  const dependencies = successfulDependencies({
+    authority: passthroughAuthority({ shallowWrapAfterSettle: true })
+  });
+  dependencies.readImages = async () => canonical;
+  dependencies.signImage = async ({ objectPath }) => `https://signed.invalid/${objectPath}`;
+  dependencies.createSession = async () => ({
+    persistence: { recognition_session: { saved: true } }
+  });
+  delete dependencies.preparePath;
+  dependencies.persistPath = async ({ prepared }) => {
+    persistenceInput = prepared;
+    return {
+      ...prepared,
+      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    };
+  };
+  const result = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "verified-original-set-identity",
+    callProvider: async (request) => {
+      providerCalls += 1;
+      providerWire = JSON.stringify(request);
+      return new Response(JSON.stringify({
+        id: "resp_verified_original_set",
+        model: "gpt-5.6-luna-2026-08-01",
+        status: "completed",
+        output_text: JSON.stringify(observed),
+        reasoning: { effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort },
+        usage: { input_tokens: 100, output_tokens: 30, total_tokens: 130 }
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json", "x-request-id": "req_verified_original_set" }
+      });
+    },
+    dependencies
+  });
+  assert.equal(providerCalls, 1);
+  assert.equal(Object.hasOwn(JSON.parse(providerWire), "tools"), false);
+  for (const hidden of [...originalSha256, originalSetSha256]) {
+    assert.doesNotMatch(providerWire, new RegExp(hidden));
+  }
+  assert.equal(
+    result.title,
+    "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls"
+  );
+  assert.equal(result.external_identity_support, undefined);
+  assert.deepEqual(Object.keys(result.csm_rows).sort(), ["output", "resolution"]);
+  assert.deepEqual(Object.keys(result.csm_rows.resolution).sort(), [
+    "contract_version", "recognition_session_id", "resolver_version"
+  ]);
+  assert.deepEqual(Object.keys(result.csm_rows.output).sort(), [
+    "composer_version", "contract_version"
+  ]);
+  for (const hidden of [...originalSha256, originalSetSha256]) {
+    assert.doesNotMatch(JSON.stringify(result), new RegExp(hidden),
+      "the browser result must not carry private original identity");
+  }
+  assert.doesNotMatch(JSON.stringify(result), /original_set_sha256|source_ref/);
+  assert.equal(
+    persistenceInput.csm_persistence_checkpoint.external_identity_receipt.original_set_sha256,
+    originalSetSha256
+  );
+  assert.equal(
+    persistenceInput.csm_persistence_checkpoint.external_identity_receipt.request_original_set_sha256,
+    originalSetSha256
+  );
+  const checkpointMarker = persistenceInput.csm_persistence_checkpoint;
+  assert.equal(validateCsmPersistenceCheckpoint(persistenceInput, {
+    tenantId: "tenant-1",
+    operationKey: checkpointMarker.operation_key,
+    payloadHash: checkpointMarker.payload_sha256,
+    recognitionSessionId: checkpointMarker.recognition_session_id,
+    executionContractSha256: persistenceInput.execution_contract_sha256,
+    resolutionContractSha256: persistenceInput.resolution_contract_sha256,
+    originalSetSha256
+  }).title, result.title);
+  const identityReceiptTampered = structuredClone(persistenceInput);
+  identityReceiptTampered.csm_persistence_checkpoint.external_identity_receipt.original_set_sha256 =
+    "f".repeat(64);
+  assert.throws(() => validateCsmPersistenceCheckpoint(identityReceiptTampered, {
+    tenantId: "tenant-1",
+    operationKey: checkpointMarker.operation_key,
+    payloadHash: checkpointMarker.payload_sha256,
+    recognitionSessionId: checkpointMarker.recognition_session_id,
+    executionContractSha256: persistenceInput.execution_contract_sha256,
+    resolutionContractSha256: persistenceInput.resolution_contract_sha256,
+    originalSetSha256
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "external_identity_receipt_mismatch");
+  assert.equal(result.csm_persistence_checkpoint, undefined);
+}
 
 // The active session root has a CSM contract even while its physical table
 // retains the historical name. Duplicate creation is accepted only after a
@@ -782,6 +935,21 @@ function preparedResult(recognitionSessionId, title = "Test title") {
   });
   return {
     ...ledgerResult,
+    external_identity_support: {
+      schema_version: "csm-external-identity-support-receipt.v1",
+      status: "ABSTAINED",
+      reason: "NO_EXACT_MATCH",
+      pack_id: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_id,
+      pack_version: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_version,
+      pack_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_sha256,
+      index_id: EXTERNAL_IDENTITY_SUPPORT_PACK.index_id,
+      index_version: EXTERNAL_IDENTITY_SUPPORT_PACK.index_version,
+      index_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.index_sha256,
+      registry_release_id: EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+      resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
+    },
+    resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
+    resolution_contract: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
     accuracy_loss_ledger: accuracyLossLedger,
     input_tokens: 4_000,
     output_tokens: 120,
@@ -987,7 +1155,8 @@ function stagedSuccessfulDependencies(options = {}) {
     lane_version: STAGED_RECOGNITION_LANE_VERSION,
     original_manifest_sha256: originalManifestSha256,
     recognition_fingerprints: [`sha256:${derivedHash}`],
-    execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
+    execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
+    resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
   };
   const result = await runDirectCsmAsset({
     tenantId: "tenant-1",
@@ -1099,7 +1268,8 @@ function stagedSuccessfulDependencies(options = {}) {
     lane_version: STAGED_RECOGNITION_LANE_VERSION,
     original_manifest_sha256: originalManifestSha256,
     recognition_fingerprints: [`sha256:${IMAGE_HASH}`],
-    execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
+    execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
+    resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
   };
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
@@ -1133,6 +1303,7 @@ function stagedSuccessfulDependencies(options = {}) {
     recognitionSessionDeferred: true,
     recognitionInput,
     executionContractSha256: task.execution_contract_sha256,
+    resolutionContractSha256: task.resolution_contract_sha256,
     operationScope: "derived_checkpoint"
   });
   assert.equal(
@@ -1149,6 +1320,7 @@ function stagedSuccessfulDependencies(options = {}) {
     payloadHash,
     recognitionSessionId: sessionId,
     executionContractSha256: task.execution_contract_sha256,
+    resolutionContractSha256: task.resolution_contract_sha256,
     operationScope: "derived_checkpoint"
   }).title, checkpoint.title);
   assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
@@ -1556,7 +1728,8 @@ function stagedSuccessfulDependencies(options = {}) {
     recognitionSessionId: sessionId,
     recognitionSessionDeferred: true,
     recognitionInput,
-    executionContractSha256: task.execution_contract_sha256
+    executionContractSha256: task.execution_contract_sha256,
+    resolutionContractSha256: task.resolution_contract_sha256
   });
   const firstSession = buildCsmRecognitionSessionRow({
     sessionId,
@@ -2320,7 +2493,8 @@ await assert.rejects(
     operationKey,
     payloadHash,
     recognitionSessionId: sessionId,
-    executionContractSha256: task.execution_contract_sha256
+    executionContractSha256: task.execution_contract_sha256,
+    resolutionContractSha256: task.resolution_contract_sha256
   });
   const events = [];
   const authority = passthroughAuthority();
@@ -2689,7 +2863,8 @@ await assert.rejects(
     },
     tenantId: "tenant-1", operationKey,
     payloadHash: buildLunaDirectPayloadHash(task), recognitionSessionId: sessionId,
-    executionContractSha256: task.execution_contract_sha256
+    executionContractSha256: task.execution_contract_sha256,
+    resolutionContractSha256: task.resolution_contract_sha256
   });
   assert.equal(
     checkpoint.csm_persistence_checkpoint.schema_version,

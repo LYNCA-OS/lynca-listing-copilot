@@ -10,7 +10,10 @@ import {
   writeCsmStageRows, csmPersistenceEnabled, isCsmPersistenceConfigured,
   checkCsmPersistenceReadiness, writeCsmStagePacketAtomically,
   CSM_PRODUCT_PROJECTION_READINESS_RPC, CSM_PRODUCT_PROJECTION_VERSION,
-  CSM_SUPABASE_REQUEST_TIMEOUT_MS, THIN_REGISTRY_RELEASE_CONTRACT
+  CSM_SUPABASE_REQUEST_TIMEOUT_MS,
+  THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
+  THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+  THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 
@@ -52,6 +55,11 @@ const REGISTRY_RELEASE = {
   ...THIN_REGISTRY_RELEASE_CONTRACT,
   registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
 };
+const EXTERNAL_REGISTRY_RELEASE = {
+  ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+  registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
+};
+const REGISTRY_RELEASES = [REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE];
 const PRODUCT_PROJECTION_READY = {
   ok: true,
   code: "csm_product_projection_ready",
@@ -85,7 +93,7 @@ function jsonResponse(value, status = 200) {
     fetchImpl: async (url, init = {}) => {
       calls += 1;
       assert.ok(init.signal instanceof AbortSignal);
-      if (!String(url).includes("/rpc/")) return jsonResponse([REGISTRY_RELEASE]);
+      if (!String(url).includes("/rpc/")) return jsonResponse(REGISTRY_RELEASES);
       return {
         ok: true,
         status: 200,
@@ -195,7 +203,7 @@ function fakeStore({ failOnceOn = "" } = {}) {
       }
       return String(url).includes("/rpc/")
         ? jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 })
-        : jsonResponse([REGISTRY_RELEASE]);
+        : jsonResponse(REGISTRY_RELEASES);
     }
   });
   assert.equal(ready.ready, true);
@@ -205,7 +213,7 @@ function fakeStore({ failOnceOn = "" } = {}) {
       ? jsonResponse({ message: "function missing" }, 404)
       : String(url).includes("/rpc/")
         ? jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 })
-        : jsonResponse([REGISTRY_RELEASE])
+        : jsonResponse(REGISTRY_RELEASES)
   });
   assert.deepEqual(projectionMissing, {
     ready: false,
@@ -221,7 +229,7 @@ function fakeStore({ failOnceOn = "" } = {}) {
     env: ENV,
     fetchImpl: async () => jsonResponse([{
       ...REGISTRY_RELEASE, content_sha256: "0".repeat(64)
-    }])
+    }, EXTERNAL_REGISTRY_RELEASE])
   });
   assert.equal(mismatched.ready, false);
   assert.equal(mismatched.reason, "registry_release_contract_mismatch");
@@ -237,7 +245,7 @@ function fakeStore({ failOnceOn = "" } = {}) {
       }
       registryAttempts += 1;
       if (registryAttempts === 1) throw new Error("transient network failure");
-      return jsonResponse([REGISTRY_RELEASE]);
+      return jsonResponse(REGISTRY_RELEASES);
     }
   });
   assert.equal(recovered.ready, true);

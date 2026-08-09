@@ -32,6 +32,9 @@ import {
   validateCsmModelExecutionContract
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
+import {
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 function reorderedPack(pack) {
   return {
@@ -359,6 +362,17 @@ assert.deepEqual(
     { ...profile, sha256: sha256CsmRecognitionTransportReceipt(profile) }
   ]))
 );
+assert.deepEqual(
+  healthBody.runtime.external_identity,
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  "health must expose the exact active pack, index, resolution and Registry release receipts"
+);
+for (const receipt of [
+  healthBody.runtime.external_identity.support_pack.sha256,
+  healthBody.runtime.external_identity.index.sha256,
+  healthBody.runtime.external_identity.resolution_contract.sha256,
+  healthBody.runtime.external_identity.registry_release.content_sha256
+]) assert.match(receipt, /^[a-f0-9]{64}$/);
 assert.equal(
   healthBody.runtime.provider_timeout_ms,
   CSM_LUNA_OPTIMIZATION_PACK.resource_hints.provider_timeout_ms

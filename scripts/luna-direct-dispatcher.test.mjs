@@ -304,6 +304,41 @@ assert.throws(
       recognition_fingerprints: [`sha256:${"0".repeat(64)}`]
     })
   );
+  const resolutionBound = task("asset-1", {
+    resolution_contract_sha256: "b".repeat(64),
+    original_set_sha256: "c".repeat(64)
+  });
+  const changedOriginalSet = {
+    ...resolutionBound,
+    original_set_sha256: "f".repeat(64)
+  };
+  assert.equal(
+    buildLunaDirectOperationKey(resolutionBound),
+    buildLunaDirectOperationKey(changedOriginalSet),
+    "verified-original identity is execution payload, not a second paid operation"
+  );
+  assert.notEqual(
+    buildLunaDirectPayloadHash(resolutionBound),
+    buildLunaDirectPayloadHash(changedOriginalSet),
+    "a different verified-original set must conflict before provider use"
+  );
+  assert.notEqual(
+    buildLunaDirectPayloadHash(resolutionBound),
+    buildLunaDirectPayloadHash({ ...resolutionBound, original_set_sha256: null }),
+    "the payload explicitly binds both presence and absence of original-set identity"
+  );
+  assert.throws(
+    () => buildLunaDirectPayloadHash({
+      ...task("asset-1"), original_set_sha256: "c".repeat(64)
+    }),
+    /original_set_sha256_requires_resolution_contract/
+  );
+  assert.throws(
+    () => buildLunaDirectPayloadHash({
+      ...resolutionBound, original_set_sha256: "not-a-digest"
+    }),
+    /invalid_original_set_sha256/
+  );
   const derived = task("asset-staged", {
     image_fingerprints: [`sha256:${"a".repeat(64)}`],
     operation_scope: "derived_checkpoint",

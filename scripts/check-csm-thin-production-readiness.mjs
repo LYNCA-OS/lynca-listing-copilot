@@ -20,6 +20,9 @@ import {
   CSM_PROVIDER_AUTHORITY_SCOPE,
   csmProviderPacerReadinessMatches
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
+import {
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 const LOOKUP_HASH = "0".repeat(64);
 
@@ -147,6 +150,7 @@ export async function checkCsmThinProductionReadiness({
     durable_provider_authority_ready: true,
     durable_provider_operation_key_recovery_ready: true,
     durable_provider_pacer_ready: true,
+    external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
     retired_capabilities_disabled: true
   });
 }

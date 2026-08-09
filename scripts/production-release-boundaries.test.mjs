@@ -106,7 +106,7 @@ const prepromotionHealth = workflow.indexOf(
   "Verify the immutable deployment and prepare candidate-only browser authorization"
 );
 const candidateSource = workflow.indexOf(
-  "Materialize fixed NON_TCG and TCG cases from Production Storage"
+  "Materialize fixed NON_TCG TCG and exact parity cases from Production Storage"
 );
 const candidateJourney = workflow.indexOf(
   "Run real candidate Writer Journey before production promotion"
@@ -151,6 +151,7 @@ assert.ok(productionDatabase > productionHealth && productionAuth > productionDa
 assert.ok(rollbackRestore > productionAuth && releaseEvidence > rollbackRestore,
   "failed post-promotion verification must restore Production before evidence upload");
 const candidateJourneyStep = workflow.slice(candidateJourney, candidateAuthorizationCleanup);
+const candidateSourceStep = workflow.slice(candidateSource, candidateJourney);
 const ownershipGuardStep = workflow.slice(ownershipGuard, vercelPromote);
 const promotionStep = workflow.slice(vercelPromote, productionHealth);
 const rollbackStep = workflow.slice(rollbackRestore, releaseEvidence);
@@ -158,6 +159,29 @@ const postPromotionHealthStep = workflow.slice(productionHealth, productionDatab
 const postPromotion = workflow.slice(vercelPromote);
 assert.doesNotMatch(candidateJourneyStep, /continue-on-error|if:\s*always\(\)/,
   "a failed candidate journey must preserve the failed job status");
+assert.match(candidateSourceStep, /writer-journey-cases-v3\.json/);
+assert.match(candidateSourceStep, /writer-journey-large-source-v2\.json/);
+assert.match(candidateSourceStep,
+  /WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT/,
+  "the candidate source gate must validate parity identity and hashes from the checked-out contract");
+assert.match(candidateSourceStep, /manifest\.schema_version !== 'writer-journey-cases-v3'/);
+assert.match(candidateSourceStep, /parity\.source_asset_id !== contract\.source_asset_id/);
+assert.match(candidateSourceStep, /file\.content_sha256 === contract\.images\[index\]\.content_sha256/);
+assert.match(candidateSourceStep, /flag: 'wx', mode: 0o600/,
+  "the derived v2 subset must be exclusively created owner-only");
+assert.match(candidateSourceStep, /stat\(largeSourcePath\)[\s\S]*0o777\)[\s\S]*0o600/,
+  "the v2 subset mode must be verified before the large builder can consume it");
+assert.match(candidateSourceStep,
+  /WRITER_JOURNEY_CASES_MANIFEST=%s\\n'[\s\S]*\$cases_manifest/,
+  "the real Writer Journey must receive the v3 manifest containing parity_case");
+assert.match(candidateSourceStep,
+  /WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\\n'[\s\S]*\$large_source_manifest/);
+assert.match(candidateSourceStep,
+  /--source-manifest "\$WRITER_JOURNEY_LARGE_SOURCE_MANIFEST"/,
+  "the strict large builder must receive the owner-only v2 subset");
+assert.doesNotMatch(candidateSourceStep,
+  /--source-manifest "\$WRITER_JOURNEY_CASES_MANIFEST"/,
+  "the parity-bearing v3 manifest must not be passed to the v2-only large builder");
 assert.match(ownershipGuardStep,
   /--verify-writer-authority/,
   "promotion must re-verify that Vercel remains staged-only with no deploy hook");
@@ -269,9 +293,9 @@ assert.match(workflow, /case "\$WRITER_JOURNEY_INITIAL_STORAGE_STATE" in[\s\S]*?
 assert.doesNotMatch(workflow,
   /VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-protection-bypass|x-vercel-set-bypass-cookie/,
   "the bypass secret must remain inside the protected helper, never workflow state or logs");
-const candidateSourceStep = workflow.slice(candidateSource,
+const candidateMaterializationStep = workflow.slice(candidateSource,
   workflow.indexOf("Build executor-bound large staged transport fixture", candidateSource));
-assert.doesNotMatch(candidateSourceStep, /VERCEL_TOKEN|VERCEL_AUTOMATION|protection-bypass/i,
+assert.doesNotMatch(candidateMaterializationStep, /VERCEL_TOKEN|VERCEL_AUTOMATION|protection-bypass/i,
   "Supabase source materialization must never inherit the Vercel bypass credential");
 assert.doesNotMatch(protectedHealth, /supabase/i,
   "the candidate-scoped bypass helper must have no Supabase transport path");
@@ -362,6 +386,12 @@ assert.equal(
   "the immutable candidate gate must resolve the adapter owned by the active profile"
 );
 assert.match(workflow, /h\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
+assert.match(workflow,
+  /import \{\s*EXTERNAL_IDENTITY_RELEASE_CONTRACT\s*\} from '\.\/lib\/listing\/knowledge\/csm-external-identity-support\.mjs'/,
+  "the immutable candidate gate must import the checked-out external identity release contract");
+assert.match(workflow,
+  /JSON\.stringify\(h\.runtime\?\.external_identity\)[\s\S]*JSON\.stringify\(EXTERNAL_IDENTITY_RELEASE_CONTRACT\)/,
+  "the immutable candidate gate must reject stale pack, index, resolver or Registry release receipts");
 assert.doesNotMatch(workflow, /CSM_OPENAI_RESPONSES_ADAPTER_VERSION/,
   "release verification must not pin the active profile to one provider adapter");
 assert.match(workflow, /csmExecutionContractImageUrls/);

@@ -43,6 +43,13 @@ import {
 import { requireTenantAccess } from "../lib/tenant/access.mjs";
 import { publicTenantAuthError } from "../lib/tenant/errors.mjs";
 import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
+import {
+  computeVerifiedOriginalSetSha256,
+  EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
+  EXTERNAL_IDENTITY_SUPPORT_PACK,
+  validatePostObservationResolutionContract
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 const MODEL = CSM_THIN_RUNTIME_CONTRACT.model;
 const EFFORT = CSM_THIN_RUNTIME_CONTRACT.reasoningEffort;
@@ -64,8 +71,12 @@ export const CSM_DIRECT_PROVIDER_TIMEOUT_MS = CSM_THIN_RUNTIME_CONTRACT.provider
 export const CSM_PERSISTENCE_CHECKPOINT_VERSION = "csm-persistence-checkpoint-v2";
 export const CSM_PERSISTENCE_CHECKPOINT_LEGACY_VERSION = "csm-persistence-checkpoint-v1";
 export const CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION =
-  "csm-persistence-checkpoint-ordinary-execution-v1";
+  "csm-persistence-checkpoint-ordinary-execution-v2";
 export const CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION =
+  "csm-persistence-checkpoint-derived-v2";
+const CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_LEGACY_VERSION =
+  "csm-persistence-checkpoint-ordinary-execution-v1";
+const CSM_PERSISTENCE_CHECKPOINT_DERIVED_LEGACY_VERSION =
   "csm-persistence-checkpoint-derived-v1";
 export const CSM_PERSISTENCE_READINESS_CACHE_TTL_MS = 30_000;
 const CSM_PACKET_HASH_KEYS = Object.freeze([
@@ -89,6 +100,26 @@ function normalizedDetail(value) {
     throw Object.assign(new Error("invalid_image_detail"), { statusCode: 400 });
   }
   return detail;
+}
+
+function externalIdentityFromVerifiedOriginals(originals) {
+  if (!Array.isArray(originals) || originals.length !== 2) {
+    return { context: null, originalSetSha256: null };
+  }
+  const originalImageSha256 = originals.map((image) => String(
+    image?.content_sha256 || image?.contentSha256 || ""
+  ).trim().toLowerCase());
+  let originalSetSha256;
+  try {
+    originalSetSha256 = computeVerifiedOriginalSetSha256(originalImageSha256);
+  } catch {
+    return { context: null, originalSetSha256: null };
+  }
+  originalImageSha256.sort();
+  return {
+    context: { originalImageSha256 },
+    originalSetSha256
+  };
 }
 
 export function deterministicCsmSessionId(operationKey) {
@@ -163,10 +194,92 @@ function normalizedCheckpointRecognitionInput(value) {
   });
 }
 
+function normalizedExternalIdentityCheckpointReceipt(result, {
+  requestOriginalSetSha256 = null,
+  resolutionContractSha256
+} = {}) {
+  const requestDigest = optionalSha256(requestOriginalSetSha256, "request_original_set_sha256");
+  const resolutionDigest = optionalSha256(
+    resolutionContractSha256,
+    "external_identity_resolution_contract_sha256"
+  );
+  if (!resolutionDigest) throw persistenceCheckpointError("external_identity_resolution_contract_missing");
+  const support = result?.external_identity_support;
+  if (!support || !["APPLIED", "ABSTAINED"].includes(support.status)) {
+    throw persistenceCheckpointError("external_identity_support_receipt_missing");
+  }
+  const releaseFields = {
+    pack_id: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_id,
+    pack_version: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_version,
+    pack_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_sha256,
+    index_id: EXTERNAL_IDENTITY_SUPPORT_PACK.index_id,
+    index_version: EXTERNAL_IDENTITY_SUPPORT_PACK.index_version,
+    index_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.index_sha256,
+    registry_release_id: EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+    resolution_contract_sha256: resolutionDigest
+  };
+  for (const [field, value] of Object.entries(releaseFields)) {
+    if (support[field] !== value) {
+      throw persistenceCheckpointError(`external_identity_${field}_mismatch`);
+    }
+  }
+
+  const receipt = {
+    schema_version: "csm-external-identity-checkpoint-receipt.v1",
+    status: support.status,
+    request_original_set_sha256: requestDigest,
+    ...releaseFields
+  };
+  const stored = result?.csm_rows?.output?.structured_output?.external_identity_support ?? null;
+  if (support.status === "ABSTAINED") {
+    if (stored !== null) throw persistenceCheckpointError("external_identity_rows_unexpected");
+    return {
+      ...receipt,
+      reason: requiredText(support.reason, "external_identity_abstain_reason")
+    };
+  }
+
+  const matchMode = String(support.match_mode || "").trim();
+  if (!["EXACT_FOUR_ANCHOR", "VERIFIED_ORIGINAL_SET"].includes(matchMode)) {
+    throw persistenceCheckpointError("external_identity_match_mode_invalid");
+  }
+  const originalSetSha256 = optionalSha256(
+    support.original_set_sha256,
+    "external_identity_original_set_sha256"
+  );
+  if (matchMode === "VERIFIED_ORIGINAL_SET") {
+    if (!originalSetSha256 || originalSetSha256 !== requestDigest) {
+      throw persistenceCheckpointError("external_identity_original_set_sha256_mismatch");
+    }
+  } else if (originalSetSha256) {
+    throw persistenceCheckpointError("external_identity_original_set_sha256_unexpected");
+  }
+  const applied = {
+    ...receipt,
+    match_mode: matchMode,
+    original_set_sha256: originalSetSha256,
+    record_id: requiredText(support.record_id, "external_identity_record_id")
+  };
+  for (const field of [
+    "pack_id", "pack_version", "pack_sha256", "index_id", "index_version", "index_sha256",
+    "registry_release_id", "resolution_contract_sha256", "match_mode", "record_id"
+  ]) {
+    if (stored?.[field] !== applied[field]) {
+      throw persistenceCheckpointError(`external_identity_rows_${field}_mismatch`);
+    }
+  }
+  if ((stored?.original_set_sha256 ?? null) !== originalSetSha256) {
+    throw persistenceCheckpointError("external_identity_rows_original_set_sha256_mismatch");
+  }
+  return applied;
+}
+
 export function buildCsmPersistenceCheckpoint({
   prepared, tenantId, operationKey, payloadHash, recognitionSessionId,
   recognitionSessionDeferred = false, recognitionInput = null,
-  executionContractSha256 = null, operationScope = ""
+  executionContractSha256 = null, resolutionContractSha256 = null,
+  originalSetSha256 = null,
+  operationScope = ""
 } = {}) {
   const tenant = requiredText(tenantId, "tenant_id");
   const operation = requiredText(operationKey, "operation_key");
@@ -176,6 +289,10 @@ export function buildCsmPersistenceCheckpoint({
   const executionContract = optionalSha256(
     executionContractSha256,
     "execution_contract_sha256"
+  );
+  const resolutionContract = optionalSha256(
+    resolutionContractSha256,
+    "resolution_contract_sha256"
   );
   const derivedCheckpoint = String(operationScope || "").trim() === "derived_checkpoint";
   if (operationScope && !derivedCheckpoint) {
@@ -195,6 +312,28 @@ export function buildCsmPersistenceCheckpoint({
   } else if (prepared?.execution_contract_sha256 != null) {
     throw persistenceCheckpointError("legacy_result_contains_execution_contract");
   }
+  if (resolutionContract) {
+    const preparedResolutionContract = optionalSha256(
+      prepared?.resolution_contract_sha256,
+      "prepared_resolution_contract_sha256"
+    );
+    if (preparedResolutionContract !== resolutionContract) {
+      throw persistenceCheckpointError("prepared_resolution_contract_sha256_mismatch");
+    }
+    try {
+      validatePostObservationResolutionContract(prepared?.resolution_contract, {
+        expectedSha256: resolutionContract
+      });
+    } catch {
+      throw persistenceCheckpointError("prepared_resolution_contract_invalid");
+    }
+  }
+  const externalIdentityReceipt = resolutionContract
+    ? normalizedExternalIdentityCheckpointReceipt(prepared, {
+        requestOriginalSetSha256: originalSetSha256,
+        resolutionContractSha256: resolutionContract
+      })
+    : null;
   const hashes = prepared?.csm_rows?.session_hashes;
   if (!exactPacketHashes(hashes)) {
     throw persistenceCheckpointError("packet_hashes_invalid");
@@ -210,8 +349,12 @@ export function buildCsmPersistenceCheckpoint({
     csm_persistence_checkpoint: {
       schema_version: executionContract
         ? derivedCheckpoint
-          ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
-          : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
+          ? resolutionContract
+            ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
+            : CSM_PERSISTENCE_CHECKPOINT_DERIVED_LEGACY_VERSION
+          : resolutionContract
+            ? CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
+            : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_LEGACY_VERSION
         : CSM_PERSISTENCE_CHECKPOINT_VERSION,
       state: "PERSISTENCE_PENDING",
       tenant_id: tenant,
@@ -225,6 +368,9 @@ export function buildCsmPersistenceCheckpoint({
       ...(recognitionInput ? {
         recognition_input: normalizedCheckpointRecognitionInput(recognitionInput)
       } : {}),
+      ...(externalIdentityReceipt ? {
+        external_identity_receipt: externalIdentityReceipt
+      } : {}),
       packet_hashes: hashes,
       accuracy_loss_ledger_version: accuracyLossLedger.version,
       accuracy_loss_ledger_sha256: accuracyLossLedger.ledger_sha256
@@ -234,12 +380,18 @@ export function buildCsmPersistenceCheckpoint({
 
 export function validateCsmPersistenceCheckpoint(result, {
   tenantId, operationKey, payloadHash, recognitionSessionId,
-  executionContractSha256 = null, operationScope = ""
+  executionContractSha256 = null, resolutionContractSha256 = null,
+  originalSetSha256 = null,
+  operationScope = ""
 } = {}) {
   const checkpoint = result?.csm_persistence_checkpoint;
   const executionContract = optionalSha256(
     executionContractSha256,
     "execution_contract_sha256"
+  );
+  const resolutionContract = optionalSha256(
+    resolutionContractSha256,
+    "resolution_contract_sha256"
   );
   const derivedCheckpoint = String(operationScope || "").trim() === "derived_checkpoint";
   if (operationScope && !derivedCheckpoint) {
@@ -258,7 +410,10 @@ export function validateCsmPersistenceCheckpoint(result, {
   const allowedCheckpointVersions = executionContract
     ? [derivedCheckpoint
         ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
-        : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION]
+        : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION,
+      derivedCheckpoint
+        ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_LEGACY_VERSION
+        : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_LEGACY_VERSION]
     : derivedCheckpoint
       ? []
       : [CSM_PERSISTENCE_CHECKPOINT_VERSION, CSM_PERSISTENCE_CHECKPOINT_LEGACY_VERSION];
@@ -286,9 +441,39 @@ export function validateCsmPersistenceCheckpoint(result, {
   if (!executionContract && checkpoint?.execution_contract_sha256 != null) {
     throw persistenceCheckpointError("legacy_checkpoint_contains_execution_contract");
   }
+  if (resolutionContract) {
+    if (optionalSha256(
+      result?.resolution_contract_sha256,
+      "result_resolution_contract_sha256"
+    ) !== resolutionContract) {
+      throw persistenceCheckpointError("result_resolution_contract_sha256_mismatch");
+    }
+    try {
+      validatePostObservationResolutionContract(result?.resolution_contract, {
+        expectedSha256: resolutionContract
+      });
+    } catch {
+      throw persistenceCheckpointError("result_resolution_contract_invalid");
+    }
+  }
+  const identityReceiptCheckpoint = checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION;
+  if (identityReceiptCheckpoint && resolutionContract) {
+    const expectedReceipt = normalizedExternalIdentityCheckpointReceipt(result, {
+      requestOriginalSetSha256: originalSetSha256,
+      resolutionContractSha256: resolutionContract
+    });
+    if (JSON.stringify(checkpoint.external_identity_receipt) !== JSON.stringify(expectedReceipt)) {
+      throw persistenceCheckpointError("external_identity_receipt_mismatch");
+    }
+  } else if (checkpoint?.external_identity_receipt != null) {
+    throw persistenceCheckpointError("external_identity_receipt_unexpected");
+  }
   const currentCheckpoint = checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_VERSION
     || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
-    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION;
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_LEGACY_VERSION
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_LEGACY_VERSION;
   if (currentCheckpoint
       && checkpoint.recognition_session_deferred != null
       && typeof checkpoint.recognition_session_deferred !== "boolean") {
@@ -376,13 +561,99 @@ function historicalExecutionContractSha256(result) {
   return executionContractSha256;
 }
 
+function historicalResolutionContractSha256(result) {
+  const contract = result?.resolution_contract ?? null;
+  const rawSha256 = result?.resolution_contract_sha256 ?? null;
+  if (contract === null && rawSha256 === null) return null;
+  if (contract === null || rawSha256 === null) {
+    throw persistenceCheckpointError("historical_resolution_receipt_incomplete");
+  }
+  const sha256 = optionalSha256(rawSha256, "historical_resolution_contract_sha256");
+  try {
+    validatePostObservationResolutionContract(contract, { expectedSha256: sha256 });
+  } catch {
+    throw persistenceCheckpointError("historical_resolution_receipt_invalid");
+  }
+  return sha256;
+}
+
+function historicalOriginalSetSha256(result) {
+  const receipt = result?.csm_persistence_checkpoint?.external_identity_receipt;
+  if (receipt == null) return null;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    throw persistenceCheckpointError("historical_external_identity_receipt_invalid");
+  }
+  return optionalSha256(
+    receipt.request_original_set_sha256,
+    "historical_request_original_set_sha256"
+  );
+}
+
+const PUBLIC_PERSISTED_RESULT_FIELDS = Object.freeze([
+  "title", "fields", "field_defects", "unreadable_fields", "low_confidence_fields",
+  "grammar", "brackets", "dropped_brackets", "suppressed_brackets", "restored_brackets",
+  "truncated", "input_empty_fields", "normalization_reasons", "character_budget", "length",
+  "raw_length", "provider", "model", "requested_model", "served_model",
+  "served_model_attested", "provider_response_status", "provider_response_status_attested",
+  "provider_response_incomplete", "requested_effort", "served_effort",
+  "served_effort_attested", "served_effort_conflict", "image_detail", "input_tokens",
+  "cached_input_tokens", "output_tokens", "reasoning_tokens", "total_tokens",
+  "total_tokens_source", "latency_ms", "provider_http_status", "provider_response_id",
+  "provider_request_id", "provider_client_request_id", "prompt_version", "max_output_tokens",
+  "model_profile_id", "provider_adapter_version", "request_builder_version",
+  "response_parser_version", "optimization_pack_id", "optimization_pack_sha256",
+  "execution_contract_sha256", "execution_contract", "transport_profile_id",
+  "transport_profile_sha256", "provider_attempt_number", "provider_retry_count",
+  "csm_contract_version", "csm_owner_versions", "latency_stages_ms"
+]);
+
+function publicCsmRows(rows) {
+  const resolution = rows?.resolution;
+  const output = rows?.output;
+  const recognitionSessionId = requiredText(
+    resolution?.recognition_session_id,
+    "public_recognition_session_id"
+  );
+  const optionalText = (value) => String(value || "").trim();
+  const resolutionContractVersion = optionalText(resolution?.contract_version);
+  const resolverVersion = optionalText(resolution?.resolver_version);
+  const outputContractVersion = optionalText(output?.contract_version);
+  const composerVersion = optionalText(output?.composer_version);
+  const publicOutput = {
+    ...(outputContractVersion ? { contract_version: outputContractVersion } : {}),
+    ...(composerVersion ? { composer_version: composerVersion } : {})
+  };
+  return {
+    resolution: {
+      recognition_session_id: recognitionSessionId,
+      ...(resolutionContractVersion ? { contract_version: resolutionContractVersion } : {}),
+      ...(resolverVersion ? { resolver_version: resolverVersion } : {})
+    },
+    ...(Object.keys(publicOutput).length ? { output: publicOutput } : {})
+  };
+}
+
+function publicCsmPersistence(value) {
+  if (value == null) return null;
+  if (value?.ok !== true || value?.atomic !== true || value?.session?.saved !== true) {
+    throw persistenceCheckpointError("public_csm_persistence_invalid");
+  }
+  return {
+    ok: true,
+    atomic: true,
+    ...(value.replayed === true ? { replayed: true } : {}),
+    session: { saved: true }
+  };
+}
+
 export function publicPersistedResult(result, executionOrigin = null, canonicalAssetId = null) {
-  const {
-    csm_persistence_checkpoint: checkpoint,
-    provider_authority_receipt: providerAuthorityReceipt,
-    accuracy_loss_ledger: _accuracyLossLedger,
-    ...publicResult
-  } = result || {};
+  const checkpoint = result?.csm_persistence_checkpoint;
+  const providerAuthorityReceipt = result?.provider_authority_receipt;
+  const publicResult = Object.fromEntries(PUBLIC_PERSISTED_RESULT_FIELDS.flatMap((key) => (
+    Object.prototype.hasOwnProperty.call(result || {}, key) ? [[key, result[key]]] : []
+  )));
+  const csmRows = publicCsmRows(result?.csm_rows);
+  const csmPersistence = publicCsmPersistence(result?.csm_persistence);
   let freshAuthorityReceipt = null;
   if (executionOrigin === "FRESH_CURRENT") {
     const authorityOperationKey = String(checkpoint?.operation_key || "").trim();
@@ -404,6 +675,8 @@ export function publicPersistedResult(result, executionOrigin = null, canonicalA
   // FRESH_CURRENT label or authority claim from its durable checkpoint.
   return {
     ...publicResult,
+    csm_rows: csmRows,
+    ...(csmPersistence ? { csm_persistence: csmPersistence } : {}),
     ...(canonicalAssetId === null ? {} : {
       asset_id: requiredText(canonicalAssetId, "canonical_asset_id")
     }),
@@ -624,10 +897,16 @@ export async function runDirectCsmAsset({
       retryable: false
     });
   }
-  const originals = canonical.images.filter((image) => image.derived !== true).slice(0, 2);
+  const canonicalOriginals = canonical.images.filter((image) => image.derived !== true);
+  const originals = canonicalOriginals.slice(0, 2);
   if (!originals.length) {
     throw Object.assign(new Error("canonical_original_image_missing"), { statusCode: 409 });
   }
+  // readCanonicalListingImageReferences has already enforced tenant/asset
+  // scope plus object/content verification. Only that server-owned original
+  // set can open the reviewed image-identity seam; recognition derivatives and
+  // client payload values never participate.
+  const externalIdentity = externalIdentityFromVerifiedOriginals(canonicalOriginals);
   // COS-53: Recognition may read a stored bounded DOWNSCALE when one exists for
   // an original and is actually smaller. The originals remain the system of
   // record and are still what must exist -- the check above is unchanged and
@@ -689,6 +968,8 @@ export async function runDirectCsmAsset({
       "recognition_image_content_sha256"
     ).toLowerCase()}`),
     execution_contract_sha256: executionContractSha256,
+    resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
+    original_set_sha256: externalIdentity.originalSetSha256,
     ...(operationScope ? {
       operation_scope: operationScope,
       lane_version: requiredText(dependencies.laneVersion, "lane_version"),
@@ -748,6 +1029,8 @@ export async function runDirectCsmAsset({
   let durableResult = null;
   let durablePayloadHash = payloadHash;
   let durableExecutionContractSha256 = task.execution_contract_sha256;
+  let durableResolutionContractSha256 = task.resolution_contract_sha256;
+  let durableOriginalSetSha256 = task.original_set_sha256;
   let historicalPayloadRecovered = false;
   let freshProviderAttemptStarted = false;
   let currentRequestCheckpoint = null;
@@ -780,7 +1063,9 @@ export async function runDirectCsmAsset({
       return {
         result: historical.result,
         payloadHash: storedPayloadHash,
-        executionContractSha256: historicalExecutionContractSha256(historical.result)
+        executionContractSha256: historicalExecutionContractSha256(historical.result),
+        resolutionContractSha256: historicalResolutionContractSha256(historical.result),
+        originalSetSha256: historicalOriginalSetSha256(historical.result)
       };
     }
     // Every matched non-success state is authoritative. In particular FAILED,
@@ -803,6 +1088,8 @@ export async function runDirectCsmAsset({
         durable = { status: "found", result: recovered.result };
         durablePayloadHash = recovered.payloadHash;
         durableExecutionContractSha256 = recovered.executionContractSha256;
+        durableResolutionContractSha256 = recovered.resolutionContractSha256;
+        durableOriginalSetSha256 = recovered.originalSetSha256;
         historicalPayloadRecovered = true;
       } catch (recoveryError) {
         throw markStagedLookupRecovery(recoveryError);
@@ -837,6 +1124,8 @@ export async function runDirectCsmAsset({
       durable = { status: "found", result: recovered.result };
       durablePayloadHash = recovered.payloadHash;
       durableExecutionContractSha256 = recovered.executionContractSha256;
+      durableResolutionContractSha256 = recovered.resolutionContractSha256;
+      durableOriginalSetSha256 = recovered.originalSetSha256;
       historicalPayloadRecovered = true;
     }
     if (durable.status === "found") durableResult = durable.result;
@@ -923,6 +1212,7 @@ export async function runDirectCsmAsset({
         transportProfile,
         promptVersion: CSM_DIRECT_PROMPT_VERSION,
         providerClientRequestId,
+        externalIdentityContext: externalIdentity.context,
         callProvider: async (request) => {
           providerCaller ||= createResponsesProviderCaller({
             env,
@@ -965,6 +1255,8 @@ export async function runDirectCsmAsset({
       recognitionSessionDeferred,
       recognitionInput: recognition.read,
       executionContractSha256: dispatched.execution_contract_sha256 || null,
+      resolutionContractSha256: dispatched.resolution_contract_sha256 || null,
+      originalSetSha256: dispatched.original_set_sha256 || null,
       operationScope
     });
     currentRequestCheckpoint = checkpoint;
@@ -1001,6 +1293,8 @@ export async function runDirectCsmAsset({
           settled = recovered.result;
           durablePayloadHash = recovered.payloadHash;
           durableExecutionContractSha256 = recovered.executionContractSha256;
+          durableResolutionContractSha256 = recovered.resolutionContractSha256;
+          durableOriginalSetSha256 = recovered.originalSetSha256;
           historicalPayloadRecovered = true;
         } catch (recoveryError) {
           throw markStagedLookupRecovery(recoveryError);
@@ -1010,6 +1304,8 @@ export async function runDirectCsmAsset({
         settled = recovered.result;
         durablePayloadHash = recovered.payloadHash;
         durableExecutionContractSha256 = recovered.executionContractSha256;
+        durableResolutionContractSha256 = recovered.resolutionContractSha256;
+        durableOriginalSetSha256 = recovered.originalSetSha256;
         historicalPayloadRecovered = true;
       }
     }
@@ -1048,6 +1344,8 @@ export async function runDirectCsmAsset({
     payloadHash: durablePayloadHash,
     recognitionSessionId: sessionId,
     executionContractSha256: durableExecutionContractSha256,
+    resolutionContractSha256: durableResolutionContractSha256,
+    originalSetSha256: durableOriginalSetSha256,
     operationScope
   });
   if (typeof synchronizeBeforePersistence === "function") {
