@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 import {
-  materializeWriterJourneySource,
-  WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACT
+  materializeWriterJourneySources,
+  WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS
 } from "./materialize-writer-journey-source.mjs";
 
 const productionUrl = "https://irpgnhkslrsiucybkufc.supabase.co";
@@ -23,88 +24,210 @@ const fetchImpl = async (url, init = {}) => {
     headers: { "content-type": "image/jpeg", "content-length": String(jpeg.length) }
   });
 };
-const source = {
-  source_feedback_id: "safe-source",
+const sha256 = createHash("sha256").update(jpeg).digest("hex");
+const cases = ["NON_TCG", "TCG"].map((caseId) => ({
+  case_id: caseId,
+  expected_grammar: caseId,
+  source_feedback_id: `safe-${caseId.toLowerCase()}`,
   evaluation_cohort: "INTERNAL_REVIEWED_GT",
-  images: [{
+  hash_provenance: "TEST_EXACT_BYTES",
+  images: ["front", "back"].map((side) => ({
     bucket: "listing-feedback-images",
-    object_path: "feedback/safe source/front.jpg",
-    role: "front_original",
-    content_sha256: createHash("sha256").update(jpeg).digest("hex")
-  }]
+    object_path: `feedback/safe ${caseId.toLowerCase()}/${side}.jpg`,
+    role: `${side}_original`,
+    content_sha256: sha256
+  }))
+}));
+const sandboxDir = await mkdtemp(path.join(os.tmpdir(), "writer-journey-source-"));
+const freshOutDir = (label = "attempt") => mkdtemp(path.join(sandboxDir, `${label}-`));
+const productionEnv = {
+  SUPABASE_URL: productionUrl,
+  SUPABASE_SERVICE_ROLE_KEY: "sb_secret_service-test"
 };
-const outDir = await mkdtemp(path.join(os.tmpdir(), "writer-journey-source-"));
+const runAttempt = async ({
+  env = productionEnv,
+  outDir = null,
+  cases: attemptCases = cases,
+  fetchImpl: attemptFetch = fetchImpl
+} = {}) => materializeWriterJourneySources({
+  env,
+  outDir: outDir || await freshOutDir(),
+  cases: attemptCases,
+  fetchImpl: attemptFetch
+});
 
 try {
-  assert.deepEqual(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACT, {
-    source_feedback_id: "007edfc1-e52d-4a9e-ab8f-3955e6500620",
-    evaluation_cohort: "INTERNAL_REVIEWED_GT",
-    image_sha256: {
-      "007edfc1-e52d-4a9e-ab8f-3955e6500620_front":
-        "16f731783a954b79d696ff2343c25e996692c0f845fc2bb01ed483ab7a74774b",
-      "007edfc1-e52d-4a9e-ab8f-3955e6500620_back":
-        "b3edee5956060acde3946cc5c4fcf29a0981d582e5d547b69290ce53f2f3cdc1"
-    }
+  assert.equal(buildCsmResolutionView({ composed: { grammar: "standard" } }).grammar.value,
+    WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[0].expected_grammar,
+    "the manifest grammar must follow the resolution-view contract, not an internal SEM enum");
+  assert.equal(buildCsmResolutionView({ composed: { grammar: "tcg" } }).grammar.value,
+    WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1].expected_grammar);
+  assert.deepEqual(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.map((source) => ({
+    case_id: source.case_id,
+    expected_grammar: source.expected_grammar,
+    source_feedback_id: source.source_feedback_id
+  })), [{
+    case_id: "NON_TCG",
+    expected_grammar: "NON_TCG",
+    source_feedback_id: "007edfc1-e52d-4a9e-ab8f-3955e6500620"
+  }, {
+    case_id: "TCG",
+    expected_grammar: "TCG",
+    source_feedback_id: "6356cb8c-664a-4c9e-b909-63274390f4e1"
+  }]);
+  for (const contract of WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS) {
+    assert.equal(Object.keys(contract.image_sha256).length, 2);
+    for (const hash of Object.values(contract.image_sha256)) assert.match(hash, /^[0-9a-f]{64}$/);
+  }
+  assert.deepEqual(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1].image_sha256, {
+    "6356cb8c-664a-4c9e-b909-63274390f4e1_front":
+      "3678b079635cea9524e4d159594f9af24b69806577f981b87f391b8f43600bfe",
+    "6356cb8c-664a-4c9e-b909-63274390f4e1_back":
+      "7e06b39628b32fa78eedc1dc602485e8a13d6dab28751ae06605265d31aeb388"
   });
-  const result = await materializeWriterJourneySource({
-    env: { SUPABASE_URL: productionUrl, SUPABASE_SERVICE_ROLE_KEY: "sb_secret_service-test" },
+  assert.equal(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1].hash_provenance,
+    "2026-08-09_DIRECT_EXACT_PATH_BYTE_ACQUISITION");
+  const materializerSource = await readFile(new URL("./materialize-writer-journey-source.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(materializerSource, /error:\s*String\(error/,
+    "CLI failures must not echo signed URLs, tokens, or service secrets");
+  const outDir = await freshOutDir("success");
+  await chmod(outDir, 0o755);
+  assert.equal((await stat(outDir)).mode & 0o777, 0o755,
+    "the fixture must begin with broad permissions");
+  const result = await runAttempt({
     outDir,
-    source,
-    fetchImpl
   });
-  assert.equal(result.schema_version, "writer-journey-source-v1");
-  assert.equal(result.image_count, 1);
-  assert.deepEqual(await readFile(result.files[0].path), jpeg);
-  assert.equal((await stat(result.files[0].path)).mode & 0o777, 0o600);
-  assert.equal(calls.length, 2);
-  assert.match(calls[0].url, /safe%20source\/front\.jpg$/);
+  assert.equal(result.schema_version, "writer-journey-cases-v2");
+  assert.equal(result.evidence_scope, "LIVE_CONTRACT_RECEIPT_ONLY");
+  assert.equal(result.accuracy_claim, null);
+  assert.deepEqual(result.cases.map((entry) => entry.expected_grammar), ["NON_TCG", "TCG"]);
+  assert.deepEqual(result.cases.map((entry) => entry.image_count), [2, 2]);
+  assert.equal((await stat(outDir)).mode & 0o777, 0o700,
+    "a pre-existing broad output directory must be tightened");
+  for (const entry of result.cases) {
+    assert.deepEqual(entry.files.map((file) => file.role), ["front_original", "back_original"]);
+    assert.equal((await stat(path.dirname(entry.files[0].path))).mode & 0o777, 0o700);
+    for (const file of entry.files) {
+      assert.deepEqual(await readFile(file.path), jpeg);
+      assert.equal((await stat(file.path)).mode & 0o777, 0o600);
+      assert.equal(file.content_sha256, sha256);
+    }
+  }
+  assert.equal(calls.length, 8);
+  assert.match(calls[0].url, /safe%20non_tcg\/front\.jpg$/);
   assert.equal(calls[0].init.headers.apikey, "sb_secret_service-test");
   assert.equal(calls[0].init.headers.authorization, undefined);
   assert.equal(calls[0].init.redirect, "error",
     "a Storage redirect must not receive the server-only apikey");
+  assert.equal(calls[1].init.redirect, "error",
+    "a signed download redirect must not escape the exact Storage object");
   assert.doesNotMatch(JSON.stringify(result), /sb_secret_service-test/);
 
   await assert.rejects(
-    materializeWriterJourneySource({
+    runAttempt({
       env: { SUPABASE_URL: "https://wrong.supabase.co", SUPABASE_SERVICE_ROLE_KEY: "x" },
-      outDir,
-      source,
-      fetchImpl
     }),
     /SUPABASE_URL_not_production/
   );
   await assert.rejects(
-    materializeWriterJourneySource({
+    runAttempt({
       env: { SUPABASE_URL: productionUrl },
-      outDir,
-      source,
-      fetchImpl
     }),
     /SUPABASE_SERVICE_ROLE_KEY_required/
   );
   await assert.rejects(
-    materializeWriterJourneySource({
-      env: { SUPABASE_URL: productionUrl, SUPABASE_SERVICE_ROLE_KEY: "x" },
-      outDir,
-      source: { ...source, evaluation_cohort: "EBAY_COLD_START" },
-      fetchImpl
+    runAttempt({
+      cases: [{ ...cases[0], evaluation_cohort: "EBAY_COLD_START" }, cases[1]],
     }),
     /writer_journey_source_record_invalid/
   );
   await assert.rejects(
-    materializeWriterJourneySource({
-      env: { SUPABASE_URL: productionUrl, SUPABASE_SERVICE_ROLE_KEY: "x" },
-      outDir,
-      source: { ...source, images: [{ ...source.images[0], object_path: "../escape.jpg" }] },
-      fetchImpl
+    runAttempt({
+      cases: [{ ...cases[0], images: [cases[0].images[1], cases[0].images[0]] }, cases[1]],
+    }),
+    /writer_journey_source_record_invalid/,
+    "front/back order is part of the fixed live case identity"
+  );
+  await assert.rejects(
+    runAttempt({
+      cases: [{ ...cases[0], images: [cases[0].images[0], cases[0].images[0]] }, cases[1]],
+    }),
+    /writer_journey_source_record_invalid/,
+    "duplicate roles must not manufacture a two-view case"
+  );
+  await assert.rejects(
+    runAttempt({
+      cases: [{
+        ...cases[0],
+        images: [{ ...cases[0].images[0], object_path: "../escape.jpg" }, cases[0].images[1]]
+      }, cases[1]],
     }),
     /storage_object_path_invalid/
   );
+  const existingCaseOutDir = await freshOutDir("existing-case");
+  await mkdir(path.join(existingCaseOutDir, "non-tcg"), { mode: 0o755 });
   await assert.rejects(
-    materializeWriterJourneySource({
-      env: { SUPABASE_URL: productionUrl, SUPABASE_SERVICE_ROLE_KEY: "x" },
-      outDir,
-      source,
+    runAttempt({ outDir: existingCaseOutDir }),
+    /writer_journey_source_case_directory_exists/,
+    "case directories must be newly created so stale files cannot be reused"
+  );
+
+  const existingFileOutDir = await freshOutDir("existing-file");
+  const existingFilePath = path.join(existingFileOutDir, "non-tcg", "1-front_original.jpg");
+  const existingBytes = Buffer.from("do-not-overwrite", "utf8");
+  let existingFilePlanted = false;
+  await assert.rejects(
+    runAttempt({
+      outDir: existingFileOutDir,
+      fetchImpl: async (url, init = {}) => {
+        if (init.method === "POST") {
+          return new Response(JSON.stringify({
+            signedURL: new URL(String(url)).pathname.replace("/storage/v1", "") + "?token=test"
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (!existingFilePlanted) {
+          await writeFile(existingFilePath, existingBytes, { mode: 0o644 });
+          await chmod(existingFilePath, 0o644);
+          existingFilePlanted = true;
+        }
+        return new Response(jpeg, { status: 200 });
+      }
+    }),
+    /writer_journey_source_file_exists/,
+    "an existing 0644 fixture must fail rather than be overwritten or repaired"
+  );
+  assert.deepEqual(await readFile(existingFilePath), existingBytes);
+  assert.equal((await stat(existingFilePath)).mode & 0o777, 0o644);
+
+  const symlinkOutDir = await freshOutDir("existing-symlink");
+  const symlinkPath = path.join(symlinkOutDir, "non-tcg", "1-front_original.jpg");
+  const sentinelPath = path.join(sandboxDir, "symlink-sentinel.txt");
+  const sentinelBytes = Buffer.from("sentinel-must-remain-unchanged", "utf8");
+  await writeFile(sentinelPath, sentinelBytes, { mode: 0o600 });
+  let symlinkPlanted = false;
+  await assert.rejects(
+    runAttempt({
+      outDir: symlinkOutDir,
+      fetchImpl: async (url, init = {}) => {
+        if (init.method === "POST") {
+          return new Response(JSON.stringify({
+            signedURL: new URL(String(url)).pathname.replace("/storage/v1", "") + "?token=test"
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        if (!symlinkPlanted) {
+          await symlink(sentinelPath, symlinkPath);
+          symlinkPlanted = true;
+        }
+        return new Response(jpeg, { status: 200 });
+      }
+    }),
+    /writer_journey_source_file_exists/,
+    "exclusive creation must reject a symlink planted at the destination"
+  );
+  assert.deepEqual(await readFile(sentinelPath), sentinelBytes);
+
+  await assert.rejects(
+    runAttempt({
       fetchImpl: async () => new Response(JSON.stringify({
         signedURL: "https://attacker.example/object/sign/file?token=x"
       }), { status: 200, headers: { "content-type": "application/json" } })
@@ -112,19 +235,84 @@ try {
     /writer_journey_signing_response_invalid/
   );
   await assert.rejects(
-    materializeWriterJourneySource({
-      env: { SUPABASE_URL: productionUrl, SUPABASE_SERVICE_ROLE_KEY: "x" },
-      outDir,
-      source: {
-        ...source,
-        images: [{ ...source.images[0], content_sha256: "0".repeat(64) }]
-      },
-      fetchImpl
+    runAttempt({
+      fetchImpl: async (url) => new Response(JSON.stringify({
+        signedURL: new URL(String(url)).pathname.replace("/storage/v1", "")
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    }),
+    /writer_journey_signing_response_invalid/,
+    "the exact Storage object path is not usable without a signed token"
+  );
+  await assert.rejects(
+    runAttempt({
+      fetchImpl: async (url) => ({
+        ok: true,
+        redirected: true,
+        json: async () => ({
+          signedURL: new URL(String(url)).pathname.replace("/storage/v1", "") + "?token=test"
+        })
+      })
+    }),
+    /writer_journey_source_signing_failed/,
+    "an injected transport must not hide a followed signing redirect"
+  );
+  await assert.rejects(
+    runAttempt({
+      fetchImpl: async (url, init = {}) => {
+        if (init.method === "POST") {
+          return new Response(JSON.stringify({
+            signedURL: "/object/sign/listing-feedback-images/feedback/wrong-object.jpg?token=test"
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return new Response(jpeg, { status: 200 });
+      }
+    }),
+    /writer_journey_signing_response_invalid/,
+    "same-origin signed URLs must still bind the exact bucket and object path"
+  );
+  await assert.rejects(
+    runAttempt({
+      fetchImpl: async (url, init = {}) => {
+        if (init.method === "POST") {
+          return new Response(JSON.stringify({
+            signedURL: new URL(String(url)).pathname.replace("/storage/v1", "") + "?token=test"
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        assert.equal(init.redirect, "error");
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://attacker.example/redirected-object.jpg" }
+        });
+      }
+    }),
+    /writer_journey_source_download_failed/,
+    "redirect responses must fail closed without following Location"
+  );
+  await assert.rejects(
+    runAttempt({
+      fetchImpl: async (url, init = {}) => {
+        if (init.method === "POST") {
+          return new Response(JSON.stringify({
+            signedURL: new URL(String(url)).pathname.replace("/storage/v1", "") + "?token=test"
+          }), { status: 200, headers: { "content-type": "application/json" } });
+        }
+        return { ok: true, redirected: true };
+      }
+    }),
+    /writer_journey_source_download_failed/,
+    "an injected transport must not hide a followed download redirect"
+  );
+  await assert.rejects(
+    runAttempt({
+      cases: [{
+        ...cases[0],
+        images: [{ ...cases[0].images[0], content_sha256: "0".repeat(64) }, cases[0].images[1]]
+      }, cases[1]],
     }),
     /writer_journey_source_hash_mismatch/
   );
 } finally {
-  await rm(outDir, { recursive: true, force: true });
+  await rm(sandboxDir, { recursive: true, force: true });
 }
 
 console.log("writer journey source materialization tests passed");

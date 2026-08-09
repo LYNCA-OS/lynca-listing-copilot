@@ -37,17 +37,16 @@ jobs:
       - run: npm ci
       - run: npm run check:e2e:production-writer-journey
       - run: npm run test:e2e:production-writer-journey:contract
+      - run: npx playwright test e2e/production-writer-journey.spec.mjs --project=chromium --grep @offline
 
   writer-journey:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment: production
     env:
       WRITER_JOURNEY_BASE_URL: https://listing.lyncafei.team
       WRITER_JOURNEY_EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
-      METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
-      METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,23 +71,27 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Assert scoped production credentials
+        env:
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: test -n "$METAVERSE_USERNAME" && test -n "$METAVERSE_PASSWORD"
-      - name: Materialize one internal source directly from Production Storage
+      - name: Materialize fixed NON_TCG and TCG cases from Production Storage
         id: source
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           source_dir="$RUNNER_TEMP/writer-journey-source"
-          source_json="$RUNNER_TEMP/writer-journey-source.json"
-          node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" > "$source_json"
-          local_images="$(node -e 'const x=require(process.argv[1]); process.stdout.write(x.files.map((f)=>f.path).join(","))' "$source_json")"
-          test -n "$local_images"
-          echo "local_images=$local_images" >> "$GITHUB_OUTPUT"
+          cases_manifest="$RUNNER_TEMP/writer-journey-cases-v2.json"
+          node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" > "$cases_manifest"
+          node -e 'const x=require(process.argv[1]); if(x.schema_version!=="writer-journey-cases-v2"||x.accuracy_claim!==null||x.cases?.length!==2)process.exit(1)' "$cases_manifest"
+          echo "cases_manifest=$cases_manifest" >> "$GITHUB_OUTPUT"
       - run: npx playwright install --with-deps chromium
       - name: Run real production Writer Journey
         env:
-          WRITER_JOURNEY_LOCAL_IMAGES: ${{ steps.source.outputs.local_images }}
+          WRITER_JOURNEY_CASES_MANIFEST: ${{ steps.source.outputs.cases_manifest }}
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: npm run test:e2e:production-writer-journey
       - name: Upload passing evidence
         if: success()
