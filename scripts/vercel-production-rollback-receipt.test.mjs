@@ -8,7 +8,8 @@ import {
   captureVercelProductionRollbackReceipt,
   verifyCanonicalVercelProductionDeployment,
   verifyCanonicalVercelProductionReceipt,
-  verifySavedVercelProductionDeployment
+  verifySavedVercelProductionDeployment,
+  verifyVercelProductionWriterAuthority
 } from "./vercel-production-rollback-receipt.mjs";
 
 const token = "vercel_token_for_rollback_tests_123456";
@@ -76,7 +77,9 @@ function mockFetch({
   aliases = [alias(), alias()],
   deploymentValue = deployment(),
   exactHealth = health(),
-  canonicalHealth = health()
+  canonicalHealth = health(),
+  projectOverrides = {},
+  domainOverrides = {}
 } = {}) {
   const calls = [];
   let aliasIndex = 0;
@@ -91,8 +94,30 @@ function mockFetch({
       if (url.pathname === `/v9/projects/${projectId}`) {
         return json({
           id: projectId,
+          name: "lynca-listing-copilot",
           accountId: teamId,
-          protectionBypass: { [bypass]: { scope: "automation-bypass" } }
+          autoAssignCustomDomains: false,
+          link: {
+            type: "github",
+            org: "LYNCA-OS",
+            repo: "lynca-listing-copilot",
+            productionBranch: "main",
+            deployHooks: []
+          },
+          protectionBypass: { [bypass]: { scope: "automation-bypass" } },
+          ...projectOverrides
+        });
+      }
+      if (url.pathname === `/v9/projects/${projectId}/domains/listing.lyncafei.team`) {
+        return json({
+          name: "listing.lyncafei.team",
+          projectId,
+          verified: true,
+          gitBranch: null,
+          customEnvironmentId: null,
+          redirect: null,
+          redirectStatusCode: null,
+          ...domainOverrides
         });
       }
       throw new Error(`unexpected Vercel API call: ${url.pathname}`);
@@ -132,6 +157,20 @@ const temp = await mkdtemp(join(tmpdir(), "lynca-vercel-rollback-receipt-"));
 try {
   const receiptPath = join(temp, "rollback.json");
   const captureMock = mockFetch();
+  assert.deepEqual(
+    await verifyVercelProductionWriterAuthority({
+      env,
+      fetchImpl: captureMock.fetchImpl
+    }),
+    {
+      project_id: projectId,
+      team_id: teamId,
+      auto_assign_custom_domains: false,
+      canonical_domain_git_branch: null,
+      deploy_hook_count: 0,
+      git_production_branch: "main"
+    }
+  );
   const receipt = await captureVercelProductionRollbackReceipt({
     env,
     fetchImpl: captureMock.fetchImpl,
@@ -155,6 +194,45 @@ try {
   assert.equal(serialized.includes(token), false);
   assert.equal(serialized.includes(bypass), false);
   assertCredentialBoundaries(captureMock.calls);
+
+  for (const [name, projectOverrides] of [
+    ["automatic domain assignment", { autoAssignCustomDomains: true }],
+    ["deploy hook", {
+      link: {
+        type: "github",
+        org: "LYNCA-OS",
+        repo: "lynca-listing-copilot",
+        productionBranch: "main",
+        deployHooks: [{ id: "hook_forbidden", name: "forbidden", ref: "main" }]
+      }
+    }],
+    ["foreign Git repository", {
+      link: {
+        type: "github",
+        org: "foreign",
+        repo: "lynca-listing-copilot",
+        productionBranch: "main",
+        deployHooks: []
+      }
+    }]
+  ]) {
+    await assert.rejects(
+      verifyVercelProductionWriterAuthority({
+        env,
+        fetchImpl: mockFetch({ projectOverrides }).fetchImpl
+      }),
+      /writer_authority_mismatch/,
+      name
+    );
+  }
+  await assert.rejects(
+    verifyVercelProductionWriterAuthority({
+      env,
+      fetchImpl: mockFetch({ domainOverrides: { gitBranch: "main" } }).fetchImpl
+    }),
+    /writer_authority_mismatch/,
+    "the canonical domain must not follow a Git branch"
+  );
 
   const savedMock = mockFetch({ aliases: [] });
   await verifySavedVercelProductionDeployment({

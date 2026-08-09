@@ -108,7 +108,7 @@ jobs:
             `VERCEL_SCOPE_SLUG=${scopeSlug}\nVERCEL_ORG_ID=${orgId}\nVERCEL_PROJECT_ID=${projectId}\n`
           );
           NODE
-      - name: Capture the current canonical rollback deployment before candidate creation
+      - name: Verify the unique alias writer and capture the current rollback deployment
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -258,7 +258,7 @@ jobs:
             esac
             rm -f -- "$WRITER_JOURNEY_INITIAL_STORAGE_STATE"
           fi
-      - name: Verify canonical Production has not changed since rollback capture
+      - name: Re-verify single-writer authority and canonical ownership before promotion
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -269,9 +269,12 @@ jobs:
             *) exit 1 ;;
           esac
           test "$(stat -c '%a' "$VERCEL_ROLLBACK_RECEIPT")" = "600"
-          # Compare-and-swap guard: the candidate Journey can take minutes.
-          # Never overwrite a deployment promoted by another control plane
-          # after this release captured its rollback receipt.
+          # Vercel exposes no conditional promotion API. Normal Production
+          # writes therefore belong exclusively to this protected workflow.
+          # Fail closed if the staged-only project contract or canonical owner
+          # changed while the candidate Writer Journey was running.
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-writer-authority
           node scripts/vercel-production-rollback-receipt.mjs \
             --verify-canonical "$VERCEL_ROLLBACK_RECEIPT"
       - name: Promote the verified immutable deployment to production
@@ -354,8 +357,10 @@ jobs:
             *) exit 1 ;;
           esac
           test "$(stat -c '%a' "$VERCEL_ROLLBACK_RECEIPT")" = "600"
-          # Roll back only while this release still owns the canonical alias.
-          # If another control plane promoted after us, preserve that deployment.
+          # Roll back only while this single writer still owns the alias.
+          # A Vercel OWNER break-glass action invalidates automatic rollback.
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-writer-authority
           node scripts/vercel-production-rollback-receipt.mjs \
             --verify-canonical-deployment "$DEPLOYMENT_URL"
           node scripts/vercel-production-rollback-receipt.mjs \

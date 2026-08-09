@@ -99,6 +99,21 @@ Archive the JSON with the migration checksums and recovery-point timestamp. Any 
 
 The manual workflow repeats code gates and the schema preflight before triggering Vercel. It must not be used to bootstrap the Track C schema.
 
+Vercel does not expose a supported conditional-promotion operation. The normal
+Production alias writer is therefore exactly one protected GitHub workflow:
+`.github/workflows/deploy-production.yml`. The Vercel project must keep custom
+Production-domain auto-assignment disabled and contain zero Deploy Hooks. Git
+integration may create staged artifacts, but the canonical domain must have no
+Git-branch binding and must never move automatically. No other workflow or
+repository secret may hold `VERCEL_TOKEN`.
+
+Vercel OWNER access is break-glass authority, not a second release path. Before
+an OWNER uses the Dashboard or a personal CLI token, wait for or cancel the
+`production-deploy` workflow, record the old and new deployment IDs and Git
+SHAs, and verify canonical health afterward. An OWNER mutation during a run
+invalidates that run's automatic rollback; the workflow must stop rather than
+overwrite it.
+
 ```bash
 export EXPECTED_SHA="$(git rev-parse HEAD)"
 gh workflow run deploy-production.yml --ref main

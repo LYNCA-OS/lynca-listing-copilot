@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 const retiredRuntimeMigrationSurface = [
   "api/admin-apply-sem-definition-migration.js",
@@ -56,6 +56,9 @@ const protectedHealth = readFileSync("scripts/fetch-vercel-protected-health.mjs"
 const rollbackReceipt = readFileSync(
   "scripts/vercel-production-rollback-receipt.mjs", "utf8"
 );
+const activeServiceContext = JSON.parse(readFileSync(
+  "docs/operations/active-service-context.json", "utf8"
+));
 for (const [file, minimumRedirects] of Object.entries({
   "lib/supabase-rest.mjs": 1,
   "lib/listing/v4/session/supabase-rest.mjs": 1,
@@ -96,7 +99,7 @@ const schemaPreflight = workflow.indexOf("Verify CSM persistence and global prov
 const immutableReleaseGate = workflow.indexOf("Re-confirm the exact main commit before building the immutable release");
 const vercelProjectBinding = workflow.indexOf("Bind the canonical Vercel project from tracked service context");
 const rollbackCapture = workflow.indexOf(
-  "Capture the current canonical rollback deployment before candidate creation"
+  "Verify the unique alias writer and capture the current rollback deployment"
 );
 const vercelDeploy = workflow.indexOf("Build and deploy the exact dispatched checkout");
 const prepromotionHealth = workflow.indexOf(
@@ -111,8 +114,8 @@ const candidateJourney = workflow.indexOf(
 const candidateAuthorizationCleanup = workflow.indexOf(
   "Destroy candidate browser authorization"
 );
-const canonicalCas = workflow.indexOf(
-  "Verify canonical Production has not changed since rollback capture"
+const ownershipGuard = workflow.indexOf(
+  "Re-verify single-writer authority and canonical ownership before promotion"
 );
 const vercelPromote = workflow.indexOf("Promote the verified immutable deployment to production");
 const productionHealth = workflow.indexOf("Wait for the exact CSM thin main commit to reach production");
@@ -138,28 +141,33 @@ assert.ok(candidateJourney > candidateSource,
   "the real Writer Journey must execute against the immutable candidate");
 assert.ok(candidateAuthorizationCleanup > candidateJourney,
   "candidate browser authorization must be destroyed even when the journey fails");
-assert.ok(canonicalCas > candidateAuthorizationCleanup,
-  "the canonical compare-and-swap guard must remain unreachable until the candidate journey succeeds");
-assert.ok(vercelPromote > canonicalCas,
-  "production promotion must remain unreachable until the compare-and-swap guard succeeds");
+assert.ok(ownershipGuard > candidateAuthorizationCleanup,
+  "the ownership guard must remain unreachable until the candidate journey succeeds");
+assert.ok(vercelPromote > ownershipGuard,
+  "production promotion must remain unreachable until the single-writer guard succeeds");
 assert.ok(productionHealth > vercelPromote, "the promoted production alias must be verified independently");
 assert.ok(productionDatabase > productionHealth && productionAuth > productionDatabase,
   "post-promotion verification must remain exact SHA, database, auth, and route checks");
 assert.ok(rollbackRestore > productionAuth && releaseEvidence > rollbackRestore,
   "failed post-promotion verification must restore Production before evidence upload");
 const candidateJourneyStep = workflow.slice(candidateJourney, candidateAuthorizationCleanup);
-const canonicalCasStep = workflow.slice(canonicalCas, vercelPromote);
+const ownershipGuardStep = workflow.slice(ownershipGuard, vercelPromote);
 const promotionStep = workflow.slice(vercelPromote, productionHealth);
 const rollbackStep = workflow.slice(rollbackRestore, releaseEvidence);
 const postPromotionHealthStep = workflow.slice(productionHealth, productionDatabase);
 const postPromotion = workflow.slice(vercelPromote);
 assert.doesNotMatch(candidateJourneyStep, /continue-on-error|if:\s*always\(\)/,
   "a failed candidate journey must preserve the failed job status");
-assert.match(canonicalCasStep,
+assert.match(ownershipGuardStep,
+  /--verify-writer-authority/,
+  "promotion must re-verify that Vercel remains staged-only with no deploy hook");
+assert.match(ownershipGuardStep,
   /--verify-canonical "\$VERCEL_ROLLBACK_RECEIPT"/,
-  "promotion must compare-and-swap against the captured canonical deployment");
-assert.doesNotMatch(canonicalCasStep, /id:\s*promote|vercel@54\.14\.5 promote/,
-  "a compare-and-swap failure must not look like an attempted promotion or trigger rollback");
+  "promotion must reject canonical drift from the captured deployment");
+assert.doesNotMatch(ownershipGuardStep, /id:\s*promote|vercel@54\.14\.5 promote/,
+  "an ownership failure must not look like an attempted promotion or trigger rollback");
+assert.doesNotMatch(workflow, /compare-and-swap|\bCAS\b/i,
+  "Vercel has no public conditional promotion API; release controls must not claim CAS");
 assert.doesNotMatch(promotionStep, /continue-on-error|if:\s*always\(\)/,
   "promotion must use the default success guard, never run after a failed journey");
 assert.match(promotionStep, /id: promote/,
@@ -183,11 +191,36 @@ assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
 assert.doesNotMatch(workflow, /VERCEL_DEPLOY_HOOK_URL|Deploy Hook|vercel-deploy-hook/,
   "a branch-reading deploy hook can race with main and must not mutate production");
+assert.match(rollbackReceipt, /autoAssignCustomDomains !== false/,
+  "the live writer-authority gate must require staged-only production deployments");
+assert.match(rollbackReceipt, /hooks\.length !== 0/,
+  "the live writer-authority gate must reject every deploy hook");
+assert.match(rollbackReceipt, /domain\?\.gitBranch !== null/,
+  "the canonical domain must not follow a Git branch outside the release workflow");
+assert.equal(activeServiceContext.vercel.production.release_authority.normal_alias_writer,
+  "protected_github_workflow_only");
+assert.equal(activeServiceContext.vercel.production.release_authority.auto_assign_custom_domains,
+  false);
+assert.equal(activeServiceContext.vercel.production.release_authority.allowed_deploy_hooks, 0);
+assert.equal(activeServiceContext.vercel.production.release_authority.canonical_domain_git_branch,
+  null);
+assert.equal(activeServiceContext.vercel.production.release_authority.provider_conditional_write_supported,
+  false);
+const workflowFiles = readdirSync(".github/workflows")
+  .filter((name) => /\.ya?ml$/.test(name));
+for (const name of workflowFiles) {
+  const source = readFileSync(`.github/workflows/${name}`, "utf8");
+  if (name === "deploy-production.yml") continue;
+  assert.doesNotMatch(source, /^\s*environment:\s*production\s*$/m,
+    `${name} must not enter the Production credential environment`);
+  assert.doesNotMatch(source, /secrets\.VERCEL_TOKEN|vercel(?:@[0-9.]+)?\s+(?:promote|rollback)/,
+    `${name} must not become a second Production alias writer`);
+}
 assert.match(workflow, /VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/);
 assert.equal(
   [...workflow.matchAll(/VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/g)].length,
   6,
-  "capture, build, candidate verification, canonical CAS, promotion, and rollback authenticate independently"
+  "capture, build, candidate verification, ownership guard, promotion, and rollback authenticate independently"
 );
 const immutableBuildStep = workflow.slice(vercelDeploy, prepromotionHealth);
 assert.match(immutableBuildStep, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \}\}/,
@@ -382,7 +415,7 @@ assert.match(rollbackStep,
   "the saved deployment must still be READY and exact-SHA healthy before any rollback mutation");
 assert.match(rollbackStep,
   /--verify-canonical-deployment "\$DEPLOYMENT_URL"/,
-  "rollback must preserve a deployment promoted by another control plane after this release");
+  "rollback must stop when an OWNER break-glass action has replaced this release");
 assert.ok(
   rollbackStep.indexOf('--verify-canonical-deployment "$DEPLOYMENT_URL"')
     < rollbackStep.indexOf('vercel@54.14.5 promote "$rollback_url"'),

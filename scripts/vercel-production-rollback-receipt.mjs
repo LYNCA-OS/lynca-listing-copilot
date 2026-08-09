@@ -9,6 +9,10 @@ import {
 } from "./fetch-vercel-protected-health.mjs";
 
 const CANONICAL_PRODUCTION_ORIGIN = "https://listing.lyncafei.team";
+const CANONICAL_PROJECT_NAME = "lynca-listing-copilot";
+const CANONICAL_GIT_ORG = "LYNCA-OS";
+const CANONICAL_GIT_REPO = "lynca-listing-copilot";
+const CANONICAL_GIT_PRODUCTION_BRANCH = "main";
 const RECEIPT_SCHEMA = "vercel-production-rollback-receipt-v1";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_KEYS = Object.freeze([
@@ -62,6 +66,53 @@ function identity(env) {
     teamId: required(env, "VERCEL_ORG_ID", /^team_[A-Za-z0-9]+$/),
     projectId: required(env, "VERCEL_PROJECT_ID", /^prj_[A-Za-z0-9]+$/)
   };
+}
+
+export async function verifyVercelProductionWriterAuthority({
+  env = process.env,
+  fetchImpl = fetch
+} = {}) {
+  const ids = identity(env);
+  const project = await vercelApiJson(fetchImpl, {
+    token: ids.token,
+    teamId: ids.teamId,
+    pathname: `/v9/projects/${encodeURIComponent(ids.projectId)}`
+  });
+  const canonicalHostname = new URL(CANONICAL_PRODUCTION_ORIGIN).hostname;
+  const domain = await vercelApiJson(fetchImpl, {
+    token: ids.token,
+    teamId: ids.teamId,
+    pathname: `/v9/projects/${encodeURIComponent(ids.projectId)}`
+      + `/domains/${encodeURIComponent(canonicalHostname)}`
+  });
+  const hooks = project?.link?.deployHooks;
+  if (project?.id !== ids.projectId
+    || project?.accountId !== ids.teamId
+    || project?.name !== CANONICAL_PROJECT_NAME
+    || project?.autoAssignCustomDomains !== false
+    || project?.link?.type !== "github"
+    || project?.link?.org !== CANONICAL_GIT_ORG
+    || project?.link?.repo !== CANONICAL_GIT_REPO
+    || project?.link?.productionBranch !== CANONICAL_GIT_PRODUCTION_BRANCH
+    || !Array.isArray(hooks)
+    || hooks.length !== 0
+    || domain?.name !== canonicalHostname
+    || domain?.projectId !== ids.projectId
+    || domain?.verified !== true
+    || domain?.gitBranch !== null
+    || domain?.customEnvironmentId !== null
+    || domain?.redirect !== null
+    || domain?.redirectStatusCode !== null) {
+    throw new Error("vercel_rollback_receipt_writer_authority_mismatch");
+  }
+  return Object.freeze({
+    project_id: ids.projectId,
+    team_id: ids.teamId,
+    auto_assign_custom_domains: false,
+    canonical_domain_git_branch: null,
+    deploy_hook_count: 0,
+    git_production_branch: CANONICAL_GIT_PRODUCTION_BRANCH
+  });
 }
 
 async function canonicalAlias(fetchImpl, { token, teamId, projectId }) {
@@ -217,6 +268,7 @@ export async function captureVercelProductionRollbackReceipt({
   now = () => new Date()
 } = {}) {
   const ids = identity(env);
+  await verifyVercelProductionWriterAuthority({ env, fetchImpl });
   const before = await canonicalAlias(fetchImpl, ids);
   await readyDeployment(fetchImpl, {
     ...ids,
@@ -319,6 +371,10 @@ export async function verifyCanonicalVercelProductionDeployment({
 }
 
 async function main(argv) {
+  if (argv.length === 1 && argv[0] === "--verify-writer-authority") {
+    await verifyVercelProductionWriterAuthority();
+    return;
+  }
   if (argv.length !== 2 || ![
     "--out",
     "--verify-deployment",
