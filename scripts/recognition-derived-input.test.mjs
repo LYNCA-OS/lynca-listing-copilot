@@ -212,24 +212,18 @@ await assert.rejects(() => canonicalListingCropMetadataForVerification({
   objectPath: sourcePath, env, fetchImpl
 }), /cannot carry crop provenance/);
 
-// The client-side producer is deliberately NOT here.
-//
-// It shipped on 2026-08-08 and was rolled back the same day: it doubled the
-// upload, showed the operator every card twice, and then blocked a writer queue
-// at 0/7 with `operation_payload_conflict`. Nothing currently uploads or sends
-// a `readability_derived` asset, so everything above is inert in production --
-// the selector sees no downscale and returns the originals, exactly as before.
-//
-// The read side, the byte rule and the admission stay, because they are the
-// parts that were verified. The upload-path change comes back only after a real
-// large-image upload has been run through it.
+// The staged producer is recognition-only: it never enters `asset.images` or
+// Storage, and the server keys authority on the separately declared original
+// hashes. This is the boundary the withdrawn producer violated when it doubled
+// cards/uploads and made direct fallback collide on a different payload hash.
 {
   const app = await readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8");
-  assert.ok(!/ensureRecognitionDownscales/.test(app),
-    "the client producer returns only after a real upload has verified it");
+  assert.match(app, /ensureStagedRecognitionInputs/);
+  assert.doesNotMatch(app, /asset\.images\.(?:push|unshift|splice)\([^)]*stagedRecognition/);
   const ingest = await readFile(new URL("../api/csm-listing-title-ingest.js", import.meta.url), "utf8");
-  assert.ok(!/recognitionInputOnly/.test(ingest),
-    "the derived-inline route returns with it");
+  assert.match(ingest, /buildStagedRecognitionContract/);
+  assert.match(ingest, /buildStagedIdentityCanonical/);
+  assert.match(ingest, /bindStagedSessionToVerifiedCanonical/);
 }
 
 console.log("COS-53 recognition derived input tests passed");

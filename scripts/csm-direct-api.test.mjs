@@ -30,6 +30,10 @@ import {
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
 import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
 import {
+  STAGED_RECOGNITION_LANE_VERSION,
+  bindStagedSessionToVerifiedCanonical
+} from "../lib/listing/thin/staged-recognition-input.mjs";
+import {
   CSM_SESSION_SCHEMA_VERSION,
   buildCsmRecognitionSessionRow,
   createCsmRecognitionSession
@@ -166,6 +170,37 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   assert.equal(buildCsmIngestFailureResponse(Object.assign(new Error("explicit"), {
     statusCode: 400, retryable: true
   })).body.retryable, true, "an explicit retryable ingest classification remains authoritative");
+  const stagedFailure = buildCsmIngestFailureResponse(Object.assign(new Error("response_lost"), {
+    statusCode: 503,
+    staged_resume_checkpoint_available: true
+  }), { stagedResumeReceipt: `stgr_${"a".repeat(64)}` });
+  assert.equal(stagedFailure.body.recovery_action, "STAGED_RESUME_ONLY");
+  assert.equal(stagedFailure.body.staged_resume_receipt, `stgr_${"a".repeat(64)}`);
+  const stagedPreProviderFailure = buildCsmIngestFailureResponse(Object.assign(new Error("readiness"), {
+    statusCode: 503,
+    provider_attempt_started: false,
+    recovery_action: "STAGED_FRESH_RETRY"
+  }), { stagedResumeReceipt: `stgr_${"a".repeat(64)}` });
+  assert.equal(stagedPreProviderFailure.body.recovery_action, "STAGED_FRESH_RETRY");
+  assert.equal(stagedPreProviderFailure.body.provider_attempt_started, false);
+  assert.equal(stagedPreProviderFailure.body.staged_resume_receipt, undefined,
+    "a pre-provider failure must not claim that a durable checkpoint exists");
+  const claimedPreProviderFailure = buildCsmIngestFailureResponse(Object.assign(new Error("claim_failed"), {
+    statusCode: 503,
+    provider_attempt_started: false,
+    retryable: true
+  }), { stagedResumeReceipt: `stgr_${"a".repeat(64)}` });
+  assert.equal(claimedPreProviderFailure.body.recovery_action, undefined,
+    "a generic pre-request failure may already own a FAILED authority operation and must not loop as fresh");
+  const stagedIdentityDrift = buildCsmIngestFailureResponse(Object.assign(
+    new Error("staged_verified_original_identity_mismatch"),
+    { statusCode: 409, retryable: false, recovery_action: "STAGED_RESUME_ONLY" }
+  ), { stagedResumeReceipt: `stgr_${"a".repeat(64)}` });
+  assert.equal(stagedIdentityDrift.status, 409);
+  assert.equal(stagedIdentityDrift.body.retryable, true);
+  assert.equal(stagedIdentityDrift.body.recovery_action, "INPUT_REBIND",
+    "verified original drift must move to a new immutable asset, not resume the old checkpoint");
+  assert.equal(stagedIdentityDrift.body.staged_resume_receipt, undefined);
 }
 
 {
@@ -392,6 +427,8 @@ const canonicalImages = () => ({
   images: [{
     objectPath: "tenant-1/a.jpg",
     bucket: "cards",
+    size: 1_000,
+    storageRole: "image_1_original",
     derived: false,
     content_sha256: IMAGE_HASH
   }]
@@ -555,6 +592,462 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
   };
 }
 
+// Staged large-image input decouples provider pixels from paid-operation
+// identity without weakening either boundary: the dispatcher hashes the
+// original bytes, while signing and the provider see only the bounded derived
+// image. A fallback/finalize over verified originals therefore addresses the
+// exact same durable checkpoint and cannot buy another model call.
+{
+  const originalHash = "c".repeat(64);
+  const derivedHash = "d".repeat(64);
+  const originalCanonical = {
+    asset_id: "asset-1",
+    image_generation_id: "asset-1",
+    image_set_sha256: "e".repeat(64),
+    expected_original_count: 1,
+    image_references: [{ object_path: "staged-unverified/front.jpg", content_sha256: originalHash }],
+    images: [{
+      image_id: "front",
+      objectPath: "staged-unverified/front.jpg",
+      bucket: "staged-unverified",
+      storageRole: "image_1_original",
+      size: 7_000_000,
+      derived: false,
+      content_sha256: originalHash
+    }]
+  };
+  const derived = {
+    image_id: "front-recognition",
+    objectPath: "inline/front-recognition.jpg",
+    bucket: "inline",
+    size: 700_000,
+    derived: true,
+    content_sha256: derivedHash
+  };
+  const authorityEvents = [];
+  const signedPaths = [];
+  const authority = passthroughAuthority({ events: authorityEvents });
+  const originalManifestSha256 = "f".repeat(64);
+  const task = {
+    tenant_id: "tenant-1",
+    intent_id: "staged-identity",
+    asset_id: "asset-1",
+    model: "gpt-5.6-luna",
+    detail: "high",
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+    prompt_version: CSM_DIRECT_PROMPT_VERSION,
+    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
+    image_fingerprints: [`sha256:${originalHash}`],
+    operation_scope: "derived_checkpoint",
+    lane_version: STAGED_RECOGNITION_LANE_VERSION,
+    original_manifest_sha256: originalManifestSha256
+  };
+  const result = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "staged-identity",
+    dependencies: {
+      checkReadiness: async () => ({ ready: true }),
+      readImages: async () => originalCanonical,
+      chooseRecognitionImages: () => ({
+        images: [derived],
+        read: [{
+          image_role: "front_original",
+          read: "readability_derived",
+          bytes: derived.size,
+          original_bytes: originalCanonical.images[0].size,
+          derived_available: true,
+          derived_bytes: derived.size
+        }]
+      }),
+      operationScope: "derived_checkpoint",
+      laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+      originalManifestSha256,
+      signImage: async ({ objectPath }) => {
+        signedPaths.push(objectPath);
+        return "data:image/jpeg;base64,derived";
+      },
+      createSession: async () => ({ persistence: { recognition_session: { saved: true } } }),
+      preparePath: async ({ recognitionSessionId, imageUrls }) => {
+        assert.deepEqual(imageUrls, ["data:image/jpeg;base64,derived"]);
+        return preparedResult(recognitionSessionId, "Staged title");
+      },
+      persistPath: async ({ prepared }) => ({
+        ...prepared,
+        csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+      }),
+      providerAdmission: authority
+    }
+  });
+  assert.equal(result.title, "Staged title");
+  assert.deepEqual(signedPaths, [derived.objectPath]);
+  assert.equal(authorityEvents[0].metadata.payloadHash, buildLunaDirectPayloadHash(task));
+  assert.notEqual(
+    authorityEvents[0].metadata.payloadHash,
+    buildLunaDirectPayloadHash({ ...task, image_fingerprints: [`sha256:${derivedHash}`] })
+  );
+  assert.equal(
+    buildLunaDirectPayloadHash(task),
+    buildLunaDirectPayloadHash({
+      ...task,
+      model: "future-model",
+      reasoning_effort: "future-effort",
+      prompt_version: "future-prompt"
+    }),
+    "a response-loss resume must survive model, effort and prompt deployment drift"
+  );
+}
+
+// A staged resume receipt is provider-incapable. It may recreate the deferred
+// formal session and persist an already-paid checkpoint, but even a missing
+// checkpoint may not enqueue, sign, prepare, or call the model.
+{
+  const originalManifestSha256 = "9".repeat(64);
+  const task = {
+    tenant_id: "tenant-1", intent_id: "resume-only", asset_id: "asset-1",
+    model: "gpt-staged-old", detail: "high",
+    reasoning_effort: "old-effort",
+    prompt_version: "old-prompt",
+    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
+    image_fingerprints: [`sha256:${IMAGE_HASH}`],
+    operation_scope: "derived_checkpoint",
+    lane_version: STAGED_RECOGNITION_LANE_VERSION,
+    original_manifest_sha256: originalManifestSha256
+  };
+  const operationKey = buildLunaDirectOperationKey(task);
+  const payloadHash = buildLunaDirectPayloadHash(task);
+  const sessionId = deterministicCsmSessionId(operationKey);
+  const recognitionInput = [{
+    image_role: "front_original",
+    read: "readability_derived",
+    bytes: 700_000,
+    original_bytes: 7_000_000,
+    derived_available: true,
+    derived_bytes: 700_000,
+    source_image_id: "front",
+    transform_version: "readability-downscale-v1",
+    lane_version: STAGED_RECOGNITION_LANE_VERSION,
+    content_sha256: "d".repeat(64),
+    original_content_sha256: IMAGE_HASH
+  }];
+  const checkpoint = buildCsmPersistenceCheckpoint({
+    prepared: {
+      ...preparedResult(sessionId, "Resume-only title"),
+      model: task.model,
+      requested_effort: task.reasoning_effort,
+      image_detail: task.detail,
+      prompt_version: task.prompt_version
+    },
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash,
+    recognitionSessionId: sessionId,
+    recognitionSessionDeferred: true,
+    recognitionInput
+  });
+  let lookups = 0;
+  const events = [];
+  let sessionPayload = null;
+  let persistRuntime = null;
+  const authority = {
+    globallyEnforced: true,
+    lookupOperationResult: async ({ operationKey: actualOperationKey, payloadHash: actualPayloadHash }) => {
+      lookups += 1;
+      assert.equal(actualOperationKey, operationKey);
+      assert.equal(actualPayloadHash, payloadHash,
+        "resume lookup identity must survive the current deployment runtime");
+      return { status: "found", result: checkpoint };
+    },
+    enqueueAttempt: async () => { throw new Error("resume_must_not_enqueue"); },
+    runAttempt: async () => { throw new Error("resume_must_not_run"); }
+  };
+  const dependencies = successfulDependencies({ events, authority });
+  dependencies.operationScope = "derived_checkpoint";
+  dependencies.laneVersion = STAGED_RECOGNITION_LANE_VERSION;
+  dependencies.originalManifestSha256 = originalManifestSha256;
+  dependencies.createSession = async ({ payload }) => {
+    events.push("session");
+    sessionPayload = payload;
+    return { persistence: { recognition_session: { saved: true } } };
+  };
+  dependencies.persistPath = async (args) => {
+    events.push("persist_csm");
+    persistRuntime = args;
+    return {
+      ...args.prepared,
+      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    };
+  };
+  const resumed = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: "resume-only", resumeOnly: true,
+    dependencies
+  });
+  assert.equal(resumed.title, "Resume-only title");
+  assert.equal(lookups, 1);
+  assert.deepEqual(events, ["readiness", "images", "session", "persist_csm"]);
+  assert.equal(sessionPayload.provider, task.model);
+  assert.deepEqual(sessionPayload.recognition_input, recognitionInput);
+  assert.equal(persistRuntime.model, task.model);
+  assert.equal(persistRuntime.effort, task.reasoning_effort);
+  assert.equal(persistRuntime.promptVersion, task.prompt_version);
+  assert.doesNotMatch(JSON.stringify(checkpoint), /staged-unverified/,
+    "authority checkpoints and marketplace output may not persist placeholder paths");
+
+  let enqueueCalls = 0;
+  await assert.rejects(runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: "resume-missing", resumeOnly: true,
+    dependencies: {
+      ...successfulDependencies({
+        authority: {
+          globallyEnforced: true,
+          lookupOperationResult: async () => ({ status: "not_found" }),
+          enqueueAttempt: async () => { enqueueCalls += 1; },
+          runAttempt: async () => { enqueueCalls += 1; }
+        }
+      }),
+      operationScope: "derived_checkpoint",
+      laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+      originalManifestSha256,
+      signImage: async () => { throw new Error("resume_must_not_sign"); },
+      preparePath: async () => { throw new Error("resume_must_not_prepare"); }
+    }
+  }), (error) => error.code === "csm_resume_not_found"
+    && error.retryable === true
+    && error.provider_attempt_started === false
+    && error.recovery_action === "STAGED_FRESH_RETRY");
+  assert.equal(enqueueCalls, 0);
+
+  for (const status of ["pending", "ambiguous", "failed"]) {
+    let forbiddenBoundaryCalls = 0;
+    await assert.rejects(runDirectCsmAsset({
+      tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+      intentId: `resume-${status}`, resumeOnly: true,
+      dependencies: {
+        ...successfulDependencies({
+          authority: {
+            globallyEnforced: true,
+            lookupOperationResult: async () => ({ status }),
+            enqueueAttempt: async () => { forbiddenBoundaryCalls += 1; },
+            runAttempt: async () => { forbiddenBoundaryCalls += 1; }
+          }
+        }),
+        operationScope: "derived_checkpoint",
+        laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+        originalManifestSha256,
+        signImage: async () => { forbiddenBoundaryCalls += 1; },
+        preparePath: async () => { forbiddenBoundaryCalls += 1; }
+      }
+    }), (error) => error.code === `csm_resume_${status}`
+      && error.recovery_action === "STAGED_RESUME_ONLY"
+      && error.provider_attempt_started === false
+      && error.retryable === ["pending", "ambiguous"].includes(status));
+    assert.equal(forbiddenBoundaryCalls, 0,
+      `${status} resume lookup must not enqueue, sign, prepare, or call provider`);
+  }
+
+  for (const providerAttemptStarted of [false, true, undefined]) {
+    const dispatchFailure = Object.assign(new Error("durable_dispatch_response_lost"), {
+      retryable: true,
+      ...(providerAttemptStarted === undefined ? {} : { provider_attempt_started: providerAttemptStarted })
+    });
+    await assert.rejects(runDirectCsmAsset({
+      tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+      intentId: `dispatch-throw-${String(providerAttemptStarted)}`,
+      dependencies: {
+        ...successfulDependencies({ authority: passthroughAuthority() }),
+        operationScope: "derived_checkpoint",
+        laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+        originalManifestSha256,
+        createDispatcher: () => ({
+          enqueue: async () => { throw dispatchFailure; },
+          manualRetry: async () => { throw new Error("unexpected_manual_retry"); }
+        })
+      }
+    }), (error) => error === dispatchFailure
+      && error.recovery_action === "STAGED_RESUME_ONLY",
+    "after durable dispatch is touched, uncertainty always recovers through lookup-only");
+  }
+}
+
+// Upload failure after provider settlement is the critical staged-lane loss
+// case. The first request leaves only the durable provider checkpoint; the
+// resume request may finish the verified-original session and CSM persistence,
+// but it must not sign or call the provider again.
+{
+  const originalHash = "6".repeat(64);
+  const derivedHash = "7".repeat(64);
+  const originalManifestSha256 = "8".repeat(64);
+  const identityCanonical = {
+    asset_id: "asset-1",
+    image_generation_id: "asset-1",
+    image_set_sha256: "9".repeat(64),
+    expected_original_count: 1,
+    image_references: [{
+      image_id: "front",
+      image_role: "front_original",
+      bucket: "staged-unverified",
+      object_path: "staged-unverified/front",
+      content_sha256: originalHash,
+      derived: false
+    }],
+    images: [{
+      image_id: "front",
+      objectPath: "staged-unverified/front",
+      bucket: "staged-unverified",
+      storageRole: "image_1_original",
+      size: 7_000_000,
+      derived: false,
+      content_sha256: originalHash
+    }]
+  };
+  const verifiedCanonical = {
+    tenant_id: "tenant-1",
+    asset_id: "asset-1",
+    image_generation_id: "asset-1",
+    image_set_sha256: "a".repeat(64),
+    expected_original_count: 1,
+    images: [{
+      image_id: "front",
+      storageRole: "image_1_original",
+      size: 7_000_000,
+      content_sha256: originalHash,
+      derived: false
+    }],
+    image_references: [{
+      image_id: "front",
+      image_role: "front_original",
+      bucket: "listing-images",
+      object_path: "tenants/tenant-1/listing-assets/2026-08-09/asset-1/front.jpg",
+      content_sha256: originalHash,
+      derived: false
+    }]
+  };
+  const recognitionInput = [{
+    image_role: "front_original",
+    read: "readability_derived",
+    bytes: 700_000,
+    original_bytes: 7_000_000,
+    derived_available: true,
+    derived_bytes: 700_000,
+    source_image_id: "front",
+    transform_version: "readability-downscale-v1",
+    lane_version: STAGED_RECOGNITION_LANE_VERSION,
+    content_sha256: derivedHash,
+    original_content_sha256: originalHash
+  }];
+  let durableCheckpoint = null;
+  let deferredSessionArgs = null;
+  let uploadReady = false;
+  let providerCalls = 0;
+  let formalSessionCreates = 0;
+  let persistenceCalls = 0;
+  let resumedSessionPayload = null;
+  const authority = {
+    globallyEnforced: true,
+    lookupOperationResult: async () => durableCheckpoint
+      ? { status: "found", result: durableCheckpoint }
+      : { status: "not_found" },
+    enqueueAttempt: async (metadata) => metadata,
+    runAttempt: async ({ queuedAttempt, execute }) => {
+      await queuedAttempt;
+      durableCheckpoint = await execute();
+      return durableCheckpoint;
+    }
+  };
+  const dependencies = {
+    checkReadiness: async () => ({ ready: true }),
+    readImages: async () => identityCanonical,
+    chooseRecognitionImages: () => ({
+      images: [{
+        image_id: "front-recognition",
+        objectPath: "inline/front-recognition.jpg",
+        bucket: "inline",
+        size: 700_000,
+        derived: true,
+        content_sha256: derivedHash
+      }],
+      read: recognitionInput
+    }),
+    operationScope: "derived_checkpoint",
+    laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+    originalManifestSha256,
+    deferRecognitionSessionUntilPersistence: true,
+    signImage: async () => "data:image/jpeg;base64,derived",
+    createSession: async (args) => {
+      deferredSessionArgs = args;
+      return { persistence: { recognition_session: { saved: true, deferred: true } } };
+    },
+    preparePath: async ({ recognitionSessionId }) => {
+      providerCalls += 1;
+      return {
+        ...preparedResult(recognitionSessionId, "Recovered staged title"),
+        model: "model-before-deployment-drift",
+        requested_effort: "effort-before-deployment-drift",
+        image_detail: "high",
+        prompt_version: "prompt-before-deployment-drift"
+      };
+    },
+    persistPath: async ({ prepared, model, effort, promptVersion }) => {
+      persistenceCalls += 1;
+      if (!uploadReady) {
+        throw Object.assign(new Error("staged_original_upload_timeout:not_ready"), {
+          code: "staged_original_upload_timeout",
+          statusCode: 504,
+          retryable: true
+        });
+      }
+      const bound = bindStagedSessionToVerifiedCanonical({
+        deferredSessionArgs,
+        verifiedCanonical,
+        recognitionRead: prepared.csm_persistence_checkpoint.recognition_input
+      });
+      formalSessionCreates += 1;
+      resumedSessionPayload = bound.payload;
+      assert.equal(model, "model-before-deployment-drift");
+      assert.equal(effort, "effort-before-deployment-drift");
+      assert.equal(promptVersion, "prompt-before-deployment-drift");
+      return {
+        ...prepared,
+        csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+      };
+    },
+    providerAdmission: authority
+  };
+
+  await assert.rejects(
+    runDirectCsmAsset({
+      tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+      intentId: "staged-upload-loss", dependencies
+    }),
+    (error) => error.code === "staged_original_upload_timeout"
+      && error.retryable === true
+  );
+  assert.equal(providerCalls, 1);
+  assert.equal(formalSessionCreates, 0,
+    "an unverified upload may not create the formal recognition session");
+  assert.ok(durableCheckpoint?.csm_persistence_checkpoint,
+    "provider settlement must leave a stable persistence checkpoint");
+
+  uploadReady = true;
+  const resumed = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: "staged-upload-loss", resumeOnly: true, dependencies
+  });
+  assert.equal(resumed.title, "Recovered staged title");
+  assert.equal(providerCalls, 1,
+    "upload recovery and deployment-drift replay must add zero provider calls");
+  assert.equal(persistenceCalls, 2);
+  assert.equal(formalSessionCreates, 1);
+  assert.deepEqual(resumedSessionPayload.images, verifiedCanonical.image_references);
+  assert.deepEqual(resumedSessionPayload.image_references, verifiedCanonical.image_references);
+  assert.equal(resumedSessionPayload.image_set_sha256, verifiedCanonical.image_set_sha256);
+  assert.deepEqual(resumedSessionPayload.recognition_input, recognitionInput);
+  assert.doesNotMatch(JSON.stringify(resumedSessionPayload), /staged-unverified/);
+}
+
 let paidCalls = 0;
 await assert.rejects(
   runDirectCsmAsset({
@@ -572,6 +1065,28 @@ await assert.rejects(
   "an unavailable CSM trace store must fail before image reads and model spend"
 );
 assert.equal(paidCalls, 0, "readiness failure must incur zero paid provider calls");
+
+await assert.rejects(
+  runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "staged-readiness",
+    callProvider: async () => { paidCalls += 1; },
+    dependencies: {
+      operationScope: "derived_checkpoint",
+      laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+      originalManifestSha256: "f".repeat(64),
+      checkReadiness: async () => ({ ready: false, reason: "registry_missing" }),
+      readImages: async () => { throw new Error("must_not_read_images"); }
+    }
+  }),
+  (error) => error.recovery_action === "STAGED_FRESH_RETRY"
+    && error.provider_attempt_started === false
+    && error.retryable === true,
+  "only the explicit pre-authority readiness boundary may direct a fresh staged retry"
+);
+assert.equal(paidCalls, 0);
 
 await assert.rejects(
   runDirectCsmAsset({
@@ -635,6 +1150,7 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
     clientTiming: {
       client_preparation_ms: 8_400,
       client_sha256_ms: 610,
+      client_staged_transform_ms: 9_999_999,
       client_upload_bytes: 11_238_422,
       not_a_client_key: 5,
       client_negative_ms: -1
@@ -644,6 +1160,8 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   });
   assert.equal(withClient.latency_stages_ms.client_preparation_ms, 8_400);
   assert.equal(withClient.latency_stages_ms.client_sha256_ms, 610);
+  assert.equal(withClient.latency_stages_ms.client_staged_transform_ms, 3_600_000,
+    "untrusted client transform durations must retain the one-hour shape ceiling");
   // A byte count is not a duration. An hour-in-milliseconds ceiling silently
   // rewrote this exact upload to 3,600,000 and stored it as a size.
   assert.equal(withClient.latency_stages_ms.client_upload_bytes, 11_238_422);
