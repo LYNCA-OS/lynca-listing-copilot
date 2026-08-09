@@ -95,6 +95,9 @@ assert.match(writerJourneyMaterializer,
   "Writer Journey signing must not redirect its server-only apikey");
 const dispatchGate = workflow.indexOf("Fail closed unless this dispatch targets the current main commit");
 const setupNode = workflow.indexOf("actions/setup-node");
+const releaseClassBinding = workflow.indexOf(
+  "Bind the protected release class to this exact commit"
+);
 const schemaPreflight = workflow.indexOf("Verify CSM persistence and global provider authority before deploy");
 const immutableReleaseGate = workflow.indexOf("Re-confirm the exact main commit before building the immutable release");
 const vercelProjectBinding = workflow.indexOf("Bind the canonical Vercel project from tracked service context");
@@ -105,8 +108,11 @@ const vercelDeploy = workflow.indexOf("Build and deploy the exact dispatched che
 const prepromotionHealth = workflow.indexOf(
   "Verify the immutable deployment and prepare candidate-only browser authorization"
 );
+const compatibilityBridgeProof = workflow.indexOf(
+  "Prove the compatibility bridge is active-v1 and v2 replay-only"
+);
 const candidateSource = workflow.indexOf(
-  "Materialize fixed NON_TCG TCG and exact parity cases from Production Storage"
+  "Materialize release-class-bound Writer Journey cases from Production Storage"
 );
 const candidateJourney = workflow.indexOf(
   "Run real candidate Writer Journey before production promotion"
@@ -127,6 +133,8 @@ const rollbackRestore = workflow.indexOf(
 const releaseEvidence = workflow.indexOf("Upload release evidence");
 assert.ok(dispatchGate >= 0, "production deployment must have an explicit dispatch gate");
 assert.ok(setupNode > dispatchGate, "dispatch validation must run before release setup");
+assert.ok(releaseClassBinding > setupNode && releaseClassBinding < schemaPreflight,
+  "the release class and exact commit must be bound before any Production access");
 assert.ok(schemaPreflight > dispatchGate, "dispatch validation must run before production schema access");
 assert.ok(immutableReleaseGate > schemaPreflight, "current main must be re-read after tests and schema preflight");
 assert.ok(vercelProjectBinding > immutableReleaseGate, "the canonical Vercel identity must come from tracked service context");
@@ -135,7 +143,8 @@ assert.ok(rollbackCapture > vercelProjectBinding,
 assert.ok(vercelDeploy > rollbackCapture,
   "the current canonical deployment must be durably recorded before candidate creation");
 assert.ok(prepromotionHealth > vercelDeploy, "the immutable deployment must be healthy before promotion");
-assert.ok(candidateSource > prepromotionHealth,
+assert.ok(compatibilityBridgeProof > prepromotionHealth
+  && candidateSource > compatibilityBridgeProof,
   "candidate source materialization must follow exact deployment identity and health");
 assert.ok(candidateJourney > candidateSource,
   "the real Writer Journey must execute against the immutable candidate");
@@ -152,6 +161,9 @@ assert.ok(rollbackRestore > productionAuth && releaseEvidence > rollbackRestore,
   "failed post-promotion verification must restore Production before evidence upload");
 const candidateJourneyStep = workflow.slice(candidateJourney, candidateAuthorizationCleanup);
 const candidateSourceStep = workflow.slice(candidateSource, candidateJourney);
+const releaseClassStep = workflow.slice(releaseClassBinding, schemaPreflight);
+const compatibilityBridgeProofStep = workflow.slice(compatibilityBridgeProof, candidateSource);
+const rollbackCaptureStep = workflow.slice(rollbackCapture, vercelDeploy);
 const ownershipGuardStep = workflow.slice(ownershipGuard, vercelPromote);
 const promotionStep = workflow.slice(vercelPromote, productionHealth);
 const rollbackStep = workflow.slice(rollbackRestore, releaseEvidence);
@@ -159,7 +171,25 @@ const postPromotionHealthStep = workflow.slice(productionHealth, productionDatab
 const postPromotion = workflow.slice(vercelPromote);
 assert.doesNotMatch(candidateJourneyStep, /continue-on-error|if:\s*always\(\)/,
   "a failed candidate journey must preserve the failed job status");
+assert.match(workflow,
+  /release_class:[\s\S]*?default: ordinary[\s\S]*?options:[\s\S]*?- ordinary[\s\S]*?- compatibility-bridge/,
+  "manual dispatch must default to the full ordinary release class");
+assert.match(releaseClassStep,
+  /compatibility-bridge-release\.mjs verify-selection[\s\S]*?--release-class "\$RELEASE_CLASS"[\s\S]*?--git-sha "\$DISPATCH_SHA"/,
+  "the reduced class must be bound to the exact commit before release work begins");
+assert.match(releaseClassStep, /production-release-selection\.json/);
+assert.match(releaseClassStep, /stat -c '%a'[\s\S]*?= "600"/,
+  "the release selection receipt must remain owner-only");
+assert.doesNotMatch(releaseClassStep,
+  /VERCEL_TOKEN|OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/,
+  "the zero-call release-class proof must not acquire Production credentials");
+assert.match(compatibilityBridgeProofStep,
+  /if: \$\{\{ inputs\.release_class == 'compatibility-bridge' \}\}/);
+assert.match(compatibilityBridgeProofStep,
+  /compatibility-bridge-release\.mjs verify-health[\s\S]*?--health \/tmp\/csm-thin-health-prepromotion\.json/,
+  "the bridge must prove exact active-v1 health and dormant v2 replay on the immutable candidate");
 assert.match(candidateSourceStep, /writer-journey-cases-v3\.json/);
+assert.match(candidateSourceStep, /writer-journey-compatibility-bridge-cases-v1\.json/);
 assert.match(candidateSourceStep, /writer-journey-large-source-v2\.json/);
 assert.match(candidateSourceStep,
   /WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT/,
@@ -172,8 +202,16 @@ assert.match(candidateSourceStep, /flag: 'wx', mode: 0o600/,
 assert.match(candidateSourceStep, /stat\(largeSourcePath\)[\s\S]*0o777\)[\s\S]*0o600/,
   "the v2 subset mode must be verified before the large builder can consume it");
 assert.match(candidateSourceStep,
-  /WRITER_JOURNEY_CASES_MANIFEST=%s\\n'[\s\S]*\$cases_manifest/,
-  "the real Writer Journey must receive the v3 manifest containing parity_case");
+  /compatibility-bridge-release\.mjs build-manifest[\s\S]*?--release-class "\$PRODUCTION_RELEASE_CLASS"[\s\S]*?--git-sha "\$GITHUB_SHA"/,
+  "only the exact bridge commit may derive the parity-free compatibility manifest");
+assert.match(candidateSourceStep,
+  /if \[ "\$PRODUCTION_RELEASE_CLASS" = "compatibility-bridge" \]; then[\s\S]*?selected_cases_manifest="\$bridge_cases_manifest"[\s\S]*?else[\s\S]*?test "\$PRODUCTION_RELEASE_CLASS" = "ordinary"/,
+  "ordinary releases must not silently select the reduced manifest");
+assert.match(candidateSourceStep,
+  /WRITER_JOURNEY_RELEASE_CLASS=%s\\n'[\s\S]*\$PRODUCTION_RELEASE_CLASS/);
+assert.match(candidateSourceStep,
+  /WRITER_JOURNEY_CASES_MANIFEST=%s\\n'[\s\S]*\$selected_cases_manifest/,
+  "the real Writer Journey must receive the release-class-bound manifest");
 assert.match(candidateSourceStep,
   /WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\\n'[\s\S]*\$large_source_manifest/);
 assert.match(candidateSourceStep,
@@ -182,6 +220,9 @@ assert.match(candidateSourceStep,
 assert.doesNotMatch(candidateSourceStep,
   /--source-manifest "\$WRITER_JOURNEY_CASES_MANIFEST"/,
   "the parity-bearing v3 manifest must not be passed to the v2-only large builder");
+assert.doesNotMatch(rollbackCaptureStep,
+  /if:|PRODUCTION_RELEASE_CLASS|compatibility-bridge/,
+  "every release class must capture the current canonical rollback target identically");
 assert.match(ownershipGuardStep,
   /--verify-writer-authority/,
   "promotion must re-verify that Vercel remains staged-only with no deploy hook");
@@ -459,6 +500,8 @@ assert.match(rollbackStep, /h\.deployment\?\.git_commit_sha!==process\.env\.ROLL
 assert.match(rollbackStep, /this release remains HOLD/);
 assert.doesNotMatch(rollbackStep, /continue-on-error|OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/,
   "recovery must not clear the failed release or acquire unrelated provider credentials");
+assert.doesNotMatch(rollbackStep, /PRODUCTION_RELEASE_CLASS|compatibility-bridge/,
+  "automatic rollback must remain identical for ordinary and bridge releases");
 assert.doesNotMatch(workflow, /https:\/\/[a-z0-9-]+\.vercel\.app/,
   "rollback may not hard-code a historical deployment URL");
 const evidenceStep = workflow.slice(releaseEvidence);
@@ -470,6 +513,12 @@ assert.doesNotMatch(evidenceStep, /vercel-candidate-storage-state|WRITER_JOURNEY
 assert.match(packageJson.scripts["test:production"],
   /vercel-production-rollback-receipt\.test\.mjs/,
   "the rollback transaction counterexamples must run in the complete Production suite");
+assert.match(packageJson.scripts["test:csm-thin"],
+  /external-identity-rollback-bridge\.test\.mjs/,
+  "the v2 forward-reader contract must run in every release gate");
+assert.match(packageJson.scripts["test:production"],
+  /compatibility-bridge-release\.test\.mjs/,
+  "the reduced release class must run in every Production release gate");
 assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);
 assert.match(workflow, /r\.code!=="missing_asset_id"/);
 assert.match(workflow, /--data-binary @-/,

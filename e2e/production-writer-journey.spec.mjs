@@ -35,6 +35,12 @@ import {
 import {
   WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
 } from "../scripts/materialize-writer-journey-source.mjs";
+import {
+  COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
+  COMPATIBILITY_BRIDGE_MARKER,
+  COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  ORDINARY_RELEASE_CLASS
+} from "../scripts/compatibility-bridge-release.mjs";
 
 const expectedExecutionContractByTransportLaneAndImageCount = Object.freeze(Object.fromEntries(
   CSM_RECOGNITION_TRANSPORT_PROFILES.map((transportProfile) => [
@@ -1291,17 +1297,34 @@ function normalRouteCoverageReceipt({ sourceCase, payload, responseUrl, attempts
   });
 }
 
-function validateSourceCasesManifest(manifest) {
-  if (manifest?.schema_version !== "writer-journey-cases-v3"
+function validateSourceCasesManifest(manifest, {
+  releaseClass = ORDINARY_RELEASE_CLASS,
+  expectedGitSha = null
+} = {}) {
+  if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(releaseClass)
     || manifest?.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
     || manifest?.accuracy_claim !== null
-    || !hasExactKeys(manifest, [
-      "schema_version", "evidence_scope", "accuracy_claim", "cases", "parity_case"
-    ])
     || !Array.isArray(manifest.cases) || manifest.cases.length !== 2
     || new Set(manifest.cases.map((entry) => entry?.case_id)).size !== 2
     || new Set(manifest.cases.map((entry) => entry?.expected_grammar)).size !== 2
-    || !exactObject(manifest.parity_case)) {
+    || (releaseClass === ORDINARY_RELEASE_CLASS && (
+      manifest?.schema_version !== "writer-journey-cases-v3"
+      || !hasExactKeys(manifest, [
+        "schema_version", "evidence_scope", "accuracy_claim", "cases", "parity_case"
+      ])
+      || !exactObject(manifest.parity_case)
+    ))
+    || (releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS && (
+      !hasExactKeys(manifest, [
+        "schema_version", "release_class", "bridge_marker", "git_sha",
+        "evidence_scope", "accuracy_claim", "cases"
+      ])
+      || manifest.schema_version !== COMPATIBILITY_BRIDGE_MANIFEST_VERSION
+      || manifest.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
+      || manifest.bridge_marker !== COMPATIBILITY_BRIDGE_MARKER
+      || !/^[0-9a-f]{40}$/.test(String(expectedGitSha || ""))
+      || manifest.git_sha !== expectedGitSha
+    ))) {
     throw new Error("WRITER_JOURNEY_CASES_MANIFEST invalid");
   }
   for (const entry of manifest.cases) {
@@ -1317,6 +1340,7 @@ function validateSourceCasesManifest(manifest) {
       throw new Error("WRITER_JOURNEY_CASES_MANIFEST case invalid");
     }
   }
+  if (releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS) return [...manifest.cases];
   const parity = manifest.parity_case;
   if (!hasExactKeys(parity, [
     "case_id", "expected_grammar", "source_kind", "source_record_id", "source_asset_id",
@@ -1343,10 +1367,10 @@ function validateSourceCasesManifest(manifest) {
   return [...manifest.cases, parity];
 }
 
-async function localSourceCases(filePath) {
+async function localSourceCases(filePath, options) {
   const manifest = JSON.parse(await readFile(filePath, "utf8"));
   const cases = [];
-  for (const entry of validateSourceCasesManifest(manifest)) {
+  for (const entry of validateSourceCasesManifest(manifest, options)) {
     const images = [];
     for (const [index, file] of entry.files.entries()) {
       if (!["image/jpeg", "image/png", "image/webp"].includes(file.content_type)) {
@@ -1503,6 +1527,11 @@ test("production writer journey verifies Glass Box and staged large-image transp
   await mkdir(artifactDir, { recursive: true });
   const baseUrl = cleanBaseUrl(process.env.WRITER_JOURNEY_BASE_URL);
   const expectedSha = requiredEnv("WRITER_JOURNEY_EXPECTED_SHA");
+  const releaseClass = requiredEnv("WRITER_JOURNEY_RELEASE_CLASS");
+  requireInvariant([
+    ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS
+  ].includes(releaseClass), verifierErrorCodes.GENERIC);
+  const parityRequired = releaseClass === ORDINARY_RELEASE_CLASS;
   const username = requiredEnv("METAVERSE_USERNAME");
   const password = requiredEnv("METAVERSE_PASSWORD");
   const initialStorageState = String(
@@ -1510,7 +1539,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
   ).trim() || undefined;
   const healthUrl = `${baseUrl}/api/health`;
   const initialCookieHeader = await cookieHeaderFromStorageState(initialStorageState, healthUrl);
-  const sourceCases = await localSourceCases(requiredEnv("WRITER_JOURNEY_CASES_MANIFEST"));
+  const sourceCases = await localSourceCases(requiredEnv("WRITER_JOURNEY_CASES_MANIFEST"), {
+    releaseClass,
+    expectedGitSha: expectedSha
+  });
   const largeFixture = await localLargeFixture(requiredEnv("WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT"));
   const evidence = {
     schema_version: "production-writer-journey-evidence-v5",
@@ -1519,6 +1551,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
     accuracy_claim: null,
     passed: false,
     launch_ready_mutated: false,
+    release_class: releaseClass,
+    compatibility_bridge_marker: parityRequired ? null : COMPATIBILITY_BRIDGE_MARKER,
     base_url: baseUrl,
     started_at: new Date().toISOString(),
     deployment_id: null,
@@ -2352,10 +2386,14 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && normalTransport.attempts.filter((entry) => entry.aborted_before_network === true)
         .every((entry) => entry.response_observed === false),
     verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
-    expect(resolutionRequests).toHaveLength(4);
+    const expectedCaseIds = parityRequired
+      ? ["EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"]
+      : ["LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"];
+    const expectedProviderCaseCount = expectedCaseIds.length;
+    expect(resolutionRequests).toHaveLength(expectedProviderCaseCount);
     expect(resolutionRequests.every((request) => request.method === "GET")).toBe(true);
     expect(evidence.cases.map((entry) => entry.case_id).sort())
-      .toEqual(["EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"]);
+      .toEqual(expectedCaseIds);
     const providerResponseReceiptHashes = evidence.cases.map(
       (entry) => entry?.execution_receipt?.provider_response_id_sha256
     );
@@ -2363,7 +2401,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       (entry) => entry?.execution_receipt?.provider_authority_receipt?.operation_key_sha256
     );
     requireInvariant(providerResponseReceiptHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
-      && providerResponseReceiptHashes.length === 4
+      && providerResponseReceiptHashes.length === expectedProviderCaseCount
       && new Set(providerResponseReceiptHashes).size === evidence.cases.length
       && providerAuthorityOperationHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
       && new Set(providerAuthorityOperationHashes).size === evidence.cases.length
@@ -2376,8 +2414,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
     const recognitionPostReceipt = recognitionPostSeal(recognitionPosts, evidence.cases);
     evidence.stages.warmup = warmupResponseReceipt(warmupTransport.requests);
-    expect(ids.asset_id.size, "asset_id must be captured").toBeGreaterThanOrEqual(4);
-    expect(ids.session_id.size, "recognition_session_id must be captured").toBeGreaterThanOrEqual(4);
+    expect(ids.asset_id.size, "asset_id must be captured")
+      .toBeGreaterThanOrEqual(expectedProviderCaseCount);
+    expect(ids.session_id.size, "recognition_session_id must be captured")
+      .toBeGreaterThanOrEqual(expectedProviderCaseCount);
     expect(requestIds.size, "request_id must be captured").toBeGreaterThan(0);
     const largeCaseEvidence = evidence.cases.find((entry) => (
       entry.case_id === "LARGE_STAGED_TRANSPORT"
@@ -2414,23 +2454,25 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && entry.owner_execution_readback?.sha256
         === entry.execution_receipt?.owner_execution_receipt_sha256
     ))
-      && parityCaseEvidence?.codex_parity_exact_match === true
-      && parityCaseEvidence?.external_identity_support?.applied === true
-      && parityCaseEvidence?.external_identity_support?.match_basis === "VERIFIED_ORIGINAL_SET"
-      && parityCaseEvidence?.external_identity_support?.source_count === 3
+      && (parityRequired ? (
+        parityCaseEvidence?.codex_parity_exact_match === true
+        && parityCaseEvidence?.external_identity_support?.applied === true
+        && parityCaseEvidence?.external_identity_support?.match_basis === "VERIFIED_ORIGINAL_SET"
+        && parityCaseEvidence?.external_identity_support?.source_count === 3
+      ) : parityCaseEvidence == null)
       && largeCaseEvidence?.overlap_observed === true
       && largeCaseEvidence?.relay_durable_before_recognition_response === true,
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
     evidence.final_seal = {
-      provider_case_count: 4,
-      fresh_current_case_count: 4,
+      provider_case_count: expectedProviderCaseCount,
+      fresh_current_case_count: expectedProviderCaseCount,
       distinct_provider_response_receipts: true,
       distinct_provider_authority_operations: true,
       complete_server_stage_receipts: true,
       exact_authority_token_reservation: expectedEstimatedTokensPerAttempt,
-      durable_owner_execution_readback_count: 4,
-      codex_parity_exact_match_count: 1,
-      verified_original_set_match_count: 1,
+      durable_owner_execution_readback_count: expectedProviderCaseCount,
+      codex_parity_exact_match_count: parityRequired ? 1 : 0,
+      verified_original_set_match_count: parityRequired ? 1 : 0,
       warmup_real_response_observed: true,
       staged_overlap_observed: true,
       staged_relays_durable_before_recognition_response: true,
@@ -2578,6 +2620,37 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && validateSourceCasesManifest(manifest).every((entry) => (
     entry.files.map((file) => file.role).join(",") === "front_original,back_original"
     )), verifierErrorCodes.GENERIC);
+  const bridgeGitSha = "b".repeat(40);
+  const bridgeManifest = {
+    schema_version: COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_marker: COMPATIBILITY_BRIDGE_MARKER,
+    git_sha: bridgeGitSha,
+    evidence_scope: manifest.evidence_scope,
+    accuracy_claim: null,
+    cases: manifest.cases
+  };
+  requireInvariant(validateSourceCasesManifest(bridgeManifest, {
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    expectedGitSha: bridgeGitSha
+  }).length === 2, verifierErrorCodes.GENERIC);
+  for (const [candidate, options] of [
+    [bridgeManifest, { releaseClass: ORDINARY_RELEASE_CLASS }],
+    [manifest, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeManifest, git_sha: "c".repeat(40) }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }]
+  ]) {
+    let crossClassManifestRejected = false;
+    try { validateSourceCasesManifest(candidate, options); } catch {
+      crossClassManifestRejected = true;
+    }
+    requireInvariant(crossClassManifestRejected, verifierErrorCodes.GENERIC);
+  }
   for (const invalidFiles of [
     [manifest.cases[0].files[1], manifest.cases[0].files[0]],
     [manifest.cases[0].files[0], manifest.cases[0].files[0]]

@@ -25,13 +25,18 @@ import {
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { THIN_COMPOSER_VERSION, THIN_RESOLVER_VERSION } from "../lib/listing/thin/csm-persistence.mjs";
 import { publicCsmOwnerExecutionReceipt } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
+import {
+  validateExternalIdentityPublicReceipt
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { readJsonPayload, sendJson } from "../lib/listing/v4/session/http-handler-utils.mjs";
 
 const EXTERNAL_IDENTITY_FIELDS = Object.freeze([
   "year", "manufacturer", "product", "set", "subjects", "team", "card_number"
 ]);
-const EXTERNAL_IDENTITY_ACTIONS = new Set(["FILL", "CORROBORATE", "NORMALIZE_ALIAS"]);
+const EXTERNAL_IDENTITY_ACTIONS = new Set([
+  "FILL", "CORROBORATE", "NORMALIZE_ALIAS", "CORRECT_CONFLICT"
+]);
 const EXTERNAL_IDENTITY_MATCH_BASES = new Set(["EXACT_FOUR_ANCHOR", "VERIFIED_ORIGINAL_SET"]);
 const EXTERNAL_IDENTITY_SOURCES = Object.freeze({
   TCDB: Object.freeze({ prefix: "tcdb.", hostname: "www.tcdb.com" }),
@@ -77,7 +82,8 @@ function publicExternalSource(source) {
 export function publicExternalIdentitySupport(value) {
   if (!plainRecord(value)
       || value.schema_version !== "csm-external-identity-public-receipt.v1"
-      || value.status !== "APPLIED") return null;
+      || value.status !== "APPLIED"
+      || !validateExternalIdentityPublicReceipt(value)) return null;
   const sources = (Array.isArray(value.sources) ? value.sources : [])
     .map(publicExternalSource).filter(Boolean);
   if (!sources.length) return null;
