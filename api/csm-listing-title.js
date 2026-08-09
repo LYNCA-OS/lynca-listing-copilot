@@ -376,7 +376,7 @@ function historicalExecutionContractSha256(result) {
   return executionContractSha256;
 }
 
-export function publicPersistedResult(result, executionOrigin = null) {
+export function publicPersistedResult(result, executionOrigin = null, canonicalAssetId = null) {
   const {
     csm_persistence_checkpoint: checkpoint,
     provider_authority_receipt: providerAuthorityReceipt,
@@ -404,6 +404,9 @@ export function publicPersistedResult(result, executionOrigin = null) {
   // FRESH_CURRENT label or authority claim from its durable checkpoint.
   return {
     ...publicResult,
+    ...(canonicalAssetId === null ? {} : {
+      asset_id: requiredText(canonicalAssetId, "canonical_asset_id")
+    }),
     ...(freshAuthorityReceipt ? {
       provider_authority_receipt: freshAuthorityReceipt
     } : {}),
@@ -614,6 +617,13 @@ export async function runDirectCsmAsset({
   const imageManifestStartedAt = now();
   const canonical = await readImages({ tenantId: tenant, assetId: asset, env, fetchImpl });
   latencyStages.image_manifest_ms = now() - imageManifestStartedAt;
+  const canonicalAssetId = requiredText(canonical?.asset_id, "canonical_asset_id");
+  if (canonicalAssetId !== asset) {
+    throw Object.assign(new Error("canonical_asset_identity_mismatch"), {
+      statusCode: 409,
+      retryable: false
+    });
+  }
   const originals = canonical.images.filter((image) => image.derived !== true).slice(0, 2);
   if (!originals.length) {
     throw Object.assign(new Error("canonical_original_image_missing"), { statusCode: 409 });
@@ -1019,7 +1029,7 @@ export async function runDirectCsmAsset({
         ? "AMBIGUOUS_PROVIDER_RECOVERY"
       : "EXACT_REPLAY";
   if (!historicalPayloadRecovered && alreadyPersisted(settled, sessionId)) {
-    return publicPersistedResult(settled, executionOrigin);
+    return publicPersistedResult(settled, executionOrigin, canonicalAssetId);
   }
   const preparedWithDispatchStages = {
     ...settled,
@@ -1134,7 +1144,7 @@ export async function runDirectCsmAsset({
       retryable: Number(persistedWithLatency?.csm_persistence?.statusCode || 503) >= 500
     }));
   }
-  return publicPersistedResult(persistedWithLatency, executionOrigin);
+  return publicPersistedResult(persistedWithLatency, executionOrigin, canonicalAssetId);
 }
 
 function responseStatus(error) {

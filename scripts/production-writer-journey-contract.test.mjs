@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [login, index, app, spec, workflow, releaseWorkflow] = await Promise.all([
+const [login, index, app, spec, workflow, releaseWorkflow, packageText] = await Promise.all([
   readFile(new URL("../app/login.html", import.meta.url), "utf8"),
   readFile(new URL("../app/index.html", import.meta.url), "utf8"),
   readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8"),
   readFile(new URL("../e2e/production-writer-journey.spec.mjs", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/production-writer-journey.yml", import.meta.url), "utf8"),
-  readFile(new URL("../.github/workflows/deploy-production.yml", import.meta.url), "utf8")
+  readFile(new URL("../.github/workflows/deploy-production.yml", import.meta.url), "utf8"),
+  readFile(new URL("../package.json", import.meta.url), "utf8")
 ]);
+const packageJson = JSON.parse(packageText);
 
 for (const testId of ["login-username", "login-password", "login-submit"]) {
   assert.match(login, new RegExp(`data-testid="${testId}"`));
@@ -291,6 +293,10 @@ assert.match(spec, /!titleArtifact\.includes\("title_sha256"\)/);
 assert.match(spec, /!titleArtifact\.includes\("writer_final_title"\)/);
 assert.match(spec, /!titleArtifact\.includes\("stored_title"\)/);
 assert.match(spec, /error_code = errorCode/);
+assert.match(spec, /evidence\.failed_case_id = liveFailureCaseIds\.has\(failureCaseId\)/);
+assert.match(spec, /evidence\.failed_phase = liveFailurePhases\.has\(failurePhase\)/);
+assert.match(spec, /await Promise\.allSettled\(\[\.\.\.pendingPageWaits\]\)/,
+  "teardown must own pending page waits instead of emitting a secondary target-closed failure");
 assert.doesNotMatch(spec, /evidence\.error\s*=/);
 assert.doesNotMatch(spec, /String\(error\?\.message \|\| error\)/);
 assert.match(spec, /PRIVATE EXPECTED TITLE/,
@@ -298,6 +304,9 @@ assert.match(spec, /PRIVATE EXPECTED TITLE/,
 assert.match(spec, /cookieDomainMatches/);
 assert.match(spec, /cookiePathMatches/);
 assert.match(spec, /canonicalProductionOrigin = "https:\/\/listing\.lyncafei\.team"/);
+assert.match(spec,
+  /cookieHeaderForUrl\(cookieState, `\$\{canonicalProductionOrigin\}\/api\/health`/,
+  "offline cookie scope checks must stay canonical when the live target is an immutable candidate");
 assert.match(spec, /\^\[a-z0-9-\]\+\\\.vercel\\\.app\$/,
   "an unpromoted release target must be an exact Vercel candidate hostname");
 assert.match(spec, /function candidateStorageStateBoundToTarget/);
@@ -353,7 +362,7 @@ assert.match(spec, /metadata\.resumeOnly !== recoveryAuthorization\.resume_only/
 assert.match(spec, /const recognitionOutcome = await Promise\.race/,
   "a blocked pre-spend request must fail immediately instead of waiting for the success timeout");
 const largeResponseWait = spec.match(
-  /const largeRecognitionResponsePromise = journeyPage\.waitForResponse[\s\S]+?\), \{ timeout: 6 \* 60 \* 1000 \}\);/
+  /const largeRecognitionResponsePromise = ownPageWait\(journeyPage\.waitForResponse[\s\S]+?\), \{ timeout: 6 \* 60 \* 1000 \}\)\);/
 )?.[0] || "";
 assert.ok(largeResponseWait, "the large response wait must exist");
 assert.doesNotMatch(largeResponseWait, /response\.ok\(\)/,
@@ -578,6 +587,8 @@ assert.match(spec, /expect\(health\?\.deployment\?\.git_commit_sha[\s\S]*?\.toBe
 assert.match(spec, /expect\(finalHealth\?\.deployment\?\.git_commit_sha[\s\S]*?\.toBe\(expectedSha\)/);
 assert.doesNotMatch(spec, /recordHar|\.tracing\.|failure\.png|journey\.har/);
 assert.doesNotMatch(workflow, /test-results\/production-writer-journey/);
+assert.match(packageJson.scripts["test:e2e:production-writer-journey"], /--grep-invert @offline/,
+  "the paid candidate command must run only the live journey, never its offline counterexamples");
 assert.doesNotMatch(releaseWorkflow,
   /VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-protection-bypass|x-vercel-set-bypass-cookie/,
   "the bypass value must never enter workflow YAML, logs, or a global browser header");

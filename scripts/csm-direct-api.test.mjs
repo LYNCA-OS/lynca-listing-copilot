@@ -165,6 +165,10 @@ assert.doesNotMatch(source, /buildLegacy(?:Current|Low)LunaDirectPayloadHash/,
   "portable recovery must not enumerate a finite set of historical profile hashes");
 assert.match(source, /lookupOperationResultByKey/,
   "ordinary payload conflicts must recover through the stable tenant operation identity");
+assert.match(source, /publicPersistedResult\(settled, executionOrigin, canonicalAssetId\)/,
+  "an exact direct replay must return the tenant-scoped canonical asset identity");
+assert.match(source, /publicPersistedResult\(persistedWithLatency, executionOrigin, canonicalAssetId\)/,
+  "a fresh direct result must return the tenant-scoped canonical asset identity");
 for (const transportOwner of [
   /api\.openai\.com/,
   /OPENAI_API_KEY/,
@@ -2113,6 +2117,30 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
     dependencies
   });
   assert.equal(result.title, "Test title");
+  assert.equal(result.asset_id, "asset-1",
+    "the public direct result must bind the canonical asset used for recognition");
+}
+
+// A tenant-scoped manifest is the response authority. A mismatched manifest
+// identity must stop before signing or provider use rather than echoing the
+// client's requested asset into a successful direct response.
+{
+  const events = [];
+  const dependencies = successfulDependencies({ events, authority: passthroughAuthority() });
+  dependencies.readImages = async () => {
+    events.push("images");
+    return { ...canonicalImages(), asset_id: "asset-other" };
+  };
+  await assert.rejects(runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "canonical-asset-mismatch",
+    dependencies
+  }), (error) => error.message === "canonical_asset_identity_mismatch"
+    && error.statusCode === 409
+    && error.retryable === false);
+  assert.deepEqual(events, ["readiness", "images"]);
 }
 
 // A manual retry first resolves durable state. FAILED N becomes RETRY N+1;
@@ -2137,6 +2165,7 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   const storedSessionId = deterministicCsmSessionId(buildLunaDirectOperationKey(storedTask));
   const stored = {
     title: "Stored title",
+    asset_id: "untrusted-stored-asset",
     csm_rows: { resolution: { recognition_session_id: storedSessionId } },
     csm_persistence: { ok: true, atomic: true, session: { saved: true } },
     provider_authority_receipt: providerAuthorityReceipt({
@@ -2156,7 +2185,11 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
     dependencies: successfulDependencies({ events: replayEvents, authority: replayAuthority })
   });
   const { provider_authority_receipt: _storedAuthorityReceipt, ...publicStored } = stored;
-  assert.deepEqual(replay, { ...publicStored, execution_origin: "EXACT_REPLAY" });
+  assert.deepEqual(replay, {
+    ...publicStored,
+    asset_id: "asset-1",
+    execution_origin: "EXACT_REPLAY"
+  });
   assert.equal(replay.provider_authority_receipt, undefined,
     "an exact replay must not present the original request's claim as current");
   assert.equal(stored.execution_origin, undefined,
