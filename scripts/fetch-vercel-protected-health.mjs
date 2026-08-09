@@ -18,7 +18,7 @@ function deploymentOrigin(raw) {
     || !/^[a-z0-9-]+\.vercel\.app$/.test(url.hostname)) {
     throw new Error("vercel_protected_health_invalid_deployment_url");
   }
-  return url.origin;
+  return { hostname: url.hostname, origin: url.origin };
 }
 
 function scopedApiUrl(pathname, teamId) {
@@ -89,11 +89,31 @@ async function resolveAutomationBypass(fetchImpl, { token, teamId, projectId }) 
   return created;
 }
 
+async function verifyDeploymentIdentity(fetchImpl, {
+  token,
+  teamId,
+  projectId,
+  hostname
+}) {
+  const deployment = await vercelApiJson(fetchImpl, {
+    token,
+    teamId,
+    pathname: `/v13/deployments/${encodeURIComponent(hostname)}`
+  });
+  if (deployment?.projectId !== projectId
+    || deployment?.ownerId !== teamId
+    || deployment?.url !== hostname
+    || deployment?.readyState !== "READY") {
+    throw new Error("vercel_protected_health_deployment_identity_mismatch");
+  }
+}
+
 export async function fetchVercelProtectedHealth({ env = process.env, fetchImpl = fetch } = {}) {
   const token = required(env, "VERCEL_TOKEN", /^\S{20,}$/);
   const teamId = required(env, "VERCEL_ORG_ID", /^team_[A-Za-z0-9]+$/);
   const projectId = required(env, "VERCEL_PROJECT_ID", /^prj_[A-Za-z0-9]+$/);
-  const origin = deploymentOrigin(required(env, "DEPLOYMENT_URL"));
+  const { hostname, origin } = deploymentOrigin(required(env, "DEPLOYMENT_URL"));
+  await verifyDeploymentIdentity(fetchImpl, { token, teamId, projectId, hostname });
   const bypass = await resolveAutomationBypass(fetchImpl, { token, teamId, projectId });
   const response = await fetchImpl(`${origin}/api/health`, {
     method: "GET",
