@@ -10,7 +10,10 @@ import { promisify } from "node:util";
 const root = new URL("..", import.meta.url).pathname;
 const migrations = [
   "20260801101152_csm_thin_provider_admission_v1.sql",
-  "20260801115421_csm_thin_provider_pacer_v1.sql"
+  "20260801115421_csm_thin_provider_pacer_v1.sql",
+  "20260809145100_csm_model_profile_token_reservation_v1.sql",
+  "20260809145241_csm_provider_operation_key_recovery_v1.sql",
+  "20260809151333_csm_provider_authority_execute_hardening_v1.sql"
 ].map((name) => join(
   root,
   "infrastructure/supabase-production/supabase/migrations",
@@ -134,6 +137,12 @@ function cancel({ tenant, operation, payload = hash("a") }) {
   )::text`);
 }
 
+function lookupByKey({ tenant, operation }) {
+  return json(`select public.lookup_csm_thin_provider_operation_by_key_v1(
+    ${literal(tenant)}, ${literal(operation)}
+  )::text`);
+}
+
 for (const binary of ["initdb", "pg_ctl", "psql"]) {
   try {
     command(binary, ["--version"]);
@@ -165,8 +174,8 @@ try {
     ], { capture: false });
   }
 
-  // The tables are opaque even to service_role; the six definer RPCs are its
-  // only interface. RLS is both enabled and forced.
+  // The tables are opaque even to service_role; definer RPCs are its only
+  // interface. RLS is both enabled and forced.
   assert.equal(sql(`select pg_catalog.bool_and(c.relrowsecurity and c.relforcerowsecurity)
     from pg_catalog.pg_class c
     where c.oid in (
@@ -197,39 +206,143 @@ try {
     'public.check_csm_thin_provider_pacer_v1(text,text,text)',
     'EXECUTE'
   )`), "f");
+  assert.equal(sql(`select has_function_privilege(
+    'service_role',
+    'public.lookup_csm_thin_provider_operation_by_key_v1(text,text)',
+    'EXECUTE'
+  )`), "t");
+  assert.equal(sql(`select has_function_privilege(
+    'authenticated',
+    'public.lookup_csm_thin_provider_operation_by_key_v1(text,text)',
+    'EXECUTE'
+  )`), "f");
+  for (const signature of [
+    "enqueue_csm_thin_provider_attempt_v1(text,text,text,text,text,text,integer,text,integer,numeric,timestamp with time zone,text,integer)",
+    "claim_csm_thin_provider_attempt_v1(text,text,text,text,text,integer,text,integer)",
+    "heartbeat_csm_thin_provider_attempt_v1(text,text,integer,text,bigint,integer)",
+    "settle_csm_thin_provider_attempt_v1(text,text,text,text,text,integer,text,bigint,text,jsonb,integer)",
+    "cancel_csm_thin_provider_operation_v1(text,text,text,text,text,text)",
+    "lookup_csm_thin_provider_operation_v1(text,text,text)",
+    "lookup_csm_thin_provider_operation_by_key_v1(text,text)",
+    "check_csm_thin_provider_pacer_v1(text,text,text)"
+  ]) {
+    assert.equal(sql(`select has_function_privilege(
+      'anon', 'public.${signature}', 'EXECUTE'
+    )`), "f", `${signature} must not be public`);
+    assert.equal(sql(`select has_function_privilege(
+      'authenticated', 'public.${signature}', 'EXECUTE'
+    )`), "f", `${signature} must not be client-callable`);
+    assert.equal(sql(`select has_function_privilege(
+      'service_role', 'public.${signature}', 'EXECUTE'
+    )`), "t", `${signature} must remain server-callable`);
+  }
   assert.equal(sql(`select pg_catalog.count(*) from pg_catalog.pg_indexes
     where schemaname = 'public' and indexname like 'csm_thin_provider_%_idx'`), "4");
   assert.equal(sql(`select max_active || ':' || max_active_tokens || ':'
       || baseline_working_max_active || ':' || pacer_tokens_per_second || ':'
       || pacer_burst_tokens || ':'
       || effective_max_active
-    from public.csm_thin_provider_scopes`), "120:440000:43:60000:65200:43");
+    from public.csm_thin_provider_scopes`), "120:440000:43:60000:66000:43");
   const pacerReadiness = json(`select public.check_csm_thin_provider_pacer_v1(
     ${literal(scope[0])}, ${literal(scope[1])}, ${literal(scope[2])}
   )::text`);
   assert.equal(pacerReadiness.code, "pacer_ready");
   assert.equal(pacerReadiness.baseline_working_max_active, 43);
   assert.equal(pacerReadiness.pacer_tokens_per_second, 60_000);
-  assert.equal(pacerReadiness.pacer_burst_tokens, 65_200);
+  assert.equal(pacerReadiness.pacer_burst_tokens, 66_000);
+
+  // A model/profile change cannot know an old payload hash. The tenant-exact
+  // primary-key lookup recovers only the one already-paid SUCCEEDED result;
+  // no provider/model scope participates in this read.
+  const historicalSuccess = {
+    tenant: "tenant-history-success",
+    operation: "op-history",
+    owner: "worker-history-success"
+  };
+  enqueue({ ...historicalSuccess, payload: hash("b") });
+  const historicalLease = claim(historicalSuccess);
+  settle({
+    ...historicalSuccess,
+    fence: historicalLease.lease_fence,
+    result: { checkpoint: "paid-once" },
+    actualTokens: 100
+  });
+  const historicalLookup = lookupByKey(historicalSuccess);
+  assert.deepEqual(historicalLookup, {
+    ok: true,
+    code: "found_succeeded",
+    status_code: 200,
+    found: true,
+    operation_status: "SUCCEEDED",
+    payload_sha256: hash("b"),
+    latest_attempt_no: 1,
+    latest_attempt_state: "SUCCEEDED",
+    result: { checkpoint: "paid-once" }
+  });
+  assert.deepEqual(lookupByKey({
+    tenant: "tenant-history-other",
+    operation: historicalSuccess.operation
+  }), {
+    ok: true, code: "not_found", status_code: 200, found: false
+  }, "the same operation key in another tenant must not recover a result");
+
+  const historicalFailure = {
+    tenant: "tenant-history-failed",
+    operation: "op-history-failed",
+    owner: "worker-history-failed"
+  };
+  enqueue(historicalFailure);
+  const failureLease = claim(historicalFailure);
+  settle({
+    ...historicalFailure,
+    fence: failureLease.lease_fence,
+    outcome: "FAILED",
+    result: { checkpoint: "must-not-leak" },
+    actualTokens: 100
+  });
+  const failedLookup = lookupByKey(historicalFailure);
+  assert.equal(failedLookup.code, "found_non_success");
+  assert.equal(failedLookup.operation_status, "FAILED");
+  assert.equal(Object.hasOwn(failedLookup, "payload_sha256"), false);
+  assert.equal(Object.hasOwn(failedLookup, "result"), false);
+
+  const historicalAmbiguous = {
+    tenant: "tenant-history-ambiguous",
+    operation: "op-history-ambiguous",
+    owner: "worker-history-ambiguous"
+  };
+  enqueue(historicalAmbiguous);
+  const ambiguousLease = claim(historicalAmbiguous);
+  settle({
+    ...historicalAmbiguous,
+    fence: ambiguousLease.lease_fence,
+    outcome: "AMBIGUOUS",
+    result: { checkpoint: "unknown-not-success" },
+    actualTokens: 100
+  });
+  const ambiguousLookup = lookupByKey(historicalAmbiguous);
+  assert.equal(ambiguousLookup.operation_status, "AMBIGUOUS");
+  assert.equal(Object.hasOwn(ambiguousLookup, "payload_sha256"), false);
+  assert.equal(Object.hasOwn(ambiguousLookup, "result"), false);
 
   // Exercise PostgreSQL's timestamp epoch extraction and NUMERIC refill math,
   // not only a JavaScript approximation. The minimum lossless bucket retains
-  // every sub-5,300 carry: 53 exact one-second ticks admit 600 reservations,
-  // never more than twelve in one tick, and end at zero balance.
+  // every sub-6,500 carry: 13 exact one-second ticks admit 120 reservations,
+  // never more than ten in one tick, and end at zero balance.
   assert.equal(sql(`with recursive pacer(tick, balance, admitted_total, tick_max) as (
       select 0, 0::numeric(20,6), 0::bigint, 0::integer
       union all
       select pacer.tick + 1,
-        (step.refilled - step.admitted * 5300)::numeric(20,6),
+        (step.refilled - step.admitted * 6500)::numeric(20,6),
         pacer.admitted_total + step.admitted,
         greatest(pacer.tick_max, step.admitted)
       from pacer
       cross join lateral (
         select refilled,
-          pg_catalog.floor(refilled / 5300)::integer as admitted
+          pg_catalog.floor(refilled / 6500)::integer as admitted
         from (
           select least(
-            65200::numeric(20,6),
+            66000::numeric(20,6),
             pacer.balance + extract(epoch from (
               ('2026-08-01 00:00:00+00'::timestamptz
                 + (pacer.tick + 1) * interval '1 second')
@@ -239,10 +352,10 @@ try {
           )::numeric(20,6) as refilled
         ) refill
       ) step
-      where pacer.tick < 53
+      where pacer.tick < 13
     )
     select admitted_total || ':' || tick_max || ':' || balance
-    from pacer where tick = 53`), "600:12:0.000000");
+    from pacer where tick = 13`), "120:10:0.000000");
 
   // SCFQ/WFQ uses dominant count/token cost: the smaller tenant head wins,
   // yet the target-specific claimant can only admit its own selected row.
@@ -345,9 +458,9 @@ try {
     fence: afterWindow.lease_fence, actualTokens: 1
   });
 
-  // The scope-row lock is also the pacer serialization point. Thirteen
-  // independent PostgreSQL sessions race a 65,200-token lossless bucket. It
-  // still holds only twelve whole 5,300-token starts; no concurrent transaction
+  // The scope-row lock is also the pacer serialization point. Eleven
+  // independent PostgreSQL sessions race the 66,000-token lossless bucket. It
+  // still holds only ten whole 6,500-token starts; no concurrent transaction
   // can overspend it.
   sql(`update public.csm_thin_provider_attempts
     set started_at = pg_catalog.clock_timestamp() - interval '61 seconds'
@@ -359,9 +472,9 @@ try {
         effective_max_active = 43,
         effective_max_active_tokens = 440000,
         aimd_cooldown_until = null,
-        pacer_available_tokens = 65200,
+        pacer_available_tokens = 66000,
         pacer_refilled_at = pg_catalog.clock_timestamp()`);
-  const pacedTasks = Array.from({ length: 13 }, (_, offset) => {
+  const pacedTasks = Array.from({ length: 11 }, (_, offset) => {
     const index = offset + 1;
     return {
       tenant: `tenant-pace-${index}`,
@@ -369,17 +482,17 @@ try {
       owner: `worker-pace-${index}`
     };
   });
-  for (const task of pacedTasks) enqueue({ ...task, tokens: 5_300 });
+  for (const task of pacedTasks) enqueue({ ...task, tokens: 6_500 });
   const pacedRace = await Promise.all(pacedTasks.map(claimUntilAdmissionBoundary));
-  assert.equal(pacedRace.filter(({ admitted }) => admitted === true).length, 12,
-    "the serialized 65,200-token bucket must admit exactly twelve 5,300-token starts");
+  assert.equal(pacedRace.filter(({ admitted }) => admitted === true).length, 10,
+    "the serialized 66,000-token bucket must admit exactly ten 6,500-token starts");
   const pacedBlockedIndex = pacedRace.findIndex(({ code }) => code === "pacer_limited");
   assert.ok(pacedBlockedIndex >= 0);
   const pacedBlockedTask = pacedTasks[pacedBlockedIndex];
-  assert.equal(sql(`select active_count from public.csm_thin_provider_scopes`), "12");
+  assert.equal(sql(`select active_count from public.csm_thin_provider_scopes`), "10");
 
-  // One elapsed second at the production 60k refill rate is enough for eleven
-  // starts (58.3k) and carries 1.7k forward. The blocked thirteenth task now
+  // One elapsed second at the production 60k refill rate is enough for nine
+  // starts (58.5k) and carries 1.5k forward. The blocked eleventh task now
   // starts without resetting the independent active count/token walls.
   sql(`update public.csm_thin_provider_scopes
     set pacer_tokens_per_second = 60000,
@@ -387,8 +500,8 @@ try {
         pacer_refilled_at = pg_catalog.clock_timestamp() - interval '1 second'`);
   const pacedRefilledLease = claim(pacedBlockedTask, { respectPacer: true });
   assert.equal(pacedRefilledLease.admitted, true);
-  assert.ok(Number(pacedRefilledLease.pacer_available_tokens) >= 54_700
-    && Number(pacedRefilledLease.pacer_available_tokens) <= 59_900);
+  assert.ok(Number(pacedRefilledLease.pacer_available_tokens) >= 53_500
+    && Number(pacedRefilledLease.pacer_available_tokens) <= 59_500);
   for (let index = 0; index < pacedRace.length; index += 1) {
     const lease = pacedRace[index];
     if (lease.admitted !== true) continue;
