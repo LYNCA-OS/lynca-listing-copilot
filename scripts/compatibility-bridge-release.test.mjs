@@ -2,12 +2,14 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  ACTIVE_V2_TRANSITION_MARKER,
+  ACTIVE_V2_TRANSITION_PARENT_SHA,
   COMPATIBILITY_BRIDGE_CHANGED_PATHS,
   COMPATIBILITY_BRIDGE_COMMIT_TRAILER,
   COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
@@ -15,16 +17,18 @@ import {
   COMPATIBILITY_BRIDGE_PARENT_SHA,
   COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   COMPATIBILITY_BRIDGE_TREE_TRAILER,
+  LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
+  activeV2OrdinaryRuntimeContractProof,
   buildCompatibilityBridgeManifest,
   compatibilityBridgeRuntimeContractProof,
+  verifyOrdinaryRollbackLineage,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
-import {
-  EXTERNAL_IDENTITY_RELEASE_CONTRACT
-} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 const gitSha = "a".repeat(40);
+const nextOrdinaryGitSha = "d".repeat(40);
+const nextOrdinaryParentSha = "add4096a2811b783b46d8907d6a5cbaf8063bbc3";
 const treeSha = "b".repeat(40);
 assert.equal(
   COMPATIBILITY_BRIDGE_PARENT_SHA,
@@ -58,14 +62,42 @@ const ordinary = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha,
   headSha: gitSha,
+  parentShas: [ACTIVE_V2_TRANSITION_PARENT_SHA],
   commitMessage: "ordinary release"
 });
 assert.equal(ordinary.release_class, ORDINARY_RELEASE_CLASS);
+assert.equal(ordinary.schema_version, "production-release-selection-v3");
+assert.equal(ordinary.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+assert.equal(ordinary.transition_marker, ACTIVE_V2_TRANSITION_MARKER);
+assert.equal(ordinary.parent_git_sha, ACTIVE_V2_TRANSITION_PARENT_SHA);
+assert.equal(ordinary.required_rollback_git_sha, ACTIVE_V2_TRANSITION_PARENT_SHA);
 assert.equal(ordinary.writer_journey_manifest, "writer-journey-cases-v3");
 assert.equal(ordinary.parity_required, true);
 assert.equal(Object.hasOwn(ordinary, "bridge_marker"), false);
+const nextOrdinary = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: nextOrdinaryGitSha,
+  headSha: nextOrdinaryGitSha,
+  parentShas: [nextOrdinaryParentSha]
+});
+assert.equal(nextOrdinary.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+assert.equal(nextOrdinary.transition_marker, null);
+assert.equal(nextOrdinary.parent_git_sha, nextOrdinaryParentSha);
+assert.equal(nextOrdinary.required_rollback_git_sha, nextOrdinaryParentSha);
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha,
+  headSha: gitSha,
+  parentShas: []
+}), (error) => error.code === "ordinary_release_parent_invalid");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha,
+  headSha: gitSha,
+  parentShas: [ACTIVE_V2_TRANSITION_PARENT_SHA, "c".repeat(40)]
+}), (error) => error.code === "ordinary_release_parent_invalid");
 
-const bridge = verifyCompatibilityBridgeSelection({
+assert.throws(() => verifyCompatibilityBridgeSelection({
   releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   gitSha,
   headSha: gitSha,
@@ -73,14 +105,15 @@ const bridge = verifyCompatibilityBridgeSelection({
   parentShas: [COMPATIBILITY_BRIDGE_PARENT_SHA],
   changedPaths: [...COMPATIBILITY_BRIDGE_CHANGED_PATHS],
   commitMessage: bridgeCommitMessage
-});
-assert.equal(bridge.bridge_marker, COMPATIBILITY_BRIDGE_MARKER);
-assert.equal(bridge.git_sha, gitSha);
-assert.equal(bridge.git_tree_sha, treeSha);
-assert.equal(bridge.parent_git_sha, COMPATIBILITY_BRIDGE_PARENT_SHA);
-assert.match(bridge.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
-assert.equal(bridge.writer_journey_manifest, COMPATIBILITY_BRIDGE_MANIFEST_VERSION);
-assert.equal(bridge.parity_required, false);
+}), (error) => error.code === "compatibility_bridge_runtime_contract_invalid",
+"the historical active-v1 bridge class must be unusable after active-v2 activation");
+const historicalBridgeSelection = {
+  release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  bridge_marker: COMPATIBILITY_BRIDGE_MARKER,
+  git_sha: gitSha,
+  writer_journey_manifest: COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
+  parity_required: false
+};
 
 const shallowFixtureRoot = await mkdtemp(path.join(tmpdir(), "lynca-bridge-shallow-"));
 try {
@@ -183,44 +216,130 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   commitMessage: COMPATIBILITY_BRIDGE_COMMIT_TRAILER
 }), (error) => error.code === "release_class_invalid");
 
-const proof = compatibilityBridgeRuntimeContractProof();
-assert.equal(proof.active_registry_release_id,
-  "registry_thin_external_identity_high_risers_v1");
-assert.equal(proof.active_resolver_version, "thin-path-exact-external-identity-v2");
-assert.equal(proof.active_marketplace_profile_version, "ebay-verified-external-identity-v1");
-assert.equal(proof.active_model_profile_id, "openai-gpt-5.6-luna-csm-v1");
-assert.equal(proof.active_visible_conflict_behavior, "ABSTAINED");
-assert.equal(proof.dormant_registry_release_id,
+assert.throws(() => compatibilityBridgeRuntimeContractProof(),
+  (error) => error.code === "compatibility_bridge_runtime_contract_invalid",
+  "the bridge-only runtime proof must fail once v2 is active");
+const activeProof = activeV2OrdinaryRuntimeContractProof();
+assert.equal(activeProof.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+assert.equal(activeProof.transition_marker, ACTIVE_V2_TRANSITION_MARKER);
+assert.equal(activeProof.required_parent_git_sha, ACTIVE_V2_TRANSITION_PARENT_SHA);
+assert.equal(activeProof.active_registry_release_id,
   "registry_thin_external_identity_high_risers_v2");
-assert.equal(proof.dormant_resolver_version, "thin-path-exact-external-identity-v3");
-assert.equal(proof.provider_calls, 0);
-assert.equal(proof.health_bound, false);
+assert.equal(activeProof.active_resolver_version, "thin-path-exact-external-identity-v3");
+assert.equal(activeProof.active_marketplace_profile_version,
+  "ebay-verified-external-identity-v2");
+assert.equal(activeProof.verified_original_set_conflict_behavior, "CORRECTED");
+assert.equal(activeProof.provider_calls, 0);
+assert.match(activeProof.contract_sha256, /^[0-9a-f]{64}$/);
+const nextOrdinaryProof = activeV2OrdinaryRuntimeContractProof({
+  parentGitSha: nextOrdinaryParentSha
+});
+assert.equal(nextOrdinaryProof.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+assert.equal(nextOrdinaryProof.transition_marker, null);
+assert.equal(nextOrdinaryProof.required_parent_git_sha, nextOrdinaryParentSha);
+assert.notEqual(nextOrdinaryProof.contract_sha256, activeProof.contract_sha256);
 
-const health = {
-  ready: true,
-  deployment: { git_commit_sha: gitSha },
-  runtime: {
-    model_profile_id: "openai-gpt-5.6-luna-csm-v1",
-    external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT
-  }
-};
-assert.equal(compatibilityBridgeRuntimeContractProof({ health, gitSha }).health_bound, true);
-assert.throws(() => compatibilityBridgeRuntimeContractProof({
-  health: {
-    ...health,
-    runtime: {
-      ...health.runtime,
-      external_identity: {
-        ...EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-        registry_release: {
-          ...EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release,
-          id: "registry_thin_external_identity_high_risers_v2"
-        }
-      }
-    }
-  },
-  gitSha
-}), (error) => error.code === "compatibility_bridge_health_contract_invalid");
+const lineage = verifyOrdinaryRollbackLineage({
+  selection: ordinary,
+  rollbackReceipt: { git_sha: ACTIVE_V2_TRANSITION_PARENT_SHA }
+});
+assert.deepEqual(lineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v2",
+  release_class: ORDINARY_RELEASE_CLASS,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVE_V2_TRANSITION_MARKER,
+  release_git_sha: gitSha,
+  release_parent_git_sha: ACTIVE_V2_TRANSITION_PARENT_SHA,
+  captured_rollback_git_sha: ACTIVE_V2_TRANSITION_PARENT_SHA,
+  lineage_verified: true
+});
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: ordinary,
+  rollbackReceipt: { git_sha: "c".repeat(40) }
+}), (error) => error.code === "ordinary_release_rollback_mismatch");
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: { ...ordinary, required_rollback_git_sha: "c".repeat(40) },
+  rollbackReceipt: { git_sha: ACTIVE_V2_TRANSITION_PARENT_SHA }
+}), (error) => error.code === "ordinary_release_selection_invalid");
+const nextLineage = verifyOrdinaryRollbackLineage({
+  selection: nextOrdinary,
+  rollbackReceipt: { git_sha: nextOrdinaryParentSha }
+});
+assert.equal(nextLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+assert.equal(nextLineage.transition_marker, null);
+assert.equal(nextLineage.release_parent_git_sha, nextOrdinaryParentSha);
+assert.equal(nextLineage.captured_rollback_git_sha, nextOrdinaryParentSha);
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: nextOrdinary,
+  rollbackReceipt: { git_sha: "c".repeat(40) }
+}), (error) => error.code === "ordinary_release_rollback_mismatch");
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: { ...nextOrdinary, parent_git_sha: "c".repeat(40) },
+  rollbackReceipt: { git_sha: nextOrdinaryParentSha }
+}), (error) => error.code === "ordinary_release_selection_invalid");
+
+const cliFixtureRoot = await mkdtemp(path.join(tmpdir(), "lynca-active-v2-lineage-"));
+try {
+  const actualHead = git(process.cwd(), ["rev-parse", "HEAD"]);
+  const actualParents = parentShas(process.cwd());
+  assert.equal(actualParents.length, 1,
+    "the checked-out ordinary release must expose exactly one parent");
+  const [actualParent] = actualParents;
+  const actualTransitionMarker = actualParent === ACTIVE_V2_TRANSITION_PARENT_SHA
+    ? ACTIVE_V2_TRANSITION_MARKER
+    : null;
+  const selectionPath = path.join(cliFixtureRoot, "selection.json");
+  const rollbackPath = path.join(cliFixtureRoot, "rollback.json");
+  const lineagePath = path.join(cliFixtureRoot, "lineage.json");
+  const teamId = "team_activeV2Lineage";
+  const projectId = "prj_activeV2Lineage";
+  await writeFile(rollbackPath, JSON.stringify({
+    schema_version: "vercel-production-rollback-receipt-v1",
+    canonical_origin: "https://listing.lyncafei.team",
+    team_id: teamId,
+    project_id: projectId,
+    deployment_id: "dpl_previousOrdinary",
+    deployment_url: "https://lynca-previous-ordinary.vercel.app",
+    git_sha: actualParent,
+    ready_state: "READY",
+    target: "production",
+    captured_at: "2026-08-11T12:00:00.000Z"
+  }), { mode: 0o600 });
+  const script = path.resolve("scripts/compatibility-bridge-release.mjs");
+  const env = { ...process.env, VERCEL_ORG_ID: teamId, VERCEL_PROJECT_ID: projectId };
+  execFileSync(process.execPath, [
+    script, "verify-selection",
+    "--release-class", ORDINARY_RELEASE_CLASS,
+    "--git-sha", actualHead,
+    "--out", selectionPath
+  ], { env });
+  execFileSync(process.execPath, [
+    script, "verify-rollback-lineage",
+    "--release-class", ORDINARY_RELEASE_CLASS,
+    "--git-sha", actualHead,
+    "--selection", selectionPath,
+    "--rollback-receipt", rollbackPath,
+    "--out", lineagePath
+  ], { env });
+  assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
+  assert.equal((await stat(lineagePath)).mode & 0o777, 0o600);
+  const savedSelection = JSON.parse(await readFile(selectionPath, "utf8"));
+  assert.equal(savedSelection.schema_version, "production-release-selection-v3");
+  assert.equal(savedSelection.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+  assert.equal(savedSelection.transition_marker, actualTransitionMarker);
+  assert.equal(savedSelection.parent_git_sha, actualParent);
+  assert.equal(savedSelection.required_rollback_git_sha, actualParent);
+  const savedLineage = JSON.parse(await readFile(lineagePath, "utf8"));
+  assert.equal(savedLineage.schema_version,
+    "production-release-rollback-lineage-receipt-v2");
+  assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+  assert.equal(savedLineage.release_git_sha, actualHead);
+  assert.equal(savedLineage.release_parent_git_sha, actualParent);
+  assert.equal(savedLineage.captured_rollback_git_sha, actualParent);
+  assert.equal(savedLineage.lineage_verified, true);
+} finally {
+  await rm(cliFixtureRoot, { recursive: true, force: true });
+}
 
 const sourceManifest = {
   schema_version: "writer-journey-cases-v3",
@@ -244,7 +363,10 @@ const sourceManifest = {
   })),
   parity_case: { case_id: "EXTERNAL_IDENTITY" }
 };
-const reduced = buildCompatibilityBridgeManifest({ selection: bridge, sourceManifest });
+const reduced = buildCompatibilityBridgeManifest({
+  selection: historicalBridgeSelection,
+  sourceManifest
+});
 assert.deepEqual(Object.keys(reduced).sort(), [
   "accuracy_claim", "bridge_marker", "cases", "evidence_scope", "git_sha",
   "release_class", "schema_version"

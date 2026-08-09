@@ -14,7 +14,8 @@ import {
   EXTERNAL_IDENTITY_SUPPORT_PACK,
   externalIdentityReplayReleaseForReceipt,
   HIGH_RISERS_EXTERNAL_IDENTITY_INDEX,
-  resolveExternalIdentitySupport
+  resolveExternalIdentitySupport,
+  validateExternalIdentityFieldDecisions
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 const HR14_ORIGINAL_SHA256 = Object.freeze([
@@ -104,6 +105,10 @@ assert.equal(Object.isFrozen(
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
     .registry_thin_external_identity_high_risers_v1
 ), true);
+assert.equal(Object.isFrozen(
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+    .registry_thin_external_identity_high_risers_v2
+), true);
 assert.equal(externalIdentityReplayReleaseForReceipt({ registry_release_id: "unknown" }), null);
 
 // Active parity is a release-time gate only. Replay itself reads the literal
@@ -112,7 +117,7 @@ const activeReplayRelease = externalIdentityReplayReleaseForReceipt({
   registry_release_id: EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID
 });
 assert.deepEqual(activeReplayRelease.receipt, {
-  schema_version: "csm-external-identity-support-receipt.v1",
+  schema_version: "csm-external-identity-support-receipt.v2",
   pack_id: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_id,
   pack_version: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_version,
   pack_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_sha256,
@@ -196,6 +201,18 @@ assert.equal(applied.support.field_decisions.subjects.action, "CORROBORATE");
 assert.equal(applied.support.field_decisions.team.action, "NORMALIZE_ALIAS");
 assert.equal(applied.support.field_decisions.card_number.action, "NORMALIZE_ALIAS");
 assert.deepEqual(applied.receipt.field_decisions, applied.support.field_decisions);
+assert.equal(validateExternalIdentityFieldDecisions(applied.receipt), true,
+  "the validator must accept the resolver's HR 14 presentation alias");
+for (const [field, canonicalValue] of [
+  ["manufacturer", "topps"],
+  ["subjects", ["michael jordan"]],
+  ["card_number", "HR 14"]
+]) {
+  const canonicalPresentationDrift = structuredClone(applied.receipt);
+  canonicalPresentationDrift.field_decisions[field].canonical_value = canonicalValue;
+  assert.equal(validateExternalIdentityFieldDecisions(canonicalPresentationDrift), false,
+    `${field} canonical_value must byte-match the frozen source fact`);
+}
 
 // Data and receipts contain facts and provenance, never an assembled answer.
 const packText = JSON.stringify(EXTERNAL_IDENTITY_SUPPORT_PACK).toLowerCase();
@@ -235,6 +252,76 @@ assert.equal(verifiedOriginal.receipt.original_set_sha256, HR14_ORIGINAL_SET_SHA
 assert.equal(verifiedOriginal.receipt.record_id, "tcdb-2551-hr14");
 assert.equal(verifiedOriginal.fields.card_number, "HR14");
 assert.equal(verifiedOriginal.support.field_decisions.card_number.action, "FILL");
+
+// Candidate run 31331365633: Luna low read the four hard anchors correctly but
+// confused this release with 1994-95 Hardwood Heroes. The reviewed original
+// set and all four text anchors select the same HR14 record, so v2 corrects
+// only release year/set while retaining the physical-copy observation.
+const liveCandidateObservation = {
+  ...observedHr14,
+  year: "1994-95",
+  set: "Hardwood Heroes",
+  team: "Chicago Bulls",
+  card_number: "HR14",
+  parallel_family: "Foil",
+  parallel_exact: "Members Only",
+  print_finish: "Members Only",
+  serial: "",
+  grading_info: null,
+  attributes: []
+};
+const liveCandidateSnapshot = structuredClone(liveCandidateObservation);
+const correctedLiveCandidate = resolveExternalIdentitySupport(liveCandidateObservation, {
+  externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 }
+});
+assert.equal(correctedLiveCandidate.status, "APPLIED");
+assert.equal(correctedLiveCandidate.receipt.match_mode, "VERIFIED_ORIGINAL_SET");
+assert.deepEqual(correctedLiveCandidate.receipt.corrected_fields, ["set", "year"]);
+assert.equal(correctedLiveCandidate.fields.year, "1996-97");
+assert.equal(correctedLiveCandidate.fields.set, "High Risers");
+assert.equal(correctedLiveCandidate.fields.print_finish, "Members Only");
+assert.equal(correctedLiveCandidate.support.field_decisions.year.action, "CORRECT_CONFLICT");
+assert.equal(correctedLiveCandidate.support.field_decisions.set.action, "CORRECT_CONFLICT");
+assert.equal(correctedLiveCandidate.support.field_decisions.card_number.action, "CORROBORATE");
+assert.equal(correctedLiveCandidate.receipt.verified_optional_observations.year.match,
+  "CORRECTED_CONFLICT");
+assert.equal(correctedLiveCandidate.receipt.verified_optional_observations.set.match,
+  "CORRECTED_CONFLICT");
+assert.deepEqual(liveCandidateObservation, liveCandidateSnapshot,
+  "release correction must not relabel the immutable Luna observation");
+assert.equal(validateExternalIdentityFieldDecisions(correctedLiveCandidate.receipt), true);
+const invalidV1Correction = {
+  ...structuredClone(correctedLiveCandidate.receipt),
+  ...EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+    .registry_thin_external_identity_high_risers_v1.receipt
+};
+assert.equal(validateExternalIdentityFieldDecisions(invalidV1Correction), false,
+  "a v1 receipt cannot acquire the v2 correction action");
+const invalidExactCorrection = structuredClone(correctedLiveCandidate.receipt);
+invalidExactCorrection.match_mode = "EXACT_FOUR_ANCHOR";
+delete invalidExactCorrection.original_set_sha256;
+assert.equal(validateExternalIdentityFieldDecisions(invalidExactCorrection), false);
+const invalidOriginalSet = structuredClone(correctedLiveCandidate.receipt);
+invalidOriginalSet.original_set_sha256 = "f".repeat(64);
+assert.equal(validateExternalIdentityFieldDecisions(invalidOriginalSet), false);
+const incompleteSources = structuredClone(correctedLiveCandidate.receipt);
+incompleteSources.field_decisions.year.source_ids = ["tcdb.set.2551"];
+assert.equal(validateExternalIdentityFieldDecisions(incompleteSources), false);
+const duplicateSources = structuredClone(correctedLiveCandidate.receipt);
+duplicateSources.field_decisions.year.source_ids.push("tcdb.set.2551");
+assert.equal(validateExternalIdentityFieldDecisions(duplicateSources), false);
+const strippedCorrection = structuredClone(correctedLiveCandidate.receipt);
+strippedCorrection.field_decisions.year.action = "FILL";
+strippedCorrection.field_decisions.set.action = "FILL";
+assert.equal(validateExternalIdentityFieldDecisions(strippedCorrection), false,
+  "non-empty conflicting observations cannot be relabelled as missing values");
+const forgedDecisionValues = structuredClone(correctedLiveCandidate.receipt);
+for (const decision of Object.values(forgedDecisionValues.field_decisions)) {
+  decision.observed_value = "forged";
+  decision.canonical_value = "forged";
+}
+assert.equal(validateExternalIdentityFieldDecisions(forgedDecisionValues), false,
+  "source-backed decisions must bind the immutable record values");
 
 const reorderedVerifiedOriginal = resolveExternalIdentitySupport(emptyCardNumber, {
   externalIdentityContext: { originalImageSha256: [...HR14_ORIGINAL_SHA256].reverse() }

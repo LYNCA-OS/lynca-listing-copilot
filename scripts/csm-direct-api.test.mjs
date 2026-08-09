@@ -50,6 +50,8 @@ import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adap
 import * as providerResponseAttestation from "../lib/listing/thin/provider-response-attestation.mjs";
 import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
 import {
+  computePostObservationResolutionContractSha256,
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
   EXTERNAL_IDENTITY_SUPPORT_PACK
@@ -542,6 +544,25 @@ assert.equal(isInternalServiceRequest({
 }
 
 const IMAGE_HASH = "a".repeat(64);
+const HISTORICAL_EXTERNAL_IDENTITY_V1_CONTRACT = Object.freeze({
+  schema_version: "csm-post-observation-resolution-contract.v1",
+  contract_id: "lynca.csm.post-observation.external-identity.v1",
+  support_pack_sha256: "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+  resolver_version: "thin-path-exact-external-identity-v2",
+  conflict_policy_version: "exact-unique-or-original-set-visible-conflict-wins-v2",
+  composer_version: "thin-marketplace-composer-v3-verified-external-identity",
+  marketplace_profile_version: "ebay-verified-external-identity-v1",
+  registry_release_id: "registry_thin_external_identity_high_risers_v1",
+  matching: "exact_unique_four_anchor_or_verified_original_set",
+  visible_conflict_policy: "abstain",
+  physical_copy_fields: "immutable",
+  provider_calls_added: 0,
+  contract_sha256: "e0b2e3463e8dc13f33d5ca2dbb3739b6e07c7b02f820901b4961ed83d0d945df"
+});
+assert.equal(
+  computePostObservationResolutionContractSha256(HISTORICAL_EXTERNAL_IDENTITY_V1_CONTRACT),
+  HISTORICAL_EXTERNAL_IDENTITY_V1_CONTRACT.contract_sha256
+);
 const ordinaryTask = (intentId, overrides = {}) => ({
   tenant_id: "tenant-1",
   intent_id: intentId,
@@ -710,6 +731,153 @@ const canonicalImages = () => ({
   }), (error) => error.code === "csm_persistence_checkpoint_invalid"
     && error.detail === "external_identity_receipt_mismatch");
   assert.equal(result.csm_persistence_checkpoint, undefined);
+}
+
+// A v2 deployment must recover a paid v1 terminal checkpoint by its stored
+// release contract. Re-validating it against today's active v2 constants would
+// strand a correct historical result after every detachable-pack upgrade.
+{
+  const originalSha256 = [
+    "8641baae2722318061dc7d9431e8764e4fe72d809bf1d668294c823c1105811a",
+    "7551abbd6a90f94771396eb46f726f20c49b0745d23db4f82a8db5c82296ca01"
+  ];
+  const originalSetSha256 =
+    "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159";
+  const canonical = {
+    asset_id: "asset-1",
+    image_generation_id: "asset-1",
+    image_set_sha256: "e".repeat(64),
+    expected_original_count: 2,
+    image_references: originalSha256.map((content_sha256, index) => ({
+      image_id: `historical-original-${index + 1}`,
+      image_role: index === 0 ? "front_original" : "back_original",
+      bucket: "cards",
+      object_path: `tenant-1/asset-1/historical-original-${index + 1}.jpg`,
+      content_sha256,
+      derived: false
+    })),
+    images: originalSha256.map((content_sha256, index) => ({
+      image_id: `historical-original-${index + 1}`,
+      objectPath: `tenant-1/asset-1/historical-original-${index + 1}.jpg`,
+      bucket: "cards",
+      size: 1_000 + index,
+      storageRole: index === 0 ? "image_1_original" : "image_2_original",
+      derived: false,
+      content_sha256
+    }))
+  };
+  const executionContract = buildCsmModelExecutionContract({
+    profile: CSM_ACTIVE_MODEL_PROFILE,
+    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(2)
+  });
+  const executionContractSha256 = sha256ExecutionContractValue(executionContract);
+  const historicalPayloadHash = "9".repeat(64);
+  const releaseV1 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+    .registry_thin_external_identity_high_risers_v1;
+  let historicalCheckpoint = null;
+  let providerBoundaryCalls = 0;
+  let recoveredOperationKey = "";
+
+  const authority = {
+    globallyEnforced: true,
+    lookupOperationResult: async () => ({ status: "not_found" }),
+    enqueueAttempt: async ({ operationKey }) => {
+      recoveredOperationKey = operationKey;
+      throw Object.assign(new Error("operation_payload_conflict"), {
+        code: "operation_payload_conflict",
+        statusCode: 409,
+        retryable: false,
+        provider_attempt_started: false
+      });
+    },
+    lookupOperationResultByKey: async ({ operationKey }) => {
+      assert.equal(operationKey, recoveredOperationKey);
+      const recognitionSessionId = deterministicCsmSessionId(operationKey);
+      const prepared = {
+        ...preparedResult(recognitionSessionId, "Historical v1 title"),
+        external_identity_support: {
+          ...releaseV1.receipt,
+          status: "ABSTAINED",
+          reason: "CONFLICTING_OBSERVATION"
+        },
+        resolution_contract_sha256: HISTORICAL_EXTERNAL_IDENTITY_V1_CONTRACT.contract_sha256,
+        resolution_contract: HISTORICAL_EXTERNAL_IDENTITY_V1_CONTRACT,
+        execution_contract_sha256: executionContractSha256,
+        execution_contract: executionContract
+      };
+      historicalCheckpoint = {
+        ...prepared,
+        csm_persistence_checkpoint: {
+          schema_version: CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION,
+          state: "PERSISTENCE_PENDING",
+          tenant_id: "tenant-1",
+          operation_key: operationKey,
+          payload_sha256: historicalPayloadHash,
+          recognition_session_id: recognitionSessionId,
+          recognition_session_deferred: false,
+          execution_contract_sha256: executionContractSha256,
+          external_identity_receipt: {
+            schema_version: "csm-external-identity-checkpoint-receipt.v1",
+            status: "ABSTAINED",
+            request_original_set_sha256: originalSetSha256,
+            pack_id: releaseV1.receipt.pack_id,
+            pack_version: releaseV1.receipt.pack_version,
+            pack_sha256: releaseV1.receipt.pack_sha256,
+            index_id: releaseV1.receipt.index_id,
+            index_version: releaseV1.receipt.index_version,
+            index_sha256: releaseV1.receipt.index_sha256,
+            registry_release_id: releaseV1.receipt.registry_release_id,
+            resolution_contract_sha256: releaseV1.receipt.resolution_contract_sha256,
+            reason: "CONFLICTING_OBSERVATION"
+          },
+          packet_hashes: prepared.csm_rows.session_hashes,
+          accuracy_loss_ledger_version: prepared.accuracy_loss_ledger.version,
+          accuracy_loss_ledger_sha256: prepared.accuracy_loss_ledger.ledger_sha256
+        }
+      };
+      return {
+        status: "found",
+        payloadHash: historicalPayloadHash,
+        result: historicalCheckpoint,
+        latestAttempt: 1
+      };
+    },
+    runAttempt: async ({ queuedAttempt, execute }) => {
+      await queuedAttempt;
+      return execute();
+    }
+  };
+  const dependencies = successfulDependencies({ authority });
+  dependencies.readImages = async () => canonical;
+  dependencies.signImage = async () => { providerBoundaryCalls += 1; };
+  dependencies.preparePath = async () => { providerBoundaryCalls += 1; };
+
+  const recovered = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "historical-v1-external-recovery",
+    callProvider: async () => { providerBoundaryCalls += 1; },
+    dependencies
+  });
+  assert.equal(recovered.title, "Historical v1 title");
+  assert.equal(recovered.execution_origin, "HISTORICAL_KEY_RECOVERY");
+  assert.equal(providerBoundaryCalls, 0);
+
+  const unknownRelease = structuredClone(historicalCheckpoint);
+  unknownRelease.external_identity_support.registry_release_id = "unknown_release";
+  assert.throws(() => validateCsmPersistenceCheckpoint(unknownRelease, {
+    tenantId: "tenant-1",
+    operationKey: recoveredOperationKey,
+    payloadHash: historicalPayloadHash,
+    recognitionSessionId: deterministicCsmSessionId(recoveredOperationKey),
+    executionContractSha256,
+    resolutionContractSha256: HISTORICAL_EXTERNAL_IDENTITY_V1_CONTRACT.contract_sha256,
+    originalSetSha256
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "external_identity_registry_release_unsupported");
 }
 
 // The active session root has a CSM contract even while its physical table
@@ -936,7 +1104,9 @@ function preparedResult(recognitionSessionId, title = "Test title") {
   return {
     ...ledgerResult,
     external_identity_support: {
-      schema_version: "csm-external-identity-support-receipt.v1",
+      schema_version: EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases[
+        EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID
+      ].receipt.schema_version,
       status: "ABSTAINED",
       reason: "NO_EXACT_MATCH",
       pack_id: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_id,

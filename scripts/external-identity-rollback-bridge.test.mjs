@@ -15,6 +15,7 @@ import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
   EXTERNAL_IDENTITY_SUPPORT_PACK,
+  externalIdentityReplayReleaseForReceipt,
   resolveExternalIdentitySupport,
   validateExternalIdentityDecisionObservation,
   validateExternalIdentityFieldDecisions,
@@ -172,25 +173,20 @@ async function baseProviderResult(recognitionSessionId, providerFields = observe
   });
 }
 
-async function historicalV2Prepared(
+async function activeV2Prepared(
   recognitionSessionId,
   providerFields = observedFields,
   { actions = actionsByField, expectedTitle = TARGET_TITLE } = {}
 ) {
   const base = await baseProviderResult(recognitionSessionId, providerFields);
-  assert.equal(base.external_identity_support.status, "ABSTAINED");
-  assert.equal(base.external_identity_support.reason, "CONFLICTING_OBSERVATION");
-  const fields = {
-    ...base.fields,
-    year: "1996-97",
-    set: "High Risers",
-    team: "Chicago Bulls",
-    card_number: "HR14"
-  };
-  const support = v2Support(base.fields, fields, { actions });
+  assert.equal(base.external_identity_support.status, "APPLIED");
+  assert.equal(base.external_identity_support.match_mode, "VERIFIED_ORIGINAL_SET");
+  const observed = base.observed_fields;
+  const fields = base.fields;
+  const support = v2Support(observed, fields, { actions });
   assert.equal(validateExternalIdentityFieldDecisions(support), true);
   assert.equal(validateExternalIdentitySourceProvenance(support), true);
-  assert.equal(validateExternalIdentityDecisionObservation(support, base.fields, fields), true);
+  assert.equal(validateExternalIdentityDecisionObservation(support, observed, fields), true);
   const composed = composeCanonicalFieldsForStoredOutput(fields, {
     marketplace: "EBAY",
     ...v2.output
@@ -200,7 +196,7 @@ async function historicalV2Prepared(
     tenantId: TENANT_ID,
     recognitionSessionId,
     fields,
-    observedFields: base.fields,
+    observedFields: observed,
     externalIdentitySupport: support,
     composed,
     title: composed.title,
@@ -211,7 +207,7 @@ async function historicalV2Prepared(
     ...base,
     title: composed.title,
     fields,
-    observed_fields: base.fields,
+    observed_fields: observed,
     grammar: composed.grammar,
     brackets: composed.brackets,
     dropped_brackets: composed.dropped,
@@ -300,18 +296,21 @@ function canonicalImages() {
   };
 }
 
-// The bridge is a forward reader only: all live constants and visible-conflict
-// behavior remain v1, including the exact v1 title bytes.
-assert.equal(EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID, v1.receipt.registry_release_id);
+// Activation changes only the live descriptor. The append-only reader must
+// retain exact v1 title bytes while fresh verified-original-set execution uses
+// v2 conflict correction.
+assert.equal(EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID, v2.receipt.registry_release_id);
 assert.equal(
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.id,
-  v1.receipt.registry_release_id
+  v2.receipt.registry_release_id
 );
-const v1Conflict = resolveExternalIdentitySupport(observedFields, {
+const v2Conflict = resolveExternalIdentitySupport(observedFields, {
   externalIdentityContext: { originalImageSha256: ORIGINAL_SHA256 }
 });
-assert.equal(v1Conflict.status, "ABSTAINED");
-assert.equal(v1Conflict.receipt.reason, "CONFLICTING_OBSERVATION");
+assert.equal(v2Conflict.status, "APPLIED");
+assert.deepEqual(v2Conflict.receipt.corrected_fields, ["set", "year"]);
+assert.equal(v2Conflict.fields.year, "1996-97");
+assert.equal(v2Conflict.fields.set, "High Risers");
 const v1Long = composeCanonicalFieldsForStoredOutput({
   ...observedFields,
   year: "1996-97",
@@ -326,7 +325,7 @@ assert.equal(v1Long.length, 80);
 // Exact action semantics: a visible correction cannot be relabelled FILL;
 // canonical facts cannot be self-resealed; and HR 14 is an alias, not an exact
 // presentation match.
-const validatorPrepared = await historicalV2Prepared("session-validator-v2");
+const validatorPrepared = await activeV2Prepared("session-validator-v2");
 const validSupport = validatorPrepared.external_identity_support;
 const correctionAsFill = structuredClone(validSupport);
 correctionAsFill.field_decisions.year.action = "FILL";
@@ -355,7 +354,7 @@ assert.equal(validateExternalIdentitySourceProvenance(whitespacePrivateSource), 
 
 // A complete APPLIED v2 packet replays exactly and traverses the real storage
 // boundary. The persisted owner versions come from the stored v2 rows, never
-// from today's active v1 constants.
+// from unversioned current defaults.
 assert.deepEqual(verifyReplay(
   validatorPrepared.csm_rows,
   validatorPrepared.title
@@ -388,12 +387,34 @@ assert.equal(
   v2.output.marketplace_profile_version
 );
 
-// Fresh bridge executions cannot activate v2. Historical validation can read
-// the exact same checkpoint tuple after a future runtime has written it.
-assert.throws(() => buildCsmPersistenceCheckpoint({
+// Fresh checkpoints must now bind v2. A self-consistent historical v1 receipt
+// remains replay-readable but cannot silently downgrade a new checkpoint.
+const freshCheckpoint = buildCsmPersistenceCheckpoint({
   prepared: validatorPrepared,
   tenantId: TENANT_ID,
-  operationKey: "operation-fresh-v2-forbidden",
+  operationKey: "operation-fresh-v2-active",
+  payloadHash: "a".repeat(64),
+  recognitionSessionId: "session-validator-v2",
+  executionContractSha256: validatorPrepared.execution_contract_sha256,
+  resolutionContractSha256: v2.receipt.resolution_contract_sha256,
+  originalSetSha256: ORIGINAL_SET_SHA256
+});
+assert.equal(
+  freshCheckpoint.csm_persistence_checkpoint.external_identity_receipt.registry_release_id,
+  v2.receipt.registry_release_id
+);
+const inactiveV1Support = {
+  ...validatorPrepared.external_identity_support,
+  ...v1.receipt
+};
+assert.equal(
+  externalIdentityReplayReleaseForReceipt(inactiveV1Support)?.receipt.registry_release_id,
+  v1.receipt.registry_release_id
+);
+assert.throws(() => buildCsmPersistenceCheckpoint({
+  prepared: { ...validatorPrepared, external_identity_support: inactiveV1Support },
+  tenantId: TENANT_ID,
+  operationKey: "operation-fresh-v1-forbidden",
   payloadHash: "a".repeat(64),
   recognitionSessionId: "session-validator-v2",
   executionContractSha256: validatorPrepared.execution_contract_sha256,
@@ -502,7 +523,7 @@ const componentOnlyActions = Object.freeze({
   ...actionsByField,
   team: "FILL"
 });
-const componentOnlyPrepared = await historicalV2Prepared(
+const componentOnlyPrepared = await activeV2Prepared(
   "session-team-component-v2",
   componentOnlyObserved,
   {
@@ -534,7 +555,7 @@ assert.ok(verifyReplay(extraTeamToken, componentOnlyPrepared.title).problems.som
   problem.kind === "external_identity_observed_evidence_mismatch" && problem.field === "team"
 )));
 
-// The production direct route recovers a future v2 checkpoint by the stable
+// The production direct route recovers an active-v2 checkpoint by the stable
 // operation key and performs zero sign/session/prepare/provider calls. Its
 // persistence seam is the real replay-verified storage function above.
 let paidBoundaryCalls = 0;
@@ -566,7 +587,7 @@ const direct = await runDirectCsmAsset({
       lookupOperationResultByKey: async ({ operationKey }) => {
         lookupByKeyCalls += 1;
         const recognitionSessionId = deterministicCsmSessionId(operationKey);
-        const prepared = await historicalV2Prepared(recognitionSessionId);
+        const prepared = await activeV2Prepared(recognitionSessionId);
         durableForRun = historicalCheckpoint(prepared, {
           operationKey,
           payloadHash: HISTORICAL_PAYLOAD_SHA256

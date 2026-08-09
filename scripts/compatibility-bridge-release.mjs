@@ -21,6 +21,9 @@ import {
 import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
+import {
+  readVercelProductionRollbackReceipt
+} from "./vercel-production-rollback-receipt.mjs";
 
 export const ORDINARY_RELEASE_CLASS = "ordinary";
 export const COMPATIBILITY_BRIDGE_RELEASE_CLASS = "compatibility-bridge";
@@ -34,6 +37,12 @@ export const COMPATIBILITY_BRIDGE_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-cases-v1";
 export const COMPATIBILITY_BRIDGE_PARENT_SHA =
   "ced1a23741e179618e4e7b5eca055cb10ecac8cb";
+export const ACTIVE_V2_TRANSITION_PARENT_SHA =
+  "3755a8f081baa57cf141685f4336999b45373562";
+export const ACTIVE_V2_TRANSITION_MARKER =
+  "luna-v2-active-from-forward-reader-v1";
+export const LINEAR_ORDINARY_LINEAGE_MARKER =
+  "linear-ordinary-parent-rollback-v1";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
   "docs/operations/luna-v2-rollback-bridge.md",
   "e2e/production-writer-journey.spec.mjs",
@@ -139,12 +148,26 @@ export function verifyCompatibilityBridgeSelection({
   const actualHead = exactGitSha(headSha ?? gitText(["rev-parse", "HEAD"]));
   if (actualHead !== expectedSha) throw failure("compatibility_bridge_head_sha_mismatch");
   if (selected === ORDINARY_RELEASE_CLASS) {
+    const parents = parentShas ?? gitParentShas(expectedSha);
+    if (!Array.isArray(parents) || parents.length !== 1) {
+      throw failure("ordinary_release_parent_invalid");
+    }
+    const parentGitSha = exactGitSha(parents[0]);
+    const transitionMarker = parentGitSha === ACTIVE_V2_TRANSITION_PARENT_SHA
+      ? ACTIVE_V2_TRANSITION_MARKER
+      : null;
+    const contract = activeV2OrdinaryRuntimeContractProof({ parentGitSha });
     return Object.freeze({
-      schema_version: "production-release-selection-v1",
+      schema_version: "production-release-selection-v3",
       release_class: selected,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: transitionMarker,
+      parent_git_sha: parentGitSha,
+      required_rollback_git_sha: parentGitSha,
       git_sha: expectedSha,
       writer_journey_manifest: "writer-journey-cases-v3",
-      parity_required: true
+      parity_required: true,
+      contract_sha256: contract.contract_sha256
     });
   }
   const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
@@ -180,6 +203,118 @@ export function verifyCompatibilityBridgeSelection({
     writer_journey_manifest: COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
     parity_required: false,
     contract_sha256: contract.contract_sha256
+  });
+}
+
+export function activeV2OrdinaryRuntimeContractProof({
+  parentGitSha = ACTIVE_V2_TRANSITION_PARENT_SHA
+} = {}) {
+  const parent = exactGitSha(parentGitSha);
+  const transitionMarker = parent === ACTIVE_V2_TRANSITION_PARENT_SHA
+    ? ACTIVE_V2_TRANSITION_MARKER
+    : null;
+  const v2 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+    .registry_thin_external_identity_high_risers_v2;
+  const corrected = resolveExternalIdentitySupport({
+    year: "1994-95",
+    manufacturer: "Topps",
+    product: "Stadium Club",
+    set: "Hardwood Heroes",
+    subjects: ["Michael Jordan"],
+    team: "Bulls",
+    card_number: "HR 14"
+  }, { externalIdentityContext: { originalImageSha256: originalSha256 } });
+  const replay = composeCanonicalFieldsForStoredOutput({
+    ...corrected.fields,
+    card_name: "",
+    release_variant: "",
+    surface_color: "",
+    parallel_family: "",
+    parallel_exact: "",
+    descriptive_rarity: "",
+    serial: "",
+    attributes: [],
+    grade: "",
+    grammar: "standard",
+    lot_count: "",
+    unreadable: [],
+    low_confidence: []
+  }, { marketplace: "EBAY", ...v2.output });
+  const activeIsV2 = EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID === v2.receipt.registry_release_id
+    && EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release.id === v2.receipt.registry_release_id
+    && EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.resolver_version
+      === v2.resolution.resolver_version
+    && EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.conflict_policy_version
+      === v2.resolution.conflict_policy_version
+    && EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version
+      === v2.output.composer_version
+    && EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
+      === v2.output.marketplace_profile_version
+    && THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.id
+      === v2.receipt.registry_release_id
+    && CSM_ACTIVE_MODEL_PROFILE.id === expectedModelProfileId
+    && corrected.status === "APPLIED"
+    && corrected.receipt?.match_mode === "VERIFIED_ORIGINAL_SET"
+    && stableJson(corrected.receipt?.corrected_fields) === stableJson(["set", "year"])
+    && replay.title === targetV2Title;
+  if (!activeIsV2) throw failure("active_v2_transition_runtime_contract_invalid");
+  const body = {
+    schema_version: "active-v2-ordinary-runtime-contract-proof-v1",
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: transitionMarker,
+    required_parent_git_sha: parent,
+    active_registry_release_id: v2.receipt.registry_release_id,
+    active_resolver_version: v2.resolution.resolver_version,
+    active_conflict_policy_version: v2.resolution.conflict_policy_version,
+    active_composer_version: v2.output.composer_version,
+    active_marketplace_profile_version: v2.output.marketplace_profile_version,
+    active_model_profile_id: expectedModelProfileId,
+    verified_original_set_conflict_behavior: "CORRECTED",
+    expected_title_sha256: sha256(targetV2Title),
+    provider_calls: 0
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
+export function verifyOrdinaryRollbackLineage({
+  selection,
+  rollbackReceipt
+} = {}) {
+  if (!exactKeys(selection, [
+    "schema_version", "release_class", "lineage_marker", "transition_marker",
+    "parent_git_sha", "required_rollback_git_sha", "git_sha",
+    "writer_journey_manifest", "parity_required", "contract_sha256"
+  ])
+      || selection.schema_version !== "production-release-selection-v3"
+      || selection.release_class !== ORDINARY_RELEASE_CLASS
+      || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+      || selection.writer_journey_manifest !== "writer-journey-cases-v3"
+      || selection.parity_required !== true
+      || !/^[0-9a-f]{64}$/.test(String(selection.contract_sha256 || ""))) {
+    throw failure("ordinary_release_selection_invalid");
+  }
+  const parentGitSha = exactGitSha(selection.parent_git_sha);
+  const requiredRollbackSha = exactGitSha(selection.required_rollback_git_sha);
+  const expectedTransitionMarker = parentGitSha === ACTIVE_V2_TRANSITION_PARENT_SHA
+    ? ACTIVE_V2_TRANSITION_MARKER
+    : null;
+  if (requiredRollbackSha !== parentGitSha
+      || selection.transition_marker !== expectedTransitionMarker) {
+    throw failure("ordinary_release_selection_invalid");
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha !== parentGitSha) {
+    throw failure("ordinary_release_rollback_mismatch");
+  }
+  return Object.freeze({
+    schema_version: "production-release-rollback-lineage-receipt-v2",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: expectedTransitionMarker,
+    release_git_sha: exactGitSha(selection.git_sha),
+    release_parent_git_sha: parentGitSha,
+    captured_rollback_git_sha: capturedRollbackSha,
+    lineage_verified: true
   });
 }
 
@@ -335,6 +470,14 @@ async function readJson(file, code) {
   }
 }
 
+async function readPrivateJson(file, code) {
+  if (!path.isAbsolute(file)) throw failure(`${code}_path_invalid`);
+  if (((await stat(file)).mode & 0o777) !== 0o600) {
+    throw failure(`${code}_permissions_invalid`);
+  }
+  return readJson(file, code);
+}
+
 async function exclusivePrivateWrite(file, value) {
   if (!path.isAbsolute(file)) throw failure("compatibility_bridge_output_path_invalid");
   await writeFile(file, `${JSON.stringify(value)}\n`, { flag: "wx", mode: 0o600 });
@@ -345,7 +488,9 @@ async function exclusivePrivateWrite(file, value) {
 
 function parseArguments(argv) {
   const [mode, ...rest] = argv;
-  if (!["verify-selection", "build-manifest", "verify-health"].includes(mode)) {
+  if (![
+    "verify-selection", "verify-rollback-lineage", "build-manifest", "verify-health"
+  ].includes(mode)) {
     throw failure("compatibility_bridge_arguments_invalid");
   }
   const values = new Map();
@@ -359,6 +504,9 @@ function parseArguments(argv) {
   }
   const allowed = {
     "verify-selection": ["--release-class", "--git-sha", "--out"],
+    "verify-rollback-lineage": [
+      "--release-class", "--git-sha", "--selection", "--rollback-receipt", "--out"
+    ],
     "build-manifest": ["--release-class", "--git-sha", "--source-manifest", "--out"],
     "verify-health": ["--release-class", "--git-sha", "--health", "--out"]
   }[mode];
@@ -378,6 +526,23 @@ async function main(argv) {
   });
   if (mode === "verify-selection") {
     await exclusivePrivateWrite(values.get("--out"), selection);
+    return;
+  }
+  if (mode === "verify-rollback-lineage") {
+    const savedSelection = await readPrivateJson(
+      values.get("--selection"),
+      "ordinary_release_selection"
+    );
+    if (stableJson(savedSelection) !== stableJson(selection)) {
+      throw failure("ordinary_release_selection_mismatch");
+    }
+    const rollbackReceipt = await readVercelProductionRollbackReceipt({
+      receiptPath: values.get("--rollback-receipt")
+    });
+    await exclusivePrivateWrite(values.get("--out"), verifyOrdinaryRollbackLineage({
+      selection,
+      rollbackReceipt
+    }));
     return;
   }
   if (selection.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS) {

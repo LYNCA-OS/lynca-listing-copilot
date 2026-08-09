@@ -173,7 +173,10 @@ for (const field of [
 }
 assert.match(externalIdentityVerifier, /support\?\.record_id === "tcdb-2551-hr14"/);
 assert.match(externalIdentityVerifier, /support\?\.match_basis === "VERIFIED_ORIGINAL_SET"/);
-assert.match(externalIdentityVerifier, /support\?\.field_decisions\?\.card_number\?\.action === "FILL"/);
+assert.match(externalIdentityVerifier,
+  /\["FILL", "CORROBORATE", "NORMALIZE_ALIAS"\][\s\S]*field_decisions\?\.card_number\?\.action/);
+assert.match(externalIdentityVerifier,
+  /decision\?\.action !== "CORRECT_CONFLICT" \|\| \["year", "set"\]\.includes\(field\)/);
 assert.match(externalIdentityVerifier,
   /!Object\.prototype\.hasOwnProperty\.call\(support, "original_set_sha256"\)/);
 assert.match(externalIdentityVerifier, /actualSources\.length === expectedSources\.length/);

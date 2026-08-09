@@ -145,6 +145,22 @@ jobs:
           node scripts/vercel-production-rollback-receipt.mjs --out "$rollback_receipt"
           test "$(stat -c '%a' "$rollback_receipt")" = "600"
           printf 'VERCEL_ROLLBACK_RECEIPT=%s\n' "$rollback_receipt" >> "$GITHUB_ENV"
+      - name: Verify the linear ordinary rollback lineage before candidate creation
+        run: |
+          test "$PRODUCTION_RELEASE_CLASS" = "ordinary"
+          test -n "$PRODUCTION_RELEASE_SELECTION_RECEIPT"
+          test -n "$VERCEL_ROLLBACK_RECEIPT"
+          test "$(stat -c '%a' "$PRODUCTION_RELEASE_SELECTION_RECEIPT")" = "600"
+          test "$(stat -c '%a' "$VERCEL_ROLLBACK_RECEIPT")" = "600"
+          lineage_receipt="$RUNNER_TEMP/production-release-rollback-lineage.json"
+          umask 077
+          node scripts/compatibility-bridge-release.mjs verify-rollback-lineage \
+            --release-class "$PRODUCTION_RELEASE_CLASS" \
+            --git-sha "$GITHUB_SHA" \
+            --selection "$PRODUCTION_RELEASE_SELECTION_RECEIPT" \
+            --rollback-receipt "$VERCEL_ROLLBACK_RECEIPT" \
+            --out "$lineage_receipt"
+          test "$(stat -c '%a' "$lineage_receipt")" = "600"
       - name: Build and deploy the exact dispatched checkout
         env:
           DISPATCH_SHA: ${{ github.sha }}
@@ -429,6 +445,18 @@ jobs:
             sleep 10
           done
           test -s /tmp/csm-thin-health.json
+      - name: Bind the canonical alias to the exact promoted deployment URL
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$DEPLOYMENT_URL"
+          canonical_receipt="$RUNNER_TEMP/vercel-production-canonical-deployment-receipt.json"
+          umask 077
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --canonical-deployment-receipt "$DEPLOYMENT_URL" \
+            --out "$canonical_receipt"
+          test "$(stat -c '%a' "$canonical_receipt")" = "600"
       - name: Re-verify CSM persistence after deployment
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
@@ -452,12 +480,20 @@ jobs:
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: |
+          test -n "$METAVERSE_USERNAME"
+          test -n "$METAVERSE_PASSWORD"
+          cookie_jar="$RUNNER_TEMP/lynca-production-cookies.txt"
+          parity_response="$RUNNER_TEMP/production-parity-resolution-view.json"
+          parity_receipt="$RUNNER_TEMP/production-parity-readback-receipt.json"
+          trap 'rm -f -- "$cookie_jar" "$parity_response"' EXIT
+          umask 077
           node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))' \
-          | curl -fsS --max-time 30 -c /tmp/lynca-cookies.txt \
+          | curl -fsS --max-time 30 -c "$cookie_jar" \
             -H 'content-type: application/json' \
             --data-binary @- \
             https://listing.lyncafei.team/api/login -o /tmp/login.json
-          curl -fsS --max-time 30 -b /tmp/lynca-cookies.txt \
+          test "$(stat -c '%a' "$cookie_jar")" = "600"
+          curl -fsS --max-time 30 -b "$cookie_jar" \
             https://listing.lyncafei.team/app/listing-copilot.js \
             -o /tmp/listing-copilot.js
           grep -q '"/api/csm-listing-title"' /tmp/listing-copilot.js
@@ -465,9 +501,36 @@ jobs:
             -X POST https://listing.lyncafei.team/api/v4/listing-job-enqueue)" = "410"
           node -e 'const r=require("/tmp/retired-route.json"); if(r.error_code!=="RETIRED_LISTING_EXECUTION_PATH") process.exit(1)'
           test "$(curl -sS --max-time 30 -o /tmp/csm-noop.json -w '%{http_code}' \
-            -b /tmp/lynca-cookies.txt -H 'content-type: application/json' \
+            -b "$cookie_jar" -H 'content-type: application/json' \
             --data '{}' https://listing.lyncafei.team/api/csm-listing-title)" = "400"
           node -e 'const r=require("/tmp/csm-noop.json"); if(r.code!=="missing_asset_id") process.exit(1)'
+          writer_evidence="$GITHUB_WORKSPACE/artifacts/production-writer-journey/evidence.json"
+          parity_asset_id="$(node scripts/production-parity-readback.mjs asset-id \
+            --evidence "$writer_evidence" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA")"
+          parity_query="$(ASSET_ID="$parity_asset_id" node -e \
+            'process.stdout.write(new URLSearchParams({asset_id:process.env.ASSET_ID}).toString())')"
+          install -m 600 /dev/null "$parity_response"
+          curl -fsS --max-time 30 -b "$cookie_jar" \
+            "https://listing.lyncafei.team/api/csm-resolution-view?$parity_query" \
+            -o "$parity_response"
+          test "$(stat -c '%a' "$parity_response")" = "600"
+          node scripts/production-parity-readback.mjs verify \
+            --evidence "$writer_evidence" \
+            --readback "$parity_response" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA" \
+            --out "$parity_receipt"
+          test "$(stat -c '%a' "$parity_receipt")" = "600"
+      - name: Re-confirm the exact canonical deployment after parity readback
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$DEPLOYMENT_URL"
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-canonical-deployment "$DEPLOYMENT_URL"
       - name: Restore the saved Production deployment after release verification failure
         if: failure() && (steps.promote.outcome == 'success' || steps.promote.outcome == 'failure')
         timeout-minutes: 12
@@ -529,6 +592,9 @@ jobs:
             /tmp/retired-route.json
             /tmp/csm-noop.json
             ${{ runner.temp }}/vercel-production-rollback-receipt.json
+            ${{ runner.temp }}/production-release-rollback-lineage.json
             ${{ runner.temp }}/production-release-selection.json
+            ${{ runner.temp }}/vercel-production-canonical-deployment-receipt.json
+            ${{ runner.temp }}/production-parity-readback-receipt.json
             ${{ runner.temp }}/writer-journey-compatibility-bridge-cases-v1.json
             artifacts/production-writer-journey/evidence.json

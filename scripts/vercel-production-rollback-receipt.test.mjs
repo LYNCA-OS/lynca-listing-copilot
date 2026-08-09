@@ -6,10 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   captureVercelProductionRollbackReceipt,
+  readVercelProductionRollbackReceipt,
   verifyCanonicalVercelProductionDeployment,
   verifyCanonicalVercelProductionReceipt,
   verifySavedVercelProductionDeployment,
-  verifyVercelProductionWriterAuthority
+  verifyVercelProductionWriterAuthority,
+  writeCanonicalVercelProductionDeploymentReceipt
 } from "./vercel-production-rollback-receipt.mjs";
 
 const token = "vercel_token_for_rollback_tests_123456";
@@ -194,6 +196,7 @@ try {
   assert.equal(serialized.includes(token), false);
   assert.equal(serialized.includes(bypass), false);
   assertCredentialBoundaries(captureMock.calls);
+  assert.deepEqual(await readVercelProductionRollbackReceipt({ env, receiptPath }), receipt);
 
   for (const [name, projectOverrides] of [
     ["automatic domain assignment", { autoAssignCustomDomains: true }],
@@ -269,6 +272,38 @@ try {
     { deployment_id: candidateId, deployment_url: candidateOrigin }
   );
   assertCredentialBoundaries(candidateCanonicalMock.calls);
+
+  const canonicalDeploymentReceiptPath = join(temp, "canonical-deployment.json");
+  const canonicalDeploymentReceiptMock = mockFetch({
+    aliases: [
+      alias({ id: candidateId, hostname: candidateHostname }),
+      alias({ id: candidateId, hostname: candidateHostname })
+    ],
+    deploymentValue: deployment({ id: candidateId, url: candidateHostname })
+  });
+  assert.deepEqual(
+    await writeCanonicalVercelProductionDeploymentReceipt({
+      env,
+      fetchImpl: canonicalDeploymentReceiptMock.fetchImpl,
+      deploymentUrl: candidateOrigin,
+      outputPath: canonicalDeploymentReceiptPath,
+      now: () => new Date("2026-08-11T12:00:00.000Z")
+    }),
+    {
+      schema_version: "vercel-production-canonical-deployment-receipt-v1",
+      canonical_origin: canonicalOrigin,
+      team_id: teamId,
+      project_id: projectId,
+      deployment_id: candidateId,
+      deployment_url: candidateOrigin,
+      verified_at: "2026-08-11T12:00:00.000Z"
+    }
+  );
+  assert.equal((await stat(canonicalDeploymentReceiptPath)).mode & 0o777, 0o600);
+  const canonicalSerialized = await readFile(canonicalDeploymentReceiptPath, "utf8");
+  assert.equal(canonicalSerialized.includes(token), false);
+  assert.equal(canonicalSerialized.includes(bypass), false);
+  assertCredentialBoundaries(canonicalDeploymentReceiptMock.calls);
 
   await assert.rejects(
     verifyCanonicalVercelProductionDeployment({

@@ -14,6 +14,8 @@ const CANONICAL_GIT_ORG = "LYNCA-OS";
 const CANONICAL_GIT_REPO = "lynca-listing-copilot";
 const CANONICAL_GIT_PRODUCTION_BRANCH = "main";
 const RECEIPT_SCHEMA = "vercel-production-rollback-receipt-v1";
+const CANONICAL_DEPLOYMENT_RECEIPT_SCHEMA =
+  "vercel-production-canonical-deployment-receipt-v1";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECEIPT_KEYS = Object.freeze([
   "canonical_origin",
@@ -241,6 +243,13 @@ async function readReceipt(receiptPath, env) {
   return validateReceipt(value, env);
 }
 
+export async function readVercelProductionRollbackReceipt({
+  env = process.env,
+  receiptPath
+} = {}) {
+  return readReceipt(receiptPath, env);
+}
+
 async function writeReceipt(outputPath, receipt) {
   if (!isAbsolute(outputPath)) {
     throw new Error("vercel_rollback_receipt_path_must_be_absolute");
@@ -370,6 +379,32 @@ export async function verifyCanonicalVercelProductionDeployment({
   });
 }
 
+export async function writeCanonicalVercelProductionDeploymentReceipt({
+  env = process.env,
+  fetchImpl = fetch,
+  deploymentUrl,
+  outputPath,
+  now = () => new Date()
+} = {}) {
+  const ids = identity(env);
+  const verified = await verifyCanonicalVercelProductionDeployment({
+    env,
+    fetchImpl,
+    deploymentUrl
+  });
+  const receipt = Object.freeze({
+    schema_version: CANONICAL_DEPLOYMENT_RECEIPT_SCHEMA,
+    canonical_origin: CANONICAL_PRODUCTION_ORIGIN,
+    team_id: ids.teamId,
+    project_id: ids.projectId,
+    deployment_id: verified.deployment_id,
+    deployment_url: verified.deployment_url,
+    verified_at: now().toISOString()
+  });
+  await writeReceipt(outputPath, receipt);
+  return receipt;
+}
+
 async function main(argv) {
   if (argv.length === 1 && argv[0] === "--verify-writer-authority") {
     await verifyVercelProductionWriterAuthority();
@@ -383,6 +418,15 @@ async function main(argv) {
     "--deployment-url",
     "--git-sha"
   ].includes(argv[0])) {
+    if (argv.length === 4
+        && argv[0] === "--canonical-deployment-receipt"
+        && argv[2] === "--out") {
+      await writeCanonicalVercelProductionDeploymentReceipt({
+        deploymentUrl: argv[1],
+        outputPath: argv[3]
+      });
+      return;
+    }
     throw new Error("vercel_rollback_receipt_invalid_arguments");
   }
   const [mode, path] = argv;
