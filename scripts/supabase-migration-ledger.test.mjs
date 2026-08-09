@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -187,6 +188,55 @@ try {
     canonicalEntries.length,
     "the single Production ledger must not contain duplicate migration versions"
   );
+  const externalIdentityMigration =
+    "20260810120000_csm_external_identity_high_risers_registry_v1.sql";
+  const externalIdentitySql = await readFile(
+    join(canonicalMigrationDir, externalIdentityMigration),
+    "utf8"
+  );
+  assert.equal(
+    createHash("sha256").update(externalIdentitySql).digest("hex"),
+    "2da6d811661320ed758f66137dea8b159e4af742058892787dfee0a080b4fef8",
+    "the additive external identity Registry migration is immutable"
+  );
+  const externalIdentityPayload = {
+    mode: "post_observation_exact_external_identity",
+    external_catalog: true,
+    pack_id: "lynca.csm.external-identity",
+    pack_version: "2026-08-10",
+    pack_sha256: "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+    index_id: "basketball.1996-97-topps-stadium-club-high-risers",
+    index_sha256: "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+    resolution_contract_sha256:
+      "e0b2e3463e8dc13f33d5ca2dbb3739b6e07c7b02f820901b4961ed83d0d945df",
+    provider_calls_added: 0
+  };
+  const externalIdentityPayloads = [...externalIdentitySql.matchAll(
+    /'(\{\s*"mode":"post_observation_exact_external_identity"[\s\S]*?\})'::jsonb/g
+  )].map((match) => JSON.parse(match[1]));
+  assert.equal(externalIdentityPayloads.length, 2,
+    "the inserted payload and migration-time assertion must both be explicit");
+  for (const payload of externalIdentityPayloads) {
+    assert.deepEqual(payload, externalIdentityPayload,
+      "the migration must reject missing, changed, or additional Registry controls");
+  }
+  assert.match(externalIdentitySql, /registry_payload\s*=\s*'\{/i,
+    "the migration-time assertion must compare the whole JSONB payload");
+  assert.doesNotMatch(externalIdentitySql, /registry_payload\s*->>/i,
+    "field-by-field checks would admit unreviewed extra payload controls");
+  assert.equal(
+    (externalIdentitySql.match(/insert\s+into\s+public\.csm_registry_releases/gi) || []).length,
+    1
+  );
+  assert.match(externalIdentitySql, /on conflict \(id\) do nothing/i);
+  assert.match(externalIdentitySql,
+    /and promoted_by = 'migration:20260810120000'/i,
+    "migration provenance must be immutable across idempotent re-application");
+  assert.match(externalIdentitySql,
+    /and promoted_at = '2026-08-10T12:00:00Z'::timestamptz/i,
+    "the reviewed release time must be part of the migration-time contract");
+  assert.doesNotMatch(externalIdentitySql, /\b(?:delete|update|drop|truncate|alter)\b/i,
+    "the Registry seed must remain additive");
   const [providerAdmissionSql, providerPacerSql, productProjectionSql] = await Promise.all([
     readFile(join(canonicalMigrationDir, providerAdmissionMigration), "utf8"),
     readFile(join(canonicalMigrationDir, providerPacerMigration), "utf8"),
