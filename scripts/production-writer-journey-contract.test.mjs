@@ -102,6 +102,35 @@ assert.match(workflow, /WRITER_JOURNEY_CASES_MANIFEST: \$\{\{ steps\.source\.out
 assert.match(workflow, /writer-journey-cases-v2\.json/);
 assert.match(workflow, /Materialize fixed NON_TCG and TCG cases/);
 assert.match(workflow, /--grep @offline/);
+for (const fixturePath of [
+  "scripts/build-large-internal-writer-fixture.mjs",
+  "scripts/build-large-internal-writer-fixture.contract.test.mjs",
+  "scripts/build-large-internal-writer-fixture.browser.test.mjs"
+]) {
+  assert.ok(workflow.includes(`- "${fixturePath}"`), `${fixturePath} must trigger the PR gate`);
+}
+const contractJob = workflow.match(/\n  contract:\n[\s\S]+?(?=\n  writer-journey:)/)?.[0] || "";
+assert.ok(contractJob, "the PR contract job must exist");
+const contractNpmCi = contractJob.indexOf("- run: npm ci");
+const contractChromiumInstall = contractJob.indexOf(
+  "- run: npx playwright install --with-deps chromium"
+);
+const fixtureContractGate = contractJob.indexOf(
+  "- run: npm run test:large-internal-writer-fixture:contract"
+);
+const fixtureBrowserCommand = "- run: npm run test:large-internal-writer-fixture:browser";
+const fixtureBrowserGate = contractJob.indexOf(
+  fixtureBrowserCommand
+);
+assert.ok(contractNpmCi >= 0
+  && contractChromiumInstall > contractNpmCi
+  && fixtureContractGate > contractChromiumInstall
+  && fixtureBrowserGate > fixtureContractGate,
+  "the PR contract job must use the lockfile-selected Chromium for the same-executor fixture gate");
+assert.equal(contractJob.split(fixtureBrowserCommand).length - 1, 1,
+  "the PR contract job must run the browser gate exactly once");
+assert.doesNotMatch(workflow, /LARGE_FIXTURE_TEST_CHROMIUM_EXECUTABLE/,
+  "standard CI must not replace the Playwright-selected executor");
 assert.match(workflow, /WRITER_JOURNEY_EXPECTED_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
 assert.match(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
 assert.match(workflow, /test "\$UPSTREAM_BRANCH" = "main"/);
