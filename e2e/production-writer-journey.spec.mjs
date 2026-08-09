@@ -459,12 +459,14 @@ function externalIdentityParityProof(resolutionView) {
     && support?.index?.version === release.index.version
     && support?.index?.sha256 === release.index.sha256
     && support?.record_id === "tcdb-2551-hr14"
-    && support?.field_decisions?.card_number?.action === "FILL"
+    && ["FILL", "CORROBORATE", "NORMALIZE_ALIAS"]
+      .includes(support?.field_decisions?.card_number?.action)
     && [...(support?.supported_fields || [])].sort().join("\0") === expectedFields.join("\0")
     && Object.keys(support?.field_decisions || {}).sort().join("\0")
       === expectedFields.join("\0")
-    && Object.values(support.field_decisions).every((decision) => (
-      ["FILL", "CORROBORATE", "NORMALIZE_ALIAS"].includes(decision?.action)
+    && Object.entries(support.field_decisions).every(([field, decision]) => (
+      ["FILL", "CORROBORATE", "NORMALIZE_ALIAS", "CORRECT_CONFLICT"].includes(decision?.action)
+      && (decision?.action !== "CORRECT_CONFLICT" || ["year", "set"].includes(field))
       && Array.isArray(decision?.source_ids)
       && decision.source_ids.length > 0
     ))

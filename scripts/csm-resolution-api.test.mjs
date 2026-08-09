@@ -306,21 +306,54 @@ const legacyRecord = {
   });
   const sourceById = new Map([sources.tcdb, sources.psa, sources.beckett]
     .map((source) => [source.source_id, source]));
-  const evidenceFor = (stored) => Object.keys(stored.field_decisions).map((field) => ({
-    source_ref: sourceRef(
-      stored,
-      field,
-      stored.field_decisions[field].source_ids
-        .map((sourceId) => sourceById.get(sourceId)).filter(Boolean)
-    )
-  }));
+  const bracketForField = (field) => ({
+    subjects: "subject",
+    team: "search_optimization"
+  })[field] || field;
+  const bracketValue = (field, value) => (
+    field === "team" ? (String(value || "").trim() ? [value] : []) : value
+  );
+  const evidenceFor = (stored) => {
+    const registry = Object.entries(stored.field_decisions).map(([field, decision]) => ({
+      bracket: bracketForField(field),
+      raw_value: decision.canonical_value,
+      normalized_value: bracketValue(field, decision.canonical_value),
+      modality: "REGISTRY",
+      source_ref: sourceRef(
+        stored,
+        field,
+        decision.source_ids.map((sourceId) => sourceById.get(sourceId)).filter(Boolean)
+      )
+    }));
+    const visual = Object.entries(stored.field_decisions)
+      .filter(([field, decision]) => (
+        field === "subjects"
+          ? decision.observed_value.length > 0
+          : String(decision.observed_value || "").trim()
+      ))
+      .map(([field, decision]) => ({
+        bracket: bracketForField(field),
+        raw_value: bracketValue(field, decision.observed_value),
+        normalized_value: bracketValue(field, decision.observed_value),
+        modality: "WHOLE_CARD_VISUAL",
+        source_ref: { images: "external-session" }
+      }));
+    return [...registry, ...visual];
+  };
+  const resolvedFor = (stored) => Object.entries(stored.field_decisions)
+    .map(([field, decision]) => ({
+      bracket: bracketForField(field),
+      selected_kind: "VALUE",
+      canonical_value: bracketValue(field, decision.canonical_value)
+    }));
   const env = {
     SUPABASE_URL: "https://example.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "service-role"
   };
   const readExternal = async ({
     descriptor, stored = storedReceipt(descriptor), outputOverrides = {},
-    resolutionOverrides = {}, registryOverrides = {}, evidenceRows = evidenceFor(stored)
+    resolutionOverrides = {}, registryOverrides = {}, evidenceRows = evidenceFor(stored),
+    resolvedRows = resolvedFor(stored)
   }) => {
     const requested = [];
     const fetchImpl = async (rawUrl) => {
@@ -349,7 +382,9 @@ const legacyRecord = {
           ...resolutionOverrides
         }]), { status: 200 });
       }
-      if (url.pathname.endsWith("/csm_resolved_brackets")) return new Response("[]", { status: 200 });
+      if (url.pathname.endsWith("/csm_resolved_brackets")) {
+        return new Response(JSON.stringify(resolvedRows), { status: 200 });
+      }
       if (url.pathname.endsWith("/csm_registry_releases")) {
         return new Response(JSON.stringify([{
           ...registryRow(descriptor), ...registryOverrides
@@ -397,9 +432,12 @@ const legacyRecord = {
     "raw Registry/evidence payload and rejected URLs must stop at the DB projection");
 
   const evidenceRead = requested.find((url) => url.pathname.endsWith("/csm_evidence_observations"));
-  assert.equal(evidenceRead.searchParams.get("select"), "source_ref");
-  assert.equal(evidenceRead.searchParams.get("modality"), "eq.REGISTRY");
-  assert.doesNotMatch(evidenceRead.searchParams.get("select"), /raw_value|normalized_value/);
+  assert.equal(evidenceRead.searchParams.get("select"),
+    "bracket,raw_value,normalized_value,modality,source_ref");
+  assert.equal(evidenceRead.searchParams.has("modality"), false,
+    "the private packet read must not hide a drifted exact-support modality");
+  assert.equal(evidenceRead.searchParams.get("recognition_session_id"), "eq.external-session");
+  assert.equal(evidenceRead.searchParams.get("tenant_id"), "eq.tenant-db");
   const resolutionRead = requested.find((url) => url.pathname.endsWith("/csm_identity_resolutions"));
   assert.match(resolutionRead.searchParams.get("select"), /registry_release_id/);
   assert.match(resolutionRead.searchParams.get("select"), /conflict_policy_version/);
@@ -479,6 +517,58 @@ const legacyRecord = {
   });
   assert.equal(missingFieldEvidence.external_identity_support, undefined,
     "a source observed for one field cannot launder a second field without its own durable evidence");
+
+  const duplicateRegistryEvidence = evidenceFor(storedExternal);
+  duplicateRegistryEvidence.push(structuredClone(
+    duplicateRegistryEvidence.find((row) => (
+      row.modality === "REGISTRY" && row.source_ref.field === "year"
+    ))
+  ));
+  const { value: duplicated } = await readExternal({
+    descriptor: v1, stored: storedExternal, evidenceRows: duplicateRegistryEvidence
+  });
+  assert.equal(duplicated.external_identity_support, undefined,
+    "a duplicate durable Registry field must fail the whole support packet closed");
+
+  const unexpectedRegistryEvidence = evidenceFor(storedExternal);
+  const unexpected = structuredClone(unexpectedRegistryEvidence.find((row) => (
+    row.modality === "REGISTRY" && row.source_ref.field === "year"
+  )));
+  unexpected.bracket = "serial";
+  unexpected.source_ref.field = "serial";
+  unexpectedRegistryEvidence.push(unexpected);
+  const { value: withUnexpected } = await readExternal({
+    descriptor: v1, stored: storedExternal, evidenceRows: unexpectedRegistryEvidence
+  });
+  assert.equal(withUnexpected.external_identity_support, undefined,
+    "an unexpected durable Registry field must fail the whole support packet closed");
+
+  const wrongModalityEvidence = evidenceFor(storedExternal);
+  wrongModalityEvidence.find((row) => (
+    row.modality === "REGISTRY" && row.source_ref.field === "year"
+  )).modality = "CARD_TEXT_OCR";
+  const { value: wrongModality } = await readExternal({
+    descriptor: v1, stored: storedExternal, evidenceRows: wrongModalityEvidence
+  });
+  assert.equal(wrongModality.external_identity_support, undefined,
+    "an exact-support row with a forged modality must remain visible and fail closed");
+
+  const exactlyLimitedEvidence = evidenceFor(storedExternal);
+  while (exactlyLimitedEvidence.length < 100) {
+    exactlyLimitedEvidence.push({
+      bracket: "serial",
+      raw_value: "irrelevant",
+      normalized_value: "irrelevant",
+      modality: "WHOLE_CARD_VISUAL",
+      source_ref: { images: "external-session" }
+    });
+  }
+  const { value: truncated } = await readExternal({
+    descriptor: v1, stored: storedExternal, evidenceRows: exactlyLimitedEvidence
+  });
+  assert.equal(truncated.external_identity_support, undefined,
+    "a response exactly at the query limit has no completeness proof and must fail closed");
+
   for (const [name, sourceOverride] of [
     ["path", { url: "https://www.beckett.com/basketball/changed-path" }],
     ["fact hash", { fact_sha256: "a".repeat(64) }],
@@ -519,6 +609,18 @@ const legacyRecord = {
   assert.equal(v2Durable.external_identity_support.field_decisions.year.action, "CORRECT_CONFLICT");
   assert.equal(v2Durable.external_identity_support.field_decisions.set.action, "CORRECT_CONFLICT");
   assert.equal(v2Durable.external_identity_support.composer_version, v2.output.composer_version);
+
+  const forgedObservedStored = structuredClone(v2Stored);
+  forgedObservedStored.field_decisions.year.observed_value = "1988-89";
+  const { value: forgedObserved } = await readExternal({
+    descriptor: v2,
+    stored: forgedObservedStored,
+    evidenceRows: evidenceFor(v2Stored),
+    resolvedRows: resolvedFor(v2Stored)
+  });
+  assert.equal(forgedObserved.external_identity_support, undefined,
+    "a re-sealed observed decision must remain bound to durable WHOLE_CARD_VISUAL values");
+
   const hr1SourceIds = {
     year: ["tcdb.set.2551", "psa.set-registry.25618"],
     product: ["tcdb.set.2551", "psa.set-registry.25618"],

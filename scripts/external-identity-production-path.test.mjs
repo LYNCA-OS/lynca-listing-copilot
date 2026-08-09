@@ -16,11 +16,18 @@ import {
   THIN_EXTERNAL_IDENTITY_COMPOSER_VERSION,
   THIN_EXTERNAL_IDENTITY_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
-import { verifyReplay } from "../lib/listing/thin/csm-replay.mjs";
+import {
+  composeCanonicalFieldsForStoredOutput,
+  verifyReplay
+} from "../lib/listing/thin/csm-replay.mjs";
+import {
+  VERIFIED_EXTERNAL_IDENTITY_DROP_ORDER_V2
+} from "../lib/listing/thin/canonical-composer.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
 import {
   computeVerifiedOriginalSetSha256,
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
@@ -29,6 +36,10 @@ const HR14_ORIGINAL_SHA256 = Object.freeze([
   "7551abbd6a90f94771396eb46f726f20c49b0745d23db4f82a8db5c82296ca01"
 ]);
 const HR14_ORIGINAL_SET_SHA256 = computeVerifiedOriginalSetSha256(HR14_ORIGINAL_SHA256);
+assert.deepEqual(VERIFIED_EXTERNAL_IDENTITY_DROP_ORDER_V2, [
+  "print_finish", "card_number", "descriptive_rarity", "manufacturer",
+  "product", "set", "release_variant", "card_name", "year"
+]);
 
 const createdAt = "2026-08-10T00:00:00Z";
 const clone = (value) => structuredClone(value);
@@ -79,6 +90,16 @@ const observedHr14 = {
   unreadable: [],
   low_confidence: []
 };
+const liveCandidateObservation = {
+  ...observedHr14,
+  year: "1994-95",
+  set: "Hardwood Heroes",
+  team: "Chicago Bulls",
+  parallel_family: "Foil",
+  parallel_exact: "Members Only",
+  print_finish: "Members Only",
+  card_number: "HR14"
+};
 
 let providerCalls = 0;
 const prepared = await prepareCanonicalListingPath({
@@ -88,7 +109,7 @@ const prepared = await prepareCanonicalListingPath({
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
   createdAt,
-  callProvider: completedProvider(observedHr14, (request) => {
+  callProvider: completedProvider(liveCandidateObservation, (request) => {
     providerCalls += 1;
     assert.equal(request.model, "gpt-5.6-luna");
     assert.equal(request.reasoning.effort, "low");
@@ -111,15 +132,17 @@ assert.equal(
 assert.equal(prepared.length, 73);
 assert.equal(prepared.truncated, false);
 assert.deepEqual(prepared.observed_fields.subjects, ["Michael Jordan"]);
-assert.equal(prepared.observed_fields.year, "");
-assert.equal(prepared.observed_fields.set, "");
-assert.equal(prepared.observed_fields.team, "Bulls");
-assert.equal(prepared.observed_fields.card_number, "");
+assert.equal(prepared.observed_fields.year, "1994-95");
+assert.equal(prepared.observed_fields.set, "Hardwood Heroes");
+assert.equal(prepared.observed_fields.team, "Chicago Bulls");
+assert.equal(prepared.observed_fields.card_number, "HR14");
 assert.equal(prepared.fields.year, "1996-97");
 assert.equal(prepared.fields.set, "High Risers");
 assert.equal(prepared.fields.team, "Chicago Bulls");
 assert.equal(prepared.fields.card_number, "HR14");
-for (const physicalField of ["surface_color", "parallel_family", "parallel_exact", "serial", "grade"]) {
+for (const physicalField of [
+  "surface_color", "parallel_family", "parallel_exact", "print_finish", "serial", "grade"
+]) {
   assert.deepEqual(prepared.fields[physicalField], prepared.observed_fields[physicalField],
     `${physicalField} must remain visual/current-copy authority`);
 }
@@ -128,6 +151,11 @@ assert.equal(prepared.external_identity_support.status, "APPLIED");
 assert.equal(prepared.external_identity_support.record_id, "tcdb-2551-hr14");
 assert.equal(prepared.external_identity_support.match_mode, "VERIFIED_ORIGINAL_SET");
 assert.equal(prepared.external_identity_support.original_set_sha256, HR14_ORIGINAL_SET_SHA256);
+assert.equal(prepared.external_identity_support.field_decisions.year.action, "CORRECT_CONFLICT");
+assert.equal(prepared.external_identity_support.field_decisions.set.action, "CORRECT_CONFLICT");
+assert.equal(prepared.external_identity_support.field_decisions.card_number.action, "CORROBORATE");
+assert.ok(prepared.dropped_brackets.includes("print_finish"));
+assert.ok(!prepared.dropped_brackets.includes("card_number"));
 assert.equal(
   prepared.resolution_contract_sha256,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
@@ -157,6 +185,120 @@ for (const bracket of ["year", "manufacturer", "product", "set", "subject", "car
   assert.equal(resolved.alternate_candidate_ids.length, 1, bracket);
 }
 assert.deepEqual(verifyReplay(prepared.csm_rows, prepared.title).problems, []);
+
+// Producer and validator must agree that identity-equivalent spacing is a
+// presentation alias, not a canonical presentation. Exercise the full path so
+// a valid HR 14 receipt cannot be produced and then rejected by build/replay.
+let aliasProviderCalls = 0;
+const aliasPrepared = await prepareCanonicalListingPath({
+  tenantId: "tenant-external",
+  recognitionSessionId: "session-hr14-card-number-alias",
+  imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+  createdAt,
+  callProvider: completedProvider({ ...liveCandidateObservation, card_number: "HR 14" }, () => {
+    aliasProviderCalls += 1;
+  })
+});
+assert.equal(aliasProviderCalls, 1);
+assert.equal(aliasPrepared.title,
+  "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls");
+assert.equal(aliasPrepared.observed_fields.card_number, "HR 14");
+assert.equal(aliasPrepared.fields.card_number, "HR14");
+assert.equal(aliasPrepared.external_identity_support.field_decisions.card_number.action,
+  "NORMALIZE_ALIAS");
+assert.deepEqual(verifyReplay(aliasPrepared.csm_rows, aliasPrepared.title).problems, []);
+
+// An absent team does not imply an absent search_optimization observation:
+// component signals share that SEM bracket. The replay binding must remove the
+// fixed component vocabulary and still recover the exact empty team value.
+const teamFillPrepared = await prepareCanonicalListingPath({
+  tenantId: "tenant-external",
+  recognitionSessionId: "session-hr14-team-fill-rc",
+  imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+  createdAt,
+  callProvider: completedProvider({
+    ...liveCandidateObservation,
+    team: "",
+    attributes: ["RC"]
+  })
+});
+assert.equal(teamFillPrepared.external_identity_support.field_decisions.team.action, "FILL");
+assert.deepEqual(verifyReplay(teamFillPrepared.csm_rows, teamFillPrepared.title).problems, []);
+{
+  const injectedSearchSignal = clone(teamFillPrepared.csm_rows);
+  const visualSearch = injectedSearchSignal.evidence.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "search_optimization"
+  ));
+  visualSearch.raw_value.push("Injected");
+  visualSearch.normalized_value.push("Injected");
+  const checked = verifyReplay(reseal(injectedSearchSignal), teamFillPrepared.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "external_identity_observed_evidence_mismatch" && problem.field === "team"
+  )));
+}
+
+// The v1 candidate receipt remains executable history. v2 changes only the
+// active verified-external budget priority; it must not rewrite the title a
+// previously persisted v1 tuple deterministically replays.
+const replayV1 = composeCanonicalFieldsForStoredOutput(prepared.fields, {
+  composer_version: "thin-marketplace-composer-v3-verified-external-identity",
+  marketplace_profile_version: "ebay-verified-external-identity-v1",
+  marketplace: "EBAY"
+});
+assert.equal(replayV1.title,
+  "1996-97 Topps Stadium Club High Risers Michael Jordan Members Only Chicago Bulls");
+assert.equal(replayV1.length, 80);
+assert.ok(replayV1.dropped.includes("card_number"));
+assert.ok(!replayV1.dropped.includes("print_finish"));
+const replayV2 = composeCanonicalFieldsForStoredOutput(prepared.fields, {
+  composer_version: THIN_EXTERNAL_IDENTITY_COMPOSER_VERSION,
+  marketplace_profile_version: EBAY_EXTERNAL_IDENTITY_PROFILE_VERSION,
+  marketplace: "EBAY"
+});
+assert.equal(replayV2.title,
+  "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls");
+assert.ok(replayV2.dropped.includes("print_finish"));
+assert.ok(!replayV2.dropped.includes("card_number"));
+
+// A no-correction exact packet is valid under both append-only release tuples.
+const exactPrepared = await prepareCanonicalListingPath({
+  tenantId: "tenant-external",
+  recognitionSessionId: "session-hr14-exact-release-replay",
+  imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  createdAt,
+  callProvider: completedProvider({
+    ...observedHr14,
+    year: "1996-97",
+    set: "High Risers",
+    team: "Chicago Bulls",
+    card_number: "HR14"
+  })
+});
+assert.deepEqual(verifyReplay(exactPrepared.csm_rows, exactPrepared.title).problems, []);
+const historicalV1Rows = clone(exactPrepared.csm_rows);
+const historicalV1 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+  .registry_thin_external_identity_high_risers_v1;
+const historicalMetadata = historicalV1Rows.output.structured_output.external_identity_support;
+Object.assign(historicalMetadata, historicalV1.receipt);
+Object.assign(historicalV1Rows.resolution, historicalV1.resolution);
+Object.assign(historicalV1Rows.output, historicalV1.output);
+for (const row of historicalV1Rows.evidence.filter((entry) => entry.modality === "REGISTRY")) {
+  for (const field of [
+    "pack_id", "pack_version", "pack_sha256", "index_id", "index_version", "index_sha256",
+    "record_id", "registry_release_id", "resolution_contract_sha256", "match_mode"
+  ]) {
+    row.source_ref[field] = historicalMetadata[field];
+  }
+}
+reseal(historicalV1Rows);
+assert.deepEqual(verifyReplay(historicalV1Rows, historicalV1Rows.output.title).problems, [],
+  "a literal v1 evidence tuple remains executable after v2 becomes active");
 
 // Replay dispatches from the stored release receipt and validates that release
 // as a closed tuple. Re-sealing these counterexamples proves the release checks
@@ -226,6 +368,80 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
 }
 
 {
+  const forgedSource = clone(prepared.csm_rows);
+  const source = forgedSource.evidence.find((row) => row.modality === "REGISTRY")
+    .source_ref.sources.find((item) => item.source_id === "tcdb.set.2551");
+  source.url = "https://www.tcdb.com/forged-path";
+  source.fact_sha256 = "f".repeat(64);
+  const checked = verifyReplay(reseal(forgedSource), prepared.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "external_identity_source_provenance_invalid"
+  )));
+}
+
+{
+  const missingCoverage = clone(prepared.csm_rows);
+  let retained = false;
+  missingCoverage.evidence = missingCoverage.evidence.filter((row) => {
+    if (row.modality !== "REGISTRY") return true;
+    if (!retained) {
+      retained = true;
+      return true;
+    }
+    return false;
+  });
+  const checked = verifyReplay(reseal(missingCoverage), prepared.title);
+  assert.equal(checked.ok, false);
+  assert.equal(checked.problems.filter((problem) => (
+    problem.kind === "external_identity_field_evidence_cardinality_invalid"
+      && problem.count === 0
+  )).length, 6);
+}
+
+{
+  const duplicateCoverage = clone(prepared.csm_rows);
+  duplicateCoverage.evidence.push(clone(
+    duplicateCoverage.evidence.find((row) => row.modality === "REGISTRY")
+  ));
+  const checked = verifyReplay(reseal(duplicateCoverage), prepared.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "external_identity_field_evidence_cardinality_invalid"
+      && problem.count === 2
+  )));
+}
+
+{
+  const extraCoverage = clone(prepared.csm_rows);
+  const extra = clone(extraCoverage.evidence.find((row) => row.modality === "REGISTRY"));
+  extra.source_ref.field = "parallel_exact";
+  extra.bracket = "print_finish";
+  extraCoverage.evidence.push(extra);
+  const checked = verifyReplay(reseal(extraCoverage), prepared.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "external_identity_field_evidence_unexpected"
+      && problem.field === "parallel_exact"
+  )));
+}
+
+{
+  const forgedObservedValues = clone(prepared.csm_rows);
+  const decisions = forgedObservedValues.output.structured_output
+    .external_identity_support.field_decisions;
+  decisions.year.observed_value = "1988-89";
+  decisions.set.observed_value = "Forged Set";
+  const checked = verifyReplay(reseal(forgedObservedValues), prepared.title);
+  assert.equal(checked.ok, false);
+  for (const field of ["year", "set"]) {
+    assert.ok(checked.problems.some((problem) => (
+      problem.kind === "external_identity_observed_evidence_mismatch" && problem.field === field
+    )), field);
+  }
+}
+
+{
   const invalidMode = clone(prepared.csm_rows);
   invalidMode.output.structured_output.external_identity_support.match_mode = "FUZZY";
   for (const row of invalidMode.evidence.filter((entry) => entry.modality === "REGISTRY")) {
@@ -234,6 +450,80 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
   const checked = verifyReplay(reseal(invalidMode), prepared.title);
   assert.equal(checked.ok, false);
   assert.ok(checked.problems.some((problem) => problem.kind === "external_identity_match_mode_invalid"));
+}
+
+for (const mutate of [
+  (receipt) => { receipt.field_decisions.subjects.action = "CORRECT_CONFLICT"; },
+  (receipt) => { receipt.field_decisions.year.source_ids = ["tcdb.set.2551"]; },
+  (receipt) => { receipt.field_decisions.year.source_ids = ["evil.source"]; },
+  (receipt) => { delete receipt.field_decisions.manufacturer; },
+  (receipt) => {
+    receipt.match_mode = "EXACT_FOUR_ANCHOR";
+    delete receipt.original_set_sha256;
+  }
+]) {
+  const tampered = clone(prepared.csm_rows);
+  mutate(tampered.output.structured_output.external_identity_support);
+  const checked = verifyReplay(reseal(tampered), prepared.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "external_identity_field_decisions_invalid"
+  )));
+}
+
+{
+  const invalidSupport = clone(prepared.external_identity_support);
+  invalidSupport.match_mode = "EXACT_FOUR_ANCHOR";
+  delete invalidSupport.original_set_sha256;
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "tenant-external",
+    recognitionSessionId: "session-invalid-correction",
+    fields: prepared.fields,
+    observedFields: prepared.observed_fields,
+    externalIdentitySupport: invalidSupport,
+    composed: {
+      grammar: prepared.grammar,
+      brackets: prepared.brackets,
+      dropped: prepared.dropped_brackets,
+      suppressed: prepared.suppressed_brackets,
+      restored: prepared.restored_brackets,
+      truncated: prepared.truncated,
+      input_empty_fields: prepared.input_empty_fields,
+      normalization_reasons: prepared.normalization_reasons,
+      character_budget: prepared.character_budget,
+      length: prepared.length
+    },
+    title: prepared.title,
+    registryReleaseId: EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+    createdAt
+  }), /external_identity_release_receipt_mismatch/);
+}
+
+{
+  const forgedObservedSupport = clone(prepared.external_identity_support);
+  forgedObservedSupport.field_decisions.year.observed_value = "1988-89";
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "tenant-external",
+    recognitionSessionId: "session-forged-observed-decision",
+    fields: prepared.fields,
+    observedFields: prepared.observed_fields,
+    externalIdentitySupport: forgedObservedSupport,
+    composed: {
+      grammar: prepared.grammar,
+      brackets: prepared.brackets,
+      dropped: prepared.dropped_brackets,
+      suppressed: prepared.suppressed_brackets,
+      restored: prepared.restored_brackets,
+      truncated: prepared.truncated,
+      input_empty_fields: prepared.input_empty_fields,
+      normalization_reasons: prepared.normalization_reasons,
+      character_budget: prepared.character_budget,
+      length: prepared.length
+    },
+    title: prepared.title,
+    registryReleaseId: EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+    createdAt
+  }), /external_identity_release_receipt_mismatch/);
 }
 
 // No exact support changes neither canonical facts nor any deterministic CSM
