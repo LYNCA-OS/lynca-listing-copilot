@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   COMPATIBILITY_BRIDGE_CHANGED_PATHS,
@@ -21,6 +26,17 @@ import {
 
 const gitSha = "a".repeat(40);
 const treeSha = "b".repeat(40);
+const git = (cwd, args) => execFileSync("git", args, {
+  cwd,
+  encoding: "utf8",
+  stdio: ["ignore", "pipe", "pipe"]
+}).trim();
+const parentShas = (cwd) => {
+  const [head, ...parents] = git(cwd, ["rev-list", "--parents", "-n", "1", "HEAD"])
+    .split(/\s+/);
+  assert.equal(head, git(cwd, ["rev-parse", "HEAD"]));
+  return parents;
+};
 const bridgeCommitMessage = [
   "rollback forward reader",
   "",
@@ -54,6 +70,49 @@ assert.equal(bridge.parent_git_sha, COMPATIBILITY_BRIDGE_PARENT_SHA);
 assert.match(bridge.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
 assert.equal(bridge.writer_journey_manifest, COMPATIBILITY_BRIDGE_MANIFEST_VERSION);
 assert.equal(bridge.parity_required, false);
+
+const shallowFixtureRoot = await mkdtemp(path.join(tmpdir(), "lynca-bridge-shallow-"));
+try {
+  const source = path.join(shallowFixtureRoot, "source");
+  git(shallowFixtureRoot, ["init", "--quiet", "--initial-branch=main", source]);
+  git(source, [
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--quiet", "--allow-empty", "-m", "synthetic bridge parent"
+  ]);
+  const fixtureParentSha = git(source, ["rev-parse", "HEAD"]);
+  git(source, [
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--quiet", "--allow-empty", "-m", "synthetic bridge child"
+  ]);
+  const sourceUrl = pathToFileURL(source).href;
+
+  const depthOne = path.join(shallowFixtureRoot, "depth-one");
+  git(shallowFixtureRoot, ["clone", "--quiet", "--depth=1", sourceUrl, depthOne]);
+  assert.deepEqual(parentShas(depthOne), [],
+    "a depth-one checkout hides the bridge parent even when its object exists upstream");
+
+  const depthTwo = path.join(shallowFixtureRoot, "depth-two");
+  git(shallowFixtureRoot, ["clone", "--quiet", "--depth=2", sourceUrl, depthTwo]);
+  git(depthTwo, [
+    "fetch", "--quiet", "--no-tags", "--depth=2",
+    "origin", "main:refs/remotes/origin/main"
+  ]);
+  assert.deepEqual(parentShas(depthTwo), [fixtureParentSha],
+    "depth two must retain the synthetic bridge parent");
+
+  const truncated = path.join(shallowFixtureRoot, "depth-two-then-one");
+  git(shallowFixtureRoot, ["clone", "--quiet", "--depth=2", sourceUrl, truncated]);
+  git(truncated, [
+    "fetch", "--quiet", "--no-tags", "--depth=1",
+    "origin", "main:refs/remotes/origin/main"
+  ]);
+  assert.deepEqual(parentShas(truncated), [],
+    "a later depth-one freshness fetch makes the checked-out bridge commit shallow again");
+} finally {
+  await rm(shallowFixtureRoot, { recursive: true, force: true });
+}
 
 for (const commitMessage of [
   "ordinary release",

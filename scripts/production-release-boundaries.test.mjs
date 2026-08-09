@@ -252,7 +252,18 @@ assert.doesNotMatch(writerJourneyWorkflow,
   "the PR-only contract workflow must not receive Production credentials");
 assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
-assert.match(workflow, /git fetch --no-tags --depth=1 origin main:refs\/remotes\/origin\/main/);
+assert.match(workflow,
+  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*fetch-depth: 2/,
+  "the release selector needs the exact commit parent in the checked-out object graph");
+assert.equal(
+  [...workflow.matchAll(
+    /git fetch --no-tags --depth=2 origin main:refs\/remotes\/origin\/main/g
+  )].length,
+  2,
+  "both main-ref freshness checks must retain the selected commit parent"
+);
+assert.doesNotMatch(workflow, /git fetch --no-tags --depth=1/,
+  "a depth-one re-fetch would erase the bridge parent required by selection");
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
 assert.doesNotMatch(workflow, /VERCEL_DEPLOY_HOOK_URL|Deploy Hook|vercel-deploy-hook/,
   "a branch-reading deploy hook can race with main and must not mutate production");

@@ -5,6 +5,13 @@ The pre-bridge Production deployment identified during release review as
 identity receipt. It is therefore not a safe rollback target after v2 starts
 writing durable checkpoints.
 
+The first protected bridge dispatch, Actions run `31334470937`, stopped at
+`compatibility_bridge_parent_mismatch` before any step referenced Production
+credentials or accessed the provider or database, and before candidate creation
+or promotion. The bridge commit was correct; the default depth-one checkout hid
+its parent, and the later depth-one main-ref fetch would have recreated the same
+shallow boundary.
+
 The safe release order is fixed:
 
 1. Treat database migration #225 as a completed, immutable prerequisite. The
@@ -12,9 +19,14 @@ The safe release order is fixed:
    and its exact readback was verified; do not apply or mutate it again in this
    release. Active v1 still queries only its v1 ID, and the bridge has no
    active-v2 readiness or behavior dependency.
-2. Create one active-v1 forward-reader commit directly on the reviewed parent
-   `35e825f1a3a6411fecceb0a7bb638d341f848a2e`. Its changed paths must equal the
-   tracked bridge artifact manifest, and its message must contain exactly one
+2. Keep the reviewed active-v1 forward-reader commit
+   `9b65f7ccf7c97643104c8aafb6156bcd9b715516` immutable. Create exactly one
+   checkout repair commit directly on that parent. Its only changed paths are
+   the workflow, this runbook, the bridge selector and test, and the Production
+   release-boundary test enumerated by `COMPATIBILITY_BRIDGE_CHANGED_PATHS`.
+   Both checkout and the explicit main-ref freshness fetch retain depth two.
+   After those five paths are frozen, compute the commit tree and include
+   exactly one
    `LYNCA-Release-Class: compatibility-bridge-v1` trailer plus exactly one
    `LYNCA-Compatibility-Bridge-Tree: <HEAD tree SHA>` trailer.
 3. Dispatch `deploy-production` with `release_class=compatibility-bridge`. The
@@ -29,8 +41,10 @@ The safe release order is fixed:
    rollback deployment. The ordinary release must pass the complete v3 Writer
    Journey manifest, including the exact external-identity parity case.
 
-The compatibility class is commit-bound and intentionally non-reusable: an
-ordinary commit cannot select its reduced manifest, and an active-v2 runtime
-cannot satisfy its active-v1 contract proof. The bridge changes only historical
-validation, replay, persistence, and readback; fresh resolution, health,
+The compatibility class is commit-bound and intentionally non-reusable: the
+repair selector requires parent `9b65f7ccf7c97643104c8aafb6156bcd9b715516`
+and exactly the five repair paths, an ordinary commit cannot select its reduced
+manifest, and an active-v2 runtime cannot satisfy its active-v1 contract proof.
+The inherited bridge changes only historical validation, replay, persistence,
+and readback; the repair changes no data-plane file. Fresh resolution, health,
 profile, Registry readiness, and title composition remain active v1.
