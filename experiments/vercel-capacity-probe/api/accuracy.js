@@ -21,7 +21,9 @@ const ALLOWED_ARMS = new Set([
   "canonical_residual_v1_high",
   "control_a",
   "control_b",
-  "residual_c"
+  "residual_c",
+  "compact_v4_control",
+  "compact_v4_treatment"
 ]);
 
 const plainObject = (value) => Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -129,7 +131,8 @@ function normalizedTemplate(value, armId, frozenContracts = FROZEN_REQUEST_CONTR
       || !plainObject(format.schema) || JSON.stringify(format.schema).length > 36_000) {
     throw new Error("request_template_schema_invalid");
   }
-  for (const property of ["residual_evidence", "residual_visible_evidence"]) {
+  for (const property of ["residual_evidence", "residual_visible_evidence",
+    "residual_printed_phrase"]) {
     const present = Object.hasOwn(format.schema.properties || {}, property)
       && (format.schema.required || []).includes(property);
     if (present !== (armSpec.residual_property === property)) {
@@ -255,7 +258,8 @@ function structuredOutput(parsed, armId) {
     return { ok: false, raw: texts[0], parsed: value, error: "structured_output_not_object" };
   }
   const expected = ARM_REQUEST_SPECS[armId]?.residual_property;
-  for (const property of ["residual_evidence", "residual_visible_evidence"]) {
+  for (const property of ["residual_evidence", "residual_visible_evidence",
+    "residual_printed_phrase"]) {
     if (Object.hasOwn(value, property) !== (expected === property)) {
       return { ok: false, raw: texts[0], parsed: value, error: "structured_output_arm_mismatch" };
     }
@@ -456,6 +460,7 @@ export default async function handler(req, res) {
       region: process.env.VERCEL_REGION || null,
       deployment_id: process.env.VERCEL_DEPLOYMENT_ID || null,
       deployment_hostname: process.env.VERCEL_URL || null,
+      release_git_sha: process.env.LYNCA_RELEASE_GIT_SHA || null,
       model: MODEL,
       reasoning_effort: null,
       reasoning_effort_mode: "per_arm",
@@ -483,7 +488,8 @@ export default async function handler(req, res) {
       environment: process.env.VERCEL_ENV || null,
       region: process.env.VERCEL_REGION || null,
       deployment_id: process.env.VERCEL_DEPLOYMENT_ID || null,
-      deployment_hostname: process.env.VERCEL_URL || null
+      deployment_hostname: process.env.VERCEL_URL || null,
+      release_git_sha: process.env.LYNCA_RELEASE_GIT_SHA || null
     });
   } catch (error) {
     const status = Number(error?.statusCode) === 401 ? 401 : 400;

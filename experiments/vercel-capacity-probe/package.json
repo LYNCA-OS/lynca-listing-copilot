@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node verify-cloud-sim-context.mjs && node control.test.mjs && node accuracy.test.mjs && node run-cloud-paired-accuracy.test.mjs && node materialize-residual-v3-payload.test.mjs && node residual-v3.test.mjs"
+    "test": "node verify-cloud-sim-context.mjs && node control.test.mjs && node accuracy.test.mjs && node run-cloud-paired-accuracy.test.mjs && node materialize-residual-v3-payload.test.mjs && node residual-v3.test.mjs && node residual-compact-v4.test.mjs"
   }
 }

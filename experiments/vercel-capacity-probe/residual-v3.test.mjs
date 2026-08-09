@@ -64,8 +64,8 @@ const signedAssets = await signAssetsOnlyManifest(assetsOnlyManifest, { serviceK
     assert.equal(options.method, "POST"); assert.equal(options.redirect, "error");
     assert.equal(options.headers.authorization, "Bearer storage-secret");
     assert.equal(JSON.parse(options.body).expiresIn, 8 * 60 * 60);
-    return { ok: true, json: async () => ({ signedURL:
-      `/object/sign/cards/signed-${signCalls}?token=${token}` }) };
+    const pathname = new URL(url).pathname.replace(/^\/storage\/v1/, "");
+    return { ok: true, json: async () => ({ signedURL: `${pathname}?token=${token}` }) };
   } });
 assert.equal(signCalls, 70);
 assert.equal(signedAssets.length, 35);
@@ -98,7 +98,8 @@ assert.equal(readinessBody.schema_version, "lynca-cloud-accuracy-readiness-v2");
 assert.equal(readinessBody.reasoning_effort, null);
 assert.equal(readinessBody.reasoning_effort_mode, "per_arm");
 assert.deepEqual(Object.keys(readinessBody.arm_request_specs),
-  ["canonical_high", "canonical_residual_v1_high", "control_a", "control_b", "residual_c"]);
+  ["canonical_high", "canonical_residual_v1_high", "control_a", "control_b", "residual_c",
+    "compact_v4_control", "compact_v4_treatment"]);
 assert.equal(readinessBody.frozen_request_contracts.control_a.normalized_request_sha256,
   readinessBody.frozen_request_contracts.control_b.normalized_request_sha256);
 

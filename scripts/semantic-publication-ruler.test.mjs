@@ -204,6 +204,18 @@ assert.equal(wrongFinish.title.publishable, false);
 assert.equal(deletedFinish.recognition.fact_recall, 0);
 assert.equal(deletedFinish.title.publishable, true, "optional true title facts may be omitted");
 assert.equal(repairedFinish.recognition.fact_recall, 0.5);
+assert.equal(repairedFinish.recognition.exact_fact_satisfied_count, 1);
+assert.deepEqual(repairedFinish.recognition.field_metrics.print_finish, {
+  supported_count: 1,
+  contradicted_count: 0,
+  unresolved_count: 0,
+  verified_claim_precision: 1,
+  gold_fact_count: 1,
+  satisfied_fact_count: 1,
+  exact_fact_satisfied_count: 1,
+  fact_recall: 1,
+  exact_fact_recall: 1
+});
 assert.equal(repairedFinish.title.publishable, true);
 assert.ok(repairedFinish.recognition.fact_recall > deletedFinish.recognition.fact_recall);
 
@@ -266,6 +278,13 @@ const requiredGold = score({
   title_claims: [{ field: "print_finish", value: "Refractor" }]
 });
 assert.equal(requiredGold.title.required_claim_recall, 0);
+assert.equal(requiredGold.title.required_claim_missing_count, 1);
+assert.deepEqual(requiredGold.title.required_field_metrics.print_finish, {
+  required_claim_count: 1,
+  required_claim_satisfied_count: 0,
+  required_claim_missing_count: 1,
+  required_claim_recall: 0
+});
 assert.equal(requiredGold.title.publishable, false);
 
 // Critical errors and unreviewed claims always fail closed.

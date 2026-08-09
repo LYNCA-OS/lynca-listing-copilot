@@ -14,7 +14,11 @@ export const ARM_REQUEST_SPECS = Object.freeze({
   control_b: Object.freeze({ effort: "low", max_output_tokens: 8192,
     format_name: "canonical_card_fields", residual_property: null }),
   residual_c: Object.freeze({ effort: "low", max_output_tokens: 8192,
-    format_name: "canonical_card_fields", residual_property: "residual_visible_evidence" })
+    format_name: "canonical_card_fields", residual_property: "residual_visible_evidence" }),
+  compact_v4_control: Object.freeze({ effort: "low", max_output_tokens: 8192,
+    format_name: "canonical_card_fields", residual_property: null }),
+  compact_v4_treatment: Object.freeze({ effort: "low", max_output_tokens: 8192,
+    format_name: "canonical_card_fields", residual_property: "residual_printed_phrase" })
 });
 
 export const FROZEN_REQUEST_CONTRACTS = Object.freeze({
@@ -47,6 +51,18 @@ export const FROZEN_REQUEST_CONTRACTS = Object.freeze({
     normalized_request_bytes: 12072,
     contract_wire_sha256: "93b02d22dafa07faefe444bfa3001576b2d89757b96d1f501a329bda84a36d87",
     contract_wire_bytes: 12103
+  }),
+  compact_v4_control: Object.freeze({
+    normalized_request_sha256: "fb7a23014f7b6d83f1bfcbb1a589ff7ad37199102520320963f06dc32d8eab19",
+    normalized_request_bytes: 11154,
+    contract_wire_sha256: "17fd188889e9ef11a2fcd9068a0cd55865dee6b8565f9fcc21aa36fe0761f61c",
+    contract_wire_bytes: 11185
+  }),
+  compact_v4_treatment: Object.freeze({
+    normalized_request_sha256: "e7229871d4fcfc7da088dc6fcf3a3c42acf6909e0ea9ac432dea7dfca57c0982",
+    normalized_request_bytes: 11484,
+    contract_wire_sha256: "cad46b8b3cf7a87f361c1cb2cfcbedef93aba1d8e117b8d764c3c6d7bbd6b584",
+    contract_wire_bytes: 11515
   })
 });
 

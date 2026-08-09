@@ -1,0 +1,21 @@
+{
+  "schema_version": "typed-gold-annotation-packet-receipt-v1",
+  "packet_sha256": "4fb3a450b9a64b929c526516f62e9df536598235e2a98263e206c2be748809ac",
+  "bindings": {
+    "dataset_sha256": "5aebd6a4bb08665d6601801258e39a5954ec82b7187f71f577f18c71bd27adca",
+    "source_cohort_sha256": "79168538efab26ef7415b5f1e07945295ac68f44628502af812d06d091639fbd",
+    "physical_projection_sha256": "84342a0cdb3dcd80dc20dde4de099a48a4108d4323ea1439005f2183346fc4e0",
+    "selection_policy_sha256": "4e93ed79c07e6493253c994e2b204c104e45f6bc2aac2160e9ef19ba34a24187",
+    "critical_policy_sha256": "7b404a3e790e4a43f83dfbeccd189b1e8eac7cc5e6f56cbafdf7da669f2d3881",
+    "concept_registry_sha256": "9a838d48f7107347633db8ef32a37ceb9f9ca444dd9f46b64978eb7b5c7b2991",
+    "scorer_bundle_sha256": "dcfb552c49188f199ca472eb8e7e57b9792db13e6689bd82b48f384a2d73a541"
+  },
+  "card_count": 20,
+  "strata": {
+    "CARD_FRONT": 1,
+    "CARD_BACK+CARD_FRONT": 19
+  },
+  "ordered_asset_ids_sha256": "69cd52e80e09626cdf83683229db11b1ce5c913f06ee72c7a3b4d0c4caa63459",
+  "ordered_physical_card_ids_sha256": "69cd52e80e09626cdf83683229db11b1ce5c913f06ee72c7a3b4d0c4caa63459",
+  "sealed_reviewed_title_bytes_read": false
+}

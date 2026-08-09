@@ -1,0 +1,15 @@
+{
+  "policy_id": "typed-gold-r0-label-blind-stratified-selection-v1",
+  "seed": "typed-gold-r0-2026-08-09",
+  "source_population": "frozen_existing_150",
+  "strata": {
+    "CARD_FRONT": 1,
+    "CARD_BACK+CARD_FRONT": 19
+  },
+  "within_stratum_order": "sha256(seed+NUL+physical_card_id)_ascending",
+  "prohibited_selection_inputs": [
+    "sealed reviewed title",
+    "title-derived field",
+    "model outcome"
+  ]
+}

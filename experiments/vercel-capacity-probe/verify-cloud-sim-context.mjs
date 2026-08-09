@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import accuracyHandler from "./api/accuracy.js";
 import { ARM_REQUEST_SPECS, FROZEN_REQUEST_CONTRACTS } from "./request-contract.mjs";
+import { buildResidualCompactV4Inputs } from "./build-residual-compact-v4-inputs.mjs";
 import { buildAssetsOnlyManifestFromDataset } from "./materialize-residual-v3-payload.mjs";
 
 const labRoot = dirname(fileURLToPath(import.meta.url));
@@ -71,12 +72,13 @@ assert.doesNotMatch(
 
 const environmentKeys = ["VERCEL_ENV", "VERCEL_REGION", "VERCEL_URL", "VERCEL_DEPLOYMENT_ID",
   "LYNCA_CLOUD_SIM_ENABLED", "LYNCA_CLOUD_SIM_STORAGE_HOST", "LYNCA_CLOUD_SIM_RUN_TOKEN",
-  "OPENAI_API_KEY"];
+  "OPENAI_API_KEY", "LYNCA_RELEASE_GIT_SHA"];
 const environmentBefore = Object.fromEntries(environmentKeys.map((key) => [key, process.env[key]]));
 Object.assign(process.env, { VERCEL_ENV: "preview", VERCEL_REGION: "sin1",
   VERCEL_URL: "local-contract-check.vercel.app", VERCEL_DEPLOYMENT_ID: "local-contract-check",
   LYNCA_CLOUD_SIM_ENABLED: "true", LYNCA_CLOUD_SIM_STORAGE_HOST: "irpgnhkslrsiucybkufc.supabase.co",
-  LYNCA_CLOUD_SIM_RUN_TOKEN: "local-contract-check", OPENAI_API_KEY: "local-contract-check" });
+  LYNCA_CLOUD_SIM_RUN_TOKEN: "local-contract-check", OPENAI_API_KEY: "local-contract-check",
+  LYNCA_RELEASE_GIT_SHA: "a".repeat(40) });
 let readiness;
 try {
   await accuracyHandler({ method: "GET" }, { setHeader() {}, end(body) { readiness = JSON.parse(body); } });
@@ -88,6 +90,8 @@ try {
 assert.equal(readiness?.ready, true, "cloud_sim_accuracy_readiness_failed");
 assert.equal(readiness?.environment, "preview", "cloud_sim_accuracy_environment_mismatch");
 assert.equal(readiness?.region, "sin1", "cloud_sim_accuracy_readiness_region_mismatch");
+assert.equal(readiness?.release_git_sha, "a".repeat(40),
+  "cloud_sim_accuracy_release_git_sha_mismatch");
 assert.equal(readiness?.schema_version, "lynca-cloud-accuracy-readiness-v2",
   "cloud_sim_accuracy_readiness_schema_mismatch");
 assert.equal(readiness?.reasoning_effort, null, "cloud_sim_accuracy_global_effort_must_be_null");
@@ -111,6 +115,13 @@ if (process.argv.includes("--require-data")) {
     "cloud_sim_physical_dataset_fingerprint_mismatch");
   assert.equal(buildAssetsOnlyManifestFromDataset({ dataset: JSON.parse(datasetBody), prereg }).assets.length,
     35, "cloud_sim_physical_pairing_mismatch");
+  const compactPrereg = JSON.parse(await readFile(resolve(repositoryRoot,
+    "experiments/accuracy/model-residual-compact-v4-cloud-prereg.json"), "utf8"));
+  const compact = buildResidualCompactV4Inputs({ datasetBody, prereg: compactPrereg,
+    v3Prereg: prereg });
+  assert.equal(compact.manifest.assets.length, 70, "cloud_sim_compact_v4_physical_pairing_mismatch");
+  assert.equal(compact.labelRefReceipt.sealed_label_bytes_read, false,
+    "cloud_sim_compact_v4_label_boundary_mismatch");
   physicalDataVerified = true;
 }
 

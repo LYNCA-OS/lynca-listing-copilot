@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { execFile, spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import {
-  chmod,
   mkdtemp,
+  open,
   readFile,
   rename,
   rm,
@@ -14,6 +14,28 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const labRoot = dirname(fileURLToPath(import.meta.url));
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+
+function execFileText(command, args, { cwd, execFileImpl = execFile } = {}) {
+  return new Promise((resolvePromise, reject) => {
+    execFileImpl(command, args, { cwd, encoding: "utf8" }, (error, stdout) => {
+      if (error) reject(error); else resolvePromise(String(stdout || ""));
+    });
+  });
+}
+
+export async function cleanCommittedSourceState(repositoryRoot, options = {}) {
+  const [head, status] = await Promise.all([
+    execFileText("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot, ...options }),
+    execFileText("git", ["status", "--porcelain=v1", "--untracked-files=all"],
+      { cwd: repositoryRoot, ...options })
+  ]);
+  const headSha = head.trim();
+  if (!/^[0-9a-f]{40}$/.test(headSha) || status !== "") {
+    throw new Error("compact_v4_source_checkout_not_clean_committed");
+  }
+  return { head_sha: headSha, clean: true, status_porcelain_sha256: sha256(status) };
+}
 
 export function deploymentOrigin(value) {
   const parsed = new URL(String(value || ""));
@@ -23,17 +45,27 @@ export function deploymentOrigin(value) {
   return parsed.origin;
 }
 
-export async function writeJsonAtomic(path, value) {
+const defaultAtomicIo = Object.freeze({ open, rename, unlink });
+
+export async function writeJsonAtomic(path, value, { io = defaultAtomicIo } = {}) {
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
+  let fileHandle = null;
+  let directoryHandle = null;
   try {
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-      flag: "wx",
-      mode: 0o600
-    });
-    await rename(temporary, path);
-    await chmod(path, 0o600);
+    fileHandle = await io.open(temporary, "wx", 0o600);
+    await fileHandle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await fileHandle.sync();
+    await fileHandle.close();
+    fileHandle = null;
+    await io.rename(temporary, path);
+    directoryHandle = await io.open(dirname(path), "r");
+    await directoryHandle.sync();
+    await directoryHandle.close();
+    directoryHandle = null;
   } catch (error) {
-    await unlink(temporary).catch(() => {});
+    await fileHandle?.close().catch(() => {});
+    await directoryHandle?.close().catch(() => {});
+    await io.unlink(temporary).catch(() => {});
     throw error;
   }
 }
@@ -47,11 +79,11 @@ export async function readJson(path) {
   }
 }
 
-export function durableJsonWriter(path) {
+export function durableJsonWriter(path, options = {}) {
   let tail = Promise.resolve();
   return async (value) => {
     const snapshot = structuredClone(value);
-    tail = tail.then(() => writeJsonAtomic(path, snapshot));
+    tail = tail.then(() => writeJsonAtomic(path, snapshot, options));
     await tail;
   };
 }

@@ -16,20 +16,42 @@ const exactKeys = (value, expected) => value && typeof value === "object"
   && !Array.isArray(value)
   && Object.keys(value).sort().join("\0") === [...expected].sort().join("\0");
 
-export function validateAssetsOnlyManifest(manifest) {
+export function signedObjectPathname(image) {
+  const object = image.object_path.split("/").map(encodeURIComponent).join("/");
+  return `/storage/v1/object/sign/${encodeURIComponent(image.bucket)}/${object}`;
+}
+
+export function assertSignedUrlMatchesImage(value, image) {
+  const url = new URL(String(value || ""));
+  if (url.protocol !== "https:" || url.hostname !== new URL(STORAGE_ORIGIN).hostname
+      || url.pathname !== signedObjectPathname(image)) {
+    throw new Error("assets_only_signed_url_object_mismatch");
+  }
+  return url;
+}
+
+export function validateAssetsOnlyManifest(manifest, {
+  expectedCards = 35,
+  minimumImages = 2,
+  maximumImages = 2,
+  schemaVersion = "residual-v3-assets-only-manifest-v1"
+} = {}) {
   if (!exactKeys(manifest, ["schema_version", "assets"])
-    || manifest.schema_version !== "residual-v3-assets-only-manifest-v1"
-    || !Array.isArray(manifest.assets) || manifest.assets.length !== 35) {
+    || manifest.schema_version !== schemaVersion
+    || !Array.isArray(manifest.assets) || manifest.assets.length !== expectedCards) {
     throw new Error("v3_assets_only_manifest_invalid");
   }
   const ids = new Set();
+  const objects = new Set();
   for (const asset of manifest.assets) {
     if (!exactKeys(asset, ["asset_id", "image_set_sha256", "images"])
       || typeof asset.asset_id !== "string" || !asset.asset_id
       || !/^[0-9a-f]{64}$/.test(String(asset.image_set_sha256 || ""))
-      || !Array.isArray(asset.images) || asset.images.length !== 2
+      || !Array.isArray(asset.images) || asset.images.length < minimumImages
+      || asset.images.length > maximumImages
       || ids.has(asset.asset_id)) throw new Error("v3_assets_only_asset_invalid");
     ids.add(asset.asset_id);
+    const roles = new Set();
     for (const image of asset.images) {
       if (!exactKeys(image, ["bucket", "object_path", "role"])
         || !/^[a-z0-9][a-z0-9_-]*$/.test(String(image.bucket || ""))
@@ -38,6 +60,12 @@ export function validateAssetsOnlyManifest(manifest) {
         || !["front_original", "back_original"].includes(image.role)) {
         throw new Error("v3_assets_only_image_invalid");
       }
+      const objectKey = `${image.bucket}\0${image.object_path}`;
+      if (objects.has(objectKey) || roles.has(image.role)) {
+        throw new Error("v3_assets_only_image_duplicate");
+      }
+      objects.add(objectKey);
+      roles.add(image.role);
     }
     if (imageSetFingerprint({ images: asset.images }) !== asset.image_set_sha256) {
       throw new Error(`v3_assets_only_image_pairing_mismatch:${asset.asset_id}`);
@@ -67,9 +95,10 @@ export function buildAssetsOnlyManifestFromDataset({ dataset, prereg }) {
 }
 
 export async function signAssetsOnlyManifest(manifest, {
-  fetchImpl = globalThis.fetch, serviceKey, ttlSeconds = DEFAULT_SIGNED_URL_TTL_SECONDS
+  fetchImpl = globalThis.fetch, serviceKey, ttlSeconds = DEFAULT_SIGNED_URL_TTL_SECONDS,
+  validation = undefined
 } = {}) {
-  validateAssetsOnlyManifest(manifest);
+  validateAssetsOnlyManifest(manifest, validation);
   if (typeof fetchImpl !== "function" || !String(serviceKey || "")
     || !Number.isInteger(ttlSeconds) || ttlSeconds < DEFAULT_SIGNED_URL_TTL_SECONDS) {
     throw new Error("v3_assets_only_signing_config_invalid");
@@ -78,8 +107,7 @@ export async function signAssetsOnlyManifest(manifest, {
   for (const asset of manifest.assets) {
     const imageUrls = [];
     for (const image of asset.images) {
-      const object = image.object_path.split("/").map(encodeURIComponent).join("/");
-      const endpoint = `${STORAGE_ORIGIN}/storage/v1/object/sign/${encodeURIComponent(image.bucket)}/${object}`;
+      const endpoint = `${STORAGE_ORIGIN}${signedObjectPathname(image)}`;
       const response = await fetchImpl(endpoint, { method: "POST", redirect: "error",
         headers: { authorization: `Bearer ${serviceKey}`, apikey: serviceKey,
           "content-type": "application/json" }, body: JSON.stringify({ expiresIn: ttlSeconds }) });
@@ -89,10 +117,7 @@ export async function signAssetsOnlyManifest(manifest, {
       if (!signed) throw new Error("v3_assets_only_signed_url_missing");
       if (signed.startsWith("/object/sign/")) signed = `/storage/v1${signed}`;
       const url = new URL(signed, STORAGE_ORIGIN);
-      if (url.protocol !== "https:" || url.hostname !== new URL(STORAGE_ORIGIN).hostname
-        || !url.pathname.startsWith("/storage/v1/object/sign/")) {
-        throw new Error("v3_assets_only_signed_url_invalid");
-      }
+      assertSignedUrlMatchesImage(url, image);
       imageUrls.push(url.toString());
     }
     assets.push({ asset_id: asset.asset_id, image_set_sha256: asset.image_set_sha256,
