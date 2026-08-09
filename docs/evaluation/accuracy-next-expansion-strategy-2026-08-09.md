@@ -1,15 +1,36 @@
 # 下一轮准确率扩范围决策报告 — 2026-08-09
 
-状态：`DECISION_READY_CONDITIONAL / ZERO_PROVIDER_CALLS / NO_RUNTIME_CHANGE`
+状态：`COMPACT105_EXECUTED / FORMAL_STOP / FRESH150_NOT_AUTHORIZED / NO_RUNTIME_CHANGE`
 
-适用水位：`codex/model-constraint-diagnostic-20260808@f350ce6a`。本报告冻结于 compact residual v4 的 105-call 结果产生之前，因此不预设它 PASS；结果出来后必须按本文的条件分支执行，不能把本报告改写成事后预注册。
+预注册水位：`codex/model-constraint-diagnostic-20260808@f350ce6a`。执行水位：`codex/model-constraint-diagnostic-20260808@acd99367771f6a3cf130a300181bc365d17884e6`。本报告初稿冻结于 compact residual v4 的 105-call 结果产生之前；以下“执行结果”只记录已经发生的结果与按原条件分支得出的决策，不改写验前门槛。
 
 ## Executive Summary
 
-- **反方观点更可信：现在不该同时扩 grading、phrase、image 和 world 四条线。** 当前最大风险不是漏掉一个小规则，而是把 provider 输入、schema、resolver、world rank 和评价尺子一起改，最后即使分数上升也无法归因。理论最优解是每轮只改变一个 provider-level 变量，其余机制全部在同一冻结响应上做零调用消融。
-- **下一轮先补尺子，再扩机制。** Token F1 继续保留为兼容趋势，但不能单独授权。迭代主尺应是 critical factual safety、typed-field precision/recall、required-missing/wrong-role、title factual utility 与 latency/token Pareto；最终发布主尺是 Publishable Card Rate（PCR）及 recognition precision/recall 的置信下界。
-- **执行优先级是：grading/slab typed gold → phrase-aware Product/Set → support-only world rank → orientation/image transport。** 这与“图像或世界知识看起来更大”的直觉不同：评级结构化已有 38/38 exact 的独立证据；phrase resolver 已有 150 回放正信号；world 只有 candidate-rank 信号且本地资产已被清理；倒置卡在 255 卡审计中为 0，额外 bottom-band 又已被延迟否决。
-- **真实 150 不是机械攒够 10 条规则就开跑。** “10 个机制”可作为批处理上限，不能作为统计门。购买 fresh150 必须同时满足：R0 独立 typed gold receipt 为 `COMPLETE`、所有用于决策的 truth metrics 非 `null`、wrong-role audit 为 `COMPLETE`、cumulative bundle 在 150 零调用回放中安全为正、当前 compact105 通过预注册门；`null` 永远不按 `0` 处理。若需要同批因果增益，150 张卡的 control+treatment 是 300 calls；若已有同版本、同图片、验前冻结的合法 control，可只新增 150 treatment calls。
+- **关闭 compact residual v4，不继续扩大这一 schema family。** 实测只有 `+0.001003`、`1W/0L/69T`；按当前胜例率，fresh150 达到 6 wins 的概率约 `2.14%`。成本已过门，但捕获收益没有保住。
+- **F1 只是 Writer-title proxy，不是事实准确率。** 本轮 independent typed gold 覆盖为 `0/70`，所以 critical factual error、typed precision/recall、required-missing 与 wrong-role 全部保持 `null`；任何“零事实错误”表述都没有证据。
+- **约束层没有被证明普遍压低 canonical 表现，但评价器发现了债务。** Paired canonical macro F1 平均为 `+0.008059`，同时 title exact 仅 `15/35`、fields exact `5/35`。冻结 gate 的形式 STOP 保留，但安全拒绝、paired disagreement 与 factual regression 必须在下一版尺子中分开。
+- **下一轮扩大真值与零调用机制，不扩大付费 schema。** 优先完成 typed-gold pilot/150、source-aware Product/Set phrase bank、slab exact phrase 与最小 support-only world graph；新的 cumulative downstream bundle 过独立 typed gate 后，才开新的 fresh150 预注册。
+
+## Compact105 执行结果：成本问题解决了，捕获收益没有保住
+
+**正式决策保持 `STOP_HARD_REGRESSION`；产品解释是“关闭这一冻结 schema family”，不是声称已经证明它造成了事实错误。** 2026-08-09 的 isolated Singapore Preview 完成 `70` treatment + `35` paired control：`105/105` provider calls、concurrency `1`、`0` failure、`0` retry。物化前后 `139/139` 图片的 SHA-256 与字节长度逐槽一致；执行期间未读取 sealed labels。
+
+| 决策维度 | 实测 | 解释 |
+|---|---:|---|
+| Resolver title proxy | `+0.001003`, `1W/0L/69T`, sign `p=1.0` | 未过 `+0.003 / 6W`；唯一收益为一个 source-backed `1st Bowman` |
+| Compact capture | `9/70` 非空短语，`2/70` 空字符串，`59/70` null | 只有 `1/70` 真正改变标题；live capture 没有保住 zero-call adapter 的收益 |
+| Canonical interference | paired macro F1 `+0.008059` | 平均值过门；没有证据支持“compact schema 普遍压低 canonical 标题” |
+| Paired stability | title exact `15/35`; full fields exact `5/35`; canonical subset `25/35` 卡、`37` cells disagreement | schema arm 与模型自抖动混在一起；单次 pair 不能把逐卡差异都归因于 schema |
+| Frozen safety gate | 2 empty-sentinel contract failures；2 schema/policy heuristic rows；1 safe guard rejection；1 paired disagreement | 按验前绝对零门必须 STOP；后 4 项不是 typed factual error，不能继续使用 regression 命名 |
+| Source/title safety proxy | reference loss `0`; unbacked token `0`; unsupported numeric `0`; over-80 `0`; resolver losses `0` | 说明唯一落地变化是安全的，但不足以证明事实准确率 |
+| Factual authority | typed gold `0/70`; factual error / typed P-R / required-missing / wrong-role 全为 `null` | `null` 不是 `0`；本轮不能宣称 critical factual error 为零 |
+| Operational Pareto | total tokens p50 `+0.83%`; output p50 `+6.94%`; latency p50 `+5.45%`; latency p95 `-5.44%` | 单字符串 schema 已解决 wide v3 的成本问题 |
+
+冻结 gate 的形式 STOP 不应被事后改成 PASS，但也不能把它过度解释成“已证实 factual regression”。独立复算发现：一次 `accepted=false` 是 Composer 为避免丢失已有 finish 而成功拒绝候选，最终 fields/title 与 baseline 完全一致；paired critical 判定还把 title F1 下降和另一个未进标题的字段差异拼接，并混用了旧字段名。补充 diagnostic v2 已把这些输出为 `SAFE_GUARD_REJECTION_NO_OUTPUT_CHANGE`、`PAIRED_CANONICAL_DISAGREEMENT` 与 `SCHEMA_POLICY_HEURISTIC`；在 typed gold 为 0 时，所有 factual/critical regression 指标强制为 `null`。
+
+即使完全不把这些诊断项计作回归，utility gate 仍然失败，产品决策仍是关闭这个 arm：按当前 `1/70` 胜例率，fresh150 达到 `6` wins 的概率约 `2.14%`；要有 `80%` 概率达到 `6` wins 需约 `552` treatment，按本轮 `2:1` treatment/control 设计约 `828` calls。更多样本只会更精确地证明收益稀疏，不会把它变成广谱机制。
+
+**执行后的核心建议：关闭 compact residual v4 这一冻结 schema family，不跑其 fresh150。扩大范围转向 0-call typed gold、source-aware Product/Set phrase bank、slab exact phrase 与最小 support-only world graph；只有新的 cumulative downstream bundle 在独立 typed gold 下过门，才开新的 fresh150 预注册。**
 
 ## 当前准确率损失不在一个层级
 
@@ -67,7 +88,7 @@ PCR 适合做 release gate，不适合做日常迭代指标；日常看上面的
 
 ### 1. Grading / slab typed recall：先补真值，不重复购买已证明的 grade schema
 
-**结论：GO typed-gold；HOLD 新的 slab 规则，等待 compact105。**
+**结论：GO typed-gold；HOLD 新的 slab 规则；compact105 已 STOP。**
 
 独立 105 已经把 structured grading 从 `33/38 (86.8%)` 提升到 `38/38 (100%)`，`5` repairs、`0` grading regressions。38/38 的 95% Wilson 下界约 `0.908`，所以“card grade 与 auto grade 分开”本身已经是明确正资产，不应再拿它当新实验收费。
 
@@ -84,7 +105,7 @@ PCR 适合做 release gate，不适合做日常迭代指标；日常看上面的
 
 - 先对现有 150 全量补 typed gold；其中所有 graded/slab 卡作为必审 stratum，0 provider calls；
 - 保留 30–60 张 graded/slab targeted diagnostic 只用于定位字段，不把富集比例冒充生产 PCR；
-- compact105 若捕获至少预注册的 `6W/0L` 且所有 typed/latency 门通过，再把 slab phrase resolver 作为 fresh150 treatment 内的零调用 on/off 消融；
+- compact105 已关闭；slab phrase 只能作为新的 downstream mechanism bank，在同一冻结 response 上做零调用 on/off 消融；
 - GO 要求 slab finish/colour verified precision `100%`、critical regression `0`，并至少 `6` 个 exact targeted repairs；否则 HOLD，不为 F1 小涨放宽来源。
 
 ### 2. Phrase-aware Product / Set completeness：当前最值得继续攒的安全增益
@@ -158,11 +179,12 @@ Phrase resolver、world ranker、Composer 都可以在同一冻结 response 上 
 | 阶段 | Cohort | Provider 变量 | Calls | 目的 | 放行条件 |
 |---|---:|---|---:|---|---|
 | R0 — typed gold/ruler | 150 production-mixture cards | 无 | 0 | 建 critical/required/typed 双轴 gold | coverage gate 完整；labels/sealer/scorer SHA 冻结 |
-| R1 — 当前 compact screen | 70 treatment + 35 contemporaneous controls | response schema only | **105，已批准** | 否证 compact capture、interference、cost | 严格按 prereg PASS/HOLD/STOP；不得事后改门 |
+| R1 — compact screen | 70 treatment + 35 contemporaneous controls | response schema only | **105，已完成** | compact capture、interference、cost | **FORMAL STOP：不进入 fresh150** |
 | R2 — phrase/slab/world replay bank | 同一冻结 150 responses | downstream only | 0 | 单机制与 leave-one-out interaction | 每机制和 cumulative bundle 全部 safety=0；bundle `>=8W/0L`, `ΔF1>=.003` |
-| R3 — fresh150 paired expansion | 150 control + 150 treatment | 只保留一个 provider-level 变量 | **300** | 同批因果增益 + typed/PCR | R0 receipt `COMPLETE`、truth metrics 全非 `null`、wrong-role `COMPLETE`，再与所有 mechanism/operational gates 合取通过 |
-| R4 — independent promotion | 新的、未用于开发的 150 | frozen candidate | **150 incremental**；若无合法 frozen control 则 300 | 绝对 `>=0.90` 发布证明 | `>=143/150` publishable、precision/recall CI、0 critical |
-| R5 — image transport（条件式） | 独立 150 pair | image bytes only | **300** | 只在廉价 transport 先过离线门后执行 | accuracy gain 与 latency/token 同时 Pareto |
+| R3 — downstream fresh150 | 新的 150 response，每张离线 replay baseline/candidate | provider 输入不变 | **150** | 新 cohort 泛化 + typed/PCR | R0 receipt `COMPLETE`、truth metrics 全非 `null`、wrong-role `COMPLETE`、cumulative bank 过门 |
+| R4 — provider-level experiment（条件式） | 150 control + 150 treatment | 只改变一个 provider-level 变量 | **300** | prompt/schema/image 的同批因果增益 | 只有新机制确实需要改 provider 输入时才授权 |
+| R5 — independent promotion | 新的、未用于开发的 150 | frozen candidate | **150 incremental**；若无合法 frozen control 则 300 | 绝对 `>=0.90` 发布证明 | `>=143/150` publishable、precision/recall CI、0 critical |
+| R6 — image transport（条件式） | 独立 150 pair | image bytes only | **300** | 只在廉价 transport 先过离线门后执行 | accuracy gain 与 latency/token 同时 Pareto |
 
 ### 为什么不是一次四臂 750 calls
 
@@ -170,7 +192,7 @@ Phrase resolver、world ranker、Composer 都可以在同一冻结 response 上 
 
 成本最优路线是：
 
-1. 当前 105 先回答 compact schema 是否值得继续；
+1. 已完成的 105 回答 compact schema 不值得继续；
 2. 其后所有 downstream 机制用同一响应做零调用 bank/leave-one-out；
 3. 只让一个冻结 provider-level bundle 进入 150 pair；
 4. final independent 150 只做绝对 promotion，不再探索。
@@ -192,7 +214,7 @@ Phrase resolver、world ranker、Composer 都可以在同一冻结 response 上 
 - R0 的独立 SPG/cohort receipt 必须为 `COMPLETE`，approval/material/policy/registry/scorer SHA 与唯一 physical-card cohort 已冻结；
 - `critical_factual_error_cards`、`critical_unresolved_cards`、typed precision、exact recall、required-missing/required-count 与 unresolved prediction 等用于决策的 cohort-level truth metrics 全部非 `null`；
 - 独立 wrong-role audit 必须为 `COMPLETE` 且值非 `null`；任何 `null` 都代表未知，绝不等同于 `0`；
-- compact105 预注册门、cumulative mechanism bank 门和 operational gate 必须全部 PASS；任一缺失即 HOLD，不授权 fresh150。
+- compact105 family 已关闭，不得复用或改写它的 prereg；新的 cumulative mechanism bank 与 operational gate 必须在独立新 prereg 中全部 PASS，任一缺失即 HOLD。
 
 ### HOLD
 
@@ -230,11 +252,10 @@ Phrase resolver、world ranker、Composer 都可以在同一冻结 response 上 
 
 ## 给下一轮授权的条件式建议
 
-1. **现在批准且立即执行：** R0 typed gold/ruler、phrase/slab 零调用 replay、world 最小资产重建的可行性审计；provider calls `0`。
-2. **compact105 = PASS：** 把 compact phrase lane 加入 mechanism bank；继续攒到最多 10 个“独立、零回归”的机制，但 fresh150 入场券必须是 `R0 receipt COMPLETE && truth metrics 全非 null && wrong-role COMPLETE && cumulative 8W/0L && ΔF1>=.003 && operational PASS`；数量本身不授权，`null` 永远不等于 `0`。
-3. **compact105 = HOLD：** 不买 fresh150；先完成 typed gold，并用现有响应把 phrase-aware 与 slab resolver 做到 cumulative gate，再重新决定。
-4. **compact105 = STOP：** 关闭该 schema family；转向 phrase-aware downstream 与最小 source-versioned world rank，不扩大图片或宽 schema。
-5. **现在不批准：** orientation/image 新 paid arm、generic world model、wide residual、第二调用或整套约束解除。
+1. **现在批准且继续执行：** R0 typed gold/ruler、phrase/slab 零调用 replay、world 最小资产重建的可行性审计；provider calls `0`。
+2. **compact105 已 STOP：** 关闭该 schema family，不改阈值、不补样本、不进入 fresh150。
+3. **下一张付费票：** 仅给新的 downstream cumulative bank；入场券为 `R0 receipt COMPLETE && truth metrics 全非 null && wrong-role COMPLETE && cumulative 8W/0L && ΔF1>=.003 && operational PASS`。数量本身不授权，`null` 永远不等于 `0`。
+4. **继续不批准：** orientation/image 新 paid arm、generic world model、wide residual、第二调用或整套约束解除。
 
 我的核心建议是：**下一轮只争取“更多可见证据进入候选层”，不让更多未经证实的事实进入 canonical 层。** 这是同时提高 recall 和守住 critical precision 的最短路径。
 
@@ -244,13 +265,15 @@ Phrase resolver、world ranker、Composer 都可以在同一冻结 response 上 
 - 254/109/63 与所有 oracle 都读取 reviewed title，只用于定位物理边界，不是 deployable gain。
 - grading 38/38 来自独立 105；slab finish/colour 尚无等价 typed gold。
 - world `15W/0L` 是 candidate rank；当前 clean checkout 缺 catalog/constraint 资产，coverage replay 在本轮只读验证中因缺文件 fail closed。
-- 本报告没有 provider/network 调用，没有修改 runtime/runner，也没有部署 Production。
+- 报告初稿为 0-call；执行更新使用 isolated Preview 完成 105 次 provider calls。没有修改 Production runtime，也没有部署或触碰 Production。
+- compact105 的正式 analysis SHA-256 为 `6b1485c14f08116c91b3c437f3b7533d16af24462ce9b5e30cfb1c16fe2884a1`；checkpoint 为 `2b81e4d890a6d32f23341f7b74d775f672192a138c9e22e0bd3a9cc6c9231e4e`；post-run 139-image receipt 为 `ed09ed0fc65ba16e5e853af1b2673c896bf9a0447bf0da23b2357646dc3ed377`；forward diagnostic v2 为 `0463a7b6459fd88989c0593a4b2baf61abb4c7947eac96cef82d26564d90a716`。原始响应、diagnostic 与 signed URL payload 保留在 ignored、mode-0600 的内部 artifact 目录，不进入 Git。
 
 主要证据：
 
 - [`model-constraint-impact-audit-2026-08-08.md`](./model-constraint-impact-audit-2026-08-08.md)
 - [`post-luna-current-main-150-2026-08-08.md`](./post-luna-current-main-150-2026-08-08.md)
 - [`model-residual-compact-v4-cloud-prereg-2026-08-09.md`](./model-residual-compact-v4-cloud-prereg-2026-08-09.md)
+- [`model-residual-compact-v4-paid105-runbook-2026-08-09.md`](./model-residual-compact-v4-paid105-runbook-2026-08-09.md)
 - [`orientation-grading-color-audit-2026-08-03.md`](./orientation-grading-color-audit-2026-08-03.md)
 - [`accuracy-phrase-aware-resolver-v1-replay-150-2026-08-02.md`](./accuracy-phrase-aware-resolver-v1-replay-150-2026-08-02.md)
 - [`world-compatibility-ranker-v1-stop-2026-08-02.md`](./world-compatibility-ranker-v1-stop-2026-08-02.md)
@@ -259,7 +282,8 @@ Phrase resolver、world ranker、Composer 都可以在同一冻结 response 上 
 - [`ruler-replacement-design-2026-08-03.md`](./ruler-replacement-design-2026-08-03.md)
 - [`ruler-design-review-2026-08-03.md`](./ruler-design-review-2026-08-03.md)
 
-本轮只读验证：
+执行后验证：
 
-- PASS：ruler annotation readiness、reviewed field evaluator、phrase-aware resolver、provider transport comparator、world ranker safety invariants；
+- PASS：105/105 raw-response replay、deployment/auth/request identity、139/139 pre/post image bytes、ruler annotation readiness、reviewed field evaluator、phrase-aware resolver、provider transport comparator、world ranker safety invariants；
+- FORMAL STOP：compact residual v4 utility 与冻结 safety gate；不允许进入 fresh150；
 - BLOCKED AS EXPECTED：world asset coverage 的两项重放测试缺 `data/catalog/official` 与 constraint snapshot；没有用弱替代物伪造通过。
