@@ -223,6 +223,11 @@ assert.match(workflow, /scheduler_attempt_slots === 120/);
 assert.match(workflow, /baseline_working_attempts === 43/);
 assert.match(workflow, /pacer_estimated_tokens_per_second === 60000/);
 assert.match(workflow, /pacer_burst_estimated_tokens === 65200/);
+assert.match(
+  health,
+  /pacer_burst_estimated_tokens:\s*CSM_PROVIDER_AUTHORITY_LIMITS\.pacerBurstEstimatedTokens/,
+  "health must report the running runtime contract, not a database rollout compatibility value"
+);
 assert.match(workflow, /steady_reserved_attempts_per_minute === 679/);
 assert.match(workflow, /effective_reserved_attempt_ceiling === 83/);
 assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);

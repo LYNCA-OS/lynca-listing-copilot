@@ -16,9 +16,9 @@ import {
   isCsmPersistenceConfigured
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
-  CSM_PROVIDER_AUTHORITY_LIMITS,
   CSM_PROVIDER_AUTHORITY_RPCS,
-  CSM_PROVIDER_AUTHORITY_SCOPE
+  CSM_PROVIDER_AUTHORITY_SCOPE,
+  csmProviderPacerReadinessMatches
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 
 const LOOKUP_RPC = "lookup_csm_thin_provider_operation_v1";
@@ -103,24 +103,7 @@ export async function checkCsmThinProductionReadiness({
     }
   );
   const pacer = await pacerResponse.json().catch(() => null);
-  const pacerReady = pacerResponse.ok
-    && pacer?.ok === true
-    && pacer?.code === "pacer_ready"
-    && Number(pacer.max_active) === CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveAttempts
-    && Number(pacer.max_active_tokens) === CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveEstimatedTokens
-    && Number(pacer.baseline_working_max_active)
-      === CSM_PROVIDER_AUTHORITY_LIMITS.baselineWorkingActiveAttempts
-    && Number(pacer.effective_max_active) >= 1
-    && Number(pacer.effective_max_active)
-      <= CSM_PROVIDER_AUTHORITY_LIMITS.baselineWorkingActiveAttempts
-    && Number(pacer.pacer_tokens_per_second)
-      === CSM_PROVIDER_AUTHORITY_LIMITS.pacerEstimatedTokensPerSecond
-    && Number(pacer.pacer_burst_tokens)
-      === CSM_PROVIDER_AUTHORITY_LIMITS.pacerBurstEstimatedTokens
-    && Number(pacer.token_window_target)
-      === CSM_PROVIDER_AUTHORITY_LIMITS.targetEstimatedTokensPerWindow
-    && Number(pacer.token_window_hard_limit)
-      === CSM_PROVIDER_AUTHORITY_LIMITS.hardTokensPerWindow;
+  const pacerReady = pacerResponse.ok && csmProviderPacerReadinessMatches(pacer);
   if (!pacerReady) {
     throw readinessError("csm_provider_pacer_not_ready", String(pacerResponse.status));
   }

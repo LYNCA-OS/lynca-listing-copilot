@@ -76,6 +76,21 @@ function fakeRpc(responses = {}) {
   };
 }
 
+async function readinessForPacer(receipt) {
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookup]: {
+      ok: true, code: "not_found", found: false
+    },
+    [CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness]: receipt
+  });
+  return {
+    store,
+    result: await checkCsmProviderAdmissionReadiness({
+      env: ENV, fetchImpl: store.fetchImpl
+    })
+  };
+}
+
 function authority(store, overrides = {}) {
   return createCsmSupabaseProviderAdmissionAuthority({
     env: ENV,
@@ -95,15 +110,8 @@ function authority(store, overrides = {}) {
 // The request preflight verifies both the durable authority family and the
 // exact global pacer contract. A stale/partial pacer migration fails closed.
 {
-  const readyStore = fakeRpc({
-    [CSM_PROVIDER_AUTHORITY_RPCS.lookup]: {
-      ok: true, code: "not_found", found: false
-    },
-    [CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness]: pacerReceipt()
-  });
-  assert.deepEqual(await checkCsmProviderAdmissionReadiness({
-    env: ENV, fetchImpl: readyStore.fetchImpl
-  }), { ready: true, reason: null });
+  const { store: readyStore, result: readyResult } = await readinessForPacer(pacerReceipt());
+  assert.deepEqual(readyResult, { ready: true, reason: null });
   assert.deepEqual(readyStore.calls.map(({ name }) => name), [
     CSM_PROVIDER_AUTHORITY_RPCS.lookup,
     CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness
@@ -116,17 +124,42 @@ function authority(store, overrides = {}) {
     p_model: "gpt-5.6-luna"
   });
 
-  const stalePacerStore = fakeRpc({
-    [CSM_PROVIDER_AUTHORITY_RPCS.lookup]: {
-      ok: true, code: "not_found", found: false
-    },
-    [CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness]: pacerReceipt({
-      baseline_working_max_active: 120
-    })
-  });
-  assert.deepEqual(await checkCsmProviderAdmissionReadiness({
-    env: ENV, fetchImpl: stalePacerStore.fetchImpl
-  }), { ready: false, reason: "provider_pacer_probe_contract_mismatch" });
+  for (const pacer_burst_tokens of [65_200, 66_000]) {
+    const { result } = await readinessForPacer(pacerReceipt({
+      pacer_burst_tokens,
+      effective_max_active: 1
+    }));
+    assert.deepEqual(result, { ready: true, reason: null },
+      `rollout endpoint ${pacer_burst_tokens} must remain ready`);
+  }
+
+  for (const pacer_burst_tokens of [65_199, 65_201, 65_999, 66_001]) {
+    const { result } = await readinessForPacer(pacerReceipt({ pacer_burst_tokens }));
+    assert.deepEqual(result, {
+      ready: false,
+      reason: "provider_pacer_probe_contract_mismatch"
+    }, `non-endpoint burst ${pacer_burst_tokens} must fail closed`);
+  }
+
+  for (const overrides of [
+    { max_active: 119 },
+    { max_active_tokens: 439_999 },
+    { baseline_working_max_active: 42 },
+    { effective_max_active: 0 },
+    { effective_max_active: 44 },
+    { pacer_tokens_per_second: 59_999 },
+    { token_window_target: 3_599_999 },
+    { token_window_hard_limit: 3_999_999 }
+  ]) {
+    const { result } = await readinessForPacer(pacerReceipt({
+      pacer_burst_tokens: 66_000,
+      ...overrides
+    }));
+    assert.deepEqual(result, {
+      ready: false,
+      reason: "provider_pacer_probe_contract_mismatch"
+    }, `the rollout bridge must not relax ${Object.keys(overrides)[0]}`);
+  }
 }
 
 assert.deepEqual(CSM_PROVIDER_AUTHORITY_LIMITS, {

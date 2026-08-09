@@ -29,6 +29,22 @@ function response(value, status = 200) {
   });
 }
 
+function pacerReceipt(overrides = {}) {
+  return {
+    ok: true,
+    code: "pacer_ready",
+    max_active: CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveAttempts,
+    max_active_tokens: CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveEstimatedTokens,
+    baseline_working_max_active: CSM_PROVIDER_AUTHORITY_LIMITS.baselineWorkingActiveAttempts,
+    effective_max_active: CSM_PROVIDER_AUTHORITY_LIMITS.baselineWorkingActiveAttempts,
+    pacer_tokens_per_second: CSM_PROVIDER_AUTHORITY_LIMITS.pacerEstimatedTokensPerSecond,
+    pacer_burst_tokens: CSM_PROVIDER_AUTHORITY_LIMITS.pacerBurstEstimatedTokens,
+    token_window_target: CSM_PROVIDER_AUTHORITY_LIMITS.targetEstimatedTokensPerWindow,
+    token_window_hard_limit: CSM_PROVIDER_AUTHORITY_LIMITS.hardTokensPerWindow,
+    ...overrides
+  };
+}
+
 const calls = [];
 const fetchImpl = async (url, init = {}) => {
   const parsed = new URL(String(url));
@@ -54,21 +70,20 @@ const fetchImpl = async (url, init = {}) => {
     return response({ ok: true, code: "not_found", found: false });
   }
   if (parsed.pathname.endsWith("/check_csm_thin_provider_pacer_v1")) {
-    return response({
-      ok: true,
-      code: "pacer_ready",
-      max_active: CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveAttempts,
-      max_active_tokens: CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveEstimatedTokens,
-      baseline_working_max_active: CSM_PROVIDER_AUTHORITY_LIMITS.baselineWorkingActiveAttempts,
-      effective_max_active: CSM_PROVIDER_AUTHORITY_LIMITS.baselineWorkingActiveAttempts,
-      pacer_tokens_per_second: CSM_PROVIDER_AUTHORITY_LIMITS.pacerEstimatedTokensPerSecond,
-      pacer_burst_tokens: CSM_PROVIDER_AUTHORITY_LIMITS.pacerBurstEstimatedTokens,
-      token_window_target: CSM_PROVIDER_AUTHORITY_LIMITS.targetEstimatedTokensPerWindow,
-      token_window_hard_limit: CSM_PROVIDER_AUTHORITY_LIMITS.hardTokensPerWindow
-    });
+    return response(pacerReceipt());
   }
   throw new Error(`unexpected_request:${parsed.pathname}`);
 };
+
+function fetchWithPacer(overrides, observedScopes = []) {
+  return async (url, init = {}) => {
+    if (String(url).endsWith("/check_csm_thin_provider_pacer_v1")) {
+      observedScopes.push(JSON.parse(init.body));
+      return response(pacerReceipt(overrides));
+    }
+    return fetchImpl(url, init);
+  };
+}
 
 const ready = await checkCsmThinProductionReadiness({ env: ENV, fetchImpl });
 assert.equal(ready.ok, true);
@@ -87,6 +102,47 @@ assert.deepEqual(calls.map(({ pathname }) => pathname), [
 ]);
 assert.ok(calls.every(({ init }) => init.headers.apikey === ENV.SUPABASE_SECRET_KEY));
 assert.equal(ready.listing_asset_owner_ready, true);
+
+const databaseOnlyScopes = [];
+for (const pacer_burst_tokens of [65_200, 66_000]) {
+  const databaseOnlyReady = await checkCsmThinProductionReadiness({
+    env: { ...ENV, OPENAI_API_KEY: "" },
+    fetchImpl: fetchWithPacer({ pacer_burst_tokens }, databaseOnlyScopes),
+    requireProviderKey: false
+  });
+  assert.equal(databaseOnlyReady.ok, true);
+  assert.equal(databaseOnlyReady.provider_configuration_checked, false);
+}
+assert.deepEqual(databaseOnlyScopes, [65_200, 66_000].map(() => ({
+  p_provider: "openai",
+  p_account_scope: "lynca-primary",
+  p_model: "gpt-5.6-luna"
+})), "database-only rollout readiness must retain the exact Production scope");
+
+for (const pacer_burst_tokens of [65_199, 65_201, 65_999, 66_001]) {
+  await assert.rejects(
+    checkCsmThinProductionReadiness({
+      env: { ...ENV, OPENAI_API_KEY: "" },
+      fetchImpl: fetchWithPacer({ pacer_burst_tokens }),
+      requireProviderKey: false
+    }),
+    (error) => error.code === "csm_provider_pacer_not_ready",
+    `database-only readiness must reject non-endpoint burst ${pacer_burst_tokens}`
+  );
+}
+
+await assert.rejects(
+  checkCsmThinProductionReadiness({
+    env: { ...ENV, OPENAI_API_KEY: "" },
+    fetchImpl: fetchWithPacer({
+      pacer_burst_tokens: 66_000,
+      max_active_tokens: CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveEstimatedTokens - 1
+    }),
+    requireProviderKey: false
+  }),
+  (error) => error.code === "csm_provider_pacer_not_ready",
+  "the burst rollout bridge must not relax another database limit"
+);
 
 await assert.rejects(
   checkCsmThinProductionReadiness({
