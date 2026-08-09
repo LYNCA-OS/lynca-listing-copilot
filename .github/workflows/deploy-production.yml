@@ -25,6 +25,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
       - name: Fail closed unless this dispatch targets the current main commit
         env:
           DISPATCH_REF: ${{ github.ref }}
@@ -34,7 +36,7 @@ jobs:
           test "$DEFAULT_BRANCH" = "main"
           test "$DISPATCH_REF" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          git fetch --no-tags --depth=2 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - uses: actions/setup-node@v5
         with:
@@ -114,7 +116,7 @@ jobs:
         env:
           DISPATCH_SHA: ${{ github.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+          git fetch --no-tags --depth=2 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
       - name: Bind the canonical Vercel project from tracked service context
         run: |

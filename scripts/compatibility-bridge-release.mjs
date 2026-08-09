@@ -33,25 +33,13 @@ export const COMPATIBILITY_BRIDGE_TREE_TRAILER =
 export const COMPATIBILITY_BRIDGE_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-cases-v1";
 export const COMPATIBILITY_BRIDGE_PARENT_SHA =
-  "35e825f1a3a6411fecceb0a7bb638d341f848a2e";
+  "9b65f7ccf7c97643104c8aafb6156bcd9b715516";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
-  "api/csm-listing-title.js",
-  "api/csm-resolution-view.js",
   "docs/operations/luna-v2-rollback-bridge.md",
-  "e2e/production-writer-journey.spec.mjs",
-  "lib/listing/knowledge/csm-external-identity-support.mjs",
-  "lib/listing/thin/canonical-composer.mjs",
-  "lib/listing/thin/csm-persistence.mjs",
-  "lib/listing/thin/csm-replay.mjs",
-  "lib/listing/thin/csm-supabase-writer.mjs",
-  "package.json",
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
-  "scripts/csm-resolution-api.test.mjs",
-  "scripts/external-identity-rollback-bridge.test.mjs",
-  "scripts/production-release-boundaries.test.mjs",
-  "scripts/production-writer-journey-contract.test.mjs"
+  "scripts/production-release-boundaries.test.mjs"
 ]);
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
