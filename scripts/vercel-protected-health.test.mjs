@@ -15,11 +15,22 @@ function jsonResponse(body, status = 200) {
   });
 }
 
+function deploymentIdentity(overrides = {}) {
+  return {
+    projectId: env.VERCEL_PROJECT_ID,
+    ownerId: env.VERCEL_ORG_ID,
+    url: new URL(env.DEPLOYMENT_URL).hostname,
+    readyState: "READY",
+    ...overrides
+  };
+}
+
 {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), init });
-    if (calls.length === 1) {
+    if (calls.length === 1) return jsonResponse(deploymentIdentity());
+    if (calls.length === 2) {
       return jsonResponse({
         id: env.VERCEL_PROJECT_ID,
         accountId: env.VERCEL_ORG_ID,
@@ -30,28 +41,31 @@ function jsonResponse(body, status = 200) {
   };
   const health = await fetchVercelProtectedHealth({ env, fetchImpl });
   assert.equal(health.ready, true);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0].url,
-    "https://api.vercel.com/v9/projects/prj_test456?teamId=team_test123");
+    "https://api.vercel.com/v13/deployments/lynca-test-team.vercel.app?teamId=team_test123");
   assert.equal(calls[0].init.redirect, "error");
   assert.equal(calls[0].init.headers.authorization, `Bearer ${env.VERCEL_TOKEN}`);
-  assert.equal(calls[1].url, `${env.DEPLOYMENT_URL}/api/health`);
-  assert.equal(calls[1].init.redirect, "error");
-  assert.equal(calls[1].init.headers["x-vercel-protection-bypass"], "existing-bypass-token-123456");
+  assert.equal(calls[1].url,
+    "https://api.vercel.com/v9/projects/prj_test456?teamId=team_test123");
+  assert.equal(calls[2].url, `${env.DEPLOYMENT_URL}/api/health`);
+  assert.equal(calls[2].init.redirect, "error");
+  assert.equal(calls[2].init.headers["x-vercel-protection-bypass"], "existing-bypass-token-123456");
 }
 
 {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push({ url: String(url), init });
-    if (calls.length === 1) {
+    if (calls.length === 1) return jsonResponse(deploymentIdentity());
+    if (calls.length === 2) {
       return jsonResponse({
         id: env.VERCEL_PROJECT_ID,
         accountId: env.VERCEL_ORG_ID,
         protectionBypass: {}
       });
     }
-    if (calls.length === 2) {
+    if (calls.length === 3) {
       return jsonResponse({
         protectionBypass: { "created-bypass-token-1234567": { scope: "automation-bypass" } }
       });
@@ -59,18 +73,44 @@ function jsonResponse(body, status = 200) {
     return jsonResponse({ ready: true });
   };
   await fetchVercelProtectedHealth({ env, fetchImpl });
-  assert.equal(calls.length, 3);
-  assert.equal(calls[1].url,
+  assert.equal(calls.length, 4);
+  assert.equal(calls[2].url,
     "https://api.vercel.com/v1/projects/prj_test456/protection-bypass?teamId=team_test123");
-  assert.equal(calls[1].init.method, "PATCH");
-  assert.equal(calls[1].init.body, "{}");
-  assert.equal(calls[2].init.headers["x-vercel-protection-bypass"], "created-bypass-token-1234567");
+  assert.equal(calls[2].init.method, "PATCH");
+  assert.equal(calls[2].init.body, "{}");
+  assert.equal(calls[3].init.headers["x-vercel-protection-bypass"], "created-bypass-token-1234567");
+}
+
+for (const identity of [
+  deploymentIdentity({ projectId: "prj_attacker", url: "evil.vercel.app" }),
+  deploymentIdentity({ ownerId: "team_attacker", url: "evil.vercel.app" }),
+  deploymentIdentity({ url: "other.vercel.app" }),
+  deploymentIdentity({ readyState: "BUILDING", url: "evil.vercel.app" }),
+  { url: "evil.vercel.app", readyState: "READY" }
+]) {
+  const calls = [];
+  await assert.rejects(
+    fetchVercelProtectedHealth({
+      env: { ...env, DEPLOYMENT_URL: "https://evil.vercel.app" },
+      fetchImpl: async (url, init) => {
+        calls.push({ url: String(url), init });
+        return jsonResponse(identity);
+      }
+    }),
+    /deployment_identity_mismatch/
+  );
+  assert.equal(calls.length, 1);
+  assert.ok(!calls[0].url.includes("/v9/projects/"));
+  assert.equal(calls[0].init.headers.authorization, `Bearer ${env.VERCEL_TOKEN}`);
+  assert.equal(calls[0].init.headers["x-vercel-protection-bypass"], undefined);
 }
 
 await assert.rejects(
   fetchVercelProtectedHealth({
     env,
-    fetchImpl: async () => jsonResponse({ id: "prj_wrong", accountId: env.VERCEL_ORG_ID })
+    fetchImpl: async (url) => String(url).includes("/v13/deployments/")
+      ? jsonResponse(deploymentIdentity())
+      : jsonResponse({ id: "prj_wrong", accountId: env.VERCEL_ORG_ID })
   }),
   /project_identity_mismatch/
 );
