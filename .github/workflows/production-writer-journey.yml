@@ -93,9 +93,23 @@ jobs:
           node -e 'const x=require(process.argv[1]); if(x.schema_version!=="writer-journey-cases-v2"||x.accuracy_claim!==null||x.cases?.length!==2)process.exit(1)' "$cases_manifest"
           echo "cases_manifest=$cases_manifest" >> "$GITHUB_OUTPUT"
       - run: npx playwright install --with-deps chromium
+      - name: Build executor-bound large staged transport fixture
+        id: large_fixture
+        env:
+          WRITER_JOURNEY_CASES_MANIFEST: ${{ steps.source.outputs.cases_manifest }}
+        run: |
+          fixture_parent="$RUNNER_TEMP/lynca-large-writer-fixture"
+          fixture_dir="$fixture_parent/bundle"
+          install -d -m 700 "$fixture_parent"
+          node scripts/build-large-internal-writer-fixture.mjs \
+            --source-manifest "$WRITER_JOURNEY_CASES_MANIFEST" \
+            --out-dir "$fixture_dir" >/dev/null
+          test -f "$fixture_dir/receipt.json"
+          echo "receipt=$fixture_dir/receipt.json" >> "$GITHUB_OUTPUT"
       - name: Run real production Writer Journey
         env:
           WRITER_JOURNEY_CASES_MANIFEST: ${{ steps.source.outputs.cases_manifest }}
+          WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT: ${{ steps.large_fixture.outputs.receipt }}
           METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
           METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
         run: npm run test:e2e:production-writer-journey

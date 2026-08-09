@@ -29,8 +29,8 @@ assert.match(spec, /\/api\/v4\/listing-feedback/);
 assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
 assert.match(spec, /provider_attempt_number[\s\S]*?\.toBe\(1\)/);
 assert.match(spec, /provider_retry_count[\s\S]*?\.toBe\(0\)/);
-assert.match(spec, /test\.setTimeout\(15 \* 60 \* 1000\)/,
-  "two sequential hard-capped provider attempts must fit inside the live test budget");
+assert.match(spec, /test\.setTimeout\(20 \* 60 \* 1000\)/,
+  "three sequential live cases must fit inside the bounded journey budget");
 assert.match(spec, /composer\?\.trace_reliable[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /composer\?\.recomposed_matches_stored[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /panelTitleSha256 === generatedTitleSha256/);
@@ -46,6 +46,8 @@ assert.match(spec, /field_ground_truth_available: false/);
 assert.match(spec, /LIVE_CONTRACT_RECEIPT_ONLY/);
 assert.match(spec, /writer-journey-cases-v2/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
+assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
+assert.match(spec, /production-writer-journey-evidence-v3/);
 assert.match(spec, /\["NON_TCG", "TCG"\]/);
 assert.match(spec, /entry\.files\[0\]\?\.role !== "front_original"/);
 assert.match(spec, /entry\.files\[1\]\?\.role !== "back_original"/);
@@ -77,6 +79,61 @@ assert.match(spec, /PRIVATE EXPECTED TITLE/,
 assert.match(spec, /cookieDomainMatches/);
 assert.match(spec, /cookiePathMatches/);
 assert.match(spec, /productionOrigin = "https:\/\/listing\.lyncafei\.team"/);
+assert.match(spec, /serviceWorkers: "block"/,
+  "service workers must not bypass the pre-spend staged request gate");
+assert.match(spec, /health\?\.runtime\?\.transport_profile\?\.id === CSM_STAGED_TRANSPORT_PROFILE\.id/,
+  "the live journey must bind the deployed transport profile before upload");
+assert.match(spec,
+  /const expectedProviderAdapterVersion = resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider\s*\)\.contract\.id/,
+  "the journey must verify the adapter resolved by the active model profile");
+assert.match(spec, /health\?\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
+assert.doesNotMatch(spec, /CSM_OPENAI_RESPONSES_ADAPTER_VERSION/,
+  "the journey must remain portable across registered provider adapters");
+assert.match(spec, /journeyContext\.route\("\*\*\/api\/csm-listing-title\*\*"/);
+assert.match(spec, /route\.abort\("blockedbyclient"\)/,
+  "an invalid staged request must be stopped before it reaches the provider boundary");
+assert.match(spec, /url\.pathname !== stagedRecognitionPath/);
+assert.match(spec, /request\.postDataBuffer\(\)/);
+assert.match(spec, /x-lynca-ingest-metadata/);
+assert.match(spec, /recognitionInputOnly !== true/);
+assert.match(spec, /client_original_upload_elapsed_at_dispatch_ms/);
+assert.match(spec, /Object\.prototype\.hasOwnProperty\.call\(timing, "client_original_upload_ms"\)/);
+assert.match(spec, /metadata\.contentSha256 !== expected\.content_sha256/);
+assert.match(spec, /payload\?\.relay_timing\?\.browser_body_bytes !== expected\.bytes/);
+assert.match(spec, /payload\?\.asset_id !== assetId/);
+assert.match(spec, /payload\?\.upload\?\.image_id !== imageId/);
+assert.match(spec, /external_storage_puts === 0/,
+  "the large fixture must use two relays rather than a signed-Storage fallback");
+assert.match(spec, /validateLargeRecoveryAuthorization/);
+assert.match(spec, /recoveryAuthorization\?\.allows_second_request !== true/);
+assert.match(spec, /metadata\.resumeOnly !== recoveryAuthorization\.resume_only/);
+assert.match(spec, /const recognitionOutcome = await Promise\.race/,
+  "a blocked pre-spend request must fail immediately instead of waiting for the success timeout");
+assert.match(spec, /relayAssetIds\.size !== 1 \|\| !relayAssetIds\.has\(payload\?\.asset_id\)/);
+assert.match(spec, /relay\?\.image_id === original\?\.image_id/,
+  "relay bytes must bind to the exact role and image id used by recognition");
+assert.match(spec, /immutable_manifest_sha256/,
+  "an authorized recovery must preserve the exact original, derived, and body manifest");
+assert.match(spec, /firstRequest && metadata\.resumeOnly !== false/,
+  "the first staged request must never enter through a resume-only shape");
+assert.match(spec, /payload\?\.served_effort == null/,
+  "missing provider effort echo must remain an honest null");
+assert.match(spec, /servedEffortAttested === ownerEffortAttested/,
+  "top-level and durable effort attestation must agree");
+assert.match(spec, /largeTransport\.phase_complete = true/);
+assert.match(spec, /await journeyContext\.close\(\);\s*journeyContext = null;/,
+  "the browser context must close before the final late-request seal is accepted");
+assert.match(spec, /ingest_requests\.length === largeTransport\.ingest_responses\.length/);
+assert.match(spec, /ownerSession\?\.role === "OWNER"/,
+  "synthetic Production feedback must stop before provider use unless the actor is OWNER");
+assert.match(spec, /feedback_data_use === "ADMIN_TEST_ONLY"/);
+assert.match(spec, /training_eligible === false/);
+assert.match(spec, /production_promotion_eligible === false/);
+assert.match(spec, /case_id: "LARGE_STAGED_TRANSPORT"/);
+assert.match(spec, /transport_only: true/);
+assert.match(spec, /fixture_receipt_sha256/);
+assert.doesNotMatch(spec, /largeFixture\.receipt\.(?:source|originals|derived)/,
+  "the uploaded live evidence must not copy fixture bytes, paths, or per-image hashes");
 assert.doesNotMatch(spec, /getByTestId\("writer-persistence-status"\).*toBeVisible/);
 assert.match(spec, /deployment_id/);
 assert.match(spec, /WRITER_JOURNEY_INITIAL_STORAGE_STATE/,
@@ -99,6 +156,10 @@ assert.equal([...workflow.matchAll(/METAVERSE_PASSWORD: \$\{\{ secrets\.METAVERS
 assert.match(workflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
 assert.match(workflow, /materialize-writer-journey-source\.mjs/);
 assert.match(workflow, /WRITER_JOURNEY_CASES_MANIFEST: \$\{\{ steps\.source\.outputs\.cases_manifest \}\}/);
+assert.match(workflow, /Build executor-bound large staged transport fixture/);
+assert.match(workflow, /build-large-internal-writer-fixture\.mjs/);
+assert.match(workflow, /install -d -m 700 "\$fixture_parent"/);
+assert.match(workflow, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT: \$\{\{ steps\.large_fixture\.outputs\.receipt \}\}/);
 assert.match(workflow, /writer-journey-cases-v2\.json/);
 assert.match(workflow, /Materialize fixed NON_TCG and TCG cases/);
 assert.match(workflow, /--grep @offline/);

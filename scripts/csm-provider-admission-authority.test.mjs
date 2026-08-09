@@ -21,6 +21,10 @@ assert.equal(
   CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness,
   "check_csm_thin_provider_pacer_v1"
 );
+assert.equal(
+  CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey,
+  "lookup_csm_thin_provider_operation_by_key_v1"
+);
 
 function pacerReceipt(overrides = {}) {
   return {
@@ -81,6 +85,9 @@ async function readinessForPacer(receipt) {
     [CSM_PROVIDER_AUTHORITY_RPCS.lookup]: {
       ok: true, code: "not_found", found: false
     },
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "not_found", status_code: 200, found: false
+    },
     [CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness]: receipt
   });
   return {
@@ -114,11 +121,16 @@ function authority(store, overrides = {}) {
   assert.deepEqual(readyResult, { ready: true, reason: null });
   assert.deepEqual(readyStore.calls.map(({ name }) => name), [
     CSM_PROVIDER_AUTHORITY_RPCS.lookup,
+    CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey,
     CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness
   ]);
   assert.equal(readyStore.calls.every(({ init }) => init.redirect === "error"), true,
     "provider authority must not redirect its server-only apikey");
   assert.deepEqual(readyStore.calls[1].body, {
+    p_tenant_id: "__csm_readiness__",
+    p_operation_key: "__csm_readiness__"
+  });
+  assert.deepEqual(readyStore.calls[2].body, {
     p_provider: "openai",
     p_account_scope: "lynca-primary",
     p_model: "gpt-5.6-luna"
@@ -162,12 +174,74 @@ function authority(store, overrides = {}) {
   }
 }
 
+// The key-only recovery RPC is model/profile agnostic but tenant exact. Only a
+// durable SUCCEEDED operation returns its historical payload and checkpoint;
+// every other state remains state-only and cannot seed a fresh attempt.
+{
+  const storedPayloadHash = "b".repeat(64);
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "found_succeeded", status_code: 200, found: true,
+      operation_status: "SUCCEEDED", payload_sha256: storedPayloadHash,
+      latest_attempt_no: 4, latest_attempt_state: "SUCCEEDED",
+      result: { title: "historical checkpoint" }
+    }
+  });
+  const admission = authority(store);
+  assert.deepEqual(await admission.lookupOperationResultByKey(metadata()), {
+    status: "found",
+    payloadHash: storedPayloadHash,
+    result: { title: "historical checkpoint" },
+    latestAttempt: 4,
+    latestAttemptState: "SUCCEEDED"
+  });
+  assert.deepEqual(store.calls[0].body, {
+    p_tenant_id: "tenant-a",
+    p_operation_key: "luna-direct:v2:operation-a"
+  });
+}
+
+for (const [operationStatus, expectedStatus] of [
+  ["QUEUED", "pending"],
+  ["RUNNING", "pending"],
+  ["FAILED", "failed"],
+  ["AMBIGUOUS", "ambiguous"],
+  ["CANCEL_REQUESTED", "ambiguous"],
+  ["CANCELLED", "cancelled"]
+]) {
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "found_non_success", status_code: 200, found: true,
+      operation_status: operationStatus,
+      latest_attempt_no: 2, latest_attempt_state: operationStatus
+    }
+  });
+  const recovered = await authority(store).lookupOperationResultByKey(metadata());
+  assert.equal(recovered.status, expectedStatus);
+  assert.equal(Object.hasOwn(recovered, "payloadHash"), false);
+  assert.equal(Object.hasOwn(recovered, "result"), false);
+}
+
+{
+  const leakedFailure = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey]: {
+      ok: true, code: "found_non_success", status_code: 200, found: true,
+      operation_status: "FAILED", result: { title: "must not leak" }
+    }
+  });
+  await assert.rejects(
+    authority(leakedFailure).lookupOperationResultByKey(metadata()),
+    (error) => error.code === "operation_key_non_success_contract_mismatch"
+      && error.provider_attempt_started === false
+  );
+}
+
 assert.deepEqual(CSM_PROVIDER_AUTHORITY_LIMITS, {
   maximumActiveAttempts: 120,
   maximumActiveEstimatedTokens: 440_000,
   baselineWorkingActiveAttempts: 43,
   pacerEstimatedTokensPerSecond: 60_000,
-  pacerBurstEstimatedTokens: 65_200,
+  pacerBurstEstimatedTokens: 66_000,
   retryFractionWhileFreshQueued: 0.2,
   rollingWindowSeconds: 60,
   targetRequestsPerWindow: 4_500,
@@ -186,8 +260,8 @@ assert.equal(
     CSM_PROVIDER_AUTHORITY_LIMITS.pacerBurstEstimatedTokens
       / CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt
   ),
-  12,
-  "the lossless bucket must not raise the twelve-attempt microburst ceiling"
+  10,
+  "the p95 reservation keeps the lossless one-second microburst at ten attempts"
 );
 function saturatedPacerTicks(burstTokens, ticks) {
   const counts = [];
@@ -205,34 +279,26 @@ function saturatedPacerTicks(burstTokens, ticks) {
   }
   return { counts, balance, total: counts.reduce((sum, value) => sum + value, 0) };
 }
-const clippedTwelveQuantumBucket = saturatedPacerTicks(63_600, 4);
-assert.deepEqual(clippedTwelveQuantumBucket.counts, [11, 11, 11, 12]);
-assert.equal(
-  clippedTwelveQuantumBucket.total
-    * CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt / 4,
-  59_625,
-  "a twelve-quantum bucket clips carry before consumption and undershoots 60k/s"
-);
 const losslessDiscreteCycle = saturatedPacerTicks(
   CSM_PROVIDER_AUTHORITY_LIMITS.pacerBurstEstimatedTokens,
-  53
+  13
 );
-assert.equal(losslessDiscreteCycle.total, 600);
-assert.equal(Math.max(...losslessDiscreteCycle.counts), 12);
+assert.equal(losslessDiscreteCycle.total, 120);
+assert.equal(Math.max(...losslessDiscreteCycle.counts), 10);
 assert.equal(losslessDiscreteCycle.balance, 0);
 assert.equal(
   Math.floor(
     CSM_PROVIDER_AUTHORITY_LIMITS.pacerEstimatedTokensPerSecond * 60
       / CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt
   ),
-  679
+  553
 );
 assert.equal(
   Math.floor(
     CSM_PROVIDER_AUTHORITY_LIMITS.maximumActiveEstimatedTokens
       / CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt
   ),
-  83
+  67
 );
 
 // One logical request is durably enqueued, waits until its global scheduler

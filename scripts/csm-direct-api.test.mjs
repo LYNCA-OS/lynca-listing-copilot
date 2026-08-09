@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import { readFile, readdir } from "node:fs/promises";
 import { buildAccuracyLossLedger } from "../lib/listing/thin/accuracy-loss-ledger.mjs";
@@ -12,6 +13,9 @@ import {
   CSM_DIRECT_PROVIDER_TIMEOUT_MS,
   CSM_PERSISTENCE_READINESS_CACHE_TTL_MS,
   CSM_DIRECT_PROMPT_VERSION,
+  CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION,
+  CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION,
+  CSM_PERSISTENCE_CHECKPOINT_VERSION,
   buildProviderFailureReceipt,
   buildCsmDirectFailureResponse,
   buildCsmPersistenceCheckpoint,
@@ -21,13 +25,24 @@ import {
   deterministicProviderClientRequestId,
   deterministicCsmSessionId,
   resetCsmPersistenceReadinessCache,
-  runDirectCsmAsset
+  runDirectCsmAsset,
+  validateCsmPersistenceCheckpoint
 } from "../api/csm-listing-title.js";
 import {
+  buildLegacyCurrentLunaDirectPayloadHash,
   buildLegacyLowLunaDirectPayloadHash,
   buildLunaDirectOperationKey,
   buildLunaDirectPayloadHash
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
+import {
+  buildCsmModelExecutionContract,
+  buildCsmModelExecutionContractSha256,
+  buildCsmModelProfile,
+  csmExecutionContractImageUrls,
+  CSM_ACTIVE_MODEL_PROFILE,
+  sha256ExecutionContractValue
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
+import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
 import {
   STAGED_RECOGNITION_LANE_VERSION,
@@ -56,6 +71,13 @@ import { readSupabaseRows } from "../lib/supabase-rest.mjs";
 
 const source = await readFile(new URL("../api/csm-listing-title.js", import.meta.url), "utf8");
 const vercel = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+const CURRENT_STAGED_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
+  model: CSM_THIN_RUNTIME_CONTRACT.model,
+  requestedEffort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+  imageDetail: "high",
+  semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+  imageUrls: csmExecutionContractImageUrls(1)
+});
 
 async function readModuleTree(directory) {
   const modules = [];
@@ -111,6 +133,20 @@ assert.deepEqual(
 );
 assert.match(source, /cloud_run_calls:\s*0/, "the endpoint must make its zero Cloud Run boundary observable");
 assert.match(source, /vector_calls:\s*0/, "the endpoint must make its zero vector boundary observable");
+assert.doesNotMatch(source, /buildLegacy(?:Current|Low)LunaDirectPayloadHash/,
+  "portable recovery must not enumerate a finite set of historical profile hashes");
+assert.match(source, /lookupOperationResultByKey/,
+  "ordinary payload conflicts must recover through the stable tenant operation identity");
+for (const transportOwner of [
+  /api\.openai\.com/,
+  /OPENAI_API_KEY/,
+  /lynca_operation_sha256/,
+  /lynca_payload_sha256/,
+  /authorization:\s*`Bearer/
+]) {
+  assert.doesNotMatch(source, transportOwner,
+    "provider endpoint, auth and dispatch envelope must live in the resolved adapter");
+}
 assert.equal(vercel.functions["api/csm-listing-title.js"].maxDuration, 300);
 assert.deepEqual(vercel.regions, ["sin1"]);
 for (const functionPath of [
@@ -126,7 +162,7 @@ assert.equal(CSM_DIRECT_CLAIM_POLL_MS, 1_000);
 assert.equal(CSM_DIRECT_CLAIM_TIMEOUT_MS, 145_000);
 assert.equal(CSM_DIRECT_PROVIDER_TIMEOUT_MS, 120_000);
 assert.equal(CSM_DIRECT_MAX_ATTEMPTS, 3);
-assert.equal(CSM_DIRECT_ESTIMATED_TOKENS, 5_300);
+assert.equal(CSM_DIRECT_ESTIMATED_TOKENS, 6_500);
 assert.match(CSM_DIRECT_PROMPT_VERSION, /^csm-canonical-fields-v\d+$/);
 assert.equal(CSM_PERSISTENCE_READINESS_CACHE_TTL_MS, 30_000);
 assert.equal(deterministicCsmSessionId("operation-a"), deterministicCsmSessionId("operation-a"));
@@ -276,7 +312,7 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   resetCsmPersistenceReadinessCache();
 }
 
-// The default cached preflight is the integration boundary: five global
+// The default cached preflight is the integration boundary: six global
 // probes are shared by the whole warm-instance burst, a stale pacer fails
 // closed, and fixing it is visible immediately because failures are uncached.
 {
@@ -311,6 +347,11 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
     if (pathname.endsWith(`/${CSM_PROVIDER_AUTHORITY_RPCS.lookup}`)) {
       return new Response(JSON.stringify({ ok: true, code: "not_found", found: false }));
     }
+    if (pathname.endsWith(`/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`)) {
+      return new Response(JSON.stringify({
+        ok: true, code: "not_found", status_code: 200, found: false
+      }));
+    }
     if (pathname.endsWith(`/${CSM_PROVIDER_AUTHORITY_RPCS.pacerReadiness}`)) {
       return new Response(JSON.stringify({
         ok: true,
@@ -334,12 +375,12 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
     checkCachedCsmPersistenceReadiness(options)
   )));
   assert.ok(burst.every(({ ready }) => ready === true));
-  assert.equal(calls.length, 5, "120 cards must share one five-probe pre-spend receipt");
+  assert.equal(calls.length, 6, "120 cards must share one six-probe pre-spend receipt");
   await checkCachedCsmPersistenceReadiness(options);
-  assert.equal(calls.length, 5, "a successful receipt must be reused inside its TTL");
+  assert.equal(calls.length, 6, "a successful receipt must be reused inside its TTL");
   clockMs += CSM_PERSISTENCE_READINESS_CACHE_TTL_MS + 1;
   await checkCachedCsmPersistenceReadiness(options);
-  assert.equal(calls.length, 10, "all five probes must refresh after cache expiry");
+  assert.equal(calls.length, 12, "all six probes must refresh after cache expiry");
 
   resetCsmPersistenceReadinessCache();
   pacerReady = false;
@@ -349,7 +390,7 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   pacerReady = true;
   const healed = await checkCachedCsmPersistenceReadiness(options);
   assert.equal(healed.ready, true, "pacer recovery must not wait for a failure TTL");
-  assert.equal(calls.length, 20, "failure and immediate recovery each require one five-probe receipt");
+  assert.equal(calls.length, 24, "failure and immediate recovery each require one six-probe receipt");
   resetCsmPersistenceReadinessCache();
 }
 
@@ -369,18 +410,52 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   const call = createResponsesProviderCaller({
     env: { OPENAI_API_KEY: "test-key" }, operationKey, payloadHash, attempt: 2,
     fetchImpl: async (url, init) => {
-      request = { url, init, body: JSON.parse(init.body) };
+      request = { url, init, rawBody: init.body, body: JSON.parse(init.body) };
       return new Response('{"id":"resp_trace"}', { status: 200 });
     }
   });
   await call({ model: "gpt-5.6-luna", metadata: { existing: "kept" } });
   assert.equal(request.url, "https://api.openai.com/v1/responses");
+  assert.equal(request.init.method, "POST");
+  assert.equal(new Headers(request.init.headers).get("authorization"), "Bearer test-key");
+  assert.equal(new Headers(request.init.headers).get("content-type"), "application/json");
   assert.equal(new Headers(request.init.headers).get("x-client-request-id"), clientRequestId);
+  assert.equal(
+    createHash("sha256").update(request.rawBody).digest("hex"),
+    "42735d23c487398755c2fbc25ff18264c7d19319c8d97fcbe1e9f03f09865bbd",
+    "moving dispatch into the adapter must not change OpenAI request bytes"
+  );
   assert.equal(request.body.store, true);
   assert.equal(request.body.metadata.existing, "kept");
   assert.match(request.body.metadata.lynca_operation_sha256, /^[0-9a-f]{64}$/);
   assert.equal(request.body.metadata.lynca_payload_sha256, payloadHash);
   assert.equal(request.body.metadata.lynca_attempt, "2");
+
+  const activeAdapter = resolveCsmProviderAdapter(CSM_THIN_RUNTIME_CONTRACT.provider);
+  assert.equal(typeof activeAdapter.createCaller, "function");
+  assert.equal(activeAdapter.contract.transport.endpoint, request.url);
+  assert.equal(activeAdapter.contract.transport.api_key_env, "OPENAI_API_KEY");
+  let adapterRequest = null;
+  await activeAdapter.createCaller({
+    env: { OPENAI_API_KEY: "test-key" },
+    operationKey,
+    payloadHash,
+    attempt: 2,
+    clientRequestId,
+    timeoutMs: CSM_DIRECT_PROVIDER_TIMEOUT_MS,
+    fetchImpl: async (url, init) => {
+      adapterRequest = { url, init };
+      return new Response('{"id":"resp_trace"}', { status: 200 });
+    }
+  })({ model: "gpt-5.6-luna", metadata: { existing: "kept" } });
+  assert.equal(adapterRequest.url, request.url);
+  assert.equal(adapterRequest.init.body, request.rawBody);
+  assert.deepEqual(adapterRequest.init.headers, request.init.headers);
+  assert.throws(
+    () => resolveCsmProviderAdapter("future-provider"),
+    /unsupported_csm_provider:future-provider/,
+    "an unknown provider must fail before caller creation or fetch"
+  );
 }
 
 assert.equal(internalServiceSecretHeader, "x-lynca-worker-secret");
@@ -418,6 +493,20 @@ assert.equal(isInternalServiceRequest({
 }
 
 const IMAGE_HASH = "a".repeat(64);
+const ordinaryTask = (intentId, overrides = {}) => ({
+  tenant_id: "tenant-1",
+  intent_id: intentId,
+  asset_id: "asset-1",
+  model: CSM_THIN_RUNTIME_CONTRACT.model,
+  detail: "high",
+  reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+  prompt_version: CSM_DIRECT_PROMPT_VERSION,
+  estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
+  image_fingerprints: [`sha256:${IMAGE_HASH}`],
+  recognition_fingerprints: [`sha256:${IMAGE_HASH}`],
+  execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
+  ...overrides
+});
 const canonicalImages = () => ({
   asset_id: "asset-1",
   image_generation_id: "asset-1",
@@ -581,10 +670,15 @@ const canonicalImages = () => ({
   );
 }
 
-function passthroughAuthority({ events = [], lookup = async () => ({ status: "not_found" }) } = {}) {
+function passthroughAuthority({
+  events = [],
+  lookup = async () => ({ status: "not_found" }),
+  lookupByKey = async () => ({ status: "not_found" })
+} = {}) {
   return {
     globallyEnforced: true,
     lookupOperationResult: lookup,
+    lookupOperationResultByKey: lookupByKey,
     enqueueAttempt: async (metadata) => {
       events.push({ type: "enqueue", metadata });
       return metadata;
@@ -661,7 +755,18 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       // the tier can only change in one place.
       assert.equal(input.effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
       assert.deepEqual(input.imageUrls, [signedUrl]);
-      return preparedResult(input.recognitionSessionId);
+      return {
+        ...preparedResult(input.recognitionSessionId),
+        execution_contract_sha256: buildCsmModelExecutionContractSha256({
+          provider: input.provider,
+          model: input.model,
+          requestedEffort: input.effort,
+          imageDetail: input.imageDetail,
+          maxOutputTokens: input.maxOutputTokens,
+          semanticPromptVersion: input.promptVersion,
+          imageUrls: input.imageUrls
+        })
+      };
     },
     persistPath: async ({ prepared }) => {
       events.push("persist_csm");
@@ -722,7 +827,9 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     image_fingerprints: [`sha256:${originalHash}`],
     operation_scope: "derived_checkpoint",
     lane_version: STAGED_RECOGNITION_LANE_VERSION,
-    original_manifest_sha256: originalManifestSha256
+    original_manifest_sha256: originalManifestSha256,
+    recognition_fingerprints: [`sha256:${derivedHash}`],
+    execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
   };
   const result = await runDirectCsmAsset({
     tenantId: "tenant-1",
@@ -753,7 +860,10 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       createSession: async () => ({ persistence: { recognition_session: { saved: true } } }),
       preparePath: async ({ recognitionSessionId, imageUrls }) => {
         assert.deepEqual(imageUrls, ["data:image/jpeg;base64,derived"]);
-        return preparedResult(recognitionSessionId, "Staged title");
+        return {
+          ...preparedResult(recognitionSessionId, "Staged title"),
+          execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
+        };
       },
       persistPath: async ({ prepared }) => ({
         ...prepared,
@@ -769,15 +879,46 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     authorityEvents[0].metadata.payloadHash,
     buildLunaDirectPayloadHash({ ...task, image_fingerprints: [`sha256:${derivedHash}`] })
   );
+  const futureProfile = buildCsmModelProfile({
+    id: "future-neutral-profile-v1",
+    provider: "openai",
+    accountScope: "lynca-primary",
+    model: "future-model",
+    promptStyleVersion: "future-canonical-direct-v1",
+    optimizationPack: null,
+    reasoningEffort: "future-effort",
+    imageDetail: task.detail,
+    maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
+    transportProfileId: "future-transport-v1",
+    estimatedTokensPerAttempt: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
+    providerTimeoutMs: CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs,
+    capabilities: CSM_ACTIVE_MODEL_PROFILE.capabilities
+  });
+  const futureExecutionSha256 = buildCsmModelExecutionContractSha256({
+    profile: futureProfile,
+    semanticPromptVersion: "future-prompt"
+  });
   assert.equal(
+    buildLunaDirectOperationKey(task),
+    buildLunaDirectOperationKey({
+      ...task,
+      model: "future-model",
+      reasoning_effort: "future-effort",
+      prompt_version: "future-prompt",
+      execution_contract_sha256: futureExecutionSha256
+    }),
+    "a profile change stays inside the same staged user operation"
+  );
+  assert.notEqual(
     buildLunaDirectPayloadHash(task),
     buildLunaDirectPayloadHash({
       ...task,
       model: "future-model",
       reasoning_effort: "future-effort",
-      prompt_version: "future-prompt"
+      prompt_version: "future-prompt",
+      execution_contract_sha256: futureExecutionSha256
     }),
-    "a response-loss resume must survive model, effort and prompt deployment drift"
+    "but the changed paid execution must conflict instead of replaying the old checkpoint"
   );
 }
 
@@ -788,14 +929,16 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
   const originalManifestSha256 = "9".repeat(64);
   const task = {
     tenant_id: "tenant-1", intent_id: "resume-only", asset_id: "asset-1",
-    model: "gpt-staged-old", detail: "high",
-    reasoning_effort: "old-effort",
-    prompt_version: "old-prompt",
+    model: CSM_THIN_RUNTIME_CONTRACT.model, detail: "high",
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+    prompt_version: CSM_DIRECT_PROMPT_VERSION,
     estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
     image_fingerprints: [`sha256:${IMAGE_HASH}`],
     operation_scope: "derived_checkpoint",
     lane_version: STAGED_RECOGNITION_LANE_VERSION,
-    original_manifest_sha256: originalManifestSha256
+    original_manifest_sha256: originalManifestSha256,
+    recognition_fingerprints: [`sha256:${IMAGE_HASH}`],
+    execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
   };
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
@@ -816,6 +959,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
   const checkpoint = buildCsmPersistenceCheckpoint({
     prepared: {
       ...preparedResult(sessionId, "Resume-only title"),
+      execution_contract_sha256: task.execution_contract_sha256,
       model: task.model,
       requested_effort: task.reasoning_effort,
       image_detail: task.detail,
@@ -826,8 +970,52 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     payloadHash,
     recognitionSessionId: sessionId,
     recognitionSessionDeferred: true,
-    recognitionInput
+    recognitionInput,
+    executionContractSha256: task.execution_contract_sha256,
+    operationScope: "derived_checkpoint"
   });
+  assert.equal(
+    checkpoint.csm_persistence_checkpoint.schema_version,
+    CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
+  );
+  assert.equal(
+    checkpoint.csm_persistence_checkpoint.execution_contract_sha256,
+    task.execution_contract_sha256
+  );
+  assert.equal(validateCsmPersistenceCheckpoint(checkpoint, {
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash,
+    recognitionSessionId: sessionId,
+    executionContractSha256: task.execution_contract_sha256,
+    operationScope: "derived_checkpoint"
+  }).title, checkpoint.title);
+  assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash,
+    recognitionSessionId: sessionId,
+    executionContractSha256: "e".repeat(64),
+    operationScope: "derived_checkpoint"
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "execution_contract_sha256_mismatch");
+  assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
+    tenantId: "tenant-1", operationKey, payloadHash, recognitionSessionId: sessionId,
+    executionContractSha256: task.execution_contract_sha256
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "marker_missing",
+  "an ordinary resume may not adopt a staged checkpoint version");
+  const missingExecutionReceipt = structuredClone(checkpoint);
+  delete missingExecutionReceipt.csm_persistence_checkpoint.execution_contract_sha256;
+  assert.throws(() => validateCsmPersistenceCheckpoint(missingExecutionReceipt, {
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash,
+    recognitionSessionId: sessionId,
+    executionContractSha256: task.execution_contract_sha256,
+    operationScope: "derived_checkpoint"
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "execution_contract_sha256_mismatch");
   let lookups = 0;
   const events = [];
   let sessionPayload = null;
@@ -903,6 +1091,198 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     && error.provider_attempt_started === false
     && error.recovery_action === "STAGED_FRESH_RETRY");
   assert.equal(enqueueCalls, 0);
+
+  const historicalStagedProfile = buildCsmModelProfile({
+    id: "historical-staged-profile-v1",
+    provider: "openai",
+    accountScope: "historical-account-scope",
+    model: "historical-staged-model",
+    promptStyleVersion: "historical-staged-prompt-v1",
+    optimizationPack: null,
+    reasoningEffort: "low",
+    imageDetail: "original",
+    maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
+    transportProfileId: "historical-staged-transport-v1",
+    estimatedTokensPerAttempt: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
+    providerTimeoutMs: CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs,
+    capabilities: CSM_ACTIVE_MODEL_PROFILE.capabilities
+  });
+  const historicalStagedContract = structuredClone(buildCsmModelExecutionContract({
+    profile: historicalStagedProfile,
+    semanticPromptVersion: "historical-staged-prompt-v1",
+    imageUrls: csmExecutionContractImageUrls(1)
+  }));
+  historicalStagedContract.provider_adapter_version = "historical-openai-adapter-v1";
+  historicalStagedContract.provider_adapter_sha256 = "8".repeat(64);
+  historicalStagedContract.request_builder_version = "historical-request-builder-v1";
+  historicalStagedContract.response_parser_version = "historical-response-parser-v1";
+  const historicalStagedExecutionSha256 = sha256ExecutionContractValue(
+    historicalStagedContract
+  );
+  const historicalStagedTask = {
+    ...task,
+    model: historicalStagedContract.model,
+    detail: historicalStagedContract.image_detail,
+    reasoning_effort: historicalStagedContract.requested_effort,
+    prompt_version: historicalStagedContract.semantic_prompt_version,
+    lane_version: "readability-derived-inline-v1",
+    execution_contract_sha256: historicalStagedExecutionSha256
+  };
+  assert.equal(buildLunaDirectOperationKey(historicalStagedTask), operationKey);
+  const historicalStagedPayloadHash = buildLunaDirectPayloadHash(historicalStagedTask);
+  assert.notEqual(historicalStagedPayloadHash, payloadHash);
+  const historicalStagedPrepared = {
+    ...preparedResult(sessionId, "Historical staged title"),
+    provider: historicalStagedContract.provider,
+    requested_model: historicalStagedContract.model,
+    model: historicalStagedContract.model,
+    requested_effort: historicalStagedContract.requested_effort,
+    image_detail: historicalStagedContract.image_detail,
+    prompt_version: historicalStagedContract.semantic_prompt_version,
+    max_output_tokens: historicalStagedContract.max_output_tokens,
+    model_profile_id: historicalStagedContract.model_profile_id,
+    optimization_pack_id: historicalStagedContract.optimization_pack_id,
+    optimization_pack_sha256: historicalStagedContract.optimization_pack_sha256,
+    provider_adapter_version: historicalStagedContract.provider_adapter_version,
+    request_builder_version: historicalStagedContract.request_builder_version,
+    response_parser_version: historicalStagedContract.response_parser_version,
+    execution_contract_sha256: historicalStagedExecutionSha256,
+    execution_contract: historicalStagedContract
+  };
+  const historicalStagedCheckpoint = buildCsmPersistenceCheckpoint({
+    prepared: historicalStagedPrepared,
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash: historicalStagedPayloadHash,
+    recognitionSessionId: sessionId,
+    recognitionInput,
+    executionContractSha256: historicalStagedExecutionSha256,
+    operationScope: "derived_checkpoint"
+  });
+  let profileConflictBoundaryCalls = 0;
+  const profileConflictEvents = [];
+  const profileConflictResult = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: task.intent_id, resumeOnly: true,
+    dependencies: {
+      ...successfulDependencies({
+        events: profileConflictEvents,
+        authority: {
+          globallyEnforced: true,
+          lookupOperationResult: async () => {
+            throw Object.assign(new Error("operation_payload_conflict"), {
+              code: "operation_payload_conflict",
+              statusCode: 409,
+              retryable: false,
+              provider_attempt_started: false
+            });
+          },
+          lookupOperationResultByKey: async () => ({
+            status: "found",
+            payloadHash: historicalStagedPayloadHash,
+            result: historicalStagedCheckpoint,
+            latestAttempt: 1
+          }),
+          enqueueAttempt: async () => { profileConflictBoundaryCalls += 1; },
+          runAttempt: async () => { profileConflictBoundaryCalls += 1; }
+        }
+      }),
+      operationScope: "derived_checkpoint",
+      laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+      originalManifestSha256,
+      signImage: async () => { profileConflictBoundaryCalls += 1; },
+      preparePath: async () => { profileConflictBoundaryCalls += 1; }
+    }
+  });
+  assert.equal(profileConflictResult.title, "Historical staged title");
+  assert.equal(profileConflictBoundaryCalls, 0,
+    "a staged execution-contract conflict must recover without sign or provider work");
+  assert.deepEqual(profileConflictEvents, ["readiness", "images", "persist_csm"]);
+
+  let initialProfileConflictBoundaryCalls = 0;
+  const initialProfileConflictEvents = [];
+  const initialProfileConflictAuthorityEvents = [];
+  const initialProfileConflictResult = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: task.intent_id,
+    dependencies: {
+      ...successfulDependencies({
+        events: initialProfileConflictEvents,
+        authority: {
+          globallyEnforced: true,
+          enqueueAttempt: async () => {
+            initialProfileConflictAuthorityEvents.push("enqueue_conflict");
+            throw Object.assign(new Error("operation_payload_conflict"), {
+              code: "operation_payload_conflict",
+              statusCode: 409,
+              retryable: false,
+              provider_attempt_started: false
+            });
+          },
+          runAttempt: async ({ queuedAttempt }) => {
+            initialProfileConflictAuthorityEvents.push("run_without_execute");
+            return queuedAttempt;
+          },
+          lookupOperationResultByKey: async () => {
+            initialProfileConflictAuthorityEvents.push("lookup_by_key");
+            return {
+              status: "found",
+              payloadHash: historicalStagedPayloadHash,
+              result: historicalStagedCheckpoint,
+              latestAttempt: 1
+            };
+          }
+        }
+      }),
+      operationScope: "derived_checkpoint",
+      laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+      originalManifestSha256,
+      signImage: async () => { initialProfileConflictBoundaryCalls += 1; },
+      preparePath: async () => { initialProfileConflictBoundaryCalls += 1; }
+    }
+  });
+  assert.equal(initialProfileConflictResult.title, "Historical staged title");
+  assert.equal(initialProfileConflictBoundaryCalls, 0);
+  assert.deepEqual(initialProfileConflictAuthorityEvents, [
+    "enqueue_conflict", "run_without_execute", "lookup_by_key"
+  ]);
+  assert.deepEqual(initialProfileConflictEvents, ["readiness", "images", "persist_csm"]);
+
+  for (const historicalStatus of ["pending", "ambiguous", "failed", "cancelled", "not_found"]) {
+    let forbiddenHistoricalBoundaryCalls = 0;
+    await assert.rejects(runDirectCsmAsset({
+      tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+      intentId: task.intent_id, resumeOnly: true,
+      dependencies: {
+        ...successfulDependencies({
+          authority: {
+            globallyEnforced: true,
+            lookupOperationResult: async () => {
+              throw Object.assign(new Error("operation_payload_conflict"), {
+                code: "operation_payload_conflict",
+                statusCode: 409,
+                retryable: false,
+                provider_attempt_started: false
+              });
+            },
+            lookupOperationResultByKey: async () => ({ status: historicalStatus }),
+            enqueueAttempt: async () => { forbiddenHistoricalBoundaryCalls += 1; },
+            runAttempt: async () => { forbiddenHistoricalBoundaryCalls += 1; }
+          }
+        }),
+        operationScope: "derived_checkpoint",
+        laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+        originalManifestSha256,
+        signImage: async () => { forbiddenHistoricalBoundaryCalls += 1; },
+        preparePath: async () => { forbiddenHistoricalBoundaryCalls += 1; }
+      }
+    }), (error) => error.code === `csm_legacy_payload_${historicalStatus}`
+      && error.statusCode === 409
+      && error.recovery_action === "STAGED_RESUME_ONLY"
+      && error.provider_attempt_started === false);
+    assert.equal(forbiddenHistoricalBoundaryCalls, 0,
+      `historical staged ${historicalStatus} must remain provider-incapable`);
+  }
 
   for (const status of ["pending", "ambiguous", "failed"]) {
     let forbiddenBoundaryCalls = 0;
@@ -988,17 +1368,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       content_sha256: supportCropReference.content_sha256
     }]
   };
-  const task = {
-    tenant_id: "tenant-1",
-    intent_id: "normal-response-loss",
-    asset_id: "asset-1",
-    model: CSM_THIN_RUNTIME_CONTRACT.model,
-    detail: "high",
-    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    prompt_version: CSM_DIRECT_PROMPT_VERSION,
-    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
-    image_fingerprints: [`sha256:${IMAGE_HASH}`]
-  };
+  const task = ordinaryTask("normal-response-loss");
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
   const sessionId = deterministicCsmSessionId(operationKey);
@@ -1013,6 +1383,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
   const checkpoint = buildCsmPersistenceCheckpoint({
     prepared: {
       ...preparedResult(sessionId, "Recovered normal title"),
+      execution_contract_sha256: task.execution_contract_sha256,
       model: task.model,
       requested_effort: task.reasoning_effort,
       image_detail: task.detail,
@@ -1023,7 +1394,8 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
     payloadHash,
     recognitionSessionId: sessionId,
     recognitionSessionDeferred: true,
-    recognitionInput
+    recognitionInput,
+    executionContractSha256: task.execution_contract_sha256
   });
   const firstSession = buildCsmRecognitionSessionRow({
     sessionId,
@@ -1207,6 +1579,7 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       providerCalls += 1;
       return {
         ...preparedResult(recognitionSessionId, "Recovered staged title"),
+        execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
         model: "model-before-deployment-drift",
         requested_effort: "effort-before-deployment-drift",
         image_detail: "high",
@@ -1518,14 +1891,7 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.equal(authorityEvents[0].metadata.attempt, 3);
   assert.equal(authorityEvents[0].metadata.attemptClass, "retry");
 
-  const storedTask = {
-    tenant_id: "tenant-1", intent_id: "intent-1", asset_id: "asset-1",
-    model: "gpt-5.6-luna", detail: "high",
-    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    prompt_version: CSM_DIRECT_PROMPT_VERSION,
-    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
-    image_fingerprints: [`sha256:${IMAGE_HASH}`]
-  };
+  const storedTask = ordinaryTask("intent-1");
   const storedSessionId = deterministicCsmSessionId(buildLunaDirectOperationKey(storedTask));
   const stored = {
     title: "Stored title",
@@ -1611,7 +1977,10 @@ await assert.rejects(
   const dependencies = successfulDependencies({ events, authority });
   dependencies.preparePath = async ({ recognitionSessionId }) => {
     prepareCalls += 1;
-    return preparedResult(recognitionSessionId, "Resume title");
+    return {
+      ...preparedResult(recognitionSessionId, "Resume title"),
+      execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
+    };
   };
   dependencies.persistPath = async ({ prepared }) => {
     persistCalls += 1;
@@ -1652,23 +2021,20 @@ await assert.rejects(
 // paid checkpoint, executeTask does not run, so it must recreate that deferred
 // boundary from the checkpoint before persistence rather than fail forever.
 {
-  const task = {
-    tenant_id: "tenant-1", intent_id: "deferred-session-resume", asset_id: "asset-1",
-    model: "gpt-5.6-luna", detail: "high",
-    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    prompt_version: CSM_DIRECT_PROMPT_VERSION,
-    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
-    image_fingerprints: [`sha256:${IMAGE_HASH}`]
-  };
+  const task = ordinaryTask("deferred-session-resume");
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
   const sessionId = deterministicCsmSessionId(operationKey);
   const durable = buildCsmPersistenceCheckpoint({
-    prepared: preparedResult(sessionId, "Deferred resume title"),
+    prepared: {
+      ...preparedResult(sessionId, "Deferred resume title"),
+      execution_contract_sha256: task.execution_contract_sha256
+    },
     tenantId: "tenant-1",
     operationKey,
     payloadHash,
-    recognitionSessionId: sessionId
+    recognitionSessionId: sessionId,
+    executionContractSha256: task.execution_contract_sha256
   });
   const events = [];
   const authority = passthroughAuthority();
@@ -1691,19 +2057,71 @@ await assert.rejects(
   assert.ok(resumed.latency_stages_ms.recognition_session_replay_ms >= 0);
 }
 
-// Cross-deployment compatibility: the operation key did not change when
-// effort entered payload identity. Only an explicit current-hash conflict may
-// trigger one lookup of the exact pre-change low-effort hash. A found paid
+// The immediately previous effort+originals payload remains recoverable under
+// the exact same operation key. Recovery is lookup-only and does not touch the
+// signing, session, or provider boundaries.
+{
+  const task = ordinaryTask("legacy-current-hash-resume");
+  const operationKey = buildLunaDirectOperationKey(task);
+  const legacyPayloadHash = buildLegacyCurrentLunaDirectPayloadHash(task);
+  const sessionId = deterministicCsmSessionId(operationKey);
+  const durable = buildCsmPersistenceCheckpoint({
+    prepared: preparedResult(sessionId, "Previous paid title"),
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash: legacyPayloadHash,
+    recognitionSessionId: sessionId
+  });
+  const mislabeledLegacy = {
+    ...durable,
+    execution_contract_sha256: task.execution_contract_sha256
+  };
+  assert.throws(() => validateCsmPersistenceCheckpoint(mislabeledLegacy, {
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash: legacyPayloadHash,
+    recognitionSessionId: sessionId
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "legacy_result_contains_execution_contract");
+  const events = [];
+  let lookups = 0;
+  const authority = {
+    globallyEnforced: true,
+    lookupOperationResultByKey: async ({ operationKey: actualOperationKey }) => {
+      lookups += 1;
+      assert.equal(actualOperationKey, operationKey);
+      return {
+        status: "found", payloadHash: legacyPayloadHash,
+        result: durable, latestAttempt: 1
+      };
+    },
+    enqueueAttempt: async () => { throw new Error("legacy_must_not_enqueue"); },
+    runAttempt: async () => { throw new Error("legacy_must_not_run"); }
+  };
+  const dependencies = successfulDependencies({ events, authority });
+  dependencies.createDispatcher = () => ({
+    enqueue: async () => {
+      throw Object.assign(new Error("operation_payload_conflict"), {
+        code: "operation_payload_conflict",
+        provider_attempt_started: false
+      });
+    },
+    manualRetry: async () => { throw new Error("unexpected_manual_retry"); }
+  });
+  const resumed = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: task.intent_id, dependencies
+  });
+  assert.equal(resumed.title, "Previous paid title");
+  assert.equal(lookups, 1);
+  assert.deepEqual(events, ["readiness", "images", "persist_csm"]);
+}
+
+// Older cross-deployment compatibility: if the immediately previous hash
+// conflicts, inspect the exact pre-effort low hash next. A found paid
 // checkpoint resumes persistence without signing or executing the provider.
 {
-  const task = {
-    tenant_id: "tenant-1", intent_id: "legacy-hash-resume", asset_id: "asset-1",
-    model: "gpt-5.6-luna", detail: "high",
-    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    prompt_version: CSM_DIRECT_PROMPT_VERSION,
-    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
-    image_fingerprints: [`sha256:${IMAGE_HASH}`]
-  };
+  const task = ordinaryTask("legacy-hash-resume");
   const operationKey = buildLunaDirectOperationKey(task);
   const currentPayloadHash = buildLunaDirectPayloadHash(task);
   const legacyPayloadHash = buildLegacyLowLunaDirectPayloadHash(task);
@@ -1733,9 +2151,13 @@ await assert.rejects(
       await queuedAttempt;
       throw new Error("unreachable");
     },
-    lookupOperationResult: async ({ payloadHash }) => {
-      authorityEvents.push({ type: "lookup", payloadHash });
-      return { status: "found", result: durable, latestAttempt: 1 };
+    lookupOperationResultByKey: async ({ operationKey: actualOperationKey }) => {
+      authorityEvents.push({ type: "lookup_by_key", operationKey: actualOperationKey });
+      assert.equal(actualOperationKey, operationKey);
+      return {
+        status: "found", payloadHash: legacyPayloadHash,
+        result: durable, latestAttempt: 1
+      };
     }
   };
   const events = [];
@@ -1748,16 +2170,150 @@ await assert.rejects(
   assert.deepEqual(authorityEvents, [
     { type: "enqueue", payloadHash: currentPayloadHash },
     { type: "run" },
-    { type: "lookup", payloadHash: legacyPayloadHash }
+    { type: "lookup_by_key", operationKey }
   ]);
   assert.deepEqual(events, ["readiness", "images", "persist_csm"],
     "legacy recovery must perform zero sign, zero session recreation and zero provider work");
 }
 
+// Portable recovery is not a finite allowlist of Luna payload hashes. A future
+// profile's execution-bound checkpoint keeps the same stable operation key and
+// is recovered by key only. Its embedded historical contract validates against
+// its own SHA, never against today's active profile or adapter registry.
+{
+  const task = ordinaryTask("portable-future-profile-resume");
+  const operationKey = buildLunaDirectOperationKey(task);
+  const futureProfile = buildCsmModelProfile({
+    id: "future-neutral-profile-v1",
+    provider: "openai",
+    accountScope: "future-account-scope",
+    model: "future-model",
+    promptStyleVersion: "future-canonical-direct-v1",
+    optimizationPack: null,
+    reasoningEffort: "low",
+    imageDetail: "high",
+    maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens,
+    transportProfileId: "future-transport-v1",
+    estimatedTokensPerAttempt: CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt,
+    providerTimeoutMs: CSM_THIN_RUNTIME_CONTRACT.providerTimeoutMs,
+    capabilities: CSM_ACTIVE_MODEL_PROFILE.capabilities
+  });
+  const futureContractOptions = {
+    profile: futureProfile,
+    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION
+  };
+  const futureExecutionContract = structuredClone(
+    buildCsmModelExecutionContract(futureContractOptions)
+  );
+  futureExecutionContract.provider_adapter_version = "future-openai-adapter-v9";
+  futureExecutionContract.provider_adapter_sha256 = "9".repeat(64);
+  futureExecutionContract.request_builder_version = "future-request-builder-v4";
+  futureExecutionContract.response_parser_version = "future-response-parser-v3";
+  const futureExecutionSha256 = sha256ExecutionContractValue(futureExecutionContract);
+  const historicalTask = {
+    ...task,
+    model: futureProfile.model,
+    reasoning_effort: futureProfile.reasoning_effort,
+    execution_contract_sha256: futureExecutionSha256
+  };
+  assert.equal(buildLunaDirectOperationKey(historicalTask), operationKey);
+  const historicalPayloadHash = buildLunaDirectPayloadHash(historicalTask);
+  assert.notEqual(historicalPayloadHash, buildLunaDirectPayloadHash(task));
+  const sessionId = deterministicCsmSessionId(operationKey);
+  const historicalPrepared = {
+    ...preparedResult(sessionId, "Portable historical title"),
+    provider: futureExecutionContract.provider,
+    requested_model: futureExecutionContract.model,
+    model: futureExecutionContract.model,
+    requested_effort: futureExecutionContract.requested_effort,
+    image_detail: futureExecutionContract.image_detail,
+    prompt_version: futureExecutionContract.semantic_prompt_version,
+    max_output_tokens: futureExecutionContract.max_output_tokens,
+    model_profile_id: futureExecutionContract.model_profile_id,
+    provider_adapter_version: futureExecutionContract.provider_adapter_version,
+    request_builder_version: futureExecutionContract.request_builder_version,
+    response_parser_version: futureExecutionContract.response_parser_version,
+    optimization_pack_id: futureExecutionContract.optimization_pack_id,
+    optimization_pack_sha256: futureExecutionContract.optimization_pack_sha256,
+    execution_contract_sha256: futureExecutionSha256,
+    execution_contract: futureExecutionContract
+  };
+  const durable = buildCsmPersistenceCheckpoint({
+    prepared: historicalPrepared,
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash: historicalPayloadHash,
+    recognitionSessionId: sessionId,
+    executionContractSha256: futureExecutionSha256
+  });
+  const authorityEvents = [];
+  const authority = {
+    globallyEnforced: true,
+    enqueueAttempt: async () => {
+      authorityEvents.push("enqueue_conflict");
+      throw Object.assign(new Error("operation_payload_conflict"), {
+        code: "operation_payload_conflict", provider_attempt_started: false
+      });
+    },
+    runAttempt: async ({ queuedAttempt }) => {
+      authorityEvents.push("run_without_execute");
+      await queuedAttempt;
+    },
+    lookupOperationResultByKey: async ({ operationKey: actualOperationKey }) => {
+      authorityEvents.push("lookup_by_key");
+      assert.equal(actualOperationKey, operationKey);
+      return {
+        status: "found",
+        payloadHash: historicalPayloadHash,
+        result: durable,
+        latestAttempt: 1
+      };
+    }
+  };
+  const events = [];
+  const resumed = await runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: task.intent_id,
+    dependencies: successfulDependencies({ events, authority })
+  });
+  assert.equal(resumed.title, "Portable historical title");
+  assert.deepEqual(authorityEvents, [
+    "enqueue_conflict", "run_without_execute", "lookup_by_key"
+  ]);
+  assert.deepEqual(events, ["readiness", "images", "persist_csm"],
+    "portable recovery must perform zero sign/session/provider work");
+
+  const tampered = structuredClone(durable);
+  tampered.execution_contract.model = "tampered-model";
+  let persistenceCalls = 0;
+  const tamperedDependencies = successfulDependencies({
+    authority: {
+      ...authority,
+      lookupOperationResultByKey: async () => ({
+        status: "found",
+        payloadHash: historicalPayloadHash,
+        result: tampered,
+        latestAttempt: 1
+      })
+    }
+  });
+  tamperedDependencies.persistPath = async () => {
+    persistenceCalls += 1;
+    throw new Error("tampered_history_must_not_persist");
+  };
+  await assert.rejects(runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: task.intent_id,
+    dependencies: tamperedDependencies
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "historical_execution_receipt_invalid");
+  assert.equal(persistenceCalls, 0);
+}
+
 // Pending/ambiguous legacy operations remain provider-incapable and retryable;
 // FAILED has no paid success checkpoint and stays terminal. None may reach the
 // signing/model boundary.
-for (const legacyStatus of ["pending", "ambiguous", "failed"]) {
+for (const legacyStatus of ["pending", "ambiguous", "failed", "cancelled"]) {
   let lookupCalls = 0;
   let prepareCalls = 0;
   const authority = {
@@ -1768,7 +2324,7 @@ for (const legacyStatus of ["pending", "ambiguous", "failed"]) {
       });
     },
     runAttempt: async ({ queuedAttempt }) => queuedAttempt,
-    lookupOperationResult: async () => {
+    lookupOperationResultByKey: async () => {
       lookupCalls += 1;
       return { status: legacyStatus };
     }
@@ -1791,15 +2347,18 @@ for (const legacyStatus of ["pending", "ambiguous", "failed"]) {
 // A healthy current-hash request does not pay a compatibility lookup RTT.
 {
   let lookupCalls = 0;
+  const events = [];
   const authority = passthroughAuthority({
     lookup: async () => { lookupCalls += 1; return { status: "not_found" }; }
   });
   await runDirectCsmAsset({
     tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
     intentId: "current-hash-clean-path",
-    dependencies: successfulDependencies({ authority })
+    dependencies: successfulDependencies({ events, authority })
   });
   assert.equal(lookupCalls, 0, "the compatibility branch must add zero RTT to the current path");
+  assert.equal(events.filter((event) => event === "model_and_csm").length, 1,
+    "a fresh intent buys exactly one paid execution");
 }
 
 // An old persistence-shaped FAILED record has no recoverable provider output.
@@ -1824,20 +2383,76 @@ await assert.rejects(
 // Checkpoint bindings are not advisory: changing operation or payload identity
 // makes a stored result unusable before any persistence write.
 {
-  const task = {
-    tenant_id: "tenant-1", intent_id: "bound-intent", asset_id: "asset-1",
-    model: "gpt-5.6-luna", detail: "high",
-    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    prompt_version: CSM_DIRECT_PROMPT_VERSION,
-    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
-    image_fingerprints: [`sha256:${IMAGE_HASH}`]
-  };
+  const task = ordinaryTask("bound-intent");
   const operationKey = buildLunaDirectOperationKey(task);
   const sessionId = deterministicCsmSessionId(operationKey);
   const checkpoint = buildCsmPersistenceCheckpoint({
-    prepared: preparedResult(sessionId), tenantId: "tenant-1", operationKey,
-    payloadHash: buildLunaDirectPayloadHash(task), recognitionSessionId: sessionId
+    prepared: {
+      ...preparedResult(sessionId),
+      execution_contract_sha256: task.execution_contract_sha256
+    },
+    tenantId: "tenant-1", operationKey,
+    payloadHash: buildLunaDirectPayloadHash(task), recognitionSessionId: sessionId,
+    executionContractSha256: task.execution_contract_sha256
   });
+  assert.equal(
+    checkpoint.csm_persistence_checkpoint.schema_version,
+    CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
+  );
+  assert.equal(
+    Object.hasOwn(checkpoint.csm_persistence_checkpoint, "execution_contract_sha256"),
+    true,
+    "new ordinary checkpoints must bind the complete paid execution"
+  );
+  assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash: buildLunaDirectPayloadHash(task),
+    recognitionSessionId: sessionId,
+    executionContractSha256: task.execution_contract_sha256,
+    operationScope: "derived_checkpoint"
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "marker_missing",
+  "a staged resume may not adopt an ordinary execution-bound checkpoint");
+
+  const executionTampered = structuredClone(checkpoint);
+  executionTampered.execution_contract_sha256 = "e".repeat(64);
+  let providerBoundaryCalls = 0;
+  let writerCalls = 0;
+  const tamperDependencies = successfulDependencies({
+    authority: passthroughAuthority({
+      lookup: async () => ({ status: "found", result: executionTampered })
+    })
+  });
+  tamperDependencies.preparePath = async () => {
+    providerBoundaryCalls += 1;
+    throw new Error("tampered_checkpoint_must_not_prepare");
+  };
+  tamperDependencies.persistPath = async () => {
+    writerCalls += 1;
+    throw new Error("tampered_checkpoint_must_not_write");
+  };
+  await assert.rejects(runDirectCsmAsset({
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: task.intent_id, manualRetry: true, dependencies: tamperDependencies
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "result_execution_contract_sha256_mismatch");
+  assert.equal(providerBoundaryCalls, 0);
+  assert.equal(writerCalls, 0);
+
+  assert.throws(() => buildCsmPersistenceCheckpoint({
+    prepared: {
+      ...preparedResult(sessionId),
+      execution_contract_sha256: "e".repeat(64)
+    },
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash: buildLunaDirectPayloadHash(task),
+    recognitionSessionId: sessionId,
+    executionContractSha256: task.execution_contract_sha256
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid"
+    && error.detail === "prepared_execution_contract_sha256_mismatch");
+
   checkpoint.csm_persistence_checkpoint.payload_sha256 = "f".repeat(64);
   await assert.rejects(
     runDirectCsmAsset({

@@ -7,6 +7,12 @@ import {
   prepareCanonicalListingPath,
   runPersistedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
+import {
+  buildCsmModelExecutionContract,
+  CSM_LUNA_MODEL_PROFILE,
+  CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+  sha256ExecutionContractValue
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { writeCsmStageRows } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   computeCsmPacketHashes,
@@ -27,11 +33,20 @@ function providerFor(fields) {
     // expectation moves rather than the behaviour: this assertion was written
     // against the superseded default.
     assert.equal(request.reasoning.effort, "low");
+    assert.equal(request.max_output_tokens, 8192);
     return new Response(JSON.stringify({
       id: "resp_csm_trace",
+      model: "gpt-5.6-luna-2026-08-01",
+      status: "completed",
       output_text: JSON.stringify(fields),
       reasoning: { effort: "low" },
-      usage: { input_tokens: 100, output_tokens: 30 }
+      usage: {
+        input_tokens: 100,
+        input_tokens_details: { cached_tokens: 40 },
+        output_tokens: 30,
+        output_tokens_details: { reasoning_tokens: 12 },
+        total_tokens: 999
+      }
     }), {
       status: 200,
       headers: { "content-type": "application/json", "x-request-id": "req_csm_trace" }
@@ -123,12 +138,46 @@ const common = {
       assert.equal(patch.csm_owner_versions.provider_attempt_number, null);
       assert.equal(patch.csm_owner_versions.provider_retry_count, null);
       assert.equal(patch.csm_owner_versions.provider, "openai");
+      assert.equal(patch.csm_owner_versions.model, "gpt-5.6-luna");
+      assert.equal(patch.csm_owner_versions.requested_model, "gpt-5.6-luna");
+      assert.equal(patch.csm_owner_versions.served_model, "gpt-5.6-luna-2026-08-01");
+      assert.equal(patch.csm_owner_versions.served_model_attested, true);
       assert.equal(patch.csm_owner_versions.reasoning_effort, "low");
       assert.equal(patch.csm_owner_versions.reasoning_effort_attested, true);
+      assert.equal(patch.csm_owner_versions.provider_response_status, "completed");
+      assert.equal(patch.csm_owner_versions.provider_response_status_attested, true);
+      assert.equal(patch.csm_owner_versions.provider_response_incomplete, false);
+      assert.equal(patch.csm_owner_versions.served_effort_conflict, false);
+      assert.equal(patch.csm_owner_versions.provider_http_status, 200);
+      assert.equal(patch.csm_owner_versions.model_profile_id, "openai-gpt-5.6-luna-csm-v1");
+      assert.equal(
+        patch.csm_owner_versions.optimization_pack_id,
+        CSM_LUNA_MODEL_PROFILE.optimization_pack_id
+      );
+      assert.equal(
+        patch.csm_owner_versions.optimization_pack_sha256,
+        CSM_LUNA_MODEL_PROFILE.optimization_pack_sha256
+      );
+      assert.equal(patch.csm_owner_versions.account_scope, "lynca-primary");
+      assert.equal(patch.csm_owner_versions.provider_adapter_version, "openai-responses-v1");
+      assert.equal(patch.csm_owner_versions.request_builder_version, "canonical-fields-request-v1");
+      assert.equal(
+        patch.csm_owner_versions.response_parser_version,
+        "canonical-output-v2-strict-observed-or-null"
+      );
+      assert.match(patch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(
+        patch.csm_owner_versions.execution_contract.model_profile_id,
+        patch.csm_owner_versions.model_profile_id
+      );
+      assert.equal(patch.csm_owner_versions.max_output_tokens, 8192);
       assert.equal(patch.csm_owner_versions.latency_ms >= 0, true);
       assert.equal(patch.csm_owner_versions.input_tokens, 100);
+      assert.equal(patch.csm_owner_versions.cached_input_tokens, 40);
       assert.equal(patch.csm_owner_versions.output_tokens, 30);
-      assert.equal(patch.csm_owner_versions.total_tokens, 130);
+      assert.equal(patch.csm_owner_versions.reasoning_tokens, 12);
+      assert.equal(patch.csm_owner_versions.total_tokens, 999);
+      assert.equal(patch.csm_owner_versions.total_tokens_source, "provider");
       assert.match(patch.csm_recognition_packet_sha256, /^[0-9a-f]{64}$/);
       assert.match(patch.csm_resolution_packet_sha256, /^[0-9a-f]{64}$/);
       assert.match(patch.csm_marketplace_packet_sha256, /^[0-9a-f]{64}$/);
@@ -146,6 +195,10 @@ const common = {
   assert.match(result.title, /^2025 Pokemon JP /);
   assert.ok(result.title.length <= 80);
   assert.equal(result.csm_persistence.ok, true);
+  assert.equal(result.csm_owner_versions.provider_adapter_version, "openai-responses-v1",
+    "the public result must expose the exact owner receipt written with the CSM packet");
+  assert.deepEqual(result.csm_owner_versions.execution_contract, result.execution_contract,
+    "the durable owner must retain the complete historical execution identity");
   assert.deepEqual(patchedHashes, result.csm_rows.session_hashes,
     "the session must persist the exact three hashes verified by replay");
   assert.deepEqual(result.csm_rows.output.dropped_trace, {
@@ -190,6 +243,8 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     }), { status: 200, headers: { "content-type": "application/json" } })
   });
   assert.equal(prepared.requested_effort, "low");
+  assert.equal(prepared.prompt_version, prepared.execution_contract.semantic_prompt_version,
+    "default prepare must persist the semantic prompt actually hashed by its contract");
   assert.equal(prepared.served_effort, null);
   assert.equal(prepared.served_effort_attested, false);
   let sessionPatch = null;
@@ -204,6 +259,14 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   assert.equal(sessionPatch.csm_owner_versions.effort, "low");
   assert.equal(sessionPatch.csm_owner_versions.reasoning_effort, null);
   assert.equal(sessionPatch.csm_owner_versions.reasoning_effort_attested, false);
+  assert.equal(sessionPatch.csm_owner_versions.served_model, null);
+  assert.equal(sessionPatch.csm_owner_versions.served_model_attested, false);
+  assert.equal(sessionPatch.csm_owner_versions.provider_response_status, null);
+  assert.equal(sessionPatch.csm_owner_versions.provider_response_status_attested, false);
+  assert.equal(sessionPatch.csm_owner_versions.total_tokens, 130);
+  assert.equal(sessionPatch.csm_owner_versions.total_tokens_source, "input_plus_output");
+  assert.equal(sessionPatch.csm_owner_versions.prompt_version, prepared.prompt_version);
+  assert.match(sessionPatch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
 }
 
 // Persistence failure is isolated to this attempt, but the production
@@ -316,6 +379,11 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     };
   });
   assert.equal(resumed.title, prepared.title);
+  assert.deepEqual(resumed.execution_contract, prepared.execution_contract);
+  assert.equal(
+    resumed.execution_contract_sha256,
+    sha256ExecutionContractValue(prepared.execution_contract)
+  );
   assert.equal(providerCalls, 1);
   assert.equal(writeCalls, 2);
 
@@ -331,6 +399,136 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     (error) => error.code === "csm_prepared_result_invalid"
   );
   assert.equal(writeCalls, 2, "invalid replay must fail before storage");
+
+  for (const [name, mutate] of [
+    ["failed status", (value) => {
+      value.provider_response_status = "failed";
+      value.provider_response_status_attested = true;
+    }],
+    ["incomplete receipt", (value) => { value.provider_response_incomplete = true; }],
+    ["non-string served model", (value) => {
+      value.served_model = 123;
+      value.served_model_attested = true;
+    }],
+    ["malformed status", (value) => {
+      value.provider_response_status = 200;
+      value.provider_response_status_attested = true;
+    }],
+    ["non-string provider", (value) => { value.provider = 7; }],
+    ["non-string requested model", (value) => { value.requested_model = 123; }],
+    ["non-string model alias", (value) => { value.model = 123; }],
+    ["non-string requested effort", (value) => { value.requested_effort = {}; }],
+    ["non-string image detail", (value) => { value.image_detail = 1; }],
+    ["non-string prompt version", (value) => { value.prompt_version = false; }],
+    ["non-integer max output", (value) => { value.max_output_tokens = "8192"; }],
+    ["execution contract extra field", (value) => {
+      value.execution_contract.unowned_extension = true;
+      value.execution_contract_sha256 = sha256ExecutionContractValue(value.execution_contract);
+    }],
+    ["execution contract missing account scope", (value) => {
+      delete value.execution_contract.account_scope;
+      value.execution_contract_sha256 = sha256ExecutionContractValue(value.execution_contract);
+    }],
+    ["execution fingerprint drift", (value) => {
+      value.execution_contract_sha256 = "0".repeat(64);
+    }]
+  ]) {
+    const invalidReceipt = structuredClone(prepared);
+    mutate(invalidReceipt);
+    let invalidWriterCalls = 0;
+    await assert.rejects(
+      persistPreparedCanonicalListingPath({
+        tenantId: "tenant-1",
+        recognitionSessionId: "session-resume",
+        prepared: invalidReceipt,
+        writeRows: async () => {
+          invalidWriterCalls += 1;
+          return { ok: true, atomic: true, session: { saved: true } };
+        }
+      }),
+      (error) => error.code === "csm_prepared_result_invalid",
+      `${name} must fail before durable COMPLETE persistence`
+    );
+    assert.equal(invalidWriterCalls, 0, `${name} must not enter the writer`);
+  }
+
+  const rawReceipt = structuredClone(prepared);
+  rawReceipt.provider = " OPENAI ";
+  rawReceipt.model = ` ${prepared.model} `;
+  rawReceipt.requested_model = ` ${prepared.requested_model} `;
+  rawReceipt.requested_effort = " LOW ";
+  rawReceipt.image_detail = " HIGH ";
+  rawReceipt.prompt_version = ` ${prepared.prompt_version} `;
+  rawReceipt.served_model = ` ${prepared.served_model} `;
+  rawReceipt.served_effort = " LOW ";
+  rawReceipt.provider_response_status = " COMPLETED ";
+  let normalizedPatch = null;
+  await persistPreparedCanonicalListingPath({
+    tenantId: "tenant-1",
+    recognitionSessionId: "session-resume",
+    prepared: rawReceipt,
+    writeRows: async (_rows, options) => {
+      normalizedPatch = options.sessionPatch;
+      return { ok: true, atomic: true, session: { saved: true }, written: {} };
+    }
+  });
+  assert.equal(normalizedPatch.csm_owner_versions.provider, "openai");
+  assert.equal(normalizedPatch.csm_owner_versions.model, prepared.requested_model);
+  assert.equal(normalizedPatch.csm_owner_versions.effort, "low");
+  assert.equal(normalizedPatch.csm_owner_versions.image_detail, "high");
+  assert.equal(normalizedPatch.csm_owner_versions.prompt_version, prepared.prompt_version);
+  assert.equal(normalizedPatch.csm_owner_versions.served_model, prepared.served_model);
+  assert.equal(normalizedPatch.csm_owner_versions.reasoning_effort, "low");
+  assert.equal(normalizedPatch.csm_owner_versions.provider_response_status, "completed");
+}
+
+// A settled checkpoint owns its historical profile and adapter identity. A
+// later deployment may choose another active profile, but recovery validates
+// the checkpoint's exact shape and self-hash instead of rebuilding it with the
+// current defaults.
+{
+  const prepared = await prepareCanonicalListingPath({
+    tenantId: "tenant-1", recognitionSessionId: "session-historical-profile",
+    imageUrls: ["https://example.test/front.jpg"], callProvider: providerFor(common)
+  });
+  const historicalProfile = {
+    ...CSM_LUNA_MODEL_PROFILE,
+    id: "openai-gpt-5.6-luna-csm-historical-v0",
+    account_scope: "lynca-archive"
+  };
+  const historicalAdapterContract = {
+    ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+    id: "openai-responses-historical-v0",
+    response_parser_version: "canonical-output-historical-v0"
+  };
+  const historicalContract = buildCsmModelExecutionContract({
+    profile: historicalProfile,
+    providerAdapterVersion: historicalAdapterContract.id,
+    responseParserVersion: historicalAdapterContract.response_parser_version,
+    providerAdapterContract: historicalAdapterContract
+  });
+  const historicalPrepared = structuredClone(prepared);
+  historicalPrepared.model_profile_id = historicalContract.model_profile_id;
+  historicalPrepared.provider_adapter_version = historicalContract.provider_adapter_version;
+  historicalPrepared.response_parser_version = historicalContract.response_parser_version;
+  historicalPrepared.execution_contract = historicalContract;
+  historicalPrepared.execution_contract_sha256 = sha256ExecutionContractValue(historicalContract);
+
+  let owner = null;
+  await persistPreparedCanonicalListingPath({
+    tenantId: "tenant-1", recognitionSessionId: "session-historical-profile",
+    prepared: historicalPrepared,
+    writeRows: async (_rows, options) => {
+      owner = options.sessionPatch.csm_owner_versions;
+      return { ok: true, atomic: true, session: { saved: true }, written: {} };
+    }
+  });
+  assert.equal(owner.model_profile_id, historicalProfile.id);
+  assert.equal(owner.account_scope, historicalProfile.account_scope);
+  assert.equal(owner.provider_adapter_version, historicalAdapterContract.id);
+  assert.equal(owner.response_parser_version, historicalAdapterContract.response_parser_version);
+  assert.equal(owner.execution_contract_sha256, historicalPrepared.execution_contract_sha256);
+  assert.deepEqual(owner.execution_contract, historicalContract);
 }
 
 // A checkpoint produced under Composer v1 may be persisted after v2 deploys,
@@ -343,6 +541,20 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   });
   prepared.csm_rows.output.composer_version = THIN_COMPOSER_VERSION_V1;
   prepared.model = "gpt-5.6-luna-legacy";
+  delete prepared.requested_model;
+  delete prepared.served_model;
+  delete prepared.served_model_attested;
+  delete prepared.provider_response_status;
+  delete prepared.provider_response_status_attested;
+  delete prepared.provider_response_incomplete;
+  // Some legacy JSON snapshots materialized absent receipt columns as null.
+  // This is still “no receipt”, not a partial current receipt.
+  for (const key of [
+    "model_profile_id", "optimization_pack_id", "optimization_pack_sha256",
+    "provider_adapter_version", "request_builder_version", "response_parser_version",
+    "execution_contract_sha256", "execution_contract"
+  ]) prepared[key] = null;
+  delete prepared.max_output_tokens;
   prepared.requested_effort = "none";
   prepared.served_effort = "none";
   delete prepared.served_effort_attested;
@@ -371,6 +583,8 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   assert.equal(sessionPatch.csm_owner_versions.reasoning_effort_attested, false);
   assert.equal(sessionPatch.csm_owner_versions.image_detail, "original");
   assert.equal(sessionPatch.csm_owner_versions.prompt_version, "legacy-prompt-v1");
+  assert.equal(sessionPatch.csm_owner_versions.execution_contract, null);
+  assert.equal(sessionPatch.csm_owner_versions.account_scope, null);
 }
 
 await assert.rejects(

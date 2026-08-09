@@ -154,13 +154,38 @@ jobs:
           node --input-type=module - <<'NODE'
           import { readFileSync } from 'node:fs';
           import { CSM_THIN_RUNTIME_CONTRACT } from './lib/listing/thin/csm-runtime-contract.mjs';
+          import {
+            buildCsmModelExecutionContractSha256,
+            csmExecutionContractImageUrls,
+            CSM_ACTIVE_MODEL_PROFILE
+          } from './lib/listing/thin/csm-model-execution-contract.mjs';
+          import { resolveCsmProviderAdapter } from './lib/listing/thin/csm-provider-adapter.mjs';
+          import { CSM_STAGED_TRANSPORT_PROFILE } from './lib/listing/thin/staged-recognition-input.mjs';
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
+          const expectedProviderAdapterVersion = resolveCsmProviderAdapter(
+            CSM_ACTIVE_MODEL_PROFILE.provider
+          ).contract.id;
+          const expectedExecutionContracts = Object.fromEntries([1, 2].map((count) => [
+            String(count),
+            buildCsmModelExecutionContractSha256({
+              imageUrls: csmExecutionContractImageUrls(count)
+            })
+          ]));
           const ok = h.ready === true
             && h.deployment?.git_commit_sha === process.env.DISPATCH_SHA
             && h.active_path === CSM_THIN_RUNTIME_CONTRACT.route
             && h.model === CSM_THIN_RUNTIME_CONTRACT.model
             && h.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT.reasoningEffort
+            && h.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
+            && h.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+            && h.runtime?.execution_contract_sha256_by_image_count?.['1']
+              === expectedExecutionContracts['1']
+            && h.runtime?.execution_contract_sha256_by_image_count?.['2']
+              === expectedExecutionContracts['2']
+            && h.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
+            && h.runtime?.transport_profile?.id === CSM_STAGED_TRANSPORT_PROFILE.id
+            && h.runtime?.transport_profile?.lane_version === CSM_STAGED_TRANSPORT_PROFILE.lane_version
             && h.runtime?.cloud_run_calls === 0
             && h.runtime?.vector_calls === 0
             && h.runtime?.generic_ocr_calls === 0;
@@ -182,22 +207,47 @@ jobs:
               && node --input-type=module - <<'NODE'
           import { readFileSync } from 'node:fs';
           import { CSM_THIN_RUNTIME_CONTRACT } from './lib/listing/thin/csm-runtime-contract.mjs';
+          import {
+            buildCsmModelExecutionContractSha256,
+            csmExecutionContractImageUrls,
+            CSM_ACTIVE_MODEL_PROFILE
+          } from './lib/listing/thin/csm-model-execution-contract.mjs';
+          import { resolveCsmProviderAdapter } from './lib/listing/thin/csm-provider-adapter.mjs';
+          import { CSM_STAGED_TRANSPORT_PROFILE } from './lib/listing/thin/staged-recognition-input.mjs';
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health.json', 'utf8'));
+          const expectedProviderAdapterVersion = resolveCsmProviderAdapter(
+            CSM_ACTIVE_MODEL_PROFILE.provider
+          ).contract.id;
+          const expectedExecutionContracts = Object.fromEntries([1, 2].map((count) => [
+            String(count),
+            buildCsmModelExecutionContractSha256({
+              imageUrls: csmExecutionContractImageUrls(count)
+            })
+          ]));
           const ok = h.ready === true
             && h.deployment?.git_commit_sha === process.env.GITHUB_SHA
             && h.active_path === CSM_THIN_RUNTIME_CONTRACT.route
             && h.model === CSM_THIN_RUNTIME_CONTRACT.model
             && h.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT.reasoningEffort
+            && h.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
+            && h.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+            && h.runtime?.execution_contract_sha256_by_image_count?.['1']
+              === expectedExecutionContracts['1']
+            && h.runtime?.execution_contract_sha256_by_image_count?.['2']
+              === expectedExecutionContracts['2']
+            && h.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
+            && h.runtime?.transport_profile?.id === CSM_STAGED_TRANSPORT_PROFILE.id
+            && h.runtime?.transport_profile?.lane_version === CSM_STAGED_TRANSPORT_PROFILE.lane_version
             && h.runtime?.cloud_run_calls === 0
             && h.runtime?.vector_calls === 0
             && h.runtime?.generic_ocr_calls === 0
             && h.capacity?.scheduler_attempt_slots === 120
             && h.capacity?.baseline_working_attempts === 43
             && h.capacity?.pacer_estimated_tokens_per_second === 60000
-            && h.capacity?.pacer_burst_estimated_tokens === 65200
-            && h.capacity?.steady_reserved_attempts_per_minute === 679
-            && h.capacity?.effective_reserved_attempt_ceiling === 83;
+            && h.capacity?.pacer_burst_estimated_tokens === 66000
+            && h.capacity?.steady_reserved_attempts_per_minute === 553
+            && h.capacity?.effective_reserved_attempt_ceiling === 67;
           process.exit(ok ? 0 : 1);
           NODE
             then

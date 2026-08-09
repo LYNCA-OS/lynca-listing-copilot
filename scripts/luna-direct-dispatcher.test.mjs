@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import {
+  buildLegacyCurrentLunaDirectPayloadHash,
   buildLunaDirectOperationKey,
   buildLunaDirectPayloadHash,
   buildLegacyLowLunaDirectPayloadHash,
@@ -12,6 +14,23 @@ import {
   lunaRetryDelayMs,
   retryAfterMs
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
+import {
+  buildCanonicalFieldsRequest,
+  CANONICAL_FIELDS_PROMPT,
+  CANONICAL_FIELDS_SCHEMA
+} from "../lib/listing/thin/canonical-fields.mjs";
+import {
+  buildCsmModelExecutionContract,
+  buildCsmModelExecutionContractSha256,
+  canonicalExecutionContractJson,
+  CSM_CANONICAL_RESPONSE_PARSER_VERSION,
+  CSM_LUNA_MODEL_PROFILE,
+  CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+  sha256ExecutionContractValue
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
+
+const TEST_EXECUTION_SHA256 = "d".repeat(64);
+const FUTURE_EXECUTION_SHA256 = "e".repeat(64);
 
 const dispatcherSource = await readFile(
   new URL("../lib/listing/thin/luna-direct-dispatcher.mjs", import.meta.url),
@@ -24,6 +43,7 @@ assert.doesNotMatch(
 );
 
 function task(assetId, overrides = {}) {
+  const imageSha256 = createHash("sha256").update(String(assetId)).digest("hex");
   return {
     tenant_id: "tenant-1",
     intent_id: "intent-1",
@@ -31,11 +51,128 @@ function task(assetId, overrides = {}) {
     model: "gpt-5.6-luna",
     detail: "high",
     reasoning_effort: "low",
-    prompt_version: "csm-canonical-v1",
+    prompt_version: "csm-canonical-fields-v1",
     estimated_tokens: 5_262,
     image_urls: [`https://example.test/${assetId}.jpg`],
+    image_fingerprints: [`sha256:${imageSha256}`],
+    recognition_fingerprints: [`sha256:${imageSha256}`],
+    execution_contract_sha256: TEST_EXECUTION_SHA256,
     ...overrides
   };
+}
+
+// The staged execution receipt binds every byte/policy that can change a paid
+// result. The ordinary operation key remains byte-for-byte compatible while
+// its new payload hash becomes execution-bound.
+{
+  const normal = task("asset-1");
+  assert.equal(
+    buildLunaDirectOperationKey(normal),
+    "luna-direct:v2:7547a2302c7d67f88b8e3bcccb1a119f524a1f403cb1f35eb5cb8d7255a98081"
+  );
+  assert.equal(
+    buildLunaDirectPayloadHash(normal),
+    "2b75511adf93d9bce0735a657b0d2aebd732bce78437eaded11055b70ba1bd8d"
+  );
+  const requestBytes = JSON.stringify(buildCanonicalFieldsRequest({
+    imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
+    model: "gpt-5.6-luna",
+    effort: "low",
+    imageDetail: "high"
+  }));
+  assert.equal(requestBytes.length, 11_185);
+  assert.equal(
+    createHash("sha256").update(requestBytes).digest("hex"),
+    "79ff68337c102f8263036747b52834e6f72beee7ff3c7634a8e37d66c3510b45"
+  );
+
+  const baseOptions = {
+    model: "gpt-5.6-luna",
+    requestedEffort: "low",
+    imageDetail: "high",
+    maxOutputTokens: 8192,
+    semanticPromptVersion: "csm-canonical-fields-v1",
+    renderedPrompt: CANONICAL_FIELDS_PROMPT,
+    schema: CANONICAL_FIELDS_SCHEMA,
+    promptStyleVersion: "luna-canonical-direct-v1",
+    providerAdapterVersion: "openai-responses-v1",
+    responseParserVersion: CSM_CANONICAL_RESPONSE_PARSER_VERSION,
+    capabilities: CSM_LUNA_MODEL_PROFILE.capabilities,
+    providerAdapterContract: CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT
+  };
+  const baseDigest = buildCsmModelExecutionContractSha256(baseOptions);
+  assert.match(baseDigest, /^[0-9a-f]{64}$/);
+  assert.throws(
+    () => buildCsmModelExecutionContract({ ...baseOptions, provider: "future-provider" }),
+    /unsupported_csm_provider:future-provider/,
+    "an unregistered provider must fail before health or a paid execution can claim readiness"
+  );
+  assert.throws(
+    () => buildCsmModelExecutionContract({ ...baseOptions, model: "future-model" }),
+    /model_optimization_pack_model_mismatch/,
+    "a Luna pack cannot silently label a different model"
+  );
+  for (const change of [
+    { requestedEffort: "none" },
+    { imageDetail: "original" },
+    { maxOutputTokens: 8191 },
+    { semanticPromptVersion: "csm-canonical-fields-v2" },
+    { renderedPrompt: `${CANONICAL_FIELDS_PROMPT} ` },
+    { schema: { ...CANONICAL_FIELDS_SCHEMA, description: "changed" } },
+    { promptStyleVersion: "luna-canonical-direct-v2" },
+    {
+      providerAdapterVersion: "openai-responses-v2",
+      providerAdapterContract: {
+        ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+        id: "openai-responses-v2"
+      }
+    },
+    {
+      responseParserVersion: "canonical-output-v3",
+      providerAdapterContract: {
+        ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+        response_parser_version: "canonical-output-v3"
+      }
+    },
+    {
+      providerAdapterContract: {
+        ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+        served_effort_receipt: {
+          ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT.served_effort_receipt,
+          required: false,
+          missing_policy: "requested_effort_fallback",
+          attested_when_present: false
+        }
+      }
+    },
+    { capabilities: { ...CSM_LUNA_MODEL_PROFILE.capabilities, sampling_parameters: "future" } }
+  ]) {
+    assert.notEqual(buildCsmModelExecutionContractSha256({ ...baseOptions, ...change }), baseDigest);
+  }
+  assert.equal(
+    canonicalExecutionContractJson({ z: 1, a: { y: 2, b: 3 } }),
+    '{"a":{"b":3,"y":2},"z":1}'
+  );
+  assert.equal(
+    sha256ExecutionContractValue({ z: 1, a: { y: 2, b: 3 } }),
+    sha256ExecutionContractValue({ a: { b: 3, y: 2 }, z: 1 }),
+    "object insertion order must not change the execution identity"
+  );
+  const receipt = buildCsmModelExecutionContract(baseOptions);
+  assert.equal(
+    receipt.rendered_prompt_sha256,
+    createHash("sha256").update(CANONICAL_FIELDS_PROMPT).digest("hex")
+  );
+  assert.equal(
+    CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT.served_effort_receipt.missing_policy,
+    "null",
+    "a missing provider echo must stay UNKNOWN instead of copying requested effort"
+  );
+  assert.equal(
+    CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT.served_effort_receipt.attested_when_present,
+    true,
+    "served effort is attested only by a non-empty provider echo"
+  );
 }
 
 const TEST_ONLY_SINGLE_PROCESS_ADMISSION = Object.freeze({
@@ -73,8 +210,9 @@ assert.throws(
   "a dispatcher may not bypass the per-physical-attempt global capacity boundary"
 );
 
-// The idempotency identity is stable, ignores unrelated payload members, and
-// changes whenever tenant scope or an execution-defining field changes.
+// The already-deployed ordinary operation key is now a permanent logical key:
+// only tenant/intent/asset change it. Every paid-execution change moves the
+// payload hash instead, so an upgrade conflicts under the same authority row.
 {
   const first = buildLunaDirectOperationKey(task("asset-1"));
   const same = buildLunaDirectOperationKey({ ...task("asset-1"), image_urls: ["https://rotated.test/front.jpg"] });
@@ -83,12 +221,19 @@ assert.throws(
   for (const change of [
     { tenant_id: "tenant-2" },
     { intent_id: "intent-2" },
-    { asset_id: "asset-2" },
-    { model: "gpt-5.6-luna-next" },
-    { detail: "original" },
-    { prompt_version: "csm-canonical-v2" }
+    { asset_id: "asset-2" }
   ]) {
     assert.notEqual(buildLunaDirectOperationKey(task("asset-1", change)), first);
+  }
+  for (const change of [
+    { model: "gpt-5.6-luna-next", execution_contract_sha256: FUTURE_EXECUTION_SHA256 },
+    { detail: "original", execution_contract_sha256: FUTURE_EXECUTION_SHA256 },
+    { prompt_version: "csm-canonical-fields-v2", execution_contract_sha256: FUTURE_EXECUTION_SHA256 },
+    { reasoning_effort: "none", execution_contract_sha256: FUTURE_EXECUTION_SHA256 }
+  ]) {
+    const changed = task("asset-1", change);
+    assert.equal(buildLunaDirectOperationKey(changed), first);
+    assert.notEqual(buildLunaDirectPayloadHash(changed), buildLunaDirectPayloadHash(task("asset-1")));
   }
   assert.equal(
     buildLunaDirectOperationKey(task("asset-1", { detail: " HIGH " })),
@@ -97,44 +242,41 @@ assert.throws(
   );
   assert.equal(buildLunaDirectPayloadHash(task("asset-1")).length, 64);
   assert.equal(
-    buildLunaDirectOperationKey(task("asset-1", { reasoning_effort: "none" })),
+    buildLunaDirectOperationKey(task("asset-1", {
+      reasoning_effort: "none",
+      execution_contract_sha256: FUTURE_EXECUTION_SHA256
+    })),
     first,
     "an effort deployment must retain the durable user operation identity"
   );
   assert.notEqual(
-    buildLunaDirectPayloadHash(task("asset-1", { reasoning_effort: "none" })),
+    buildLunaDirectPayloadHash(task("asset-1", {
+      reasoning_effort: "none",
+      execution_contract_sha256: FUTURE_EXECUTION_SHA256
+    })),
     buildLunaDirectPayloadHash(task("asset-1")),
     "but the execution payload must fail closed rather than replay a different effort"
   );
   assert.equal(
-    buildLegacyLowLunaDirectPayloadHash({
-      ...task("asset-1", { image_fingerprints: ["sha256:front"] }),
-      tenant_id: "tenant-1",
-      intent_id: "intent-1",
-      asset_id: "asset-1",
-      model: "gpt-5.6-luna",
-      detail: "high",
-      reasoning_effort: "low",
-      prompt_version: "csm-canonical-v1",
-      estimated_tokens: 5_262
-    }),
-    "b9e933c2e490ba3e47e28c8bd9adf16d1fa9dbd54b22ea95637f0dac4686126c",
+    buildLegacyLowLunaDirectPayloadHash(task("asset-1")),
+    "bcf1201acc0a256d8e86c3b7d273fa518ac3fe4cd63d8c2642c5fefa4e09ffdd",
     "legacy recovery must reproduce the exact pre-effort payload digest"
   );
-  assert.throws(
-    () => buildLegacyLowLunaDirectPayloadHash(task("asset-1", { reasoning_effort: "none" })),
-    (error) => error.code === "LUNA_DIRECT_LEGACY_PAYLOAD_INELIGIBLE"
+  assert.equal(
+    buildLegacyCurrentLunaDirectPayloadHash(task("asset-1")),
+    "01b2f42445985e06c04f6d05c56fb5f7cc41cff1ac4348d48143129899cc9fe2"
   );
   assert.throws(
     () => buildLunaDirectOperationKey(task("asset-1", { reasoning_effort: undefined })),
     /missing_reasoning_effort/,
     "callers must bind the actual effort instead of inheriting a hidden default"
   );
-  assert.notEqual(
+  assert.equal(
     buildLunaDirectPayloadHash(task("asset-1")),
-    buildLunaDirectPayloadHash({ ...task("asset-1"), image_urls: ["https://rotated.test/front.jpg"] })
+    buildLunaDirectPayloadHash({ ...task("asset-1"), image_urls: ["https://rotated.test/front.jpg"] }),
+    "short-lived signed URLs are outside durable payload identity"
   );
-  const stableMaterial = task("asset-1", { image_fingerprints: ["sha256:front"] });
+  const stableMaterial = task("asset-1");
   assert.equal(
     buildLunaDirectPayloadHash(stableMaterial),
     buildLunaDirectPayloadHash({
@@ -145,7 +287,69 @@ assert.throws(
   );
   assert.notEqual(
     buildLunaDirectPayloadHash(stableMaterial),
-    buildLunaDirectPayloadHash({ ...stableMaterial, image_fingerprints: ["sha256:replacement"] })
+    buildLunaDirectPayloadHash({
+      ...stableMaterial,
+      recognition_fingerprints: [`sha256:${"0".repeat(64)}`]
+    })
+  );
+  const derived = task("asset-staged", {
+    image_fingerprints: [`sha256:${"a".repeat(64)}`],
+    operation_scope: "derived_checkpoint",
+    lane_version: "readability-derived-inline-v2",
+    original_manifest_sha256: "c".repeat(64),
+    recognition_fingerprints: [`sha256:${"f".repeat(64)}`],
+    execution_contract_sha256: "d".repeat(64)
+  });
+  const changedExecution = { ...derived, execution_contract_sha256: "e".repeat(64) };
+  assert.equal(
+    buildLunaDirectOperationKey(derived),
+    buildLunaDirectOperationKey(changedExecution),
+    "model execution is payload identity, not a second staged user operation"
+  );
+  assert.notEqual(
+    buildLunaDirectPayloadHash(derived),
+    buildLunaDirectPayloadHash(changedExecution),
+    "a staged checkpoint may not cross execution contracts"
+  );
+  for (const changedExecutionPolicy of [
+    { detail: "original", execution_contract_sha256: "e".repeat(64) },
+    { lane_version: "readability-derived-inline-v3", execution_contract_sha256: "e".repeat(64) }
+  ]) {
+    const changed = { ...derived, ...changedExecutionPolicy };
+    assert.equal(
+      buildLunaDirectOperationKey(changed),
+      buildLunaDirectOperationKey(derived),
+      "model detail and transport lane must not create a second staged user operation"
+    );
+    assert.notEqual(
+      buildLunaDirectPayloadHash(changed),
+      buildLunaDirectPayloadHash(derived),
+      "model detail and transport lane must conflict at the paid payload boundary"
+    );
+  }
+  const changedRecognition = {
+    ...derived,
+    recognition_fingerprints: [`sha256:${"0".repeat(64)}`]
+  };
+  assert.equal(buildLunaDirectOperationKey(derived), buildLunaDirectOperationKey(changedRecognition),
+    "transport bytes must not create a second user operation");
+  assert.notEqual(buildLunaDirectPayloadHash(derived), buildLunaDirectPayloadHash(changedRecognition),
+    "transport-byte drift must conflict at the payload boundary before another call");
+  assert.throws(
+    () => buildLunaDirectPayloadHash({ ...task("asset-ordinary"), execution_contract_sha256: undefined }),
+    /missing_execution_contract_sha256/
+  );
+  assert.throws(
+    () => buildLunaDirectPayloadHash({ ...task("asset-ordinary"), recognition_fingerprints: [] }),
+    /invalid_recognition_fingerprints/
+  );
+  assert.throws(
+    () => buildLunaDirectPayloadHash({ ...derived, execution_contract_sha256: undefined }),
+    /missing_execution_contract_sha256/
+  );
+  assert.throws(
+    () => buildLunaDirectOperationKey({ ...derived, execution_contract_sha256: "not-a-digest" }),
+    /invalid_execution_contract_sha256/
   );
 }
 
@@ -341,17 +545,27 @@ assert.throws(
   await Promise.all(promises);
 }
 
-// One intent/asset pair cannot silently split into two prompt/model operations.
+// One intent/asset pair cannot silently split into two execution profiles. The
+// logical key stays fixed and the warm payload fence rejects the second digest.
 {
+  let executeCalls = 0;
   const dispatcher = createTestDispatcher({
     csmDirectConcurrency: 1,
-    executeTask: async () => ({ ok: true })
+    executeTask: async () => {
+      executeCalls += 1;
+      return { ok: true };
+    }
   });
   await dispatcher.enqueue(task("conflict"));
   assert.throws(
-    () => dispatcher.enqueue(task("conflict", { prompt_version: "csm-canonical-v2" })),
-    (error) => error.code === "LUNA_DIRECT_ASSET_OPERATION_CONFLICT"
+    () => dispatcher.enqueue(task("conflict", {
+      prompt_version: "csm-canonical-fields-v2",
+      execution_contract_sha256: FUTURE_EXECUTION_SHA256
+    })),
+    (error) => error.code === "LUNA_DIRECT_OPERATION_PAYLOAD_CONFLICT"
   );
+  assert.equal(executeCalls, 1,
+    "same-intent profile drift must fail before a second paid execution");
 }
 
 // Effort is payload identity, not user-operation identity. A warm dispatcher
@@ -364,7 +578,10 @@ assert.throws(
   });
   await dispatcher.enqueue(task("effort-conflict"));
   assert.throws(
-    () => dispatcher.enqueue(task("effort-conflict", { reasoning_effort: "none" })),
+    () => dispatcher.enqueue(task("effort-conflict", {
+      reasoning_effort: "none",
+      execution_contract_sha256: FUTURE_EXECUTION_SHA256
+    })),
     (error) => error.code === "LUNA_DIRECT_OPERATION_PAYLOAD_CONFLICT"
   );
 }

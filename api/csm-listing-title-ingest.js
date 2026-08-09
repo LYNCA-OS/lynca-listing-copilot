@@ -15,6 +15,7 @@ import {
 import {
   persistPreparedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
+import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import { readCanonicalListingImageReferences } from "../lib/listing/storage/canonical-image-references.mjs";
 import {
   assertStagedVerifiedOriginals,
@@ -435,7 +436,9 @@ export default async function handler(req, res) {
       userId: context.userId,
       assetId,
       intentId,
-      imageDetail: metadata.imageDetail || metadata.image_detail || "high",
+      // The signed execution profile is server-owned; browser metadata cannot
+      // switch paid model detail independently of its checkpoint identity.
+      imageDetail: CSM_THIN_RUNTIME_CONTRACT.imageDetail,
       resumeOnly,
       // Into the run, not merged onto the response afterwards.
       //

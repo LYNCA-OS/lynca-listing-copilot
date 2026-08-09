@@ -222,14 +222,37 @@ assert.match(workflow, /h\.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT\.reaso
 assert.match(workflow, /scheduler_attempt_slots === 120/);
 assert.match(workflow, /baseline_working_attempts === 43/);
 assert.match(workflow, /pacer_estimated_tokens_per_second === 60000/);
-assert.match(workflow, /pacer_burst_estimated_tokens === 65200/);
+assert.match(workflow, /pacer_burst_estimated_tokens === 66000/);
+assert.match(workflow, /steady_reserved_attempts_per_minute === 553/);
+assert.match(workflow, /effective_reserved_attempt_ceiling === 67/);
 assert.match(
   health,
   /pacer_burst_estimated_tokens:\s*CSM_PROVIDER_AUTHORITY_LIMITS\.pacerBurstEstimatedTokens/,
   "health must report the running runtime contract, not a database rollout compatibility value"
 );
-assert.match(workflow, /steady_reserved_attempts_per_minute === 679/);
-assert.match(workflow, /effective_reserved_attempt_ceiling === 83/);
+assert.match(workflow, /h\.runtime\?\.model_profile_id === CSM_ACTIVE_MODEL_PROFILE\.id/);
+assert.equal(
+  [...workflow.matchAll(/resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider\s*\)\.contract\.id/g)].length,
+  2,
+  "both release gates must resolve the adapter owned by the active profile"
+);
+assert.match(workflow, /h\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
+assert.doesNotMatch(workflow, /CSM_OPENAI_RESPONSES_ADAPTER_VERSION/,
+  "release verification must not pin the active profile to one provider adapter");
+assert.match(workflow, /csmExecutionContractImageUrls/);
+assert.equal(
+  [...workflow.matchAll(/execution_contract_sha256_by_image_count/g)].length,
+  4,
+  "both release gates must compare the one- and two-image execution contracts"
+);
+assert.equal(
+  [...workflow.matchAll(/buildCsmModelExecutionContractSha256\(\{\s*imageUrls: csmExecutionContractImageUrls\(count\)\s*\}\)/g)].length,
+  2,
+  "both release gates must derive execution receipts from the actual image-slot count"
+);
+assert.match(workflow, /h\.runtime\?\.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE\.max_output_tokens/);
+assert.match(workflow, /h\.runtime\?\.transport_profile\?\.id === CSM_STAGED_TRANSPORT_PROFILE\.id/);
+assert.match(workflow, /h\.runtime\?\.transport_profile\?\.lane_version === CSM_STAGED_TRANSPORT_PROFILE\.lane_version/);
 assert.match(workflow, /RETIRED_LISTING_EXECUTION_PATH/);
 assert.match(workflow, /r\.code!=="missing_asset_id"/);
 assert.match(workflow, /--data-binary @-/,

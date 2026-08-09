@@ -6,6 +6,25 @@ import {
   csmRetiredCapabilitiesDisabled,
   enabledExactly
 } from "../lib/listing/thin/csm-runtime-contract.mjs";
+import {
+  csmExecutionContractImageUrls,
+  compileCsmModelExecution,
+  CSM_ACTIVE_MODEL_PROFILE
+} from "../lib/listing/thin/csm-model-execution-contract.mjs";
+import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
+import {
+  CSM_STAGED_TRANSPORT_PROFILE
+} from "../lib/listing/thin/staged-recognition-input.mjs";
+
+const activeExecution = compileCsmModelExecution({
+  imageUrls: csmExecutionContractImageUrls(1)
+});
+const activeExecutionContractSha256ByImageCount = Object.freeze(Object.fromEntries(
+  [1, 2].map((count) => [String(count), compileCsmModelExecution({
+    imageUrls: csmExecutionContractImageUrls(count)
+  }).execution_contract_sha256])
+));
+const activeProviderAdapter = resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider);
 
 export default function handler(req, res) {
   if (req.method !== "GET") {
@@ -20,7 +39,7 @@ export default function handler(req, res) {
     && Boolean(String(
       process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || ""
     ).trim());
-  const providerConfigured = Boolean(String(process.env.OPENAI_API_KEY || "").trim());
+  const providerConfigured = activeProviderAdapter.configured(process.env);
   const retiredCapabilitiesDisabled = csmRetiredCapabilitiesDisabled(process.env);
   const ready = persistenceConfigured && providerConfigured && retiredCapabilitiesDisabled;
   const releaseGitSha = String(
@@ -47,6 +66,17 @@ export default function handler(req, res) {
       environment: process.env.VERCEL_ENV || null
     },
     runtime: {
+      model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
+      optimization_pack: {
+        id: activeExecution.execution_contract.optimization_pack_id,
+        sha256: activeExecution.execution_contract.optimization_pack_sha256
+      },
+      provider_adapter_version: activeProviderAdapter.contract.id,
+      request_builder_version: activeProviderAdapter.contract.request_builder_version,
+      execution_contract_sha256_by_image_count: activeExecutionContractSha256ByImageCount,
+      max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
+      provider_timeout_ms: CSM_ACTIVE_MODEL_PROFILE.provider_timeout_ms,
+      transport_profile: CSM_STAGED_TRANSPORT_PROFILE,
       persistence_configured: persistenceConfigured,
       provider_configured: providerConfigured,
       retired_capabilities_disabled: retiredCapabilitiesDisabled,
