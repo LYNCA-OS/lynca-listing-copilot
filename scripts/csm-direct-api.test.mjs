@@ -497,6 +497,88 @@ const canonicalImages = () => ({
     conflict.persistence.recognition_session.error,
     "csm_recognition_session_post_write_identity_conflict"
   );
+
+  const expandedPayload = {
+    ...payload,
+    images: [...payload.images, {
+      image_id: "front-name-crop",
+      image_role: "nameplate_crop",
+      object_path: "tenant-1/front-name-crop.jpg",
+      content_sha256: "c".repeat(64),
+      derived: true,
+      source_image_id: "front"
+    }],
+    image_references: [...payload.image_references, {
+      image_id: "front-name-crop",
+      image_role: "nameplate_crop",
+      object_path: "tenant-1/front-name-crop.jpg",
+      content_sha256: "c".repeat(64),
+      derived: true,
+      source_image_id: "front"
+    }],
+    image_set_sha256: "d".repeat(64)
+  };
+  let replayWrites = 0;
+  const replay = await createCsmRecognitionSession({
+    ...input,
+    payload: expandedPayload,
+    reuseExistingSnapshot: true,
+    env,
+    fetchImpl: async (_url, init = {}) => {
+      if (init.method === "POST") replayWrites += 1;
+      return new Response(JSON.stringify([stored]), { status: 200 });
+    }
+  });
+  assert.equal(replay.persistence.recognition_session.saved, true);
+  assert.equal(replay.persistence.recognition_session.reused_existing_snapshot, true);
+  assert.equal(replayWrites, 0,
+    "checkpoint resume must read and reuse the first durable snapshot without touching the insert trigger");
+  assert.deepEqual(replay.row.identity_snapshot.image_references, stored.identity_snapshot.image_references,
+    "a later support crop must not rewrite the paid session's original-only identity");
+
+  let raceRead = 0;
+  let raceWrites = 0;
+  const readInsertRace = await createCsmRecognitionSession({
+    ...input,
+    payload: expandedPayload,
+    reuseExistingSnapshot: true,
+    env,
+    fetchImpl: async (_url, init = {}) => {
+      if (init.method === "POST") {
+        raceWrites += 1;
+        return new Response("[]", { status: 201 });
+      }
+      raceRead += 1;
+      return new Response(JSON.stringify(raceRead === 1 ? [] : [stored]), { status: 200 });
+    }
+  });
+  assert.equal(raceWrites, 1);
+  assert.equal(readInsertRace.persistence.recognition_session.saved, true);
+  assert.equal(readInsertRace.persistence.recognition_session.reused_existing_snapshot, true,
+    "a first writer winning between replay read and insert must remain authoritative");
+  assert.deepEqual(readInsertRace.row.identity_snapshot.image_references, stored.identity_snapshot.image_references);
+
+  const changedOriginal = await createCsmRecognitionSession({
+    ...input,
+    payload: {
+      ...expandedPayload,
+      images: expandedPayload.images.map((image, index) => index === 0
+        ? { ...image, content_sha256: "9".repeat(64) }
+        : image),
+      image_references: expandedPayload.image_references.map((image, index) => index === 0
+        ? { ...image, content_sha256: "9".repeat(64) }
+        : image)
+    },
+    reuseExistingSnapshot: true,
+    env,
+    fetchImpl: async () => new Response(JSON.stringify([stored]), { status: 200 })
+  });
+  assert.equal(changedOriginal.persistence.recognition_session.saved, false);
+  assert.equal(
+    changedOriginal.persistence.recognition_session.error,
+    "csm_recognition_session_existing_owner_conflict",
+    "first-write-wins may ignore later support crops, never a changed original identity"
+  );
 }
 
 function passthroughAuthority({ events = [], lookup = async () => ({ status: "not_found" }) } = {}) {
@@ -766,8 +848,10 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
   dependencies.operationScope = "derived_checkpoint";
   dependencies.laneVersion = STAGED_RECOGNITION_LANE_VERSION;
   dependencies.originalManifestSha256 = originalManifestSha256;
-  dependencies.createSession = async ({ payload }) => {
+  dependencies.createSession = async ({ payload, reuseExistingSnapshot }) => {
     events.push("session");
+    assert.equal(reuseExistingSnapshot, true,
+      "a paid checkpoint resume must reuse the first durable session snapshot");
     sessionPayload = payload;
     return { persistence: { recognition_session: { saved: true } } };
   };
@@ -870,6 +954,145 @@ function successfulDependencies({ events = [], authority, signedUrl = "https://s
       && error.recovery_action === "STAGED_RESUME_ONLY",
     "after durable dispatch is touched, uncertainty always recovers through lookup-only");
   }
+}
+
+// Normal compressed-image recovery keeps the first durable session snapshot.
+// A support crop may have appeared after that insert and before the HTTP
+// response was lost, but replay uses the already-paid checkpoint, performs no
+// provider work, and never tries to rebuild the same session ID from the newer
+// canonical projection.
+{
+  const originalCanonical = canonicalImages();
+  const supportCropReference = {
+    image_id: "front-name-crop",
+    image_role: "nameplate_crop",
+    bucket: "cards",
+    object_path: "tenant-1/front-name-crop.jpg",
+    content_sha256: "e".repeat(64),
+    derived: true,
+    source_image_id: "front",
+    source_region: "nameplate"
+  };
+  const expandedCanonical = {
+    ...originalCanonical,
+    image_set_sha256: "f".repeat(64),
+    image_references: [...originalCanonical.image_references, supportCropReference],
+    images: [...originalCanonical.images, {
+      image_id: supportCropReference.image_id,
+      objectPath: supportCropReference.object_path,
+      bucket: supportCropReference.bucket,
+      size: 200,
+      storageRole: supportCropReference.image_role,
+      derived: true,
+      source_image_id: "front",
+      content_sha256: supportCropReference.content_sha256
+    }]
+  };
+  const task = {
+    tenant_id: "tenant-1",
+    intent_id: "normal-response-loss",
+    asset_id: "asset-1",
+    model: CSM_THIN_RUNTIME_CONTRACT.model,
+    detail: "high",
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+    prompt_version: CSM_DIRECT_PROMPT_VERSION,
+    estimated_tokens: CSM_DIRECT_ESTIMATED_TOKENS,
+    image_fingerprints: [`sha256:${IMAGE_HASH}`]
+  };
+  const operationKey = buildLunaDirectOperationKey(task);
+  const payloadHash = buildLunaDirectPayloadHash(task);
+  const sessionId = deterministicCsmSessionId(operationKey);
+  const recognitionInput = [{
+    image_role: "front_original",
+    read: "original",
+    bytes: 1_000,
+    original_bytes: 1_000,
+    derived_available: false,
+    derived_bytes: null
+  }];
+  const checkpoint = buildCsmPersistenceCheckpoint({
+    prepared: {
+      ...preparedResult(sessionId, "Recovered normal title"),
+      model: task.model,
+      requested_effort: task.reasoning_effort,
+      image_detail: task.detail,
+      prompt_version: task.prompt_version
+    },
+    tenantId: "tenant-1",
+    operationKey,
+    payloadHash,
+    recognitionSessionId: sessionId,
+    recognitionSessionDeferred: true,
+    recognitionInput
+  });
+  const firstSession = buildCsmRecognitionSessionRow({
+    sessionId,
+    tenantId: "tenant-1",
+    userId: "user-1",
+    operatorId: "user-1",
+    routePlan: { route: "CSM_THIN_DIRECT", route_reason: "cloud_run_retired" },
+    payload: {
+      asset_id: "asset-1",
+      client_asset_ref: "asset-1",
+      images: originalCanonical.image_references,
+      image_references: originalCanonical.image_references,
+      image_generation_id: originalCanonical.image_generation_id,
+      image_set_sha256: originalCanonical.image_set_sha256,
+      expected_original_count: originalCanonical.expected_original_count,
+      recognition_input: recognitionInput,
+      provider: task.model,
+      mode: "csm_thin_direct"
+    }
+  });
+  let sessionWrites = 0;
+  let providerCalls = 0;
+  let persistenceCalls = 0;
+  const events = [];
+  const result = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: task.intent_id,
+    dependencies: {
+      checkReadiness: async () => { events.push("readiness"); return { ready: true }; },
+      readImages: async () => { events.push("images-expanded"); return expandedCanonical; },
+      signImage: async () => { throw new Error("checkpoint_resume_must_not_sign"); },
+      createSession: async (args) => {
+        events.push("reuse-first-session");
+        return createCsmRecognitionSession({
+          ...args,
+          env: {
+            SUPABASE_URL: "https://example.supabase.co",
+            SUPABASE_SECRET_KEY: "sb_secret_test"
+          },
+          fetchImpl: async (_url, init = {}) => {
+            if (init.method === "POST") sessionWrites += 1;
+            return new Response(JSON.stringify([firstSession]), { status: 200 });
+          }
+        });
+      },
+      preparePath: async () => { providerCalls += 1; throw new Error("checkpoint_resume_must_not_prepare"); },
+      persistPath: async ({ prepared }) => {
+        events.push("persist");
+        persistenceCalls += 1;
+        return {
+          ...prepared,
+          csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+        };
+      },
+      createDispatcher: () => ({
+        enqueue: async () => checkpoint,
+        manualRetry: async () => { throw new Error("unexpected_manual_retry"); }
+      }),
+      providerAdmission: passthroughAuthority()
+    }
+  });
+  assert.equal(result.title, "Recovered normal title");
+  assert.deepEqual(events, ["readiness", "images-expanded", "reuse-first-session", "persist"]);
+  assert.equal(providerCalls, 0);
+  assert.equal(sessionWrites, 0,
+    "resume must not issue a latest-canonical insert for an existing deterministic session");
+  assert.equal(persistenceCalls, 1);
 }
 
 // Upload failure after provider settlement is the critical staged-lane loss
@@ -1188,6 +1411,15 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   const callBlock = ingestSource.slice(callIndex, ingestSource.indexOf("dependencies:", callIndex));
   assert.match(callBlock, /clientTiming:/,
     "client timings must be an argument to the run, since the run is what persists them");
+  const dependencyBlock = ingestSource.slice(
+    ingestSource.indexOf("dependencies:", callIndex),
+    ingestSource.indexOf("const verifications", callIndex)
+  );
+  assert.match(dependencyBlock, /synchronizeBeforePersistence:/,
+    "staged original verification must be a separately timed pre-persistence stage");
+  const persistBlock = dependencyBlock.slice(dependencyBlock.indexOf("persistPath:"));
+  assert.doesNotMatch(persistBlock, /await ensureStagedOriginals\(\)/,
+    "csm_persistence_ms must not absorb the original-upload synchronization wait");
   assert.ok(result.latency_stages_ms.request_total_ms >= 0);
   assert.equal(result.provider_attempt_number, 1);
   assert.equal(result.provider_retry_count, 0);
@@ -1197,6 +1429,49 @@ assert.equal(paidCalls, 0, "a failed provider pacer preflight must incur zero pa
   assert.equal(authorityEvents[0].metadata.estimatedTokens, CSM_DIRECT_ESTIMATED_TOKENS);
   assert.match(authorityEvents[0].metadata.payloadHash, /^[0-9a-f]{64}$/);
   assert.equal(paidCalls, 0, "the injected CSM seam must not accidentally call the real provider");
+}
+
+
+// A slow original upload can be the staged route's critical path, but it is not
+// CSM persistence. Deterministic time proves the two stages remain independent
+// in both the persisted prepared packet and the response receipt.
+{
+  let clockMs = 10_000;
+  const events = [];
+  const dependencies = successfulDependencies({
+    events,
+    authority: passthroughAuthority()
+  });
+  dependencies.now = () => clockMs;
+  dependencies.synchronizeBeforePersistence = async ({ prepared }) => {
+    events.push("original_sync");
+    assert.equal(prepared.latency_stages_ms.staged_original_sync_ms, undefined);
+    clockMs += 9_000;
+  };
+  dependencies.persistPath = async ({ prepared }) => {
+    events.push("persist_csm");
+    assert.equal(prepared.latency_stages_ms.staged_original_sync_ms, 9_000,
+      "the server-owned sync measurement must reach the persisted packet");
+    clockMs += 700;
+    return {
+      ...prepared,
+      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    };
+  };
+  const result = await runDirectCsmAsset({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    assetId: "asset-1",
+    intentId: "independent-original-sync-timing",
+    dependencies
+  });
+  assert.deepEqual(events, [
+    "readiness", "images", "sign", "session", "model_and_csm", "original_sync", "persist_csm"
+  ]);
+  assert.equal(result.latency_stages_ms.staged_original_sync_ms, 9_000);
+  assert.equal(result.latency_stages_ms.csm_persistence_ms, 700,
+    "the persistence stage must exclude the preceding original sync wait");
+  assert.equal(result.latency_stages_ms.request_total_ms, 9_700);
 }
 
 // Signed image reads and the durable recognition-session write are independent

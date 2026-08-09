@@ -429,6 +429,7 @@ export default async function handler(req, res) {
     }
     const imageByPath = new Map(canonical.images.map((image) => [image.object_path, image.source]));
     let deferredSessionArgs = null;
+    let stagedVerifiedCanonical = null;
     const result = await runDirectCsmAsset({
       tenantId: context.tenantId,
       userId: context.userId,
@@ -462,7 +463,16 @@ export default async function handler(req, res) {
           chooseRecognitionImages: () => stagedRecognition,
           operationScope: "derived_checkpoint",
           laneVersion: stagedContract.laneVersion,
-          originalManifestSha256: stagedContract.originalManifestSha256
+          originalManifestSha256: stagedContract.originalManifestSha256,
+          // Timed by the direct route before formal CSM persistence starts, so
+          // original-upload synchronization remains a distinct critical-path
+          // stage instead of inflating `csm_persistence_ms`.
+          synchronizeBeforePersistence: async () => {
+            stagedVerifiedCanonical = assertStagedVerifiedOriginals({
+              contract: stagedContract,
+              canonical: await ensureStagedOriginals()
+            });
+          }
         } : {}),
         signImage: async ({ objectPath }) => {
           const image = imageByPath.get(objectPath);
@@ -481,17 +491,14 @@ export default async function handler(req, res) {
           };
         },
         persistPath: async (args) => {
-          const verifiedCanonical = staged ? await ensureStagedOriginals() : null;
           if (!staged) await storagePromise;
+          if (staged && !stagedVerifiedCanonical) throw new Error("staged_original_sync_missing");
           if (!deferredSessionArgs) throw new Error("ingest_deferred_session_missing");
           const { createCsmRecognitionSession } = await import("../lib/listing/thin/csm-session-store.mjs");
           const sessionArgs = staged
             ? bindStagedSessionToVerifiedCanonical({
               deferredSessionArgs,
-              verifiedCanonical: assertStagedVerifiedOriginals({
-                contract: stagedContract,
-                canonical: verifiedCanonical
-              }),
+              verifiedCanonical: stagedVerifiedCanonical,
               recognitionRead: args.prepared?.csm_persistence_checkpoint?.recognition_input
                 || stagedRecognition.read
             })

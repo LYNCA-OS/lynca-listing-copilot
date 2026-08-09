@@ -96,6 +96,8 @@ assert.doesNotMatch(retrySource, /processAssetViaQueue|listing-job|Cloud Run|v4_
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-upload-url"/, "originals must use server-scoped signed upload URLs");
 assert.match(js, /fetchStorageApiJson\("\/api\/listing-image-verify-upload"/, "recognition must depend on verified storage state");
 assert.match(js, /uploadOriginalAssetImagesBatch/, "paired originals should share bounded signing and verification calls");
+assert.match(js, /const images = durableOriginalImagesForUpload\(providerImages\)/,
+  "background preparation must freeze the durable generation at original images");
 assert.match(js, /pendingStorageVerification/, "a successful PUT must retain enough state for verification retry");
 assert.match(js, /throw failedOriginal\.error/, "a verification failure must reopen the original-upload promise");
 assert.match(js, /function createImagePreviewUrl/);
@@ -238,6 +240,44 @@ assert.equal(__listingCopilotAppTestHooks.directRecognitionConcurrencyLimit({ ma
   await first;
   assert.equal(asset.clientTiming.client_staged_transform_ms, firstTiming,
     "a cache hit must not accumulate the staged transform duration twice");
+}
+
+{
+  const inFlight = {
+    originalStorageUploadStatus: "uploading",
+    originalStorageUploadStartedAt: 100,
+    clientTiming: {}
+  };
+  __listingCopilotAppTestHooks.snapshotOriginalUploadTimingForDispatch(inFlight, () => 625.4);
+  assert.equal(inFlight.clientTiming.client_original_upload_elapsed_at_dispatch_ms, 525,
+    "staged dispatch must retain the observed upload overlap as a lower bound");
+  assert.equal(Object.hasOwn(inFlight.clientTiming, "client_original_upload_ms"), false,
+    "an unfinished upload must never be persisted as a zero-duration completion");
+
+  const settled = {
+    originalStorageUploadStatus: "ready",
+    originalStorageUploadStartedAt: 100,
+    clientTiming: { client_original_upload_ms: 9_200 }
+  };
+  __listingCopilotAppTestHooks.snapshotOriginalUploadTimingForDispatch(settled, () => 100);
+  assert.equal(settled.clientTiming.client_original_upload_ms, 9_200,
+    "a settled upload duration must not be replaced by a dispatch snapshot");
+  assert.equal(settled.clientTiming.client_original_upload_elapsed_at_dispatch_ms, undefined);
+}
+
+{
+  const original = { id: "front", storageRole: "image_1_original", derived: false };
+  const supportCrop = {
+    id: "front-name-crop",
+    storageRole: "nameplate_crop",
+    derived: true,
+    sourceImageId: "front"
+  };
+  assert.deepEqual(
+    __listingCopilotAppTestHooks.durableOriginalImagesForUpload([original, supportCrop]),
+    [original],
+    "support-only crops must not expand the durable exact set behind an active session"
+  );
 }
 
 {
