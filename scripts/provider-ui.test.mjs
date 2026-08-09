@@ -154,6 +154,7 @@ globalThis.document = {
       getContext() {
         return {
           drawImage() {},
+          fillRect() {},
           getImageData() { return { data: new Uint8ClampedArray(4) }; }
         };
       },
@@ -165,6 +166,16 @@ globalThis.document = {
   addEventListener() {}
 };
 globalThis.window = { addEventListener() {} };
+globalThis.Image = class {
+  constructor() {
+    this.naturalWidth = 2400;
+    this.naturalHeight = 1600;
+  }
+
+  set src(_value) {
+    queueMicrotask(() => this.onload?.());
+  }
+};
 globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
 
 const { __listingCopilotAppTestHooks } = await import("../app/listing-copilot.js");
@@ -203,6 +214,50 @@ assert.equal(__listingCopilotAppTestHooks.directRecognitionConcurrencyLimit(), 6
 assert.equal(__listingCopilotAppTestHooks.directRecognitionConcurrencyLimit({ maxWorkers: 3 }), 3);
 
 {
+  const sourceFile = new Blob([new Uint8Array(4_000_000)], { type: "image/jpeg" });
+  const asset = {
+    images: [{
+      id: "timed-original",
+      name: "timed-original.jpg",
+      storageFirst: true,
+      sourceFile,
+      previewUrl: "data:image/jpeg;base64,/9j/2Q=="
+    }]
+  };
+  const first = __listingCopilotAppTestHooks.ensureStagedRecognitionInputs(asset);
+  assert.equal(first, asset.stagedRecognitionInputPromise,
+    "the staged transform timer must wrap the single-flight promise itself");
+  assert.equal(asset.clientTiming.client_staged_transform_ms, 0,
+    "the staged transform timing slot must exist before parallel network stages settle");
+  assert.equal((await first).length, 1);
+  assert.ok(Number.isInteger(asset.clientTiming.client_staged_transform_ms));
+  assert.ok(asset.clientTiming.client_staged_transform_ms >= 0);
+  const firstTiming = asset.clientTiming.client_staged_transform_ms;
+  assert.equal(__listingCopilotAppTestHooks.ensureStagedRecognitionInputs(asset), first,
+    "a cached staged transform must reuse the original promise");
+  await first;
+  assert.equal(asset.clientTiming.client_staged_transform_ms, firstTiming,
+    "a cache hit must not accumulate the staged transform duration twice");
+}
+
+{
+  const sourceFile = new Blob([new Uint8Array(4_000_000)], { type: "image/jpeg" });
+  const original = { id: "front", storageFirst: true, sourceFile };
+  const derived = {
+    id: "front-recognition",
+    sourceImageId: "front",
+    derived: true,
+    sourceBlob: new Blob([new Uint8Array(400_000)], { type: "image/jpeg" })
+  };
+  assert.equal(__listingCopilotAppTestHooks.csmStagedRecognitionEligible(
+    { images: [original] }, [derived]
+  ), true);
+  assert.equal(__listingCopilotAppTestHooks.csmStagedRecognitionEligible(
+    { images: [{ ...original, storageFirst: false }] }, [derived]
+  ), false, "HEIC/>25MB fallback images may not be downscaled a second time");
+}
+
+{
   const transportFailure = new Error("empty_http_receipt");
   __listingCopilotAppTestHooks.applyServerRetryability(transportFailure, {});
   assert.equal(transportFailure.retryable, undefined,
@@ -233,6 +288,8 @@ assert.deepEqual(
     terminal_failure: true,
     terminal_without_title: true,
     input_rebind_required: false,
+    staged_resume_only: false,
+    staged_fresh_retry: false,
     recovery_mode: "CSM_DIRECT_RETRY"
   },
   "a failed direct request must remain manually retryable"
@@ -250,6 +307,144 @@ assert.equal(
   "INPUT_REBIND",
   "an immutable image conflict must choose the rebind recovery mode"
 );
+assert.equal(
+  __listingCopilotAppTestHooks.retryStateForResult({
+    confidence: "FAILED",
+    recoveryAction: "STAGED_RESUME_ONLY",
+    staged_resume_receipt: `stgr_${"a".repeat(64)}`
+  }).recovery_mode,
+  "STAGED_RESUME_ONLY",
+  "a staged failure may only resume its stable checkpoint"
+);
+assert.equal(
+  __listingCopilotAppTestHooks.retryStateForResult({
+    confidence: "FAILED",
+    recoveryAction: "STAGED_FRESH_RETRY"
+  }).recovery_mode,
+  "STAGED_FRESH_RETRY",
+  "an authority-proven pre-provider/not-found staged failure retries the staged lane, never direct fallback"
+);
+
+{
+  let resolveUpload;
+  const liveUpload = new Promise((resolve) => { resolveUpload = resolve; });
+  const asset = {
+    images: [{}],
+    originalStorageUploadPromise: liveUpload,
+    backgroundPreparationPromise: Promise.resolve(),
+    backgroundPreparationScheduledRunId: "background-1",
+    backgroundPrepareStatus: "uploading"
+  };
+  __listingCopilotAppTestHooks.resetAssetPreparationForRetry(asset);
+  assert.equal(asset.originalStorageUploadPromise, liveUpload,
+    "staged retry must preserve a still-running original upload single-flight claim");
+  resolveUpload();
+}
+{
+  const rebind = Object.assign(new Error("immutable object collision"), {
+    recovery_action: "INPUT_REBIND",
+    requires_input_rebind: true
+  });
+  assert.equal(
+    __listingCopilotAppTestHooks.definitiveOriginalUploadError({ originalStorageUploadError: rebind }),
+    rebind,
+    "a staged timeout must not hide a definitive original-upload rebind error"
+  );
+  assert.equal(
+    __listingCopilotAppTestHooks.definitiveOriginalUploadError({
+      originalStorageUploadError: Object.assign(new Error("temporary"), { retryable: true })
+    }),
+    null,
+    "a temporary upload failure keeps the checkpoint-resume path"
+  );
+}
+
+{
+  let releaseUpload;
+  const slowUpload = new Promise((resolve) => { releaseUpload = resolve; });
+  let httpRequests = 1;
+  let providerCalls = 1;
+  const recovery = __listingCopilotAppTestHooks.recoverStagedRequestOnce({
+    error: Object.assign(new Error("staged_original_upload_timeout"), {
+      recovery_action: "STAGED_RESUME_ONLY",
+      staged_resume_receipt: `stgr_${"b".repeat(64)}`
+    }),
+    originalUpload: slowUpload,
+    resumeRequest: async () => {
+      httpRequests += 1;
+      return { trace_status: "PERSISTED" };
+    },
+    freshRequest: async () => {
+      providerCalls += 1;
+      throw new Error("resume_must_not_call_provider");
+    }
+  });
+  await Promise.resolve();
+  assert.equal(httpRequests, 1, "receipt recovery waits for the same live upload claim");
+  releaseUpload();
+  const recovered = await recovery;
+  assert.equal(recovered.payload.trace_status, "PERSISTED");
+  assert.equal(httpRequests, 2);
+  assert.equal(providerCalls, 1,
+    "slow upload plus a settled checkpoint finishes with two HTTP requests and one provider call");
+}
+
+{
+  let httpRequests = 1;
+  let providerCalls = 0;
+  const recovered = await __listingCopilotAppTestHooks.recoverStagedRequestOnce({
+    error: Object.assign(new Error("readiness"), {
+      recovery_action: "STAGED_FRESH_RETRY",
+      provider_attempt_started: false
+    }),
+    originalUpload: Promise.resolve(),
+    freshRequest: async () => {
+      httpRequests += 1;
+      providerCalls += 1;
+      return { trace_status: "PERSISTED" };
+    }
+  });
+  assert.equal(recovered.payload.trace_status, "PERSISTED");
+  assert.equal(httpRequests, 2);
+  assert.equal(providerCalls, 1,
+    "an explicit pre-authority receipt may make exactly one fresh staged provider request");
+}
+
+{
+  let recoveryRequests = 0;
+  await assert.rejects(
+    __listingCopilotAppTestHooks.recoverStagedRequestOnce({
+      error: Object.assign(new Error("response_lost"), {
+        recovery_action: "STAGED_RESUME_ONLY",
+        staged_resume_receipt: `stgr_${"c".repeat(64)}`
+      }),
+      originalUpload: Promise.resolve(),
+      resumeRequest: async () => {
+        recoveryRequests += 1;
+        throw new Error("second_request_failed");
+      }
+    }),
+    /second_request_failed/
+  );
+  assert.equal(recoveryRequests, 1, "a second staged failure stops; recovery never loops");
+}
+
+{
+  const temporaryUploadError = Object.assign(new Error("temporary_upload_failure"), { retryable: true });
+  let recoveryRequests = 0;
+  const outcome = await __listingCopilotAppTestHooks.recoverStagedRequestOnce({
+    error: Object.assign(new Error("checkpoint_waiting"), {
+      recovery_action: "STAGED_RESUME_ONLY",
+      staged_resume_receipt: `stgr_${"d".repeat(64)}`
+    }),
+    originalUpload: Promise.reject(temporaryUploadError),
+    resumeRequest: async () => { recoveryRequests += 1; }
+  });
+  assert.equal(outcome.recovered, false);
+  assert.equal(outcome.uploadError, temporaryUploadError);
+  assert.equal(recoveryRequests, 0,
+    "a failed upload preserves the receipt for the operator; it does not start recovery before originals exist");
+}
 assert.equal(
   __listingCopilotAppTestHooks.retryStateForResult({
     confidence: "FAILED",
@@ -316,6 +511,49 @@ const rebindImage = {
   storageAssetId: assetId,
   storageTenantId: tenantId
 };
+{
+  const liveImage = { sourceBlob: { local: true } };
+  const liveAsset = {
+    id: "asset-live",
+    clientAssetRef: "asset-live",
+    durableAssetId: assetId,
+    durableTenantId: tenantId,
+    imageGenerationId: assetId,
+    images: [liveImage],
+    providerImages: [liveImage],
+    originalStorageUploadStatus: "uploading",
+    originalStorageUploadError: null
+  };
+  let rejectOldUpload;
+  const oldAttempt = new Promise((_resolve, reject) => { rejectOldUpload = reject; });
+  let guardedOldUpload;
+  guardedOldUpload = oldAttempt.catch((error) => {
+    liveAsset.originalStorageUploadStatus = "failed";
+    liveAsset.originalStorageUploadError = error;
+    if (liveAsset.originalStorageUploadPromise === guardedOldUpload) {
+      liveAsset.originalStorageUploadPromise = null;
+    }
+    throw error;
+  });
+  liveAsset.originalStorageUploadPromise = guardedOldUpload;
+  const newUpload = Promise.resolve("new-generation");
+  const transition = (async () => {
+    await __listingCopilotAppTestHooks.settleOriginalUploadBeforeRebind(liveAsset);
+    __listingCopilotAppTestHooks.resetAssetPreparationForRetry(liveAsset, { inputRebind: true });
+    liveAsset.originalStorageUploadPromise = newUpload;
+    liveAsset.originalStorageUploadStatus = "uploading";
+    liveAsset.originalStorageUploadError = null;
+  })();
+  await Promise.resolve();
+  assert.equal(liveAsset.originalStorageUploadPromise, guardedOldUpload,
+    "INPUT_REBIND must not mutate the asset while the retired upload can still write shared state");
+  rejectOldUpload(Object.assign(new Error("old_input_rebind"), { recovery_action: "INPUT_REBIND" }));
+  await transition;
+  assert.equal(liveAsset.originalStorageUploadPromise, newUpload);
+  assert.equal(liveAsset.originalStorageUploadStatus, "uploading");
+  assert.equal(liveAsset.originalStorageUploadError, null,
+    "the retired upload rejection is cleared before the successor upload starts");
+}
 const rebindAsset = {
   id: "asset-1",
   clientAssetRef: "asset-1",

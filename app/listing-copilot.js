@@ -47,6 +47,10 @@ const IMAGE_INITIAL_QUALITY = 0.9;
 const IMAGE_MIN_QUALITY = 0.78;
 const IMAGE_EMERGENCY_MIN_QUALITY = 0.64;
 const TARGET_IMAGE_DATA_URL_CHARS = 2_400_000;
+const STAGED_RECOGNITION_LONG_EDGE = 1600;
+const STAGED_RECOGNITION_QUALITY = 0.8;
+const STAGED_RECOGNITION_ROLE = "readability_derived";
+const STAGED_RECOGNITION_LANE_VERSION = "readability-derived-inline-v2";
 const REQUEST_IMAGE_BATCH_LIMIT = 14;
 const TARGETED_CROP_QUALITY = 0.88;
 const FIELD_MAX_CROPS_PER_IMAGE = 6;
@@ -561,6 +565,81 @@ async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
   };
 }
 
+async function buildStagedRecognitionImage(image = {}) {
+  const source = storageSourceForImage(image);
+  const decodable = image.previewUrl || image.dataUrl || "";
+  // Only a browser-decodable original whose exact bytes are already eligible
+  // for the canonical Storage path may enter this lane. HEIC/HEIF and >25MB
+  // inputs have already gone through the 2200px fallback; downscaling those a
+  // second time would compound accuracy loss and mislabel transformed bytes as
+  // an original manifest.
+  if (image.storageFirst !== true || source !== image.sourceFile || !source?.size || !decodable) return null;
+  try {
+    const compressed = await compressImageDataUrl(
+      decodable,
+      STAGED_RECOGNITION_LONG_EDGE,
+      STAGED_RECOGNITION_QUALITY
+    );
+    delete compressed.sourceCanvas;
+    const blob = dataUrlToBlob(compressed.dataUrl);
+    if (!blob?.size || blob.size >= source.size) return null;
+    return {
+      id: `${image.id}-recognition-${STAGED_RECOGNITION_LONG_EDGE}`,
+      name: `${image.name}-recognition-${STAGED_RECOGNITION_LONG_EDGE}.jpg`,
+      originalType: "image/jpeg",
+      type: "image/jpeg",
+      size: blob.size,
+      originalSize: blob.size,
+      width: compressed.width,
+      height: compressed.height,
+      originalWidth: compressed.width,
+      originalHeight: compressed.height,
+      dataUrl: compressed.dataUrl,
+      sourceBlob: blob,
+      sourceImageId: image.id,
+      storageRole: STAGED_RECOGNITION_ROLE,
+      derived: true,
+      contentSha256: ""
+    };
+  } catch {
+    return null;
+  }
+}
+
+function ensureStagedRecognitionInputs(asset = {}) {
+  if (asset.stagedRecognitionInputPromise) return asset.stagedRecognitionInputPromise;
+  const startedAt = performance.now();
+  const timing = asset.clientTiming || (asset.clientTiming = {});
+  // Reserve the bounded client-timing slot before the parallel upload can add
+  // network fields. `safeClientTiming` deliberately retains only 12 keys.
+  timing.client_staged_transform_ms = 0;
+  const attempt = (async () => {
+    const originals = (asset.images || []).filter((image) => !imageIsDerivedForRequest(image));
+    const originalBytes = originals.reduce((total, image) => {
+      return total + Number(storageSourceForImage(image)?.size || 0);
+    }, 0);
+    if (
+      !originals.length
+      || originals.length > 2
+      || originals.some((image) => image.storageFirst !== true)
+      || originalBytes <= STORAGE_UPLOAD_RELAY_MAX_BYTES
+    ) return [];
+    const recognitionInputs = await Promise.all(originals.map(buildStagedRecognitionImage));
+    if (recognitionInputs.some((image) => !image)) return [];
+    const inlineBytes = recognitionInputs.reduce((total, image) => total + image.sourceBlob.size, 0);
+    if (inlineBytes > STORAGE_UPLOAD_RELAY_MAX_BYTES) return [];
+    asset.stagedRecognitionInputs = recognitionInputs;
+    return recognitionInputs;
+  })();
+  asset.stagedRecognitionInputPromise = attempt.finally(() => {
+    timing.client_staged_transform_ms = Math.min(
+      3_600_000,
+      Math.max(0, Math.round(performance.now() - startedAt))
+    );
+  });
+  return asset.stagedRecognitionInputPromise;
+}
+
 async function fileToAssetImage(file) {
   const id = imageId();
   const originalDataUrl = await readFileAsDataUrl(file);
@@ -947,6 +1026,17 @@ async function contentSha256Hex(source) {
 
   const buffer = await source.arrayBuffer();
   const digest = await globalThis.crypto.subtle.digest("SHA-256", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function sha256TextHex(value) {
+  if (!globalThis.crypto?.subtle || typeof TextEncoder !== "function") return "";
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(String(value || ""))
+  );
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
@@ -1673,6 +1763,8 @@ function ensureAssetOriginalImagesUploaded(asset) {
   // "is this asset already being prepared?"; `state.retryInFlight` is a count
   // and can only answer "is anything retrying?".
   if (asset.originalStorageUploadPromise) return asset.originalStorageUploadPromise;
+  asset.originalStorageUploadStatus = "uploading";
+  asset.originalStorageUploadError = null;
 
   // The direct path's blind spot, measured.
   //
@@ -1772,6 +1864,7 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // consequence on CI while every local run passed: a card was recognized
     // twice. Measurement must not change the shape of what it measures.
     recordOriginalUploadTiming();
+    asset.originalStorageUploadStatus = "ready";
     return phases.originalOutcomes.some((outcome) => outcome.uploaded === true);
   })();
 
@@ -1787,6 +1880,8 @@ function ensureAssetOriginalImagesUploaded(asset) {
     // consumed the writer's time, and a stage recorded only on success is the
     // shape that made this gap invisible to begin with.
     recordOriginalUploadTiming();
+    asset.originalStorageUploadStatus = "failed";
+    asset.originalStorageUploadError = error;
     if (asset.originalStorageUploadPromise === guarded) asset.originalStorageUploadPromise = null;
     throw error;
   });
@@ -1906,7 +2001,87 @@ function csmIngestFastPathEligible(asset = {}) {
     && sources.reduce((total, source) => total + source.size, 0) <= STORAGE_UPLOAD_RELAY_MAX_BYTES;
 }
 
-async function requestCsmIngestFastPath(asset, intentId) {
+function csmStagedRecognitionEligible(asset = {}, recognitionInputs = [], { allowVerified = false } = {}) {
+  const originals = (asset.images || []).filter((image) => !imageIsDerivedForRequest(image));
+  if (
+    !originals.length
+    || originals.length > 2
+    || recognitionInputs.length !== originals.length
+    || originals.some((image) => image.storageFirst !== true
+      || storageSourceForImage(image) !== image.sourceFile)
+  ) return false;
+  const originalsVerified = asset.durableAssetId && asset.durableTenantId
+    && originals.every((image) => imageHasVerifiedStorageReference(
+      image,
+      asset.durableAssetId,
+      asset.durableTenantId
+    ));
+  if (originalsVerified && !allowVerified) return false;
+  const originalBytes = originals.reduce((total, image) => {
+    return total + Number(storageSourceForImage(image)?.size || 0);
+  }, 0);
+  const inlineBytes = recognitionInputs.reduce((total, image) => {
+    return total + Number(storageSourceForImage(image)?.size || 0);
+  }, 0);
+  return originalBytes > STORAGE_UPLOAD_RELAY_MAX_BYTES
+    && inlineBytes > 0
+    && inlineBytes <= STORAGE_UPLOAD_RELAY_MAX_BYTES
+    && recognitionInputs.every((image, index) => (
+      image?.sourceImageId === originals[index]?.id
+      && Number(storageSourceForImage(image)?.size || 0)
+        < Number(storageSourceForImage(originals[index])?.size || 0)
+    ));
+}
+
+async function stagedOriginalManifest(asset = {}) {
+  return Promise.all((asset.images || [])
+    .filter((image) => !imageIsDerivedForRequest(image))
+    .map(async (image, imageIndex) => {
+      await ensureImageUploadMetadata(image);
+      const source = storageSourceForImage(image);
+      if (!source) throw new Error("staged_original_source_missing");
+      const contentSha256 = image.contentSha256 || await contentSha256Hex(source);
+      if (!contentSha256) throw new Error("staged_original_hash_missing");
+      image.contentSha256 = contentSha256;
+      const dimensions = storageDimensionsForImage(image, source);
+      return {
+        imageId: image.id,
+        storageFirst: image.storageFirst === true && source === image.sourceFile,
+        role: storageRoleForImage(image, imageIndex),
+        contentType: image.originalType || source.type || "image/jpeg",
+        size: source.size,
+        width: dimensions.width,
+        height: dimensions.height,
+        contentSha256
+      };
+    }));
+}
+
+async function stagedResumeReceipt(asset, intentId, originals) {
+  const originalManifestSha256 = await sha256TextHex(JSON.stringify(originals.map((image) => [
+    image.imageId,
+    image.role,
+    image.size,
+    image.contentSha256
+  ])));
+  const digest = await sha256TextHex([
+    "staged-recognition-resume-v1",
+    canonicalAssetTenantId(asset),
+    canonicalAssetId(asset),
+    String(intentId || "").trim(),
+    STAGED_RECOGNITION_LANE_VERSION,
+    originalManifestSha256,
+    ...originals.map((image) => `sha256:${image.contentSha256}`)
+  ].join("\u001f"));
+  if (!digest) throw new Error("staged_resume_receipt_unavailable");
+  return `stgr_${digest}`;
+}
+
+async function requestCsmIngestFastPath(asset, intentId, {
+  recognitionInputs = null,
+  resumeOnly = false,
+  resumeReceipt = ""
+} = {}) {
   // The 18 seconds nobody could see.
   //
   // A production run measured 4,652ms server-side against roughly 23 seconds
@@ -1932,7 +2107,9 @@ async function requestCsmIngestFastPath(asset, intentId) {
     }
   };
   const preparationStartedAt = performance.now();
-  const images = await Promise.all(asset.images.map(async (image, imageIndex) => {
+  const staged = Array.isArray(recognitionInputs) && recognitionInputs.length > 0;
+  const inlineSource = staged ? recognitionInputs : asset.images;
+  const images = await Promise.all(inlineSource.map(async (image, imageIndex) => {
     await clientStage("client_image_metadata_ms", () => ensureImageUploadMetadata(image));
     const source = storageSourceForImage(image);
     const usingOriginalSource = source === image.sourceFile;
@@ -1953,18 +2130,37 @@ async function requestCsmIngestFastPath(asset, intentId) {
       image,
       source,
       imageId: image.id,
-      role: storageRoleForImage(image, imageIndex),
+      role: staged ? STAGED_RECOGNITION_ROLE : storageRoleForImage(image, imageIndex),
       fileName: image.name,
       contentType,
       size: source.size,
       width: dimensions.width,
       height: dimensions.height,
       signatureHex,
-      contentSha256
+      contentSha256,
+      ...(staged ? { sourceImageId: image.sourceImageId } : {})
     };
   }));
   clientTiming.client_preparation_ms = Math.round(performance.now() - preparationStartedAt);
-  clientTiming.client_upload_bytes = images.reduce((total, image) => total + (image.size || 0), 0);
+  const originalImages = staged ? await stagedOriginalManifest(asset) : [];
+  if (staged) await ensureDurableAssetIdentity(asset);
+  const computedResumeReceipt = staged
+    ? await stagedResumeReceipt(asset, intentId, originalImages)
+    : "";
+  if (resumeOnly && resumeReceipt !== computedResumeReceipt) {
+    throw Object.assign(new Error("staged_resume_receipt_mismatch"), {
+      code: "staged_resume_receipt_mismatch",
+      retryable: false,
+      stagedRecognition: true
+    });
+  }
+  clientTiming.client_upload_bytes = staged
+    ? originalImages.reduce((total, image) => total + image.size, 0)
+    : images.reduce((total, image) => total + (image.size || 0), 0);
+  if (staged) {
+    clientTiming.client_recognition_body_bytes = images.reduce((total, image) => total + image.size, 0);
+    asset.stagedResumeReceipt = computedResumeReceipt;
+  }
   const metadata = {
     clientTiming,
     clientAssetRef: asset.clientAssetRef || asset.id,
@@ -1972,27 +2168,50 @@ async function requestCsmIngestFastPath(asset, intentId) {
     captureProfileId: defaultCaptureProfileId,
     intentId,
     imageDetail: "high",
+    ...(staged ? {
+      recognitionInputOnly: true,
+      laneVersion: STAGED_RECOGNITION_LANE_VERSION,
+      expectedOriginalCount: originalImages.length,
+      originalImages,
+      resumeOnly: resumeOnly === true,
+      stagedResumeReceipt: computedResumeReceipt
+    } : {}),
     images: images.map(({ source: _source, image: _image, ...image }) => image)
   };
-  const request = await fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "content-type": "application/octet-stream",
-      "x-lynca-ingest-metadata": encodeUploadRelayMetadata(metadata)
-    },
-    credentials: "same-origin",
-    body: new Blob(images.map((image) => image.source), { type: "application/octet-stream" })
-  }, {
-    timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
-    maxAttempts: 1,
-    retryNetworkErrors: false,
-    asset,
-    stage: "csm_thin_ingest"
-  });
+  let request;
+  try {
+    request = await fetchJsonWithRetry(CSM_THIN_INGEST_API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-lynca-ingest-metadata": encodeUploadRelayMetadata(metadata)
+      },
+      credentials: "same-origin",
+      body: new Blob(images.map((image) => image.source), { type: "application/octet-stream" })
+    }, {
+      timeoutMs: CSM_THIN_REQUEST_TIMEOUT_MS,
+      maxAttempts: 1,
+      retryNetworkErrors: false,
+      asset,
+      stage: "csm_thin_ingest"
+    });
+  } catch (error) {
+    if (staged) {
+      // An empty/transport-lost HTTP receipt is ambiguous: the provider may
+      // already have settled. The next user action is lookup-only; it never
+      // falls through to the original direct route or buys a second call.
+      error.stagedRecognition = true;
+      error.staged_resume_receipt = computedResumeReceipt;
+      error.recovery_action = "STAGED_RESUME_ONLY";
+      error.retryable = true;
+    }
+    throw error;
+  }
   const payload = request.payload || {};
   const canRecoverUpload = payload.client_asset_ref === metadata.clientAssetRef
     && payload.asset_id
     && payload.tenant_id
+    && !staged
     && Array.isArray(payload.verifications);
   if (canRecoverUpload) {
     asset.durableAssetId = payload.asset_id;
@@ -2020,10 +2239,56 @@ async function requestCsmIngestFastPath(asset, intentId) {
     const error = new Error(request.payload?.message || `CSM 一体化链路失败：${request.response?.status || "network"}`);
     error.code = String(request.payload?.code || "").trim();
     applyServerRetryability(error, request.payload);
+    if (staged) {
+      error.stagedRecognition = true;
+      const recoveryAction = String(request.payload?.recovery_action || "").trim().toUpperCase();
+      if (recoveryAction === "STAGED_RESUME_ONLY") {
+        if (request.payload?.staged_resume_receipt !== computedResumeReceipt) {
+          error.code = "staged_resume_receipt_invalid";
+          error.retryable = false;
+        } else {
+          error.staged_resume_receipt = computedResumeReceipt;
+          error.recovery_action = recoveryAction;
+        }
+      } else if (recoveryAction === "STAGED_FRESH_RETRY") {
+        if (request.payload?.provider_attempt_started !== false) {
+          error.code = "staged_fresh_retry_receipt_invalid";
+          error.retryable = false;
+        } else {
+          error.recovery_action = recoveryAction;
+          error.provider_attempt_started = false;
+        }
+      } else if (recoveryAction === "INPUT_REBIND") {
+        error.recovery_action = recoveryAction;
+        error.requires_input_rebind = true;
+        error.retryable = true;
+      } else {
+        // A definite staged response without an explicit recovery contract may
+        // be a terminal provider failure. Never silently route it through the
+        // original-pixel direct endpoint.
+        error.retryable = false;
+      }
+    }
     throw error;
   }
-  if (!canRecoverUpload) {
+  if (!canRecoverUpload && !staged) {
     throw new Error("csm_ingest_asset_identity_mismatch");
+  }
+  if (staged) {
+    if (
+      payload.client_asset_ref !== metadata.clientAssetRef
+      || payload.asset_id !== canonicalAssetId(asset)
+      || payload.tenant_id !== canonicalAssetTenantId(asset)
+      || payload.trace_status !== "PERSISTED"
+      || payload.staged_resume_receipt !== computedResumeReceipt
+    ) {
+      throw Object.assign(new Error("csm_staged_ingest_identity_mismatch"), {
+        code: "csm_staged_ingest_identity_mismatch",
+        retryable: false,
+        stagedRecognition: true
+      });
+    }
+    asset.stagedResumeReceipt = payload.staged_resume_receipt;
   }
   return payload;
 }
@@ -2041,31 +2306,142 @@ function shouldFallbackFastIngest(error) {
   return error?.retryable !== false;
 }
 
+function definitiveOriginalUploadError(asset = {}) {
+  const error = asset.originalStorageUploadError;
+  if (!error) return null;
+  return error.requires_input_rebind === true
+    || String(error.recovery_action || "").trim().toUpperCase() === "INPUT_REBIND"
+    || error.retryable === false
+    ? error
+    : null;
+}
+
+async function recoverStagedRequestOnce({
+  error,
+  originalUpload,
+  manualRetry = false,
+  lifecycleGuard = () => {},
+  resumeRequest,
+  freshRequest
+} = {}) {
+  if (manualRetry || !originalUpload || typeof originalUpload.then !== "function") {
+    return { recovered: false };
+  }
+  const action = String(error?.recovery_action || "").trim().toUpperCase();
+  const receipt = String(error?.staged_resume_receipt || "").trim();
+  const resume = action === "STAGED_RESUME_ONLY"
+    && /^stgr_[0-9a-f]{64}$/.test(receipt)
+    && typeof resumeRequest === "function";
+  const fresh = action === "STAGED_FRESH_RETRY"
+    && error?.provider_attempt_started === false
+    && typeof freshRequest === "function";
+  if (!resume && !fresh) return { recovered: false };
+
+  // One continuation, not a retry loop: finish the exact upload already in
+  // flight, re-check lifecycle ownership, then follow only the server receipt.
+  try {
+    await originalUpload;
+  } catch (uploadError) {
+    return { recovered: false, uploadError };
+  }
+  lifecycleGuard();
+  const payload = await (resume ? resumeRequest(receipt) : freshRequest());
+  lifecycleGuard();
+  return { recovered: true, action, payload };
+}
+
+async function settleOriginalUploadBeforeRebind(asset = {}, lifecycleGuard = () => {}) {
+  const activeUpload = asset.originalStorageUploadPromise;
+  if (activeUpload && typeof activeUpload.then === "function") {
+    await activeUpload.catch(() => null);
+  }
+  lifecycleGuard();
+  return { hadActiveUpload: Boolean(activeUpload) };
+}
+
 async function processAssetViaCsmThinPath(asset, {
   intentId = state.backgroundRecognitionBatchId,
   manualRetry = false,
-  retrySubmissionId = ""
+  retrySubmissionId = "",
+  stagedResumeReceipt: requestedStagedResumeReceipt = "",
+  stagedFreshRetry = false
 } = {}) {
   assertCurrentAssetLifecycle(asset);
   const durableIntentId = String(intentId || "").trim();
   if (!durableIntentId) throw new Error("CSM 识别意图缺失");
   const startedAt = performance.now();
   let payload;
-  if (manualRetry !== true && csmIngestFastPathEligible(asset)) {
+  const stagedResume = manualRetry === true && Boolean(requestedStagedResumeReceipt);
+  const stagedFresh = manualRetry === true && stagedFreshRetry === true;
+  const stagedRecovery = stagedResume || stagedFresh;
+  const priorUploadError = definitiveOriginalUploadError(asset);
+  if (stagedRecovery && priorUploadError) throw priorUploadError;
+  let recognitionInputs = null;
+  let originalUpload = null;
+  if (!csmIngestFastPathEligible(asset) && (manualRetry !== true || stagedRecovery)) {
+    originalUpload = ensureAssetOriginalImagesUploaded(asset);
+    void originalUpload.catch(() => null);
+    recognitionInputs = await ensureStagedRecognitionInputs(asset);
+    if (!csmStagedRecognitionEligible(asset, recognitionInputs, { allowVerified: stagedRecovery })) {
+      recognitionInputs = null;
+    }
+    if (stagedRecovery && !recognitionInputs) {
+      throw Object.assign(new Error("staged_recovery_input_unavailable"), {
+        code: "staged_recovery_input_unavailable",
+        retryable: false,
+        stagedRecognition: true,
+        recovery_action: stagedResume ? "STAGED_RESUME_ONLY" : "STAGED_FRESH_RETRY"
+      });
+    }
+  }
+  if ((manualRetry !== true && csmIngestFastPathEligible(asset)) || recognitionInputs?.length) {
     setAssetProgress(asset.index, "上传与 Luna 并行", 0.28);
     markAssetStarted(asset, Date.now(), "client_csm_ingest_request");
     try {
-      payload = await requestCsmIngestFastPath(asset, durableIntentId);
+      payload = await requestCsmIngestFastPath(asset, durableIntentId, {
+        recognitionInputs,
+        resumeOnly: stagedResume,
+        resumeReceipt: requestedStagedResumeReceipt
+      });
     } catch (fastPathError) {
-      // A complete provider response can fail its output contract after the
-      // paid attempt is durably settled FAILED. Retrying the route cannot
-      // recover that result; it only adds another round trip before showing
-      // the same failure. Undefined/true remains eligible for the direct
-      // durability recovery used by transport and Storage failures.
-      if (!shouldFallbackFastIngest(fastPathError)) throw fastPathError;
-      // The durable operation key is asset/intent/image based, so falling back
-      // can safely recover a lost response without buying a second model call.
-      asset.fastIngestFallbackReason = String(fastPathError?.code || fastPathError?.message || "fast_ingest_failed").slice(0, 160);
+      if (recognitionInputs?.length) {
+        const uploadError = definitiveOriginalUploadError(asset);
+        if (uploadError) throw uploadError;
+        const recovery = await recoverStagedRequestOnce({
+          error: fastPathError,
+          originalUpload,
+          manualRetry,
+          lifecycleGuard: () => assertCurrentAssetLifecycle(asset),
+          resumeRequest: (receipt) => requestCsmIngestFastPath(asset, durableIntentId, {
+            recognitionInputs,
+            resumeOnly: true,
+            resumeReceipt: receipt
+          }),
+          freshRequest: () => requestCsmIngestFastPath(asset, durableIntentId, {
+            recognitionInputs,
+            resumeOnly: false
+          })
+        });
+        if (recovery.recovered) {
+          payload = recovery.payload;
+        } else if (recovery.uploadError) {
+          const settledUploadError = definitiveOriginalUploadError(asset);
+          if (settledUploadError) throw settledUploadError;
+          throw fastPathError;
+        } else {
+          throw fastPathError;
+        }
+      } else {
+        // A complete provider response can fail its output contract after the
+        // paid attempt is durably settled FAILED. Retrying the route cannot
+        // recover that result; it only adds another round trip before showing
+        // the same failure. Undefined/true remains eligible for the direct
+        // durability recovery used by transport and Storage failures.
+        if (!shouldFallbackFastIngest(fastPathError)) throw fastPathError;
+        // The durable operation key is asset/intent/image based, so falling back
+        // can safely recover a lost response without buying a second model call.
+        asset.fastIngestFallbackReason = String(fastPathError?.code || fastPathError?.message || "fast_ingest_failed").slice(0, 160);
+      }
     }
   }
   if (!payload) {
@@ -2717,10 +3093,13 @@ export const __listingCopilotAppTestHooks = {
   assetCreateIdempotencyKey,
   assetLifecycleMatches,
   boundedProviderImagesForRequest,
+  csmStagedRecognitionEligible,
   clearImageStorageBinding,
   consumeSelectedFiles,
+  definitiveOriginalUploadError,
   directRecognitionConcurrencyLimit,
   ensureAssetPreparedForRecognition,
+  ensureStagedRecognitionInputs,
   generationTimingView,
   handleFiles,
   imageHasVerifiedStorageReference,
@@ -2734,6 +3113,8 @@ export const __listingCopilotAppTestHooks = {
     resultIndexes: state.results.map((result) => Number(result.index))
   }),
   recognitionClockFromServerPayload,
+  recoverStagedRequestOnce,
+  settleOriginalUploadBeforeRebind,
   resetAssetPreparationForRetry,
   retryStateForResult,
   shouldUseStorageFirstImage,
@@ -3531,13 +3912,17 @@ function retryStateForResult(result = {}) {
   const retryable = requestFailed && result.retryable !== false;
   const submitting = result.retryStatus === "submitting";
   const persistenceLocked = result.feedbackStatus === "saving" || writerFeedbackPersisted(result);
-  const inputRebindRequired = String(
+  const recoveryAction = String(
     result.recoveryAction
     || result.recovery_action
     || result.retry?.recovery_action
     || result.error?.recovery_action
     || ""
-  ).trim().toUpperCase() === "INPUT_REBIND";
+  ).trim().toUpperCase();
+  const inputRebindRequired = recoveryAction === "INPUT_REBIND";
+  const stagedResumeOnly = recoveryAction === "STAGED_RESUME_ONLY"
+    && /^stgr_[0-9a-f]{64}$/.test(String(result.staged_resume_receipt || ""));
+  const stagedFreshRetry = recoveryAction === "STAGED_FRESH_RETRY";
   return {
     retryable,
     submitting,
@@ -3545,7 +3930,13 @@ function retryStateForResult(result = {}) {
     terminal_failure: requestFailed,
     terminal_without_title: requestFailed && !hasVisibleTitle,
     input_rebind_required: inputRebindRequired,
-    recovery_mode: inputRebindRequired ? "INPUT_REBIND" : "CSM_DIRECT_RETRY"
+    staged_resume_only: stagedResumeOnly,
+    staged_fresh_retry: stagedFreshRetry,
+    recovery_mode: inputRebindRequired
+      ? "INPUT_REBIND"
+      : stagedResumeOnly
+        ? "STAGED_RESUME_ONLY"
+        : stagedFreshRetry ? "STAGED_FRESH_RETRY" : "CSM_DIRECT_RETRY"
   };
 }
 
@@ -3581,7 +3972,7 @@ function TitleCardComponent(result, asset = null) {
     ? "正在重新识别…"
     : retryState.input_rebind_required
       ? "重新绑定图片"
-      : "重新识别";
+      : retryState.staged_resume_only ? "恢复识别结果" : "重新识别";
   const titleEdited = String(correctedTitle || "").trim()
     && String(correctedTitle || "").trim() !== String(generatedTitle || "").trim();
   const saveLabel = {
@@ -3917,6 +4308,7 @@ function failedResult(asset, error, intentId = state.backgroundRecognitionBatchI
     confidence: "FAILED",
     reason: error.message,
     recoveryAction: String(error?.recovery_action || error?.recoveryAction || "").trim().toUpperCase(),
+    staged_resume_receipt: String(error?.staged_resume_receipt || asset.stagedResumeReceipt || "").trim(),
     error_code: String(error?.code || error?.error_code || "").trim(),
     retryable: error?.retryable !== false,
     fields: {},
@@ -4049,6 +4441,8 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
     asset.durableAssetPromise = null;
     asset.assetCreateIdempotencyKey = "";
     asset.originalStorageUploadPromise = null;
+    asset.originalStorageUploadStatus = "queued";
+    asset.originalStorageUploadError = null;
     asset.backgroundPreparationPromise = null;
     asset.backgroundPreparationRunId = null;
     asset.backgroundPreparationScheduledRunId = null;
@@ -4063,7 +4457,6 @@ function resetAssetPreparationForRetry(asset = {}, { inputRebind = false } = {})
   const originalsVerified = Boolean(assetId && tenantId)
     && (asset.images || []).every((image) => imageHasVerifiedStorageReference(image, assetId, tenantId));
   if (!originalsVerified) {
-    asset.originalStorageUploadPromise = null;
     asset.backgroundPreparationPromise = null;
     asset.backgroundPreparationScheduledRunId = null;
     asset.backgroundPrepareStatus = "queued";
@@ -4106,12 +4499,24 @@ async function runAssetRetry({ asset, current, retryState, assetIndex }) {
   renderResults();
 
   try {
+    if (retryState.input_rebind_required) {
+      // The successor reuses the image objects. Let the old immutable-asset
+      // upload settle before clearing their bindings, or its late completion
+      // could write the retired asset identity onto the successor generation.
+      await settleOriginalUploadBeforeRebind(asset, () => {
+        if (!assetLifecycleMatches(asset, lifecycleGeneration)) throw new Error("stale_asset_lifecycle");
+      });
+    }
     resetAssetPreparationForRetry(asset, {
       inputRebind: retryState.input_rebind_required
     });
     const result = await processAssetViaCsmThinPath(asset, {
       intentId,
       manualRetry: true,
+      stagedResumeReceipt: retryState.staged_resume_only
+        ? String(current.staged_resume_receipt || "")
+        : "",
+      stagedFreshRetry: retryState.staged_fresh_retry,
       // COS-51: one stable key per operator retry action, so the server can be
       // idempotent for the same tenant + asset + image + intent + submission.
       retrySubmissionId
@@ -4141,6 +4546,9 @@ async function runAssetRetry({ asset, current, retryState, assetIndex }) {
     current.recoveryAction = String(error?.recovery_action || current.recoveryAction || "")
       .trim()
       .toUpperCase();
+    current.staged_resume_receipt = String(
+      error?.staged_resume_receipt || current.staged_resume_receipt || ""
+    ).trim();
     current.error_code = String(error?.code || current.error_code || "").trim();
     current.retryable = error?.retryable !== false;
     current.feedbackMessage = `重新识别失败：${error.message || "请再次重试"}`;
