@@ -7,6 +7,9 @@ on:
       - "e2e/**"
       - "scripts/materialize-writer-journey-source.mjs"
       - "scripts/materialize-writer-journey-source.test.mjs"
+      - "scripts/build-large-internal-writer-fixture.mjs"
+      - "scripts/build-large-internal-writer-fixture.contract.test.mjs"
+      - "scripts/build-large-internal-writer-fixture.browser.test.mjs"
       - "scripts/production-writer-journey-contract.test.mjs"
       - "playwright.config.mjs"
       - "package.json"
@@ -27,7 +30,7 @@ jobs:
   contract:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,8 +38,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run check:e2e:production-writer-journey
       - run: npm run test:e2e:production-writer-journey:contract
+      - run: npm run test:large-internal-writer-fixture:contract
+      - run: npm run test:large-internal-writer-fixture:browser
       - run: npx playwright test e2e/production-writer-journey.spec.mjs --project=chromium --grep @offline
 
   writer-journey:
