@@ -376,15 +376,17 @@ const UNIMPLEMENTED = [
   },
   {
     decision: "COS-42",
-    clause: "read-only Resolution View is built but unreleased",
+    clause: "read-only Resolution View is released in code but lacks a live operator receipt",
     why: [
-      "`buildCsmResolutionView` is asserted by the clauses above and is not",
-      "reachable by an operator: the read-only view is not released in the",
-      "demo, and the TCG / NON_TCG operator journeys have not been run.",
+      "The direct writer path now imports `app/csm-glass-box.mjs`, fetches",
+      "`/api/csm-resolution-view` after a final persisted result, and renders",
+      "the returned read model. The API and UI contract are covered offline.",
+      "The earlier 'built but unreleased' note is therefore stale.",
       "",
-      "The clauses that pass here are the contract's shape, not evidence that",
-      "a writer can see it. `Listing Copilot Verified` on COS-42 needs a real",
-      "session, not a green suite."
+      "What is still missing is production evidence: one real TCG and one real",
+      "NON_TCG writer journey must show the panel for the same persisted",
+      "session without changing the title. `Listing Copilot Verified` remains",
+      "open until those two receipts exist."
     ].join("\n        ")
   },
   {
