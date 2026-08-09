@@ -237,6 +237,63 @@ try {
     "the reviewed release time must be part of the migration-time contract");
   assert.doesNotMatch(externalIdentitySql, /\b(?:delete|update|drop|truncate|alter)\b/i,
     "the Registry seed must remain additive");
+  const externalIdentityMigrationV2 =
+    "20260810200000_csm_external_identity_high_risers_registry_v2.sql";
+  assert.ok(externalIdentityMigrationV2 > externalIdentityMigration,
+    "the v2 Registry release must follow the already-promoted v1 migration");
+  const externalIdentitySqlV2 = await readFile(
+    join(canonicalMigrationDir, externalIdentityMigrationV2),
+    "utf8"
+  );
+  assert.equal(
+    createHash("sha256").update(externalIdentitySqlV2).digest("hex"),
+    "97d79a2e4bc5de13ff2b3f5c94dad92edf126c9aa1f50a666e9620803fa553fa",
+    "the additive v2 external identity Registry migration is immutable"
+  );
+  const externalIdentityPayloadV2 = {
+    mode: "post_observation_exact_external_identity",
+    external_catalog: true,
+    pack_id: "lynca.csm.external-identity",
+    pack_version: "2026-08-10",
+    index_id: "basketball.1996-97-topps-stadium-club-high-risers",
+    pack_sha256: "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+    index_sha256: "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+    resolution_contract_sha256:
+      "407f69668256c799b0beeae8bd9dbdbe3073f86b6f6367c8216417973d6b691f",
+    provider_calls_added: 0
+  };
+  const externalIdentityPayloadsV2 = [...externalIdentitySqlV2.matchAll(
+    /'(\{\s*"mode":"post_observation_exact_external_identity"[\s\S]*?\})'::jsonb/g
+  )].map((match) => JSON.parse(match[1]));
+  assert.equal(externalIdentityPayloadsV2.length, 2,
+    "the v2 inserted payload and migration-time assertion must both be explicit");
+  for (const payload of externalIdentityPayloadsV2) {
+    assert.deepEqual(payload, externalIdentityPayloadV2,
+      "the v2 migration must reject missing, changed, or additional Registry controls");
+  }
+  for (const literal of [
+    "registry_thin_external_identity_high_risers_v2",
+    "thin-path-external-identity-high-risers-v2",
+    "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+    "linear-cos-10-23-v25"
+  ]) assert.match(externalIdentitySqlV2, new RegExp(literal));
+  assert.match(externalIdentitySqlV2, /registry_payload\s*=\s*'\{/i,
+    "the v2 migration-time assertion must compare the whole JSONB payload");
+  assert.doesNotMatch(externalIdentitySqlV2, /registry_payload\s*->>/i,
+    "v2 field-by-field checks would admit unreviewed extra payload controls");
+  assert.equal(
+    (externalIdentitySqlV2.match(/insert\s+into\s+public\.csm_registry_releases/gi) || []).length,
+    1
+  );
+  assert.match(externalIdentitySqlV2, /on conflict \(id\) do nothing/i);
+  assert.match(externalIdentitySqlV2,
+    /and promoted_by = 'migration:20260810200000'/i,
+    "v2 migration provenance must be immutable across idempotent re-application");
+  assert.match(externalIdentitySqlV2,
+    /and promoted_at = '2026-08-09T19:40:00Z'::timestamptz/i,
+    "the reviewed v2 release time must be part of the migration-time contract");
+  assert.doesNotMatch(externalIdentitySqlV2, /\b(?:delete|update|drop|truncate|alter)\b/i,
+    "the v2 Registry seed must remain additive");
   const [providerAdmissionSql, providerPacerSql, productProjectionSql] = await Promise.all([
     readFile(join(canonicalMigrationDir, providerAdmissionMigration), "utf8"),
     readFile(join(canonicalMigrationDir, providerPacerMigration), "utf8"),
