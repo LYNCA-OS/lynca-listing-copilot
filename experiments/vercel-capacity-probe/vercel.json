@@ -8,6 +8,10 @@
     "api/accuracy.js": {
       "maxDuration": 300,
       "regions": ["sin1"]
+    },
+    "api/prompt-cache.js": {
+      "maxDuration": 300,
+      "regions": ["sin1"]
     }
   }
 }
