@@ -11,6 +11,10 @@ const processTitlesSource = source.slice(
   source.indexOf("async function processTitles("),
   source.indexOf("function successorClientAssetRef(")
 );
+const preparationRunSource = source.slice(
+  source.indexOf("function beginBackgroundPreparationRun("),
+  source.indexOf("function drainBackgroundPreparationQueue(")
+);
 
 assert.doesNotMatch(
   handleFilesSource,
@@ -54,6 +58,11 @@ assert.match(
   handleFilesSource,
   /requestRecognitionContinuation\(\{ lifecycleGeneration, filePreparationRunId \}\)/,
   "every completed or appended upload selection must automatically continue recognition"
+);
+assert.equal(
+  [...preparationRunSource.matchAll(/createClientBatchId\(\)/g)].length,
+  1,
+  "one preparation run must mint exactly one recognition batch identity"
 );
 
 const assets = Array.from({ length: 110 }, (_, offset) => ({ index: offset + 1 }));

@@ -17,6 +17,7 @@ import {
 import {
   nextWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,
+  writerFeedbackDecision,
   writerExportRowsReady,
   writerExportWithinLimit,
   writerFeedbackPersisted
@@ -2717,6 +2718,7 @@ export const __listingCopilotAppTestHooks = {
   assetLifecycleMatches,
   boundedProviderImagesForRequest,
   clearImageStorageBinding,
+  consumeSelectedFiles,
   directRecognitionConcurrencyLimit,
   ensureAssetPreparedForRecognition,
   generationTimingView,
@@ -2740,7 +2742,8 @@ export const __listingCopilotAppTestHooks = {
   storageDimensionsForImage,
   storageSourceForImage,
   syncAssetGenerationTimingFromServer,
-  uploadOriginalAssetImagesBatch
+  uploadOriginalAssetImagesBatch,
+  workspaceActionLocks
 };
 
 function createClientAsset(images, index) {
@@ -2777,14 +2780,22 @@ function writerModeActive() {
   return state.workspaceMode === "writer";
 }
 
-function workspaceInteractionLocked() {
-  return state.writerSaveInFlight
-    || state.exportingWorkbook
-    || state.preparingFiles;
+function workspaceInteractionLocked(currentState = state) {
+  return currentState.writerSaveInFlight
+    || currentState.exportingWorkbook
+    || currentState.preparingFiles;
 }
 
-function destructiveWorkspaceInteractionLocked() {
-  return workspaceInteractionLocked() || state.retryInFlight > 0;
+function destructiveWorkspaceInteractionLocked(currentState = state) {
+  return workspaceInteractionLocked(currentState) || currentState.retryInFlight > 0;
+}
+
+function workspaceActionLocks(currentState = state) {
+  const intakeLocked = destructiveWorkspaceInteractionLocked(currentState);
+  return {
+    intakeLocked,
+    resetLocked: intakeLocked || currentState.processing === true
+  };
 }
 
 function writerSavedAssets() {
@@ -2953,7 +2964,7 @@ function runWorkbenchViewTransition({ kind, enabled = true, prepareSharedElement
 
 function updateWorkspaceModeUi() {
   const interactionLocked = workspaceInteractionLocked();
-  const destructiveInteractionLocked = destructiveWorkspaceInteractionLocked() || state.processing;
+  const actionLocks = workspaceActionLocks();
   elements.workspace?.setAttribute("data-workspace-mode", state.workspaceMode);
   elements.workspace?.setAttribute("data-batch-state", state.assets.length ? "ready" : "empty");
   elements.workspaceModeButtons.forEach((button) => {
@@ -2962,9 +2973,12 @@ function updateWorkspaceModeUi() {
     button.setAttribute("aria-pressed", active ? "true" : "false");
     button.disabled = interactionLocked;
   });
-  elements.imageInput.disabled = destructiveInteractionLocked;
-  elements.resetButton.disabled = destructiveInteractionLocked;
-  elements.dropZone.setAttribute("aria-disabled", destructiveInteractionLocked ? "true" : "false");
+  // Recognition is additive: handleFiles intentionally accepts later cards
+  // into the same intent while workers are active. Reset is destructive and
+  // stays locked until those workers settle.
+  elements.imageInput.disabled = actionLocks.intakeLocked;
+  elements.resetButton.disabled = actionLocks.resetLocked;
+  elements.dropZone.setAttribute("aria-disabled", actionLocks.intakeLocked ? "true" : "false");
   if (elements.workspaceModeHint) {
     elements.workspaceModeHint.textContent = writerModeActive()
       ? "只看当前卡片；Enter 确认入库并推进到下一张。"
@@ -4195,11 +4209,6 @@ function finalTitleForResult(result) {
   return String(result.correctedTitle ?? result.final_title ?? result.rendered_title ?? result.title ?? "").trim();
 }
 
-function feedbackActionForResult(result, generatedTitle, correctedTitle) {
-  if (result.explicitReviewOutcome === "REJECTED") return "REJECT";
-  return String(generatedTitle || "").trim() === String(correctedTitle || "").trim() ? "ACCEPT" : "EDIT";
-}
-
 function clientFeedbackSubmissionId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `web_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
@@ -4346,9 +4355,20 @@ async function saveFeedbackForResult(result, asset, { deferFinalRender = false }
     ?? ""
   ).trim();
   const explicitReject = result.explicitReviewOutcome === "REJECTED";
-  if ((!correctedTitle && !explicitReject) || (!generatedTitle && !explicitReject)) return false;
+  const decision = writerFeedbackDecision({
+    generatedTitle,
+    correctedTitle,
+    explicitReject
+  });
+  if (!decision.ready) {
+    result.feedbackStatus = "";
+    result.persistenceStatus = "failed";
+    result.feedbackMessage = "标题不能为空，请输入最终英文标题后再保存。";
+    if (!deferFinalRender) renderResults();
+    return false;
+  }
 
-  const action = feedbackActionForResult(result, generatedTitle, correctedTitle);
+  const action = decision.action;
   const submission = pendingFeedbackSubmission(result, {
     action,
     writerTitle: correctedTitle
@@ -4716,6 +4736,12 @@ function resetTool() {
   renderResults();
 }
 
+function consumeSelectedFiles(input) {
+  const files = [...(input?.files || [])];
+  if (input) input.value = "";
+  return files;
+}
+
 function bindEvents() {
   elements.workspaceModeButtons.forEach((button) => {
     button.addEventListener("click", (event) => setWorkspaceMode(button.dataset.workspaceMode, {
@@ -4740,7 +4766,10 @@ function bindEvents() {
   elements.imageInput.addEventListener("change", (event) => {
     const animateIntake = state.fileSelectionPointerRequested;
     state.fileSelectionPointerRequested = false;
-    void handleFiles(event.target.files, { animateIntake });
+    // File inputs do not emit `change` when the same selection is chosen twice.
+    // Consume a stable snapshot and clear the control before async preparation,
+    // so a failed file can be selected again without resetting the workspace.
+    void handleFiles(consumeSelectedFiles(event.target), { animateIntake });
   });
 
   document.querySelectorAll("input[name='assetMode']").forEach((input) => {

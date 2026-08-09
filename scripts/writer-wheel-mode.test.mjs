@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   nextWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,
+  writerFeedbackDecision,
   writerExportRowsReady,
   writerExportWithinLimit,
   writerFeedbackPersisted
@@ -48,7 +49,8 @@ assert.ok(
 assert.match(feedbackSource, /result\.persistenceStatus = "persisted";/, "the transaction acknowledgement must be the source of persisted state");
 assert.match(feedbackSource, /catch \(error\)[\s\S]*result\.persistenceStatus = "failed";/, "failed persistence must leave the card retryable");
 assert.match(feedbackSource, /async function saveTitleFeedback[\s\S]*const persisted = await saveFeedbackForResult\(result, asset,[\s\S]*return persisted/, "writer saves must return the persistence result");
-assert.match(feedbackSource, /\(!correctedTitle && !explicitReject\)[\s\S]*return false/, "an empty title must fail locally unless the writer explicitly rejects the card");
+assert.match(feedbackSource, /writerFeedbackDecision\(\{[\s\S]*generatedTitle,[\s\S]*correctedTitle,[\s\S]*explicitReject/, "writer saves must use the shared client decision contract");
+assert.doesNotMatch(feedbackSource, /!generatedTitle && !explicitReject/, "a manually entered title must remain savable when the model supplied no draft");
 assert.match(js, /event\.isComposing/, "Enter must not submit while an IME composition is active");
 assert.doesNotMatch(js, /feedbackStatus = payload\.training_eligible/, "training eligibility must never decide whether an accepted title is treated as stored");
 
@@ -99,6 +101,25 @@ assert.doesNotMatch(
 
 const assets = [{ index: 1 }, { index: 2 }, { index: 3 }];
 const savedOne = [{ index: 1, correctedTitle: "Saved title", feedbackStatus: "saved", persistenceStatus: "persisted" }];
+
+assert.deepEqual(
+  writerFeedbackDecision({ generatedTitle: "", correctedTitle: "Writer supplied title" }),
+  { ready: true, action: "EDIT", reason: "" },
+  "a no-draft model result must accept a writer-supplied title"
+);
+assert.deepEqual(
+  writerFeedbackDecision({ generatedTitle: "Draft", correctedTitle: "" }),
+  { ready: false, action: "", reason: "TITLE_REQUIRED" },
+  "an empty final title must fail locally with an actionable reason"
+);
+assert.equal(
+  writerFeedbackDecision({ generatedTitle: "Draft", correctedTitle: "Draft" }).action,
+  "ACCEPT"
+);
+assert.equal(
+  writerFeedbackDecision({ generatedTitle: "Draft", correctedTitle: "", explicitReject: true }).action,
+  "REJECT"
+);
 
 assert.equal(
   writerExportRowsReady({ assets: [assets[0]], results: savedOne }),
