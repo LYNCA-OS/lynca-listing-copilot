@@ -17,6 +17,11 @@ import {
   CANONICAL_NAMING_RELEASE_CONTRACT
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
+  VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
   PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
 } from "./production-standard-p0-verifier.mjs";
 import {
@@ -52,6 +57,7 @@ const versions = {
 };
 const standardVersions = {
   ...versions,
+  resolver: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION,
   composer: CANONICAL_NAMING_RELEASE_CONTRACT.composer_version,
   marketplace_profile: CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
 };
@@ -167,7 +173,6 @@ const resolutionView = {
   },
   composer: {
     composer_version: versions.composer,
-    marketplace_profile_version: versions.marketplace_profile,
     stored_title: PRODUCTION_PARITY_EXPECTED_TITLE,
     recomposed_matches_stored: true,
     trace_reliable: true
@@ -199,6 +204,22 @@ const resolutionView = {
     }])),
     sources: publicSources
   }
+};
+const verifiedOriginalSupport = {
+  schema_version: "csm-verified-original-closed-projection-public-receipt.v1",
+  status: "APPLIED",
+  match_basis: "EXACT_VERIFIED_ORIGINAL_SET",
+  release_id: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id,
+  pack_id: "lynca.csm.verified-original-closed-projection.subset-a",
+  pack_version: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_version,
+  pack_sha256: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256,
+  resolver_version: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION,
+  conflict_policy_version: VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
+  resolution_contract_sha256:
+    VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256,
+  projection_mode: "CLOSED_WORLD_EXACT",
+  closed_world_field_count:
+    VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.closed_world_field_count
 };
 const standardResolutionView = {
   schema_version: standardVersions.resolution_view_schema,
@@ -234,6 +255,7 @@ const standardResolutionView = {
     selected_candidate: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial,
     rendered_text: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial
   }],
+  verified_original_observation_support: verifiedOriginalSupport,
   owner_execution_receipt: { version: ownerVersion, sha256: standardOwnerSha256 }
 };
 
@@ -319,6 +341,9 @@ for (const mutate of [
   (value) => { value.recognition_session_id = `csmsess_${"d".repeat(40)}`; },
   (value) => { value.owner_execution_receipt.sha256 = "d".repeat(64); },
   (value) => { value.grammar.resolver_version = "resolver-drift"; },
+  (value) => { value.composer.marketplace_profile_version = versions.marketplace_profile; },
+  (value) => { value.composer.marketplace_profile_version = "profile-drift"; },
+  (value) => { value.composer.marketplace_profile_version = null; },
   (value) => { value.external_identity_support.registry_release.id = "registry-drift"; }
 ]) {
   const changed = clone(resolutionView);
@@ -335,6 +360,7 @@ for (const mutate of [
   (value) => { value.cases[1].image_sha256[0].content_sha256 = "f".repeat(64); },
   (value) => { value.cases[1].standard_p0_identity.card_number_selected_exact = false; },
   (value) => { value.cases[1].expected_grammar = "TCG"; },
+  (value) => { value.cases[1].versions.resolver = "resolver-drift"; },
   (value) => { value.cases[1].versions.composer = "thin-marketplace-composer-v2"; },
   (value) => { value.cases[1].title_length = 81; },
   (value) => { value.cases[1].external_identity_support = evidenceExternal; }
@@ -356,7 +382,14 @@ for (const mutate of [
   (value) => { value.brackets[0].canonical_field = "collector_number"; },
   (value) => { value.brackets[0].selected_candidate = "250"; },
   (value) => { value.brackets[1].rendered_text = "49/50"; },
+  (value) => { delete value.composer.marketplace_profile_version; },
+  (value) => { value.composer.marketplace_profile_version = null; },
   (value) => { value.composer.marketplace_profile_version = "ebay-profile-v1"; },
+  (value) => { value.composer.composer_version = "unknown-composer"; },
+  (value) => { delete value.verified_original_observation_support; },
+  (value) => { value.verified_original_observation_support.resolver_version = "resolver-drift"; },
+  (value) => { value.verified_original_observation_support.release_id = "release-drift"; },
+  (value) => { value.verified_original_observation_support.original_set_sha256 = "0".repeat(64); },
   (value) => { value.grammar.raw = "tcg"; },
   (value) => { value.owner_execution_receipt.sha256 = "f".repeat(64); },
   (value) => { value.composer.trace_reliable = false; },

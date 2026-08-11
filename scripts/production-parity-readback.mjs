@@ -15,11 +15,19 @@ import {
   CANONICAL_NAMING_RELEASE_CONTRACT
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
+  validateVerifiedOriginalObservationPublicReceipt,
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
   PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT,
   productionStandardP0EvidenceProofValid,
   productionStandardP0ResolutionProof,
   productionStandardP0ResolutionProofValid
 } from "./production-standard-p0-verifier.mjs";
+import {
+  productionPublicCompositionProjectionForOwner
+} from "./production-public-composition-projection.mjs";
 import {
   WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
 } from "./materialize-writer-journey-source.mjs";
@@ -227,7 +235,8 @@ function standardEvidence(evidence, { deploymentUrl, gitSha }) {
       ])
       || versions.composer !== CANONICAL_NAMING_RELEASE_CONTRACT.composer_version
       || versions.marketplace_profile
-        !== CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version) {
+        !== CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
+      || versions.resolver !== VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION) {
     throw failure("production_standard_readback_case_invalid");
   }
   return Object.freeze({
@@ -321,6 +330,10 @@ export function verifyProductionParityReadback({
   const sha = exactGitSha(gitSha);
   const entry = parityEvidence(evidence, { deploymentUrl: target, gitSha: sha });
   const owner = resolutionView?.owner_execution_receipt;
+  const publicProjection = productionPublicCompositionProjectionForOwner({
+    composer_version: entry.composer_version,
+    marketplace_profile_version: entry.marketplace_profile_version
+  });
   if (!exactObject(resolutionView)
       || resolutionView.asset_id !== entry.asset_id
       || resolutionView.recognition_session_id !== entry.recognition_session_id
@@ -328,8 +341,10 @@ export function verifyProductionParityReadback({
       || resolutionView.grammar?.contract_version !== entry.resolution_view_schema
       || resolutionView.grammar?.resolver_version !== entry.resolver_version
       || resolutionView.composer?.composer_version !== entry.composer_version
-      || resolutionView.composer?.marketplace_profile_version
-        !== entry.marketplace_profile_version
+      || publicProjection?.marketplace_profile_public !== false
+      || Object.prototype.hasOwnProperty.call(
+        resolutionView.composer || {}, "marketplace_profile_version"
+      )
       || resolutionView.composer?.stored_title !== PRODUCTION_PARITY_EXPECTED_TITLE
       || resolutionView.composer?.recomposed_matches_stored !== true
       || resolutionView.composer?.trace_reliable !== true
@@ -387,6 +402,11 @@ export function verifyProductionStandardReadback({
   const owner = resolutionView?.owner_execution_receipt;
   const storedTitle = String(composer?.stored_title || "").trim();
   const p0Proof = productionStandardP0ResolutionProof(resolutionView);
+  const verifiedOriginalSupport = resolutionView?.verified_original_observation_support;
+  const publicProjection = productionPublicCompositionProjectionForOwner({
+    composer_version: entry.composer_version,
+    marketplace_profile_version: entry.marketplace_profile_version
+  });
   if (!exactObject(resolutionView)
       || resolutionView.asset_id !== entry.asset_id
       || resolutionView.recognition_session_id !== entry.recognition_session_id
@@ -396,6 +416,10 @@ export function verifyProductionStandardReadback({
       || resolutionView.grammar?.contract_version !== entry.resolution_view_schema
       || resolutionView.grammar?.resolver_version !== entry.resolver_version
       || composer?.composer_version !== entry.composer_version
+      || publicProjection?.marketplace_profile_public !== true
+      || !Object.prototype.hasOwnProperty.call(
+        composer || {}, "marketplace_profile_version"
+      )
       || composer?.marketplace_profile_version !== entry.marketplace_profile_version
       || composer?.title !== storedTitle
       || storedTitle.length !== entry.title_length
@@ -406,6 +430,14 @@ export function verifyProductionStandardReadback({
       || composer?.trace_reliable !== true
       || !productionStandardP0ResolutionProofValid(p0Proof)
       || Object.hasOwn(resolutionView, "external_identity_support")
+      || !validateVerifiedOriginalObservationPublicReceipt(verifiedOriginalSupport)
+      || verifiedOriginalSupport.release_id
+        !== VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id
+      || verifiedOriginalSupport.pack_sha256
+        !== VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256
+      || verifiedOriginalSupport.resolver_version !== entry.resolver_version
+      || verifiedOriginalSupport.resolution_contract_sha256
+        !== VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256
       || !exactKeys(owner, ["version", "sha256"])
       || owner.version !== entry.owner_execution_receipt_version
       || owner.sha256 !== entry.owner_execution_receipt_sha256) {
