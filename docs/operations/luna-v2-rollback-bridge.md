@@ -23,6 +23,16 @@ unchanged and instead makes the relay fixture prove both sides of its intended
 boundary: total originals above 3.2MB, each original at or below 3.2MB, and
 derived recognition bytes at or below 3.2MB.
 
+The relay-bounded dispatch, Actions run `31448835682`, then passed that fixture
+build but stopped at the same pre-spend boundary. Candidate logs and the
+sanitized journey receipt showed a durable asset-create request before the
+staged request, with no relay request yet emitted. This is a valid scheduler
+ordering: the original-upload single flight starts first, then computes upload
+metadata while the staged transform independently prepares recognition bytes.
+The overlap proof therefore binds the actual upload-pipeline request before the
+recognition request plus the client's in-flight upload timer; it still requires
+both exact relays to become durable before the recognition success response.
+
 The safe release order is fixed:
 
 1. Treat database migration #225 as a completed, immutable prerequisite. The
@@ -30,13 +40,13 @@ The safe release order is fixed:
    and its exact readback was verified; do not apply or mutate it again in this
    release. Active v1 still queries only its v1 ID, and the bridge has no
    active-v2 readiness or behavior dependency.
-2. Keep the reviewed active-v1 forward-reader and checkout-repair commit
-   `c1f9e654268ca534ff54876d44a29b29adedc575` immutable. Create exactly one
-   transport-fixture repair commit directly on that parent. Its only changed
-   paths are this runbook, the bridge selector and test, the large fixture
-   builder and contract, and the Writer Journey verifier and contract enumerated
-   by `COMPATIBILITY_BRIDGE_CHANGED_PATHS`. Production upload routing and bridge
-   data-plane files remain unchanged. After those eight paths are frozen,
+2. Keep the reviewed relay-bounded bridge commit
+   `4beb373ecf3006dbcd855c4305d532f0c4421609` immutable. Create exactly one
+   overlap-proof repair commit directly on that parent. Its only changed paths
+   are this runbook, the bridge selector and test, and the Writer Journey
+   verifier and contract enumerated by `COMPATIBILITY_BRIDGE_CHANGED_PATHS`.
+   Production upload routing and bridge data-plane files remain unchanged.
+   After those five paths are frozen,
    compute the commit tree and include
    exactly one
    `LYNCA-Release-Class: compatibility-bridge-v1` trailer plus exactly one
@@ -54,8 +64,8 @@ The safe release order is fixed:
    Journey manifest, including the exact external-identity parity case.
 
 The compatibility class is commit-bound and intentionally non-reusable: the
-repair selector requires parent `c1f9e654268ca534ff54876d44a29b29adedc575`
-and exactly the eight repair paths, an ordinary commit cannot select its reduced
+repair selector requires parent `4beb373ecf3006dbcd855c4305d532f0c4421609`
+and exactly the five repair paths, an ordinary commit cannot select its reduced
 manifest, and an active-v2 runtime cannot satisfy its active-v1 contract proof.
 The inherited bridge changes only historical validation, replay, persistence,
 and readback; the repair changes no data-plane file. Fresh resolution, health,

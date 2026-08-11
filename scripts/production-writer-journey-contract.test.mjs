@@ -443,11 +443,34 @@ assert.match(spec, /journeyContext\.route\("\*\*\/api\/listing-image-upload-rela
 assert.match(spec, /largeTransport\.relay_requests\.length >= 2[\s\S]*?route\.abort\("blockedbyclient"\)/,
   "a third relay request must fail before network use");
 assert.match(spec, /started_count: relayStarted[\s\S]*?completed_count: relayCompleted[\s\S]*?incomplete_count: relayStarted - relayCompleted/);
-assert.match(spec, /relayTimelineSnapshot\.started_count < 1/);
-assert.match(spec, /relayTimelineSnapshot\.incomplete_count < 1/);
+assert.match(spec,
+  /upload_pipeline_request_sequence: uploadPipelineRequest\?\.request_sequence/,
+  "the real upload pipeline, not relay scheduler timing, must start before recognition");
+assert.match(spec,
+  /upload_pipeline_identity: uploadPipelineRequest\?\.identity/,
+  "the upload-pipeline request must be identity-bound to the staged recognition request");
+assert.match(spec,
+  /relayTimelineSnapshot\.upload_pipeline_identity\.client_asset_ref[\s\S]*?!== identity\.client_asset_ref/);
+assert.match(spec,
+  /relayTimelineSnapshot\.upload_pipeline_request_sequence[\s\S]*?>= relayTimelineSnapshot\.recognition_request_sequence/);
+assert.match(spec,
+  /const receipt = validateLargeIngestRequest[\s\S]*?largeTransport\.ingest_requests\.push\(receipt\);[\s\S]*?const responsePromise = route\.request\(\)\.response\(\)/,
+  "a rejected pre-spend request must not leave an unowned response waiter behind");
+assert.doesNotMatch(spec, /relayTimelineSnapshot\.started_count < 1/);
+assert.doesNotMatch(spec, /relayTimelineSnapshot\.incomplete_count < 1/);
+assert.match(spec, /client_original_upload_elapsed_at_dispatch_ms/,
+  "the same original-upload single flight must still be active at staged dispatch");
 assert.match(spec, /relay\.durable_response_sequence < recognitionResponseSequence/,
   "both durable relay responses must precede the successful recognition response");
 assert.match(spec, /relay_durable_before_recognition_response: true/);
+assert.match(spec,
+  /largeTransport\.upload_pipeline_requests\[0\]\.response_status >= 200[\s\S]*?< 300/,
+  "the bound upload-pipeline request must complete successfully");
+assert.match(spec,
+  /uploadPipelineReceipt\?\.asset_id !== payload\?\.asset_id/,
+  "the durable asset-create response must bind the final recognition and relay asset");
+assert.match(spec,
+  /uploadPipelineReceipt: largeTransport\.upload_pipeline_requests\[0\]\?\.response_receipt/);
 assert.match(spec, /largeTransport\.recognition_response_events\.length === 1/);
 assert.match(spec, /largeTransport\.relay_requests\.length === 2/);
 assert.match(spec, /largeTransport\.relay_requests\.every\(\(entry\) => entry\.response_observed === true\)/);

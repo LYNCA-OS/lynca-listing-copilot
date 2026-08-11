@@ -962,13 +962,20 @@ function validateLargeIngestRequest(request, fixture, priorRequests, {
   const timing = metadata.clientTiming;
   const firstRequest = priorRequests.length === 0;
   if (firstRequest && (!exactObject(relayTimelineSnapshot)
+    || !Number.isSafeInteger(relayTimelineSnapshot.upload_pipeline_request_sequence)
+    || !hasExactKeys(relayTimelineSnapshot.upload_pipeline_identity, [
+      "capture_profile_id", "client_asset_ref", "expected_original_count", "idempotency_key"
+    ])
     || !Number.isSafeInteger(relayTimelineSnapshot.started_count)
     || !Number.isSafeInteger(relayTimelineSnapshot.completed_count)
     || !Number.isSafeInteger(relayTimelineSnapshot.incomplete_count)
     || !Number.isSafeInteger(relayTimelineSnapshot.recognition_request_sequence)
-    || relayTimelineSnapshot.started_count < 1
+    || relayTimelineSnapshot.upload_pipeline_request_sequence < 1
+    || relayTimelineSnapshot.upload_pipeline_request_sequence
+      >= relayTimelineSnapshot.recognition_request_sequence
+    || relayTimelineSnapshot.started_count < 0
     || relayTimelineSnapshot.completed_count < 0
-    || relayTimelineSnapshot.incomplete_count < 1
+    || relayTimelineSnapshot.incomplete_count < 0
     || relayTimelineSnapshot.completed_count + relayTimelineSnapshot.incomplete_count
       !== relayTimelineSnapshot.started_count)) {
     throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
@@ -1072,6 +1079,15 @@ function validateLargeIngestRequest(request, fixture, priorRequests, {
   if (Object.values(identity).some((value) => !value)) {
     throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
   }
+  if (firstRequest && (relayTimelineSnapshot.upload_pipeline_identity.capture_profile_id
+      !== identity.capture_profile_id
+    || relayTimelineSnapshot.upload_pipeline_identity.client_asset_ref
+      !== identity.client_asset_ref
+    || relayTimelineSnapshot.upload_pipeline_identity.idempotency_key
+      !== identity.idempotency_key
+    || relayTimelineSnapshot.upload_pipeline_identity.expected_original_count !== 2)) {
+    throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+  }
   if (priorRequests.length && stableJson(priorRequests[0].identity) !== stableJson(identity)) {
     throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
   }
@@ -1088,7 +1104,12 @@ function validateLargeIngestRequest(request, fixture, priorRequests, {
     original_manifest: originalManifest,
     derived_manifest: derivedManifest,
     immutable_manifest_sha256: identity.immutable_manifest_sha256,
-    overlap_observed: firstRequest && relayTimelineSnapshot.incomplete_count >= 1,
+    overlap_observed: firstRequest,
+    upload_pipeline_started_before_recognition: firstRequest,
+    upload_pipeline_identity_bound: firstRequest,
+    upload_pipeline_request_sequence: firstRequest
+      ? relayTimelineSnapshot.upload_pipeline_request_sequence
+      : null,
     relay_started_at_dispatch: firstRequest ? relayTimelineSnapshot.started_count : null,
     relay_completed_at_dispatch: firstRequest ? relayTimelineSnapshot.completed_count : null,
     relay_incomplete_at_dispatch: firstRequest ? relayTimelineSnapshot.incomplete_count : null,
@@ -1150,7 +1171,8 @@ async function validateLargeRelayResponse(response, fixture, timeline) {
 }
 
 function validateLargeRecognitionResponse(payload, fixture, ingestRequests, relayReceipts, {
-  recognitionResponseSequence = null
+  recognitionResponseSequence = null,
+  uploadPipelineReceipt = null
 } = {}) {
   const stages = payload?.latency_stages_ms || {};
   const firstRequest = ingestRequests[0];
@@ -1202,10 +1224,16 @@ function validateLargeRecognitionResponse(payload, fixture, ingestRequests, rela
     || ingestRequests.length < 1 || ingestRequests.length > 2
     || firstRequest?.body_bytes !== fixture.derivedTotal
     || firstRequest?.overlap_observed !== true
-    || firstRequest?.relay_started_at_dispatch < 1
-    || firstRequest?.relay_incomplete_at_dispatch < 1
+    || firstRequest?.upload_pipeline_started_before_recognition !== true
+    || firstRequest?.upload_pipeline_identity_bound !== true
+    || !Number.isSafeInteger(firstRequest?.upload_pipeline_request_sequence)
+    || firstRequest.upload_pipeline_request_sequence >= firstRequest.recognition_request_sequence
     || firstRequest?.relay_completed_at_dispatch
       + firstRequest?.relay_incomplete_at_dispatch !== firstRequest?.relay_started_at_dispatch
+    || uploadPipelineReceipt?.asset_id !== payload?.asset_id
+    || uploadPipelineReceipt?.client_asset_ref !== firstRequest?.identity?.client_asset_ref
+    || uploadPipelineReceipt?.idempotency_key !== firstRequest?.identity?.idempotency_key
+    || uploadPipelineReceipt?.expected_original_count !== 2
     || payload?.client_asset_ref !== firstRequest?.identity?.client_asset_ref
     || payload?.staged_resume_receipt !== firstRequest?.identity?.staged_resume_receipt
     || relayReceipts.length !== 2
@@ -1220,6 +1248,11 @@ function validateLargeRecognitionResponse(payload, fixture, ingestRequests, rela
     original_upload_bytes: fixture.originalTotal,
     recognition_body_bytes: fixture.derivedTotal,
     overlap_observed: true,
+    upload_pipeline_started_before_recognition: true,
+    upload_pipeline_identity_bound: true,
+    upload_pipeline_asset_bound: true,
+    upload_pipeline_request_sequence: firstRequest.upload_pipeline_request_sequence,
+    recognition_request_sequence: firstRequest.recognition_request_sequence,
     relay_started_at_first_staged_post: firstRequest.relay_started_at_dispatch,
     relay_completed_at_first_staged_post: firstRequest.relay_completed_at_dispatch,
     relay_incomplete_at_first_staged_post: firstRequest.relay_incomplete_at_dispatch,
@@ -1600,6 +1633,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     ingest_requests: [],
     ingest_responses: [],
     response_promises: [],
+    upload_pipeline_requests: [],
     relay_requests: [],
     relay_receipts: [],
     recognition_response_events: [],
@@ -1804,7 +1838,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
         if (requestIndex !== 0) {
           throw verifierFailure(verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
         }
-        const responsePromise = route.request().response();
+        const uploadPipelineRequest = largeTransport.upload_pipeline_requests[0];
         const relayStarted = largeTransport.relay_requests.length;
         const relayCompleted = largeTransport.relay_requests.filter(
           (entry) => entry.response_observed === true
@@ -1813,6 +1847,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
           route.request(), largeFixture, largeTransport.ingest_requests, {
             phaseComplete: largeTransport.phase_complete,
             relayTimelineSnapshot: {
+              upload_pipeline_request_sequence: uploadPipelineRequest?.request_sequence,
+              upload_pipeline_identity: uploadPipelineRequest?.identity,
               started_count: relayStarted,
               completed_count: relayCompleted,
               incomplete_count: relayStarted - relayCompleted,
@@ -1821,6 +1857,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
           }
         );
         largeTransport.ingest_requests.push(receipt);
+        const responsePromise = route.request().response();
         recognitionPost.continued = true;
         await route.continue();
         const capturedResponse = (async () => {
@@ -1855,6 +1892,46 @@ test("production writer journey verifies Glass Box and staged large-image transp
     const journeyPage = await journeyContext.newPage();
     journeyPage.on("request", (request) => {
       const url = new URL(request.url());
+      if (largeTransport.active
+          && request.method() === "POST"
+          && url.origin === productionOrigin
+          && url.pathname === "/api/listing-asset-create"
+          && !url.search && !url.hash) {
+        let identity = null;
+        try {
+          const payload = request.postDataJSON();
+          if (hasExactKeys(payload, [
+            "capture_profile_id", "client_asset_ref", "expected_original_count", "idempotency_key"
+          ])
+            && typeof payload.capture_profile_id === "string"
+            && typeof payload.client_asset_ref === "string"
+            && typeof payload.idempotency_key === "string"
+            && Number.isSafeInteger(payload.expected_original_count)) {
+            identity = payload;
+          }
+        } catch {}
+        if (largeTransport.upload_pipeline_requests.length >= 1) {
+          markLargeTransportViolation(
+            largeTransport,
+            verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED
+          );
+        } else if (!identity) {
+          markLargeTransportViolation(
+            largeTransport,
+            verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED
+          );
+        } else {
+          largeTransport.upload_pipeline_requests.push({
+            request,
+            identity,
+            request_sequence: ++networkSequence,
+            response_observed: false,
+            response_status: null,
+            response_sequence: null,
+            response_receipt: null
+          });
+        }
+      }
       if (largeTransport.active && request.method() === "PUT" && url.origin !== productionOrigin) {
         largeTransport.external_storage_puts += 1;
       }
@@ -1883,6 +1960,40 @@ test("production writer journey verifies Glass Box and staged large-image transp
         warmupRequest.response_sequence = ++networkSequence;
       }
       const responsePathname = new URL(response.url()).pathname;
+      const uploadPipelineRequest = largeTransport.upload_pipeline_requests.find((entry) => (
+        entry.request === response.request()
+      ));
+      if (uploadPipelineRequest) {
+        uploadPipelineRequest.response_observed = true;
+        uploadPipelineRequest.response_status = response.status();
+        uploadPipelineRequest.response_sequence = ++networkSequence;
+        const uploadPipelineTask = (async () => {
+          const payload = await jsonOrNull(response);
+          if (response.status() < 200 || response.status() >= 300
+            || payload?.ok !== true
+            || String(payload?.client_asset_ref || "")
+              !== uploadPipelineRequest.identity.client_asset_ref
+            || String(payload?.idempotency_key || "")
+              !== uploadPipelineRequest.identity.idempotency_key
+            || Number(payload?.expected_original_count) !== 2
+            || !String(payload?.asset_id || "").trim()) {
+            throw verifierFailure(verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED);
+          }
+          uploadPipelineRequest.response_receipt = Object.freeze({
+            asset_id: String(payload.asset_id),
+            client_asset_ref: String(payload.client_asset_ref),
+            idempotency_key: String(payload.idempotency_key),
+            expected_original_count: Number(payload.expected_original_count)
+          });
+        })().catch(() => {
+          markLargeTransportViolation(
+            largeTransport,
+            verifierErrorCodes.LARGE_PRESPEND_GATE_FAILED
+          );
+        });
+        largeTransport.capture_tasks.add(uploadPipelineTask);
+        void uploadPipelineTask.finally(() => largeTransport.capture_tasks.delete(uploadPipelineTask));
+      }
       if (largeTransport.active
         && response.request().method() === "POST"
         && responsePathname === stagedRecognitionPath) {
@@ -2196,6 +2307,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
     });
     requireInvariant(!largeTransport.violation
       && largeTransport.external_storage_puts === 0
+      && largeTransport.upload_pipeline_requests.length === 1
+      && largeTransport.upload_pipeline_requests[0].response_observed === true
+      && largeTransport.upload_pipeline_requests[0].response_status >= 200
+      && largeTransport.upload_pipeline_requests[0].response_status < 300
+      && largeTransport.upload_pipeline_requests[0].response_receipt?.asset_id
+        === largeRecognitionPayload.asset_id
       && new Set(largeTransport.relay_receipts.map((entry) => entry.role)).size === 2
       && largeTransport.relay_receipts.reduce(
         (total, entry) => total + entry.browser_body_bytes, 0
@@ -2209,7 +2326,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       {
         recognitionResponseSequence: largeTransport.recognition_response_events.find((entry) => (
           entry.request === largeRecognitionResponse.request()
-        ))?.response_sequence
+        ))?.response_sequence,
+        uploadPipelineReceipt: largeTransport.upload_pipeline_requests[0]?.response_receipt
       }
     );
     const largeRecognitionPost = recognitionPosts.find((entry) => (
@@ -2378,6 +2496,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && largeTransport.ingest_responses.length === 1
       && largeTransport.recognition_response_events.length === 1
       && largeTransport.recognition_response_events[0].status === 200
+      && largeTransport.upload_pipeline_requests.length === 1
+      && largeTransport.upload_pipeline_requests[0].response_observed === true
       && largeTransport.relay_requests.length === 2
       && largeTransport.relay_requests.every((entry) => entry.response_observed === true)
       && largeTransport.relay_receipts.length === 2,
@@ -2985,9 +3105,16 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     postDataBuffer: () => ingestBody
   });
   const offlineRelayTimelineSnapshot = Object.freeze({
-    started_count: 2,
+    upload_pipeline_request_sequence: 1,
+    upload_pipeline_identity: Object.freeze({
+      capture_profile_id: ingestMetadata.captureProfileId,
+      client_asset_ref: ingestMetadata.clientAssetRef,
+      expected_original_count: ingestMetadata.expectedOriginalCount,
+      idempotency_key: ingestMetadata.idempotencyKey
+    }),
+    started_count: 0,
     completed_count: 0,
-    incomplete_count: 2,
+    incomplete_count: 0,
     recognition_request_sequence: 3
   });
   const accepted = validateLargeIngestRequest(makeIngestRequest(), fixture, [], {
@@ -2997,8 +3124,16 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && accepted.body_bytes === fixture.derivedTotal,
   verifierErrorCodes.GENERIC);
   for (const invalidTimeline of [
-    { ...offlineRelayTimelineSnapshot, started_count: 0, incomplete_count: 0 },
-    { ...offlineRelayTimelineSnapshot, completed_count: 2, incomplete_count: 0 }
+    { ...offlineRelayTimelineSnapshot, upload_pipeline_request_sequence: 0 },
+    { ...offlineRelayTimelineSnapshot, upload_pipeline_request_sequence: 3 },
+    {
+      ...offlineRelayTimelineSnapshot,
+      upload_pipeline_identity: {
+        ...offlineRelayTimelineSnapshot.upload_pipeline_identity,
+        client_asset_ref: "different-asset"
+      }
+    },
+    { ...offlineRelayTimelineSnapshot, started_count: 0, incomplete_count: 1 }
   ]) {
     let falseOverlapRejected = false;
     try {
@@ -3075,10 +3210,10 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     asset_id: "asset-test",
     image_id: `original-${index + 1}`,
     browser_body_bytes: fixture.originals[index].bytes,
-    started_sequence: index + 1,
-    durable_response_sequence: index + 4
+    started_sequence: index + 4,
+    durable_response_sequence: index + 6
   }));
-  const offlineRecognitionResponseSequence = 6;
+  const offlineRecognitionResponseSequence = 8;
   const offlineProviderResponseId = "resp_offline_writer_journey";
   const offlineExecutionContract = structuredClone(
     expectedExecutionContractByTransportLaneAndImageCount[
@@ -3295,13 +3430,34 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && !offlineExecutionArtifact.includes("PRIVATE")
     && !offlineExecutionArtifact.includes("/not-read/"),
   verifierErrorCodes.GENERIC);
-  const validateOfflineLargeResponse = (payload, receipts = relayReceipts) => (
+  const offlineUploadPipelineReceipt = Object.freeze({
+    asset_id: recognitionPayload.asset_id,
+    client_asset_ref: accepted.identity.client_asset_ref,
+    idempotency_key: accepted.identity.idempotency_key,
+    expected_original_count: 2
+  });
+  const validateOfflineLargeResponse = (
+    payload,
+    receipts = relayReceipts,
+    uploadPipelineReceipt = offlineUploadPipelineReceipt
+  ) => (
     validateLargeRecognitionResponse(payload, fixture, [accepted], receipts, {
-      recognitionResponseSequence: offlineRecognitionResponseSequence
+      recognitionResponseSequence: offlineRecognitionResponseSequence,
+      uploadPipelineReceipt
     })
   );
   requireInvariant(validateOfflineLargeResponse(recognitionPayload).recognition_body_bytes
     === fixture.derivedTotal, verifierErrorCodes.GENERIC);
+  let unboundUploadPipelineRejected = false;
+  try {
+    validateOfflineLargeResponse(recognitionPayload, relayReceipts, {
+      ...offlineUploadPipelineReceipt,
+      asset_id: "asset-drift"
+    });
+  } catch {
+    unboundUploadPipelineRejected = true;
+  }
+  requireInvariant(unboundUploadPipelineRejected, verifierErrorCodes.GENERIC);
   for (const drifted of [
     { ...recognitionPayload, asset_id: "asset-drift" },
     { ...recognitionPayload, served_effort: "low", served_effort_attested: false },
