@@ -23,30 +23,32 @@ import { LISTING_IMAGE_RELAY_MAX_BYTES } from "../api/listing-image-upload-relay
 
 const materializer = await import("./materialize-writer-journey-source.mjs");
 const materializerContracts = materializer.WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS;
-const sourceId = LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_feedback_id;
-const frontHash = LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.image_sha256[`${sourceId}_front`];
-const backHash = LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.image_sha256[`${sourceId}_back`];
+const sourceId = LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_asset_id;
+const frontHash = LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.images[0].content_sha256;
+const backHash = LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.images[1].content_sha256;
 const approvedFiles = [
   {
-    path: "/private/tmp/approved-front.jpg",
+    path: "/private/tmp/approved-front.webp",
     role: "front_original",
     bytes: 101,
-    content_type: "image/jpeg",
+    content_type: "image/webp",
     content_sha256: frontHash
   },
   {
-    path: "/private/tmp/approved-back.jpg",
+    path: "/private/tmp/approved-back.webp",
     role: "back_original",
     bytes: 102,
-    content_type: "image/jpeg",
+    content_type: "image/webp",
     content_sha256: backHash
   }
 ];
 const approvedCase = {
   case_id: "NON_TCG",
   expected_grammar: "NON_TCG",
-  source_feedback_id: sourceId,
-  evaluation_cohort: "INTERNAL_REVIEWED_GT",
+  source_kind: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_kind,
+  source_record_id: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_record_id,
+  source_asset_id: sourceId,
+  evaluation_cohort: "PRODUCTION_LOW_REASONING_VERIFIED",
   hash_provenance: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.hash_provenance,
   image_count: 2,
   files: approvedFiles
@@ -80,29 +82,40 @@ const approvedCasesManifest = {
 assert.deepEqual(LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT, {
   case_id: "NON_TCG",
   expected_grammar: "NON_TCG",
-  source_feedback_id: "007edfc1-e52d-4a9e-ab8f-3955e6500620",
-  evaluation_cohort: "INTERNAL_REVIEWED_GT",
-  hash_provenance: "2026-08-08_DIRECT_EXACT_PATH_BYTE_ACQUISITION",
-  content_type: "image/jpeg",
-  image_sha256: {
-    "007edfc1-e52d-4a9e-ab8f-3955e6500620_front": frontHash,
-    "007edfc1-e52d-4a9e-ab8f-3955e6500620_back": backHash
-  }
+  source_kind: "PRODUCTION_ASSET",
+  source_record_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+  source_asset_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+  evaluation_cohort: "PRODUCTION_LOW_REASONING_VERIFIED",
+  hash_provenance: "2026-08-11_PRODUCTION_ASSET_EXACT_VERIFICATION",
+  content_type: "image/webp",
+  images: [{
+    image_id: "f55f120f-09e0-4c2f-9166-8bcf7310b4d0",
+    role: "front_original",
+    content_sha256: frontHash
+  }, {
+    image_id: "cd43a047-0472-441e-bc4d-00e53b04634f",
+    role: "back_original",
+    content_sha256: backHash
+  }]
 });
 const matchingMaterializerContract = materializerContracts.find((contract) => (
   contract?.case_id === "NON_TCG"
 ));
-assert.equal(matchingMaterializerContract?.source_feedback_id, sourceId);
-assert.equal(matchingMaterializerContract?.evaluation_cohort, "INTERNAL_REVIEWED_GT");
-assert.deepEqual(matchingMaterializerContract?.image_sha256,
-  LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.image_sha256);
+assert.equal(matchingMaterializerContract?.source_kind, "PRODUCTION_ASSET");
+assert.equal(matchingMaterializerContract?.source_record_id, sourceId);
+assert.equal(matchingMaterializerContract?.source_asset_id, sourceId);
+assert.equal(matchingMaterializerContract?.evaluation_cohort,
+  "PRODUCTION_LOW_REASONING_VERIFIED");
+assert.deepEqual(matchingMaterializerContract?.images.map(({ image_id, role, content_sha256 }) => ({
+  image_id, role, content_sha256
+})), LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.images);
 assert.equal(matchingMaterializerContract.hash_provenance,
   LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.hash_provenance);
 
 assert.deepEqual(LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT, {
-  schema_version: "large-internal-writer-fixture-receipt-v1",
+  schema_version: "large-internal-writer-fixture-receipt-v2",
   builder_id: "large-internal-writer-fixture-builder",
-  builder_version: "1.1.0",
+  builder_version: "1.2.0",
   source_class: "LYNCA_INTERNAL_SYNTHETIC_TEST",
   allowed_use: "PRODUCTION_RELEASE_TRANSPORT_ONLY",
   forbidden_uses: [
@@ -140,13 +153,13 @@ assert.deepEqual(normalized.map(({ image_id, side, role, content_sha256 }) => ({
   image_id, side, role, content_sha256
 })), [
   {
-    image_id: `${sourceId}_front`,
+    image_id: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.images[0].image_id,
     side: "front",
     role: "front_original",
     content_sha256: frontHash
   },
   {
-    image_id: `${sourceId}_back`,
+    image_id: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.images[1].image_id,
     side: "back",
     role: "back_original",
     content_sha256: backHash
@@ -159,8 +172,22 @@ for (const invalid of [
   { ...approvedCasesManifest, evidence_scope: "MODEL_EVALUATION" },
   { ...approvedCasesManifest, accuracy_claim: { score: 1 } },
   { ...approvedCasesManifest, cases: [approvedCasesManifest.cases[0]] },
-  { ...approvedCasesManifest, cases: [{ ...approvedCase, source_feedback_id: "another-source" }] },
-  { ...approvedCasesManifest, cases: [{ ...approvedCase, evaluation_cohort: "EBAY_COLD_START" }] },
+  {
+    ...approvedCasesManifest,
+    cases: [approvedTcgCase, { ...approvedCase, source_kind: "SUPABASE_FEEDBACK" }]
+  },
+  {
+    ...approvedCasesManifest,
+    cases: [approvedTcgCase, { ...approvedCase, source_record_id: "asset_wrong" }]
+  },
+  {
+    ...approvedCasesManifest,
+    cases: [approvedTcgCase, { ...approvedCase, source_asset_id: "asset_wrong" }]
+  },
+  {
+    ...approvedCasesManifest,
+    cases: [approvedTcgCase, { ...approvedCase, evaluation_cohort: "EBAY_COLD_START" }]
+  },
   { ...approvedCasesManifest, cases: [{ ...approvedCase, image_count: 1 }] },
   { ...approvedCasesManifest, cases: [{ ...approvedCase, files: approvedFiles.slice(0, 1) }] },
   {
@@ -211,8 +238,10 @@ const receiptBuilderSource = source.match(
 )?.[0] || "";
 assert.ok(receiptBuilderSource);
 assert.doesNotMatch(receiptBuilderSource,
-  /expected_grammar|case_id|source_labels_copied|accuracy_claim|writer_(?:raw_|final_)?title/,
+  /expected_grammar|expected_card_number|expected_serial|\bcard_number\b|\bserial\b|case_id|source_labels_copied|accuracy_claim|writer_(?:raw_|final_)?title/,
   "the transport receipt must not copy grammar, title, label, or accuracy-claim fields");
+assert.doesNotMatch(source, /production-standard-p0-verifier/,
+  "verifier-only identity facts must not enter fixture generation");
 assert.doesNotMatch(source, /tenant_staging_cos51|tenant_legacy/);
 assert.doesNotMatch(source, /\bfetch\s*\(/);
 assert.match(source, /provider_calls:\s*0/);

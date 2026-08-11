@@ -655,9 +655,13 @@ function publicCsmRows(rows) {
   const resolverVersion = optionalText(resolution?.resolver_version);
   const outputContractVersion = optionalText(output?.contract_version);
   const composerVersion = optionalText(output?.composer_version);
+  const marketplaceProfileVersion = optionalText(output?.marketplace_profile_version);
   const publicOutput = {
     ...(outputContractVersion ? { contract_version: outputContractVersion } : {}),
-    ...(composerVersion ? { composer_version: composerVersion } : {})
+    ...(composerVersion ? { composer_version: composerVersion } : {}),
+    ...(marketplaceProfileVersion ? {
+      marketplace_profile_version: marketplaceProfileVersion
+    } : {})
   };
   return {
     resolution: {

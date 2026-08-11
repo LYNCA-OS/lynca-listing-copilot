@@ -1,0 +1,422 @@
+{
+  "schema_version": "lynca-subset-a-low-canonical-v1",
+  "contract": {
+    "marketplace_profile": "lynca-standard-name-v0.1",
+    "composer_version": "thin-marketplace-composer-v3",
+    "character_budget": 80,
+    "provider_calls": 0,
+    "formal_evidence_sha256": "dbab65be5f7421683bf63c648ffddd016787b7e26369e3e2c2a38f3694b94c61",
+    "recovery_evidence_sha256": "12ffd04e74a858d29266f48a90a23989a4a3cef7c8c0b12bc1cd0be680ad5c7f",
+    "source_evidence_content_sha256": "5edcf9c43d2a840f5480dd8bd980cdaf7db6f0d34c25bbca1ee5b8f69049fd78",
+    "projection_content_sha256": "b4f0e4e78632b38e060b1d7708e86e4e451c49ea303803cb8522eade74e52a6d"
+  },
+  "cases": [
+    {
+      "id": "a",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "a.webp", "sha256": "161f0d97df619f8d34b2453551567a0473d3e477c3e0ec9295029fbce8c59e44" },
+        { "name": "aa.webp", "sha256": "cef46b5d761d2d20f5cd21d611cab8d8037721bcdb4ae8c1a0d4441439a6fdc3" }
+      ],
+      "anchors": {
+        "session_sha256": "200237a2477d7db292a3a8804dc0ec22a9b8f5f6f2fb1ca038061d01dc51cfc7",
+        "asset_sha256": "c610dfd5aa1451c1ee0094f33069fc8dcc28fbbc9e1ab1cb2e4a644402c812cb"
+      },
+      "canonical_fields": {
+        "year": "2025", "manufacturer": "Topps", "product": "Topps Chrome",
+        "subjects": ["Cooper Flagg"], "print_finish": "Gold Refractor",
+        "components": ["RC"], "team": "Mavericks", "card_number": "251",
+        "serial": "50/50", "grammar": "standard"
+      },
+      "expected": {
+        "title": "2025 Topps Chrome Cooper Flagg Gold Refractor RC Mavericks #251 50/50",
+        "length": 69,
+        "trace": { "budget_omitted": [], "redundant_omitted": ["manufacturer"], "abbreviated": [], "year_alias": null }
+      }
+    },
+    {
+      "id": "b",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "b.webp", "sha256": "88debfceb73ee0bf048e92462e50d599df7a865a5e95ee361cdd76219a82f21c" },
+        { "name": "bb.webp", "sha256": "a431abc8e498856de4a37e1b61937cee68652448e9b465c9bed96dfd1ec048e5" }
+      ],
+      "anchors": {
+        "session_sha256": "e42cbd8b38b56673e8b77c4391912796ea1381ac267394bdbb0742d812b4466a",
+        "asset_sha256": "137ada3a64c36634cf3aec7577f6105f1d4e64dd57d66b968e1e738dd76bf700"
+      },
+      "canonical_fields": {
+        "year": "2001", "manufacturer": "Donruss", "product": "Donruss Elite",
+        "set": "Passing the Torch", "subjects": ["Barry Bonds", "Willie Mays"],
+        "components": ["Auto"], "team": "Giants", "card_number": "PT-18",
+        "serial": "22/50", "grading_info": {
+          "company": "PSA", "card_grade": "", "auto_grade": "9", "grade_type": "AUTHENTIC_WITH_AUTO"
+        }, "grammar": "standard"
+      },
+      "expected": {
+        "title": "2001 Donruss Elite Passing the Torch Barry Bonds Willie Mays Auto #PT-18 22/50",
+        "length": 78,
+        "trace": {
+          "budget_omitted": ["team", "grading_info"],
+          "redundant_omitted": ["manufacturer"],
+          "abbreviated": [],
+          "year_alias": null
+        }
+      }
+    },
+    {
+      "id": "c",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "c.webp", "sha256": "d38876e02897a3b9b3cd46b1b7de33919f8f81daf1cd1b50644f872c3ec53a9b" },
+        { "name": "cc.webp", "sha256": "0eab45b9d77f245e9becefa25a8f5ecbc9020e6c5e5b7b88e3fd94da62c32e14" }
+      ],
+      "anchors": {
+        "session_sha256": "02aedd5f5ef89c86a7e187f04c9dbe3a1525f69422ec7b03dee4bce0cdfa6947",
+        "asset_sha256": "407d52762371b7abd14be2cf6830b96d8b29057853bd3d7d353173305e10306b"
+      },
+      "canonical_fields": {
+        "year": "2025-26", "manufacturer": "Topps", "product": "Bowman Chrome Basketball",
+        "set": "Chrome Prospect Autograph", "subjects": ["Caleb Wilson"],
+        "components": ["Auto"], "team": "UNC", "card_number": "CPA-CL",
+        "serial": "1/1", "grammar": "standard"
+      },
+      "expected": {
+        "title": "2025-26 Topps Bowman Chrome Basketball Prospect Auto Caleb Wilson #CPA-CL 1/1",
+        "length": 77,
+        "trace": {
+          "budget_omitted": ["team"], "redundant_omitted": ["components"],
+          "abbreviated": [],
+          "year_alias": null,
+          "display_aliases": [
+            { "field": "set", "before": "Prospect Autograph", "after": "Prospect Auto" }
+          ],
+          "overlap_trim": {
+            "before": "Chrome Prospect Autograph", "after": "Prospect Autograph",
+            "removed_prefix": "Chrome", "redundant_with": "product:0"
+          }
+        }
+      }
+    },
+    {
+      "id": "d",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "d.webp", "sha256": "840df52a4cb5bdff3e0e8d015cdf6167e4592f14967ccf6b2305fe31882d1b25" },
+        { "name": "dd.webp", "sha256": "4fd565d8ab3237eb745858f8b472d9e1a06fdd9a7c3e1a5bbbd639cb96c072eb" }
+      ],
+      "anchors": {
+        "session_sha256": "643ec927928a5306028e65f3664dbda8f782bddcda0ebb9b64fd9c9c82c846dc",
+        "asset_sha256": "164dcaee4c169de8549a4fa29641223cf0fb3d80dd7db930341fdce180e37b8d"
+      },
+      "canonical_fields": {
+        "year": "2000", "manufacturer": "Topps", "product": "Bowman Chrome",
+        "subjects": ["Tom Brady"], "team": "Patriots", "card_number": "236",
+        "grading_info": { "company": "BGS", "card_grade": "9.5", "auto_grade": "", "grade_type": "CARD_ONLY" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2000 Topps Bowman Chrome Tom Brady Patriots #236 BGS 9.5", "length": 56,
+        "trace": { "budget_omitted": [], "redundant_omitted": [], "abbreviated": [], "year_alias": null }
+      }
+    },
+    {
+      "id": "e",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "e.webp", "sha256": "df3e7a1f199ec184fe618a91a831fc1d07432c1e0733db6e88fd5317eb995cb7" },
+        { "name": "ee.webp", "sha256": "ba12c5742204fccb62e6881703f1a2275428444caf88611d3ed91f618fce3636" }
+      ],
+      "anchors": {
+        "session_sha256": "3534034aa534aa7bdbcea9875e140c4a4c394ec72852eef549c1bf8f976ab24a",
+        "asset_sha256": "18f14bbeb8795d561472ea7e0d7ef8a9d57618d63b5a724bd80e3219951cd509"
+      },
+      "canonical_fields": {
+        "year": "1986", "manufacturer": "Fleer", "product": "Fleer",
+        "subjects": ["Michael Jordan"], "team": "Bulls", "card_number": "57",
+        "grading_info": { "company": "PSA", "card_grade": "6", "auto_grade": "", "grade_type": "CARD_ONLY" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "1986 Fleer Michael Jordan Bulls #57 PSA 6", "length": 41,
+        "trace": { "budget_omitted": [], "redundant_omitted": ["manufacturer"], "abbreviated": [], "year_alias": null }
+      }
+    },
+    {
+      "id": "f",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "f.webp", "sha256": "96d25f72806eaad324eb7fd1aaa0346d2945799342b067d517df3bd90400e634" },
+        { "name": "ff.webp", "sha256": "606973c78a805cd301576cb8d37b933a2f58815a7385535f975755d61b2bbd9d" }
+      ],
+      "anchors": {
+        "session_sha256": "4ba02efbac681a07f7722ad21b1d87e5e0521ef05b389d8cbc9253ff8fe3f568",
+        "asset_sha256": "166f9f192ce1b94e93b4f8e19f8335a636f263876c7ea080baac287cf46e61fa"
+      },
+      "canonical_fields": {
+        "year": "2018", "manufacturer": "Topps", "product": "Topps",
+        "set": "Future Stars-Autograph", "subjects": ["Shohei Ohtani"],
+        "components": ["RC", "Auto"], "team": "Angels", "card_number": "FS-5", "serial": "1/5",
+        "grading_info": { "company": "PSA", "card_grade": "8", "auto_grade": "", "grade_type": "CARD_ONLY" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2018 Topps Future Stars Auto Shohei Ohtani RC Angels #FS-5 1/5 PSA 8", "length": 68,
+        "trace": {
+          "budget_omitted": [], "redundant_omitted": ["manufacturer", "components"],
+          "abbreviated": [], "year_alias": null,
+          "display_aliases": [
+            { "field": "set", "before": "Future Stars-Autograph", "after": "Future Stars Auto" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "g",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "g.webp", "sha256": "f2b53b8f4c24bc1aa7071d7a8dd27f9b2ca6a75b41a8350f23d5958ba48da81a" },
+        { "name": "gg.webp", "sha256": "a836c4cdf229d0232bdb8f2d867b8d369847fa1d8ede9c289314319cf6b844c0" }
+      ],
+      "anchors": {
+        "session_sha256": "68c09cf2777d2e5c5fdbe964b0e652ccca6c3fec36a3f755fb0daeb0db614342",
+        "asset_sha256": "91e9e56d98b364fdee185e8fe0794bb4b7a8d4e85d59ae759e7543306b999a98"
+      },
+      "canonical_fields": {
+        "year": "2003-04", "manufacturer": "Upper Deck", "product": "UD Glass",
+        "set": "Monumental Marks", "subjects": ["LeBron James"], "components": ["Auto", "Jersey"],
+        "team": "Cavaliers", "card_number": "LJJ",
+        "grading_info": { "company": "BGS", "card_grade": "9", "auto_grade": "10", "grade_type": "CARD_AND_AUTO" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2003-04 Upper Deck UD Glass Monumental Marks LeBron James Auto Jersey #LJJ", "length": 74,
+        "trace": {
+          "budget_omitted": ["team", "grading_info"], "redundant_omitted": [], "abbreviated": [],
+          "year_alias": null
+        }
+      }
+    },
+    {
+      "id": "h",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "h.webp", "sha256": "b8a012fc4c979c5bb8d60a03ba8c6be33a069604a99572a73aa204a9767e3506" },
+        { "name": "hh.webp", "sha256": "576d39339042ecbc33694011e89e8b08af8e57a00b69ad42a5037762db4dfeaf" }
+      ],
+      "anchors": {
+        "session_sha256": "5f1f5b7e9fa9b1bde107b757ed3270808cc5f2deb8edf0fec286bd8767171ca4",
+        "asset_sha256": "2eaa500faa5a82ef18de3fbeba805e13fc435813746fc8f0658de29f04309b79"
+      },
+      "canonical_fields": {
+        "year": "2024", "manufacturer": "Topps", "product": "Bowman Chrome", "set": "Prospect Auto",
+        "subjects": ["Leo De Vries"], "print_finish": "Gold Ref", "components": ["Auto"], "team": "Padres",
+        "card_number": "CPALD", "serial": "45/50",
+        "grading_info": { "company": "PSA", "card_grade": "10", "auto_grade": "", "grade_type": "CARD_ONLY" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2024 Topps Bowman Chrome Prospect Auto Leo De Vries Gold Ref Padres #CPALD 45/50", "length": 80,
+        "trace": { "budget_omitted": ["grading_info"], "redundant_omitted": ["components"], "abbreviated": [], "year_alias": null },
+        "required_tokens": ["#CPALD"], "forbidden_tokens": ["#CPA-LD"]
+      }
+    },
+    {
+      "id": "i",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "i.webp", "sha256": "3f6d1c50cc2689bd2e9f5233b838a292cf8d00941c89675f4d9eb614c3f6b0f2" },
+        { "name": "ii.webp", "sha256": "70c5b772be1bb76694cd3ed9f09522d867f4d7487a119ccf02454c11ae52c52d" }
+      ],
+      "anchors": {
+        "session_sha256": "5cb7f4a35ede769ecc809045a2c8ad977787ed3e3475086e235bb3964cbb44a6",
+        "asset_sha256": "21907a23982b525a5c0ccc83216baeaad1e95dc10e249fd0ae774f4f6e902ae1"
+      },
+      "canonical_fields": {
+        "year": "2012", "manufacturer": "Panini", "product": "Prizm", "set": "Autographs",
+        "subjects": ["Kobe Bryant"], "print_finish": "Prizm", "components": ["Auto"], "team": "Lakers",
+        "card_number": "1",
+        "grading_info": { "company": "PSA", "card_grade": "9", "auto_grade": "10", "grade_type": "CARD_AND_AUTO" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2012 Panini Prizm Autographs Kobe Bryant Lakers #1 PSA 9/10", "length": 59,
+        "trace": { "budget_omitted": [], "redundant_omitted": ["print_finish", "components"], "abbreviated": [], "year_alias": null }
+      }
+    },
+    {
+      "id": "j",
+      "evidence_partition": "formal_a_j",
+      "images": [
+        { "name": "j.webp", "sha256": "5d6914f323381370718f466552fe2aefe3e5f195b7893a487b47861e48a4086a" },
+        { "name": "jj.webp", "sha256": "2014b11342a177b68d8f018cddaec382ffb3d50b473b97659864568f629ecfd0" }
+      ],
+      "anchors": {
+        "session_sha256": "3ee7dc5b48321a19108023a8c8a44a0575fc0bb5319682b6b68089130c641cc5",
+        "asset_sha256": "2c3952e9a8c363eca316b2ce055f69e3bc7e54ab60be86f14b3faca15df0cc27"
+      },
+      "canonical_fields": {
+        "year": "2025", "manufacturer": "Topps", "product": "Bowman Chrome",
+        "subjects": ["Cooper Flagg"], "components": ["RC"], "team": "Dallas Mavericks",
+        "card_number": "BCV-1", "serial": "1/5", "grammar": "standard"
+      },
+      "expected": {
+        "title": "2025 Topps Bowman Chrome Cooper Flagg RC Dallas Mavericks #BCV-1 1/5", "length": 68,
+        "trace": { "budget_omitted": [], "redundant_omitted": [], "abbreviated": [], "year_alias": null },
+        "forbidden_tokens": ["Red", "Refractor", "2025-26", "Basketball"]
+      }
+    },
+    {
+      "id": "k",
+      "evidence_partition": "recovery_k_p",
+      "images": [
+        { "name": "k.webp", "sha256": "ccf416f9d345d97da01366e07ef485acec8527984bbe6bdd72ff74ab967096f8" },
+        { "name": "kk.webp", "sha256": "a983686d27c11589f5ca5479e17ec81a9f1934ac4b53a9882c01b1ce0220aca1" }
+      ],
+      "anchors": {
+        "session_sha256": "c89021c7d7780d4d3ff6e3bc2caee45f03595130df9813693d8a0b936bade793",
+        "asset_sha256": "1cdca867daa4b4517bf113d85dffa3304e2df51d59afbaeb616f1ea8e26a717b"
+      },
+      "canonical_fields": {
+        "year": "2024", "manufacturer": "Panini", "product": "Prizm", "subjects": ["Jayden Daniels"],
+        "print_finish": "Gold Shimmer", "components": ["RC"], "team": "Commanders",
+        "card_number": "347", "serial": "09/10",
+        "grading_info": { "company": "PSA", "card_grade": "10", "auto_grade": "", "grade_type": "CARD_ONLY" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2024 Panini Prizm Jayden Daniels Gold Shimmer RC Commanders #347 09/10 PSA 10", "length": 77,
+        "trace": { "budget_omitted": [], "redundant_omitted": [], "abbreviated": [], "year_alias": null }
+      }
+    },
+    {
+      "id": "l",
+      "evidence_partition": "recovery_k_p",
+      "images": [
+        { "name": "l.webp", "sha256": "af38a0d80c163513312e49ddbcd688fee3fcdaa68c164bd275888038410f5430" },
+        { "name": "ll.webp", "sha256": "a427f95b628ae71f5bbe75de6a0a72c86a01cd1345a30110e3f208a85160cb54" }
+      ],
+      "anchors": {
+        "session_sha256": "415e3dbec65e2f7e307324b5ea9c06a2cd17acba56a46a62f85f57cf594d9e64",
+        "asset_sha256": "99109e9b942447c21703b03ae2d230bf4f712cae4b7f8491535476ee3e7e2e3f"
+      },
+      "canonical_fields": {
+        "year": "2000", "manufacturer": "Topps", "product": "Bowman Chrome", "subjects": ["Tom Brady"],
+        "components": ["RC"], "team": "Patriots", "card_number": "236",
+        "grading_info": { "company": "BGS", "card_grade": "9.5", "auto_grade": "", "grade_type": "CARD_ONLY" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2000 Topps Bowman Chrome Tom Brady RC Patriots #236 BGS 9.5", "length": 59,
+        "trace": { "budget_omitted": [], "redundant_omitted": [], "abbreviated": [], "year_alias": null }
+      }
+    },
+    {
+      "id": "m",
+      "evidence_partition": "recovery_k_p",
+      "images": [
+        { "name": "m.webp", "sha256": "a840101a4f3b0220ad0935fa80d3e23b76e4575a5c9c7cbf1dbeff6f173f8710" },
+        { "name": "mm.webp", "sha256": "c74a321158dad74d5e300cfd424c2caaf7f619cf2a003877ba492daa253b649e" }
+      ],
+      "anchors": {
+        "session_sha256": "85ea12eadb2f2f634d3c4eb037365c1f719934277d02c4d880fe411201b04855",
+        "asset_sha256": "abc4fd534eede4297ca292f9bc501253283f580f92ed556df59be63048f4ecbf"
+      },
+      "canonical_fields": {
+        "year": "2026", "manufacturer": "Topps", "product": "Topps Cosmic Chrome Basketball",
+        "set": "Cosmic Chrome Autograph Variation", "subjects": ["Cooper Flagg"], "release_variant": "Variation",
+        "components": ["RC", "Auto"], "team": "Mavericks", "card_number": "CCA-CF",
+        "serial": "40/50", "grammar": "standard"
+      },
+      "expected": {
+        "title": "2026 Topps Cosmic Chrome Basketball Auto Variation Cooper Flagg RC #CCA-CF 40/50", "length": 80,
+        "trace": {
+          "budget_omitted": ["team"], "redundant_omitted": ["manufacturer", "release_variant", "components"],
+          "abbreviated": [], "year_alias": null,
+          "display_aliases": [
+            { "field": "set", "before": "Autograph Variation", "after": "Auto Variation" }
+          ],
+          "overlap_trim": {
+            "before": "Cosmic Chrome Autograph Variation", "after": "Autograph Variation",
+            "removed_prefix": "Cosmic Chrome", "redundant_with": "product:0"
+          },
+          "required_selected": ["product", "set", "subjects", "card_number", "serial"]
+        },
+        "required_tokens": ["Topps", "#CCA-CF"]
+      }
+    },
+    {
+      "id": "n",
+      "evidence_partition": "recovery_k_p",
+      "images": [
+        { "name": "n.webp", "sha256": "7281dc8672146d68ff74605dcf8b93055c63283f14462fc81a856721849b40b0" },
+        { "name": "nn.webp", "sha256": "f429f7864d55f8be79e5f8dce3612f9307460131894b44f70202d1905aada3d4" }
+      ],
+      "anchors": {
+        "session_sha256": "48e9c2190ea74e592dfca9ce251b9f9280928f66fdcf55f51dd469fe2a05ae85",
+        "asset_sha256": "df70bcf9eec36273cd9bbf4dc85d4dbb7cc07386fb6efad7dca515756d881c53"
+      },
+      "canonical_fields": {
+        "year": "1976", "manufacturer": "Topps", "subjects": ["Walter Payton"], "team": "Bears",
+        "card_number": "148",
+        "grading_info": { "company": "PSA", "card_grade": "9", "auto_grade": "", "grade_type": "CARD_ONLY" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "1976 Topps Walter Payton Bears #148 PSA 9", "length": 41,
+        "trace": { "budget_omitted": [], "redundant_omitted": [], "abbreviated": [], "year_alias": null }
+      }
+    },
+    {
+      "id": "o",
+      "evidence_partition": "recovery_k_p",
+      "images": [
+        { "name": "o.webp", "sha256": "72302bd6eddd91e3f0c5082782a036d03f209ba6f7c9f068faa94b76ea92e118" },
+        { "name": "oo.webp", "sha256": "e009c445d68631f0f20e37dfe0cef4fc714d75cbe557f3528597395a183a300d" }
+      ],
+      "anchors": {
+        "session_sha256": "e547c9238dafc6ca1bb6d16b586e5e0f8459cbf8761add647de32553a2aa6ca8",
+        "asset_sha256": "a033c30326dd628fff0bd147b11f9e43ad15341a9fa9ba346e7057ce74885df6"
+      },
+      "canonical_fields": {
+        "year": "2012-13", "manufacturer": "Panini", "product": "Immaculate Collection",
+        "set": "All Star Lineage Autos", "subjects": ["Kobe Bryant"], "components": ["Auto"],
+        "team": "Lakers", "card_number": "AS-KB", "serial": "03/15",
+        "grading_info": { "company": "BGS", "card_grade": "9", "auto_grade": "10", "grade_type": "CARD_AND_AUTO" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2012-13 Immaculate Collection All Star Lineage Autos Kobe Bryant #AS-KB 03/15", "length": 77,
+        "trace": {
+          "budget_omitted": ["manufacturer", "team", "grading_info"], "redundant_omitted": ["components"],
+          "abbreviated": [], "year_alias": null
+        },
+        "required_tokens": ["#AS-KB"], "forbidden_tokens": ["#KB"]
+      }
+    },
+    {
+      "id": "p",
+      "evidence_partition": "recovery_k_p",
+      "images": [
+        { "name": "p.webp", "sha256": "648916b52ec173a28c5e8449b60de9a5973e2b41b2c0d4e7be38f1e1a48ec3ca" },
+        { "name": "pp.webp", "sha256": "a8546d7ac05be1df62c60455e15837c0deea7b15cab69b421c1b69e616bbf1f9" }
+      ],
+      "anchors": {
+        "session_sha256": "70e1c6518cdd845b0e991df146c6d4e716aa2c7611bcd4452d8fe749f57130fd",
+        "asset_sha256": "b57ce3612b7f02c9dc562ffdf698448abdb60c085923cb1f5c2c42318cd94aa8"
+      },
+      "canonical_fields": {
+        "year": "2017", "manufacturer": "Panini", "product": "Impeccable", "set": "Elegance",
+        "subjects": ["Patrick Mahomes II"], "components": ["Auto", "Patch"], "team": "Chiefs",
+        "card_number": "107", "serial": "60/75",
+        "grading_info": { "company": "BGS", "card_grade": "9.5", "auto_grade": "10", "grade_type": "CARD_AND_AUTO" },
+        "grammar": "standard"
+      },
+      "expected": {
+        "title": "2017 Panini Impeccable Elegance Patrick Mahomes II Auto Patch Chiefs #107 60/75", "length": 79,
+        "trace": { "budget_omitted": ["grading_info"], "redundant_omitted": [], "abbreviated": [], "year_alias": null },
+        "required_substrings": ["Patrick Mahomes II"], "forbidden_substrings": ["Elegance II"]
+      }
+    }
+  ]
+}

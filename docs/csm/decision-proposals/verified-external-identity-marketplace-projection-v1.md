@@ -2,6 +2,11 @@
 
 Status: Founder approved, 2026-08-10.
 
+Historical status note, 2026-08-11: this document remains the immutable v1
+decision and replay rationale. COS-60 supersedes its statement that Card Number
+must stay globally suppressed for *new* LYNCA Standard projections. It does not
+change any v1/v2 external receipt, Registry release or historical title.
+
 Observation
 ↓
 Question

@@ -37,8 +37,20 @@ import {
   EXTERNAL_IDENTITY_SUPPORT_PACK
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
+  CANONICAL_NAMING_RELEASE_CONTRACT
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
+  WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS,
+  WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
 } from "../scripts/materialize-writer-journey-source.mjs";
+import {
+  PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT,
+  productionStandardP0EvidenceProofValid,
+  productionStandardP0ResolutionProof,
+  productionStandardP0ResolutionProofValid,
+  standardP0TitleIdentityExact
+} from "../scripts/production-standard-p0-verifier.mjs";
 import {
   COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
   COMPATIBILITY_BRIDGE_MARKER,
@@ -209,6 +221,11 @@ function healthExternalIdentityContractMatches(runtime) {
   return stableJson(runtime?.external_identity) === stableJson(EXTERNAL_IDENTITY_RELEASE_CONTRACT);
 }
 
+function healthCanonicalNamingContractMatches(runtime) {
+  return stableJson(runtime?.canonical_naming)
+    === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT);
+}
+
 function writerJourneyHealthReceipt({
   httpOk = false,
   health = null,
@@ -234,10 +251,13 @@ function writerJourneyHealthReceipt({
     deployment_identity: `${observedOrigin}#${expectedSha}`,
     deployment_git_commit_sha: health?.deployment?.git_commit_sha,
     deployment_environment: health?.deployment?.environment,
+    canonical_naming_contract_valid: healthCanonicalNamingContractMatches(health?.runtime),
+    canonical_naming_release_contract: health?.runtime?.canonical_naming,
     runtime_contract_valid: health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
       && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
       && healthRecognitionTransportContractMatches(health?.runtime)
       && healthExternalIdentityContractMatches(health?.runtime)
+      && healthCanonicalNamingContractMatches(health?.runtime)
       && health?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
       && health?.runtime?.retired_capabilities_disabled === true
   };
@@ -252,6 +272,8 @@ function writerJourneyHealthReceipt({
     && receipt.deployment_identity === `${productionOrigin}#${expectedSha}`
     && receipt.deployment_git_commit_sha === expectedSha
     && receipt.deployment_environment === "production"
+    && stableJson(receipt.canonical_naming_release_contract)
+      === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT)
     && receipt.runtime_contract_valid,
   verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
   return Object.freeze(receipt);
@@ -600,7 +622,9 @@ function publicRecognitionPayloadBoundary(payload, code) {
     && hasExactKeys(payload.csm_rows.resolution, [
       "contract_version", "recognition_session_id", "resolver_version"
     ])
-    && hasExactKeys(payload.csm_rows.output, ["composer_version", "contract_version"])
+    && hasExactKeys(payload.csm_rows.output, [
+      "composer_version", "contract_version", "marketplace_profile_version"
+    ])
     && hasExactKeys(payload.csm_persistence, ["atomic", "ok", "session"])
     && payload.csm_persistence.ok === true
     && payload.csm_persistence.atomic === true
@@ -797,7 +821,7 @@ function assertNoPrivateFixtureKeys(value) {
   }
   if (!exactObject(value)) return;
   for (const [key, nested] of Object.entries(value)) {
-    if (/^(?:title|writer_title|canonical_title|ground_truth|label|labels|grammar|accuracy_claim)$/i.test(key)) {
+    if (/^(?:title|writer_title|canonical_title|ground_truth|label|labels|grammar|accuracy_claim|expected_card_number|expected_serial|card_number|serial)$/i.test(key)) {
       throw verifierFailure(verifierErrorCodes.LARGE_FIXTURE_INVALID);
     }
     assertNoPrivateFixtureKeys(nested);
@@ -837,7 +861,7 @@ function validateLargeFixtureReceipt(receipt) {
   assertNoPrivateFixtureKeys(receipt);
   if (!hasExactKeys(receipt, receiptKeys)
     || receipt.schema_version !== contract.schema_version
-    || receipt.fixture_id !== "large-internal-writer-fixture-v1"
+    || receipt.fixture_id !== "large-internal-writer-fixture-v2"
     || receipt.source_class !== contract.source_class
     || receipt.allowed_use !== contract.allowed_use
     || receipt.provider_calls !== 0
@@ -850,6 +874,27 @@ function validateLargeFixtureReceipt(receipt) {
     || receipt.transform?.staged_lane_version !== contract.staged_lane_version
     || receipt.transform?.staged_long_edge !== contract.staged_long_edge
     || receipt.transform?.staged_jpeg_quality !== contract.staged_jpeg_quality
+    || !hasExactKeys(receipt.source, [
+      "source_kind", "source_record_id", "source_asset_id", "evaluation_cohort",
+      "hash_provenance", "manifest_contract_sha256", "images"
+    ])
+    || receipt.source.source_kind !== "PRODUCTION_ASSET"
+    || receipt.source.source_record_id !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_record_id
+    || receipt.source.source_asset_id !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_asset_id
+    || receipt.source.evaluation_cohort
+      !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.evaluation_cohort
+    || receipt.source.hash_provenance
+      !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.hash_provenance
+    || !/^[0-9a-f]{64}$/.test(String(receipt.source.manifest_contract_sha256 || ""))
+    || !Array.isArray(receipt.source.images) || receipt.source.images.length !== 2
+    || receipt.source.images.some((image, index) => (
+      image?.image_id !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].image_id
+      || image?.role !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].role
+      || image?.content_type
+        !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].content_type
+      || image?.content_sha256
+        !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].content_sha256
+    ))
     || receipt.limits?.original_total_min_bytes_exclusive !== contract.original_total_min_bytes_exclusive
     || receipt.limits?.original_each_max_bytes !== contract.original_each_max_bytes
     || receipt.limits?.original_each_relay_max_bytes !== contract.original_each_relay_max_bytes
@@ -1348,6 +1393,15 @@ function validateLargeRecognitionResponse(payload, fixture, ingestRequests, rela
   };
 }
 
+function containsVerifierOnlyMetadata(value) {
+  if (Array.isArray(value)) return value.some(containsVerifierOnlyMetadata);
+  if (!exactObject(value)) return false;
+  return Object.entries(value).some(([key, nested]) => (
+    /^(?:expected_card_number|expected_serial|card_number|serial|source_kind|source_record_id|source_asset_id)$/i.test(key)
+    || containsVerifierOnlyMetadata(nested)
+  ));
+}
+
 function validateOrdinaryIngestRequest(request, sourceCase) {
   const url = new URL(request.url());
   const body = request.postDataBuffer();
@@ -1362,12 +1416,19 @@ function validateOrdinaryIngestRequest(request, sourceCase) {
     && !url.hash
     && request.method() === "POST"
     && body?.length === expectedBytes
+    && hasExactKeys(metadata, [
+      "captureProfileId", "clientAssetRef", "clientTiming", "idempotencyKey", "images", "intentId"
+    ])
+    && !containsVerifierOnlyMetadata(metadata)
     && metadata?.recognitionInputOnly !== true
     && !Object.prototype.hasOwnProperty.call(metadata || {}, "originalImages")
     && !Object.prototype.hasOwnProperty.call(metadata || {}, "laneVersion")
     && Array.isArray(metadata?.images)
     && metadata.images.length === sourceCase.image_count
-    && metadata.images.every((image) => !Object.prototype.hasOwnProperty.call(image || {}, "sourceImageId")),
+    && metadata.images.every((image) => hasExactKeys(image, [
+      "contentSha256", "contentType", "fileName", "height", "imageId", "role",
+      "signatureHex", "size", "width"
+    ]) && !Object.prototype.hasOwnProperty.call(image || {}, "sourceImageId")),
   verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
   return Object.freeze({ original_inline: true });
 }
@@ -1442,16 +1503,51 @@ function validateSourceCasesManifest(manifest, {
     ))) {
     throw new Error("WRITER_JOURNEY_CASES_MANIFEST invalid");
   }
+  const tcgContract = WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.find(
+    (entry) => entry.case_id === "TCG"
+  );
+  const fileKeys = ["path", "role", "bytes", "content_type", "content_sha256"];
   for (const entry of manifest.cases) {
-    if (!["NON_TCG", "TCG"].includes(entry.case_id)
-      || (entry.case_id === "NON_TCG" && entry.expected_grammar !== "NON_TCG")
-      || (entry.case_id === "TCG" && entry.expected_grammar !== "TCG")
-      || entry.evaluation_cohort !== "INTERNAL_REVIEWED_GT"
-      || !entry.source_feedback_id || !entry.hash_provenance
+    const productionStandard = entry?.case_id === "NON_TCG";
+    const expectedContract = productionStandard
+      ? WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
+      : tcgContract;
+    const expectedKeys = productionStandard
+      ? [
+        "case_id", "expected_grammar", "source_kind", "source_record_id", "source_asset_id",
+        "evaluation_cohort", "hash_provenance", "image_count", "files"
+      ]
+      : [
+        "case_id", "expected_grammar", "source_feedback_id", "evaluation_cohort",
+        "hash_provenance", "image_count", "files"
+      ];
+    if (!expectedContract
+      || !hasExactKeys(entry, expectedKeys)
       || !Array.isArray(entry.files) || entry.files.length !== 2
-      || entry.image_count !== entry.files.length
+      || entry.image_count !== 2
+      || entry.files.some((file) => !hasExactKeys(file, fileKeys))
+      || entry.expected_grammar !== expectedContract.expected_grammar
+      || entry.evaluation_cohort !== expectedContract.evaluation_cohort
+      || entry.hash_provenance !== expectedContract.hash_provenance
       || entry.files[0]?.role !== "front_original"
-      || entry.files[1]?.role !== "back_original") {
+      || entry.files[1]?.role !== "back_original"
+      || (productionStandard ? (
+        entry.source_kind !== expectedContract.source_kind
+        || entry.source_record_id !== expectedContract.source_record_id
+        || entry.source_asset_id !== expectedContract.source_asset_id
+        || entry.files.some((file, index) => (
+          file.content_type !== expectedContract.images[index].content_type
+          || file.bytes !== expectedContract.images[index].bytes
+          || file.content_sha256 !== expectedContract.images[index].content_sha256
+        ))
+      ) : (
+        entry.source_feedback_id !== expectedContract.source_feedback_id
+        || entry.files.some((file, index) => (
+          file.content_sha256 !== expectedContract.image_sha256[
+            `${expectedContract.source_feedback_id}_${index === 0 ? "front" : "back"}`
+          ]
+        ))
+      ))) {
       throw new Error("WRITER_JOURNEY_CASES_MANIFEST case invalid");
     }
   }
@@ -1567,10 +1663,17 @@ function recognitionVersionReceipt(recognition, view) {
   const contract = String(recognition?.csm_contract_version || rowContract).trim();
   const rowResolver = String(rows.resolution?.resolver_version || "").trim();
   const rowComposer = String(rows.output?.composer_version || "").trim();
+  const rowMarketplaceProfile = String(
+    rows.output?.marketplace_profile_version || ""
+  ).trim();
   const resolver = String(owner.resolver || rowResolver).trim();
   const composer = String(owner.composer || rowComposer).trim();
+  const marketplaceProfile = String(
+    owner.marketplace_profile || rowMarketplaceProfile
+  ).trim();
   if (recognition?.csm_owner_versions != null) {
-    requireInvariant(Boolean(owner.resolver) && Boolean(owner.composer),
+    requireInvariant(Boolean(owner.resolver) && Boolean(owner.composer)
+      && Boolean(owner.marketplace_profile),
       verifierErrorCodes.VERSION_CONTRACT_MISMATCH);
   }
   requireInvariant(Boolean(contract) && contract === rowContract && contract === resolutionContract,
@@ -1588,12 +1691,29 @@ function recognitionVersionReceipt(recognition, view) {
   requireInvariant(Boolean(composer) && composer === rowComposer
     && view?.composer?.composer_version === composer,
     verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+  requireInvariant(Boolean(marketplaceProfile)
+    && marketplaceProfile === rowMarketplaceProfile
+    && view?.composer?.marketplace_profile_version === marketplaceProfile,
+  verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+  if (composer === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version) {
+    requireInvariant(
+      marketplaceProfile === CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version,
+      verifierErrorCodes.VERSION_COMPOSER_MISMATCH
+    );
+  }
   return {
     resolution_view_schema: view.schema_version,
     csm_contract: contract,
     resolver,
-    composer
+    composer,
+    marketplace_profile: marketplaceProfile
   };
+}
+
+function canonicalNamingVersionActive(versions) {
+  return versions?.composer === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version
+    && versions?.marketplace_profile
+      === CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
 }
 
 function feedbackReceipt({
@@ -1660,7 +1780,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
   });
   const largeFixture = await localLargeFixture(requiredEnv("WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT"));
   const evidence = {
-    schema_version: "production-writer-journey-evidence-v5",
+    schema_version: "production-writer-journey-evidence-v6",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     field_ground_truth_available: false,
     accuracy_claim: null,
@@ -2203,6 +2323,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       responseAttempt.provider_response_id_sha256 =
         executionReceipt.provider_response_id_sha256;
       let externalIdentityReceipt = null;
+      let standardP0Identity = null;
 
       failurePhase = "TITLE_UI";
       const result = journeyPage.getByTestId("writer-title-result").first();
@@ -2234,6 +2355,24 @@ test("production writer journey verifies Glass Box and staged large-image transp
       expect(resolutionView?.recognition_session_id).toBe(recognitionPayload.recognition_session_id);
       expect(resolutionView?.grammar?.value).toBe(sourceCase.expected_grammar);
       const versions = recognitionVersionReceipt(recognitionPayload, resolutionView);
+      if (sourceCase.case_id === "NON_TCG") {
+        requireInvariant(resolutionView?.grammar?.raw === "standard"
+          && canonicalNamingVersionActive(versions)
+          && sourceCase.source_kind === "PRODUCTION_ASSET"
+          && sourceCase.source_asset_id
+            === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
+          && standardP0TitleIdentityExact(recognitionPayload?.title)
+          && standardP0TitleIdentityExact(titleBeforePanel),
+        verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+        const resolutionProof = productionStandardP0ResolutionProof(resolutionView);
+        requireInvariant(productionStandardP0ResolutionProofValid(resolutionProof),
+          verifierErrorCodes.TITLE_STORED_UI_MISMATCH);
+        standardP0Identity = Object.freeze({
+          ...resolutionProof,
+          recognition_title_exact: true,
+          ui_title_exact: true
+        });
+      }
       const ownerExecutionReadback = durableOwnerExecutionReadbackProof(
         executionReceipt, resolutionView
       );
@@ -2348,6 +2487,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
         trace_reliable: resolutionView.composer.trace_reliable,
         recomposed_matches_stored: resolutionView.composer.recomposed_matches_stored,
         versions,
+        canonical_naming_active: canonicalNamingVersionActive(versions),
+        ...(standardP0Identity ? { standard_p0_identity: standardP0Identity } : {}),
         ...(externalIdentityReceipt ? {
           codex_parity_exact_match: true,
           external_identity_support: externalIdentityReceipt
@@ -2535,6 +2676,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       trace_reliable: largeResolutionView.composer.trace_reliable,
       recomposed_matches_stored: largeResolutionView.composer.recomposed_matches_stored,
       versions: largeVersions,
+      canonical_naming_active: canonicalNamingVersionActive(largeVersions),
       owner_execution_readback: largeOwnerExecutionReadback,
       ...titleEvidenceReceipt({
         titleBeforePanel: largeTitleBeforePanel,
@@ -2658,6 +2800,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
     const parityCaseEvidence = evidence.cases.find((entry) => (
       entry.case_id === "EXTERNAL_IDENTITY"
     ));
+    const standardCaseEvidence = evidence.cases.find((entry) => (
+      entry.case_id === "NON_TCG"
+    ));
     requireInvariant(evidence.cases.every((entry) => (
       hasExactKeys(entry.execution_receipt?.server_stages_ms, requiredServerStageNames)
       && Object.values(entry.execution_receipt.server_stages_ms).every(
@@ -2693,6 +2838,19 @@ test("production writer journey verifies Glass Box and staged large-image transp
         && parityCaseEvidence?.external_identity_support?.match_basis === "VERIFIED_ORIGINAL_SET"
         && parityCaseEvidence?.external_identity_support?.source_count === 3
       ) : parityCaseEvidence == null)
+      && standardCaseEvidence?.canonical_naming_active === true
+      && standardCaseEvidence?.source_kind === "PRODUCTION_ASSET"
+      && standardCaseEvidence?.source_record_id
+        === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_record_id
+      && standardCaseEvidence?.source_asset_id
+        === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
+      && productionStandardP0EvidenceProofValid(
+        standardCaseEvidence?.standard_p0_identity
+      )
+      && standardCaseEvidence?.versions?.composer
+        === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version
+      && standardCaseEvidence?.versions?.marketplace_profile
+        === CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
       && largeCaseEvidence?.overlap_observed === true
       && largeCaseEvidence?.relay_durable_before_recognition_response === true,
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
@@ -2707,6 +2865,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
       feedback_policy_receipt_count: expectedProviderCaseCount,
       codex_parity_exact_match_count: parityRequired ? 1 : 0,
       verified_original_set_match_count: parityRequired ? 1 : 0,
+      canonical_naming_active_case_count: evidence.cases.filter(
+        (entry) => entry.canonical_naming_active === true
+      ).length,
+      standard_p0_exact_case_count: evidence.cases.filter(
+        (entry) => productionStandardP0EvidenceProofValid(entry.standard_p0_identity)
+      ).length,
       warmup_real_response_observed: true,
       staged_overlap_observed: true,
       staged_relays_durable_before_recognition_response: true,
@@ -2786,6 +2950,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       execution_contract_sha256_by_transport_lane_and_image_count:
         expectedExecutionContractSha256ByTransportLaneAndImageCount,
       external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+      canonical_naming: CANONICAL_NAMING_RELEASE_CONTRACT,
       max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
       retired_capabilities_disabled: true
     }
@@ -2816,6 +2981,16 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     {
       ...offlineHealth,
       runtime: { ...offlineHealth.runtime, retired_capabilities_disabled: false }
+    },
+    {
+      ...offlineHealth,
+      runtime: {
+        ...offlineHealth.runtime,
+        canonical_naming: {
+          ...CANONICAL_NAMING_RELEASE_CONTRACT,
+          composer_version: "thin-marketplace-composer-v2"
+        }
+      }
     }
   ]) {
     let invalidHealthRejected = false;
@@ -2968,27 +3143,46 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     requireInvariant(bridgeRecognitionPostDriftRejected, verifierErrorCodes.GENERIC);
   }
 
-  const hash = "a".repeat(64);
+  const offlineTcgContract = WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.find(
+    (entry) => entry.case_id === "TCG"
+  );
   const manifest = {
     schema_version: "writer-journey-cases-v3",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     accuracy_claim: null,
-    cases: [
-      { case_id: "NON_TCG", expected_grammar: "NON_TCG" },
-      { case_id: "TCG", expected_grammar: "TCG" }
-    ].map((entry) => ({
-      ...entry,
-      source_feedback_id: `source-${entry.case_id}`,
-      evaluation_cohort: "INTERNAL_REVIEWED_GT",
-      hash_provenance: "TEST_EXACT_BYTES",
+    cases: [{
+      case_id: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.case_id,
+      expected_grammar: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.expected_grammar,
+      source_kind: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_kind,
+      source_record_id: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_record_id,
+      source_asset_id: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_asset_id,
+      evaluation_cohort: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.evaluation_cohort,
+      hash_provenance: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.hash_provenance,
       image_count: 2,
-      files: ["front_original", "back_original"].map((role) => ({
-        path: `/not-read/${entry.case_id}/${role}.jpg`,
-        role,
-        content_type: "image/jpeg",
-        content_sha256: hash
+      files: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images.map((image) => ({
+        path: `/not-read/NON_TCG/${image.role}.webp`,
+        role: image.role,
+        bytes: image.bytes,
+        content_type: image.content_type,
+        content_sha256: image.content_sha256
       }))
-    })),
+    }, {
+      case_id: "TCG",
+      expected_grammar: offlineTcgContract.expected_grammar,
+      source_feedback_id: offlineTcgContract.source_feedback_id,
+      evaluation_cohort: offlineTcgContract.evaluation_cohort,
+      hash_provenance: offlineTcgContract.hash_provenance,
+      image_count: 2,
+      files: ["front", "back"].map((side, index) => ({
+        path: `/not-read/TCG/${side}.jpg`,
+        role: `${side}_original`,
+        bytes: 100 + index,
+        content_type: "image/jpeg",
+        content_sha256: offlineTcgContract.image_sha256[
+          `${offlineTcgContract.source_feedback_id}_${side}`
+        ]
+      }))
+    }],
     parity_case: {
       case_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.case_id,
       expected_grammar: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.expected_grammar,
@@ -3056,6 +3250,55 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     }
     requireInvariant(roleDriftRejected, verifierErrorCodes.GENERIC);
   }
+  for (const standardMutation of [
+    { source_kind: "SUPABASE_FEEDBACK" },
+    { source_record_id: "asset-drift" },
+    { source_asset_id: "asset-drift" },
+    { expected_card_number: "251" },
+    { files: [
+      { ...manifest.cases[0].files[0], content_sha256: "f".repeat(64) },
+      manifest.cases[0].files[1]
+    ] }
+  ]) {
+    let standardSourceDriftRejected = false;
+    try {
+      validateSourceCasesManifest({
+        ...manifest,
+        cases: [{ ...manifest.cases[0], ...standardMutation }, manifest.cases[1]]
+      });
+    } catch {
+      standardSourceDriftRejected = true;
+    }
+    requireInvariant(standardSourceDriftRejected, verifierErrorCodes.GENERIC);
+  }
+  const exactStandardP0View = {
+    composer: {
+      title: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
+      stored_title: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title
+    },
+    brackets: [{
+      bracket: "card_number",
+      canonical_field: "card_number",
+      value: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_card_number,
+      selected_candidate: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_card_number,
+      rendered_text: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.rendered_card_number
+    }, {
+      bracket: "numerical_rarity",
+      canonical_field: "serial",
+      value: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial,
+      selected_candidate: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial,
+      rendered_text: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial
+    }]
+  };
+  requireInvariant(productionStandardP0ResolutionProofValid(
+    productionStandardP0ResolutionProof(exactStandardP0View)
+  ), verifierErrorCodes.GENERIC);
+  requireInvariant(!productionStandardP0ResolutionProofValid(
+    productionStandardP0ResolutionProof({
+      ...exactStandardP0View,
+      composer: { title: "#251 50/50", stored_title: "#251 50/50" }
+    })
+  ), verifierErrorCodes.GENERIC);
   for (const parityMutation of [
     { source_asset_id: "asset-drift" },
     { files: [manifest.parity_case.files[1], manifest.parity_case.files[0]] },
@@ -3193,20 +3436,50 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
 
   const recognition = {
     csm_contract_version: "csm-stage-v-test",
-    csm_owner_versions: { resolver: "resolver-v-test", composer: "composer-v-test" },
+    csm_owner_versions: {
+      resolver: "resolver-v-test",
+      composer: "composer-v-test",
+      marketplace_profile: "marketplace-v-test"
+    },
     csm_rows: {
       resolution: { contract_version: "csm-stage-v-test", resolver_version: "resolver-v-test" },
-      output: { contract_version: "csm-stage-v-test", composer_version: "composer-v-test" }
+      output: {
+        contract_version: "csm-stage-v-test",
+        composer_version: "composer-v-test",
+        marketplace_profile_version: "marketplace-v-test"
+      }
     }
   };
   const view = {
     schema_version: "csm-resolution-view-v1",
     grammar: { contract_version: "csm-resolution-view-v1", resolver_version: "resolver-v-test" },
-    composer: { composer_version: "composer-v-test" }
+    composer: {
+      composer_version: "composer-v-test",
+      marketplace_profile_version: "marketplace-v-test"
+    }
   };
   const versions = recognitionVersionReceipt(recognition, view);
   requireInvariant(versions.resolver === "resolver-v-test"
     && versions.composer === "composer-v-test", verifierErrorCodes.GENERIC);
+  const canonicalRecognition = structuredClone(recognition);
+  canonicalRecognition.csm_owner_versions.composer =
+    CANONICAL_NAMING_RELEASE_CONTRACT.composer_version;
+  canonicalRecognition.csm_owner_versions.marketplace_profile =
+    CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
+  canonicalRecognition.csm_rows.output.composer_version =
+    CANONICAL_NAMING_RELEASE_CONTRACT.composer_version;
+  canonicalRecognition.csm_rows.output.marketplace_profile_version =
+    CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
+  const canonicalVersions = recognitionVersionReceipt(canonicalRecognition, {
+    ...view,
+    composer: {
+      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT.composer_version,
+      marketplace_profile_version:
+        CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
+    }
+  });
+  requireInvariant(canonicalNamingVersionActive(canonicalVersions),
+    verifierErrorCodes.GENERIC);
   let versionDriftCode = "";
   try {
     recognitionVersionReceipt(recognition, {
@@ -3598,7 +3871,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       },
       output: {
         contract_version: "csm-stage-offline-v1",
-        composer_version: "composer-offline"
+        composer_version: "composer-offline",
+        marketplace_profile_version: "marketplace-offline"
       }
     },
     csm_persistence: { ok: true, atomic: true, session: { saved: true } },
@@ -3891,10 +4165,28 @@ test("offline ordinary route coverage rejects an abort that could reach the prov
       { buffer: Buffer.from("back") }
     ]
   };
-  const ordinaryMetadata = Buffer.from(JSON.stringify({
+  const ordinaryMetadataObject = {
+    captureProfileId: "capture-profile",
     clientAssetRef: "asset-ref",
-    images: [{ imageId: "front" }, { imageId: "back" }]
-  })).toString("base64url");
+    clientTiming: {},
+    idempotencyKey: "idempotency-key",
+    intentId: "intent-id",
+    images: ["front", "back"].map((side, index) => ({
+      imageId: side,
+      role: index === 0 ? "image_1_original" : "image_2_original",
+      fileName: `${side}.webp`,
+      contentType: "image/webp",
+      size: sourceCase.images[index].buffer.length,
+      width: 10,
+      height: 20,
+      signatureHex: "52494646",
+      contentSha256: "a".repeat(64)
+    }))
+  };
+  const encodeOrdinaryMetadata = (metadata) => Buffer.from(
+    JSON.stringify(metadata)
+  ).toString("base64url");
+  const ordinaryMetadata = encodeOrdinaryMetadata(ordinaryMetadataObject);
   const ordinaryRequest = {
     url: () => `${productionOrigin}${stagedRecognitionPath}`,
     method: () => "POST",
@@ -3918,6 +4210,35 @@ test("offline ordinary route coverage rejects an abort that could reach the prov
     stagedRejected = sanitizedFailureCode(error) === verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
   }
   requireInvariant(stagedRejected, verifierErrorCodes.GENERIC);
+  for (const leaked of [
+    { ...ordinaryMetadataObject, expected_card_number: "251" },
+    { ...ordinaryMetadataObject, source_asset_id: "asset_hidden" },
+    {
+      ...ordinaryMetadataObject,
+      clientTiming: { expected_serial: "50/50" }
+    },
+    {
+      ...ordinaryMetadataObject,
+      images: [
+        { ...ordinaryMetadataObject.images[0], card_number: "251" },
+        ordinaryMetadataObject.images[1]
+      ]
+    }
+  ]) {
+    let leakedMetadataRejected = false;
+    try {
+      validateOrdinaryIngestRequest({
+        ...ordinaryRequest,
+        headers: () => ({
+          "x-lynca-ingest-metadata": encodeOrdinaryMetadata(leaked)
+        })
+      }, sourceCase);
+    } catch (error) {
+      leakedMetadataRejected = sanitizedFailureCode(error)
+        === verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
+    }
+    requireInvariant(leakedMetadataRejected, verifierErrorCodes.GENERIC);
+  }
 
   const nonTcgCoverage = normalRouteCoverageReceipt({
     sourceCase,

@@ -552,6 +552,7 @@ const baselineRows = buildCsmStageRows({
   composed: {
     grammar: baseline.grammar,
     brackets: baseline.brackets,
+    bracket_text: baseline.bracket_text,
     dropped: baseline.dropped_brackets,
     suppressed: baseline.suppressed_brackets,
     restored: baseline.restored_brackets,
@@ -559,7 +560,11 @@ const baselineRows = buildCsmStageRows({
     input_empty_fields: baseline.input_empty_fields,
     normalization_reasons: baseline.normalization_reasons,
     character_budget: baseline.character_budget,
-    length: baseline.length
+    length: baseline.length,
+    composer_version: baseline.composer_version,
+    marketplace_profile_version: baseline.marketplace_profile_version,
+    canonical_naming_trace: baseline.canonical_naming_trace,
+    canonical_naming_publishable: baseline.canonical_naming_publishable
   },
   title: baseline.title,
   createdAt

@@ -3,8 +3,13 @@
 Status: Canonical SEM standard
 Scope: Standard collectible cards plus TCG cards
 Marketplace title limit: 80 characters
-Source of record: Linear COS-10, COS-11, COS-12, COS-13, COS-14, COS-20, COS-21, COS-22, COS-23
+Source of record: Linear COS-10, COS-11, COS-12, COS-13, COS-14, COS-20, COS-21, COS-22, COS-23, COS-58, COS-59, COS-60
 Machine version: `linear-cos-10-23-v25`
+
+Active marketplace projection: `LYNCA Standard Naming v0.1` (COS-60). COS-60
+supersedes the older Card Number *projection priority* below; COS-10 remains
+authoritative for the semantic distinction between Card Number and Numerical
+Rarity. Historical Composer/profile versions remain executable for replay.
 
 ## Core Principle
 
@@ -25,6 +30,13 @@ The title should preserve the complete current-image print run when it is direct
 For Sports, Entertainment, Culture, Celebrity, and other non-TCG standard cards:
 
 `Year -> Manufacturer -> Product -> Set -> Subject -> Card Name -> Release Variant -> Print Finish -> Numerical Rarity -> Descriptive Rarity -> Card Number -> Search Optimization -> Grading Info`
+
+The sequence above remains the semantic grammar order. The active LYNCA
+Standard Naming v0.1 marketplace projection deliberately uses a separate fixed
+display order: `Year -> Manufacturer -> Product -> Set -> Subject -> Card Name
+-> Release Variant -> Print Finish -> Descriptive Rarity -> Components/Search
+Optimization/Team -> Card Number -> Numerical Rarity -> Grading Info`. This is
+an explicit COS-60 profile override, not a mutation of stored semantic state.
 
 Hidden category values such as `Basketball`, `Baseball`, `Marvel Comics`, or `Entertainment` are classification data. They do not normally render as title tokens unless part of an actual product name.
 
@@ -50,7 +62,7 @@ Unlike Standard Card Grammar, TCG titles are card-centric. Card Number is an ide
 
 `Set`: Product sub-set or TCG release set when applicable.
 
-`Manufacturer/Product/Set smart composition`: backend records may keep all long fields separately, such as `Panini / Panini Prizm Black / Panini Prizm Black FOTL`. Output must merge the hierarchy and remove redundant or distribution/configuration words, rendering `Panini Prizm Black`. This smart composition applies to both Standard Card Grammar and TCG Grammar.
+`Manufacturer/Product/Set smart composition`: backend records may keep all long fields separately, such as `Panini / Panini Prizm Black / Panini Prizm Black FOTL`. Output must merge the hierarchy and remove redundant or distribution/configuration words, rendering `Panini Prizm Black`. LYNCA Standard Naming v0.1 implements the exact unambiguous `FOTL` remainder case; other configuration terms remain visible until a later evidence-bearing profile decides they are safe to omit. The semantic principle covers Standard and TCG grammar, but this executable v0.1 profile is Standard-only; TCG remains on its literal historical v2 profile until a separately tested TCG profile is released.
 
 `Subject`: Player, character, team subject, or multiple subjects.
 
@@ -60,11 +72,23 @@ Unlike Standard Card Grammar, TCG titles are card-centric. Card Number is an ide
 
 `Product configuration`: `FOTL`, `Hobby`, `Retail`, `Choice`, `Fast Break`, and `Sapphire` are product/distribution/configuration terms. They do not belong in Release Variant. Store them in backend product/configuration data and include them in output only when commercially useful and the 80-character budget allows.
 
-`Card Name/Release Variant/Print Finish smart composition`: backend records may store these fields separately, but output should merge them into a natural commercial phrase and remove duplicate words. Example backend fields `Gold Refractor Autograph / Variation / Gold` should render as `Gold Refractor Auto Variation`, not duplicate `Gold` and not split the phrase unnaturally. This smart composition applies to both Standard Card Grammar and TCG Grammar.
+`Card Name/Release Variant/Print Finish smart composition`: backend records may store these fields separately, but output should merge them into a natural commercial phrase and remove duplicate words. Example backend fields `Gold Refractor Autograph / Variation / Gold` render as `Gold Refractor Auto Variation`, using the versioned profile-owned whole-word display alias `Autograph -> Auto`; canonical state remains unchanged and the alias is written to the transformation trace. The semantic principle covers Standard and TCG grammar, while the executable alias in this release is confined to the Standard v0.1 profile.
+
+Lexical overlap across different semantic fields is not sufficient evidence for
+deduplication. `SP Authentic` does not consume an independently supported `SP`
+descriptive rarity, and `Gold Standard` does not consume an independently
+supported `Gold` finish. Cross-semantic exceptions must be enumerated by the
+versioned marketplace profile and remain visible in the normalization trace.
 
 `TCG Subject/Card Name separation`: TCG titles are card-centric, but Subject and Card Name must still remain separable. Example: `Pikachu Illustrator` should store `Subject = Pikachu` and `Card Name = Illustrator`. Do not store the whole phrase as Subject. If the printed card name is the same as the subject, such as `Charizard ex`, both fields may contain the same value and the renderer deduplicates output.
 
-`Card Number`: For non-TCG this is low priority, such as `PAU`, `DPA`, `TCLA`. If the visible code is `PAU-AED`, `AED` is a subject abbreviation and may be omitted, rendering `#PAU`. If recognized and the 80-character budget allows, include it. If it is not recognized, do not invent it. If the title is too long, remove this field before higher-priority fields. For TCG, card number is important because it identifies a card within a set, but it may still be omitted from the marketplace title when the 80-character budget would otherwise displace higher-value rarity, finish, special stamp, or grading tokens.
+`Card Number`: A P0 machine-identity anchor for the active LYNCA naming
+profile. Store its complete canonical value without a leading `#`; display the
+same supported value with one leading `#`. Do not guess, shorten, split or
+repair a visible code in the Composer. Card Number and Numerical Rarity remain
+different fields even when both contain digits or `/`. Historical profiles may
+have omitted Card Number; their behavior is replay-only and is not the active
+projection policy.
 
 `Descriptive Rarity`: Especially common in TCG, such as `SR`, `AR`, `UR`. Less common in standard sports cards.
 
@@ -84,9 +108,23 @@ Unlike Standard Card Grammar, TCG titles are card-centric. Card Number is an ide
 
 The renderer adds a field only if the result fits within 80 characters, or removes lower-priority fields first.
 
-For non-TCG cards, remove `Card Number` before Product Finish, Variant, Numerical Rarity, Subject, Product, and Grading Info.
+For the active LYNCA Standard naming profile, non-empty Card Number and complete
+Numerical Rarity are P0 and are not budget-drop candidates. Selection priority
+is independent from render order: the selector first chooses the highest-value
+supported token set under 80 characters, then the renderer emits it in the
+fixed profile order. Every observed Subject on a Standard single card is
+mandatory identity: an empty Subject is not publishable, and no subject on a
+multi-subject card may be budget-dropped. If all Subjects plus the two P0
+identity tokens cannot fit, fail closed instead of publishing a partial card
+identity or truncating any identity token.
 
-For TCG cards, prefer `Card Number` when the title budget allows, but do not let it displace higher-value rarity, finish, special stamp, or grading tokens in the 80-character marketplace title.
+LYNCA Standard Naming v0.1 does not generically remove subject first names.
+Token order alone cannot prove a person's family name (`Yao Ming` is the
+minimal counterexample), so subject compaction remains disabled until an
+evidence-bearing alias profile can make that transformation without guessing.
+
+Older marketplace profiles used different Card Number priorities. They remain
+literal historical replay contracts and must not be modified in place.
 
 Do not add filler tokens to occupy space.
 

@@ -60,11 +60,14 @@ assert.match(spec,
 assert.match(spec, /hasExactKeys\(manifest, \[/,
   "the live manifest root must reject undeclared fields such as a leaked expected title");
 assert.match(spec, /WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT/);
+assert.match(spec, /WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT/);
+assert.match(spec, /entry\.source_kind !== expectedContract\.source_kind/);
+assert.match(spec, /file\.bytes !== expectedContract\.images\[index\]\.bytes/);
 assert.match(spec, /parity\.source_asset_id !== WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT\.source_asset_id/);
 assert.match(spec, /parity\.files\.some\(\(file, index\) =>/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
 assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
-assert.match(spec, /production-writer-journey-evidence-v5/);
+assert.match(spec, /production-writer-journey-evidence-v6/);
 assert.match(spec, /"NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"/);
 assert.match(spec, /CODEX_PARITY_EXPECTED_TITLE/);
 assert.match(spec, /codexParityTitleMatches/);
@@ -77,6 +80,21 @@ assert.match(spec, /resolution_view_schema/);
 assert.match(spec, /csm_owner_versions/);
 assert.match(spec, /VERSION_RESOLVER_MISMATCH/);
 assert.match(spec, /VERSION_COMPOSER_MISMATCH/);
+assert.match(spec, /CANONICAL_NAMING_RELEASE_CONTRACT/);
+assert.match(spec, /canonicalNamingVersionActive/);
+assert.match(spec,
+  /sourceCase\.case_id === "NON_TCG"[\s\S]*?resolutionView\?\.grammar\?\.raw === "standard"[\s\S]*?canonicalNamingVersionActive\(versions\)/,
+  "the ordinary Standard Writer case, not a transport-only case, must prove CNL v0.1");
+assert.match(spec, /standardCaseEvidence\?\.canonical_naming_active === true/);
+assert.match(spec, /canonical_naming_active_case_count/,
+  "the immutable candidate must prove that at least one real Writer case used CNL v0.1");
+assert.match(spec, /productionStandardP0ResolutionProof/);
+assert.match(spec, /productionStandardP0ResolutionProofValid/);
+assert.match(spec, /productionStandardP0EvidenceProofValid/);
+assert.match(spec, /standard_p0_identity/);
+assert.match(spec, /standard_p0_exact_case_count/);
+assert.match(spec, /standardP0TitleIdentityExact\(recognitionPayload\?\.title\)/,
+  "the P0 live proof must bind the complete expected title, not only number tokens");
 assert.match(spec, /LIVE_EXECUTION_RECEIPT_MISMATCH/);
 assert.match(spec, /ROUTE_COVERAGE_MISMATCH/);
 const ordinaryRouteVerifier = spec.match(
@@ -85,6 +103,10 @@ const ordinaryRouteVerifier = spec.match(
 assert.ok(ordinaryRouteVerifier, "the ordinary ingest request verifier must exist");
 assert.match(ordinaryRouteVerifier, /url\.pathname === stagedRecognitionPath/);
 assert.match(ordinaryRouteVerifier, /metadata\?\.recognitionInputOnly !== true/);
+assert.match(ordinaryRouteVerifier, /hasExactKeys\(metadata, \[/,
+  "ordinary upload metadata must be exact-key gated before route.continue");
+assert.match(ordinaryRouteVerifier, /!containsVerifierOnlyMetadata\(metadata\)/,
+  "verifier-only source and expected facts must fail before provider dispatch");
 assert.match(ordinaryRouteVerifier, /!Object\.prototype\.hasOwnProperty\.call\(metadata \|\| \{\}, "originalImages"\)/);
 assert.match(ordinaryRouteVerifier, /!Object\.prototype\.hasOwnProperty\.call\(image \|\| \{\}, "sourceImageId"\)/);
 const normalRouteVerifier = spec.match(
@@ -398,6 +420,13 @@ assert.match(healthVerifier,
   /receipt\.reasoning_effort === CSM_ACTIVE_MODEL_PROFILE\.reasoning_effort/);
 assert.match(healthVerifier, /healthRecognitionTransportContractMatches\(health\?\.runtime\)/);
 assert.match(healthVerifier, /healthExternalIdentityContractMatches\(health\?\.runtime\)/);
+assert.match(spec, /function healthCanonicalNamingContractMatches/);
+assert.match(healthVerifier, /healthCanonicalNamingContractMatches\(health\?\.runtime\)/);
+assert.match(healthVerifier, /canonical_naming_contract_valid/);
+assert.match(healthVerifier,
+  /canonical_naming_release_contract:\s*health\?\.runtime\?\.canonical_naming/);
+assert.match(healthVerifier,
+  /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(CANONICAL_NAMING_RELEASE_CONTRACT\)/);
 assert.match(healthVerifier, /retired_capabilities_disabled === true/);
 assert.match(spec, /const initialHealthReceipt = writerJourneyHealthReceipt/);
 assert.match(spec, /const finalHealthReceipt = writerJourneyHealthReceipt/);
@@ -700,6 +729,8 @@ assert.match(releaseWorkflow, /writer-journey-large-source-v2\.json/);
 assert.match(releaseWorkflow, /Materialize release-class-bound Writer Journey cases/);
 assert.match(releaseWorkflow, /manifest\.schema_version !== 'writer-journey-cases-v3'/);
 assert.match(releaseWorkflow, /parity\.source_asset_id !== contract\.source_asset_id/);
+assert.match(releaseWorkflow, /WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT/);
+assert.match(releaseWorkflow, /writer_journey_verifier_fact_leaked/);
 assert.match(releaseWorkflow, /flag: 'wx', mode: 0o600/,
   "the large-builder subset must be a newly created owner-only file");
 assert.match(releaseWorkflow, /WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\\n/);
@@ -710,6 +741,16 @@ for (const fixturePath of [
   "scripts/build-large-internal-writer-fixture.browser.test.mjs"
 ]) {
   assert.ok(workflow.includes(`- "${fixturePath}"`), `${fixturePath} must trigger the PR gate`);
+}
+for (const p0ProofPath of [
+  "scripts/production-standard-p0-verifier.mjs",
+  "scripts/production-parity-readback.mjs",
+  "scripts/production-parity-readback.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
+]) {
+  assert.ok(workflow.includes(`- "${p0ProofPath}"`),
+    `${p0ProofPath} must trigger the offline Writer proof gate`);
 }
 for (const releaseContractPath of [
   "scripts/production-release-boundaries.test.mjs",

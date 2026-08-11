@@ -9,20 +9,40 @@ import { CSM_PRODUCTION_SUPABASE_PROJECT_REF } from
 import { supabaseServiceHeaders } from "../lib/supabase-service-headers.mjs";
 
 const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
-export const WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS = Object.freeze([
-  Object.freeze({
-    case_id: "NON_TCG",
-    expected_grammar: "NON_TCG",
-    source_feedback_id: "007edfc1-e52d-4a9e-ab8f-3955e6500620",
-    evaluation_cohort: "INTERNAL_REVIEWED_GT",
-    hash_provenance: "2026-08-08_DIRECT_EXACT_PATH_BYTE_ACQUISITION",
-    image_sha256: Object.freeze({
-      "007edfc1-e52d-4a9e-ab8f-3955e6500620_front":
-        "16f731783a954b79d696ff2343c25e996692c0f845fc2bb01ed483ab7a74774b",
-      "007edfc1-e52d-4a9e-ab8f-3955e6500620_back":
-        "b3edee5956060acde3946cc5c4fcf29a0981d582e5d547b69290ce53f2f3cdc1"
+export const WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT = Object.freeze({
+  case_id: "NON_TCG",
+  expected_grammar: "NON_TCG",
+  source_kind: "PRODUCTION_ASSET",
+  source_record_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+  source_asset_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+  evaluation_cohort: "PRODUCTION_LOW_REASONING_VERIFIED",
+  hash_provenance: "2026-08-11_PRODUCTION_ASSET_EXACT_VERIFICATION",
+  images: Object.freeze([
+    Object.freeze({
+      image_id: "f55f120f-09e0-4c2f-9166-8bcf7310b4d0",
+      storage_role: "image_1_original",
+      role: "front_original",
+      content_type: "image/webp",
+      bytes: 237200,
+      width: 910,
+      height: 1255,
+      content_sha256: "161f0d97df619f8d34b2453551567a0473d3e477c3e0ec9295029fbce8c59e44"
+    }),
+    Object.freeze({
+      image_id: "cd43a047-0472-441e-bc4d-00e53b04634f",
+      storage_role: "image_2_original",
+      role: "back_original",
+      content_type: "image/webp",
+      bytes: 180260,
+      width: 922,
+      height: 1258,
+      content_sha256: "cef46b5d761d2d20f5cd21d611cab8d8037721bcdb4ae8c1a0d4441439a6fdc3"
     })
-  }),
+  ])
+});
+
+export const WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS = Object.freeze([
+  WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT,
   Object.freeze({
     case_id: "TCG",
     expected_grammar: "TCG",
@@ -69,6 +89,7 @@ export const WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT = Object.freeze({
 });
 
 function sourceForContract(contract) {
+  if (contract.source_kind === "PRODUCTION_ASSET") return contract;
   const indexed = launchGateImageSourceRecords.find((source) => (
     source.source_feedback_id === contract.source_feedback_id
     && source.evaluation_cohort === contract.evaluation_cohort
@@ -217,11 +238,14 @@ async function responseJson(response, errorCode) {
   }
 }
 
-export function verifiedExactParitySourceRows(rows, {
-  contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
+export function verifiedProductionAssetSourceRows(rows, {
+  contract,
+  errorCode = "writer_journey_production_asset_source_invalid"
 } = {}) {
-  if (!Array.isArray(rows) || rows.length !== 2) {
-    throw new Error("writer_journey_parity_source_invalid");
+  if (!contract || contract.source_kind !== "PRODUCTION_ASSET"
+      || !Array.isArray(contract.images) || contract.images.length !== 2
+      || !Array.isArray(rows) || rows.length !== 2) {
+    throw new Error(errorCode);
   }
   const byImageId = new Map(rows.map((row) => [row?.image_id, row]));
   const images = contract.images.map((expected) => {
@@ -233,11 +257,15 @@ export function verifiedExactParitySourceRows(rows, {
       || row.content_hash_verified !== true
       || row.content_sha256 !== expected.content_sha256
       || !["image/jpeg", "image/png", "image/webp"].includes(row.content_type)
+      || (expected.content_type && row.content_type !== expected.content_type)
       || !Number.isSafeInteger(row.size) || row.size < 1 || row.size > MAX_SOURCE_BYTES
+      || (expected.bytes && row.size !== expected.bytes)
       || !Number.isSafeInteger(row.width) || row.width < 1
+      || (expected.width && row.width !== expected.width)
       || !Number.isSafeInteger(row.height) || row.height < 1
+      || (expected.height && row.height !== expected.height)
       || !row.bucket || !row.object_path) {
-      throw new Error("writer_journey_parity_source_invalid");
+      throw new Error(errorCode);
     }
     return {
       bucket: row.bucket,
@@ -253,8 +281,23 @@ export function verifiedExactParitySourceRows(rows, {
   return { ...contract, images };
 }
 
-async function exactParitySource({ origin, serviceKey, fetchImpl }) {
-  const contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT;
+export function verifiedExactParitySourceRows(rows, {
+  contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
+} = {}) {
+  return verifiedProductionAssetSourceRows(rows, {
+    contract,
+    errorCode: "writer_journey_parity_source_invalid"
+  });
+}
+
+async function productionAssetSource({
+  origin,
+  serviceKey,
+  fetchImpl,
+  contract,
+  readErrorCode,
+  invalidErrorCode
+}) {
   const endpoint = new URL(`${origin}/rest/v1/listing_image_verifications`);
   endpoint.searchParams.set("select", [
     "object_path", "bucket", "asset_id", "image_id", "storage_role", "content_type",
@@ -268,14 +311,29 @@ async function exactParitySource({ origin, serviceKey, fetchImpl }) {
     redirect: "error",
     signal: AbortSignal.timeout(15_000)
   });
-  const rows = await responseJson(response, "writer_journey_parity_source_read_failed");
-  return verifiedExactParitySourceRows(rows, { contract });
+  const rows = await responseJson(response, readErrorCode);
+  return verifiedProductionAssetSourceRows(rows, {
+    contract,
+    errorCode: invalidErrorCode
+  });
+}
+
+async function exactParitySource({ origin, serviceKey, fetchImpl }) {
+  return productionAssetSource({
+    origin,
+    serviceKey,
+    fetchImpl,
+    contract: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
+    readErrorCode: "writer_journey_parity_source_read_failed",
+    invalidErrorCode: "writer_journey_parity_source_invalid"
+  });
 }
 
 export async function materializeWriterJourneySources({
   env = process.env,
   outDir,
   cases = DEFAULT_CASES,
+  standardCase = undefined,
   parityCase = undefined,
   fetchImpl = globalThis.fetch
 } = {}) {
@@ -287,18 +345,60 @@ export async function materializeWriterJourneySources({
   const resolvedParityCase = parityCase === undefined
     ? await exactParitySource({ origin, serviceKey, fetchImpl })
     : parityCase;
+  const requestedStandardCase = Array.isArray(cases)
+    ? cases.find((source) => source?.case_id === "NON_TCG")
+    : null;
+  const resolvedStandardCase = requestedStandardCase?.source_kind === "PRODUCTION_ASSET"
+    ? (standardCase === undefined
+      ? await productionAssetSource({
+        origin,
+        serviceKey,
+        fetchImpl,
+        contract: requestedStandardCase,
+        readErrorCode: "writer_journey_standard_source_read_failed",
+        invalidErrorCode: "writer_journey_standard_source_invalid"
+      })
+      : standardCase)
+    : null;
+  const resolvedCases = Array.isArray(cases) ? cases.map((source) => (
+    source?.case_id === "NON_TCG" && resolvedStandardCase ? resolvedStandardCase : source
+  )) : cases;
   const directory = path.resolve(requiredText(outDir, "out_dir"));
-  if (!Array.isArray(cases) || cases.length !== 2
-    || new Set(cases.map((source) => source?.case_id)).size !== 2
-    || new Set(cases.map((source) => source?.expected_grammar)).size !== 2
-    || cases.some((source) => source?.evaluation_cohort !== "INTERNAL_REVIEWED_GT"
-      || !["NON_TCG", "TCG"].includes(source?.case_id)
+  const standardContract = requestedStandardCase;
+  const tcgContract = Array.isArray(cases)
+    ? cases.find((source) => source?.case_id === "TCG")
+    : null;
+  if (!Array.isArray(resolvedCases) || resolvedCases.length !== 2
+    || new Set(resolvedCases.map((source) => source?.case_id)).size !== 2
+    || new Set(resolvedCases.map((source) => source?.expected_grammar)).size !== 2
+    || resolvedCases.some((source) => (
+      !["NON_TCG", "TCG"].includes(source?.case_id)
       || (source.case_id === "NON_TCG" && source.expected_grammar !== "NON_TCG")
       || (source.case_id === "TCG" && source.expected_grammar !== "TCG")
-      || !source?.source_feedback_id || !source?.hash_provenance
+      || !source?.hash_provenance
       || !Array.isArray(source.images) || source.images.length !== 2
       || source.images[0]?.role !== "front_original"
-      || source.images[1]?.role !== "back_original")) {
+      || source.images[1]?.role !== "back_original"
+      || (source.case_id === "NON_TCG" && (
+        source.source_kind !== standardContract.source_kind
+        || source.source_record_id !== standardContract.source_record_id
+        || source.source_asset_id !== standardContract.source_asset_id
+        || source.evaluation_cohort !== standardContract.evaluation_cohort
+        || source.hash_provenance !== standardContract.hash_provenance
+        || source.images.some((image, index) => (
+          image?.image_id !== standardContract.images[index].image_id
+          || image?.storage_role !== standardContract.images[index].storage_role
+          || image?.content_sha256 !== standardContract.images[index].content_sha256
+          || image?.object_verified !== true
+          || image?.content_hash_verified !== true
+        ))
+      ))
+      || (source.case_id === "TCG" && (
+        source.source_feedback_id !== tcgContract.source_feedback_id
+        || source.evaluation_cohort !== tcgContract.evaluation_cohort
+        || source.hash_provenance !== tcgContract.hash_provenance
+      ))
+    ))) {
     throw new Error("writer_journey_source_record_invalid");
   }
   if (resolvedParityCase !== null && (
@@ -326,7 +426,9 @@ export async function materializeWriterJourneySources({
   await secureRootDirectory(directory);
 
   const materializedCases = [];
-  for (const source of resolvedParityCase ? [...cases, resolvedParityCase] : cases) {
+  for (const source of resolvedParityCase
+    ? [...resolvedCases, resolvedParityCase]
+    : resolvedCases) {
     const caseDirectory = path.join(directory, source.case_id.toLowerCase().replace("_", "-"));
     await secureNewCaseDirectory(caseDirectory);
     const files = [];
