@@ -100,13 +100,15 @@ const uniqueFields = (rows, reason) => [...new Set(rows
 const titleTokens = (title) => title.split(/\s+/).filter(Boolean);
 
 try {
-  const { composeLyncaStandardName } = await import(
+  const { composeLyncaStandardNameForProfile } = await import(
     "../lib/listing/thin/canonical-naming-adapter.mjs"
   );
 
   for (const entry of fixture.cases) {
     const { canonical_fields: fields, expected } = entry;
-    const result = composeLyncaStandardName(fields);
+    const result = composeLyncaStandardNameForProfile(fields, {
+      marketplaceProfileVersion: fixture.contract.marketplace_profile
+    });
     const trace = result.canonical_naming_trace;
     const label = `Subset A ${entry.id}`;
 

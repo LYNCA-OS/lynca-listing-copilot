@@ -52,6 +52,7 @@ import {
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { composeCanonicalFieldsForStoredOutput } from "../lib/listing/thin/csm-replay.mjs";
 import { finishCanonicalFields } from "../lib/listing/thin/thin-listing-path.mjs";
 import * as providerResponseAttestation from "../lib/listing/thin/provider-response-attestation.mjs";
 import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
@@ -81,7 +82,9 @@ import {
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   buildCsmStageRows,
-  computeCsmPacketHashes
+  computeCsmPacketHashes,
+  EBAY_PROFILE_VERSION,
+  THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   CSM_PROJECTION_ACTIVATION
@@ -118,9 +121,9 @@ assert.deepEqual(Object.keys(providerResponseAttestation).sort(), [
   "providerUsageReceipt"
 ], "provider response attestation must expose only live receipt normalizers");
 
-// Complete public-result bytes from the archived de55 Production writer. The
-// forward-reader bridge may add new CNL tuples, but its active v2 response must
-// not acquire even an empty field or an additive profile key.
+// Archived de55 bytes remain selected by their stored v2/eBay tuple, while a
+// fresh default write must project Activation A. Neither proof consults a
+// mutable current tuple for the historical arm.
 {
   const fields = parseCanonicalFields({
     year: "2025",
@@ -149,19 +152,60 @@ assert.deepEqual(Object.keys(providerResponseAttestation).sort(), [
     unreadable: [],
     low_confidence: []
   }).fields;
-  const prepared = finishCanonicalFields(fields);
-  const rows = buildCsmStageRows({
+  const storedV2 = composeCanonicalFieldsForStoredOutput(fields, {
+    composer_version: THIN_COMPOSER_VERSION_V2,
+    marketplace_profile_version: EBAY_PROFILE_VERSION,
+    marketplace: "EBAY"
+  });
+  const historical = {
+    title: storedV2.title,
+    fields,
+    field_defects: [],
+    unreadable_fields: storedV2.unreadable,
+    low_confidence_fields: storedV2.low_confidence,
+    grammar: storedV2.grammar,
+    brackets: storedV2.brackets,
+    dropped_brackets: storedV2.dropped,
+    suppressed_brackets: storedV2.suppressed,
+    restored_brackets: storedV2.restored,
+    truncated: storedV2.truncated,
+    input_empty_fields: storedV2.input_empty_fields,
+    normalization_reasons: storedV2.normalization_reasons,
+    character_budget: storedV2.character_budget,
+    length: storedV2.length,
+    composer_version: THIN_COMPOSER_VERSION_V2,
+    marketplace_profile_version: EBAY_PROFILE_VERSION
+  };
+  const historicalRows = buildCsmStageRows({
     tenantId: "tenant-byte-probe",
     recognitionSessionId: "session-byte-probe-plain",
-    fields: prepared.fields,
-    composed: prepared,
-    title: prepared.title
+    fields,
+    composed: historical,
+    title: historical.title
   });
-  const publicResult = publicPersistedResult({ ...prepared, csm_rows: rows });
   assert.equal(
-    createHash("sha256").update(JSON.stringify(publicResult)).digest("hex"),
+    createHash("sha256").update(JSON.stringify(publicPersistedResult({
+      ...historical,
+      csm_rows: historicalRows
+    }))).digest("hex"),
     "d81a24258f96b6a083dff3bd3053babe1f69dec8e9e1c8ed4f3d60f630258bbd",
     "the complete dormant v2 public result must remain byte-identical to de55"
+  );
+  const active = finishCanonicalFields(fields);
+  const activeRows = buildCsmStageRows({
+    tenantId: "tenant-byte-probe",
+    recognitionSessionId: "session-byte-probe-plain",
+    fields: active.fields,
+    composed: active,
+    title: active.title
+  });
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(publicPersistedResult({
+      ...active,
+      csm_rows: activeRows
+    }))).digest("hex"),
+    "096e2bc743311f788f6eec817c110694eb6f4c817ab57844c236ca2241edbc32",
+    "the complete active CNL v0.2 public result must remain byte-identical"
   );
 }
 const CURRENT_DIRECT_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
@@ -668,20 +712,19 @@ const canonicalImages = () => ({
 });
 
 const activeVerifiedProjection = structuredClone(CSM_PROJECTION_ACTIVATION);
-activeVerifiedProjection.active_writer.standard = {
-  composer_version: activeVerifiedProjection.forward_readers.standard[1].composer_version,
-  marketplace_profile_version:
-    activeVerifiedProjection.forward_readers.standard[1].marketplace_profile_version
+const dormantProjection = structuredClone(CSM_PROJECTION_ACTIVATION);
+dormantProjection.active_writer.standard = {
+  composer_version: THIN_COMPOSER_VERSION_V2,
+  marketplace_profile_version: EBAY_PROFILE_VERSION
 };
-activeVerifiedProjection.active_writer.verified_original_observation_overlay =
-  VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID;
+dormantProjection.active_writer.verified_original_observation_overlay = null;
 const subsetAOriginalSha256 = WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images
   .map(({ content_sha256 }) => content_sha256);
 
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256
-}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
-"the bridge must keep exact verified sets dormant under the v2 writer");
+}).resolution_contract_sha256, COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
+"Activation A must select the exact verified overlay by default");
 const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256,
   projectionActivation: activeVerifiedProjection
@@ -704,9 +747,9 @@ for (const mixed of [
     }
   },
   {
-    ...CSM_PROJECTION_ACTIVATION,
+    ...dormantProjection,
     active_writer: {
-      ...CSM_PROJECTION_ACTIVATION.active_writer,
+      ...dormantProjection.active_writer,
       verified_original_observation_overlay: VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
     }
   }
@@ -857,7 +900,7 @@ function resealVerifiedOriginalPrepared(prepared) {
   }), (error) => error.detail === "verified_original_observation_receipt_mismatch");
   assert.throws(() => buildCsmPersistenceCheckpoint({
     ...args,
-    projectionActivation: CSM_PROJECTION_ACTIVATION
+    projectionActivation: dormantProjection
   }), (error) => error.detail === "verified_original_observation_release_not_active");
   assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
     tenantId: args.tenantId,

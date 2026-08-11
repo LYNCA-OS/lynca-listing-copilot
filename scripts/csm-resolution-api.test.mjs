@@ -11,12 +11,12 @@ import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import {
   composeLyncaStandardName,
+  LYNCA_STANDARD_PROFILE_VERSION_V1,
   LYNCA_STANDARD_PROFILE_VERSION_V2
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   buildCsmStageRows,
   EBAY_PROFILE_VERSION,
-  LYNCA_STANDARD_PROFILE_VERSION,
   THIN_COMPOSER_VERSION,
   THIN_COMPOSER_VERSION_V1,
   THIN_COMPOSER_VERSION_V2
@@ -71,12 +71,9 @@ const record = {
 const deps = { readRecord: async () => record, appendReview: async ({ review }) => review };
 
 // Flat records have no historical replay bundle, so their stored pair must
-// equal the active router pair for their grammar. The forward-reader bridge
-// deliberately keeps every fresh grammar on v2/eBay; v3/v0.1 and v3/v0.2 are
-// historical/forward-readable only when their executable replay rows travel
-// with the record.
+// equal the active router pair for their grammar. Activation A moves only
+// Standard to v3/v0.2; TCG and Lot remain on v2/eBay.
 const legacyFlatCases = [
-  ["standard", JSON.parse(payload)],
   ["tcg", {
     year: "2025", product: "Pokemon", set: "Mega Brave",
     subjects: ["Mega Absol Ex"], card_number: "089/063",
@@ -124,16 +121,44 @@ for (const [grammar, canonicalPayload] of legacyFlatCases) {
 {
   const currentStandard = composeResolutionView({
     canonical_payload: payload,
+    composer_version: THIN_COMPOSER_VERSION,
+    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V2
+  });
+  assert.equal(currentStandard.composer_version, THIN_COMPOSER_VERSION);
+  assert.equal(currentStandard.marketplace_profile_version,
+    LYNCA_STANDARD_PROFILE_VERSION_V2);
+  const activeRecord = {
+    asset_id: "asset-standard-active",
+    recognition_session_id: "session-standard-active",
+    resolution_id: "resolution-standard-active",
+    output_id: "output-standard-active",
+    canonical_payload: payload,
+    output_title: currentStandard.composed.title,
+    composer_version: THIN_COMPOSER_VERSION,
+    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V2,
+    resolver_version: "thin-path-observation-only-v1",
+    owner_execution_receipt: {
+      version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+      sha256: OWNER_RECEIPT_SHA256
+    }
+  };
+  const activeView = await handleResolutionViewRequest({
+    tenantId: "t1",
+    assetId: activeRecord.asset_id,
+    dependencies: { readRecord: async () => activeRecord }
+  });
+  assert.equal(activeView.composer.composer_version, THIN_COMPOSER_VERSION);
+  assert.equal(activeView.composer.marketplace_profile_version,
+    LYNCA_STANDARD_PROFILE_VERSION_V2);
+
+  assert.throws(() => composeResolutionView({
+    canonical_payload: payload,
     composer_version: THIN_COMPOSER_VERSION_V2,
     marketplace_profile_version: EBAY_PROFILE_VERSION
-  });
-  assert.equal(currentStandard.composer_version, THIN_COMPOSER_VERSION_V2);
-  assert.equal(currentStandard.marketplace_profile_version, EBAY_PROFILE_VERSION);
+  }), (error) => error?.statusCode === 409
+    && error?.message === "csm_resolution_replay_rows_required");
 }
-for (const marketplaceProfileVersion of [
-  LYNCA_STANDARD_PROFILE_VERSION,
-  LYNCA_STANDARD_PROFILE_VERSION_V2
-]) {
+for (const marketplaceProfileVersion of [LYNCA_STANDARD_PROFILE_VERSION_V1]) {
   assert.throws(
     () => composeResolutionView({
       canonical_payload: payload,
@@ -224,12 +249,15 @@ const legacyRecord = {
   assert.equal(view.composer.recomposed_matches_stored, true);
   assert.equal(view.composer.trace_reliable, true);
   assert.ok(view.composer.composer_version, "the version the trace was produced under travels with it");
-  assert.equal(Object.hasOwn(view.composer, "marketplace_profile_version"), false,
-    "the bridge preserves the exact de55 v2 public key set");
+  assert.equal(view.composer.composer_version, THIN_COMPOSER_VERSION);
+  assert.equal(view.composer.marketplace_profile_version,
+    LYNCA_STANDARD_PROFILE_VERSION_V2);
   assert.equal(view.brackets.find((entry) => entry.bracket === "search_optimization").value,
-    "Dodgers, RC", "the legacy search projection keeps team before components");
-  assert.ok(view.brackets.every((entry) => !Object.hasOwn(entry, "canonical_fields")),
-    "the forward-reader must not enrich an already-published v2 response");
+    "RC, Dodgers", "Activation A uses the registered CNL search projection");
+  assert.deepEqual(
+    view.brackets.find((entry) => entry.bracket === "search_optimization").canonical_fields,
+    ["components", "search_optimization", "team"]
+  );
   assert.deepEqual(view.owner_execution_receipt, {
     version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
     sha256: OWNER_RECEIPT_SHA256
