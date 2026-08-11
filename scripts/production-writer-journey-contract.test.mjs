@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
+import {
+  PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT,
+  PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX,
+  productionPublicCompositionProjectionForOwner
+} from "./production-public-composition-projection.mjs";
+
 const [login, index, app, spec, feedbackApi, workflow, releaseWorkflow, packageText] = await Promise.all([
   readFile(new URL("../app/login.html", import.meta.url), "utf8"),
   readFile(new URL("../app/index.html", import.meta.url), "utf8"),
@@ -87,13 +93,13 @@ assert.match(spec, /CANONICAL_NAMING_RELEASE_CONTRACT/);
 assert.match(spec, /canonicalNamingVersionActive/);
 assert.match(spec, /compatibilityBridgeStandardVersionActive/);
 assert.match(spec,
-  /sourceCase\.case_id === "NON_TCG"[\s\S]*?parityRequired[\s\S]*?canonicalNamingVersionActive\(versions\)[\s\S]*?compatibilityBridgeStandardVersionActive\(versions\)/,
+  /sourceCase\.case_id === "NON_TCG"[\s\S]*?parityRequired[\s\S]*?verifiedOriginalObservationVersionActive\([\s\S]*?versions[\s\S]*?observationLegacyVersionActive\(versions\)/,
   "the Standard Writer case must prove the release-class-specific active writer tuple");
 assert.match(spec, /standardCaseEvidence\?\.canonical_naming_active === true/);
 assert.match(spec, /standardCaseEvidence\?\.compatibility_bridge_standard_active === true/);
 assert.match(spec, /standardCaseEvidence\?\.verified_original_observation_active === false/);
 assert.match(spec, /canonical_naming_active_case_count/,
-  "the immutable candidate must prove that at least one real Writer case used CNL v0.1");
+  "the immutable candidate must prove that at least one real Writer case used active CNL");
 assert.match(spec, /productionStandardP0ResolutionProof/);
 assert.match(spec, /productionStandardP0ResolutionProofValid/);
 assert.match(spec, /productionStandardP0EvidenceProofValid/);
@@ -238,22 +244,52 @@ const publicPayloadBoundary = spec.match(
   /function publicRecognitionPayloadBoundary[\s\S]+?(?=\nfunction liveExecutionReceiptProof)/
 )?.[0] || "";
 assert.ok(publicPayloadBoundary, "every live route must verify the public recognition projection");
-const publicProjectionSelector = spec.match(
-  /function publicRecognitionProjectionForOwner[\s\S]+?(?=\nfunction publicRecognitionPayloadBoundary)/
-)?.[0] || "";
-assert.ok(publicProjectionSelector,
-  "the public recognition projection must be selected from the sealed owner tuple");
-for (const token of [
-  "CANONICAL_NAMING_RELEASE_CONTRACT_V1",
-  "CANONICAL_NAMING_RELEASE_CONTRACT_V2",
-  "THIN_COMPOSER_VERSION_V2",
-  "EBAY_PROFILE_VERSION",
-  "EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract",
-  "marketplace_profile_public: true",
-  "marketplace_profile_public: false"
-]) {
-  assert.match(publicProjectionSelector, new RegExp(token.replaceAll(".", "\\.")));
+assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.schema_version,
+  "production-public-composition-projection-contract-v1");
+assert.match(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.contract_sha256,
+  /^[0-9a-f]{64}$/);
+assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length, 6);
+assert.equal(new Set(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.map((entry) => (
+  `${entry.composer_version}\0${entry.marketplace_profile_version}`
+))).size, 6);
+for (const entry of PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX) {
+  assert.strictEqual(productionPublicCompositionProjectionForOwner({
+    composer: entry.composer_version,
+    marketplace_profile: entry.marketplace_profile_version
+  }), entry);
+  assert.deepEqual(entry.public_output_keys, entry.marketplace_profile_public
+    ? ["composer_version", "contract_version", "marketplace_profile_version"]
+    : ["composer_version", "contract_version"]);
 }
+assert.equal(productionPublicCompositionProjectionForOwner({
+  composer: "unknown-composer", marketplace_profile: "unknown-profile"
+}), null);
+assert.equal(productionPublicCompositionProjectionForOwner({
+  composer: PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].composer_version,
+  composer_version: "mixed-composer",
+  marketplace_profile:
+    PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].marketplace_profile_version
+}), null);
+assert.equal(productionPublicCompositionProjectionForOwner({
+  composer: PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].composer_version,
+  marketplace_profile:
+    PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].marketplace_profile_version,
+  marketplace_profile_version: "mixed-profile"
+}), null);
+assert.equal(productionPublicCompositionProjectionForOwner({
+  composer: PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].composer_version,
+  marketplace_profile_version:
+    PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].marketplace_profile_version
+}), null);
+assert.equal(productionPublicCompositionProjectionForOwner({
+  composer_version: PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].composer_version,
+  marketplace_profile:
+    PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX[0].marketplace_profile_version
+}), null);
+assert.match(spec, /productionPublicCompositionProjectionForOwner/,
+  "the Writer Journey must use the shared sealed owner-tuple projection");
+assert.doesNotMatch(spec, /function publicRecognitionProjectionForOwner/,
+  "the Writer Journey must not keep a second tuple registry");
 for (const forbidden of [
   "external_identity_support", "csm_persistence_checkpoint", "accuracy_loss_ledger",
   "observed_fields", "resolution_contract", "original_set_sha256", "source_ref"
@@ -261,7 +297,7 @@ for (const forbidden of [
   assert.match(publicPayloadBoundary, new RegExp(forbidden));
 }
 assert.match(publicPayloadBoundary, /hasExactKeys\(payload\.csm_rows, \["output", "resolution"\]\)/);
-assert.match(publicPayloadBoundary, /hasExactKeys\(publicOutput, projection\.output_keys\)/);
+assert.match(publicPayloadBoundary, /hasExactKeys\(publicOutput, projection\.public_output_keys\)/);
 assert.match(publicPayloadBoundary, /publicOutput\.composer_version === owner\.composer/);
 assert.match(publicPayloadBoundary,
   /publicOutput\.marketplace_profile_version === owner\.marketplace_profile/);
@@ -273,13 +309,37 @@ const recognitionVersionVerifier = spec.match(
 )?.[0] || "";
 assert.ok(recognitionVersionVerifier,
   "the version receipt must verify the same owner-selected public projection");
-assert.match(recognitionVersionVerifier, /publicRecognitionProjectionForOwner\(\{/);
+assert.match(recognitionVersionVerifier, /productionPublicCompositionProjectionForOwner\(\{/);
 assert.match(recognitionVersionVerifier, /publicProjection\.marketplace_profile_public/);
 assert.match(recognitionVersionVerifier,
   /!Object\.prototype\.hasOwnProperty\.call\(rows\.output, "marketplace_profile_version"\)/);
 assert.match(recognitionVersionVerifier,
-  /composer === THIN_COMPOSER_VERSION_V2[\s\S]*?marketplaceProfile === EBAY_PROFILE_VERSION/,
-  "only the registered legacy v2 view may omit its profile");
+  /!Object\.prototype\.hasOwnProperty\.call\([\s\S]*?view\?\.composer \|\| \{\}, "marketplace_profile_version"/,
+  "registered hidden-profile tuples must require omission in the public view too");
+assert.match(spec, /observationLegacyVersionActive\(tcgCaseEvidence\?\.versions\)/,
+  "the final seal must pin the TCG legacy tuple");
+assert.match(spec, /observationCanonicalV2VersionActive\(largeCaseEvidence\?\.versions\)/,
+  "the final seal must pin the active Large Standard tuple");
+assert.match(spec, /registeredExternalIdentityVersionActive\(parityCaseEvidence\?\.versions\)/,
+  "the final seal must pin the registered external tuple");
+const verifiedOriginalVersionVerifier = spec.match(
+  /function verifiedOriginalObservationVersionActive[\s\S]+?(?=\nfunction registeredExternalIdentityVersionActive)/
+)?.[0] || "";
+assert.ok(verifiedOriginalVersionVerifier,
+  "the active Standard tuple must bind the verified-original release receipt");
+for (const token of [
+  "validateVerifiedOriginalObservationPublicReceipt",
+  "VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION",
+  "VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id",
+  "VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256",
+  "VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256"
+]) {
+  assert.match(verifiedOriginalVersionVerifier,
+    new RegExp(token.replaceAll(".", "\\.")));
+}
+assert.match(spec,
+  /verifiedOriginalObservationVersionActive\(standardCaseEvidence\?\.versions\)/,
+  "the final seal must reject a Standard resolver that only self-consistently drifted");
 const executionReceiptVerifier = spec.match(
   /function liveExecutionReceiptProof[\s\S]+?(?=\nfunction assertNoPrivateFixtureKeys)/
 )?.[0] || "";

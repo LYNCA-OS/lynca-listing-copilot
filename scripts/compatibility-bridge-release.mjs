@@ -58,6 +58,10 @@ import {
 import {
   PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
 } from "./production-standard-p0-verifier.mjs";
+import {
+  PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT,
+  PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX
+} from "./production-public-composition-projection.mjs";
 
 export const ORDINARY_RELEASE_CLASS = "ordinary";
 export const COMPATIBILITY_BRIDGE_RELEASE_CLASS = "compatibility-bridge";
@@ -123,6 +127,17 @@ export const CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA =
   "2946066d48c1818262db2fbe9150bf3079f051e4";
 export const CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID = "31515428405";
 export const CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA =
+  CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
+export const CANONICAL_NAMING_ACTIVATION_A3_DESCRIPTOR_ID =
+  "canonical-naming-activation-a3-public-projection-repair-v1";
+export const CANONICAL_NAMING_ACTIVATION_A3_MARKER =
+  "canonical-naming-activation-a3-public-composition-projection-repair-v1";
+export const CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA =
+  "655d00c2e2624f331bf85fa565bb5bc15bb5d4b3";
+export const CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA =
+  "889e7cf15a711e709227d5d4e6f6a35c2c2bc776";
+export const CANONICAL_NAMING_ACTIVATION_A3_FAILED_RUN_ID = "31517338969";
+export const CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA =
   CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
@@ -201,6 +216,15 @@ export const CANONICAL_NAMING_ACTIVATION_A2_CHANGED_PATHS = Object.freeze([
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-standard-p0-verifier.mjs"
 ]);
+export const CANONICAL_NAMING_ACTIVATION_A3_CHANGED_PATHS = Object.freeze([
+  "e2e/production-writer-journey.spec.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-parity-readback.mjs",
+  "scripts/production-parity-readback.test.mjs",
+  "scripts/production-public-composition-projection.mjs",
+  "scripts/production-writer-journey-contract.test.mjs"
+]);
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const originalSha256 = Object.freeze([
@@ -226,6 +250,24 @@ const CANONICAL_NAMING_ACTIVATION_A2_VERIFIER_CONTRACT = Object.freeze({
 });
 const CANONICAL_NAMING_ACTIVATION_A2_VERIFIER_CONTRACT_SHA256 =
   "79c9588bc790a54a3a5088ff9ea10901ea89ab74191c69b58c12e5e9871891d5";
+const CANONICAL_NAMING_ACTIVATION_A2_RUNTIME_CONTRACT_SHA256 =
+  "cad6a34f87e5a3bc50e41cb4601e95fe5b29b80ebe304c79f7a9d65c86a10543";
+const CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_CONTRACT_SHA256 =
+  "2a92ad7ffab15ec57555d215bbe2b4119becf238a6094a531ed8e7901f6fd90a";
+const CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX = Object.freeze([
+  ["canonical_naming:v1", "thin-marketplace-composer-v3",
+    "lynca-standard-name-v0.1", true],
+  ["canonical_naming:v2", "thin-marketplace-composer-v3",
+    "lynca-standard-name-v0.2", true],
+  ["legacy_ebay:v1", "thin-marketplace-composer-v1", "ebay-profile-v1", false],
+  ["legacy_ebay:v2", "thin-marketplace-composer-v2", "ebay-profile-v1", false],
+  ["external_identity:registry_thin_external_identity_high_risers_v1",
+    "thin-marketplace-composer-v3-verified-external-identity",
+    "ebay-verified-external-identity-v1", false],
+  ["external_identity:registry_thin_external_identity_high_risers_v2",
+    "thin-marketplace-composer-v4-verified-external-identity",
+    "ebay-verified-external-identity-v2", false]
+]);
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const stableJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -373,6 +415,20 @@ function exactCanonicalNamingActivationA2ChangedPaths(values) {
   return actual;
 }
 
+function exactCanonicalNamingActivationA3ChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("canonical_naming_activation_a3_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...CANONICAL_NAMING_ACTIVATION_A3_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("canonical_naming_activation_a3_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -429,7 +485,22 @@ function canonicalNamingActivationA2ArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function canonicalNamingActivationA3ArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A3_DESCRIPTOR_ID,
+    repair_marker: CANONICAL_NAMING_ACTIVATION_A3_MARKER,
+    parent_git_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA,
+    parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA,
+    failed_run_id: CANONICAL_NAMING_ACTIVATION_A3_FAILED_RUN_ID,
+    required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA,
+    changed_paths: exactCanonicalNamingActivationA3ChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
+    return CANONICAL_NAMING_ACTIVATION_A3_MARKER;
+  }
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA) {
     return CANONICAL_NAMING_ACTIVATION_A2_MARKER;
   }
@@ -487,6 +558,35 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA) {
+        throw failure("canonical_naming_activation_a3_parent_tree_mismatch");
+      }
+      const artifactPaths = exactCanonicalNamingActivationA3ChangedPaths(
+        changedPaths ?? gitChangedPaths(CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA, expectedSha)
+      );
+      const repairContract = canonicalNamingActivationA3RuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v7",
+        release_class: selected,
+        repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A3_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: CANONICAL_NAMING_ACTIVATION_A3_MARKER,
+        parent_git_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA,
+        parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA,
+        failed_run_id: CANONICAL_NAMING_ACTIVATION_A3_FAILED_RUN_ID,
+        required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          canonicalNamingActivationA3ArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: "writer-journey-cases-v3",
+        parity_required: true,
+        contract_sha256: repairContract.contract_sha256
+      });
+    }
     if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA}^{tree}`
@@ -885,10 +985,134 @@ export function canonicalNamingActivationA2RuntimeContractProof({
   return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
 }
 
+export function canonicalNamingActivationA3RuntimeContractProof({
+  projectionContract = PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT,
+  projectionMatrix = PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX,
+  baseA2Proof = canonicalNamingActivationA2RuntimeContractProof()
+} = {}) {
+  const compactMatrix = Array.isArray(projectionMatrix)
+    ? projectionMatrix.map((entry) => [
+      entry?.id,
+      entry?.composer_version,
+      entry?.marketplace_profile_version,
+      entry?.marketplace_profile_public
+    ])
+    : null;
+  const matrixShapeValid = Array.isArray(projectionMatrix)
+    && projectionMatrix.length === CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX.length
+    && projectionMatrix.every((entry) => exactKeys(entry, [
+      "id", "composer_version", "marketplace_profile_version",
+      "marketplace_profile_public", "public_output_keys"
+    ]) && stableJson(entry.public_output_keys) === stableJson(
+      entry.marketplace_profile_public
+        ? ["composer_version", "contract_version", "marketplace_profile_version"]
+        : ["composer_version", "contract_version"]
+    ));
+  const contractPayload = {
+    schema_version: "production-public-composition-projection-contract-v1",
+    projections: projectionMatrix
+  };
+  if (!matrixShapeValid
+      || stableJson(compactMatrix)
+        !== stableJson(CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX)
+      || !exactKeys(projectionContract, [
+        "schema_version", "projections", "contract_sha256"
+      ])
+      || projectionContract.schema_version !== contractPayload.schema_version
+      || stableJson(projectionContract.projections) !== stableJson(projectionMatrix)
+      || projectionContract.contract_sha256
+        !== CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_CONTRACT_SHA256
+      || sha256(JSON.stringify(contractPayload)) !== projectionContract.contract_sha256) {
+    throw failure("canonical_naming_activation_a3_projection_contract_invalid");
+  }
+  const expectedA2Proof = canonicalNamingActivationA2RuntimeContractProof();
+  if (!exactObject(baseA2Proof)
+      || stableJson(baseA2Proof) !== stableJson(expectedA2Proof)
+      || baseA2Proof.contract_sha256
+        !== CANONICAL_NAMING_ACTIVATION_A2_RUNTIME_CONTRACT_SHA256
+      || baseA2Proof.base_activation_runtime_contract_sha256
+        !== CANONICAL_NAMING_ACTIVATION_RUNTIME_CONTRACT_SHA256) {
+    throw failure("canonical_naming_activation_a3_base_runtime_contract_invalid");
+  }
+  const body = {
+    schema_version: "canonical-naming-activation-a3-runtime-contract-proof-v1",
+    repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A3_DESCRIPTOR_ID,
+    repair_marker: CANONICAL_NAMING_ACTIVATION_A3_MARKER,
+    required_parent_git_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA,
+    required_parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA,
+    failed_run_id: CANONICAL_NAMING_ACTIVATION_A3_FAILED_RUN_ID,
+    required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA,
+    base_activation_a2_runtime_contract_sha256: baseA2Proof.contract_sha256,
+    base_activation_runtime_contract_sha256:
+      baseA2Proof.base_activation_runtime_contract_sha256,
+    public_projection_schema_version: projectionContract.schema_version,
+    public_projection_contract_sha256: projectionContract.contract_sha256,
+    public_projection_matrix_sha256: sha256(stableJson(projectionMatrix)),
+    registered_tuple_count: projectionMatrix.length,
+    public_profile_tuple_count: projectionMatrix.filter(
+      (entry) => entry.marketplace_profile_public
+    ).length,
+    hidden_profile_tuple_count: projectionMatrix.filter(
+      (entry) => !entry.marketplace_profile_public
+    ).length,
+    verifier_consumers: Object.freeze([
+      "production-parity-readback", "production-writer-journey"
+    ]),
+    provider_calls: 0
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
 export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v7") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "required_rollback_git_sha", "artifact_manifest_sha256", "git_sha",
+      "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id !== CANONICAL_NAMING_ACTIVATION_A3_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== CANONICAL_NAMING_ACTIVATION_A3_MARKER
+        || selection.parent_git_sha !== CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA
+        || selection.parent_tree_sha !== CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA
+        || selection.failed_run_id !== CANONICAL_NAMING_ACTIVATION_A3_FAILED_RUN_ID
+        || selection.required_rollback_git_sha !== CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== canonicalNamingActivationA3ArtifactManifestSha256(
+            CANONICAL_NAMING_ACTIVATION_A3_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest !== "writer-journey-cases-v3"
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== canonicalNamingActivationA3RuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a3_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v8",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A3_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: CANONICAL_NAMING_ACTIVATION_A3_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA,
+      release_parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA,
+      failed_run_id: CANONICAL_NAMING_ACTIVATION_A3_FAILED_RUN_ID,
+      required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v6") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
@@ -991,6 +1215,9 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a3_selection_invalid");
+  }
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA) {
     throw failure("ordinary_release_activation_a2_selection_invalid");
   }

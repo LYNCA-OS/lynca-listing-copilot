@@ -42,7 +42,10 @@ import {
   CANONICAL_NAMING_RELEASE_CONTRACT_V2
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
-  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+  validateVerifiedOriginalObservationPublicReceipt,
+  VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
   WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
@@ -56,6 +59,10 @@ import {
   productionStandardP0ResolutionProofValid,
   standardP0TitleIdentityExact
 } from "../scripts/production-standard-p0-verifier.mjs";
+import {
+  PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX,
+  productionPublicCompositionProjectionForOwner
+} from "../scripts/production-public-composition-projection.mjs";
 import {
   COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
   COMPATIBILITY_BRIDGE_MARKER,
@@ -71,7 +78,8 @@ import {
 } from "../scripts/production-forward-readback.mjs";
 import {
   EBAY_PROFILE_VERSION,
-  THIN_COMPOSER_VERSION_V2
+  THIN_COMPOSER_VERSION_V2,
+  THIN_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
 
 const expectedExecutionContractByTransportLaneAndImageCount = Object.freeze(Object.fromEntries(
@@ -635,43 +643,13 @@ function recognitionPostSeal(recognitionPosts, evidenceCases) {
   });
 }
 
-function publicRecognitionProjectionForOwner(owner) {
-  const composer = String(owner?.composer || "").trim();
-  const marketplaceProfile = String(owner?.marketplace_profile || "").trim();
-  const canonical = [
-    CANONICAL_NAMING_RELEASE_CONTRACT_V1,
-    CANONICAL_NAMING_RELEASE_CONTRACT_V2
-  ].some((contract) => composer === contract.composer_version
-    && marketplaceProfile === contract.marketplace_profile_version);
-  if (canonical) {
-    return Object.freeze({
-      output_keys: Object.freeze([
-        "composer_version", "contract_version", "marketplace_profile_version"
-      ]),
-      marketplace_profile_public: true
-    });
-  }
-  const external = EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract;
-  const legacy = composer === THIN_COMPOSER_VERSION_V2
-    && marketplaceProfile === EBAY_PROFILE_VERSION;
-  const registeredExternal = composer === external.composer_version
-    && marketplaceProfile === external.marketplace_profile_version;
-  if (legacy || registeredExternal) {
-    return Object.freeze({
-      output_keys: Object.freeze(["composer_version", "contract_version"]),
-      marketplace_profile_public: false
-    });
-  }
-  return null;
-}
-
 function publicRecognitionPayloadBoundary(payload, owner, code) {
   const forbiddenTopLevel = [
     "external_identity_support", "csm_persistence_checkpoint", "accuracy_loss_ledger",
     "observed_fields", "resolution_contract"
   ];
   const serialized = JSON.stringify(payload);
-  const projection = publicRecognitionProjectionForOwner(owner);
+  const projection = productionPublicCompositionProjectionForOwner(owner);
   const publicOutput = payload?.csm_rows?.output;
   requireInvariant(exactObject(payload)
     && exactObject(projection)
@@ -682,7 +660,7 @@ function publicRecognitionPayloadBoundary(payload, owner, code) {
     && hasExactKeys(payload.csm_rows.resolution, [
       "contract_version", "recognition_session_id", "resolver_version"
     ])
-    && hasExactKeys(publicOutput, projection.output_keys)
+    && hasExactKeys(publicOutput, projection.public_output_keys)
     && publicOutput.composer_version === owner.composer
     && (projection.marketplace_profile_public
       ? publicOutput.marketplace_profile_version === owner.marketplace_profile
@@ -1763,7 +1741,7 @@ function recognitionVersionReceipt(recognition, view) {
   requireInvariant(Boolean(composer) && composer === rowComposer
     && view?.composer?.composer_version === composer,
   verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
-  const publicProjection = publicRecognitionProjectionForOwner({
+  const publicProjection = productionPublicCompositionProjectionForOwner({
     composer,
     marketplace_profile: marketplaceProfile
   });
@@ -1772,12 +1750,17 @@ function recognitionVersionReceipt(recognition, view) {
       ? rowMarketplaceProfile === marketplaceProfile
       : rowMarketplaceProfile === ""
         && !Object.prototype.hasOwnProperty.call(rows.output, "marketplace_profile_version"));
-  const legacyV2View = composer === THIN_COMPOSER_VERSION_V2
-    && marketplaceProfile === EBAY_PROFILE_VERSION
-    && view?.composer?.marketplace_profile_version == null;
+  const viewHasMarketplaceProfile = Object.prototype.hasOwnProperty.call(
+    view?.composer || {}, "marketplace_profile_version"
+  );
+  const publicViewProfileMatches = exactObject(publicProjection)
+    && (publicProjection.marketplace_profile_public
+      ? viewHasMarketplaceProfile
+        && view.composer.marketplace_profile_version === marketplaceProfile
+      : !viewHasMarketplaceProfile);
   requireInvariant(Boolean(marketplaceProfile)
     && publicRowProfileMatches
-    && (view?.composer?.marketplace_profile_version === marketplaceProfile || legacyV2View),
+    && publicViewProfileMatches,
   verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
   if (composer === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version) {
     requireInvariant(
@@ -1814,6 +1797,36 @@ function canonicalNamingVersionActive(versions) {
 function compatibilityBridgeStandardVersionActive(versions) {
   return versions?.composer === THIN_COMPOSER_VERSION_V2
     && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
+}
+
+function observationLegacyVersionActive(versions) {
+  return versions?.resolver === THIN_RESOLVER_VERSION
+    && compatibilityBridgeStandardVersionActive(versions);
+}
+
+function observationCanonicalV2VersionActive(versions) {
+  return versions?.resolver === THIN_RESOLVER_VERSION
+    && canonicalNamingVersionActive(versions);
+}
+
+function verifiedOriginalObservationVersionActive(versions, support = null) {
+  const tupleActive = versions?.resolver === VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+    && canonicalNamingVersionActive(versions);
+  if (support == null) return tupleActive;
+  return tupleActive
+    && validateVerifiedOriginalObservationPublicReceipt(support)
+    && support?.release_id === VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id
+    && support?.pack_sha256 === VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256
+    && support?.resolver_version === versions.resolver
+    && support?.resolution_contract_sha256
+      === VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256;
+}
+
+function registeredExternalIdentityVersionActive(versions) {
+  const contract = EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract;
+  return versions?.resolver === contract.resolver_version
+    && versions?.composer === contract.composer_version
+    && versions?.marketplace_profile === contract.marketplace_profile_version;
 }
 
 function feedbackReceipt({
@@ -2456,12 +2469,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
       expect(resolutionView?.recognition_session_id).toBe(recognitionPayload.recognition_session_id);
       expect(resolutionView?.grammar?.value).toBe(sourceCase.expected_grammar);
       const versions = recognitionVersionReceipt(recognitionPayload, resolutionView);
+      if (sourceCase.case_id === "TCG") {
+        requireInvariant(observationLegacyVersionActive(versions),
+          verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+      }
       if (sourceCase.case_id === "NON_TCG") {
         requireInvariant(resolutionView?.grammar?.raw === "standard"
           && (parityRequired
-            ? canonicalNamingVersionActive(versions)
-              && resolutionView?.verified_original_observation_support?.status === "APPLIED"
-            : compatibilityBridgeStandardVersionActive(versions)
+            ? verifiedOriginalObservationVersionActive(
+              versions, resolutionView?.verified_original_observation_support
+            )
+            : observationLegacyVersionActive(versions)
               && resolutionView?.verified_original_observation_support == null),
         verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
         standardResolutionView = structuredClone(resolutionView);
@@ -2488,6 +2506,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       );
       if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
         failurePhase = "EXTERNAL_IDENTITY_SUPPORT";
+        requireInvariant(registeredExternalIdentityVersionActive(versions),
+          verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
         requireInvariant(codexParityTitleMatches({
           recognitionTitle: recognitionPayload?.title,
           uiTitle: titleBeforePanel,
@@ -2599,7 +2619,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
         versions,
         canonical_naming_active: canonicalNamingVersionActive(versions),
         compatibility_bridge_standard_active:
-          compatibilityBridgeStandardVersionActive(versions),
+          observationLegacyVersionActive(versions),
         verified_original_observation_active:
           resolutionView?.verified_original_observation_support?.status === "APPLIED",
         ...(standardP0Identity ? { standard_p0_identity: standardP0Identity } : {}),
@@ -2709,6 +2729,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && largeResolutionView?.recognition_session_id === largeRecognitionPayload.recognition_session_id,
     verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
     const largeVersions = recognitionVersionReceipt(largeRecognitionPayload, largeResolutionView);
+    requireInvariant((parityRequired
+      ? observationCanonicalV2VersionActive(largeVersions)
+        && largeResolutionView?.verified_original_observation_support == null
+        && largeResolutionView?.external_identity_support == null
+      : observationLegacyVersionActive(largeVersions)),
+    verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
     const largeOwnerExecutionReadback = durableOwnerExecutionReadbackProof(
       transportReceipt.execution_receipt, largeResolutionView
     );
@@ -2917,6 +2943,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     const standardCaseEvidence = evidence.cases.find((entry) => (
       entry.case_id === "NON_TCG"
     ));
+    const tcgCaseEvidence = evidence.cases.find((entry) => entry.case_id === "TCG");
     requireInvariant(evidence.cases.every((entry) => (
       hasExactKeys(entry.execution_receipt?.server_stages_ms, requiredServerStageNames)
       && Object.values(entry.execution_receipt.server_stages_ms).every(
@@ -2948,6 +2975,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     ))
       && (parityRequired ? (
         parityCaseEvidence?.codex_parity_exact_match === true
+        && registeredExternalIdentityVersionActive(parityCaseEvidence?.versions)
         && parityCaseEvidence?.external_identity_support?.applied === true
         && parityCaseEvidence?.external_identity_support?.match_basis === "VERIFIED_ORIGINAL_SET"
         && parityCaseEvidence?.external_identity_support?.source_count === 3
@@ -2957,6 +2985,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
         === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_record_id
       && standardCaseEvidence?.source_asset_id
         === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
+      && observationLegacyVersionActive(tcgCaseEvidence?.versions)
       && (parityRequired ? (
         standardCaseEvidence?.canonical_naming_active === true
           && standardCaseEvidence?.compatibility_bridge_standard_active === false
@@ -2964,6 +2993,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
           && productionStandardP0EvidenceProofValid(
             standardCaseEvidence?.standard_p0_identity
           )
+          && verifiedOriginalObservationVersionActive(standardCaseEvidence?.versions)
           && standardCaseEvidence?.versions?.composer
             === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
           && standardCaseEvidence?.versions?.marketplace_profile
@@ -2973,10 +3003,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
           && standardCaseEvidence?.compatibility_bridge_standard_active === true
           && standardCaseEvidence?.verified_original_observation_active === false
           && standardCaseEvidence?.standard_p0_identity == null
-          && standardCaseEvidence?.versions?.composer === THIN_COMPOSER_VERSION_V2
-          && standardCaseEvidence?.versions?.marketplace_profile === EBAY_PROFILE_VERSION
+          && observationLegacyVersionActive(standardCaseEvidence?.versions)
       ))
       && largeCaseEvidence?.overlap_observed === true
+      && (parityRequired
+        ? observationCanonicalV2VersionActive(largeCaseEvidence?.versions)
+        : observationLegacyVersionActive(largeCaseEvidence?.versions))
       && largeCaseEvidence?.relay_durable_before_recognition_response === true,
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
     evidence.final_seal = {
@@ -3627,15 +3659,25 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     schema_version: "csm-resolution-view-v1",
     grammar: { contract_version: "csm-resolution-view-v1", resolver_version: "resolver-v-test" },
     composer: {
-      composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
-      marketplace_profile_version:
-        EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
+      composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version
     }
   };
   const versions = recognitionVersionReceipt(recognition, view);
   requireInvariant(versions.resolver === "resolver-v-test"
     && versions.composer
       === EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+  verifierErrorCodes.GENERIC);
+  requireInvariant(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length === 6
+    && PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.every((entry) => (
+      productionPublicCompositionProjectionForOwner({
+        composer: entry.composer_version,
+        marketplace_profile: entry.marketplace_profile_version
+      }) === entry
+    ))
+    && productionPublicCompositionProjectionForOwner({
+      composer: "unknown-composer",
+      marketplace_profile: "unknown-profile"
+    }) == null,
   verifierErrorCodes.GENERIC);
   const canonicalRecognition = structuredClone(recognition);
   canonicalRecognition.csm_owner_versions.composer =
@@ -3656,6 +3698,46 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   });
   requireInvariant(canonicalNamingVersionActive(canonicalVersions),
     verifierErrorCodes.GENERIC);
+  const verifiedOriginalVersions = {
+    ...canonicalVersions,
+    resolver: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+  };
+  const verifiedOriginalSupport = {
+    schema_version: "csm-verified-original-closed-projection-public-receipt.v1",
+    status: "APPLIED",
+    match_basis: "EXACT_VERIFIED_ORIGINAL_SET",
+    release_id: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id,
+    pack_id: "lynca.csm.verified-original-closed-projection.subset-a",
+    pack_version: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_version,
+    pack_sha256: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256,
+    resolver_version: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION,
+    conflict_policy_version: VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
+    resolution_contract_sha256:
+      VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256,
+    projection_mode: "CLOSED_WORLD_EXACT",
+    closed_world_field_count:
+      VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.closed_world_field_count
+  };
+  requireInvariant(verifiedOriginalObservationVersionActive(
+    verifiedOriginalVersions, verifiedOriginalSupport
+  ), verifierErrorCodes.GENERIC);
+  for (const [driftedVersions, driftedSupport] of [
+    [{ ...verifiedOriginalVersions, resolver: "resolver-drift" }, verifiedOriginalSupport],
+    [verifiedOriginalVersions, { ...verifiedOriginalSupport, resolver_version: "resolver-drift" }],
+    [verifiedOriginalVersions, { ...verifiedOriginalSupport, release_id: "release-drift" }],
+    [verifiedOriginalVersions, { ...verifiedOriginalSupport, pack_sha256: "0".repeat(64) }],
+    [verifiedOriginalVersions, {
+      ...verifiedOriginalSupport, conflict_policy_version: "policy-drift"
+    }],
+    [verifiedOriginalVersions, {
+      ...verifiedOriginalSupport, original_set_sha256: "0".repeat(64)
+    }],
+    [verifiedOriginalVersions, { ...verifiedOriginalSupport, projection_mode: "OPEN_WORLD" }]
+  ]) {
+    requireInvariant(!verifiedOriginalObservationVersionActive(
+      driftedVersions, driftedSupport
+    ), verifierErrorCodes.GENERIC);
+  }
   const bridgeRecognition = structuredClone(recognition);
   bridgeRecognition.csm_owner_versions.composer = THIN_COMPOSER_VERSION_V2;
   bridgeRecognition.csm_owner_versions.marketplace_profile = EBAY_PROFILE_VERSION;
@@ -3673,9 +3755,22 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     [recognition, {
       ...view,
       composer: {
-        composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version
+        composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+        marketplace_profile_version:
+          EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
       }
     }],
+    [{
+      ...structuredClone(recognition),
+      csm_rows: {
+        ...structuredClone(recognition.csm_rows),
+        output: {
+          ...structuredClone(recognition.csm_rows.output),
+          marketplace_profile_version:
+            EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
+        }
+      }
+    }, view],
     [{
       ...structuredClone(canonicalRecognition),
       csm_rows: {
