@@ -4,7 +4,7 @@
 export const PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT = Object.freeze({
   source_asset_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
   expected_title:
-    "2025 Topps Chrome Cooper Flagg Gold Refractor RC Mavericks #251 50/50",
+    "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50",
   expected_card_number: "251",
   rendered_card_number: "#251",
   expected_serial: "50/50"
