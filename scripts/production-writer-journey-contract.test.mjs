@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [login, index, app, spec, workflow, releaseWorkflow, packageText] = await Promise.all([
+const [login, index, app, spec, feedbackApi, workflow, releaseWorkflow, packageText] = await Promise.all([
   readFile(new URL("../app/login.html", import.meta.url), "utf8"),
   readFile(new URL("../app/index.html", import.meta.url), "utf8"),
   readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8"),
   readFile(new URL("../e2e/production-writer-journey.spec.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../api/v4/listing-feedback.js", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/production-writer-journey.yml", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/deploy-production.yml", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8")
@@ -33,7 +34,7 @@ assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
 assert.match(spec, /provider_attempt_number[\s\S]*?\.toBe\(1\)/);
 assert.match(spec, /provider_retry_count[\s\S]*?\.toBe\(0\)/);
 assert.match(spec, /test\.setTimeout\(25 \* 60 \* 1000\)/,
-  "four sequential live cases must fit inside the bounded journey budget");
+  "up to four sequential live cases must fit inside the bounded journey budget");
 assert.match(spec, /composer\?\.trace_reliable[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /composer\?\.recomposed_matches_stored[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /panelTitleSha256 === generatedTitleSha256/);
@@ -309,7 +310,7 @@ assert.equal([
 assert.match(spec, /imageCount: sourceCase\.image_count/,
   "each normal case must verify the exact image-count execution contract");
 assert.match(spec, /providerResponseReceiptHashes[\s\S]*?new Set\(providerResponseReceiptHashes\)\.size === evidence\.cases\.length/,
-  "all four cases must carry distinct provider response receipts");
+  "all selected cases must carry distinct provider response receipts");
 assert.match(spec, /!offlineExecutionArtifact\.includes\(offlineProviderResponseId\)/);
 assert.match(spec, /!offlineExecutionArtifact\.includes\('\"provider_response_id\":'\)/);
 assert.match(spec, /!offlineExecutionArtifact\.includes\('\"execution_contract\":'\)/);
@@ -381,16 +382,44 @@ assert.match(spec, /function healthRecognitionTransportContractMatches/,
 assert.match(spec, /runtime\?\.recognition_transport_profiles\?\.\[lane\]/);
 assert.match(spec,
   /runtime\?\.execution_contract_sha256_by_transport_lane_and_image_count\?\.\[lane\]\?\.\["1"\]/);
-assert.match(spec, /healthRecognitionTransportContractMatches\(health\?\.runtime\)/);
 assert.match(spec, /function healthExternalIdentityContractMatches/);
 assert.match(spec, /runtime\?\.external_identity/);
-assert.match(spec, /healthExternalIdentityContractMatches\(health\?\.runtime\)/);
-assert.match(spec, /healthExternalIdentityContractMatches\(finalHealth\?\.runtime\)/);
+const healthVerifier = spec.match(
+  /function writerJourneyHealthReceipt[\s\S]+?(?=\nfunction feedbackPolicyReceipt)/
+)?.[0] || "";
+assert.ok(healthVerifier, "one exact health verifier must guard both ends of the live journey");
+assert.match(healthVerifier, /receipt\.ready/);
+assert.match(healthVerifier, /receipt\.active_path === "CSM_THIN_DIRECT"/);
+assert.match(healthVerifier, /receipt\.model === CSM_ACTIVE_MODEL_PROFILE\.model/);
+assert.match(healthVerifier,
+  /receipt\.reasoning_effort === CSM_ACTIVE_MODEL_PROFILE\.reasoning_effort/);
+assert.match(healthVerifier, /healthRecognitionTransportContractMatches\(health\?\.runtime\)/);
+assert.match(healthVerifier, /healthExternalIdentityContractMatches\(health\?\.runtime\)/);
+assert.match(healthVerifier, /retired_capabilities_disabled === true/);
+assert.match(spec, /const initialHealthReceipt = writerJourneyHealthReceipt/);
+assert.match(spec, /const finalHealthReceipt = writerJourneyHealthReceipt/);
+assert.match(spec, /evidence\.stages\.health = \{[\s\S]*?\.\.\.initialHealthReceipt/);
+assert.match(spec, /evidence\.stages\.release_stability = \{[\s\S]*?\.\.\.finalHealthReceipt/);
+assert.match(healthVerifier, /expectedOrigin === productionOrigin/);
+assert.match(healthVerifier, /responseUrl === `\$\{productionOrigin\}\/api\/health`/);
+assert.match(healthVerifier, /receipt\.deployment_origin === productionOrigin/);
+assert.match(healthVerifier,
+  /receipt\.deployment_identity === `\$\{productionOrigin\}#\$\{expectedSha\}`/);
+assert.match(spec,
+  /finalHealthReceipt\.deployment_identity === evidence\.deployment_identity[\s\S]*?finalHealthReceipt\.deployment_origin === evidence\.deployment_origin/,
+  "the final health read must remain on the exact immutable origin and SHA tested initially");
+assert.doesNotMatch(spec, /function deploymentId/,
+  "a Git SHA must not masquerade as a Vercel deployment ID");
+assert.equal([...spec.matchAll(/redirect: "error"/g)].length, 2,
+  "both live health reads must reject redirects to another deployment origin");
+assert.match(spec, /responseUrl: healthResponse\.url/);
+assert.match(spec, /responseUrl: finalHealthResponse\.url/);
 assert.match(spec,
   /const expectedProviderAdapterContract = resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider\s*\)\.contract/,
   "the journey must verify the adapter resolved by the active model profile");
 assert.match(spec, /const expectedProviderAdapterVersion = expectedProviderAdapterContract\.id/);
-assert.match(spec, /health\?\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
+assert.match(healthVerifier,
+  /health\?\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
 assert.doesNotMatch(spec, /CSM_OPENAI_RESPONSES_ADAPTER_VERSION/,
   "the journey must remain portable across registered provider adapters");
 assert.match(spec, /journeyContext\.route\("\*\*\/api\/csm-listing-title\*\*"/);
@@ -493,10 +522,12 @@ assert.ok(offlineIngestMetadata, "the offline staged metadata fixture must exist
 assert.doesNotMatch(offlineIngestMetadata, /imageDetail/,
   "the offline fixture must match the metadata emitted by Production");
 assert.match(spec, /function recognitionPostSeal/);
-assert.match(spec, /recognitionPosts\.length === 5/);
-assert.match(spec, /continued\.length === 4/);
+assert.match(spec, /const expectedContinued = evidenceCases\.length/);
+assert.match(spec, /recognitionPosts\.length === expectedContinued \+ 1/);
+assert.match(spec, /continued\.length === expectedContinued/);
 assert.match(spec, /aborted\.length === 1/);
-assert.match(spec, /new Set\(continued\.map\(\(entry\) => entry\.recognition_session_id\)\)\.size === 4/);
+assert.match(spec,
+  /new Set\(continued\.map\(\(entry\) => entry\.recognition_session_id\)\)\.size === expectedContinued/);
 assert.match(spec, /evidenceCases\.every\(\(caseEvidence\) => continued\.filter/);
 assert.match(spec, /caseEvidence\.recognition_session_id === entry\.recognition_session_id/);
 assert.match(spec,
@@ -517,22 +548,72 @@ assert.match(spec, /await journeyContext\.close\(\);\s*journeyContext = null;/,
 assert.match(spec, /ingest_requests\.length === largeTransport\.ingest_responses\.length/);
 assert.match(spec, /ownerSession\?\.role === "OWNER"/,
   "synthetic Production feedback must stop before provider use unless the actor is OWNER");
-assert.match(spec, /feedback_data_use === "ADMIN_TEST_ONLY"/);
-assert.match(spec, /training_eligible === false/);
-assert.match(spec, /production_promotion_eligible === false/);
+const ownerAuthorization = spec.indexOf('failurePhase = "OWNER_AUTHORIZATION"');
+const firstProviderCaseLoop = spec.indexOf("for (const sourceCase of sourceCases)");
+const firstUpload = spec.indexOf("await uploadInput.setInputFiles", firstProviderCaseLoop);
+assert.ok(ownerAuthorization >= 0
+  && firstProviderCaseLoop > ownerAuthorization
+  && firstUpload > ownerAuthorization,
+"OWNER authorization must complete before the first upload or provider-capable case");
+const feedbackPolicyVerifier = spec.match(
+  /function feedbackPolicyReceipt[\s\S]+?(?=\nfunction decodeBase64UrlJson)/
+)?.[0] || "";
+assert.ok(feedbackPolicyVerifier, "all writer cases must share one feedback policy verifier");
+assert.match(feedbackPolicyVerifier,
+  /feedback_data_use: payload\?\.feedback_data_use === ADMIN_TEST_DATASET_DISPOSITION/);
+assert.match(feedbackPolicyVerifier,
+  /dataset_disposition: payload\?\.dataset_disposition === FEEDBACK_DATASET_DISPOSITION/);
+assert.match(feedbackPolicyVerifier,
+  /transaction\?\.transaction\?\.dataset_disposition[\s\S]*?=== FEEDBACK_DATASET_DISPOSITION/);
+assert.match(feedbackPolicyVerifier, /payload\?\.training_eligible === false/);
+assert.match(feedbackPolicyVerifier, /payload\?\.production_promotion_eligible === false/);
+assert.equal([...spec.matchAll(
+  /const (?:feedbackPolicy|largeFeedbackPolicy) = requireFeedbackPolicy\(\{/g
+)].length, 2,
+  "normal and large writer paths must use the same feedback policy gate");
+assert.match(spec, /feedbackPolicyChecks\.length === expectedProviderCaseCount/);
+assert.match(spec,
+  /feedbackPolicyChecks\.map\(\(entry\) => entry\.case_id\)\.sort\(\)\.join\("\\0"\)[\s\S]*?=== expectedCaseIds\.join\("\\0"\)/,
+  "feedback policy receipts must bind one-to-one to the selected provider cases");
+assert.match(spec, /entry\.feedback_policy_passed === true/);
+assert.match(spec, /entry\.dataset_disposition === FEEDBACK_DATASET_DISPOSITION/);
+assert.match(feedbackApi,
+  /dataset_disposition: committed\.dataset_disposition \|\| FEEDBACK_DATASET_DISPOSITION/,
+  "the API must return the durable observe-only disposition independently of Owner test use");
+assert.match(feedbackApi, /const committed = transaction\.transaction \|\| \{\}/);
+assert.match(feedbackApi, /v4_persistence: \{ transaction \}/,
+  "the feedback verifier must follow the API's outer transaction receipt and inner RPC row");
+assert.match(feedbackApi,
+  /context\.role === TENANT_ROLES\.OWNER[\s\S]*?\? ADMIN_TEST_DATASET_DISPOSITION[\s\S]*?: FEEDBACK_DATASET_DISPOSITION/,
+  "only the Owner feedback-data-use marker may be ADMIN_TEST_ONLY");
+assert.doesNotMatch(spec,
+  /dataset_disposition\s*===\s*["']ADMIN_TEST_ONLY["']/,
+  "the verifier must never confuse Owner test use with the observe-only durable disposition");
+assert.match(spec, /const bridgeRecognitionCases = offlineRecognitionCases\.filter/);
+assert.match(spec, /bridgeRecognitionSeal\.recognition_post_count === 4/);
+assert.match(spec, /bridgeRecognitionSeal\.network_continued_provider_requests === 3/);
+assert.match(spec, /\{ \.\.\.offlineHealth, ready: false \}/,
+  "an HTTP-200 but unready deployment must fail the offline release-health counterexample");
+assert.match(spec, /deploymentOriginDriftRejected/,
+  "a same-SHA response from another deployment origin must fail closed");
+assert.match(spec, /const offlineFeedbackPayload = \{/);
+assert.match(spec,
+  /feedbackPolicyReceipt\(invalidFeedback\)\.feedback_policy_passed === false/,
+  "each feedback policy drift must be rejected without another provider call");
 assert.match(spec, /case_id: "LARGE_STAGED_TRANSPORT"/);
 assert.match(spec, /transport_only: true/);
 assert.match(spec, /fixture_receipt_sha256/);
 assert.doesNotMatch(spec, /largeFixture\.receipt\.(?:source|originals|derived)/,
   "the uploaded live evidence must not copy fixture bytes, paths, or per-image hashes");
 assert.doesNotMatch(spec, /getByTestId\("writer-persistence-status"\).*toBeVisible/);
-assert.match(spec, /deployment_id/);
+assert.match(spec, /deployment_identity/);
+assert.match(spec, /deployment_origin/);
 assert.match(spec, /evidence\.final_seal = \{/);
 assert.match(spec,
   /const providerAuthorityOperationHashes = evidence\.cases\.map/);
 assert.match(spec,
   /new Set\(providerAuthorityOperationHashes\)\.size === evidence\.cases\.length/,
-  "all four cases must bind distinct database authority operations");
+  "all selected cases must bind distinct database authority operations");
 assert.match(spec,
   /entry\.recognition_session_id === `csmsess_\$\{[\s\S]*?operation_key_sha256\.slice\(0, 40\)/,
   "the final seal must recompute the session binding instead of trusting a boolean");
@@ -548,7 +629,7 @@ assert.ok(finalCaseReceiptSealStart >= 0 && finalCaseReceiptSealEnd > finalCaseR
 const finalCaseReceiptSeal = spec.slice(finalCaseReceiptSealStart, finalCaseReceiptSealEnd);
 assert.match(finalCaseReceiptSeal,
   /hasExactKeys\([\s\S]*?provider_authority_receipt,[\s\S]*?providerAuthorityReceiptEvidenceKeys/,
-  "all four cases must retain the exact authority receipt projection");
+  "all selected cases must retain the exact authority receipt projection");
 assert.match(finalCaseReceiptSeal, /provider_authority_receipt\.schema_version[\s\S]*?csm-provider-authority-receipt-v1/);
 assert.match(finalCaseReceiptSeal,
   /provider_authority_receipt\?\.estimated_tokens[\s\S]*?expectedEstimatedTokensPerAttempt/);
@@ -558,7 +639,7 @@ assert.match(finalCaseReceiptSeal, /provider_authority_receipt\?\.operation_stat
 assert.match(finalCaseReceiptSeal, /owner_execution_readback\?\.durable_read_after_write === true/);
 assert.match(finalCaseReceiptSeal,
   /owner_execution_readback\?\.sha256[\s\S]*?owner_execution_receipt_sha256/,
-  "all four cases must match the database readback hash to the response owner receipt");
+  "all selected cases must match the database readback hash to the response owner receipt");
 for (const field of [
   "provider_case_count: expectedProviderCaseCount",
   "fresh_current_case_count: expectedProviderCaseCount",
@@ -566,6 +647,7 @@ for (const field of [
   "complete_server_stage_receipts: true",
   "exact_authority_token_reservation: expectedEstimatedTokensPerAttempt",
   "durable_owner_execution_readback_count: expectedProviderCaseCount",
+  "feedback_policy_receipt_count: expectedProviderCaseCount",
   "codex_parity_exact_match_count: parityRequired ? 1 : 0",
   "verified_original_set_match_count: parityRequired ? 1 : 0",
   "warmup_real_response_observed: true",
@@ -575,17 +657,12 @@ for (const field of [
 ]) {
   assert.ok(spec.includes(field), `final seal missing ${field}`);
 }
-const initialHealthVerifier = spec.match(
-  /requireInvariant\(health\?\.ready === true[\s\S]+?verifierErrorCodes\.RUNTIME_CONTRACT_MISMATCH\);/
-)?.[0] || "";
-assert.ok(initialHealthVerifier, "the initial runtime health verifier must exist");
-assert.match(initialHealthVerifier, /retired_capabilities_disabled === true/);
 assert.doesNotMatch(spec,
   /cloud_run_calls|vector_calls|generic_ocr_calls/,
   "hard-coded retired call counters are not dynamic Production execution evidence");
 assert.match(spec, /WRITER_JOURNEY_INITIAL_STORAGE_STATE/,
   "a storage state may be used only after cookies are matched to the exact journey URL");
-assert.match(spec, /deployment\?\.environment[\s\S]*?\.toBe\("production"\)/,
+assert.match(healthVerifier, /receipt\.deployment_environment === "production"/,
   "ordinary Preview must not masquerade as a production-target candidate");
 assert.equal([...spec.matchAll(/baseURL: baseUrl/g)].length, 2, "both browser contexts must use the normalized production base URL");
 assert.doesNotMatch(spec, /\{\s*baseURL\s*[,}]/, "undefined baseURL shorthand must never reach production E2E");
@@ -684,8 +761,7 @@ assert.doesNotMatch(releaseWorkflow.slice(promotion),
 assert.doesNotMatch(workflow, /workflow_dispatch:/);
 assert.doesNotMatch(workflow, /LAUNCH_GATE_EVAL_SECRET/);
 assert.doesNotMatch(spec, /launch-gate-source-images/);
-assert.match(spec, /expect\(health\?\.deployment\?\.git_commit_sha[\s\S]*?\.toBe\(expectedSha\)/);
-assert.match(spec, /expect\(finalHealth\?\.deployment\?\.git_commit_sha[\s\S]*?\.toBe\(expectedSha\)/);
+assert.match(healthVerifier, /receipt\.deployment_git_commit_sha === expectedSha/);
 assert.doesNotMatch(spec, /recordHar|\.tracing\.|failure\.png|journey\.har/);
 assert.doesNotMatch(workflow, /test-results\/production-writer-journey/);
 assert.match(packageJson.scripts["test:e2e:production-writer-journey"], /--grep-invert @offline/,

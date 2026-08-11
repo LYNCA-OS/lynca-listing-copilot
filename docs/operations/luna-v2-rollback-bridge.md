@@ -33,6 +33,21 @@ The overlap proof therefore binds the actual upload-pipeline request before the
 recognition request plus the client's in-flight upload timer; it still requires
 both exact relays to become durable before the recognition success response.
 
+The overlap-proof dispatch, Actions run `31450129725`, then passed selection,
+database readiness, the immutable candidate, the active-v1/dormant-v2 bridge
+proof, source materialization, and the complete NON_TCG and TCG writer cases.
+Its large case also completed the model request, both original relays,
+persistence, Glass Box, and the feedback transaction. It stopped only because
+the verifier incorrectly required the durable top-level
+`dataset_disposition` to equal `ADMIN_TEST_ONLY`. The runtime contract is
+intentionally split: an Owner synthetic request has
+`feedback_data_use=ADMIN_TEST_ONLY`, while the saved feedback and learning
+facts remain `dataset_disposition=OBSERVE_ONLY`, `training_eligible=false`, and
+`production_promotion_eligible=false`. The tail repair uses that exact split
+for every case, authorizes the Owner before the first upload, derives the
+provider-post seal from the selected manifest, and applies the same complete
+ready/runtime/deployment health predicate before and after the journey.
+
 The safe release order is fixed:
 
 1. Treat database migration #225 as a completed, immutable prerequisite. The
@@ -40,9 +55,9 @@ The safe release order is fixed:
    and its exact readback was verified; do not apply or mutate it again in this
    release. Active v1 still queries only its v1 ID, and the bridge has no
    active-v2 readiness or behavior dependency.
-2. Keep the reviewed relay-bounded bridge commit
-   `4beb373ecf3006dbcd855c4305d532f0c4421609` immutable. Create exactly one
-   overlap-proof repair commit directly on that parent. Its only changed paths
+2. Keep the reviewed overlap-proof bridge commit
+   `ced1a23741e179618e4e7b5eca055cb10ecac8cb` immutable. Create exactly one
+   tail-contract repair commit directly on that parent. Its only changed paths
    are this runbook, the bridge selector and test, and the Writer Journey
    verifier and contract enumerated by `COMPATIBILITY_BRIDGE_CHANGED_PATHS`.
    Production upload routing and bridge data-plane files remain unchanged.
@@ -53,7 +68,8 @@ The safe release order is fixed:
    `LYNCA-Compatibility-Bridge-Tree: <HEAD tree SHA>` trailer.
 3. Dispatch `deploy-production` with `release_class=compatibility-bridge`. The
    immutable candidate must pass the ordinary NON_TCG, TCG, and large-transport
-   Writer Journey cases plus the zero-provider-call active-v1/dormant-v2 proof.
+   Writer Journey cases, every Owner observe-only feedback receipt, both exact
+   health reads, plus the zero-provider-call active-v1/dormant-v2 proof.
    The paid active-v2 parity case is out of domain for this release only.
 4. Let the normal promotion path make the bridge canonical. If post-promotion
    verification fails, the unchanged automatic rollback restores the captured
@@ -64,7 +80,7 @@ The safe release order is fixed:
    Journey manifest, including the exact external-identity parity case.
 
 The compatibility class is commit-bound and intentionally non-reusable: the
-repair selector requires parent `4beb373ecf3006dbcd855c4305d532f0c4421609`
+repair selector requires parent `ced1a23741e179618e4e7b5eca055cb10ecac8cb`
 and exactly the five repair paths, an ordinary commit cannot select its reduced
 manifest, and an active-v2 runtime cannot satisfy its active-v1 contract proof.
 The inherited bridge changes only historical validation, replay, persistence,

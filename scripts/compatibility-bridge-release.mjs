@@ -33,7 +33,7 @@ export const COMPATIBILITY_BRIDGE_TREE_TRAILER =
 export const COMPATIBILITY_BRIDGE_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-cases-v1";
 export const COMPATIBILITY_BRIDGE_PARENT_SHA =
-  "4beb373ecf3006dbcd855c4305d532f0c4421609";
+  "ced1a23741e179618e4e7b5eca055cb10ecac8cb";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
   "docs/operations/luna-v2-rollback-bridge.md",
   "e2e/production-writer-journey.spec.mjs",
