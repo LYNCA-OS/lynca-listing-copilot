@@ -33,13 +33,10 @@ export const COMPATIBILITY_BRIDGE_TREE_TRAILER =
 export const COMPATIBILITY_BRIDGE_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-cases-v1";
 export const COMPATIBILITY_BRIDGE_PARENT_SHA =
-  "c1f9e654268ca534ff54876d44a29b29adedc575";
+  "4beb373ecf3006dbcd855c4305d532f0c4421609";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
   "docs/operations/luna-v2-rollback-bridge.md",
   "e2e/production-writer-journey.spec.mjs",
-  "scripts/build-large-internal-writer-fixture.browser.test.mjs",
-  "scripts/build-large-internal-writer-fixture.contract.test.mjs",
-  "scripts/build-large-internal-writer-fixture.mjs",
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
