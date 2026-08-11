@@ -635,13 +635,46 @@ function recognitionPostSeal(recognitionPosts, evidenceCases) {
   });
 }
 
-function publicRecognitionPayloadBoundary(payload, code) {
+function publicRecognitionProjectionForOwner(owner) {
+  const composer = String(owner?.composer || "").trim();
+  const marketplaceProfile = String(owner?.marketplace_profile || "").trim();
+  const canonical = [
+    CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2
+  ].some((contract) => composer === contract.composer_version
+    && marketplaceProfile === contract.marketplace_profile_version);
+  if (canonical) {
+    return Object.freeze({
+      output_keys: Object.freeze([
+        "composer_version", "contract_version", "marketplace_profile_version"
+      ]),
+      marketplace_profile_public: true
+    });
+  }
+  const external = EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract;
+  const legacy = composer === THIN_COMPOSER_VERSION_V2
+    && marketplaceProfile === EBAY_PROFILE_VERSION;
+  const registeredExternal = composer === external.composer_version
+    && marketplaceProfile === external.marketplace_profile_version;
+  if (legacy || registeredExternal) {
+    return Object.freeze({
+      output_keys: Object.freeze(["composer_version", "contract_version"]),
+      marketplace_profile_public: false
+    });
+  }
+  return null;
+}
+
+function publicRecognitionPayloadBoundary(payload, owner, code) {
   const forbiddenTopLevel = [
     "external_identity_support", "csm_persistence_checkpoint", "accuracy_loss_ledger",
     "observed_fields", "resolution_contract"
   ];
   const serialized = JSON.stringify(payload);
+  const projection = publicRecognitionProjectionForOwner(owner);
+  const publicOutput = payload?.csm_rows?.output;
   requireInvariant(exactObject(payload)
+    && exactObject(projection)
     && forbiddenTopLevel.every((key) => !Object.prototype.hasOwnProperty.call(payload, key))
     && !serialized.includes('"original_set_sha256"')
     && !serialized.includes('"source_ref"')
@@ -649,9 +682,11 @@ function publicRecognitionPayloadBoundary(payload, code) {
     && hasExactKeys(payload.csm_rows.resolution, [
       "contract_version", "recognition_session_id", "resolver_version"
     ])
-    && hasExactKeys(payload.csm_rows.output, [
-      "composer_version", "contract_version", "marketplace_profile_version"
-    ])
+    && hasExactKeys(publicOutput, projection.output_keys)
+    && publicOutput.composer_version === owner.composer
+    && (projection.marketplace_profile_public
+      ? publicOutput.marketplace_profile_version === owner.marketplace_profile
+      : !Object.prototype.hasOwnProperty.call(publicOutput, "marketplace_profile_version"))
     && hasExactKeys(payload.csm_persistence, ["atomic", "ok", "session"])
     && payload.csm_persistence.ok === true
     && payload.csm_persistence.atomic === true
@@ -662,7 +697,6 @@ function publicRecognitionPayloadBoundary(payload, code) {
 
 function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile } = {}) {
   const code = verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH;
-  publicRecognitionPayloadBoundary(payload, code);
   const owner = payload?.csm_owner_versions;
   const laneVersion = String(transportProfile?.lane_version || "");
   const expectedExecutionContract =
@@ -695,6 +729,7 @@ function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile }
     && /^[0-9a-f]{64}$/.test(String(ownerExecutionReceiptSha256 || ""))
     && computedOwnerExecutionReceiptSha256 === ownerExecutionReceiptSha256,
   code);
+  publicRecognitionPayloadBoundary(payload, owner, code);
   const providerAuthorityReceipt = providerAuthorityReceiptProof(payload, owner, code);
 
   const expectedVersionFields = {
@@ -1727,12 +1762,21 @@ function recognitionVersionReceipt(recognition, view) {
     verifierErrorCodes.VERSION_RESOLVER_MISMATCH);
   requireInvariant(Boolean(composer) && composer === rowComposer
     && view?.composer?.composer_version === composer,
-    verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+  verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+  const publicProjection = publicRecognitionProjectionForOwner({
+    composer,
+    marketplace_profile: marketplaceProfile
+  });
+  const publicRowProfileMatches = exactObject(publicProjection)
+    && (publicProjection.marketplace_profile_public
+      ? rowMarketplaceProfile === marketplaceProfile
+      : rowMarketplaceProfile === ""
+        && !Object.prototype.hasOwnProperty.call(rows.output, "marketplace_profile_version"));
   const legacyV2View = composer === THIN_COMPOSER_VERSION_V2
     && marketplaceProfile === EBAY_PROFILE_VERSION
     && view?.composer?.marketplace_profile_version == null;
   requireInvariant(Boolean(marketplaceProfile)
-    && marketplaceProfile === rowMarketplaceProfile
+    && publicRowProfileMatches
     && (view?.composer?.marketplace_profile_version === marketplaceProfile || legacyV2View),
   verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
   if (composer === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version) {
@@ -3567,15 +3611,15 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     csm_contract_version: "csm-stage-v-test",
     csm_owner_versions: {
       resolver: "resolver-v-test",
-      composer: "composer-v-test",
-      marketplace_profile: "marketplace-v-test"
+      composer: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+      marketplace_profile:
+        EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
     },
     csm_rows: {
       resolution: { contract_version: "csm-stage-v-test", resolver_version: "resolver-v-test" },
       output: {
         contract_version: "csm-stage-v-test",
-        composer_version: "composer-v-test",
-        marketplace_profile_version: "marketplace-v-test"
+        composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version
       }
     }
   };
@@ -3583,13 +3627,16 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     schema_version: "csm-resolution-view-v1",
     grammar: { contract_version: "csm-resolution-view-v1", resolver_version: "resolver-v-test" },
     composer: {
-      composer_version: "composer-v-test",
-      marketplace_profile_version: "marketplace-v-test"
+      composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+      marketplace_profile_version:
+        EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
     }
   };
   const versions = recognitionVersionReceipt(recognition, view);
   requireInvariant(versions.resolver === "resolver-v-test"
-    && versions.composer === "composer-v-test", verifierErrorCodes.GENERIC);
+    && versions.composer
+      === EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+  verifierErrorCodes.GENERIC);
   const canonicalRecognition = structuredClone(recognition);
   canonicalRecognition.csm_owner_versions.composer =
     CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version;
@@ -3613,16 +3660,62 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   bridgeRecognition.csm_owner_versions.composer = THIN_COMPOSER_VERSION_V2;
   bridgeRecognition.csm_owner_versions.marketplace_profile = EBAY_PROFILE_VERSION;
   bridgeRecognition.csm_rows.output.composer_version = THIN_COMPOSER_VERSION_V2;
-  bridgeRecognition.csm_rows.output.marketplace_profile_version = EBAY_PROFILE_VERSION;
+  delete bridgeRecognition.csm_rows.output.marketplace_profile_version;
   const bridgeVersions = recognitionVersionReceipt(bridgeRecognition, {
     ...view,
     composer: {
-      composer_version: THIN_COMPOSER_VERSION_V2,
-      marketplace_profile_version: EBAY_PROFILE_VERSION
+      composer_version: THIN_COMPOSER_VERSION_V2
     }
   });
   requireInvariant(compatibilityBridgeStandardVersionActive(bridgeVersions)
     && !canonicalNamingVersionActive(bridgeVersions), verifierErrorCodes.GENERIC);
+  for (const [driftedRecognition, driftedView] of [
+    [recognition, {
+      ...view,
+      composer: {
+        composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version
+      }
+    }],
+    [{
+      ...structuredClone(canonicalRecognition),
+      csm_rows: {
+        ...structuredClone(canonicalRecognition.csm_rows),
+        output: {
+          contract_version: canonicalRecognition.csm_rows.output.contract_version,
+          composer_version: canonicalRecognition.csm_rows.output.composer_version
+        }
+      }
+    }, {
+      ...view,
+      composer: {
+        composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
+        marketplace_profile_version:
+          CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+      }
+    }],
+    [{
+      ...structuredClone(bridgeRecognition),
+      csm_rows: {
+        ...structuredClone(bridgeRecognition.csm_rows),
+        output: {
+          ...structuredClone(bridgeRecognition.csm_rows.output),
+          marketplace_profile_version: EBAY_PROFILE_VERSION
+        }
+      }
+    }, {
+      ...view,
+      composer: { composer_version: THIN_COMPOSER_VERSION_V2 }
+    }]
+  ]) {
+    let publicVersionShapeRejected = false;
+    try {
+      recognitionVersionReceipt(driftedRecognition, driftedView);
+    } catch (error) {
+      publicVersionShapeRejected = sanitizedFailureCode(error)
+        === verifierErrorCodes.VERSION_COMPOSER_MISMATCH;
+    }
+    requireInvariant(publicVersionShapeRejected, verifierErrorCodes.GENERIC);
+  }
   let versionDriftCode = "";
   try {
     recognitionVersionReceipt(recognition, {
@@ -4027,8 +4120,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       total_tokens: offlineExecutionReceipt.total_tokens,
       total_tokens_source: "provider",
       resolver: "resolver-offline",
-      composer: "composer-offline",
-      marketplace_profile: "marketplace-offline",
+      composer: THIN_COMPOSER_VERSION_V2,
+      marketplace_profile: EBAY_PROFILE_VERSION,
       accuracy_loss_ledger_version: null,
       accuracy_loss_ledger_sha256: null
     }),
@@ -4043,8 +4136,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       },
       output: {
         contract_version: "csm-stage-offline-v1",
-        composer_version: "composer-offline",
-        marketplace_profile_version: "marketplace-offline"
+        composer_version: THIN_COMPOSER_VERSION_V2
       }
     },
     csm_persistence: { ok: true, atomic: true, session: { saved: true } },
@@ -4068,6 +4160,93 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     imageCount: 2,
     transportProfile: CSM_STAGED_TRANSPORT_PROFILE
   });
+  const canonicalPublicPayload = structuredClone(recognitionPayload);
+  canonicalPublicPayload.csm_owner_versions.composer =
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version;
+  canonicalPublicPayload.csm_owner_versions.marketplace_profile =
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
+  canonicalPublicPayload.csm_rows.output = {
+    contract_version: "csm-stage-offline-v1",
+    composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
+    marketplace_profile_version:
+      CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+  };
+  publicRecognitionPayloadBoundary(
+    canonicalPublicPayload,
+    canonicalPublicPayload.csm_owner_versions,
+    verifierErrorCodes.GENERIC
+  );
+  const externalPublicPayload = structuredClone(recognitionPayload);
+  externalPublicPayload.csm_owner_versions.composer =
+    EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version;
+  externalPublicPayload.csm_owner_versions.marketplace_profile =
+    EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version;
+  externalPublicPayload.csm_rows.output.composer_version =
+    EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version;
+  publicRecognitionPayloadBoundary(
+    externalPublicPayload,
+    externalPublicPayload.csm_owner_versions,
+    verifierErrorCodes.GENERIC
+  );
+  for (const driftedPublicPayload of [
+    {
+      ...structuredClone(recognitionPayload),
+      csm_rows: {
+        ...structuredClone(recognitionPayload.csm_rows),
+        output: {
+          ...structuredClone(recognitionPayload.csm_rows.output),
+          marketplace_profile_version: EBAY_PROFILE_VERSION
+        }
+      }
+    },
+    {
+      ...structuredClone(canonicalPublicPayload),
+      csm_rows: {
+        ...structuredClone(canonicalPublicPayload.csm_rows),
+        output: {
+          contract_version: "csm-stage-offline-v1",
+          composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+        }
+      }
+    },
+    {
+      ...structuredClone(recognitionPayload),
+      csm_owner_versions: {
+        ...structuredClone(recognitionPayload.csm_owner_versions),
+        composer: "unknown-composer"
+      }
+    },
+    {
+      ...structuredClone(recognitionPayload),
+      csm_rows: {
+        ...structuredClone(recognitionPayload.csm_rows),
+        output: {
+          contract_version: "csm-stage-offline-v1",
+          composer_version: "row-composer-drift"
+        }
+      }
+    },
+    {
+      ...structuredClone(recognitionPayload),
+      csm_owner_versions: {
+        ...structuredClone(recognitionPayload.csm_owner_versions),
+        marketplace_profile: ""
+      }
+    }
+  ]) {
+    let publicProjectionRejected = false;
+    try {
+      publicRecognitionPayloadBoundary(
+        driftedPublicPayload,
+        driftedPublicPayload.csm_owner_versions,
+        verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH
+      );
+    } catch (error) {
+      publicProjectionRejected = sanitizedFailureCode(error)
+        === verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH;
+    }
+    requireInvariant(publicProjectionRejected, verifierErrorCodes.GENERIC);
+  }
   const offlineOwnerReadback = durableOwnerExecutionReadbackProof(offlineExecutionProof, {
     owner_execution_receipt: {
       version: offlineExecutionProof.owner_execution_receipt_version,
