@@ -77,6 +77,36 @@ const base = {
     "nothing is rendered from outside the grammar's own order");
 }
 
+// Independent commercial search terms remain distinct from components/team in
+// canonical state, while the marketplace bracket explains all three lanes in
+// the same order the CNL renderer used.
+{
+  const fields = {
+    ...base,
+    components: ["RC"],
+    search_optimization: ["Young Guns"],
+    team: "Blackhawks"
+  };
+  const composed = {
+    grammar: "standard",
+    brackets: ["search_optimization"],
+    bracket_text: [{
+      bracket: "search_optimization",
+      text: "RC Young Guns Blackhawks"
+    }],
+    title: "RC Young Guns Blackhawks",
+    character_budget: 80,
+    length: 24
+  };
+  const view = buildCsmResolutionView({ fields, composed });
+  const row = view.brackets.find((bracket) => bracket.bracket === "search_optimization");
+  assert.deepEqual(row.canonical_fields, ["components", "search_optimization", "team"]);
+  assert.equal(row.value, "RC, Young Guns, Blackhawks");
+  assert.equal(row.selected_candidate, "RC, Young Guns, Blackhawks");
+  assert.equal(row.rendered_text, "RC Young Guns Blackhawks");
+  assert.equal(row.composer_disposition, COMPOSER_DISPOSITION.NORMALIZED);
+}
+
 // --- a withheld observation is a policy decision, not a blind spot ------------
 {
   const { fields, composed } = run({ ...base, surface_color: "Rainbow", parallel_family: "" });

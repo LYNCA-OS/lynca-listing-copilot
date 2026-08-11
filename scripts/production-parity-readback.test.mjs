@@ -14,9 +14,22 @@ import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
+  CANONICAL_NAMING_RELEASE_CONTRACT
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
+} from "./production-standard-p0-verifier.mjs";
+import {
+  WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
+} from "./materialize-writer-journey-source.mjs";
+import {
   PRODUCTION_PARITY_EXPECTED_TITLE,
+  PRODUCTION_PARITY_READBACK_RECEIPT_SCHEMA,
+  PRODUCTION_STANDARD_READBACK_RECEIPT_SCHEMA,
   productionParityAssetId,
-  verifyProductionParityReadback
+  productionStandardAssetId,
+  verifyProductionParityReadback,
+  verifyProductionStandardReadback
 } from "./production-parity-readback.mjs";
 
 const deploymentUrl = "https://lynca-listing-copilot-candidate456.vercel.app";
@@ -25,11 +38,22 @@ const assetId = "9f5ca6ab-7d48-4cc5-97da-a54831065d29";
 const recognitionSessionId = `csmsess_${"b".repeat(40)}`;
 const ownerVersion = "csm-owner-execution-receipt.v1";
 const ownerSha256 = "c".repeat(64);
+const standardAssetId = "1c78877d-d1ed-4877-8f18-8a720eab6457";
+const standardRecognitionSessionId = `csmsess_${"d".repeat(40)}`;
+const standardOwnerSha256 = "e".repeat(64);
+const standardTitle = PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title;
 const versions = {
   resolution_view_schema: "csm-resolution-view-v1",
   csm_contract: "csm-stage-shadow-v2",
   resolver: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.resolver_version,
-  composer: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version
+  composer: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+  marketplace_profile:
+    EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
+};
+const standardVersions = {
+  ...versions,
+  composer: CANONICAL_NAMING_RELEASE_CONTRACT.composer_version,
+  marketplace_profile: CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
 };
 const expectedFields = [
   "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
@@ -52,7 +76,7 @@ const evidenceExternal = {
   source_ids: sourceIds
 };
 const evidence = {
-  schema_version: "production-writer-journey-evidence-v5",
+  schema_version: "production-writer-journey-evidence-v6",
   evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
   accuracy_claim: null,
   release_class: "ordinary",
@@ -63,25 +87,66 @@ const evidence = {
   deployment_environment: "production",
   final_seal: {
     codex_parity_exact_match_count: 1,
-    verified_original_set_match_count: 1
+    verified_original_set_match_count: 1,
+    canonical_naming_active_case_count: 1,
+    standard_p0_exact_case_count: 1
   },
-  cases: [{
-    case_id: "EXTERNAL_IDENTITY",
-    asset_id: assetId,
-    recognition_session_id: recognitionSessionId,
-    codex_parity_exact_match: true,
-    resolution_http_method: "GET",
-    resolution_request_count: 1,
-    trace_reliable: true,
-    recomposed_matches_stored: true,
-    owner_execution_readback: {
-      version: ownerVersion,
-      sha256: ownerSha256,
-      durable_read_after_write: true
+  cases: [
+    {
+      case_id: "EXTERNAL_IDENTITY",
+      asset_id: assetId,
+      recognition_session_id: recognitionSessionId,
+      codex_parity_exact_match: true,
+      resolution_http_method: "GET",
+      resolution_request_count: 1,
+      trace_reliable: true,
+      recomposed_matches_stored: true,
+      owner_execution_readback: {
+        version: ownerVersion,
+        sha256: ownerSha256,
+        durable_read_after_write: true
+      },
+      versions,
+      external_identity_support: evidenceExternal
     },
-    versions,
-    external_identity_support: evidenceExternal
-  }]
+    {
+      case_id: "NON_TCG",
+      expected_grammar: "NON_TCG",
+      source_kind: "PRODUCTION_ASSET",
+      source_record_id: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id,
+      source_asset_id: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id,
+      hash_provenance: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.hash_provenance,
+      image_sha256: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images.map((image) => ({
+        role: image.role,
+        content_sha256: image.content_sha256
+      })),
+      asset_id: standardAssetId,
+      recognition_session_id: standardRecognitionSessionId,
+      provider_attempt_number: 1,
+      provider_retry_count: 0,
+      resolution_http_method: "GET",
+      resolution_request_count: 1,
+      trace_reliable: true,
+      recomposed_matches_stored: true,
+      title_length: standardTitle.length,
+      canonical_naming_active: true,
+      standard_p0_identity: {
+        card_number_selected_exact: true,
+        serial_selected_exact: true,
+        selected_brackets_exact: true,
+        recomposed_title_exact: true,
+        stored_title_exact: true,
+        recognition_title_exact: true,
+        ui_title_exact: true
+      },
+      owner_execution_readback: {
+        version: ownerVersion,
+        sha256: standardOwnerSha256,
+        durable_read_after_write: true
+      },
+      versions: standardVersions
+    }
+  ]
 };
 const publicSources = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => ({
   provider: source.source_id.startsWith("tcdb.")
@@ -102,6 +167,7 @@ const resolutionView = {
   },
   composer: {
     composer_version: versions.composer,
+    marketplace_profile_version: versions.marketplace_profile,
     stored_title: PRODUCTION_PARITY_EXPECTED_TITLE,
     recomposed_matches_stored: true,
     trace_reliable: true
@@ -134,6 +200,42 @@ const resolutionView = {
     sources: publicSources
   }
 };
+const standardResolutionView = {
+  schema_version: standardVersions.resolution_view_schema,
+  asset_id: standardAssetId,
+  recognition_session_id: standardRecognitionSessionId,
+  grammar: {
+    value: "NON_TCG",
+    raw: "standard",
+    contract_version: standardVersions.resolution_view_schema,
+    resolver_version: standardVersions.resolver
+  },
+  composer: {
+    title: standardTitle,
+    stored_title: standardTitle,
+    character_budget: CANONICAL_NAMING_RELEASE_CONTRACT.character_budget,
+    length: standardTitle.length,
+    truncated: false,
+    composer_version: standardVersions.composer,
+    marketplace_profile_version: standardVersions.marketplace_profile,
+    recomposed_matches_stored: true,
+    trace_reliable: true
+  },
+  brackets: [{
+    bracket: "card_number",
+    canonical_field: "card_number",
+    value: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_card_number,
+    selected_candidate: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_card_number,
+    rendered_text: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.rendered_card_number
+  }, {
+    bracket: "numerical_rarity",
+    canonical_field: "serial",
+    value: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial,
+    selected_candidate: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial,
+    rendered_text: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial
+  }],
+  owner_execution_receipt: { version: ownerVersion, sha256: standardOwnerSha256 }
+};
 
 assert.equal(productionParityAssetId({ evidence, deploymentUrl, gitSha }), assetId);
 const receipt = verifyProductionParityReadback({
@@ -143,7 +245,7 @@ const receipt = verifyProductionParityReadback({
   gitSha,
   now: () => new Date("2026-08-11T12:00:00.000Z")
 });
-assert.equal(receipt.schema_version, "production-parity-persisted-readback-receipt-v1");
+assert.equal(receipt.schema_version, PRODUCTION_PARITY_READBACK_RECEIPT_SCHEMA);
 assert.equal(receipt.canonical_origin, "https://listing.lyncafei.team");
 assert.equal(receipt.deployment_url, deploymentUrl);
 assert.equal(receipt.git_sha, gitSha);
@@ -153,12 +255,50 @@ assert.equal(receipt.provider_calls, 0);
 assert.equal(receipt.asset_id, assetId);
 assert.equal(receipt.recognition_session_id, recognitionSessionId);
 assert.equal(receipt.persisted_title_exact_match, true);
+assert.equal(receipt.marketplace_profile_version, versions.marketplace_profile);
 assert.equal(receipt.owner_execution_receipt_sha256, ownerSha256);
 assert.equal(receipt.verified_at, "2026-08-11T12:00:00.000Z");
 assert.equal(JSON.stringify(receipt).includes(PRODUCTION_PARITY_EXPECTED_TITLE), false);
 assert.equal(Object.hasOwn(receipt, "stored_title"), false);
 assert.equal(Object.hasOwn(receipt, "title_sha256"), false);
 assert.equal(Object.hasOwn(receipt, "sources"), false);
+
+assert.equal(productionStandardAssetId({ evidence, deploymentUrl, gitSha }), standardAssetId);
+const standardReceipt = verifyProductionStandardReadback({
+  evidence,
+  resolutionView: standardResolutionView,
+  deploymentUrl,
+  gitSha,
+  now: () => new Date("2026-08-11T12:01:00.000Z")
+});
+assert.equal(standardReceipt.schema_version, PRODUCTION_STANDARD_READBACK_RECEIPT_SCHEMA);
+assert.equal(standardReceipt.provider_calls, 0);
+assert.equal(standardReceipt.asset_id, standardAssetId);
+assert.equal(standardReceipt.recognition_session_id, standardRecognitionSessionId);
+assert.equal(standardReceipt.persisted_standard_canonical_naming, true);
+assert.equal(standardReceipt.source_asset_exact_match, true);
+assert.equal(standardReceipt.writer_journey_standard_p0_exact, true);
+assert.equal(standardReceipt.full_title_exact_match, true);
+assert.equal(standardReceipt.card_number_exact_match, true);
+assert.equal(standardReceipt.serial_exact_match, true);
+assert.equal(standardReceipt.selected_brackets_exact, true);
+assert.equal(standardReceipt.composer_version,
+  CANONICAL_NAMING_RELEASE_CONTRACT.composer_version);
+assert.equal(standardReceipt.marketplace_profile_version,
+  CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version);
+assert.equal(standardReceipt.character_budget,
+  CANONICAL_NAMING_RELEASE_CONTRACT.character_budget);
+assert.equal(standardReceipt.owner_execution_receipt_sha256, standardOwnerSha256);
+assert.equal(standardReceipt.verified_at, "2026-08-11T12:01:00.000Z");
+assert.equal(JSON.stringify(standardReceipt).includes(standardTitle), false);
+assert.equal(JSON.stringify(standardReceipt).includes(
+  PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial
+), false);
+assert.equal(JSON.stringify(standardReceipt).includes(
+  PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.rendered_card_number
+), false);
+assert.equal(Object.hasOwn(standardReceipt, "stored_title"), false);
+assert.equal(Object.hasOwn(standardReceipt, "title"), false);
 
 const clone = (value) => structuredClone(value);
 for (const mutate of [
@@ -187,14 +327,61 @@ for (const mutate of [
     evidence, resolutionView: changed, deploymentUrl, gitSha
   }), /production_parity_readback_/);
 }
+for (const mutate of [
+  (value) => { value.final_seal.canonical_naming_active_case_count = 0; },
+  (value) => { value.final_seal.standard_p0_exact_case_count = 0; },
+  (value) => { value.cases[1].canonical_naming_active = false; },
+  (value) => { value.cases[1].source_asset_id = "asset_drift"; },
+  (value) => { value.cases[1].image_sha256[0].content_sha256 = "f".repeat(64); },
+  (value) => { value.cases[1].standard_p0_identity.card_number_selected_exact = false; },
+  (value) => { value.cases[1].expected_grammar = "TCG"; },
+  (value) => { value.cases[1].versions.composer = "thin-marketplace-composer-v2"; },
+  (value) => { value.cases[1].title_length = 81; },
+  (value) => { value.cases[1].external_identity_support = evidenceExternal; }
+]) {
+  const changed = clone(evidence);
+  mutate(changed);
+  assert.throws(() => verifyProductionStandardReadback({
+    evidence: changed,
+    resolutionView: standardResolutionView,
+    deploymentUrl,
+    gitSha
+  }), /production_standard_readback_/);
+}
+for (const mutate of [
+  (value) => { value.composer.stored_title = `${standardTitle} drift`; },
+  (value) => { value.composer.title = "#251 50/50"; value.composer.stored_title = "#251 50/50"; value.composer.length = 11; },
+  (value) => { value.brackets.push({ ...value.brackets[0] }); },
+  (value) => { value.brackets.push({ ...value.brackets[1] }); },
+  (value) => { value.brackets[0].canonical_field = "collector_number"; },
+  (value) => { value.brackets[0].selected_candidate = "250"; },
+  (value) => { value.brackets[1].rendered_text = "49/50"; },
+  (value) => { value.composer.marketplace_profile_version = "ebay-profile-v1"; },
+  (value) => { value.grammar.raw = "tcg"; },
+  (value) => { value.owner_execution_receipt.sha256 = "f".repeat(64); },
+  (value) => { value.composer.trace_reliable = false; },
+  (value) => { value.external_identity_support = {}; }
+]) {
+  const changed = clone(standardResolutionView);
+  mutate(changed);
+  assert.throws(() => verifyProductionStandardReadback({
+    evidence,
+    resolutionView: changed,
+    deploymentUrl,
+    gitSha
+  }), /production_standard_readback_/);
+}
 
 const temp = await mkdtemp(path.join(tmpdir(), "lynca-production-parity-readback-"));
 try {
   const evidencePath = path.join(temp, "evidence.json");
   const readbackPath = path.join(temp, "readback.json");
   const receiptPath = path.join(temp, "receipt.json");
+  const standardReadbackPath = path.join(temp, "standard-readback.json");
+  const standardReceiptPath = path.join(temp, "standard-receipt.json");
   await writeFile(evidencePath, JSON.stringify(evidence));
   await writeFile(readbackPath, JSON.stringify(resolutionView), { mode: 0o600 });
+  await writeFile(standardReadbackPath, JSON.stringify(standardResolutionView), { mode: 0o600 });
   const script = path.resolve("scripts/production-parity-readback.mjs");
   const assetOutput = execFileSync(process.execPath, [
     script, "asset-id",
@@ -216,6 +403,26 @@ try {
   assert.equal(saved.persisted_title_exact_match, true);
   assert.equal(JSON.stringify(saved).includes(PRODUCTION_PARITY_EXPECTED_TITLE), false);
 
+  const standardAssetOutput = execFileSync(process.execPath, [
+    script, "standard-asset-id",
+    "--evidence", evidencePath,
+    "--deployment-url", deploymentUrl,
+    "--git-sha", gitSha
+  ], { encoding: "utf8" }).trim();
+  assert.equal(standardAssetOutput, standardAssetId);
+  execFileSync(process.execPath, [
+    script, "verify-standard",
+    "--evidence", evidencePath,
+    "--readback", standardReadbackPath,
+    "--deployment-url", deploymentUrl,
+    "--git-sha", gitSha,
+    "--out", standardReceiptPath
+  ]);
+  assert.equal((await stat(standardReceiptPath)).mode & 0o777, 0o600);
+  const savedStandard = JSON.parse(await readFile(standardReceiptPath, "utf8"));
+  assert.equal(savedStandard.persisted_standard_canonical_naming, true);
+  assert.equal(JSON.stringify(savedStandard).includes(standardTitle), false);
+
   await chmod(readbackPath, 0o644);
   assert.throws(() => execFileSync(process.execPath, [
     script, "verify",
@@ -229,4 +436,4 @@ try {
   await rm(temp, { recursive: true, force: true });
 }
 
-console.log("production parity persisted readback: ok");
+console.log("production parity and standard persisted readback: ok");

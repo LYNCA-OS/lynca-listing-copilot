@@ -8,9 +8,14 @@ import {
 import { REVIEW_VERDICT, CORRECTION_REASON } from "../lib/listing/csm/resolution-review.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import { composeLyncaStandardName } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   buildCsmStageRows,
-  THIN_COMPOSER_VERSION_V1
+  EBAY_PROFILE_VERSION,
+  LYNCA_STANDARD_PROFILE_VERSION,
+  THIN_COMPOSER_VERSION,
+  THIN_COMPOSER_VERSION_V1,
+  THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { readCsmResolutionRecord } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
@@ -44,6 +49,49 @@ const record = {
 };
 const deps = { readRecord: async () => record, appendReview: async ({ review }) => review };
 
+// Flat records have no historical replay bundle, so their stored pair must
+// equal the active router pair for their grammar. Standard is v3, while TCG
+// and Lot intentionally remain on the ordinary v2/eBay executable pair.
+for (const [grammar, canonicalPayload] of [
+  ["tcg", {
+    year: "2025", product: "Pokemon", set: "Mega Brave",
+    subjects: ["Mega Absol Ex"], card_number: "089/063",
+    grammar: "tcg", language: "JP", ip: "Pokemon"
+  }],
+  ["lot", {
+    year: "2023", manufacturer: "Panini", product: "Prizm",
+    subjects: ["Victor Wembanyama", "LeBron James"],
+    grammar: "lot", lot_count: "2"
+  }]
+]) {
+  const current = composeResolutionView({
+    canonical_payload: JSON.stringify(canonicalPayload),
+    composer_version: THIN_COMPOSER_VERSION_V2,
+    marketplace_profile_version: EBAY_PROFILE_VERSION
+  });
+  assert.equal(current.composed.grammar, grammar);
+  assert.equal(current.composer_version, THIN_COMPOSER_VERSION_V2);
+  assert.equal(current.marketplace_profile_version, EBAY_PROFILE_VERSION);
+}
+assert.throws(
+  () => composeResolutionView({
+    canonical_payload: payload,
+    composer_version: THIN_COMPOSER_VERSION_V2,
+    marketplace_profile_version: EBAY_PROFILE_VERSION
+  }),
+  (error) => error?.statusCode === 409 && error?.message === "csm_resolution_replay_rows_required",
+  "a historical Standard v2 flat record still requires its replay rows"
+);
+{
+  const currentStandard = composeResolutionView({
+    canonical_payload: payload,
+    composer_version: THIN_COMPOSER_VERSION,
+    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION
+  });
+  assert.equal(currentStandard.composer_version, THIN_COMPOSER_VERSION);
+  assert.equal(currentStandard.marketplace_profile_version, LYNCA_STANDARD_PROFILE_VERSION);
+}
+
 const legacyPayload = {
   year: "2018", manufacturer: "Topps", product: "Topps Silver Pack", set: "",
   subjects: ["Shohei Ohtani"], team: "", card_name: "1983 Chrome Promo",
@@ -70,6 +118,51 @@ const legacyRecord = {
   resolver_version: "thin-path-observation-only-v1", replay_rows: legacyRows
 };
 
+// The complete Standard v3 path keeps independent search terms distinct while
+// carrying them through persistence, replay, and the Resolution View bracket.
+{
+  const fields = {
+    year: "2025",
+    manufacturer: "Upper Deck",
+    product: "Series 1",
+    subjects: ["Connor Bedard"],
+    components: ["RC"],
+    search_optimization: ["Young Guns"],
+    team: "Blackhawks",
+    card_number: "201",
+    serial: "",
+    grammar: "standard",
+    unreadable: [],
+    low_confidence: []
+  };
+  const composed = composeLyncaStandardName(fields);
+  const rows = buildCsmStageRows({
+    tenantId: "t1",
+    recognitionSessionId: "independent-search-resolution",
+    fields,
+    composed,
+    title: composed.title
+  });
+  const projected = composeResolutionView({
+    asset_id: "independent-search-asset",
+    recognition_session_id: "independent-search-resolution",
+    resolution_id: rows.resolution.id,
+    output_id: rows.output.id,
+    output_title: composed.title,
+    resolver_version: "thin-path-observation-only-v1",
+    replay_rows: rows
+  });
+  const row = projected.view.brackets.find((entry) => (
+    entry.bracket === "search_optimization"
+  ));
+  assert.deepEqual(row.canonical_fields, ["components", "search_optimization", "team"]);
+  assert.equal(row.value, "RC, Young Guns, Blackhawks");
+  assert.equal(row.rendered_text, "RC Young Guns Blackhawks");
+  assert.equal(projected.fields.team, "Blackhawks");
+  assert.deepEqual(projected.fields.components, ["RC"]);
+  assert.deepEqual(projected.fields.search_optimization, ["Young Guns"]);
+}
+
 // --- the view is a pure read -------------------------------------------------
 {
   const view = await handleResolutionViewRequest({ tenantId: "t1", assetId: "asset-1", dependencies: deps });
@@ -77,6 +170,8 @@ const legacyRecord = {
   assert.equal(view.composer.recomposed_matches_stored, true);
   assert.equal(view.composer.trace_reliable, true);
   assert.ok(view.composer.composer_version, "the version the trace was produced under travels with it");
+  assert.equal(view.composer.marketplace_profile_version, LYNCA_STANDARD_PROFILE_VERSION,
+    "the exact profile that rendered the trace travels with the zero-call readback");
   assert.deepEqual(view.owner_execution_receipt, {
     version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
     sha256: OWNER_RECEIPT_SHA256
@@ -368,7 +463,10 @@ const legacyRecord = {
       if (url.pathname.endsWith("/csm_marketplace_outputs")) {
         return new Response(JSON.stringify([{
           id: "external-output", tenant_id: "tenant-db", recognition_session_id: "external-session",
-          resolution_id: "external-resolution", structured_output: { external_identity_support: stored },
+          resolution_id: "external-resolution", structured_output: {
+            composition_grammar: "standard",
+            external_identity_support: stored
+          },
           title: "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls",
           ...descriptor.output,
           marketplace: "EBAY", contract_version: "csm-stage-shadow-v2",
@@ -430,6 +528,34 @@ const legacyRecord = {
   assert.doesNotMatch(JSON.stringify(support),
     /must-not-leave|raw_payload|canonical_value|observed_value|attacker\.example|not-https|api_key/,
     "raw Registry/evidence payload and rejected URLs must stop at the DB projection");
+
+  const durableExternalView = await handleResolutionViewRequest({
+    tenantId: "tenant-db", assetId: "external-asset",
+    dependencies: { readRecord: async () => durable }
+  });
+  assert.equal(durableExternalView.composer.composer_version, v1.output.composer_version);
+  assert.equal(durableExternalView.composer.marketplace_profile_version,
+    v1.output.marketplace_profile_version);
+  assert.equal(durableExternalView.composer.trace_reliable, true);
+  assert.equal(durableExternalView.external_identity_support.registry_release.id,
+    v1.receipt.registry_release_id);
+
+  const withoutVerifiedReceipt = structuredClone(durable);
+  delete withoutVerifiedReceipt.external_identity_support;
+  assert.throws(
+    () => composeResolutionView(withoutVerifiedReceipt),
+    (error) => error?.statusCode === 409
+      && error?.message === "csm_resolution_external_identity_receipt_invalid",
+    "an external executable pair cannot be explained without its verified receipt"
+  );
+  const malformedVerifiedReceipt = structuredClone(durable);
+  malformedVerifiedReceipt.external_identity_support.sources = [];
+  assert.throws(
+    () => composeResolutionView(malformedVerifiedReceipt),
+    (error) => error?.statusCode === 409
+      && error?.message === "csm_resolution_external_identity_receipt_invalid",
+    "an invalid public external receipt must fail the read model closed"
+  );
 
   const evidenceRead = requested.find((url) => url.pathname.endsWith("/csm_evidence_observations"));
   assert.equal(evidenceRead.searchParams.get("select"),
@@ -609,6 +735,21 @@ const legacyRecord = {
   assert.equal(v2Durable.external_identity_support.field_decisions.year.action, "CORRECT_CONFLICT");
   assert.equal(v2Durable.external_identity_support.field_decisions.set.action, "CORRECT_CONFLICT");
   assert.equal(v2Durable.external_identity_support.composer_version, v2.output.composer_version);
+  const durableExternalV2View = await handleResolutionViewRequest({
+    tenantId: "tenant-db", assetId: "external-asset-v2",
+    dependencies: { readRecord: async () => v2Durable }
+  });
+  assert.equal(durableExternalV2View.composer.composer_version, v2.output.composer_version);
+  assert.equal(durableExternalV2View.composer.trace_reliable, true);
+  assert.throws(
+    () => composeResolutionView({
+      ...durable,
+      external_identity_support: v2Durable.external_identity_support
+    }),
+    (error) => error?.statusCode === 409
+      && error?.message === "csm_resolution_external_identity_receipt_invalid",
+    "a valid receipt for another external release cannot authorize this output pair"
+  );
 
   const forgedObservedStored = structuredClone(v2Stored);
   forgedObservedStored.field_decisions.year.observed_value = "1988-89";

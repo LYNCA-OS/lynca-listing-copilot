@@ -28,9 +28,13 @@ const outputSides = Object.freeze(["front", "back"]);
 const manifestRootKeys = Object.freeze([
   "accuracy_claim", "cases", "evidence_scope", "schema_version"
 ]);
-const manifestCaseKeys = Object.freeze([
+const feedbackManifestCaseKeys = Object.freeze([
   "case_id", "evaluation_cohort", "expected_grammar", "files", "hash_provenance",
   "image_count", "source_feedback_id"
+]);
+const productionAssetManifestCaseKeys = Object.freeze([
+  "case_id", "evaluation_cohort", "expected_grammar", "files", "hash_provenance",
+  "image_count", "source_asset_id", "source_kind", "source_record_id"
 ]);
 const manifestFileKeys = Object.freeze([
   "bytes", "content_sha256", "content_type", "path", "role"
@@ -41,22 +45,32 @@ const manifestFileKeys = Object.freeze([
 export const LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT = Object.freeze({
   case_id: "NON_TCG",
   expected_grammar: "NON_TCG",
-  source_feedback_id: "007edfc1-e52d-4a9e-ab8f-3955e6500620",
-  evaluation_cohort: "INTERNAL_REVIEWED_GT",
-  hash_provenance: "2026-08-08_DIRECT_EXACT_PATH_BYTE_ACQUISITION",
-  content_type: "image/jpeg",
-  image_sha256: Object.freeze({
-    "007edfc1-e52d-4a9e-ab8f-3955e6500620_front":
-      "16f731783a954b79d696ff2343c25e996692c0f845fc2bb01ed483ab7a74774b",
-    "007edfc1-e52d-4a9e-ab8f-3955e6500620_back":
-      "b3edee5956060acde3946cc5c4fcf29a0981d582e5d547b69290ce53f2f3cdc1"
-  })
+  source_kind: "PRODUCTION_ASSET",
+  source_record_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+  source_asset_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+  evaluation_cohort: "PRODUCTION_LOW_REASONING_VERIFIED",
+  hash_provenance: "2026-08-11_PRODUCTION_ASSET_EXACT_VERIFICATION",
+  content_type: "image/webp",
+  images: Object.freeze([
+    Object.freeze({
+      image_id: "f55f120f-09e0-4c2f-9166-8bcf7310b4d0",
+      role: "front_original",
+      content_sha256:
+        "161f0d97df619f8d34b2453551567a0473d3e477c3e0ec9295029fbce8c59e44"
+    }),
+    Object.freeze({
+      image_id: "cd43a047-0472-441e-bc4d-00e53b04634f",
+      role: "back_original",
+      content_sha256:
+        "cef46b5d761d2d20f5cd21d611cab8d8037721bcdb4ae8c1a0d4441439a6fdc3"
+    })
+  ])
 });
 
 export const LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT = Object.freeze({
-  schema_version: "large-internal-writer-fixture-receipt-v1",
+  schema_version: "large-internal-writer-fixture-receipt-v2",
   builder_id: "large-internal-writer-fixture-builder",
-  builder_version: "1.1.0",
+  builder_version: "1.2.0",
   source_class: "LYNCA_INTERNAL_SYNTHETIC_TEST",
   allowed_use: "PRODUCTION_RELEASE_TRANSPORT_ONLY",
   forbidden_uses: Object.freeze([
@@ -160,7 +174,9 @@ export function validateApprovedSourceManifest(manifest) {
       || !Array.isArray(manifest.cases)
       || manifest.cases.length !== 2
       || manifest.cases.some((entry) => (
-        !hasExactKeys(entry, manifestCaseKeys)
+        !hasExactKeys(entry, entry?.case_id === contract.case_id
+          ? productionAssetManifestCaseKeys
+          : feedbackManifestCaseKeys)
         || !Array.isArray(entry.files)
         || entry.files.length !== 2
         || entry.files.some((file) => !hasExactKeys(file, manifestFileKeys))
@@ -176,7 +192,9 @@ export function validateApprovedSourceManifest(manifest) {
   if (manifest?.schema_version !== "writer-journey-cases-v2"
       || manifest?.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
       || manifest?.accuracy_claim !== null
-      || source?.source_feedback_id !== contract.source_feedback_id
+      || source?.source_kind !== contract.source_kind
+      || source?.source_record_id !== contract.source_record_id
+      || source?.source_asset_id !== contract.source_asset_id
       || source?.evaluation_cohort !== contract.evaluation_cohort
       || source?.expected_grammar !== contract.expected_grammar
       || source?.hash_provenance !== contract.hash_provenance
@@ -186,20 +204,21 @@ export function validateApprovedSourceManifest(manifest) {
     throw failure("large_fixture_source_manifest_not_approved");
   }
   return source.files.map((file, index) => {
-    const imageId = `${contract.source_feedback_id}_${outputSides[index]}`;
+    const expectedImage = contract.images[index];
     const localPath = String(file?.path || "").trim();
     const contentSha256 = String(file?.content_sha256 || "").trim().toLowerCase();
     const bytes = Number(file?.bytes);
     const contentType = String(file?.content_type || "").trim().toLowerCase();
     if (!path.isAbsolute(localPath)
         || file?.role !== sourceRoleOrder[index]
-        || contentSha256 !== contract.image_sha256[imageId]
+        || expectedImage?.role !== sourceRoleOrder[index]
+        || contentSha256 !== expectedImage?.content_sha256
         || !Number.isSafeInteger(bytes) || bytes < 1
         || contentType !== contract.content_type) {
       throw failure("large_fixture_source_manifest_not_approved");
     }
     return {
-      image_id: imageId,
+      image_id: expectedImage.image_id,
       side: outputSides[index],
       role: sourceRoleOrder[index],
       path: localPath,
@@ -493,7 +512,7 @@ async function buildReceipt({ sources, rendered }) {
   const sourceRecords = sources.map(({ buffer: _buffer, path: _path, ...source }) => source);
   const body = {
     schema_version: contract.schema_version,
-    fixture_id: "large-internal-writer-fixture-v1",
+    fixture_id: "large-internal-writer-fixture-v2",
     source_class: contract.source_class,
     allowed_use: contract.allowed_use,
     forbidden_uses: [...contract.forbidden_uses],
@@ -509,7 +528,9 @@ async function buildReceipt({ sources, rendered }) {
     },
     executor: rendered.executor,
     source: {
-      source_feedback_id: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_feedback_id,
+      source_kind: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_kind,
+      source_record_id: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_record_id,
+      source_asset_id: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.source_asset_id,
       evaluation_cohort: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.evaluation_cohort,
       hash_provenance: LARGE_INTERNAL_WRITER_FIXTURE_SOURCE_CONTRACT.hash_provenance,
       manifest_contract_sha256: sha256(Buffer.from(stableJson(sourceRecords))),

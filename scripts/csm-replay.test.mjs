@@ -4,13 +4,21 @@ import assert from "node:assert/strict";
 
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import { composeLyncaStandardName } from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   buildCsmStageRows,
   computeCsmPacketHashes,
+  EBAY_PROFILE_VERSION,
+  LYNCA_STANDARD_PROFILE_VERSION,
   THIN_COMPOSER_VERSION,
-  THIN_COMPOSER_VERSION_V1
+  THIN_COMPOSER_VERSION_V1,
+  THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
+  composeCanonicalFieldsForStoredOutput,
   replayFromRows,
   verifyReplay
 } from "../lib/listing/thin/csm-replay.mjs";
@@ -27,9 +35,9 @@ const base = {
   unreadable: [], low_confidence: []
 };
 
-function stage(input, recognitionSessionId) {
+function stage(input, recognitionSessionId, compose = composeFromCanonicalFields) {
   const fields = parseCanonicalFields(input).fields;
-  const composed = composeFromCanonicalFields(fields);
+  const composed = compose(fields);
   return {
     composed,
     rows: buildCsmStageRows({
@@ -51,6 +59,8 @@ function reseal(rows) {
 }
 
 const standard = stage(base, "session-standard");
+assert.equal(standard.rows.output.composer_version, THIN_COMPOSER_VERSION_V2);
+assert.equal(standard.rows.output.marketplace_profile_version, EBAY_PROFILE_VERSION);
 assert.ok(verifyReplay(standard.rows, standard.composed.title).ok);
 assert.match(standard.composed.title, /PSA 9\/10$/);
 assert.deepEqual(standard.rows.output.structured_output.sem.grading_info, {
@@ -93,9 +103,9 @@ assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
   assert.match(checked.replayed.title, /^Lot\*2 /);
 }
 
-// Composer versions are executable behavior. New rows use v2's display-only
-// exact-parallel colour compaction, while a persisted v1 row must keep the old
-// dropped-finish title forever.
+// Composer versions are executable behavior. Ordinary v2 rows keep their
+// display-only exact-parallel colour compaction, while a persisted v1 row must
+// keep the old dropped-finish title forever after v3 becomes current.
 {
   const versionedFields = {
     ...base,
@@ -112,17 +122,17 @@ assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
     attributes: ["RC"],
     grading_info: { company: "PSA", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY" }
   };
-  const current = stage(versionedFields, "session-composer-v2");
-  assert.equal(current.rows.output.composer_version, THIN_COMPOSER_VERSION);
-  assert.match(current.composed.title, /\bBlue\b/);
-  assert.ok(verifyReplay(current.rows, current.composed.title).ok);
+  const v2 = stage(versionedFields, "session-composer-v2");
+  assert.equal(v2.rows.output.composer_version, THIN_COMPOSER_VERSION_V2);
+  assert.match(v2.composed.title, /\bBlue\b/);
+  assert.ok(verifyReplay(v2.rows, v2.composed.title).ok);
 
   const parsed = parseCanonicalFields(versionedFields).fields;
   const legacyComposed = composeFromCanonicalFields(parsed, {
     features: { exact_parallel_color_compaction: false }
   });
   assert.doesNotMatch(legacyComposed.title, /\bBlue\b/);
-  const legacy = clone(current.rows);
+  const legacy = clone(v2.rows);
   legacy.output.composer_version = THIN_COMPOSER_VERSION_V1;
   legacy.output.title = legacyComposed.title;
   legacy.output.included_brackets = legacyComposed.brackets;
@@ -140,6 +150,184 @@ assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
   const checked = verifyReplay(legacy, legacyComposed.title);
   assert.ok(checked.ok, JSON.stringify(checked.problems));
   assert.equal(checked.replayed.composed.title_render_source, "csm_marketplace_composer_v1");
+}
+
+// Canonical Naming v3 is a new pair, not a relabelled ordinary v2 output. Its
+// complete machine trace is persisted and must be reproduced from resolved
+// rows before a prepared packet is accepted.
+const canonicalNaming = stage(
+  { ...base, descriptive_rarity: "SSP" },
+  "session-canonical-naming-v3",
+  composeLyncaStandardName
+);
+assert.equal(canonicalNaming.rows.output.composer_version, THIN_COMPOSER_VERSION);
+assert.equal(
+  canonicalNaming.rows.output.marketplace_profile_version,
+  LYNCA_STANDARD_PROFILE_VERSION
+);
+assert.deepEqual(
+  canonicalNaming.rows.output.dropped_trace.canonical_naming,
+  canonicalNaming.composed.canonical_naming_trace
+);
+assert.match(canonicalNaming.composed.title, /\bSSP\b/);
+assert.ok(canonicalNaming.composed.canonical_naming_trace.selected.some((token) => (
+  token.field === "descriptive_rarity" && token.canonical_value === "SSP"
+)));
+{
+  const checked = verifyReplay(canonicalNaming.rows, canonicalNaming.composed.title);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.deepEqual(
+    checked.replayed.composed.canonical_naming_trace,
+    canonicalNaming.composed.canonical_naming_trace
+  );
+}
+{
+  const tampered = clone(canonicalNaming.rows);
+  tampered.output.dropped_trace.canonical_naming.selected[0].display_value += " altered";
+  reseal(tampered);
+  const checked = verifyReplay(tampered, canonicalNaming.composed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => problem.kind === "canonical_naming_trace_mismatch"));
+}
+{
+  const missing = clone(canonicalNaming.rows);
+  delete missing.output.dropped_trace.canonical_naming;
+  reseal(missing);
+  const checked = verifyReplay(missing, canonicalNaming.composed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => problem.kind === "canonical_naming_trace_missing"));
+}
+{
+  const invalid = clone(canonicalNaming.rows);
+  invalid.resolved.find((row) => row.bracket === "card_number").canonical_value = "X".repeat(80);
+  const invalidReplay = replayFromRows(invalid).composed;
+  assert.equal(invalidReplay.canonical_naming_publishable, false);
+  invalid.output.title = "";
+  invalid.output.included_brackets = invalidReplay.brackets;
+  invalid.output.dropped_trace = {
+    dropped_for_budget: invalidReplay.dropped,
+    suppressed_by_profile: invalidReplay.suppressed,
+    restored: invalidReplay.restored,
+    truncated: invalidReplay.truncated,
+    empty_at_input: invalidReplay.input_empty_fields,
+    normalization_reason_codes: invalidReplay.normalization_reasons,
+    character_budget: invalidReplay.character_budget,
+    rendered_length: invalidReplay.length,
+    canonical_naming: invalidReplay.canonical_naming_trace
+  };
+  reseal(invalid);
+  const checked = verifyReplay(invalid, "");
+  assert.equal(checked.ok, false, "a self-consistent empty P0-overbudget packet must fail closed");
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "canonical_naming_output_not_publishable"
+  )));
+}
+{
+  const wrongBudget = clone(canonicalNaming.rows);
+  wrongBudget.output.dropped_trace.character_budget = 60;
+  reseal(wrongBudget);
+  const checked = verifyReplay(wrongBudget, canonicalNaming.composed.title);
+  assert.equal(checked.ok, false, "the profile version cannot silently replay a different budget");
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "canonical_naming_character_budget_mismatch"
+  )));
+}
+assert.throws(
+  () => composeLyncaStandardName(parseCanonicalFields(base).fields, { limit: 60 }),
+  /canonical_naming_character_budget_must_match_profile/
+);
+
+// `search_optimization` has an independent lane in CNL. It must survive the
+// stage packet without being confused with components or team, and historical
+// ordinary v1/v2 composers must continue ignoring that lane exactly as before.
+{
+  const youngGunsFields = parseCanonicalFields({
+    ...base,
+    year: "2023-24",
+    manufacturer: "Upper Deck",
+    product: "Series 2",
+    set: "",
+    subjects: ["Connor Bedard"],
+    team: "Blackhawks",
+    card_number: "451",
+    serial: "",
+    surface_color: "",
+    parallel_family: "",
+    attributes: ["RC"],
+    grading_info: null,
+    grade: ""
+  }).fields;
+  youngGunsFields.search_optimization = ["Young Guns"];
+
+  const naming = composeLyncaStandardName(youngGunsFields);
+  const namingRows = buildCsmStageRows({
+    tenantId: "tenant-replay", recognitionSessionId: "session-independent-search-v3",
+    fields: youngGunsFields, composed: naming, title: naming.title
+  });
+  const replayed = replayFromRows(namingRows);
+  assert.deepEqual(replayed.fields.search_optimization, ["Young Guns"]);
+  assert.deepEqual(replayed.fields.components, ["RC"]);
+  assert.equal(replayed.fields.team, "Blackhawks");
+  assert.equal(replayed.title, naming.title);
+  assert.match(replayed.title, /\bYoung Guns\b/);
+  assert.ok(verifyReplay(namingRows, naming.title).ok);
+  const lostIndependentSearch = clone(namingRows);
+  delete lostIndependentSearch.output.structured_output.search_optimization;
+  reseal(lostIndependentSearch);
+  const lostCheck = verifyReplay(lostIndependentSearch, naming.title);
+  assert.equal(lostCheck.ok, false);
+  assert.ok(lostCheck.problems.some((problem) => (
+    problem.kind === "canonical_naming_trace_mismatch"
+  )));
+
+  const withoutIndependentSearch = { ...youngGunsFields, search_optimization: [] };
+  const ordinaryV2 = composeFromCanonicalFields(youngGunsFields);
+  assert.equal(ordinaryV2.title, composeFromCanonicalFields(withoutIndependentSearch).title);
+  const ordinaryRows = buildCsmStageRows({
+    tenantId: "tenant-replay", recognitionSessionId: "session-independent-search-v2",
+    fields: youngGunsFields, composed: ordinaryV2, title: ordinaryV2.title
+  });
+  assert.deepEqual(replayFromRows(ordinaryRows).fields.search_optimization, ["Young Guns"]);
+  assert.ok(verifyReplay(ordinaryRows, ordinaryV2.title).ok);
+
+  const ordinaryV1 = composeFromCanonicalFields(youngGunsFields, {
+    features: { exact_parallel_color_compaction: false }
+  });
+  assert.equal(ordinaryV1.title, composeFromCanonicalFields(withoutIndependentSearch, {
+    features: { exact_parallel_color_compaction: false }
+  }).title);
+  const historicalV1Rows = clone(ordinaryRows);
+  historicalV1Rows.output.composer_version = THIN_COMPOSER_VERSION_V1;
+  historicalV1Rows.output.title = ordinaryV1.title;
+  historicalV1Rows.output.included_brackets = ordinaryV1.brackets;
+  historicalV1Rows.output.dropped_trace = {
+    dropped_for_budget: ordinaryV1.dropped,
+    suppressed_by_profile: ordinaryV1.suppressed,
+    restored: ordinaryV1.restored,
+    truncated: ordinaryV1.truncated,
+    empty_at_input: ordinaryV1.input_empty_fields,
+    normalization_reason_codes: ordinaryV1.normalization_reasons,
+    character_budget: ordinaryV1.character_budget,
+    rendered_length: ordinaryV1.length
+  };
+  reseal(historicalV1Rows);
+  assert.ok(verifyReplay(historicalV1Rows, ordinaryV1.title).ok);
+}
+
+// External identity v1/v2 remain literal executable history. Adding ordinary
+// v3 must not route either receipt through the new Standard adapter.
+{
+  const fields = parseCanonicalFields(base).fields;
+  const externalTitle =
+    "2025 Topps Chrome #221 Victor Wembanyama Gold Refractor 17/50 Spurs RC PSA 9/10";
+  for (const release of Object.values(EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases)) {
+    const composed = composeCanonicalFieldsForStoredOutput(fields, {
+      marketplace: "EBAY",
+      ...release.output
+    });
+    assert.equal(composed.title, externalTitle);
+    assert.match(composed.title_render_source, /verified_external_identity/);
+  }
 }
 
 // Legacy rows can be replayed only when old persisted facts make the grammar
@@ -181,6 +369,35 @@ for (const [key, value] of [
   const checked = verifyReplay(unknown, standard.composed.title);
   assert.equal(checked.ok, false);
   assert.ok(checked.problems.some((problem) => problem.kind === "unsupported_replay_version"));
+}
+
+// Composer/profile versions form one executable identity. Cross-pairing the
+// new profile with ordinary v2, or the old profile with v3, fails closed even
+// after all packet hashes have been recomputed.
+for (const [fixture, profile] of [
+  [canonicalNaming, EBAY_PROFILE_VERSION],
+  [standard, LYNCA_STANDARD_PROFILE_VERSION]
+]) {
+  const crossed = clone(fixture.rows);
+  crossed.output.marketplace_profile_version = profile;
+  reseal(crossed);
+  assert.throws(
+    () => replayFromRows(crossed),
+    (error) => error?.code === "unsupported_replay_version"
+  );
+  const checked = verifyReplay(crossed, fixture.composed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => problem.kind === "unsupported_replay_version"));
+}
+{
+  const wrongGrammar = clone(tcg.rows);
+  wrongGrammar.output.composer_version = THIN_COMPOSER_VERSION;
+  wrongGrammar.output.marketplace_profile_version = LYNCA_STANDARD_PROFILE_VERSION;
+  reseal(wrongGrammar);
+  assert.throws(
+    () => replayFromRows(wrongGrammar),
+    (error) => error?.code === "unsupported_composition_grammar_for_version"
+  );
 }
 
 // A self-consistent but semantically impossible identity/composition pair is

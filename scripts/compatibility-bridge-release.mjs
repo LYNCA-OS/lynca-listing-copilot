@@ -24,6 +24,10 @@ import {
 import {
   readVercelProductionRollbackReceipt
 } from "./vercel-production-rollback-receipt.mjs";
+import {
+  WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS,
+  WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
+} from "./materialize-writer-journey-source.mjs";
 
 export const ORDINARY_RELEASE_CLASS = "ordinary";
 export const COMPATIBILITY_BRIDGE_RELEASE_CLASS = "compatibility-bridge";
@@ -420,17 +424,53 @@ function validateOrdinaryCases(manifest) {
   }
   const ids = new Set();
   const grammars = new Set();
+  const tcgContract = WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.find(
+    (entry) => entry.case_id === "TCG"
+  );
   for (const entry of manifest.cases) {
+    const productionStandard = entry?.case_id === "NON_TCG";
+    const contract = productionStandard
+      ? WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
+      : tcgContract;
+    const expectedKeys = productionStandard
+      ? [
+        "case_id", "expected_grammar", "source_kind", "source_record_id", "source_asset_id",
+        "evaluation_cohort", "hash_provenance", "image_count", "files"
+      ]
+      : [
+        "case_id", "expected_grammar", "source_feedback_id", "evaluation_cohort",
+        "hash_provenance", "image_count", "files"
+      ];
     if (!exactObject(entry)
+        || !exactKeys(entry, expectedKeys)
         || !["NON_TCG", "TCG"].includes(entry.case_id)
-        || entry.expected_grammar !== entry.case_id
-        || entry.evaluation_cohort !== "INTERNAL_REVIEWED_GT"
-        || !String(entry.source_feedback_id || "").trim()
-        || !String(entry.hash_provenance || "").trim()
+        || entry.expected_grammar !== contract?.expected_grammar
+        || entry.evaluation_cohort !== contract?.evaluation_cohort
+        || entry.hash_provenance !== contract?.hash_provenance
         || entry.image_count !== 2
         || !Array.isArray(entry.files) || entry.files.length !== 2
+        || entry.files.some((file) => !exactKeys(file, [
+          "path", "role", "bytes", "content_type", "content_sha256"
+        ]))
         || entry.files[0]?.role !== "front_original"
-        || entry.files[1]?.role !== "back_original") {
+        || entry.files[1]?.role !== "back_original"
+        || (productionStandard ? (
+          entry.source_kind !== contract.source_kind
+          || entry.source_record_id !== contract.source_record_id
+          || entry.source_asset_id !== contract.source_asset_id
+          || entry.files.some((file, index) => (
+            file?.content_sha256 !== contract.images[index].content_sha256
+            || file?.content_type !== contract.images[index].content_type
+            || file?.bytes !== contract.images[index].bytes
+          ))
+        ) : (
+          entry.source_feedback_id !== contract?.source_feedback_id
+          || entry.files.some((file, index) => (
+            file?.content_sha256 !== contract.image_sha256[
+              `${contract.source_feedback_id}_${index === 0 ? "front" : "back"}`
+            ]
+          ))
+        ))) {
       throw failure("compatibility_bridge_source_case_invalid");
     }
     ids.add(entry.case_id);

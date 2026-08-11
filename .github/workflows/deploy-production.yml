@@ -226,6 +226,9 @@ jobs:
           import {
             EXTERNAL_IDENTITY_RELEASE_CONTRACT
           } from './lib/listing/knowledge/csm-external-identity-support.mjs';
+          import {
+            CANONICAL_NAMING_RELEASE_CONTRACT
+          } from './lib/listing/thin/canonical-naming-adapter.mjs';
           import { resolveCsmProviderAdapter } from './lib/listing/thin/csm-provider-adapter.mjs';
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
@@ -262,6 +265,8 @@ jobs:
             && recognitionTransportContractsReady
             && JSON.stringify(h.runtime?.external_identity)
               === JSON.stringify(EXTERNAL_IDENTITY_RELEASE_CONTRACT)
+            && JSON.stringify(h.runtime?.canonical_naming)
+              === JSON.stringify(CANONICAL_NAMING_RELEASE_CONTRACT)
             && h.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
             && h.runtime?.retired_capabilities_disabled === true;
           process.exit(ok ? 0 : 1);
@@ -296,7 +301,8 @@ jobs:
           import { readFile, stat, writeFile } from 'node:fs/promises';
           import path from 'node:path';
           import {
-            WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT
+            WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
+            WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
           } from './scripts/materialize-writer-journey-source.mjs';
 
           const sourcePath = process.env.CASES_MANIFEST;
@@ -307,6 +313,7 @@ jobs:
             && JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
           const contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT;
           const parity = manifest.parity_case;
+          const standard = manifest.cases?.find((entry) => entry?.case_id === 'NON_TCG');
           const validParityFiles = Array.isArray(parity?.files)
             && parity.files.length === 2
             && parity.files.every((file, index) => (
@@ -317,6 +324,18 @@ jobs:
               && Number.isSafeInteger(file.bytes) && file.bytes > 0
               && ['image/jpeg', 'image/png', 'image/webp'].includes(file.content_type)
             ));
+          const validStandardFiles = Array.isArray(standard?.files)
+            && standard.files.length === 2
+            && standard.files.every((file, index) => (
+              exactKeys(file, ['path', 'role', 'bytes', 'content_type', 'content_sha256'])
+              && path.isAbsolute(file.path)
+              && file.role === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].role
+              && file.content_type
+                === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].content_type
+              && file.bytes === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].bytes
+              && file.content_sha256
+                === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].content_sha256
+            ));
           if (!exactKeys(manifest, [
             'schema_version', 'evidence_scope', 'accuracy_claim', 'cases', 'parity_case'
           ])
@@ -324,6 +343,23 @@ jobs:
             || manifest.evidence_scope !== 'LIVE_CONTRACT_RECEIPT_ONLY'
             || manifest.accuracy_claim !== null
             || !Array.isArray(manifest.cases) || manifest.cases.length !== 2
+            || !exactKeys(standard, [
+              'case_id', 'expected_grammar', 'source_kind', 'source_record_id',
+              'source_asset_id', 'evaluation_cohort', 'hash_provenance', 'image_count', 'files'
+            ])
+            || standard.expected_grammar
+              !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.expected_grammar
+            || standard.source_kind !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_kind
+            || standard.source_record_id
+              !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_record_id
+            || standard.source_asset_id
+              !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_asset_id
+            || standard.evaluation_cohort
+              !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.evaluation_cohort
+            || standard.hash_provenance
+              !== WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.hash_provenance
+            || standard.image_count !== 2
+            || !validStandardFiles
             || !exactKeys(parity, [
               'case_id', 'expected_grammar', 'source_kind', 'source_record_id',
               'source_asset_id', 'evaluation_cohort', 'hash_provenance', 'image_count', 'files'
@@ -346,6 +382,11 @@ jobs:
             accuracy_claim: null,
             cases: manifest.cases
           };
+          if (/"(?:expected_card_number|expected_serial|card_number|serial|title)"/.test(
+            JSON.stringify(v2)
+          )) {
+            throw new Error('writer_journey_verifier_fact_leaked');
+          }
           await writeFile(largeSourcePath, `${JSON.stringify(v2)}\n`, {
             flag: 'wx', mode: 0o600
           });
@@ -485,7 +526,9 @@ jobs:
           cookie_jar="$RUNNER_TEMP/lynca-production-cookies.txt"
           parity_response="$RUNNER_TEMP/production-parity-resolution-view.json"
           parity_receipt="$RUNNER_TEMP/production-parity-readback-receipt.json"
-          trap 'rm -f -- "$cookie_jar" "$parity_response"' EXIT
+          standard_response="$RUNNER_TEMP/production-standard-resolution-view.json"
+          standard_receipt="$RUNNER_TEMP/production-standard-readback-receipt.json"
+          trap 'rm -f -- "$cookie_jar" "$parity_response" "$standard_response"' EXIT
           umask 077
           node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))' \
           | curl -fsS --max-time 30 -c "$cookie_jar" \
@@ -523,6 +566,24 @@ jobs:
             --git-sha "$GITHUB_SHA" \
             --out "$parity_receipt"
           test "$(stat -c '%a' "$parity_receipt")" = "600"
+          standard_asset_id="$(node scripts/production-parity-readback.mjs standard-asset-id \
+            --evidence "$writer_evidence" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA")"
+          standard_query="$(ASSET_ID="$standard_asset_id" node -e \
+            'process.stdout.write(new URLSearchParams({asset_id:process.env.ASSET_ID}).toString())')"
+          install -m 600 /dev/null "$standard_response"
+          curl -fsS --max-time 30 -b "$cookie_jar" \
+            "https://listing.lyncafei.team/api/csm-resolution-view?$standard_query" \
+            -o "$standard_response"
+          test "$(stat -c '%a' "$standard_response")" = "600"
+          node scripts/production-parity-readback.mjs verify-standard \
+            --evidence "$writer_evidence" \
+            --readback "$standard_response" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA" \
+            --out "$standard_receipt"
+          test "$(stat -c '%a' "$standard_receipt")" = "600"
       - name: Re-confirm the exact canonical deployment after parity readback
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -596,5 +657,6 @@ jobs:
             ${{ runner.temp }}/production-release-selection.json
             ${{ runner.temp }}/vercel-production-canonical-deployment-receipt.json
             ${{ runner.temp }}/production-parity-readback-receipt.json
+            ${{ runner.temp }}/production-standard-readback-receipt.json
             ${{ runner.temp }}/writer-journey-compatibility-bridge-cases-v1.json
             artifacts/production-writer-journey/evidence.json

@@ -212,9 +212,16 @@ assert.match(candidateSourceStep, /writer-journey-large-source-v2\.json/);
 assert.match(candidateSourceStep,
   /WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT/,
   "the candidate source gate must validate parity identity and hashes from the checked-out contract");
+assert.match(candidateSourceStep,
+  /WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT/,
+  "the ordinary Writer source must bind the verified low-reasoning Production asset");
 assert.match(candidateSourceStep, /manifest\.schema_version !== 'writer-journey-cases-v3'/);
 assert.match(candidateSourceStep, /parity\.source_asset_id !== contract\.source_asset_id/);
 assert.match(candidateSourceStep, /file\.content_sha256 === contract\.images\[index\]\.content_sha256/);
+assert.match(candidateSourceStep,
+  /standard\.source_asset_id[\s\S]*?WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT\.source_asset_id/);
+assert.match(candidateSourceStep, /writer_journey_verifier_fact_leaked/,
+  "verifier-only expected identity must not enter the generated provider fixture");
 assert.match(candidateSourceStep, /flag: 'wx', mode: 0o600/,
   "the derived v2 subset must be exclusively created owner-only");
 assert.match(candidateSourceStep, /stat\(largeSourcePath\)[\s\S]*0o777\)[\s\S]*0o600/,
@@ -274,16 +281,26 @@ assert.match(canonicalAliasStep, /stat -c '%a'[\s\S]*?= "600"/,
 assert.match(parityReadbackStep,
   /production-parity-readback\.mjs asset-id[\s\S]*?\/api\/csm-resolution-view\?\$parity_query[\s\S]*?production-parity-readback\.mjs verify/,
   "canonical must read back the exact parity asset selected by candidate evidence");
+assert.match(parityReadbackStep,
+  /production-parity-readback\.mjs standard-asset-id[\s\S]*?\/api\/csm-resolution-view\?\$standard_query[\s\S]*?production-parity-readback\.mjs verify-standard/,
+  "canonical must read back the exact NON_TCG asset selected by candidate evidence");
 assert.match(parityReadbackStep, /-b "\$cookie_jar"/,
   "the persisted parity readback must use the authenticated canonical writer session");
 assert.match(parityReadbackStep,
   /stat -c '%a' "\$parity_response"[\s\S]*?= "600"[\s\S]*?stat -c '%a' "\$parity_receipt"[\s\S]*?= "600"/,
   "raw readback and sanitized receipt must remain owner-only");
+assert.match(parityReadbackStep,
+  /stat -c '%a' "\$standard_response"[\s\S]*?= "600"[\s\S]*?stat -c '%a' "\$standard_receipt"[\s\S]*?= "600"/,
+  "raw NON_TCG readback and sanitized receipt must remain owner-only");
 assert.doesNotMatch(parityReadbackStep,
   /OPENAI_API_KEY|\/api\/csm-listing-title|--data|\s-X\s+POST/,
   "post-promotion persisted readback must never dispatch recognition or another provider call");
-assert.match(productionAuthStep, /trap 'rm -f -- "\$cookie_jar" "\$parity_response"' EXIT/,
-  "canonical auth material and raw title readback must be destroyed before evidence upload");
+assert.match(productionAuthStep,
+  /trap 'rm -f -- "\$cookie_jar" "\$parity_response" "\$standard_response"' EXIT/,
+  "canonical auth material and both raw title readbacks must be destroyed before evidence upload");
+assert.match(workflow,
+  /\$\{\{ runner\.temp \}\}\/production-standard-readback-receipt\.json/,
+  "only the sanitized NON_TCG receipt may enter release evidence");
 assert.match(canonicalReadbackRecheckStep,
   /--verify-canonical-deployment "\$DEPLOYMENT_URL"/,
   "canonical must still name the same deployment after the persisted parity GET");
@@ -351,6 +368,16 @@ assert.equal(
 );
 assert.match(parityReadback, /provider_calls: 0/,
   "the sanitized receipt must attest the zero-provider persisted-read contract");
+assert.match(parityReadback, /production-parity-persisted-readback-receipt-v2/);
+assert.match(parityReadback, /production-standard-canonical-naming-readback-receipt-v2/);
+assert.match(parityReadback, /function standardEvidence/);
+assert.match(parityReadback, /CANONICAL_NAMING_RELEASE_CONTRACT\.composer_version/);
+assert.match(parityReadback, /CANONICAL_NAMING_RELEASE_CONTRACT\.marketplace_profile_version/);
+assert.match(parityReadback, /export function productionStandardAssetId/);
+assert.match(parityReadback, /export function verifyProductionStandardReadback/);
+assert.match(parityReadback, /productionStandardP0ResolutionProofValid/);
+assert.match(parityReadback, /card_number_exact_match/);
+assert.match(parityReadback, /serial_exact_match/);
 assert.match(parityReadback, /read_route: "\/api\/csm-resolution-view"/);
 assert.doesNotMatch(parityReadback,
   /OPENAI_API_KEY|fetch\(|\/api\/csm-listing-title/,
@@ -604,6 +631,10 @@ assert.doesNotMatch(workflow, /--data\s+"\$\(node/,
   "production smoke must not expose the password in curl's process arguments");
 assert.match(health, /LYNCA_RELEASE_GIT_SHA\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_SHA/);
 assert.match(health, /LYNCA_RELEASE_GIT_REF\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_REF/);
+assert.match(health, /canonical_naming:\s*CANONICAL_NAMING_RELEASE_CONTRACT/,
+  "health must publish the exact active Canonical Naming release contract");
+assert.match(workflow, /h\.runtime\?\.canonical_naming[\s\S]*?CANONICAL_NAMING_RELEASE_CONTRACT/,
+  "the immutable candidate must match the exact Canonical Naming release contract before spend");
 assert.equal(
   packageJson.scripts["vercel-build"],
   "node lib/listing/thin/csm-deployment-environment.mjs",

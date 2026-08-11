@@ -18,6 +18,9 @@ import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adap
 import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
+  CANONICAL_NAMING_RELEASE_CONTRACT
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
 
 const activeExecution = compileCsmModelExecution({
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
@@ -95,6 +98,7 @@ export default function handler(req, res) {
       provider_timeout_ms: CSM_ACTIVE_MODEL_PROFILE.provider_timeout_ms,
       recognition_transport_profiles: activeRecognitionTransportProfiles,
       external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+      canonical_naming: CANONICAL_NAMING_RELEASE_CONTRACT,
       persistence_configured: persistenceConfigured,
       provider_configured: providerConfigured,
       retired_capabilities_disabled: retiredCapabilitiesDisabled

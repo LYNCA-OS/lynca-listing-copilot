@@ -6,6 +6,12 @@ Status: Draft v1
 Owner: LYNCA Listing Intelligence
 Scope: Sports Cards (Basketball, Football, Baseball, Soccer, F1, UFC, Hockey, etc.)
 
+Historical projection note (2026-08-11): COS-60 / LYNCA Standard Naming v0.1
+supersedes this draft's Card Number suppression and subject-code shortening
+rules for new Standard projections. The canonical Card Number is now a P0
+identity anchor and is displayed whole with `#`; this document remains useful
+only as historical v1 context and must not rewrite stored replay behavior.
+
 ## Objective
 
 The goal of Listing Copilot is not to generate random eBay titles.

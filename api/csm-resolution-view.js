@@ -13,19 +13,21 @@
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { instrumentProductionRequest, bindProductionRequestContext } from "../lib/observability/production-events.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
-import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import { composeActiveCanonicalFields } from "../lib/listing/thin/thin-listing-path.mjs";
 import {
   composeCanonicalFieldsForStoredOutput,
-  replayFromRows
+  replayFromRows,
+  validateCanonicalNamingReplayTrace
 } from "../lib/listing/thin/csm-replay.mjs";
 import { buildCsmResolutionView, CSM_RESOLUTION_VIEW_VERSION } from "../lib/listing/csm/resolution-view.mjs";
 import {
   buildCsmResolutionReview, CSM_RESOLUTION_REVIEW_VERSION
 } from "../lib/listing/csm/resolution-review.mjs";
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
-import { THIN_COMPOSER_VERSION, THIN_RESOLVER_VERSION } from "../lib/listing/thin/csm-persistence.mjs";
+import { THIN_RESOLVER_VERSION } from "../lib/listing/thin/csm-persistence.mjs";
 import { publicCsmOwnerExecutionReceipt } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
 import {
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   validateExternalIdentityPublicReceipt
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
@@ -158,7 +160,11 @@ export function publicExternalIdentitySupport(value) {
 function attachExternalIdentitySupport(view, support) {
   if (!support) return view;
   const brackets = view.brackets.map((bracket) => {
-    const decision = support.field_decisions[bracket.canonical_field];
+    const supportedField = [
+      bracket.canonical_field,
+      ...(Array.isArray(bracket.canonical_fields) ? bracket.canonical_fields : [])
+    ].find((field) => support.field_decisions[field]);
+    const decision = support.field_decisions[supportedField];
     if (!decision) return bracket;
     const registryRationale = "EXACT_EXTERNAL_IDENTITY_SUPPORT";
     const rationaleCodes = decision.action === "FILL"
@@ -189,6 +195,14 @@ function attachExternalIdentitySupport(view, support) {
   };
 }
 
+function externalIdentityReleaseForOutput(output) {
+  return Object.values(EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases)
+    .find((release) => (
+      output?.composer_version === release.output.composer_version
+        && output?.marketplace_profile_version === release.output.marketplace_profile_version
+    )) || null;
+}
+
 /**
  * Compose the read model for one stored run.
  *
@@ -211,12 +225,34 @@ export function composeResolutionView(record) {
   let fields;
   let composed;
   let composerVersion;
+  let marketplaceProfileVersion;
   let composeCorrectedTitle;
   if (record.replay_rows) {
+    const storedOutput = record.replay_rows.output;
     const replayed = replayFromRows(record.replay_rows);
     fields = replayed.fields;
     composed = replayed.composed;
-    composerVersion = record.replay_rows.output?.composer_version;
+    const externalRelease = externalIdentityReleaseForOutput(storedOutput);
+    if (externalRelease) {
+      const support = publicExternalIdentitySupport(record.external_identity_support);
+      if (!support
+          || support.registry_release.id !== externalRelease.receipt.registry_release_id
+          || support.composer_version !== storedOutput.composer_version
+          || support.marketplace_profile_version !== storedOutput.marketplace_profile_version) {
+        throw Object.assign(
+          new Error("csm_resolution_external_identity_receipt_invalid"),
+          { statusCode: 409 }
+        );
+      }
+    }
+    if (!validateCanonicalNamingReplayTrace(storedOutput, composed)) {
+      throw Object.assign(
+        new Error("csm_resolution_canonical_naming_trace_invalid"),
+        { statusCode: 409 }
+      );
+    }
+    composerVersion = storedOutput?.composer_version;
+    marketplaceProfileVersion = storedOutput?.marketplace_profile_version;
     composeCorrectedTitle = (correctedFields) =>
       composeCanonicalFieldsForStoredOutput(correctedFields, record.replay_rows.output).title;
   } else {
@@ -224,13 +260,16 @@ export function composeResolutionView(record) {
     // replay bundle. They can only be interpreted as the current contract;
     // claiming an older version without its executable row identity would be
     // an unauditable guess.
-    if (record.composer_version && record.composer_version !== THIN_COMPOSER_VERSION) {
+    fields = parseCanonicalFields(record.canonical_payload).fields;
+    composed = composeActiveCanonicalFields(fields);
+    if ((record.composer_version && record.composer_version !== composed.composer_version)
+        || (record.marketplace_profile_version
+          && record.marketplace_profile_version !== composed.marketplace_profile_version)) {
       throw Object.assign(new Error("csm_resolution_replay_rows_required"), { statusCode: 409 });
     }
-    fields = parseCanonicalFields(record.canonical_payload).fields;
-    composed = composeFromCanonicalFields(fields);
-    composerVersion = THIN_COMPOSER_VERSION;
-    composeCorrectedTitle = (correctedFields) => composeFromCanonicalFields(correctedFields).title;
+    composerVersion = composed.composer_version;
+    marketplaceProfileVersion = composed.marketplace_profile_version;
+    composeCorrectedTitle = (correctedFields) => composeActiveCanonicalFields(correctedFields).title;
   }
   return {
     view: buildCsmResolutionView({
@@ -243,6 +282,7 @@ export function composeResolutionView(record) {
     fields,
     composed,
     composer_version: composerVersion,
+    marketplace_profile_version: marketplaceProfileVersion,
     compose_corrected_title: composeCorrectedTitle
   };
 }
@@ -255,7 +295,12 @@ export async function handleResolutionViewRequest({
   if (!record) {
     throw Object.assign(new Error("csm_resolution_not_found"), { statusCode: 404 });
   }
-  const { view, composed, composer_version: composerVersion } = composeResolutionView(record);
+  const {
+    view,
+    composed,
+    composer_version: composerVersion,
+    marketplace_profile_version: marketplaceProfileVersion
+  } = composeResolutionView(record);
   const externalIdentitySupport = publicExternalIdentitySupport(record.external_identity_support);
   const publicView = attachExternalIdentitySupport(view, externalIdentitySupport);
   // If the stored title and the recomposed one disagree, the explanation does
@@ -272,6 +317,7 @@ export async function handleResolutionViewRequest({
     composer: {
       ...publicView.composer,
       composer_version: composerVersion,
+      marketplace_profile_version: marketplaceProfileVersion,
       stored_title: storedTitle || null,
       recomposed_matches_stored: !drift,
       // An operator must not be told a bracket was dropped for budget when the

@@ -83,11 +83,15 @@ const DEFAULT_FIELD_FOR_BRACKET = Object.freeze({
 });
 
 // COS-41 places Auto, RC, Patch and Relic in [Search Optimization] alongside
-// the team, so that bracket draws from two canonical fields. Showing only
-// `team` left an operator reading a title containing RC with a row that said
-// "Dodgers" -- the bracket responsible, displaying the wrong half of itself.
+// independent supported search terms and the team. The legacy singular
+// `canonical_field` remains `team` for response compatibility; the complete
+// provenance is exposed by `canonical_fields` in the exact display order.
 const EXTRA_FIELDS_FOR_BRACKET = Object.freeze({
-  search_optimization: Object.freeze(["components"])
+  search_optimization: Object.freeze(["components", "search_optimization"])
+});
+
+const SOURCE_FIELDS_FOR_BRACKET = Object.freeze({
+  search_optimization: Object.freeze(["components", "search_optimization", "team"])
 });
 
 const asArray = (value) => (Array.isArray(value) ? value : value == null || value === "" ? [] : [value]);
@@ -131,10 +135,11 @@ export function buildCsmResolutionView({
   // shown, in the composer's own position, and flagged as outside the contract.
   const composedOrder = asArray(composed.brackets);
   const extras = composedOrder.filter((b) => !contractOrder.includes(b));
-  const order = extras.length
-    ? composedOrder.filter((b) => contractOrder.includes(b) || extras.includes(b))
-        .concat(contractOrder.filter((b) => !composedOrder.includes(b)))
-    : contractOrder;
+  // Display order is a profile decision, not field importance. CNL v0.1 can
+  // therefore place canonical brackets differently from the SEM definition
+  // while still retaining the complete inspector. Show the actual projection
+  // first, then append contract fields the title did not render.
+  const order = [...new Set([...composedOrder, ...contractOrder])];
   const outsideContract = new Set(extras);
 
   const unreadable = new Set(asArray(fields.unreadable));
@@ -148,8 +153,10 @@ export function buildCsmResolutionView({
 
   const brackets = order.map((bracket) => {
     const field = fieldForBracket[bracket] || bracket;
-    const extras = (EXTRA_FIELDS_FOR_BRACKET[bracket] || []).flatMap((f) => asArray(fields[f]));
-    const raw = extras.length ? [...asArray(fields[field]), ...extras] : fields[field];
+    const canonicalFields = SOURCE_FIELDS_FOR_BRACKET[bracket]
+      || [field, ...(EXTRA_FIELDS_FOR_BRACKET[bracket] || [])];
+    const rawParts = canonicalFields.flatMap((sourceField) => asArray(fields[sourceField]));
+    const raw = canonicalFields.length > 1 ? rawParts : fields[field];
     const value = renderValue(raw);
     const empty = isEmpty(raw);
 
@@ -157,7 +164,8 @@ export function buildCsmResolutionView({
     let state = BRACKET_STATE.VALUE;
     let rationale = RATIONALE.OBSERVED;
     if (empty) {
-      if (unreadable.has(field) || unreadable.has(bracket)) {
+      if (canonicalFields.some((sourceField) => unreadable.has(sourceField))
+          || unreadable.has(bracket)) {
         state = BRACKET_STATE.INSUFFICIENT_EVIDENCE;
         rationale = RATIONALE.MODEL_REPORTED_UNREADABLE;
       } else if (withheld.has(field) || (bracket === "print_finish" && withheld.size)) {
@@ -169,7 +177,8 @@ export function buildCsmResolutionView({
         state = BRACKET_STATE.ABSENT;
         rationale = RATIONALE.NOT_OBSERVED;
       }
-    } else if (lowConfidence.has(field) || lowConfidence.has(bracket)) {
+    } else if (canonicalFields.some((sourceField) => lowConfidence.has(sourceField))
+        || lowConfidence.has(bracket)) {
       rationale = RATIONALE.MODEL_REPORTED_LOW_CONFIDENCE;
     }
 
@@ -197,6 +206,7 @@ export function buildCsmResolutionView({
       bracket,
       label: labelForCsmField(bracket) || csmFieldLabels[bracket] || bracket,
       canonical_field: field,
+      canonical_fields: Object.freeze([...canonicalFields]),
       state,
       value: state === BRACKET_STATE.VALUE ? value : "",
       rendered_text: rendered.get(bracket) ?? null,

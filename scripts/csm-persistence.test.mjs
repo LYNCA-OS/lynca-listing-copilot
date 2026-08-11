@@ -8,6 +8,7 @@ import {
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import { composeLyncaStandardName } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
 
 // The schema is the migration, not a copy of it in this file. Parsing the real
@@ -64,6 +65,80 @@ const rows = buildCsmStageRows({
   tenantId: "t1", recognitionSessionId: "s1", fields, composed,
   title: composed.title, createdAt: "2026-08-01T00:00:00Z"
 });
+
+// Active Canonical Naming is one exact executable identity: v3, its named
+// profile, and the profile's 80-character budget. A missing version must not
+// silently relabel a CNL receipt as historical v2, and a shorter ad-hoc budget
+// must not share the v0.1 profile id.
+{
+  const naming = composeLyncaStandardName(fields);
+  assert.doesNotThrow(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "cnl-valid", fields,
+    composed: naming, title: naming.title
+  }));
+
+  const missingSubjectFields = { ...structuredClone(fields), subjects: [] };
+  const missingSubject = composeLyncaStandardName(missingSubjectFields);
+  assert.equal(missingSubject.canonical_naming_publishable, false);
+  assert.equal(missingSubject.canonical_naming_failure_code,
+    "canonical_naming_mandatory_subject_identity_missing");
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "cnl-missing-subject",
+    fields: missingSubjectFields, composed: missingSubject, title: missingSubject.title
+  }), /canonical_naming_output_not_publishable/);
+
+  const wrongBudget = structuredClone(naming);
+  wrongBudget.character_budget = 60;
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "cnl-wrong-budget", fields,
+    composed: wrongBudget, title: naming.title
+  }), /canonical_naming_output_not_publishable/);
+
+  const missingPair = structuredClone(naming);
+  delete missingPair.composer_version;
+  delete missingPair.marketplace_profile_version;
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "cnl-missing-pair", fields,
+    composed: missingPair, title: naming.title
+  }), /canonical_naming_composition_contract_mismatch/);
+}
+
+// An independent marketplace search phrase is not a component and is not the
+// team. Keep the three lanes separate so replay does not turn `Young Guns`
+// into part of `Blackhawks`, while CNL can still publish the phrase.
+{
+  const youngGunsFields = {
+    ...structuredClone(fields),
+    year: "2023-24",
+    manufacturer: "Upper Deck",
+    product: "Series 2",
+    set: "",
+    subjects: ["Connor Bedard"],
+    team: "Blackhawks",
+    card_number: "451",
+    serial: "",
+    surface_color: "",
+    parallel_family: "",
+    parallel_exact: "",
+    print_finish: "",
+    components: ["RC"],
+    attributes: ["RC"],
+    search_optimization: ["Young Guns"]
+  };
+  const naming = composeLyncaStandardName(youngGunsFields);
+  const namingRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "cnl-independent-search",
+    fields: youngGunsFields, composed: naming, title: naming.title
+  });
+  assert.match(naming.title, /\bYoung Guns\b/);
+  assert.deepEqual(namingRows.output.structured_output.sem.search_optimization, [
+    "RC", "Blackhawks"
+  ]);
+  assert.deepEqual(
+    namingRows.output.structured_output.search_optimization,
+    ["Young Guns"]
+  );
+}
 assert.equal(rows.resolution.registry_release_id, THIN_REGISTRY_RELEASE_ID);
 assert.equal(rows.resolution.grammar, "NON_TCG");
 assert.equal(rows.output.marketplace, "EBAY");

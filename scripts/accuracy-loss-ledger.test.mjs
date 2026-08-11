@@ -77,6 +77,7 @@ const baselineRows = buildCsmStageRows({
   composed: {
     grammar: baseline.grammar,
     brackets: baseline.brackets,
+    bracket_text: baseline.bracket_text,
     dropped: baseline.dropped_brackets,
     suppressed: baseline.suppressed_brackets,
     restored: baseline.restored_brackets,
@@ -84,7 +85,11 @@ const baselineRows = buildCsmStageRows({
     input_empty_fields: baseline.input_empty_fields,
     normalization_reasons: baseline.normalization_reasons,
     character_budget: baseline.character_budget,
-    length: baseline.length
+    length: baseline.length,
+    composer_version: baseline.composer_version,
+    marketplace_profile_version: baseline.marketplace_profile_version,
+    canonical_naming_trace: baseline.canonical_naming_trace,
+    canonical_naming_publishable: baseline.canonical_naming_publishable
   },
   title: baseline.title
 });
@@ -130,10 +135,11 @@ assert.deepEqual(fieldLedger.find(({ field }) => field === "print_finish").reaso
   ["BASE_APPEARANCE_NOT_PARALLEL", "CSM_ADMISSION_REJECTED", "DESCRIBES_SURFACE_NOT_PARALLEL"]);
 assert.equal(ledger.stages.composed_bracket_ledger.source_sha256,
   ledger.stages.admitted_canonical_fields.sha256);
-assert.ok(ledger.stages.composed_bracket_ledger.reason_codes.includes("MARKETPLACE_PROFILE_SUPPRESSED"));
+assert.ok(!ledger.stages.composed_bracket_ledger.reason_codes.includes("MARKETPLACE_PROFILE_SUPPRESSED"),
+  "the active LYNCA profile must not claim suppression when every selected token fits");
 assert.deepEqual(ledger.stages.composed_bracket_ledger.suppressed_by_profile,
-  ["card_number", "search_optimization"],
-  "only populated values actually removed by the profile count as suppression");
+  [],
+  "Card Number and in-budget commercial features remain visible under the active profile");
 assert.equal(ledger.stages.final_title.source_sha256, ledger.stages.composed_bracket_ledger.sha256);
 assert.equal(ledger.stages.final_title.sha256, sha256(baseline.title));
 assert.equal(ledger.ledger_sha256, accuracyLedgerSha256({
@@ -271,7 +277,7 @@ const emptySuppressionLedger = buildAccuracyLossLedger({
   result: emptySuppressionResult
 });
 assert.deepEqual(emptySuppressionLedger.stages.composed_bracket_ledger.profile_suppression_policy,
-  ["card_number", "search_optimization"]);
+  []);
 assert.deepEqual(emptySuppressionLedger.stages.composed_bracket_ledger.suppressed_by_profile, []);
 assert.ok(!emptySuppressionLedger.stages.composed_bracket_ledger.reason_codes
   .includes("MARKETPLACE_PROFILE_SUPPRESSED"));

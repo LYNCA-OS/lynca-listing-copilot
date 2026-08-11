@@ -7,6 +7,7 @@ import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 import {
   materializeWriterJourneySources,
   verifiedExactParitySourceRows,
+  verifiedProductionAssetSourceRows,
   WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
   WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS
 } from "./materialize-writer-journey-source.mjs";
@@ -27,19 +28,58 @@ const fetchImpl = async (url, init = {}) => {
   });
 };
 const sha256 = createHash("sha256").update(jpeg).digest("hex");
-const cases = ["NON_TCG", "TCG"].map((caseId) => ({
-  case_id: caseId,
-  expected_grammar: caseId,
-  source_feedback_id: `safe-${caseId.toLowerCase()}`,
-  evaluation_cohort: "INTERNAL_REVIEWED_GT",
-  hash_provenance: "TEST_EXACT_BYTES",
+const testStandardContract = {
+  case_id: "NON_TCG",
+  expected_grammar: "NON_TCG",
+  source_kind: "PRODUCTION_ASSET",
+  source_record_id: "asset_test_standard",
+  source_asset_id: "asset_test_standard",
+  evaluation_cohort: "PRODUCTION_LOW_REASONING_VERIFIED",
+  hash_provenance: "TEST_PRODUCTION_ASSET_EXACT_VERIFICATION",
+  images: ["front", "back"].map((side, index) => ({
+    image_id: `standard-${side}`,
+    storage_role: `image_${index + 1}_original`,
+    role: `${side}_original`,
+    content_type: "image/jpeg",
+    bytes: jpeg.length,
+    width: 10 + index,
+    height: 20 + index,
+    content_sha256: sha256
+  }))
+};
+const standardRows = testStandardContract.images.map((image, index) => ({
+  object_path: `verified/standard/${index + 1}.jpg`,
+  bucket: "listing-card-images",
+  asset_id: testStandardContract.source_asset_id,
+  image_id: image.image_id,
+  storage_role: image.storage_role,
+  content_type: image.content_type,
+  size: image.bytes,
+  width: image.width,
+  height: image.height,
+  object_verified: true,
+  content_hash_verified: true,
+  content_sha256: image.content_sha256
+}));
+const verifiedStandardCase = verifiedProductionAssetSourceRows(standardRows, {
+  contract: testStandardContract,
+  errorCode: "writer_journey_standard_source_invalid"
+});
+const tcgContract = WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1];
+const testTcgCase = {
+  case_id: "TCG",
+  expected_grammar: "TCG",
+  source_feedback_id: tcgContract.source_feedback_id,
+  evaluation_cohort: tcgContract.evaluation_cohort,
+  hash_provenance: tcgContract.hash_provenance,
   images: ["front", "back"].map((side) => ({
     bucket: "listing-feedback-images",
-    object_path: `feedback/safe ${caseId.toLowerCase()}/${side}.jpg`,
+    object_path: `feedback/safe-tcg/${side}.jpg`,
     role: `${side}_original`,
     content_sha256: sha256
   }))
-}));
+};
+const cases = [testStandardContract, testTcgCase];
 const sandboxDir = await mkdtemp(path.join(os.tmpdir(), "writer-journey-source-"));
 const freshOutDir = (label = "attempt") => mkdtemp(path.join(sandboxDir, `${label}-`));
 const productionEnv = {
@@ -50,12 +90,14 @@ const runAttempt = async ({
   env = productionEnv,
   outDir = null,
   cases: attemptCases = cases,
+  standardCase = verifiedStandardCase,
   parityCase = null,
   fetchImpl: attemptFetch = fetchImpl
 } = {}) => materializeWriterJourneySources({
   env,
   outDir: outDir || await freshOutDir(),
   cases: attemptCases,
+  standardCase,
   parityCase,
   fetchImpl: attemptFetch
 });
@@ -66,22 +108,54 @@ try {
     "the manifest grammar must follow the resolution-view contract, not an internal SEM enum");
   assert.equal(buildCsmResolutionView({ composed: { grammar: "tcg" } }).grammar.value,
     WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1].expected_grammar);
-  assert.deepEqual(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.map((source) => ({
-    case_id: source.case_id,
-    expected_grammar: source.expected_grammar,
-    source_feedback_id: source.source_feedback_id
-  })), [{
+  const frozenStandard = WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[0];
+  assert.deepEqual({
+    case_id: frozenStandard.case_id,
+    expected_grammar: frozenStandard.expected_grammar,
+    source_kind: frozenStandard.source_kind,
+    source_record_id: frozenStandard.source_record_id,
+    source_asset_id: frozenStandard.source_asset_id,
+    evaluation_cohort: frozenStandard.evaluation_cohort,
+    hash_provenance: frozenStandard.hash_provenance
+  }, {
     case_id: "NON_TCG",
     expected_grammar: "NON_TCG",
-    source_feedback_id: "007edfc1-e52d-4a9e-ab8f-3955e6500620"
+    source_kind: "PRODUCTION_ASSET",
+    source_record_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+    source_asset_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+    evaluation_cohort: "PRODUCTION_LOW_REASONING_VERIFIED",
+    hash_provenance: "2026-08-11_PRODUCTION_ASSET_EXACT_VERIFICATION"
+  });
+  assert.deepEqual(frozenStandard.images, [{
+    image_id: "f55f120f-09e0-4c2f-9166-8bcf7310b4d0",
+    storage_role: "image_1_original",
+    role: "front_original",
+    content_type: "image/webp",
+    bytes: 237200,
+    width: 910,
+    height: 1255,
+    content_sha256: "161f0d97df619f8d34b2453551567a0473d3e477c3e0ec9295029fbce8c59e44"
+  }, {
+    image_id: "cd43a047-0472-441e-bc4d-00e53b04634f",
+    storage_role: "image_2_original",
+    role: "back_original",
+    content_type: "image/webp",
+    bytes: 180260,
+    width: 922,
+    height: 1258,
+    content_sha256: "cef46b5d761d2d20f5cd21d611cab8d8037721bcdb4ae8c1a0d4441439a6fdc3"
+  }]);
+  assert.deepEqual({
+    case_id: tcgContract.case_id,
+    expected_grammar: tcgContract.expected_grammar,
+    source_feedback_id: tcgContract.source_feedback_id
   }, {
     case_id: "TCG",
     expected_grammar: "TCG",
     source_feedback_id: "6356cb8c-664a-4c9e-b909-63274390f4e1"
-  }]);
-  for (const contract of WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS) {
-    assert.equal(Object.keys(contract.image_sha256).length, 2);
-    for (const hash of Object.values(contract.image_sha256)) assert.match(hash, /^[0-9a-f]{64}$/);
+  });
+  for (const hash of frozenStandard.images.map((image) => image.content_sha256)) {
+    assert.match(hash, /^[0-9a-f]{64}$/);
   }
   assert.deepEqual(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1].image_sha256, {
     "6356cb8c-664a-4c9e-b909-63274390f4e1_front":
@@ -134,6 +208,69 @@ try {
     assert.throws(() => verifiedExactParitySourceRows(invalidRows),
       /writer_journey_parity_source_invalid/);
   }
+  assert.equal(verifiedStandardCase.source_asset_id, testStandardContract.source_asset_id);
+  assert.deepEqual(verifiedStandardCase.images.map((image) => ({
+    image_id: image.image_id,
+    storage_role: image.storage_role,
+    role: image.role,
+    content_sha256: image.content_sha256,
+    object_verified: image.object_verified,
+    content_hash_verified: image.content_hash_verified
+  })), testStandardContract.images.map((image) => ({
+    image_id: image.image_id,
+    storage_role: image.storage_role,
+    role: image.role,
+    content_sha256: image.content_sha256,
+    object_verified: true,
+    content_hash_verified: true
+  })));
+  for (const mutate of [
+    (rows) => rows.pop(),
+    (rows) => { rows[1].image_id = rows[0].image_id; },
+    (rows) => { rows[0].asset_id = "asset_wrong"; },
+    (rows) => { rows[0].storage_role = "image_9_original"; },
+    (rows) => { rows[0].content_type = "image/png"; },
+    (rows) => { rows[0].size += 1; },
+    (rows) => { rows[0].width += 1; },
+    (rows) => { rows[0].height += 1; },
+    (rows) => { rows[0].content_sha256 = "0".repeat(64); },
+    (rows) => { rows[0].object_verified = false; },
+    (rows) => { rows[0].content_hash_verified = false; }
+  ]) {
+    const invalidRows = structuredClone(standardRows);
+    mutate(invalidRows);
+    assert.throws(() => verifiedProductionAssetSourceRows(invalidRows, {
+      contract: testStandardContract,
+      errorCode: "writer_journey_standard_source_invalid"
+    }), /writer_journey_standard_source_invalid/);
+  }
+  let standardRead = null;
+  await assert.rejects(
+    materializeWriterJourneySources({
+      env: productionEnv,
+      outDir: await freshOutDir("invalid-live-standard"),
+      cases,
+      standardCase: undefined,
+      parityCase: null,
+      fetchImpl: async (url, init = {}) => {
+        standardRead = { url: String(url), init };
+        return new Response(JSON.stringify([
+          { ...standardRows[0], content_hash_verified: false }, standardRows[1]
+        ]), { status: 200, headers: { "content-type": "application/json" } });
+      }
+    }),
+    /writer_journey_standard_source_invalid/
+  );
+  const standardReadUrl = new URL(standardRead.url);
+  assert.equal(standardReadUrl.pathname, "/rest/v1/listing_image_verifications");
+  assert.equal(standardReadUrl.searchParams.get("asset_id"),
+    `eq.${testStandardContract.source_asset_id}`);
+  assert.equal(standardReadUrl.searchParams.get("image_id"),
+    `in.(${testStandardContract.images.map((image) => image.image_id).join(",")})`);
+  assert.equal(standardReadUrl.searchParams.get("limit"), "3");
+  assert.equal(standardRead.init.headers.apikey, productionEnv.SUPABASE_SERVICE_ROLE_KEY);
+  assert.equal(standardRead.init.headers.authorization, undefined);
+  assert.equal(standardRead.init.redirect, "error");
   let parityRead = null;
   await assert.rejects(
     materializeWriterJourneySources({
@@ -162,6 +299,8 @@ try {
   const materializerSource = await readFile(new URL("./materialize-writer-journey-source.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(materializerSource, /error:\s*String\(error/,
     "CLI failures must not echo signed URLs, tokens, or service secrets");
+  assert.doesNotMatch(materializerSource, /production-standard-p0-verifier/,
+    "verifier-only expected identity must not enter source materialization");
   const outDir = await freshOutDir("success");
   await chmod(outDir, 0o755);
   assert.equal((await stat(outDir)).mode & 0o777, 0o755,
@@ -174,6 +313,19 @@ try {
   assert.equal(result.accuracy_claim, null);
   assert.deepEqual(result.cases.map((entry) => entry.expected_grammar), ["NON_TCG", "TCG"]);
   assert.deepEqual(result.cases.map((entry) => entry.image_count), [2, 2]);
+  assert.deepEqual({
+    source_kind: result.cases[0].source_kind,
+    source_record_id: result.cases[0].source_record_id,
+    source_asset_id: result.cases[0].source_asset_id
+  }, {
+    source_kind: testStandardContract.source_kind,
+    source_record_id: testStandardContract.source_record_id,
+    source_asset_id: testStandardContract.source_asset_id
+  });
+  assert.equal(Object.hasOwn(result.cases[0], "source_feedback_id"), false);
+  assert.doesNotMatch(JSON.stringify(result),
+    /expected_card_number|expected_serial|card_number|serial/,
+    "verifier-only expected values must not enter the materialized manifest");
   assert.equal((await stat(outDir)).mode & 0o777, 0o700,
     "a pre-existing broad output directory must be tightened");
   for (const entry of result.cases) {
@@ -186,7 +338,7 @@ try {
     }
   }
   assert.equal(calls.length, 8);
-  assert.match(calls[0].url, /safe%20non_tcg\/front\.jpg$/);
+  assert.match(calls[0].url, /verified\/standard\/1\.jpg$/);
   assert.equal(calls[0].init.headers.apikey, "sb_secret_service-test");
   assert.equal(calls[0].init.headers.authorization, undefined);
   assert.equal(calls[0].init.redirect, "error",
@@ -229,10 +381,13 @@ try {
   );
   await assert.rejects(
     runAttempt({
-      cases: [{
-        ...cases[0],
-        images: [{ ...cases[0].images[0], object_path: "../escape.jpg" }, cases[0].images[1]]
-      }, cases[1]],
+      standardCase: {
+        ...verifiedStandardCase,
+        images: [
+          { ...verifiedStandardCase.images[0], object_path: "../escape.jpg" },
+          verifiedStandardCase.images[1]
+        ]
+      },
     }),
     /storage_object_path_invalid/
   );
@@ -378,8 +533,18 @@ try {
     runAttempt({
       cases: [{
         ...cases[0],
-        images: [{ ...cases[0].images[0], content_sha256: "0".repeat(64) }, cases[0].images[1]]
+        images: [
+          { ...cases[0].images[0], content_sha256: "0".repeat(64) },
+          cases[0].images[1]
+        ]
       }, cases[1]],
+      standardCase: {
+        ...verifiedStandardCase,
+        images: [
+          { ...verifiedStandardCase.images[0], content_sha256: "0".repeat(64) },
+          verifiedStandardCase.images[1]
+        ]
+      },
     }),
     /writer_journey_source_hash_mismatch/
   );

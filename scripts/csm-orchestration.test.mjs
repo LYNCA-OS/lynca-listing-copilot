@@ -24,6 +24,7 @@ import {
   computeCsmPacketHashes,
   THIN_COMPOSER_VERSION_V1
 } from "../lib/listing/thin/csm-persistence.mjs";
+import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
 import { patchSupabaseRow } from "../lib/supabase-rest.mjs";
 
 const enabledEnv = {
@@ -532,6 +533,61 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   assert.equal(normalizedPatch.csm_owner_versions.served_model, prepared.served_model);
   assert.equal(normalizedPatch.csm_owner_versions.reasoning_effort, "low");
   assert.equal(normalizedPatch.csm_owner_versions.provider_response_status, "completed");
+}
+
+// Recovery is not allowed to persist a self-consistent v3 checkpoint that the
+// Canonical Naming layer marked unpublishable. Re-sealing the hashes and trace
+// must not turn an over-budget required token into an eligible durable write.
+{
+  const prepared = await prepareCanonicalListingPath({
+    tenantId: "tenant-1", recognitionSessionId: "session-v3-overbudget-resume",
+    imageUrls: ["https://example.test/front.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    callProvider: providerFor({
+      ...common, grammar: "standard", language: "", manufacturer: "Topps",
+      product: "Chrome", set: "", subjects: ["Victor Wembanyama"],
+      descriptive_rarity: "SSP", card_number: "221"
+    })
+  });
+  const invalid = structuredClone(prepared);
+  invalid.csm_rows.resolved.find((row) => row.bracket === "card_number").canonical_value =
+    "X".repeat(80);
+  const invalidComposition = replayFromRows(invalid.csm_rows).composed;
+  assert.equal(invalidComposition.canonical_naming_publishable, false);
+  invalid.title = "";
+  invalid.csm_rows.output.title = "";
+  invalid.csm_rows.output.included_brackets = invalidComposition.brackets;
+  invalid.csm_rows.output.dropped_trace = {
+    dropped_for_budget: invalidComposition.dropped,
+    suppressed_by_profile: invalidComposition.suppressed,
+    restored: invalidComposition.restored,
+    truncated: invalidComposition.truncated,
+    empty_at_input: invalidComposition.input_empty_fields,
+    normalization_reason_codes: invalidComposition.normalization_reasons,
+    character_budget: invalidComposition.character_budget,
+    rendered_length: invalidComposition.length,
+    canonical_naming: invalidComposition.canonical_naming_trace
+  };
+  invalid.csm_rows.resolution.recognition_packet_sha256 =
+    computeCsmPacketHashes(invalid.csm_rows).csm_recognition_packet_sha256;
+  invalid.csm_rows.output.resolution_packet_sha256 =
+    computeCsmPacketHashes(invalid.csm_rows).csm_resolution_packet_sha256;
+  invalid.csm_rows.session_hashes = computeCsmPacketHashes(invalid.csm_rows);
+
+  let writerCalls = 0;
+  await assert.rejects(
+    persistPreparedCanonicalListingPath({
+      tenantId: "tenant-1",
+      recognitionSessionId: "session-v3-overbudget-resume",
+      prepared: invalid,
+      writeRows: async () => {
+        writerCalls += 1;
+        return { ok: true, atomic: true, session: { saved: true }, written: {} };
+      }
+    }),
+    (error) => error.code === "csm_prepared_result_invalid" && error.statusCode === 409
+  );
+  assert.equal(writerCalls, 0, "unpublishable v3 recovery must fail before storage");
 }
 
 // A settled checkpoint owns its historical profile and adapter identity. A

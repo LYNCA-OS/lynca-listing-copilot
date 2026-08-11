@@ -90,17 +90,25 @@ const positive = card({
   assert.ok(!candidate.normalization_reasons.includes("print_finish:exact_parallel_color_compacted"));
 }
 
-// The real runtime finisher exposes the ablation while returning byte-identical
-// canonical fields on both arms.
+// The legacy Composer exposes its exact ablation through the pure v2 composer
+// above. The active Standard router is CNL v0.1 and must not be downgraded by
+// a retired experiment flag.
 {
   const payload = JSON.stringify(positive);
   const baseline = finishCanonicalTitle(payload, {
     exactParallelColorCompaction: false
   });
-  const candidate = finishCanonicalTitle(payload);
-  assert.notEqual(candidate.title, baseline.title);
+  const candidate = finishCanonicalTitle(payload, {
+    exactParallelColorCompaction: true
+  });
+  const active = finishCanonicalTitle(payload);
   assert.equal(JSON.stringify(candidate.fields), JSON.stringify(baseline.fields));
-  assert.equal(JSON.stringify(candidate.fields), JSON.stringify(finishCanonicalTitle(payload).fields));
+  assert.equal(JSON.stringify(active.fields), JSON.stringify(candidate.fields));
+  assert.equal(candidate.title, baseline.title);
+  assert.equal(candidate.composer_version, "thin-marketplace-composer-v3");
+  assert.equal(baseline.composer_version, "thin-marketplace-composer-v3");
+  assert.equal(active.composer_version, "thin-marketplace-composer-v3");
+  assert.equal(active.marketplace_profile_version, "lynca-standard-name-v0.1");
 }
 
 process.stdout.write("exact parallel color compaction: ok\n");

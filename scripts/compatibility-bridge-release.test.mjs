@@ -25,6 +25,10 @@ import {
   verifyOrdinaryRollbackLineage,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
+import {
+  WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS,
+  WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
+} from "./materialize-writer-journey-source.mjs";
 
 const gitSha = "a".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
@@ -345,22 +349,42 @@ const sourceManifest = {
   schema_version: "writer-journey-cases-v3",
   evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
   accuracy_claim: null,
-  cases: [
-    { case_id: "NON_TCG", expected_grammar: "NON_TCG" },
-    { case_id: "TCG", expected_grammar: "TCG" }
-  ].map((entry) => ({
-    ...entry,
-    source_feedback_id: `feedback-${entry.case_id}`,
-    evaluation_cohort: "INTERNAL_REVIEWED_GT",
-    hash_provenance: "PRODUCTION_STORAGE_EXACT_BYTES",
+  cases: [{
+    case_id: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.case_id,
+    expected_grammar: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.expected_grammar,
+    source_kind: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_kind,
+    source_record_id: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_record_id,
+    source_asset_id: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_asset_id,
+    evaluation_cohort: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.evaluation_cohort,
+    hash_provenance: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.hash_provenance,
     image_count: 2,
-    files: ["front_original", "back_original"].map((role, index) => ({
-      path: `/tmp/${entry.case_id}-${index}.jpg`,
-      role,
-      content_type: "image/jpeg",
-      content_sha256: String(index + 1).repeat(64)
+    files: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images.map((image, index) => ({
+      path: `/tmp/NON_TCG-${index}.webp`,
+      role: image.role,
+      bytes: image.bytes,
+      content_type: image.content_type,
+      content_sha256: image.content_sha256
     }))
-  })),
+  }, (() => {
+    const contract = WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.find(
+      (entry) => entry.case_id === "TCG"
+    );
+    return {
+      case_id: contract.case_id,
+      expected_grammar: contract.expected_grammar,
+      source_feedback_id: contract.source_feedback_id,
+      evaluation_cohort: contract.evaluation_cohort,
+      hash_provenance: contract.hash_provenance,
+      image_count: 2,
+      files: ["front", "back"].map((side, index) => ({
+        path: `/tmp/TCG-${index}.jpg`,
+        role: `${side}_original`,
+        bytes: 100 + index,
+        content_type: "image/jpeg",
+        content_sha256: contract.image_sha256[`${contract.source_feedback_id}_${side}`]
+      }))
+    };
+  })()],
   parity_case: { case_id: "EXTERNAL_IDENTITY" }
 };
 const reduced = buildCompatibilityBridgeManifest({
@@ -378,6 +402,27 @@ assert.equal(reduced.git_sha, gitSha);
 assert.deepEqual(reduced.cases.map((entry) => entry.case_id), ["NON_TCG", "TCG"]);
 assert.equal(Object.hasOwn(reduced, "parity_case"), false);
 assert.equal(JSON.stringify(reduced).includes("EXTERNAL_IDENTITY"), false);
+assert.equal(reduced.cases[0].source_kind, "PRODUCTION_ASSET");
+assert.equal(reduced.cases[0].source_asset_id,
+  WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_asset_id);
+for (const mutation of [
+  { source_kind: "SUPABASE_FEEDBACK" },
+  { source_record_id: "asset-drift" },
+  { source_asset_id: "asset-drift" },
+  { expected_card_number: "251" },
+  { files: [
+    { ...sourceManifest.cases[0].files[0], expected_serial: "50/50" },
+    sourceManifest.cases[0].files[1]
+  ] }
+]) {
+  assert.throws(() => buildCompatibilityBridgeManifest({
+    selection: historicalBridgeSelection,
+    sourceManifest: {
+      ...sourceManifest,
+      cases: [{ ...sourceManifest.cases[0], ...mutation }, sourceManifest.cases[1]]
+    }
+  }), /compatibility_bridge_source_case_invalid/);
+}
 assert.throws(() => buildCompatibilityBridgeManifest({
   selection: ordinary,
   sourceManifest

@@ -10,7 +10,7 @@ import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import {
   buildCsmStageRows, CSM_STAGE_CONTRACT_VERSION, computeCsmPacketHashes,
-  EBAY_PROFILE_VERSION, THIN_COMPOSER_VERSION, THIN_RESOLVER_VERSION
+  EBAY_PROFILE_VERSION, THIN_COMPOSER_VERSION_V2, THIN_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
 
 const root = new URL("..", import.meta.url).pathname;
@@ -159,7 +159,7 @@ function sessionPatch(rows) {
       output_tokens: 120,
       total_tokens: 5120,
       resolver: THIN_RESOLVER_VERSION,
-      composer: THIN_COMPOSER_VERSION,
+      composer: THIN_COMPOSER_VERSION_V2,
       marketplace_profile: EBAY_PROFILE_VERSION
     },
     csm_recognition_stage_status: "COMPLETE",

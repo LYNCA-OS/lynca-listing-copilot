@@ -692,7 +692,7 @@ const canonicalImages = () => ({
     "contract_version", "recognition_session_id", "resolver_version"
   ]);
   assert.deepEqual(Object.keys(result.csm_rows.output).sort(), [
-    "composer_version", "contract_version"
+    "composer_version", "contract_version", "marketplace_profile_version"
   ]);
   for (const hidden of [...originalSha256, originalSetSha256]) {
     assert.doesNotMatch(JSON.stringify(result), new RegExp(hidden),
