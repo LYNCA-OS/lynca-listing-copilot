@@ -29,6 +29,10 @@ import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
+  ADMIN_TEST_DATASET_DISPOSITION,
+  FEEDBACK_DATASET_DISPOSITION
+} from "../lib/listing/feedback/feedback-capture.mjs";
+import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT,
   EXTERNAL_IDENTITY_SUPPORT_PACK
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
@@ -123,7 +127,7 @@ const verifierErrorCodes = Object.freeze({
   LARGE_PRESPEND_GATE_FAILED: "LARGE_PRESPEND_GATE_FAILED",
   LARGE_RELAY_CONTRACT_MISMATCH: "LARGE_RELAY_CONTRACT_MISMATCH",
   LARGE_RESPONSE_CONTRACT_MISMATCH: "LARGE_RESPONSE_CONTRACT_MISMATCH",
-  LARGE_FEEDBACK_POLICY_MISMATCH: "LARGE_FEEDBACK_POLICY_MISMATCH"
+  FEEDBACK_POLICY_MISMATCH: "FEEDBACK_POLICY_MISMATCH"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
 const liveFailureCaseIds = new Set([
@@ -203,6 +207,84 @@ function healthRecognitionTransportContractMatches(runtime) {
 
 function healthExternalIdentityContractMatches(runtime) {
   return stableJson(runtime?.external_identity) === stableJson(EXTERNAL_IDENTITY_RELEASE_CONTRACT);
+}
+
+function writerJourneyHealthReceipt({
+  httpOk = false,
+  health = null,
+  expectedSha = "",
+  expectedOrigin = "",
+  responseUrl = ""
+} = {}) {
+  const expectedHealthUrl = `${expectedOrigin}/api/health`;
+  let observedOrigin = "UNEXPECTED";
+  try {
+    const observedUrl = new URL(responseUrl);
+    if (observedUrl.href === expectedHealthUrl) observedOrigin = observedUrl.origin;
+  } catch {
+    // Keep the sanitized sentinel.
+  }
+  const receipt = {
+    http_ok: httpOk === true,
+    ready: health?.ready === true,
+    active_path: health?.active_path,
+    model: health?.model,
+    reasoning_effort: health?.reasoning_effort,
+    deployment_origin: observedOrigin,
+    deployment_identity: `${observedOrigin}#${expectedSha}`,
+    deployment_git_commit_sha: health?.deployment?.git_commit_sha,
+    deployment_environment: health?.deployment?.environment,
+    runtime_contract_valid: health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
+      && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+      && healthRecognitionTransportContractMatches(health?.runtime)
+      && healthExternalIdentityContractMatches(health?.runtime)
+      && health?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
+      && health?.runtime?.retired_capabilities_disabled === true
+  };
+  requireInvariant(receipt.http_ok
+    && receipt.ready
+    && receipt.active_path === "CSM_THIN_DIRECT"
+    && receipt.model === CSM_ACTIVE_MODEL_PROFILE.model
+    && receipt.reasoning_effort === CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
+    && expectedOrigin === productionOrigin
+    && responseUrl === `${productionOrigin}/api/health`
+    && receipt.deployment_origin === productionOrigin
+    && receipt.deployment_identity === `${productionOrigin}#${expectedSha}`
+    && receipt.deployment_git_commit_sha === expectedSha
+    && receipt.deployment_environment === "production"
+    && receipt.runtime_contract_valid,
+  verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
+  return Object.freeze(receipt);
+}
+
+function feedbackPolicyReceipt({ httpOk = false, payload = null } = {}) {
+  const receipt = {
+    feedback_http_ok: httpOk === true,
+    feedback_saved: payload?.v4_persistence?.transaction?.saved === true,
+    feedback_data_use: payload?.feedback_data_use === ADMIN_TEST_DATASET_DISPOSITION
+      ? ADMIN_TEST_DATASET_DISPOSITION
+      : "UNEXPECTED",
+    dataset_disposition: payload?.dataset_disposition === FEEDBACK_DATASET_DISPOSITION
+      ? FEEDBACK_DATASET_DISPOSITION
+      : "UNEXPECTED",
+    durable_dataset_disposition:
+      payload?.v4_persistence?.transaction?.transaction?.dataset_disposition
+        === FEEDBACK_DATASET_DISPOSITION
+        ? FEEDBACK_DATASET_DISPOSITION
+        : "UNEXPECTED",
+    training_eligible: payload?.training_eligible === false ? false : null,
+    production_promotion_eligible: payload?.production_promotion_eligible === false ? false : null
+  };
+  return Object.freeze({
+    ...receipt,
+    feedback_policy_passed: receipt.feedback_http_ok
+      && receipt.feedback_saved
+      && receipt.feedback_data_use === ADMIN_TEST_DATASET_DISPOSITION
+      && receipt.dataset_disposition === FEEDBACK_DATASET_DISPOSITION
+      && receipt.durable_dataset_disposition === FEEDBACK_DATASET_DISPOSITION
+      && receipt.training_eligible === false
+      && receipt.production_promotion_eligible === false
+  });
 }
 
 function decodeBase64UrlJson(value, code) {
@@ -465,15 +547,19 @@ function warmupResponseReceipt(requests) {
 function recognitionPostSeal(recognitionPosts, evidenceCases) {
   const continued = recognitionPosts.filter((entry) => entry.continued === true);
   const aborted = recognitionPosts.filter((entry) => entry.aborted_before_network === true);
-  requireInvariant(recognitionPosts.length === 5
-    && continued.length === 4
+  const expectedContinued = evidenceCases.length;
+  requireInvariant(expectedContinued >= 1
+    && new Set(evidenceCases.map((entry) => entry.case_id)).size === expectedContinued
+    && recognitionPosts.length === expectedContinued + 1
+    && continued.length === expectedContinued
     && aborted.length === 1
     && continued.length + aborted.length === recognitionPosts.length
     && recognitionPosts.every((entry) => (
       entry.continued === !entry.aborted_before_network
     ))
-    && new Set(continued.map((entry) => entry.recognition_session_id)).size === 4
-    && new Set(continued.map((entry) => entry.provider_response_id_sha256)).size === 4
+    && new Set(continued.map((entry) => entry.recognition_session_id)).size === expectedContinued
+    && new Set(continued.map((entry) => entry.provider_response_id_sha256)).size
+      === expectedContinued
     && continued.every((entry) => (
       entry.response_observed === true
       && entry.response_status === 200
@@ -492,8 +578,8 @@ function recognitionPostSeal(recognitionPosts, evidenceCases) {
     )).length === 1),
   verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
   return Object.freeze({
-    recognition_post_count: 5,
-    network_continued_provider_requests: 4,
+    recognition_post_count: recognitionPosts.length,
+    network_continued_provider_requests: continued.length,
     extra_provider_recovery_requests: 0
   });
 }
@@ -853,13 +939,6 @@ function cleanBaseUrl(value) {
     throw verifierFailure(verifierErrorCodes.GENERIC);
   }
   return productionOrigin;
-}
-
-function deploymentId(health = {}) {
-  return health?.deployment?.deployment_id
-    || health?.deployment?.git_commit_sha
-    || health?.deployment_id
-    || null;
 }
 
 function responseRequestId(response) {
@@ -1589,7 +1668,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
     compatibility_bridge_marker: parityRequired ? null : COMPATIBILITY_BRIDGE_MARKER,
     base_url: baseUrl,
     started_at: new Date().toISOString(),
-    deployment_id: null,
+    deployment_origin: null,
+    deployment_identity: null,
     request_ids: [],
     asset_ids: [],
     batch_ids: [],
@@ -1597,6 +1677,18 @@ test("production writer journey verifies Glass Box and staged large-image transp
     session_ids: [],
     cases: [],
     stages: {}
+  };
+  const feedbackPolicyChecks = [];
+  const requireFeedbackPolicy = ({ caseId, httpOk, payload }) => {
+    const receipt = feedbackPolicyReceipt({ httpOk, payload });
+    feedbackPolicyChecks.push(Object.freeze({ case_id: caseId, ...receipt }));
+    evidence.stages.feedback_policy = {
+      checked_count: feedbackPolicyChecks.length,
+      last_check: feedbackPolicyChecks.at(-1)
+    };
+    requireInvariant(receipt.feedback_policy_passed,
+      verifierErrorCodes.FEEDBACK_POLICY_MISMATCH);
+    return receipt;
   };
   const ids = {
     asset_id: new Set(),
@@ -1651,34 +1743,31 @@ test("production writer journey verifies Glass Box and staged large-image transp
 
   try {
     const healthResponse = await fetch(healthUrl, {
+      redirect: "error",
       headers: {
         accept: "application/json",
         ...(initialCookieHeader ? { cookie: initialCookieHeader } : {})
       }
     });
     const health = await healthResponse.json();
-    expect(healthResponse.ok, "production health must be reachable").toBeTruthy();
-    expect(health?.deployment?.environment,
-      "ordinary Preview deployments are not production-target candidates").toBe("production");
-    expect(health?.deployment?.git_commit_sha, "production target must match the release under test")
-      .toBe(expectedSha);
-    requireInvariant(health?.ready === true
-      && health?.active_path === "CSM_THIN_DIRECT"
-      && health?.model === CSM_ACTIVE_MODEL_PROFILE.model
-      && health?.reasoning_effort === CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
-      && health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
-      && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
-      && healthRecognitionTransportContractMatches(health?.runtime)
-      && healthExternalIdentityContractMatches(health?.runtime)
-      && health?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
-      && health?.runtime?.retired_capabilities_disabled === true,
-    verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
-    evidence.deployment_id = deploymentId(health);
-    evidence.deployment_git_commit_sha = health.deployment.git_commit_sha;
-    evidence.deployment_environment = health.deployment.environment;
+    const initialHealthReceipt = writerJourneyHealthReceipt({
+      httpOk: healthResponse.ok,
+      health,
+      expectedSha,
+      expectedOrigin: productionOrigin,
+      responseUrl: healthResponse.url
+    });
+    evidence.deployment_origin = initialHealthReceipt.deployment_origin;
+    evidence.deployment_identity = initialHealthReceipt.deployment_identity;
+    evidence.deployment_git_commit_sha = initialHealthReceipt.deployment_git_commit_sha;
+    evidence.deployment_environment = initialHealthReceipt.deployment_environment;
     const healthRequestId = healthResponse.headers.get("x-request-id") || healthResponse.headers.get("x-vercel-id");
     if (healthRequestId) requestIds.add(healthRequestId);
-    evidence.stages.health = { passed: true, http_status: healthResponse.status };
+    evidence.stages.health = {
+      passed: true,
+      http_status: healthResponse.status,
+      ...initialHealthReceipt
+    };
 
     // Login is isolated from uploaded artifacts so credentials never enter a trace.
     failurePhase = "LOGIN";
@@ -2051,6 +2140,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
     const uploadInput = journeyPage.getByTestId("image-upload-input");
     await expect(journeyPage.getByTestId("start-recognition")).toBeHidden();
 
+    failureCaseId = null;
+    failurePhase = "OWNER_AUTHORIZATION";
+    const ownerResponse = await journeyContext.request.get(`${baseUrl}/api/session`, {
+      headers: { accept: "application/json" }
+    });
+    const ownerSession = await ownerResponse.json();
+    requireInvariant(ownerResponse.ok()
+      && ownerSession?.authenticated === true
+      && ownerSession?.role === "OWNER",
+    verifierErrorCodes.LARGE_OWNER_REQUIRED);
+
     for (const sourceCase of sourceCases) {
       failureCaseId = sourceCase.case_id;
       failurePhase = "RECOGNITION_RESPONSE";
@@ -2211,9 +2311,11 @@ test("production writer journey verifies Glass Box and staged large-image transp
         recognitionSessionId: recognitionPayload.recognition_session_id,
         expectedTitleSha256: panelTitleSha256
       });
-      expect(persistenceResponse.ok(), "feedback persistence request must succeed").toBeTruthy();
-      expect(persistencePayload?.v4_persistence?.transaction?.saved,
-        "feedback transaction must be durable").toBe(true);
+      const feedbackPolicy = requireFeedbackPolicy({
+        caseId: sourceCase.case_id,
+        httpOk: persistenceResponse.ok(),
+        payload: persistencePayload
+      });
 
       evidence.cases.push({
         case_id: sourceCase.case_id,
@@ -2254,24 +2356,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
           expectedTitleSha256: generatedTitleSha256,
           feedback
         }),
-        feedback_saved: persistencePayload.v4_persistence.transaction.saved,
+        ...feedbackPolicy,
         upload_to_feedback_ms: Date.now() - uploadStartedAt
       });
       failurePhase = "CASE_COMPLETE";
       await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
       normalTransport.active_case_id = null;
     }
-
-    failureCaseId = null;
-    failurePhase = "OWNER_AUTHORIZATION";
-    const ownerResponse = await journeyContext.request.get(`${baseUrl}/api/session`, {
-      headers: { accept: "application/json" }
-    });
-    const ownerSession = await ownerResponse.json();
-    requireInvariant(ownerResponse.ok()
-      && ownerSession?.authenticated === true
-      && ownerSession?.role === "OWNER",
-    verifierErrorCodes.LARGE_OWNER_REQUIRED);
 
     failureCaseId = "LARGE_STAGED_TRANSPORT";
     failurePhase = "LARGE_RECOGNITION";
@@ -2419,13 +2510,11 @@ test("production writer journey verifies Glass Box and staged large-image transp
       recognitionSessionId: largeRecognitionPayload.recognition_session_id,
       expectedTitleSha256: largePanelTitleSha256
     });
-    requireInvariant(largePersistenceResponse.ok()
-      && largePersistencePayload?.v4_persistence?.transaction?.saved === true
-      && largePersistencePayload?.feedback_data_use === "ADMIN_TEST_ONLY"
-      && largePersistencePayload?.dataset_disposition === "ADMIN_TEST_ONLY"
-      && largePersistencePayload?.training_eligible === false
-      && largePersistencePayload?.production_promotion_eligible === false,
-    verifierErrorCodes.LARGE_FEEDBACK_POLICY_MISMATCH);
+    const largeFeedbackPolicy = requireFeedbackPolicy({
+      caseId: "LARGE_STAGED_TRANSPORT",
+      httpOk: largePersistenceResponse.ok(),
+      payload: largePersistencePayload
+    });
 
     evidence.cases.push({
       case_id: "LARGE_STAGED_TRANSPORT",
@@ -2453,10 +2542,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       }),
       ...transportReceipt,
       relay_request_count: largeTransport.relay_receipts.length,
-      feedback_saved: true,
-      feedback_data_use: "ADMIN_TEST_ONLY",
-      training_eligible: false,
-      production_promotion_eligible: false,
+      ...largeFeedbackPolicy,
       upload_to_feedback_ms: Date.now() - largeUploadStartedAt
     });
     failurePhase = "FINAL_SEAL";
@@ -2473,23 +2559,27 @@ test("production writer journey verifies Glass Box and staged large-image transp
     verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
 
     const finalHealthResponse = await fetch(healthUrl, {
+      redirect: "error",
       headers: {
         accept: "application/json",
         ...(initialCookieHeader ? { cookie: initialCookieHeader } : {})
       }
     });
     const finalHealth = await finalHealthResponse.json();
-    expect(finalHealthResponse.ok, "production health must remain reachable").toBeTruthy();
-    expect(finalHealth?.deployment?.environment).toBe("production");
-    expect(finalHealth?.deployment?.git_commit_sha, "production target changed during Writer Journey")
-      .toBe(expectedSha);
-    requireInvariant(finalHealth?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
-      && finalHealth?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
-      && healthRecognitionTransportContractMatches(finalHealth?.runtime)
-      && healthExternalIdentityContractMatches(finalHealth?.runtime)
-      && finalHealth?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
-    verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
-    evidence.stages.release_stability = { passed: true, git_commit_sha: expectedSha };
+    const finalHealthReceipt = writerJourneyHealthReceipt({
+      httpOk: finalHealthResponse.ok,
+      health: finalHealth,
+      expectedSha,
+      expectedOrigin: productionOrigin,
+      responseUrl: finalHealthResponse.url
+    });
+    requireInvariant(finalHealthReceipt.deployment_identity === evidence.deployment_identity
+      && finalHealthReceipt.deployment_origin === evidence.deployment_origin,
+      verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
+    evidence.stages.release_stability = {
+      passed: true,
+      ...finalHealthReceipt
+    };
 
     requireInvariant(!largeTransport.violation
       && largeTransport.ingest_requests.length === 1
@@ -2515,6 +2605,26 @@ test("production writer journey verifies Glass Box and staged large-image transp
     expect(resolutionRequests.every((request) => request.method === "GET")).toBe(true);
     expect(evidence.cases.map((entry) => entry.case_id).sort())
       .toEqual(expectedCaseIds);
+    requireInvariant(feedbackPolicyChecks.length === expectedProviderCaseCount
+      && feedbackPolicyChecks.map((entry) => entry.case_id).sort().join("\0")
+        === expectedCaseIds.join("\0")
+      && evidence.cases.every((entry) => entry.feedback_policy_passed === true
+        && entry.feedback_saved === true
+        && entry.feedback_data_use === ADMIN_TEST_DATASET_DISPOSITION
+        && entry.dataset_disposition === FEEDBACK_DATASET_DISPOSITION
+        && entry.durable_dataset_disposition === FEEDBACK_DATASET_DISPOSITION
+        && entry.training_eligible === false
+        && entry.production_promotion_eligible === false),
+    verifierErrorCodes.FEEDBACK_POLICY_MISMATCH);
+    evidence.stages.feedback_policy = {
+      passed: true,
+      checked_count: feedbackPolicyChecks.length,
+      feedback_data_use: ADMIN_TEST_DATASET_DISPOSITION,
+      dataset_disposition: FEEDBACK_DATASET_DISPOSITION,
+      durable_dataset_disposition: FEEDBACK_DATASET_DISPOSITION,
+      training_eligible: false,
+      production_promotion_eligible: false
+    };
     const providerResponseReceiptHashes = evidence.cases.map(
       (entry) => entry?.execution_receipt?.provider_response_id_sha256
     );
@@ -2592,6 +2702,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       complete_server_stage_receipts: true,
       exact_authority_token_reservation: expectedEstimatedTokensPerAttempt,
       durable_owner_execution_readback_count: expectedProviderCaseCount,
+      feedback_policy_receipt_count: expectedProviderCaseCount,
       codex_parity_exact_match_count: parityRequired ? 1 : 0,
       verified_original_set_match_count: parityRequired ? 1 : 0,
       warmup_real_response_observed: true,
@@ -2651,6 +2762,140 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     requireInvariant(missingWarmupResponseRejected, verifierErrorCodes.GENERIC);
   }
 
+  const offlineSha = "a".repeat(40);
+  const offlineHealth = {
+    ready: true,
+    active_path: "CSM_THIN_DIRECT",
+    model: CSM_ACTIVE_MODEL_PROFILE.model,
+    reasoning_effort: CSM_ACTIVE_MODEL_PROFILE.reasoning_effort,
+    deployment: {
+      git_commit_sha: offlineSha,
+      environment: "production"
+    },
+    runtime: {
+      model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
+      provider_adapter_version: expectedProviderAdapterVersion,
+      recognition_transport_profiles: Object.fromEntries(
+        CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [profile.lane_version, {
+          ...profile,
+          sha256: sha256CsmRecognitionTransportReceipt(profile)
+        }])
+      ),
+      execution_contract_sha256_by_transport_lane_and_image_count:
+        expectedExecutionContractSha256ByTransportLaneAndImageCount,
+      external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+      max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
+      retired_capabilities_disabled: true
+    }
+  };
+  requireInvariant(writerJourneyHealthReceipt({
+    httpOk: true,
+    health: offlineHealth,
+    expectedSha: offlineSha,
+    expectedOrigin: productionOrigin,
+    responseUrl: `${productionOrigin}/api/health`
+  }).ready === true, verifierErrorCodes.GENERIC);
+  let deploymentOriginDriftRejected = false;
+  try {
+    writerJourneyHealthReceipt({
+      httpOk: true,
+      health: offlineHealth,
+      expectedSha: offlineSha,
+      expectedOrigin: productionOrigin,
+      responseUrl: "https://wrong-deployment.vercel.app/api/health"
+    });
+  } catch {
+    deploymentOriginDriftRejected = true;
+  }
+  requireInvariant(deploymentOriginDriftRejected, verifierErrorCodes.GENERIC);
+  for (const invalidHealth of [
+    { ...offlineHealth, ready: false },
+    { ...offlineHealth, reasoning_effort: "none" },
+    {
+      ...offlineHealth,
+      runtime: { ...offlineHealth.runtime, retired_capabilities_disabled: false }
+    }
+  ]) {
+    let invalidHealthRejected = false;
+    try {
+      writerJourneyHealthReceipt({
+        httpOk: true,
+        health: invalidHealth,
+        expectedSha: offlineSha,
+        expectedOrigin: productionOrigin,
+        responseUrl: `${productionOrigin}/api/health`
+      });
+    } catch {
+      invalidHealthRejected = true;
+    }
+    requireInvariant(invalidHealthRejected, verifierErrorCodes.GENERIC);
+  }
+
+  const offlineFeedbackPayload = {
+    feedback_data_use: ADMIN_TEST_DATASET_DISPOSITION,
+    dataset_disposition: FEEDBACK_DATASET_DISPOSITION,
+    training_eligible: false,
+    production_promotion_eligible: false,
+    v4_persistence: {
+      transaction: {
+        saved: true,
+        transaction: {
+          dataset_disposition: FEEDBACK_DATASET_DISPOSITION
+        }
+      }
+    }
+  };
+  requireInvariant(feedbackPolicyReceipt({
+    httpOk: true,
+    payload: offlineFeedbackPayload
+  }).feedback_policy_passed === true, verifierErrorCodes.GENERIC);
+  for (const invalidFeedback of [
+    { httpOk: false, payload: offlineFeedbackPayload },
+    {
+      httpOk: true,
+      payload: {
+        ...offlineFeedbackPayload,
+        v4_persistence: {
+          transaction: {
+            ...offlineFeedbackPayload.v4_persistence.transaction,
+            saved: false
+          }
+        }
+      }
+    },
+    {
+      httpOk: true,
+      payload: { ...offlineFeedbackPayload, feedback_data_use: FEEDBACK_DATASET_DISPOSITION }
+    },
+    {
+      httpOk: true,
+      payload: { ...offlineFeedbackPayload, dataset_disposition: ADMIN_TEST_DATASET_DISPOSITION }
+    },
+    {
+      httpOk: true,
+      payload: {
+        ...offlineFeedbackPayload,
+        v4_persistence: {
+          transaction: {
+            ...offlineFeedbackPayload.v4_persistence.transaction,
+            transaction: {
+              ...offlineFeedbackPayload.v4_persistence.transaction.transaction,
+              dataset_disposition: ADMIN_TEST_DATASET_DISPOSITION
+            }
+          }
+        }
+      }
+    },
+    { httpOk: true, payload: { ...offlineFeedbackPayload, training_eligible: true } },
+    {
+      httpOk: true,
+      payload: { ...offlineFeedbackPayload, production_promotion_eligible: true }
+    }
+  ]) {
+    requireInvariant(feedbackPolicyReceipt(invalidFeedback).feedback_policy_passed === false,
+      verifierErrorCodes.GENERIC);
+  }
+
   const offlineRecognitionCases = [
     "NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"
   ].map(
@@ -2683,6 +2928,18 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   requireInvariant(recognitionPostSeal(
     offlineRecognitionPosts, offlineRecognitionCases
   ).network_continued_provider_requests === 4, verifierErrorCodes.GENERIC);
+  const bridgeRecognitionCases = offlineRecognitionCases.filter(
+    (entry) => entry.case_id !== "EXTERNAL_IDENTITY"
+  );
+  const bridgeRecognitionPosts = offlineRecognitionPosts.filter(
+    (entry) => entry.case_id !== "EXTERNAL_IDENTITY"
+  );
+  const bridgeRecognitionSeal = recognitionPostSeal(
+    bridgeRecognitionPosts, bridgeRecognitionCases
+  );
+  requireInvariant(bridgeRecognitionSeal.recognition_post_count === 4
+    && bridgeRecognitionSeal.network_continued_provider_requests === 3,
+  verifierErrorCodes.GENERIC);
   for (const invalidPosts of [
     [...offlineRecognitionPosts, { ...offlineRecognitionPosts[0] }],
     offlineRecognitionPosts.map((entry, index) => index === 0
@@ -2697,6 +2954,16 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       recognitionPostDriftRejected = true;
     }
     requireInvariant(recognitionPostDriftRejected, verifierErrorCodes.GENERIC);
+  }
+  for (const invalidBridgePosts of [
+    bridgeRecognitionPosts.slice(1),
+    [...bridgeRecognitionPosts, { ...bridgeRecognitionPosts[0] }]
+  ]) {
+    let bridgeRecognitionPostDriftRejected = false;
+    try { recognitionPostSeal(invalidBridgePosts, bridgeRecognitionCases); } catch {
+      bridgeRecognitionPostDriftRejected = true;
+    }
+    requireInvariant(bridgeRecognitionPostDriftRejected, verifierErrorCodes.GENERIC);
   }
 
   const hash = "a".repeat(64);

@@ -28,7 +28,7 @@ const gitSha = "a".repeat(40);
 const treeSha = "b".repeat(40);
 assert.equal(
   COMPATIBILITY_BRIDGE_PARENT_SHA,
-  "4beb373ecf3006dbcd855c4305d532f0c4421609"
+  "ced1a23741e179618e4e7b5eca055cb10ecac8cb"
 );
 assert.deepEqual(COMPATIBILITY_BRIDGE_CHANGED_PATHS, [
   "docs/operations/luna-v2-rollback-bridge.md",
