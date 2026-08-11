@@ -42,6 +42,11 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
+      - name: Install exact locked dependencies before release selection
+        run: |
+          npm ci --no-audit --no-fund
+          git diff --quiet -- .
+          git diff --cached --quiet -- .
       - name: Bind the protected release class to this exact commit
         env:
           DISPATCH_SHA: ${{ github.sha }}
@@ -86,7 +91,6 @@ jobs:
           echo "PostgreSQL on PATH: $pg_bin"
       - name: Verify the CSM thin release artifact
         run: |
-          npm ci --no-audit --no-fund
           npm ls --omit=dev --all
           node scripts/npm-audit-gate.mjs
           npm run check
