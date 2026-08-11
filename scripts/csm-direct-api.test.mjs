@@ -14,7 +14,9 @@ import {
   CSM_PERSISTENCE_READINESS_CACHE_TTL_MS,
   CSM_DIRECT_PROMPT_VERSION,
   CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION,
+  CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERIFIED_ORIGINAL_VERSION,
   CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION,
+  CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERIFIED_ORIGINAL_VERSION,
   CSM_PERSISTENCE_CHECKPOINT_VERSION,
   buildProviderFailureReceipt,
   buildCsmDirectFailureResponse,
@@ -26,6 +28,8 @@ import {
   deterministicCsmSessionId,
   resetCsmPersistenceReadinessCache,
   runDirectCsmAsset,
+  selectCsmPostObservationResolutionContract,
+  publicPersistedResult,
   validateCsmPersistenceCheckpoint
 } from "../api/csm-listing-title.js";
 import {
@@ -47,6 +51,8 @@ import {
   sha256ExecutionContractValue
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
+import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { finishCanonicalFields } from "../lib/listing/thin/thin-listing-path.mjs";
 import * as providerResponseAttestation from "../lib/listing/thin/provider-response-attestation.mjs";
 import { buildCsmIngestFailureResponse } from "../api/csm-listing-title-ingest.js";
 import {
@@ -54,7 +60,8 @@ import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
-  EXTERNAL_IDENTITY_SUPPORT_PACK
+  EXTERNAL_IDENTITY_SUPPORT_PACK,
+  resolveExternalIdentitySupport
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   STAGED_RECOGNITION_LANE_VERSION,
@@ -72,6 +79,25 @@ import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
   THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
+import {
+  buildCsmStageRows,
+  computeCsmPacketHashes
+} from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  CSM_PROJECTION_ACTIVATION
+} from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  composeLyncaStandardNameForProfile,
+  LYNCA_STANDARD_PROFILE_VERSION_V2
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT,
+  resolveVerifiedOriginalObservation,
+  VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
+  WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
+} from "./materialize-writer-journey-source.mjs";
 import {
   CSM_PROVIDER_AUTHORITY_LIMITS,
   CSM_PROVIDER_AUTHORITY_RECEIPT_VERSION,
@@ -91,6 +117,53 @@ assert.deepEqual(Object.keys(providerResponseAttestation).sort(), [
   "providerResponseAttestation",
   "providerUsageReceipt"
 ], "provider response attestation must expose only live receipt normalizers");
+
+// Complete public-result bytes from the archived de55 Production writer. The
+// forward-reader bridge may add new CNL tuples, but its active v2 response must
+// not acquire even an empty field or an additive profile key.
+{
+  const fields = parseCanonicalFields({
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Chrome",
+    set: "",
+    subjects: ["Victor Wembanyama"],
+    team: "Spurs",
+    card_name: "",
+    release_variant: "",
+    surface_color: "Gold",
+    parallel_family: "Refractor",
+    parallel_exact: "",
+    descriptive_rarity: "",
+    card_number: "221",
+    serial: "17/50",
+    attributes: ["RC"],
+    grading_info: {
+      company: "PSA", card_grade: "9", auto_grade: "10",
+      grade_type: "CARD_AND_AUTO"
+    },
+    grammar: "standard",
+    lot_count: "",
+    language: "",
+    ip: "",
+    unreadable: [],
+    low_confidence: []
+  }).fields;
+  const prepared = finishCanonicalFields(fields);
+  const rows = buildCsmStageRows({
+    tenantId: "tenant-byte-probe",
+    recognitionSessionId: "session-byte-probe-plain",
+    fields: prepared.fields,
+    composed: prepared,
+    title: prepared.title
+  });
+  const publicResult = publicPersistedResult({ ...prepared, csm_rows: rows });
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(publicResult)).digest("hex"),
+    "d81a24258f96b6a083dff3bd3053babe1f69dec8e9e1c8ed4f3d60f630258bbd",
+    "the complete dormant v2 public result must remain byte-identical to de55"
+  );
+}
 const CURRENT_DIRECT_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
   model: CSM_THIN_RUNTIME_CONTRACT.model,
   requestedEffort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
@@ -594,6 +667,304 @@ const canonicalImages = () => ({
   }]
 });
 
+const activeVerifiedProjection = structuredClone(CSM_PROJECTION_ACTIVATION);
+activeVerifiedProjection.active_writer.standard = {
+  composer_version: activeVerifiedProjection.forward_readers.standard[1].composer_version,
+  marketplace_profile_version:
+    activeVerifiedProjection.forward_readers.standard[1].marketplace_profile_version
+};
+activeVerifiedProjection.active_writer.verified_original_observation_overlay =
+  VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID;
+const subsetAOriginalSha256 = WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images
+  .map(({ content_sha256 }) => content_sha256);
+
+assert.equal(selectCsmPostObservationResolutionContract({
+  originalImageSha256: subsetAOriginalSha256
+}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
+"the bridge must keep exact verified sets dormant under the v2 writer");
+const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
+  originalImageSha256: subsetAOriginalSha256,
+  projectionActivation: activeVerifiedProjection
+});
+assert.equal(activeVerifiedSelection.mode,
+  "EXTERNAL_AND_VERIFIED_ORIGINAL_CLOSED_PROJECTION");
+assert.equal(activeVerifiedSelection.resolution_contract_sha256,
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256);
+assert.equal(selectCsmPostObservationResolutionContract({
+  originalImageSha256: ["1".repeat(64), "2".repeat(64)],
+  projectionActivation: activeVerifiedProjection
+}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
+"an active overlay must still use the external-only contract for an unmatched set");
+for (const mixed of [
+  {
+    ...activeVerifiedProjection,
+    active_writer: {
+      ...activeVerifiedProjection.active_writer,
+      verified_original_observation_overlay: null
+    }
+  },
+  {
+    ...CSM_PROJECTION_ACTIVATION,
+    active_writer: {
+      ...CSM_PROJECTION_ACTIVATION.active_writer,
+      verified_original_observation_overlay: VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+    }
+  }
+]) {
+  assert.throws(() => selectCsmPostObservationResolutionContract({
+    originalImageSha256: subsetAOriginalSha256,
+    projectionActivation: mixed
+  }), (error) => error.code === "csm_projection_activation_invalid"
+    && error.retryable === false,
+  "mixed writer/overlay activation must fail before any provider boundary");
+}
+
+function verifiedOriginalCheckpointFixture() {
+  const observed = {
+    year: "2025", ip: "", language: "", manufacturer: "Topps", product: "Chrome",
+    set: "", subjects: ["Cooper Flagg"], team: "Mavericks", card_name: "",
+    release_variant: "", surface_color: "Gold", parallel_family: "Refractor",
+    parallel_exact: "Gold Refractor", print_finish: "Gold Refractor",
+    descriptive_rarity: "", card_number: "251", serial: "30/50", attributes: ["RC"],
+    components: ["RC"], search_optimization: [], grading_info: null, grade: "",
+    grammar: "standard", lot_count: "", special_stamp: "", description: "",
+    unreadable: [], low_confidence: []
+  };
+  const externalIdentityContext = { originalImageSha256: subsetAOriginalSha256 };
+  const verified = resolveVerifiedOriginalObservation(observed, externalIdentityContext);
+  assert.equal(verified?.receipt?.status, "APPLIED");
+  const external = resolveExternalIdentitySupport(verified.fields, { externalIdentityContext });
+  assert.equal(external.status, "ABSTAINED");
+  const composed = composeLyncaStandardNameForProfile(verified.fields, {
+    marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V2
+  });
+  const recognitionSessionId = "session-active-verified-original";
+  const rows = buildCsmStageRows({
+    tenantId: "tenant-1",
+    recognitionSessionId,
+    fields: verified.fields,
+    observedFields: observed,
+    externalIdentitySupport: external.receipt,
+    verifiedOriginalObservationSupport: verified.receipt,
+    composed,
+    title: composed.title
+  });
+  const result = {
+    title: composed.title,
+    fields: verified.fields,
+    observed_fields: observed,
+    field_defects: [],
+    sanitised: false,
+    grammar: composed.grammar,
+    brackets: composed.brackets,
+    dropped_brackets: composed.dropped,
+    suppressed_brackets: composed.suppressed,
+    restored_brackets: composed.restored,
+    truncated: composed.truncated,
+    input_empty_fields: composed.input_empty_fields,
+    normalization_reasons: composed.normalization_reasons,
+    character_budget: composed.character_budget,
+    length: composed.length,
+    external_identity_support: external.receipt,
+    verified_original_observation_support: verified.receipt,
+    resolution_contract_sha256:
+      COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
+    resolution_contract: COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT,
+    execution_contract_sha256: "d".repeat(64),
+    csm_rows: rows
+  };
+  result.accuracy_loss_ledger = buildAccuracyLossLedger({
+    rawProviderOutput: JSON.stringify(observed),
+    result
+  });
+  return {
+    prepared: result,
+    recognitionSessionId,
+    originalSetSha256: verified.receipt.original_set_sha256
+  };
+}
+
+function resealVerifiedOriginalPrepared(prepared) {
+  const rows = prepared.csm_rows;
+  rows.resolution.recognition_packet_sha256 = computeCsmPacketHashes(rows)
+    .csm_recognition_packet_sha256;
+  rows.output.resolution_packet_sha256 = computeCsmPacketHashes(rows)
+    .csm_resolution_packet_sha256;
+  rows.session_hashes = computeCsmPacketHashes(rows);
+  prepared.accuracy_loss_ledger = buildAccuracyLossLedger({
+    rawProviderOutput: JSON.stringify(prepared.observed_fields),
+    result: prepared
+  });
+  return prepared;
+}
+
+{
+  const fixture = verifiedOriginalCheckpointFixture();
+  const activePublic = publicPersistedResult(fixture.prepared);
+  assert.deepEqual(activePublic.fields.search_optimization, [],
+    "the active CNL tuple keeps its versioned independent search lane");
+  assert.equal(
+    activePublic.csm_rows.output.marketplace_profile_version,
+    LYNCA_STANDARD_PROFILE_VERSION_V2,
+    "only a registered CNL tuple exposes its marketplace profile publicly"
+  );
+  const args = {
+    prepared: fixture.prepared,
+    tenantId: "tenant-1",
+    operationKey: "csm-active-verified-original",
+    payloadHash: "e".repeat(64),
+    recognitionSessionId: fixture.recognitionSessionId,
+    executionContractSha256: fixture.prepared.execution_contract_sha256,
+    resolutionContractSha256:
+      COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
+    originalSetSha256: fixture.originalSetSha256,
+    projectionActivation: activeVerifiedProjection
+  };
+  const checkpoint = buildCsmPersistenceCheckpoint(args);
+  assert.equal(checkpoint.csm_persistence_checkpoint.schema_version,
+    CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERIFIED_ORIGINAL_VERSION);
+  assert.equal(checkpoint.csm_persistence_checkpoint.external_identity_receipt.status,
+    "ABSTAINED");
+  assert.equal(
+    checkpoint.csm_persistence_checkpoint.verified_original_observation_receipt.release_id,
+    VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+  );
+  assert.equal(validateCsmPersistenceCheckpoint(checkpoint, {
+    tenantId: args.tenantId,
+    operationKey: args.operationKey,
+    payloadHash: args.payloadHash,
+    recognitionSessionId: args.recognitionSessionId,
+    executionContractSha256: args.executionContractSha256,
+    resolutionContractSha256: args.resolutionContractSha256,
+    originalSetSha256: args.originalSetSha256
+  }).title, fixture.prepared.title);
+
+  const derived = buildCsmPersistenceCheckpoint({ ...args, operationScope: "derived_checkpoint" });
+  assert.equal(derived.csm_persistence_checkpoint.schema_version,
+    CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERIFIED_ORIGINAL_VERSION);
+
+  const tampered = structuredClone(checkpoint);
+  tampered.csm_persistence_checkpoint.verified_original_observation_receipt
+    .observed_fields_sha256 = "0".repeat(64);
+  assert.throws(() => validateCsmPersistenceCheckpoint(tampered, {
+    tenantId: args.tenantId,
+    operationKey: args.operationKey,
+    payloadHash: args.payloadHash,
+    recognitionSessionId: args.recognitionSessionId,
+    executionContractSha256: args.executionContractSha256,
+    resolutionContractSha256: args.resolutionContractSha256,
+    originalSetSha256: args.originalSetSha256
+  }), (error) => error.detail === "verified_original_observation_receipt_mismatch");
+  assert.throws(() => buildCsmPersistenceCheckpoint({
+    ...args,
+    projectionActivation: CSM_PROJECTION_ACTIVATION
+  }), (error) => error.detail === "verified_original_observation_release_not_active");
+  assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
+    tenantId: args.tenantId,
+    operationKey: args.operationKey,
+    payloadHash: args.payloadHash,
+    recognitionSessionId: args.recognitionSessionId,
+    executionContractSha256: args.executionContractSha256,
+    resolutionContractSha256: args.resolutionContractSha256,
+    originalSetSha256: "f".repeat(64)
+  }), (error) => error.code === "csm_persistence_checkpoint_invalid");
+
+  const buildFrom = (prepared, overrides = {}) => buildCsmPersistenceCheckpoint({
+    ...args,
+    prepared,
+    ...overrides
+  });
+  const externalAppliedOverlap = structuredClone(fixture.prepared);
+  externalAppliedOverlap.external_identity_support.status = "APPLIED";
+  assert.throws(() => buildFrom(externalAppliedOverlap), (error) =>
+    error.detail === "combined_external_identity_must_abstain",
+  "a combined checkpoint must reject external APPLIED before receipt normalization");
+
+  const storedExternalOverlap = structuredClone(fixture.prepared);
+  storedExternalOverlap.csm_rows.output.structured_output.external_identity_support = {
+    status: "APPLIED"
+  };
+  resealVerifiedOriginalPrepared(storedExternalOverlap);
+  assert.throws(() => buildFrom(storedExternalOverlap), (error) =>
+    error.detail === "combined_external_identity_rows_unexpected",
+  "a resealed combined packet may not carry a stored external projection");
+
+  for (const field of ["observed_fields", "fields"]) {
+    const resultDrift = structuredClone(fixture.prepared);
+    resultDrift[field].team = "Transplanted Team";
+    resultDrift.accuracy_loss_ledger = buildAccuracyLossLedger({
+      rawProviderOutput: JSON.stringify(resultDrift.observed_fields),
+      result: resultDrift
+    });
+    assert.throws(() => buildFrom(resultDrift), (error) =>
+      error.detail === "verified_original_observation_receipt_invalid",
+    `the private receipt must bind ${field} even after ledger reseal`);
+  }
+
+  const transplantedReceipt = resolveVerifiedOriginalObservation(
+    fixture.prepared.observed_fields,
+    { originalImageSha256: [
+      "88debfceb73ee0bf048e92462e50d599df7a865a5e95ee361cdd76219a82f21c",
+      "a431abc8e498856de4a37e1b61937cee68652448e9b465c9bed96dfd1ec048e5"
+    ] }
+  );
+  assert.equal(transplantedReceipt?.receipt?.record_id, "subset-a-b");
+  const overlayTransplant = structuredClone(fixture.prepared);
+  overlayTransplant.verified_original_observation_support =
+    transplantedReceipt.receipt;
+  overlayTransplant.csm_rows.output.structured_output
+    .verified_original_observation_support = transplantedReceipt.receipt;
+  resealVerifiedOriginalPrepared(overlayTransplant);
+  assert.throws(() => buildFrom(overlayTransplant, {
+    originalSetSha256: transplantedReceipt.receipt.original_set_sha256
+  }), (error) => error.detail === "verified_original_observation_receipt_invalid",
+  "a valid receipt from another reviewed set may not be transplanted and resealed");
+
+  const tupleTampered = structuredClone(fixture.prepared);
+  tupleTampered.csm_rows.output.marketplace_profile_version =
+    "lynca-standard-name-v0.1";
+  resealVerifiedOriginalPrepared(tupleTampered);
+  assert.throws(() => buildFrom(tupleTampered), (error) =>
+    error.detail === "verified_original_observation_output_tuple_mismatch",
+  "the first overlay release is bound to the v3/v0.2 replay tuple");
+
+  const packetTampered = structuredClone(fixture.prepared);
+  const supportEvidence = packetTampered.csm_rows.evidence.find((row) =>
+    row.source_ref?.support_type === "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+  );
+  assert.ok(supportEvidence);
+  packetTampered.csm_rows.evidence = packetTampered.csm_rows.evidence.filter(
+    (row) => row.id !== supportEvidence.id
+  );
+  packetTampered.csm_rows.links = packetTampered.csm_rows.links.filter(
+    (row) => row.evidence_observation_id !== supportEvidence.id
+  );
+  resealVerifiedOriginalPrepared(packetTampered);
+  assert.throws(() => buildFrom(packetTampered), (error) =>
+    error.detail === "verified_original_observation_replay_packet_invalid",
+  "recomputing packet hashes cannot repair missing overlay lineage");
+
+  for (const [label, mutate] of [
+    ["session packet hash", (prepared) => {
+      prepared.csm_rows.session_hashes.csm_marketplace_packet_sha256 = "0".repeat(64);
+    }],
+    ["embedded recognition hash", (prepared) => {
+      prepared.csm_rows.resolution.recognition_packet_sha256 = "0".repeat(64);
+    }]
+  ]) {
+    const hashTampered = structuredClone(fixture.prepared);
+    mutate(hashTampered);
+    assert.throws(() => buildFrom(hashTampered), (error) =>
+      error.detail === "verified_original_observation_replay_packet_invalid",
+    `a valid-looking but stale ${label} cannot be signed into a checkpoint`);
+  }
+
+  assert.throws(() => buildFrom(fixture.prepared, {
+    recognitionSessionId: "transplanted-session"
+  }), (error) => error.detail === "prepared_result_mismatch",
+  "a complete valid packet cannot be checkpointed under another session");
+}
+
 // The production API, not a client payload, derives the reviewed identity
 // context from tenant-scoped verified originals and carries only its set digest
 // through dispatch/checkpoint identity. The provider still sees one ordinary
@@ -687,12 +1058,14 @@ const canonicalImages = () => ({
     "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls"
   );
   assert.equal(result.external_identity_support, undefined);
+  assert.equal(Object.hasOwn(result.fields, "search_optimization"), false,
+    "the dormant bridge must preserve the de55 legacy field key set");
   assert.deepEqual(Object.keys(result.csm_rows).sort(), ["output", "resolution"]);
   assert.deepEqual(Object.keys(result.csm_rows.resolution).sort(), [
     "contract_version", "recognition_session_id", "resolver_version"
   ]);
   assert.deepEqual(Object.keys(result.csm_rows.output).sort(), [
-    "composer_version", "contract_version", "marketplace_profile_version"
+    "composer_version", "contract_version"
   ]);
   for (const hidden of [...originalSha256, originalSetSha256]) {
     assert.doesNotMatch(JSON.stringify(result), new RegExp(hidden),

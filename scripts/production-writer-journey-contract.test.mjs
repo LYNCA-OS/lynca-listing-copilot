@@ -50,8 +50,10 @@ assert.match(spec, /field_ground_truth_available: false/);
 assert.match(spec, /LIVE_CONTRACT_RECEIPT_ONLY/);
 assert.match(spec, /writer-journey-cases-v3/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_MANIFEST_VERSION/);
+assert.match(spec, /COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION/);
+assert.match(spec, /manifest\.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID/);
 assert.match(spec, /manifest\.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS/);
-assert.match(spec, /manifest\.bridge_marker !== COMPATIBILITY_BRIDGE_MARKER/);
+assert.match(spec, /manifest\.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER/);
 assert.match(spec, /manifest\.git_sha !== expectedGitSha/,
   "the reduced manifest must be bound to the exact bridge commit");
 assert.match(spec,
@@ -80,12 +82,16 @@ assert.match(spec, /resolution_view_schema/);
 assert.match(spec, /csm_owner_versions/);
 assert.match(spec, /VERSION_RESOLVER_MISMATCH/);
 assert.match(spec, /VERSION_COMPOSER_MISMATCH/);
+assert.match(spec, /STANDARD_P0_IDENTITY_MISMATCH/);
 assert.match(spec, /CANONICAL_NAMING_RELEASE_CONTRACT/);
 assert.match(spec, /canonicalNamingVersionActive/);
+assert.match(spec, /compatibilityBridgeStandardVersionActive/);
 assert.match(spec,
-  /sourceCase\.case_id === "NON_TCG"[\s\S]*?resolutionView\?\.grammar\?\.raw === "standard"[\s\S]*?canonicalNamingVersionActive\(versions\)/,
-  "the ordinary Standard Writer case, not a transport-only case, must prove CNL v0.1");
+  /sourceCase\.case_id === "NON_TCG"[\s\S]*?parityRequired[\s\S]*?canonicalNamingVersionActive\(versions\)[\s\S]*?compatibilityBridgeStandardVersionActive\(versions\)/,
+  "the Standard Writer case must prove the release-class-specific active writer tuple");
 assert.match(spec, /standardCaseEvidence\?\.canonical_naming_active === true/);
+assert.match(spec, /standardCaseEvidence\?\.compatibility_bridge_standard_active === true/);
+assert.match(spec, /standardCaseEvidence\?\.verified_original_observation_active === false/);
 assert.match(spec, /canonical_naming_active_case_count/,
   "the immutable candidate must prove that at least one real Writer case used CNL v0.1");
 assert.match(spec, /productionStandardP0ResolutionProof/);
@@ -93,8 +99,27 @@ assert.match(spec, /productionStandardP0ResolutionProofValid/);
 assert.match(spec, /productionStandardP0EvidenceProofValid/);
 assert.match(spec, /standard_p0_identity/);
 assert.match(spec, /standard_p0_exact_case_count/);
-assert.match(spec, /standardP0TitleIdentityExact\(recognitionPayload\?\.title\)/,
+assert.match(spec,
+  /standardP0LiveEvidence\(\{[\s\S]*?recognitionTitle: recognitionPayload\?\.title/,
   "the P0 live proof must bind the complete expected title, not only number tokens");
+assert.match(spec,
+  /evidence\.stages\.standard_p0_identity = Object\.freeze\(\{[\s\S]*?source_identity_exact:[\s\S]*?\.\.\.standardP0Identity/,
+  "a P0 failure must preserve only safe exactness booleans for diagnosis");
+assert.match(spec,
+  /serialDriftCode === verifierErrorCodes\.STANDARD_P0_IDENTITY_MISMATCH[\s\S]*?serial_selected_exact === false/,
+  "correct version tuples with serial drift must not be mislabeled as composer drift");
+assert.match(spec,
+  /standardResolutionView = structuredClone\(resolutionView\)/,
+  "the forward-readback expectation must use the live NON_TCG candidate view");
+assert.match(spec,
+  /evidence\.passed = true;[\s\S]*?buildProductionForwardReadbackExpectation\(\{[\s\S]*?evidence,[\s\S]*?resolutionView: standardResolutionView,[\s\S]*?deploymentUrl: baseUrl,[\s\S]*?gitSha: expectedSha/,
+  "the private expectation must bind final live evidence to candidate URL/SHA and the same view");
+assert.match(spec,
+  /writeProductionForwardReadbackExpectation\([\s\S]*?requiredEnv\("WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"\)/,
+  "the E2E must write the expectation through the exclusive 0600 helper");
+assert.doesNotMatch(releaseWorkflow,
+  /(?:printf|cat|echo)[^\n]*WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION[^\n]*\{\s*"/,
+  "the workflow must not fabricate candidate readback evidence");
 assert.match(spec, /LIVE_EXECUTION_RECEIPT_MISMATCH/);
 assert.match(spec, /ROUTE_COVERAGE_MISMATCH/);
 const ordinaryRouteVerifier = spec.match(
@@ -424,9 +449,13 @@ assert.match(spec, /function healthCanonicalNamingContractMatches/);
 assert.match(healthVerifier, /healthCanonicalNamingContractMatches\(health\?\.runtime\)/);
 assert.match(healthVerifier, /canonical_naming_contract_valid/);
 assert.match(healthVerifier,
-  /canonical_naming_release_contract:\s*health\?\.runtime\?\.canonical_naming/);
+  /canonical_naming_release_contract:\s*health\?\.runtime\?\.canonical_naming_target/);
 assert.match(healthVerifier,
-  /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(CANONICAL_NAMING_RELEASE_CONTRACT\)/);
+  /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(CANONICAL_NAMING_RELEASE_CONTRACT_V2\)/);
+assert.match(healthVerifier,
+  /verified_original_observation_release_receipt:[\s\S]*?verified_original_observation/);
+assert.match(healthVerifier,
+  /stableJson\(receipt\.verified_original_observation_release_receipt\)[\s\S]*?stableJson\(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT\)/);
 assert.match(healthVerifier, /retired_capabilities_disabled === true/);
 assert.match(spec, /const initialHealthReceipt = writerJourneyHealthReceipt/);
 assert.match(spec, /const finalHealthReceipt = writerJourneyHealthReceipt/);
@@ -711,10 +740,10 @@ assert.match(releaseWorkflow, /METAVERSE_PASSWORD: \$\{\{ secrets\.METAVERSE_PAS
 assert.match(releaseWorkflow,
   /name: Run real candidate Writer Journey before production promotion[\s\S]*?METAVERSE_USERNAME:[\s\S]*?METAVERSE_PASSWORD:/,
   "writer credentials must be scoped to the live browser step, not npm install or Storage materialization");
-assert.equal([...releaseWorkflow.matchAll(/METAVERSE_USERNAME: \$\{\{ secrets\.METAVERSE_USERNAME \}\}/g)].length, 2,
-  "credentials are limited to the candidate journey and post-promotion auth smoke");
-assert.equal([...releaseWorkflow.matchAll(/METAVERSE_PASSWORD: \$\{\{ secrets\.METAVERSE_PASSWORD \}\}/g)].length, 2,
-  "credentials are limited to the candidate journey and post-promotion auth smoke");
+assert.equal([...releaseWorkflow.matchAll(/METAVERSE_USERNAME: \$\{\{ secrets\.METAVERSE_USERNAME \}\}/g)].length, 3,
+  "credentials are limited to candidate WJ, canonical forward-readback, and postpromotion smoke");
+assert.equal([...releaseWorkflow.matchAll(/METAVERSE_PASSWORD: \$\{\{ secrets\.METAVERSE_PASSWORD \}\}/g)].length, 3,
+  "credentials are limited to candidate WJ, canonical forward-readback, and postpromotion smoke");
 assert.match(releaseWorkflow, /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/);
 assert.match(releaseWorkflow, /materialize-writer-journey-source\.mjs/);
 assert.match(releaseWorkflow, /WRITER_JOURNEY_CASES_MANIFEST=%s\\n/);

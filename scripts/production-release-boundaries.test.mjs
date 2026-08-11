@@ -57,6 +57,7 @@ const rollbackReceipt = readFileSync(
   "scripts/vercel-production-rollback-receipt.mjs", "utf8"
 );
 const parityReadback = readFileSync("scripts/production-parity-readback.mjs", "utf8");
+const forwardReadback = readFileSync("scripts/production-forward-readback.mjs", "utf8");
 const resolutionViewApi = readFileSync("api/csm-resolution-view.js", "utf8");
 const activeServiceContext = JSON.parse(readFileSync(
   "docs/operations/active-service-context.json", "utf8"
@@ -107,14 +108,14 @@ const rollbackCapture = workflow.indexOf(
   "Verify the unique alias writer and capture the current rollback deployment"
 );
 const rollbackLineage = workflow.indexOf(
-  "Verify the linear ordinary rollback lineage before candidate creation"
+  "Verify the selected release rollback lineage before candidate creation"
 );
 const vercelDeploy = workflow.indexOf("Build and deploy the exact dispatched checkout");
 const prepromotionHealth = workflow.indexOf(
   "Verify the immutable deployment and prepare candidate-only browser authorization"
 );
 const compatibilityBridgeProof = workflow.indexOf(
-  "Prove the compatibility bridge is active-v1 and v2 replay-only"
+  "Prove the selected compatibility bridge runtime contract"
 );
 const candidateSource = workflow.indexOf(
   "Materialize release-class-bound Writer Journey cases from Production Storage"
@@ -124,6 +125,9 @@ const candidateJourney = workflow.indexOf(
 );
 const candidateAuthorizationCleanup = workflow.indexOf(
   "Destroy candidate browser authorization"
+);
+const candidateForwardReadback = workflow.indexOf(
+  "Prove captured Production can read the candidate durable projection"
 );
 const ownershipGuard = workflow.indexOf(
   "Re-verify single-writer authority and canonical ownership before promotion"
@@ -152,7 +156,7 @@ assert.ok(vercelProjectBinding > immutableReleaseGate, "the canonical Vercel ide
 assert.ok(rollbackCapture > vercelProjectBinding,
   "the rollback identity must be captured only after binding the canonical team and project");
 assert.ok(rollbackLineage > rollbackCapture && vercelDeploy > rollbackLineage,
-  "the exact linear ordinary rollback lineage must fail closed before candidate creation");
+  "the selected release rollback lineage must fail closed before candidate creation");
 assert.ok(prepromotionHealth > vercelDeploy, "the immutable deployment must be healthy before promotion");
 assert.ok(compatibilityBridgeProof > prepromotionHealth
   && candidateSource > compatibilityBridgeProof,
@@ -161,8 +165,10 @@ assert.ok(candidateJourney > candidateSource,
   "the real Writer Journey must execute against the immutable candidate");
 assert.ok(candidateAuthorizationCleanup > candidateJourney,
   "candidate browser authorization must be destroyed even when the journey fails");
-assert.ok(ownershipGuard > candidateAuthorizationCleanup,
-  "the ownership guard must remain unreachable until the candidate journey succeeds");
+assert.ok(candidateForwardReadback > candidateAuthorizationCleanup,
+  "the captured rollback target must read the candidate projection with fresh auth");
+assert.ok(ownershipGuard > candidateForwardReadback,
+  "the ownership guard must remain unreachable until forward readback succeeds");
 assert.ok(vercelPromote > ownershipGuard,
   "production promotion must remain unreachable until the single-writer guard succeeds");
 assert.ok(productionHealth > vercelPromote, "the promoted production alias must be verified independently");
@@ -173,6 +179,7 @@ assert.ok(canonicalReadbackRecheck > productionAuth && rollbackRestore > canonic
   && releaseEvidence > rollbackRestore,
 "parity readback must be bracketed by exact alias checks before rollback and evidence upload");
 const candidateJourneyStep = workflow.slice(candidateJourney, candidateAuthorizationCleanup);
+const candidateForwardReadbackStep = workflow.slice(candidateForwardReadback, ownershipGuard);
 const candidateSourceStep = workflow.slice(candidateSource, candidateJourney);
 const releaseClassStep = workflow.slice(releaseClassBinding, schemaPreflight);
 const compatibilityBridgeProofStep = workflow.slice(compatibilityBridgeProof, candidateSource);
@@ -205,7 +212,7 @@ assert.match(compatibilityBridgeProofStep,
   /if: \$\{\{ inputs\.release_class == 'compatibility-bridge' \}\}/);
 assert.match(compatibilityBridgeProofStep,
   /compatibility-bridge-release\.mjs verify-health[\s\S]*?--health \/tmp\/csm-thin-health-prepromotion\.json/,
-  "the bridge must prove exact active-v1 health and dormant v2 replay on the immutable candidate");
+  "the bridge must prove its selected runtime contract on the immutable candidate");
 assert.match(candidateSourceStep, /writer-journey-cases-v3\.json/);
 assert.match(candidateSourceStep, /writer-journey-compatibility-bridge-cases-v1\.json/);
 assert.match(candidateSourceStep, /writer-journey-large-source-v2\.json/);
@@ -240,6 +247,9 @@ assert.match(candidateSourceStep,
 assert.match(candidateSourceStep,
   /WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\\n'[\s\S]*\$large_source_manifest/);
 assert.match(candidateSourceStep,
+  /WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION=%s\\n'[\s\S]*\$forward_readback_expectation/,
+  "the Writer Journey must receive a private forward-readback expectation path");
+assert.match(candidateSourceStep,
   /--source-manifest "\$WRITER_JOURNEY_LARGE_SOURCE_MANIFEST"/,
   "the strict large builder must receive the owner-only v2 subset");
 assert.doesNotMatch(candidateSourceStep,
@@ -250,13 +260,28 @@ assert.doesNotMatch(rollbackCaptureStep,
   "every release class must capture the current canonical rollback target identically");
 assert.match(rollbackLineageStep,
   /compatibility-bridge-release\.mjs verify-rollback-lineage[\s\S]*?--selection "\$PRODUCTION_RELEASE_SELECTION_RECEIPT"[\s\S]*?--rollback-receipt "\$VERCEL_ROLLBACK_RECEIPT"/,
-  "linear ordinary releases must bind the saved selection to the captured parent receipt");
+  "every selected release must bind its saved selection to the captured rollback receipt");
 assert.match(rollbackLineageStep, /production-release-rollback-lineage\.json/);
 assert.match(rollbackLineageStep, /stat -c '%a'[\s\S]*?= "600"/,
   "the rollback lineage receipt must remain owner-only");
 assert.doesNotMatch(rollbackLineageStep,
   /if:|VERCEL_TOKEN|OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/,
   "rollback lineage must be an unconditional zero-provider pre-candidate gate");
+assert.match(candidateJourneyStep,
+  /stat -c '%a' "\$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"[\s\S]*?= "600"/,
+  "the candidate must exclusively create its private exact projection expectation");
+assert.match(candidateForwardReadbackStep,
+  /--verify-canonical "\$VERCEL_ROLLBACK_RECEIPT"[\s\S]*?production-forward-readback\.mjs asset-id[\s\S]*?production-forward-readback\.mjs verify[\s\S]*?--rollback-receipt "\$VERCEL_ROLLBACK_RECEIPT"[\s\S]*?--verify-canonical "\$VERCEL_ROLLBACK_RECEIPT"/,
+  "captured Production must remain exact before and after reading the candidate asset");
+assert.match(candidateForwardReadbackStep,
+  /lynca-canonical-forward-readback-cookies\.txt[\s\S]*?\/api\/login[\s\S]*?--max-redirs 0[\s\S]*?\/api\/csm-resolution-view\?\$query/,
+  "forward readback must use a fresh canonical login and reject redirects");
+assert.match(candidateForwardReadbackStep,
+  /test "\$\{login_meta\[0\]\}" = "200"[\s\S]*?test "\$\{login_meta\[1\]\}" = "\$login_url"[\s\S]*?test "\$\{readback_meta\[0\]\}" = "200"[\s\S]*?test "\$\{readback_meta\[1\]\}" = "\$readback_url"/,
+  "both authenticated requests must return exact URLs and HTTP 200 without redirect");
+assert.doesNotMatch(candidateForwardReadbackStep,
+  /OPENAI_API_KEY|\/api\/csm-listing-title|WRITER_JOURNEY_INITIAL_STORAGE_STATE/,
+  "the rollback-target readback must be provider-free and must not reuse candidate auth");
 assert.match(ownershipGuardStep,
   /--verify-writer-authority/,
   "promotion must re-verify that Vercel remains staged-only with no deploy hook");
@@ -292,15 +317,24 @@ assert.match(parityReadbackStep,
 assert.match(parityReadbackStep,
   /stat -c '%a' "\$standard_response"[\s\S]*?= "600"[\s\S]*?stat -c '%a' "\$standard_receipt"[\s\S]*?= "600"/,
   "raw NON_TCG readback and sanitized receipt must remain owner-only");
+assert.match(productionAuthStep,
+  /if \[ "\$PRODUCTION_RELEASE_CLASS" = "ordinary" \]; then[\s\S]*?else[\s\S]*?test "\$PRODUCTION_RELEASE_CLASS" = "compatibility-bridge"[\s\S]*?production-forward-readback\.mjs verify-promoted/,
+  "bridge postpromotion must use the version-neutral exact projection readback");
 assert.doesNotMatch(parityReadbackStep,
   /OPENAI_API_KEY|\/api\/csm-listing-title|--data|\s-X\s+POST/,
   "post-promotion persisted readback must never dispatch recognition or another provider call");
 assert.match(productionAuthStep,
-  /trap 'rm -f -- "\$cookie_jar" "\$parity_response" "\$standard_response"' EXIT/,
-  "canonical auth material and both raw title readbacks must be destroyed before evidence upload");
+  /trap 'rm -f -- "\$cookie_jar" "\$parity_response" "\$standard_response" "\$bridge_response" "\$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"' EXIT/,
+  "canonical auth material, private expectation, and raw title readbacks must be destroyed before evidence upload");
 assert.match(workflow,
   /\$\{\{ runner\.temp \}\}\/production-standard-readback-receipt\.json/,
   "only the sanitized NON_TCG receipt may enter release evidence");
+assert.match(workflow,
+  /\$\{\{ runner\.temp \}\}\/production-forward-readback-receipt\.json/,
+  "the sanitized rollback-target forward-read receipt must enter release evidence");
+assert.match(workflow,
+  /\$\{\{ runner\.temp \}\}\/production-bridge-forward-readback-receipt\.json/,
+  "the sanitized bridge postpromotion receipt must enter release evidence");
 assert.match(canonicalReadbackRecheckStep,
   /--verify-canonical-deployment "\$DEPLOYMENT_URL"/,
   "canonical must still name the same deployment after the persisted parity GET");
@@ -363,8 +397,8 @@ for (const name of workflowFiles) {
 assert.match(workflow, /VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/);
 assert.equal(
   [...workflow.matchAll(/VERCEL_TOKEN: \$\{\{ secrets\.VERCEL_TOKEN \}\}/g)].length,
-  8,
-  "capture, build, candidate verification, ownership guard, promotion, alias receipt, post-readback recheck, and rollback authenticate independently"
+  9,
+  "capture, build, candidate verification, forward readback, ownership guard, promotion, alias receipt, post-readback recheck, and rollback authenticate independently"
 );
 assert.match(parityReadback, /provider_calls: 0/,
   "the sanitized receipt must attest the zero-provider persisted-read contract");
@@ -382,12 +416,23 @@ assert.match(parityReadback, /read_route: "\/api\/csm-resolution-view"/);
 assert.doesNotMatch(parityReadback,
   /OPENAI_API_KEY|fetch\(|\/api\/csm-listing-title/,
   "the receipt verifier itself must remain offline and provider-free");
+assert.match(forwardReadback, /provider_calls: 0/);
+assert.match(forwardReadback, /full_resolution_view_exact_match: true/);
+assert.match(forwardReadback, /stored_title_exact_match: true/);
+assert.match(forwardReadback, /owner_execution_receipt_exact_match: true/);
+assert.match(forwardReadback, /trace_exact_match: true/);
+assert.match(forwardReadback, /support_receipts_exact_match: true/);
+assert.doesNotMatch(forwardReadback,
+  /OPENAI_API_KEY|fetch\(|\/api\/csm-listing-title/,
+  "the version-neutral forward-read verifier must remain offline and provider-free");
 assert.match(resolutionViewApi, /The GET is a pure read over stored facts/);
 assert.match(resolutionViewApi,
   /const readRecord = dependencies\.readRecord \|\| readCsmResolutionRecord;[\s\S]*?await readRecord\(/,
   "the canonical parity endpoint must stay on the durable read path");
 assert.match(packageJson.scripts["test:production"], /production-parity-readback\.test\.mjs/,
   "the persisted parity guard must execute in both CI and protected release gates");
+assert.match(packageJson.scripts["test:production"], /production-forward-readback\.test\.mjs/,
+  "the rollback-target forward reader guard must execute in protected release gates");
 const immutableBuildStep = workflow.slice(vercelDeploy, prepromotionHealth);
 assert.match(immutableBuildStep, /OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \}\}/,
   "encrypted provider credentials must be injected into the local prebuild explicitly");
@@ -504,8 +549,8 @@ assert.equal(
   "one repository script must own the complete checkout-independent release suite"
 );
 assert.match(ciWorkflow,
-  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n\s*fetch-depth: 2/,
-  "PR CI must test the exact head SHA with its unique parent while push CI uses github.sha");
+  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 3/,
+  "PR CI must test the exact head, failed parent, and canonical rollback commits");
 assert.match(ciWorkflow, /run: npm run test:release/,
   "CI and production deploy must execute the same release suite");
 assert.doesNotMatch(packageJson.scripts["test:release"], /test:internal-library/,
@@ -631,10 +676,17 @@ assert.doesNotMatch(workflow, /--data\s+"\$\(node/,
   "production smoke must not expose the password in curl's process arguments");
 assert.match(health, /LYNCA_RELEASE_GIT_SHA\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_SHA/);
 assert.match(health, /LYNCA_RELEASE_GIT_REF\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_REF/);
-assert.match(health, /canonical_naming:\s*CANONICAL_NAMING_RELEASE_CONTRACT/,
-  "health must publish the exact active Canonical Naming release contract");
-assert.match(workflow, /h\.runtime\?\.canonical_naming[\s\S]*?CANONICAL_NAMING_RELEASE_CONTRACT/,
-  "the immutable candidate must match the exact Canonical Naming release contract before spend");
+assert.match(health, /canonical_naming_target:\s*CANONICAL_NAMING_RELEASE_CONTRACT_V2/,
+  "health must publish the exact target Canonical Naming release contract");
+assert.match(health,
+  /verified_original_observation:\s*VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT/,
+  "health must publish the exact redacted verified-original receipt");
+assert.match(workflow,
+  /h\.runtime\?\.canonical_naming_target[\s\S]*?CANONICAL_NAMING_RELEASE_CONTRACT_V2/,
+  "the immutable candidate must match the exact target Canonical Naming contract before spend");
+assert.match(workflow,
+  /h\.runtime\?\.verified_original_observation[\s\S]*?VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT/,
+  "the immutable candidate must match the exact redacted verified-original receipt before spend");
 assert.equal(
   packageJson.scripts["vercel-build"],
   "node lib/listing/thin/csm-deployment-environment.mjs",

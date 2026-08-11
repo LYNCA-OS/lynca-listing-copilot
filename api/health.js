@@ -19,8 +19,14 @@ import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  CSM_PROJECTION_ACTIVATION
+} from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
 
 const activeExecution = compileCsmModelExecution({
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
@@ -98,7 +104,11 @@ export default function handler(req, res) {
       provider_timeout_ms: CSM_ACTIVE_MODEL_PROFILE.provider_timeout_ms,
       recognition_transport_profiles: activeRecognitionTransportProfiles,
       external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-      canonical_naming: CANONICAL_NAMING_RELEASE_CONTRACT,
+      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+      verified_original_observation: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+      projection_activation: CSM_PROJECTION_ACTIVATION,
+      active_writer: CSM_PROJECTION_ACTIVATION.active_writer,
+      forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
       persistence_configured: persistenceConfigured,
       provider_configured: providerConfigured,
       retired_capabilities_disabled: retiredCapabilitiesDisabled

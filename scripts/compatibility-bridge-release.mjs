@@ -16,11 +16,33 @@ import {
   CSM_ACTIVE_MODEL_PROFILE
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import {
-  composeCanonicalFieldsForStoredOutput
+  composeLyncaStandardNameForProfile,
+  LYNCA_STANDARD_PROFILE_VERSION_V1,
+  LYNCA_STANDARD_PROFILE_VERSION_V2
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  buildCsmStageRows,
+  computeCsmPacketHashes
+} from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  CSM_PROJECTION_ACTIVATION
+} from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  composeCanonicalFieldsForStoredOutput,
+  validateVerifiedOriginalObservationReplayPacket
 } from "../lib/listing/thin/csm-replay.mjs";
 import {
+  finishCanonicalFields
+} from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  resolveVerifiedOriginalObservation,
+  VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
+  projectVerifiedOriginalObservationReadback,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
+import { composeResolutionView } from "../api/csm-resolution-view.js";
 import {
   readVercelProductionRollbackReceipt
 } from "./vercel-production-rollback-receipt.mjs";
@@ -41,6 +63,20 @@ export const COMPATIBILITY_BRIDGE_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-cases-v1";
 export const COMPATIBILITY_BRIDGE_PARENT_SHA =
   "ced1a23741e179618e4e7b5eca055cb10ecac8cb";
+export const COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID = "compatibility-bridge-v2";
+export const COMPATIBILITY_BRIDGE_V2_MARKER =
+  "canonical-naming-v3-overlay-forward-reader-active-v2-bridge-v1";
+export const COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER =
+  "LYNCA-Release-Class: compatibility-bridge";
+export const COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION =
+  "writer-journey-compatibility-bridge-v2-cases-v1";
+export const COMPATIBILITY_BRIDGE_V2_PARENT_SHA =
+  "fe7308c3e464a39279eddeebfbac13a62657cb31";
+export const COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA =
+  "86d19c808ad28b87f11e6b60919eb6613e7a710c";
+export const COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA =
+  "de55b031523237fc5572523886e25e7d3a1529d8";
+export const COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID = "31491259742";
 export const ACTIVE_V2_TRANSITION_PARENT_SHA =
   "3755a8f081baa57cf141685f4336999b45373562";
 export const ACTIVE_V2_TRANSITION_MARKER =
@@ -53,6 +89,45 @@ export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
+]);
+// Finalize this exact set only after the bridge-v2 repair tree is frozen. Any
+// missing or unrelated path fails selection before Production credentials are
+// acquired.
+export const COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS = Object.freeze([
+  ".github/workflows/ci.yml",
+  ".github/workflows/deploy-production.yml",
+  "api/csm-listing-title.js",
+  "api/csm-resolution-view.js",
+  "api/health.js",
+  "csm/contracts/resolution-view.mjs",
+  "e2e/production-writer-journey.spec.mjs",
+  "lib/listing/thin/canonical-naming-adapter.mjs",
+  "lib/listing/thin/canonical-naming-layer.mjs",
+  "lib/listing/thin/csm-orchestration.mjs",
+  "lib/listing/thin/csm-persistence.mjs",
+  "lib/listing/thin/csm-projection-activation.mjs",
+  "lib/listing/thin/csm-replay.mjs",
+  "lib/listing/thin/csm-supabase-writer.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "lib/listing/thin/verified-original-observation-support.mjs",
+  "package.json",
+  "scripts/accuracy-loss-ledger.test.mjs",
+  "scripts/canonical-naming-layer.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-model-optimization-pack.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/csm-persistence.test.mjs",
+  "scripts/csm-projection-activation.test.mjs",
+  "scripts/csm-replay.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/exact-parallel-color-compaction.test.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-release-boundaries.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/verified-original-observation-support.test.mjs"
 ]);
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -109,6 +184,24 @@ function bridgeCommitTree(value) {
   return match?.[1] || null;
 }
 
+function bridgeV2CommitTree(value) {
+  const lines = String(value || "").split(/\r?\n/).map((line) => line.trim());
+  const classLines = lines.filter((line) => line.startsWith("LYNCA-Release-Class:"));
+  const treeLines = lines.filter((line) => line.startsWith(
+    `${COMPATIBILITY_BRIDGE_TREE_TRAILER}:`
+  ));
+  if (classLines.length !== 1
+      || classLines[0] !== COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER
+      || treeLines.length !== 1) {
+    throw failure("compatibility_bridge_v2_commit_marker_invalid");
+  }
+  const match = treeLines[0].match(new RegExp(
+    `^${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ([0-9a-f]{40})$`
+  ));
+  if (!match) throw failure("compatibility_bridge_v2_commit_marker_invalid");
+  return match[1];
+}
+
 function exactChangedPaths(values) {
   if (!Array.isArray(values) || values.some((value) => (
     typeof value !== "string" || !value || value !== value.trim()
@@ -120,6 +213,30 @@ function exactChangedPaths(values) {
     throw failure("compatibility_bridge_changed_paths_mismatch");
   }
   return actual;
+}
+
+function exactBridgeV2ChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("compatibility_bridge_v2_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("compatibility_bridge_v2_changed_paths_mismatch");
+  }
+  return actual;
+}
+
+function bridgeV2ArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
+    parent_tree_sha: COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+    failed_run_id: COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID,
+    required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+    changed_paths: exactBridgeV2ChangedPaths(changedPaths)
+  }));
 }
 
 function gitParentShas(sha) {
@@ -141,6 +258,7 @@ export function verifyCompatibilityBridgeSelection({
   headSha = null,
   commitMessage = null,
   headTreeSha = null,
+  parentTreeSha = null,
   parentShas = null,
   changedPaths = null
 } = {}) {
@@ -157,6 +275,9 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("ordinary_release_parent_invalid");
     }
     const parentGitSha = exactGitSha(parents[0]);
+    if (parentGitSha === COMPATIBILITY_BRIDGE_V2_PARENT_SHA) {
+      throw failure("ordinary_release_failed_parent_requires_compatibility_bridge_v2");
+    }
     const transitionMarker = parentGitSha === ACTIVE_V2_TRANSITION_PARENT_SHA
       ? ACTIVE_V2_TRANSITION_MARKER
       : null;
@@ -174,6 +295,46 @@ export function verifyCompatibilityBridgeSelection({
       contract_sha256: contract.contract_sha256
     });
   }
+  const bridgeParents = parentShas ?? gitParentShas(expectedSha);
+  if (!Array.isArray(bridgeParents) || bridgeParents.length !== 1) {
+    throw failure("compatibility_bridge_parent_invalid");
+  }
+  const bridgeParent = exactGitSha(bridgeParents[0]);
+  if (bridgeParent === COMPATIBILITY_BRIDGE_V2_PARENT_SHA) {
+    const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
+    const messageTree = bridgeV2CommitTree(message);
+    const actualTree = exactGitSha(
+      headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
+    );
+    if (messageTree !== actualTree) throw failure("compatibility_bridge_v2_tree_mismatch");
+    const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+      "rev-parse", `${COMPATIBILITY_BRIDGE_V2_PARENT_SHA}^{tree}`
+    ]));
+    if (actualParentTree !== COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA) {
+      throw failure("compatibility_bridge_v2_parent_tree_mismatch");
+    }
+    const artifactPaths = exactBridgeV2ChangedPaths(
+      changedPaths ?? gitChangedPaths(COMPATIBILITY_BRIDGE_V2_PARENT_SHA, expectedSha)
+    );
+    const contract = compatibilityBridgeV2RuntimeContractProof();
+    return Object.freeze({
+      schema_version: "production-release-selection-v2",
+      release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+      bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER,
+      commit_trailer_sha256: sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER),
+      git_tree_sha: actualTree,
+      parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
+      parent_tree_sha: COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+      failed_run_id: COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID,
+      required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+      artifact_manifest_sha256: bridgeV2ArtifactManifestSha256(artifactPaths),
+      git_sha: expectedSha,
+      writer_journey_manifest: COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION,
+      parity_required: false,
+      contract_sha256: contract.contract_sha256
+    });
+  }
   const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
   const messageTree = bridgeCommitTree(message);
   if (!messageTree) {
@@ -183,9 +344,7 @@ export function verifyCompatibilityBridgeSelection({
     headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
   );
   if (messageTree !== actualTree) throw failure("compatibility_bridge_tree_mismatch");
-  const parents = parentShas ?? gitParentShas(expectedSha);
-  if (!Array.isArray(parents) || parents.length !== 1
-      || exactGitSha(parents[0]) !== COMPATIBILITY_BRIDGE_PARENT_SHA) {
+  if (bridgeParent !== COMPATIBILITY_BRIDGE_PARENT_SHA) {
     throw failure("compatibility_bridge_parent_mismatch");
   }
   const artifactPaths = exactChangedPaths(
@@ -322,6 +481,54 @@ export function verifyOrdinaryRollbackLineage({
   });
 }
 
+export function verifyReleaseRollbackLineage({ selection, rollbackReceipt } = {}) {
+  if (selection?.release_class === ORDINARY_RELEASE_CLASS) {
+    return verifyOrdinaryRollbackLineage({ selection, rollbackReceipt });
+  }
+  if (!exactKeys(selection, [
+    "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
+    "commit_trailer_sha256", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
+    "failed_run_id", "required_rollback_git_sha", "artifact_manifest_sha256",
+    "git_sha", "writer_journey_manifest", "parity_required", "contract_sha256"
+  ])
+      || selection.schema_version !== "production-release-selection-v2"
+      || selection.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
+      || selection.bridge_descriptor_id !== COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID
+      || selection.bridge_marker !== COMPATIBILITY_BRIDGE_V2_MARKER
+      || selection.commit_trailer_sha256 !== sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER)
+      || selection.parent_git_sha !== COMPATIBILITY_BRIDGE_V2_PARENT_SHA
+      || selection.parent_tree_sha !== COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA
+      || selection.failed_run_id !== COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID
+      || selection.required_rollback_git_sha !== COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA
+      || selection.artifact_manifest_sha256
+        !== bridgeV2ArtifactManifestSha256(COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS)
+      || selection.writer_journey_manifest !== COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
+      || selection.parity_required !== false
+      || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))
+      || !/^[0-9a-f]{40}$/.test(String(selection.git_tree_sha || ""))
+      || selection.contract_sha256
+        !== compatibilityBridgeV2RuntimeContractProof().contract_sha256) {
+    throw failure("release_rollback_lineage_selection_invalid");
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha !== COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA) {
+    throw failure("release_rollback_lineage_rollback_mismatch");
+  }
+  return Object.freeze({
+    schema_version: "production-release-rollback-lineage-receipt-v3",
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+    bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER,
+    release_git_sha: exactGitSha(selection.git_sha),
+    release_parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
+    release_parent_tree_sha: COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+    failed_run_id: COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID,
+    required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+    captured_rollback_git_sha: capturedRollbackSha,
+    lineage_verified: true
+  });
+}
+
 export function compatibilityBridgeRuntimeContractProof({ health = null, gitSha = null } = {}) {
   const v1 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
     .registry_thin_external_identity_high_risers_v1;
@@ -412,6 +619,339 @@ export function compatibilityBridgeRuntimeContractProof({ health = null, gitSha 
   return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
 }
 
+function resealCsmRows(rows) {
+  rows.resolution.recognition_packet_sha256 = computeCsmPacketHashes(rows)
+    .csm_recognition_packet_sha256;
+  rows.output.resolution_packet_sha256 = computeCsmPacketHashes(rows)
+    .csm_resolution_packet_sha256;
+  rows.session_hashes = computeCsmPacketHashes(rows);
+  return rows;
+}
+
+export function sealedV3OverlayForwardReadContractProof() {
+  const imageReferences = WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images.map((image) => ({
+    image_role: image.role,
+    content_sha256: image.content_sha256,
+    derived: false
+  }));
+  const observed = {
+    year: "2025",
+    ip: "",
+    language: "",
+    manufacturer: "Topps",
+    product: "Chrome",
+    set: "",
+    subjects: ["Cooper Flagg"],
+    team: "Mavericks",
+    card_name: "",
+    release_variant: "",
+    surface_color: "Gold",
+    parallel_family: "Refractor",
+    parallel_exact: "Gold Refractor",
+    print_finish: "Gold Refractor",
+    descriptive_rarity: "",
+    card_number: "251",
+    serial: "30/50",
+    attributes: ["RC"],
+    components: ["RC"],
+    search_optimization: [],
+    grading_info: null,
+    grade: "",
+    grammar: "standard",
+    lot_count: "",
+    special_stamp: "",
+    description: "",
+    unreadable: [],
+    low_confidence: []
+  };
+  const resolved = resolveVerifiedOriginalObservation(observed, {
+    originalImageSha256: imageReferences.map(({ content_sha256: hash }) => hash)
+  });
+  if (!resolved || resolved.receipt?.status !== "APPLIED") {
+    throw failure("compatibility_bridge_v2_overlay_fixture_invalid");
+  }
+  const composed = composeLyncaStandardNameForProfile(resolved.fields, {
+    marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V2
+  });
+  const rows = buildCsmStageRows({
+    tenantId: "tenant-compatibility-bridge-v2",
+    recognitionSessionId: "session-compatibility-bridge-v2-overlay",
+    fields: resolved.fields,
+    observedFields: observed,
+    externalIdentitySupport: { status: "ABSTAINED" },
+    verifiedOriginalObservationSupport: resolved.receipt,
+    composed,
+    title: composed.title
+  });
+  const session = {
+    identity_snapshot: {
+      expected_original_count: 2,
+      image_references: [
+        ...imageReferences,
+        {
+          image_role: "front_readability_derived",
+          content_sha256: "9".repeat(64),
+          derived: true
+        }
+      ]
+    }
+  };
+  const publicSupport = projectVerifiedOriginalObservationReadback({ session, rows });
+  const readback = composeResolutionView({
+    asset_id: "asset-compatibility-bridge-v2-overlay",
+    recognition_session_id: rows.output.recognition_session_id,
+    canonical_payload: rows.output.structured_output,
+    output_title: rows.output.title,
+    resolver_version: rows.resolution.resolver_version,
+    composer_version: rows.output.composer_version,
+    marketplace_profile_version: rows.output.marketplace_profile_version,
+    owner_execution_receipt: null,
+    verified_original_observation_support: publicSupport,
+    replay_rows: rows
+  });
+  const supportEvidence = rows.evidence.find((row) => (
+    row.source_ref?.support_type === "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+  ));
+  const reviewedCandidate = rows.candidates.find((row) => (
+    row.source_trust === "REVIEWED_CLOSED_PROJECTION_EXACT"
+  ));
+  const reviewedLink = rows.links.find((row) => (
+    row.evidence_observation_id === supportEvidence?.id
+      || row.candidate_id === reviewedCandidate?.id
+  ));
+  if (!supportEvidence || !reviewedCandidate || !reviewedLink) {
+    throw failure("compatibility_bridge_v2_overlay_fixture_invalid");
+  }
+  const missingEvidence = structuredClone(rows);
+  missingEvidence.evidence = missingEvidence.evidence.filter(
+    (row) => row.id !== supportEvidence.id
+  );
+  missingEvidence.links = missingEvidence.links.filter(
+    (row) => row.evidence_observation_id !== supportEvidence.id
+  );
+  resealCsmRows(missingEvidence);
+  const missingCandidate = structuredClone(rows);
+  missingCandidate.candidates = missingCandidate.candidates.filter(
+    (row) => row.id !== reviewedCandidate.id
+  );
+  missingCandidate.links = missingCandidate.links.filter(
+    (row) => row.candidate_id !== reviewedCandidate.id
+  );
+  resealCsmRows(missingCandidate);
+  const missingLink = structuredClone(rows);
+  missingLink.links = missingLink.links.filter((row) => (
+    row.candidate_id !== reviewedLink.candidate_id
+      || row.evidence_observation_id !== reviewedLink.evidence_observation_id
+  ));
+  resealCsmRows(missingLink);
+  const tampered = structuredClone(rows);
+  tampered.evidence.find((row) => row.id === supportEvidence.id)
+    .source_ref.field_fact_set_sha256 = "0".repeat(64);
+  resealCsmRows(tampered);
+  const negativeChecks = [
+    projectVerifiedOriginalObservationReadback({ session: {}, rows }) === null,
+    projectVerifiedOriginalObservationReadback({ session, rows: missingEvidence }) === null,
+    projectVerifiedOriginalObservationReadback({ session, rows: missingCandidate }) === null,
+    projectVerifiedOriginalObservationReadback({ session, rows: missingLink }) === null,
+    projectVerifiedOriginalObservationReadback({ session, rows: tampered }) === null
+  ];
+  const valid = validateVerifiedOriginalObservationReplayPacket(rows)
+    && publicSupport?.status === "APPLIED"
+    && readback.composed?.title === rows.output.title
+    && readback.composer_version === rows.output.composer_version
+    && readback.marketplace_profile_version === rows.output.marketplace_profile_version
+    && negativeChecks.every(Boolean);
+  if (!valid) throw failure("compatibility_bridge_v2_overlay_forward_read_invalid");
+  const body = {
+    schema_version: "compatibility-bridge-v2-sealed-overlay-forward-read-proof-v1",
+    composer_version: rows.output.composer_version,
+    marketplace_profile_version: rows.output.marketplace_profile_version,
+    public_receipt_schema_version: publicSupport.schema_version,
+    durable_packet_valid: true,
+    durable_identity_snapshot_bound: true,
+    derived_reference_ignored_for_original_set: true,
+    readback_projector_valid: true,
+    resolution_view_recomposition_valid: true,
+    negative_resealed_counterexample_count: negativeChecks.length,
+    provider_calls: 0
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
+export function compatibilityBridgeV2RuntimeContractProof({
+  health = null,
+  gitSha = null
+} = {}) {
+  const sealedOverlayForwardRead = sealedV3OverlayForwardReadContractProof();
+  const fields = {
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Chrome",
+    set: "",
+    subjects: ["Bridge Test Player"],
+    team: "Test Team",
+    card_name: "",
+    release_variant: "",
+    print_finish: "",
+    surface_color: "",
+    parallel_family: "",
+    parallel_exact: "",
+    descriptive_rarity: "",
+    card_number: "1",
+    serial: "",
+    attributes: [],
+    components: [],
+    search_optimization: [],
+    grade: "",
+    grading_info: null,
+    grammar: "standard",
+    lot_count: "",
+    unreadable: [],
+    low_confidence: []
+  };
+  const active = finishCanonicalFields(fields);
+  const historicalV2 = composeCanonicalFieldsForStoredOutput(fields, {
+    marketplace: "EBAY",
+    composer_version: "thin-marketplace-composer-v2",
+    marketplace_profile_version: "ebay-profile-v1"
+  });
+  const activeReceipt = {
+    title: active.title,
+    grammar: active.grammar,
+    brackets: active.brackets,
+    bracket_text: active.bracket_text,
+    dropped: active.dropped_brackets,
+    suppressed: active.suppressed_brackets,
+    restored: active.restored_brackets,
+    truncated: active.truncated,
+    empty_fields: active.empty_fields,
+    input_empty_fields: active.input_empty_fields,
+    unreadable: active.unreadable_fields,
+    low_confidence: active.low_confidence_fields,
+    inferred_parent: active.inferred_parent,
+    normalization_reasons: active.normalization_reasons,
+    character_budget: active.character_budget,
+    length: active.length,
+    composer_version: active.composer_version,
+    marketplace_profile_version: active.marketplace_profile_version
+  };
+  const historicalV2Receipt = {
+    title: historicalV2.title,
+    grammar: historicalV2.grammar,
+    brackets: historicalV2.brackets,
+    bracket_text: historicalV2.bracket_text,
+    dropped: historicalV2.dropped,
+    suppressed: historicalV2.suppressed,
+    restored: historicalV2.restored,
+    truncated: historicalV2.truncated,
+    empty_fields: historicalV2.empty_fields,
+    input_empty_fields: historicalV2.input_empty_fields,
+    unreadable: historicalV2.unreadable,
+    low_confidence: historicalV2.low_confidence,
+    inferred_parent: historicalV2.inferred_parent,
+    normalization_reasons: historicalV2.normalization_reasons,
+    character_budget: historicalV2.character_budget,
+    length: historicalV2.length,
+    composer_version: "thin-marketplace-composer-v2",
+    marketplace_profile_version: "ebay-profile-v1"
+  };
+  const forwardStandard = CSM_PROJECTION_ACTIVATION.forward_readers.standard;
+  const forwardReceipts = forwardStandard.map((contract) => ({
+    contract,
+    replayed: composeCanonicalFieldsForStoredOutput(fields, {
+      marketplace: "EBAY",
+      composer_version: contract.composer_version,
+      marketplace_profile_version: contract.marketplace_profile_version
+    }),
+    expected: composeLyncaStandardNameForProfile(fields, {
+      marketplaceProfileVersion: contract.marketplace_profile_version
+    })
+  }));
+  const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+  const overlayForward =
+    CSM_PROJECTION_ACTIVATION.forward_readers.verified_original_observation_overlay;
+  const runtimeReady = activeWriter.standard.composer_version === active.composer_version
+    && activeWriter.standard.marketplace_profile_version
+      === active.marketplace_profile_version
+    && activeWriter.verified_original_observation_overlay === null
+    && stableJson(forwardStandard.map((contract) => ({
+      composer_version: contract.composer_version,
+      marketplace_profile_version: contract.marketplace_profile_version
+    }))) === stableJson([
+      {
+        composer_version: "thin-marketplace-composer-v3",
+        marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V1
+      },
+      {
+        composer_version: "thin-marketplace-composer-v3",
+        marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V2
+      }
+    ])
+    && overlayForward.resolution_contract_sha256
+      === VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256
+    && overlayForward.resolver_version
+      === VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.resolver_version
+    && overlayForward.conflict_policy_version
+      === VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.conflict_policy_version
+    && stableJson(activeReceipt) === stableJson(historicalV2Receipt)
+    && active.canonical_naming_trace === null
+    && !Object.hasOwn(active, "verified_original_observation_support")
+    && forwardReceipts.every(({ replayed, expected }) => (
+      stableJson(replayed) === stableJson(expected)
+    ))
+    && sealedOverlayForwardRead.durable_packet_valid === true
+    && sealedOverlayForwardRead.readback_projector_valid === true
+    && sealedOverlayForwardRead.resolution_view_recomposition_valid === true
+    && sealedOverlayForwardRead.negative_resealed_counterexample_count === 5
+    && CSM_ACTIVE_MODEL_PROFILE.id === expectedModelProfileId;
+  if (!runtimeReady) throw failure("compatibility_bridge_v2_runtime_contract_invalid");
+
+  let healthBound = false;
+  let deploymentSha = null;
+  if (health != null) {
+    deploymentSha = exactGitSha(gitSha);
+    healthBound = health?.ready === true
+      && health?.deployment?.git_commit_sha === deploymentSha
+      && health?.runtime?.model_profile_id === expectedModelProfileId
+      && stableJson(health?.runtime?.projection_activation)
+        === stableJson(CSM_PROJECTION_ACTIVATION)
+      && stableJson(health?.runtime?.active_writer)
+        === stableJson(CSM_PROJECTION_ACTIVATION.active_writer)
+      && stableJson(health?.runtime?.forward_readers)
+        === stableJson(CSM_PROJECTION_ACTIVATION.forward_readers);
+    if (!healthBound) throw failure("compatibility_bridge_v2_health_contract_invalid");
+  }
+
+  const body = {
+    schema_version: "compatibility-bridge-v2-runtime-contract-proof-v1",
+    bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER,
+    active_writer_composer_version: activeWriter.standard.composer_version,
+    active_writer_marketplace_profile_version:
+      activeWriter.standard.marketplace_profile_version,
+    active_verified_original_observation_overlay: null,
+    forward_reader_standard_contracts: forwardStandard.map((contract) => ({
+      composer_version: contract.composer_version,
+      marketplace_profile_version: contract.marketplace_profile_version,
+      profile_id: contract.profile_id,
+      profile_version: contract.profile_version
+    })),
+    forward_reader_overlay_resolution_contract_sha256:
+      overlayForward.resolution_contract_sha256,
+    sealed_overlay_forward_read_contract_sha256:
+      sealedOverlayForwardRead.contract_sha256,
+    sealed_overlay_forward_read_packet_valid: true,
+    sealed_overlay_forward_readback_projector_valid: true,
+    sealed_overlay_forward_read_negative_count:
+      sealedOverlayForwardRead.negative_resealed_counterexample_count,
+    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
+    active_model_profile_id: expectedModelProfileId,
+    provider_calls: 0,
+    health_bound: healthBound,
+    deployment_git_sha: deploymentSha
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
 function validateOrdinaryCases(manifest) {
   if (!exactKeys(manifest, [
     "schema_version", "evidence_scope", "accuracy_claim", "cases", "parity_case"
@@ -483,13 +1023,31 @@ function validateOrdinaryCases(manifest) {
 }
 
 export function buildCompatibilityBridgeManifest({ selection, sourceManifest } = {}) {
-  if (selection?.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
-      || selection?.bridge_marker !== COMPATIBILITY_BRIDGE_MARKER
-      || selection?.writer_journey_manifest !== COMPATIBILITY_BRIDGE_MANIFEST_VERSION
-      || selection?.parity_required !== false) {
+  const historicalV1 = selection?.release_class === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && selection?.bridge_marker === COMPATIBILITY_BRIDGE_MARKER
+    && selection?.writer_journey_manifest === COMPATIBILITY_BRIDGE_MANIFEST_VERSION
+    && selection?.parity_required === false;
+  const bridgeV2 = selection?.release_class === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && selection?.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID
+    && selection?.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER
+    && selection?.writer_journey_manifest === COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
+    && selection?.parity_required === false;
+  if (!historicalV1 && !bridgeV2) {
     throw failure("compatibility_bridge_selection_required");
   }
   const cases = validateOrdinaryCases(sourceManifest);
+  if (bridgeV2) {
+    return Object.freeze({
+      schema_version: COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION,
+      release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+      bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER,
+      git_sha: exactGitSha(selection.git_sha),
+      evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
+      accuracy_claim: null,
+      cases
+    });
+  }
   return Object.freeze({
     schema_version: COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
     release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
@@ -571,15 +1129,15 @@ async function main(argv) {
   if (mode === "verify-rollback-lineage") {
     const savedSelection = await readPrivateJson(
       values.get("--selection"),
-      "ordinary_release_selection"
+      "production_release_selection"
     );
     if (stableJson(savedSelection) !== stableJson(selection)) {
-      throw failure("ordinary_release_selection_mismatch");
+      throw failure("production_release_selection_mismatch");
     }
     const rollbackReceipt = await readVercelProductionRollbackReceipt({
       receiptPath: values.get("--rollback-receipt")
     });
-    await exclusivePrivateWrite(values.get("--out"), verifyOrdinaryRollbackLineage({
+    await exclusivePrivateWrite(values.get("--out"), verifyReleaseRollbackLineage({
       selection,
       rollbackReceipt
     }));
@@ -599,10 +1157,15 @@ async function main(argv) {
     return;
   }
   const health = await readJson(values.get("--health"), "compatibility_bridge_health");
-  const proof = compatibilityBridgeRuntimeContractProof({
+  const proof = selection.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID
+    ? compatibilityBridgeV2RuntimeContractProof({
+      health,
+      gitSha: selection.git_sha
+    })
+    : compatibilityBridgeRuntimeContractProof({
     health,
     gitSha: selection.git_sha
-  });
+    });
   await exclusivePrivateWrite(values.get("--out"), {
     ...proof,
     release_selection_sha256: sha256(stableJson(selection))

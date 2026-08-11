@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -137,6 +138,30 @@ const rows = buildCsmStageRows({
   assert.deepEqual(
     namingRows.output.structured_output.search_optimization,
     ["Young Guns"]
+  );
+
+  // The bridge's active writer is still v2/eBay. Even when a caller carries a
+  // future independent search lane, its complete stage packet must stay
+  // byte-identical to de55; only registered CNL v3 profiles may persist it.
+  const legacyComposed = composeFromCanonicalFields(youngGunsFields);
+  const legacyRows = buildCsmStageRows({
+    tenantId: "tenant-legacy",
+    recognitionSessionId: "session-legacy",
+    fields: youngGunsFields,
+    composed: legacyComposed,
+    title: legacyComposed.title,
+    createdAt: "2026-08-11T00:00:00.000Z"
+  });
+  assert.equal(Object.hasOwn(
+    legacyRows.output.structured_output,
+    "search_optimization"
+  ), false);
+  assert.deepEqual(legacyRows.output.structured_output.sem.search_optimization,
+    ["RC", "Blackhawks"]);
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(legacyRows)).digest("hex"),
+    "87ef4d746dc0d50aed0b11b72a5f764d1a3e7bbb060ff72b3c234ad4f81e0df2",
+    "the full v2 packet matches the archived de55 writer bytes"
   );
 }
 assert.equal(rows.resolution.registry_release_id, THIN_REGISTRY_RELEASE_ID);

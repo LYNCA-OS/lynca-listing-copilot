@@ -37,8 +37,13 @@ import {
   EXTERNAL_IDENTITY_SUPPORT_PACK
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT
+  CANONICAL_NAMING_RELEASE_CONTRACT,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
   WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
   WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS,
@@ -55,8 +60,19 @@ import {
   COMPATIBILITY_BRIDGE_MANIFEST_VERSION,
   COMPATIBILITY_BRIDGE_MARKER,
   COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+  COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION,
+  COMPATIBILITY_BRIDGE_V2_MARKER,
   ORDINARY_RELEASE_CLASS
 } from "../scripts/compatibility-bridge-release.mjs";
+import {
+  buildProductionForwardReadbackExpectation,
+  writeProductionForwardReadbackExpectation
+} from "../scripts/production-forward-readback.mjs";
+import {
+  EBAY_PROFILE_VERSION,
+  THIN_COMPOSER_VERSION_V2
+} from "../lib/listing/thin/csm-persistence.mjs";
 
 const expectedExecutionContractByTransportLaneAndImageCount = Object.freeze(Object.fromEntries(
   CSM_RECOGNITION_TRANSPORT_PROFILES.map((transportProfile) => [
@@ -124,6 +140,7 @@ const verifierErrorCodes = Object.freeze({
   VERSION_CONTRACT_MISMATCH: "VERSION_CONTRACT_MISMATCH",
   VERSION_RESOLVER_MISMATCH: "VERSION_RESOLVER_MISMATCH",
   VERSION_COMPOSER_MISMATCH: "VERSION_COMPOSER_MISMATCH",
+  STANDARD_P0_IDENTITY_MISMATCH: "STANDARD_P0_IDENTITY_MISMATCH",
   FEEDBACK_EXCHANGE_MISMATCH: "FEEDBACK_EXCHANGE_MISMATCH",
   FEEDBACK_SESSION_MISMATCH: "FEEDBACK_SESSION_MISMATCH",
   FEEDBACK_ACTION_MISMATCH: "FEEDBACK_ACTION_MISMATCH",
@@ -222,8 +239,13 @@ function healthExternalIdentityContractMatches(runtime) {
 }
 
 function healthCanonicalNamingContractMatches(runtime) {
-  return stableJson(runtime?.canonical_naming)
-    === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT);
+  return stableJson(runtime?.canonical_naming_target)
+    === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT_V2);
+}
+
+function healthVerifiedOriginalObservationContractMatches(runtime) {
+  return stableJson(runtime?.verified_original_observation)
+    === stableJson(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT);
 }
 
 function writerJourneyHealthReceipt({
@@ -252,12 +274,15 @@ function writerJourneyHealthReceipt({
     deployment_git_commit_sha: health?.deployment?.git_commit_sha,
     deployment_environment: health?.deployment?.environment,
     canonical_naming_contract_valid: healthCanonicalNamingContractMatches(health?.runtime),
-    canonical_naming_release_contract: health?.runtime?.canonical_naming,
+    canonical_naming_release_contract: health?.runtime?.canonical_naming_target,
+    verified_original_observation_release_receipt:
+      health?.runtime?.verified_original_observation,
     runtime_contract_valid: health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
       && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
       && healthRecognitionTransportContractMatches(health?.runtime)
       && healthExternalIdentityContractMatches(health?.runtime)
       && healthCanonicalNamingContractMatches(health?.runtime)
+      && healthVerifiedOriginalObservationContractMatches(health?.runtime)
       && health?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
       && health?.runtime?.retired_capabilities_disabled === true
   };
@@ -273,7 +298,9 @@ function writerJourneyHealthReceipt({
     && receipt.deployment_git_commit_sha === expectedSha
     && receipt.deployment_environment === "production"
     && stableJson(receipt.canonical_naming_release_contract)
-      === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT)
+      === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT_V2)
+    && stableJson(receipt.verified_original_observation_release_receipt)
+      === stableJson(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT)
     && receipt.runtime_contract_valid,
   verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
   return Object.freeze(receipt);
@@ -1477,6 +1504,21 @@ function validateSourceCasesManifest(manifest, {
   releaseClass = ORDINARY_RELEASE_CLASS,
   expectedGitSha = null
 } = {}) {
+  const compatibilityBridgeV1 = releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && hasExactKeys(manifest, [
+      "schema_version", "release_class", "bridge_marker", "git_sha",
+      "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_MANIFEST_VERSION
+    && manifest.bridge_marker === COMPATIBILITY_BRIDGE_MARKER;
+  const compatibilityBridgeV2 = releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && hasExactKeys(manifest, [
+      "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker", "git_sha",
+      "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
+    && manifest.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID
+    && manifest.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER;
   if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(releaseClass)
     || manifest?.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
     || manifest?.accuracy_claim !== null
@@ -1491,13 +1533,8 @@ function validateSourceCasesManifest(manifest, {
       || !exactObject(manifest.parity_case)
     ))
     || (releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS && (
-      !hasExactKeys(manifest, [
-        "schema_version", "release_class", "bridge_marker", "git_sha",
-        "evidence_scope", "accuracy_claim", "cases"
-      ])
-      || manifest.schema_version !== COMPATIBILITY_BRIDGE_MANIFEST_VERSION
-      || manifest.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
-      || manifest.bridge_marker !== COMPATIBILITY_BRIDGE_MARKER
+      manifest.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
+      || (!compatibilityBridgeV1 && !compatibilityBridgeV2)
       || !/^[0-9a-f]{40}$/.test(String(expectedGitSha || ""))
       || manifest.git_sha !== expectedGitSha
     ))) {
@@ -1691,13 +1728,19 @@ function recognitionVersionReceipt(recognition, view) {
   requireInvariant(Boolean(composer) && composer === rowComposer
     && view?.composer?.composer_version === composer,
     verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+  const legacyV2View = composer === THIN_COMPOSER_VERSION_V2
+    && marketplaceProfile === EBAY_PROFILE_VERSION
+    && view?.composer?.marketplace_profile_version == null;
   requireInvariant(Boolean(marketplaceProfile)
     && marketplaceProfile === rowMarketplaceProfile
-    && view?.composer?.marketplace_profile_version === marketplaceProfile,
+    && (view?.composer?.marketplace_profile_version === marketplaceProfile || legacyV2View),
   verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
-  if (composer === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version) {
+  if (composer === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version) {
     requireInvariant(
-      marketplaceProfile === CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version,
+      [
+        CANONICAL_NAMING_RELEASE_CONTRACT_V1.marketplace_profile_version,
+        CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+      ].includes(marketplaceProfile),
       verifierErrorCodes.VERSION_COMPOSER_MISMATCH
     );
   }
@@ -1710,10 +1753,23 @@ function recognitionVersionReceipt(recognition, view) {
   };
 }
 
+function standardP0LiveEvidence({ recognitionTitle, uiTitle, resolutionView }) {
+  return Object.freeze({
+    ...productionStandardP0ResolutionProof(resolutionView),
+    recognition_title_exact: standardP0TitleIdentityExact(recognitionTitle),
+    ui_title_exact: standardP0TitleIdentityExact(uiTitle)
+  });
+}
+
 function canonicalNamingVersionActive(versions) {
-  return versions?.composer === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version
+  return versions?.composer === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
     && versions?.marketplace_profile
-      === CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
+}
+
+function compatibilityBridgeStandardVersionActive(versions) {
+  return versions?.composer === THIN_COMPOSER_VERSION_V2
+    && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
 }
 
 function feedbackReceipt({
@@ -1787,7 +1843,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     passed: false,
     launch_ready_mutated: false,
     release_class: releaseClass,
-    compatibility_bridge_marker: parityRequired ? null : COMPATIBILITY_BRIDGE_MARKER,
+    compatibility_bridge_marker: parityRequired ? null : COMPATIBILITY_BRIDGE_V2_MARKER,
     base_url: baseUrl,
     started_at: new Date().toISOString(),
     deployment_origin: null,
@@ -1820,6 +1876,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
   };
   const requestIds = new Set();
   const resolutionRequests = [];
+  let standardResolutionView = null;
   const responseCaptureTasks = new Set();
   const pendingPageWaits = new Set();
   const ownPageWait = (promise) => {
@@ -2357,21 +2414,30 @@ test("production writer journey verifies Glass Box and staged large-image transp
       const versions = recognitionVersionReceipt(recognitionPayload, resolutionView);
       if (sourceCase.case_id === "NON_TCG") {
         requireInvariant(resolutionView?.grammar?.raw === "standard"
-          && canonicalNamingVersionActive(versions)
-          && sourceCase.source_kind === "PRODUCTION_ASSET"
-          && sourceCase.source_asset_id
-            === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
-          && standardP0TitleIdentityExact(recognitionPayload?.title)
-          && standardP0TitleIdentityExact(titleBeforePanel),
+          && (parityRequired
+            ? canonicalNamingVersionActive(versions)
+              && resolutionView?.verified_original_observation_support?.status === "APPLIED"
+            : compatibilityBridgeStandardVersionActive(versions)
+              && resolutionView?.verified_original_observation_support == null),
         verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
-        const resolutionProof = productionStandardP0ResolutionProof(resolutionView);
-        requireInvariant(productionStandardP0ResolutionProofValid(resolutionProof),
-          verifierErrorCodes.TITLE_STORED_UI_MISMATCH);
-        standardP0Identity = Object.freeze({
-          ...resolutionProof,
-          recognition_title_exact: true,
-          ui_title_exact: true
-        });
+        standardResolutionView = structuredClone(resolutionView);
+        if (parityRequired) {
+          const sourceIdentityExact = sourceCase.source_kind === "PRODUCTION_ASSET"
+            && sourceCase.source_asset_id
+              === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id;
+          standardP0Identity = standardP0LiveEvidence({
+            recognitionTitle: recognitionPayload?.title,
+            uiTitle: titleBeforePanel,
+            resolutionView
+          });
+          evidence.stages.standard_p0_identity = Object.freeze({
+            source_identity_exact: sourceIdentityExact,
+            ...standardP0Identity
+          });
+          requireInvariant(sourceIdentityExact
+            && productionStandardP0EvidenceProofValid(standardP0Identity),
+          verifierErrorCodes.STANDARD_P0_IDENTITY_MISMATCH);
+        }
       }
       const ownerExecutionReadback = durableOwnerExecutionReadbackProof(
         executionReceipt, resolutionView
@@ -2488,6 +2554,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
         recomposed_matches_stored: resolutionView.composer.recomposed_matches_stored,
         versions,
         canonical_naming_active: canonicalNamingVersionActive(versions),
+        compatibility_bridge_standard_active:
+          compatibilityBridgeStandardVersionActive(versions),
+        verified_original_observation_active:
+          resolutionView?.verified_original_observation_support?.status === "APPLIED",
         ...(standardP0Identity ? { standard_p0_identity: standardP0Identity } : {}),
         ...(externalIdentityReceipt ? {
           codex_parity_exact_match: true,
@@ -2838,19 +2908,30 @@ test("production writer journey verifies Glass Box and staged large-image transp
         && parityCaseEvidence?.external_identity_support?.match_basis === "VERIFIED_ORIGINAL_SET"
         && parityCaseEvidence?.external_identity_support?.source_count === 3
       ) : parityCaseEvidence == null)
-      && standardCaseEvidence?.canonical_naming_active === true
       && standardCaseEvidence?.source_kind === "PRODUCTION_ASSET"
       && standardCaseEvidence?.source_record_id
         === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.source_record_id
       && standardCaseEvidence?.source_asset_id
         === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
-      && productionStandardP0EvidenceProofValid(
-        standardCaseEvidence?.standard_p0_identity
-      )
-      && standardCaseEvidence?.versions?.composer
-        === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version
-      && standardCaseEvidence?.versions?.marketplace_profile
-        === CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
+      && (parityRequired ? (
+        standardCaseEvidence?.canonical_naming_active === true
+          && standardCaseEvidence?.compatibility_bridge_standard_active === false
+          && standardCaseEvidence?.verified_original_observation_active === true
+          && productionStandardP0EvidenceProofValid(
+            standardCaseEvidence?.standard_p0_identity
+          )
+          && standardCaseEvidence?.versions?.composer
+            === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+          && standardCaseEvidence?.versions?.marketplace_profile
+            === CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+      ) : (
+        standardCaseEvidence?.canonical_naming_active === false
+          && standardCaseEvidence?.compatibility_bridge_standard_active === true
+          && standardCaseEvidence?.verified_original_observation_active === false
+          && standardCaseEvidence?.standard_p0_identity == null
+          && standardCaseEvidence?.versions?.composer === THIN_COMPOSER_VERSION_V2
+          && standardCaseEvidence?.versions?.marketplace_profile === EBAY_PROFILE_VERSION
+      ))
       && largeCaseEvidence?.overlap_observed === true
       && largeCaseEvidence?.relay_durable_before_recognition_response === true,
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
@@ -2871,6 +2952,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
       standard_p0_exact_case_count: evidence.cases.filter(
         (entry) => productionStandardP0EvidenceProofValid(entry.standard_p0_identity)
       ).length,
+      compatibility_bridge_standard_case_count: evidence.cases.filter(
+        (entry) => entry.compatibility_bridge_standard_active === true
+      ).length,
+      verified_original_observation_active_case_count: evidence.cases.filter(
+        (entry) => entry.verified_original_observation_active === true
+      ).length,
       warmup_real_response_observed: true,
       staged_overlap_observed: true,
       staged_relays_durable_before_recognition_response: true,
@@ -2878,7 +2965,26 @@ test("production writer journey verifies Glass Box and staged large-image transp
     };
     evidence.stages.live_contract = { passed: true, case_count: evidence.cases.length };
     evidence.passed = true;
+    requireInvariant(standardResolutionView != null,
+      verifierErrorCodes.RESOLUTION_VIEW_MISMATCH);
+    const forwardReadbackExpectation = buildProductionForwardReadbackExpectation({
+      evidence,
+      resolutionView: standardResolutionView,
+      deploymentUrl: baseUrl,
+      gitSha: expectedSha
+    });
+    await writeProductionForwardReadbackExpectation(
+      requiredEnv("WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"),
+      forwardReadbackExpectation
+    );
+    evidence.stages.forward_readback_expectation = {
+      passed: true,
+      asset_id: forwardReadbackExpectation.asset_id,
+      recognition_session_id: forwardReadbackExpectation.recognition_session_id,
+      provider_calls: 0
+    };
   } catch (error) {
+    evidence.passed = false;
     const errorCode = sanitizedFailureCode(error);
     evidence.error_code = errorCode;
     evidence.failed_case_id = liveFailureCaseIds.has(failureCaseId) ? failureCaseId : null;
@@ -2950,7 +3056,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       execution_contract_sha256_by_transport_lane_and_image_count:
         expectedExecutionContractSha256ByTransportLaneAndImageCount,
       external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-      canonical_naming: CANONICAL_NAMING_RELEASE_CONTRACT,
+      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+      verified_original_observation: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
       max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
       retired_capabilities_disabled: true
     }
@@ -2986,8 +3093,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       ...offlineHealth,
       runtime: {
         ...offlineHealth.runtime,
-        canonical_naming: {
-          ...CANONICAL_NAMING_RELEASE_CONTRACT,
+        canonical_naming_target: {
+          ...CANONICAL_NAMING_RELEASE_CONTRACT_V2,
           composer_version: "thin-marketplace-composer-v2"
         }
       }
@@ -3218,6 +3325,20 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
     expectedGitSha: bridgeGitSha
   }).length === 2, verifierErrorCodes.GENERIC);
+  const bridgeV2Manifest = {
+    schema_version: COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION,
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+    bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER,
+    git_sha: bridgeGitSha,
+    evidence_scope: manifest.evidence_scope,
+    accuracy_claim: null,
+    cases: manifest.cases
+  };
+  requireInvariant(validateSourceCasesManifest(bridgeV2Manifest, {
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    expectedGitSha: bridgeGitSha
+  }).length === 2, verifierErrorCodes.GENERIC);
   for (const [candidate, options] of [
     [bridgeManifest, { releaseClass: ORDINARY_RELEASE_CLASS }],
     [manifest, {
@@ -3225,6 +3346,14 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       expectedGitSha: bridgeGitSha
     }],
     [{ ...bridgeManifest, git_sha: "c".repeat(40) }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeV2Manifest, bridge_descriptor_id: "compatibility-bridge-v3" }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeV2Manifest, bridge_marker: COMPATIBILITY_BRIDGE_MARKER }, {
       releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
       expectedGitSha: bridgeGitSha
     }]
@@ -3463,23 +3592,37 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && versions.composer === "composer-v-test", verifierErrorCodes.GENERIC);
   const canonicalRecognition = structuredClone(recognition);
   canonicalRecognition.csm_owner_versions.composer =
-    CANONICAL_NAMING_RELEASE_CONTRACT.composer_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version;
   canonicalRecognition.csm_owner_versions.marketplace_profile =
-    CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
   canonicalRecognition.csm_rows.output.composer_version =
-    CANONICAL_NAMING_RELEASE_CONTRACT.composer_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version;
   canonicalRecognition.csm_rows.output.marketplace_profile_version =
-    CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
   const canonicalVersions = recognitionVersionReceipt(canonicalRecognition, {
     ...view,
     composer: {
-      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT.composer_version,
+      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
       marketplace_profile_version:
-        CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
+        CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
     }
   });
   requireInvariant(canonicalNamingVersionActive(canonicalVersions),
     verifierErrorCodes.GENERIC);
+  const bridgeRecognition = structuredClone(recognition);
+  bridgeRecognition.csm_owner_versions.composer = THIN_COMPOSER_VERSION_V2;
+  bridgeRecognition.csm_owner_versions.marketplace_profile = EBAY_PROFILE_VERSION;
+  bridgeRecognition.csm_rows.output.composer_version = THIN_COMPOSER_VERSION_V2;
+  bridgeRecognition.csm_rows.output.marketplace_profile_version = EBAY_PROFILE_VERSION;
+  const bridgeVersions = recognitionVersionReceipt(bridgeRecognition, {
+    ...view,
+    composer: {
+      composer_version: THIN_COMPOSER_VERSION_V2,
+      marketplace_profile_version: EBAY_PROFILE_VERSION
+    }
+  });
+  requireInvariant(compatibilityBridgeStandardVersionActive(bridgeVersions)
+    && !canonicalNamingVersionActive(bridgeVersions), verifierErrorCodes.GENERIC);
   let versionDriftCode = "";
   try {
     recognitionVersionReceipt(recognition, {
@@ -3491,6 +3634,35 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   }
   requireInvariant(versionDriftCode === verifierErrorCodes.VERSION_COMPOSER_MISMATCH,
     verifierErrorCodes.GENERIC);
+
+  const serialDriftView = {
+    ...exactStandardP0View,
+    composer: {
+      title: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title.replace("50/50", "30/50"),
+      stored_title: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title.replace("50/50", "30/50")
+    },
+    brackets: exactStandardP0View.brackets.map((entry) => (
+      entry.bracket === "numerical_rarity"
+        ? { ...entry, value: "30/50", selected_candidate: "30/50", rendered_text: "30/50" }
+        : entry
+    ))
+  };
+  const serialDriftEvidence = standardP0LiveEvidence({
+    recognitionTitle: serialDriftView.composer.title,
+    uiTitle: serialDriftView.composer.title,
+    resolutionView: serialDriftView
+  });
+  let serialDriftCode = "";
+  try {
+    requireInvariant(productionStandardP0EvidenceProofValid(serialDriftEvidence),
+      verifierErrorCodes.STANDARD_P0_IDENTITY_MISMATCH);
+  } catch (error) {
+    serialDriftCode = sanitizedFailureCode(error);
+  }
+  requireInvariant(serialDriftCode === verifierErrorCodes.STANDARD_P0_IDENTITY_MISMATCH
+    && serialDriftEvidence.card_number_selected_exact === true
+    && serialDriftEvidence.serial_selected_exact === false,
+  verifierErrorCodes.GENERIC);
 
   const expectedTitleHash = titleSha256("PRIVATE FEEDBACK TITLE");
   const validFeedback = {

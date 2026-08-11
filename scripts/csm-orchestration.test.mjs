@@ -21,11 +21,18 @@ import {
 } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
 import { writeCsmStageRows } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
+  buildCsmStageRows,
   computeCsmPacketHashes,
   THIN_COMPOSER_VERSION_V1
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
 import { patchSupabaseRow } from "../lib/supabase-rest.mjs";
+import {
+  composeLyncaStandardNameForProfile,
+  LYNCA_STANDARD_PROFILE_VERSION_V1
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import { buildAccuracyLossLedger } from
+  "../lib/listing/thin/accuracy-loss-ledger.mjs";
 
 const enabledEnv = {
   SUPABASE_URL: "https://example.supabase.co",
@@ -548,6 +555,39 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
       product: "Chrome", set: "", subjects: ["Victor Wembanyama"],
       descriptive_rarity: "SSP", card_number: "221"
     })
+  });
+  const historicalV3 = composeLyncaStandardNameForProfile(prepared.fields, {
+    marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V1
+  });
+  Object.assign(prepared, {
+    title: historicalV3.title,
+    grammar: historicalV3.grammar,
+    brackets: historicalV3.brackets,
+    dropped_brackets: historicalV3.dropped,
+    suppressed_brackets: historicalV3.suppressed,
+    restored_brackets: historicalV3.restored,
+    truncated: historicalV3.truncated,
+    input_empty_fields: historicalV3.input_empty_fields,
+    normalization_reasons: historicalV3.normalization_reasons,
+    character_budget: historicalV3.character_budget,
+    length: historicalV3.length,
+    canonical_naming_trace: historicalV3.canonical_naming_trace,
+    canonical_naming_publishable: historicalV3.canonical_naming_publishable,
+    composer_version: historicalV3.composer_version,
+    marketplace_profile_version: historicalV3.marketplace_profile_version
+  });
+  prepared.csm_rows = buildCsmStageRows({
+    tenantId: "tenant-1",
+    recognitionSessionId: "session-v3-overbudget-resume",
+    fields: prepared.fields,
+    observedFields: prepared.observed_fields || prepared.fields,
+    externalIdentitySupport: prepared.external_identity_support,
+    composed: historicalV3,
+    title: historicalV3.title
+  });
+  prepared.accuracy_loss_ledger = buildAccuracyLossLedger({
+    rawProviderOutput: JSON.stringify(prepared.observed_fields || prepared.fields),
+    result: prepared
   });
   const invalid = structuredClone(prepared);
   invalid.csm_rows.resolved.find((row) => row.bracket === "card_number").canonical_value =

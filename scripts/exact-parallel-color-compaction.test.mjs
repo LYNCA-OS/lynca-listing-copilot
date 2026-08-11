@@ -90,9 +90,10 @@ const positive = card({
   assert.ok(!candidate.normalization_reasons.includes("print_finish:exact_parallel_color_compacted"));
 }
 
-// The legacy Composer exposes its exact ablation through the pure v2 composer
-// above. The active Standard router is CNL v0.1 and must not be downgraded by
-// a retired experiment flag.
+// The behavior-neutral forward-reader bridge keeps the active Standard writer
+// on the current Production v2/eBay pair. Its default is the measured exact
+// colour compaction; the explicit false arm remains the ablation. CNL v0.1 and
+// v0.2 are exercised through stored-version replay until atomic activation.
 {
   const payload = JSON.stringify(positive);
   const baseline = finishCanonicalTitle(payload, {
@@ -104,11 +105,12 @@ const positive = card({
   const active = finishCanonicalTitle(payload);
   assert.equal(JSON.stringify(candidate.fields), JSON.stringify(baseline.fields));
   assert.equal(JSON.stringify(active.fields), JSON.stringify(candidate.fields));
-  assert.equal(candidate.title, baseline.title);
-  assert.equal(candidate.composer_version, "thin-marketplace-composer-v3");
-  assert.equal(baseline.composer_version, "thin-marketplace-composer-v3");
-  assert.equal(active.composer_version, "thin-marketplace-composer-v3");
-  assert.equal(active.marketplace_profile_version, "lynca-standard-name-v0.1");
+  assert.notEqual(candidate.title, baseline.title);
+  assert.equal(active.title, candidate.title);
+  assert.equal(candidate.composer_version, "thin-marketplace-composer-v2");
+  assert.equal(baseline.composer_version, "thin-marketplace-composer-v2");
+  assert.equal(active.composer_version, "thin-marketplace-composer-v2");
+  assert.equal(active.marketplace_profile_version, "ebay-profile-v1");
 }
 
 process.stdout.write("exact parallel color compaction: ok\n");
