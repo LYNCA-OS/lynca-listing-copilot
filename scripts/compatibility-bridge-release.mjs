@@ -33,13 +33,16 @@ export const COMPATIBILITY_BRIDGE_TREE_TRAILER =
 export const COMPATIBILITY_BRIDGE_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-cases-v1";
 export const COMPATIBILITY_BRIDGE_PARENT_SHA =
-  "9b65f7ccf7c97643104c8aafb6156bcd9b715516";
+  "c1f9e654268ca534ff54876d44a29b29adedc575";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
-  ".github/workflows/deploy-production.yml",
   "docs/operations/luna-v2-rollback-bridge.md",
+  "e2e/production-writer-journey.spec.mjs",
+  "scripts/build-large-internal-writer-fixture.browser.test.mjs",
+  "scripts/build-large-internal-writer-fixture.contract.test.mjs",
+  "scripts/build-large-internal-writer-fixture.mjs",
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
-  "scripts/production-release-boundaries.test.mjs"
+  "scripts/production-writer-journey-contract.test.mjs"
 ]);
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));

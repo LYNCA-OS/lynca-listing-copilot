@@ -65,6 +65,7 @@ assert.ok(first.originals.every((image) => (
   image.width === contract.output_width
   && image.height === contract.output_height
   && image.bytes <= contract.original_each_max_bytes
+  && image.bytes <= contract.original_each_relay_max_bytes
   && image.placement.fit_mode === "contain"
   && image.placement.cropped === false
 )));

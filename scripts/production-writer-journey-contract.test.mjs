@@ -418,6 +418,12 @@ assert.match(spec, /payload\?\.asset_id !== assetId/);
 assert.match(spec, /payload\?\.upload\?\.image_id !== imageId/);
 assert.match(spec, /external_storage_puts === 0/,
   "the large fixture must use two relays rather than a signed-Storage fallback");
+assert.match(spec,
+  /receipt\.limits\?\.original_each_relay_max_bytes !== contract\.original_each_relay_max_bytes/,
+  "the live fixture receipt must prove every original is eligible for the relay under test");
+assert.match(spec,
+  /maxBytes: Math\.min\(contract\.original_each_max_bytes, contract\.original_each_relay_max_bytes\)/,
+  "the pre-provider fixture gate must reject a per-image relay-threshold drift");
 assert.match(spec, /validateLargeRecoveryAuthorization/);
 assert.match(spec, /recoveryAuthorization\?\.allows_second_request !== true/);
 assert.match(spec, /metadata\.resumeOnly !== recoveryAuthorization\.resume_only/);

@@ -26,6 +26,20 @@ import {
 
 const gitSha = "a".repeat(40);
 const treeSha = "b".repeat(40);
+assert.equal(
+  COMPATIBILITY_BRIDGE_PARENT_SHA,
+  "c1f9e654268ca534ff54876d44a29b29adedc575"
+);
+assert.deepEqual(COMPATIBILITY_BRIDGE_CHANGED_PATHS, [
+  "docs/operations/luna-v2-rollback-bridge.md",
+  "e2e/production-writer-journey.spec.mjs",
+  "scripts/build-large-internal-writer-fixture.browser.test.mjs",
+  "scripts/build-large-internal-writer-fixture.contract.test.mjs",
+  "scripts/build-large-internal-writer-fixture.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs"
+]);
 const git = (cwd, args) => execFileSync("git", args, {
   cwd,
   encoding: "utf8",
