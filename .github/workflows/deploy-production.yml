@@ -145,9 +145,8 @@ jobs:
           node scripts/vercel-production-rollback-receipt.mjs --out "$rollback_receipt"
           test "$(stat -c '%a' "$rollback_receipt")" = "600"
           printf 'VERCEL_ROLLBACK_RECEIPT=%s\n' "$rollback_receipt" >> "$GITHUB_ENV"
-      - name: Verify the linear ordinary rollback lineage before candidate creation
+      - name: Verify the selected release rollback lineage before candidate creation
         run: |
-          test "$PRODUCTION_RELEASE_CLASS" = "ordinary"
           test -n "$PRODUCTION_RELEASE_SELECTION_RECEIPT"
           test -n "$VERCEL_ROLLBACK_RECEIPT"
           test "$(stat -c '%a' "$PRODUCTION_RELEASE_SELECTION_RECEIPT")" = "600"
@@ -227,8 +226,14 @@ jobs:
             EXTERNAL_IDENTITY_RELEASE_CONTRACT
           } from './lib/listing/knowledge/csm-external-identity-support.mjs';
           import {
-            CANONICAL_NAMING_RELEASE_CONTRACT
+            CANONICAL_NAMING_RELEASE_CONTRACT_V2
           } from './lib/listing/thin/canonical-naming-adapter.mjs';
+          import {
+            VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+          } from './lib/listing/thin/verified-original-observation-support.mjs';
+          import {
+            CSM_PROJECTION_ACTIVATION
+          } from './lib/listing/thin/csm-projection-activation.mjs';
           import { resolveCsmProviderAdapter } from './lib/listing/thin/csm-provider-adapter.mjs';
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
@@ -265,13 +270,21 @@ jobs:
             && recognitionTransportContractsReady
             && JSON.stringify(h.runtime?.external_identity)
               === JSON.stringify(EXTERNAL_IDENTITY_RELEASE_CONTRACT)
-            && JSON.stringify(h.runtime?.canonical_naming)
-              === JSON.stringify(CANONICAL_NAMING_RELEASE_CONTRACT)
+            && JSON.stringify(h.runtime?.canonical_naming_target)
+              === JSON.stringify(CANONICAL_NAMING_RELEASE_CONTRACT_V2)
+            && JSON.stringify(h.runtime?.verified_original_observation)
+              === JSON.stringify(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT)
+            && JSON.stringify(h.runtime?.projection_activation)
+              === JSON.stringify(CSM_PROJECTION_ACTIVATION)
+            && JSON.stringify(h.runtime?.active_writer)
+              === JSON.stringify(CSM_PROJECTION_ACTIVATION.active_writer)
+            && JSON.stringify(h.runtime?.forward_readers)
+              === JSON.stringify(CSM_PROJECTION_ACTIVATION.forward_readers)
             && h.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
             && h.runtime?.retired_capabilities_disabled === true;
           process.exit(ok ? 0 : 1);
           NODE
-      - name: Prove the compatibility bridge is active-v1 and v2 replay-only
+      - name: Prove the selected compatibility bridge runtime contract
         if: ${{ inputs.release_class == 'compatibility-bridge' }}
         env:
           DISPATCH_SHA: ${{ github.sha }}
@@ -293,6 +306,7 @@ jobs:
           canonical_cases_manifest="$RUNNER_TEMP/writer-journey-cases-v3.json"
           bridge_cases_manifest="$RUNNER_TEMP/writer-journey-compatibility-bridge-cases-v1.json"
           large_source_manifest="$RUNNER_TEMP/writer-journey-large-source-v2.json"
+          forward_readback_expectation="$RUNNER_TEMP/production-forward-readback-expectation.json"
           umask 077
           node scripts/materialize-writer-journey-source.mjs --out-dir "$source_dir" \
             > "$canonical_cases_manifest"
@@ -410,6 +424,7 @@ jobs:
             printf 'WRITER_JOURNEY_RELEASE_CLASS=%s\n' "$PRODUCTION_RELEASE_CLASS"
             printf 'WRITER_JOURNEY_CASES_MANIFEST=%s\n' "$selected_cases_manifest"
             printf 'WRITER_JOURNEY_LARGE_SOURCE_MANIFEST=%s\n' "$large_source_manifest"
+            printf 'WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION=%s\n' "$forward_readback_expectation"
           } >> "$GITHUB_ENV"
       - name: Build executor-bound large staged transport fixture
         run: |
@@ -429,6 +444,8 @@ jobs:
           test -n "$METAVERSE_USERNAME"
           test -n "$METAVERSE_PASSWORD"
           npm run test:e2e:production-writer-journey
+          test -n "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"
+          test "$(stat -c '%a' "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION")" = "600"
       - name: Destroy candidate browser authorization
         if: always()
         run: |
@@ -439,6 +456,65 @@ jobs:
             esac
             rm -f -- "$WRITER_JOURNEY_INITIAL_STORAGE_STATE"
           fi
+      - name: Prove captured Production can read the candidate durable projection
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          METAVERSE_USERNAME: ${{ secrets.METAVERSE_USERNAME }}
+          METAVERSE_PASSWORD: ${{ secrets.METAVERSE_PASSWORD }}
+        run: |
+          test -n "$VERCEL_TOKEN"
+          test -n "$METAVERSE_USERNAME"
+          test -n "$METAVERSE_PASSWORD"
+          test -n "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"
+          test "$(stat -c '%a' "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION")" = "600"
+          writer_evidence="$GITHUB_WORKSPACE/artifacts/production-writer-journey/evidence.json"
+          cookie_jar="$RUNNER_TEMP/lynca-canonical-forward-readback-cookies.txt"
+          login_response="$RUNNER_TEMP/production-forward-readback-login.json"
+          readback_response="$RUNNER_TEMP/production-forward-readback-response.json"
+          readback_receipt="$RUNNER_TEMP/production-forward-readback-receipt.json"
+          trap 'rm -f -- "$cookie_jar" "$login_response" "$readback_response"' EXIT
+          umask 077
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-canonical "$VERCEL_ROLLBACK_RECEIPT"
+          asset_id="$(node scripts/production-forward-readback.mjs asset-id \
+            --evidence "$writer_evidence" \
+            --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA")"
+          query="$(ASSET_ID="$asset_id" node -e \
+            'process.stdout.write(new URLSearchParams({asset_id:process.env.ASSET_ID}).toString())')"
+          login_url="https://listing.lyncafei.team/api/login"
+          install -m 600 /dev/null "$login_response"
+          mapfile -t login_meta < <(
+            node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))' \
+            | curl -sS --max-time 30 --max-redirs 0 -c "$cookie_jar" \
+              -H 'content-type: application/json' --data-binary @- \
+              -o "$login_response" -w '%{http_code}\n%{url_effective}\n' "$login_url"
+          )
+          test "${login_meta[0]}" = "200"
+          test "${login_meta[1]}" = "$login_url"
+          test "$(stat -c '%a' "$cookie_jar")" = "600"
+          readback_url="https://listing.lyncafei.team/api/csm-resolution-view?$query"
+          install -m 600 /dev/null "$readback_response"
+          mapfile -t readback_meta < <(
+            curl -sS --max-time 30 --max-redirs 0 -b "$cookie_jar" \
+              -o "$readback_response" -w '%{http_code}\n%{url_effective}\n' "$readback_url"
+          )
+          test "${readback_meta[0]}" = "200"
+          test "${readback_meta[1]}" = "$readback_url"
+          test "$(stat -c '%a' "$readback_response")" = "600"
+          node scripts/production-forward-readback.mjs verify \
+            --evidence "$writer_evidence" \
+            --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
+            --readback "$readback_response" \
+            --response-url "${readback_meta[1]}" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA" \
+            --rollback-receipt "$VERCEL_ROLLBACK_RECEIPT" \
+            --out "$readback_receipt"
+          test "$(stat -c '%a' "$readback_receipt")" = "600"
+          node scripts/vercel-production-rollback-receipt.mjs \
+            --verify-canonical "$VERCEL_ROLLBACK_RECEIPT"
       - name: Re-verify single-writer authority and canonical ownership before promotion
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -528,7 +604,9 @@ jobs:
           parity_receipt="$RUNNER_TEMP/production-parity-readback-receipt.json"
           standard_response="$RUNNER_TEMP/production-standard-resolution-view.json"
           standard_receipt="$RUNNER_TEMP/production-standard-readback-receipt.json"
-          trap 'rm -f -- "$cookie_jar" "$parity_response" "$standard_response"' EXIT
+          bridge_response="$RUNNER_TEMP/production-bridge-forward-readback-response.json"
+          bridge_receipt="$RUNNER_TEMP/production-bridge-forward-readback-receipt.json"
+          trap 'rm -f -- "$cookie_jar" "$parity_response" "$standard_response" "$bridge_response" "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"' EXIT
           umask 077
           node -e 'process.stdout.write(JSON.stringify({username:process.env.METAVERSE_USERNAME,password:process.env.METAVERSE_PASSWORD}))' \
           | curl -fsS --max-time 30 -c "$cookie_jar" \
@@ -548,6 +626,7 @@ jobs:
             --data '{}' https://listing.lyncafei.team/api/csm-listing-title)" = "400"
           node -e 'const r=require("/tmp/csm-noop.json"); if(r.code!=="missing_asset_id") process.exit(1)'
           writer_evidence="$GITHUB_WORKSPACE/artifacts/production-writer-journey/evidence.json"
+          if [ "$PRODUCTION_RELEASE_CLASS" = "ordinary" ]; then
           parity_asset_id="$(node scripts/production-parity-readback.mjs asset-id \
             --evidence "$writer_evidence" \
             --deployment-url "$DEPLOYMENT_URL" \
@@ -584,6 +663,34 @@ jobs:
             --git-sha "$GITHUB_SHA" \
             --out "$standard_receipt"
           test "$(stat -c '%a' "$standard_receipt")" = "600"
+          else
+            test "$PRODUCTION_RELEASE_CLASS" = "compatibility-bridge"
+            test "$(stat -c '%a' "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION")" = "600"
+            bridge_asset_id="$(node scripts/production-forward-readback.mjs asset-id \
+              --evidence "$writer_evidence" \
+              --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
+              --deployment-url "$DEPLOYMENT_URL" \
+              --git-sha "$GITHUB_SHA")"
+            bridge_query="$(ASSET_ID="$bridge_asset_id" node -e \
+              'process.stdout.write(new URLSearchParams({asset_id:process.env.ASSET_ID}).toString())')"
+            bridge_url="https://listing.lyncafei.team/api/csm-resolution-view?$bridge_query"
+            install -m 600 /dev/null "$bridge_response"
+            mapfile -t bridge_meta < <(
+              curl -sS --max-time 30 --max-redirs 0 -b "$cookie_jar" \
+                -o "$bridge_response" -w '%{http_code}\n%{url_effective}\n' "$bridge_url"
+            )
+            test "${bridge_meta[0]}" = "200"
+            test "${bridge_meta[1]}" = "$bridge_url"
+            node scripts/production-forward-readback.mjs verify-promoted \
+              --evidence "$writer_evidence" \
+              --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
+              --readback "$bridge_response" \
+              --response-url "${bridge_meta[1]}" \
+              --deployment-url "$DEPLOYMENT_URL" \
+              --git-sha "$GITHUB_SHA" \
+              --out "$bridge_receipt"
+            test "$(stat -c '%a' "$bridge_receipt")" = "600"
+          fi
       - name: Re-confirm the exact canonical deployment after parity readback
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -655,8 +762,10 @@ jobs:
             ${{ runner.temp }}/vercel-production-rollback-receipt.json
             ${{ runner.temp }}/production-release-rollback-lineage.json
             ${{ runner.temp }}/production-release-selection.json
+            ${{ runner.temp }}/production-forward-readback-receipt.json
             ${{ runner.temp }}/vercel-production-canonical-deployment-receipt.json
             ${{ runner.temp }}/production-parity-readback-receipt.json
             ${{ runner.temp }}/production-standard-readback-receipt.json
+            ${{ runner.temp }}/production-bridge-forward-readback-receipt.json
             ${{ runner.temp }}/writer-journey-compatibility-bridge-cases-v1.json
             artifacts/production-writer-journey/evidence.json

@@ -17,11 +17,23 @@ import {
   COMPATIBILITY_BRIDGE_PARENT_SHA,
   COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   COMPATIBILITY_BRIDGE_TREE_TRAILER,
+  COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS,
+  COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
+  COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+  COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID,
+  COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION,
+  COMPATIBILITY_BRIDGE_V2_MARKER,
+  COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
+  COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+  COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
   activeV2OrdinaryRuntimeContractProof,
   buildCompatibilityBridgeManifest,
+  compatibilityBridgeV2RuntimeContractProof,
   compatibilityBridgeRuntimeContractProof,
+  sealedV3OverlayForwardReadContractProof,
+  verifyReleaseRollbackLineage,
   verifyOrdinaryRollbackLineage,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
@@ -34,6 +46,8 @@ const gitSha = "a".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const nextOrdinaryParentSha = "add4096a2811b783b46d8907d6a5cbaf8063bbc3";
 const treeSha = "b".repeat(40);
+const bridgeV2GitSha = "e".repeat(40);
+const bridgeV2TreeSha = "f".repeat(40);
 assert.equal(
   COMPATIBILITY_BRIDGE_PARENT_SHA,
   "ced1a23741e179618e4e7b5eca055cb10ecac8cb"
@@ -45,6 +59,14 @@ assert.deepEqual(COMPATIBILITY_BRIDGE_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
 ]);
+assert.equal(COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID, "compatibility-bridge-v2");
+assert.equal(COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
+  "fe7308c3e464a39279eddeebfbac13a62657cb31");
+assert.equal(COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+  "86d19c808ad28b87f11e6b60919eb6613e7a710c");
+assert.equal(COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+  "de55b031523237fc5572523886e25e7d3a1529d8");
+assert.equal(COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID, "31491259742");
 const git = (cwd, args) => execFileSync("git", args, {
   cwd,
   encoding: "utf8",
@@ -61,6 +83,12 @@ const bridgeCommitMessage = [
   "",
   COMPATIBILITY_BRIDGE_COMMIT_TRAILER,
   `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${treeSha}`
+].join("\n");
+const bridgeV2CommitMessage = [
+  "activate rollback-safe projection bridge",
+  "",
+  COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
+  `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${bridgeV2TreeSha}`
 ].join("\n");
 const ordinary = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
@@ -88,6 +116,94 @@ assert.equal(nextOrdinary.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
 assert.equal(nextOrdinary.transition_marker, null);
 assert.equal(nextOrdinary.parent_git_sha, nextOrdinaryParentSha);
 assert.equal(nextOrdinary.required_rollback_git_sha, nextOrdinaryParentSha);
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: bridgeV2GitSha,
+  headSha: bridgeV2GitSha,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_PARENT_SHA]
+}), (error) => error.code
+  === "ordinary_release_failed_parent_requires_compatibility_bridge_v2");
+const bridgeV2 = verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: bridgeV2GitSha,
+  headSha: bridgeV2GitSha,
+  headTreeSha: bridgeV2TreeSha,
+  parentTreeSha: COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_PARENT_SHA],
+  changedPaths: [...COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS],
+  commitMessage: bridgeV2CommitMessage
+});
+assert.equal(bridgeV2.schema_version, "production-release-selection-v2");
+assert.equal(bridgeV2.release_class, COMPATIBILITY_BRIDGE_RELEASE_CLASS);
+assert.equal(bridgeV2.bridge_descriptor_id, COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID);
+assert.equal(bridgeV2.bridge_marker, COMPATIBILITY_BRIDGE_V2_MARKER);
+assert.equal(bridgeV2.parent_git_sha, COMPATIBILITY_BRIDGE_V2_PARENT_SHA);
+assert.equal(bridgeV2.parent_tree_sha, COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA);
+assert.equal(bridgeV2.failed_run_id, COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID);
+assert.equal(bridgeV2.required_rollback_git_sha, COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA);
+assert.equal(bridgeV2.writer_journey_manifest, COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION);
+assert.equal(bridgeV2.parity_required, false);
+assert.match(bridgeV2.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+
+assert.equal(git(process.cwd(), ["rev-parse", `${COMPATIBILITY_BRIDGE_V2_PARENT_SHA}^`]),
+  COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA);
+assert.equal(git(process.cwd(), [
+  "rev-parse", `${COMPATIBILITY_BRIDGE_V2_PARENT_SHA}^{tree}`
+]), COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA);
+for (const commitMessage of [
+  "bridge without trailers",
+  `${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${bridgeV2TreeSha}`,
+  `${COMPATIBILITY_BRIDGE_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${bridgeV2TreeSha}`,
+  `${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: not-a-tree`,
+  COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    gitSha: bridgeV2GitSha,
+    headSha: bridgeV2GitSha,
+    parentShas: [COMPATIBILITY_BRIDGE_V2_PARENT_SHA],
+    commitMessage
+  }), (error) => error.code === "compatibility_bridge_v2_commit_marker_invalid");
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: bridgeV2GitSha,
+  headSha: bridgeV2GitSha,
+  headTreeSha: treeSha,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_PARENT_SHA],
+  commitMessage: bridgeV2CommitMessage
+}), (error) => error.code === "compatibility_bridge_v2_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: bridgeV2GitSha,
+  headSha: bridgeV2GitSha,
+  headTreeSha: bridgeV2TreeSha,
+  parentTreeSha: treeSha,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_PARENT_SHA],
+  commitMessage: bridgeV2CommitMessage
+}), (error) => error.code === "compatibility_bridge_v2_parent_tree_mismatch");
+for (const changedPaths of [
+  COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS.slice(1),
+  [...COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS, "api/unrelated-bridge-change.js"]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    gitSha: bridgeV2GitSha,
+    headSha: bridgeV2GitSha,
+    headTreeSha: bridgeV2TreeSha,
+    parentTreeSha: COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+    parentShas: [COMPATIBILITY_BRIDGE_V2_PARENT_SHA],
+    changedPaths,
+    commitMessage: bridgeV2CommitMessage
+  }), (error) => error.code === "compatibility_bridge_v2_changed_paths_mismatch");
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: bridgeV2GitSha,
+  headSha: bridgeV2GitSha,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_PARENT_SHA, "c".repeat(40)],
+  commitMessage: bridgeV2CommitMessage
+}), (error) => error.code === "compatibility_bridge_parent_invalid");
 assert.throws(() => verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha,
@@ -166,12 +282,13 @@ for (const commitMessage of [
   "ordinary release",
   COMPATIBILITY_BRIDGE_COMMIT_TRAILER,
   `${COMPATIBILITY_BRIDGE_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${treeSha}`,
-  `LYNCA-Release-Class: compatibility-bridge-v2\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${treeSha}`
+  `${"LYNCA-Release-Class"}: ${COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID}\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${treeSha}`
 ]) {
   assert.throws(() => verifyCompatibilityBridgeSelection({
     releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
     gitSha,
     headSha: gitSha,
+    parentShas: [COMPATIBILITY_BRIDGE_PARENT_SHA],
     commitMessage
   }), (error) => error.code === "compatibility_bridge_commit_marker_missing");
 }
@@ -223,6 +340,47 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
 assert.throws(() => compatibilityBridgeRuntimeContractProof(),
   (error) => error.code === "compatibility_bridge_runtime_contract_invalid",
   "the bridge-only runtime proof must fail once v2 is active");
+const bridgeV2Proof = compatibilityBridgeV2RuntimeContractProof();
+assert.equal(bridgeV2Proof.schema_version,
+  "compatibility-bridge-v2-runtime-contract-proof-v1");
+assert.equal(bridgeV2Proof.bridge_marker, COMPATIBILITY_BRIDGE_V2_MARKER);
+assert.equal(bridgeV2Proof.active_writer_composer_version,
+  "thin-marketplace-composer-v2");
+assert.equal(bridgeV2Proof.active_writer_marketplace_profile_version,
+  "ebay-profile-v1");
+assert.equal(bridgeV2Proof.active_verified_original_observation_overlay, null);
+assert.deepEqual(bridgeV2Proof.forward_reader_standard_contracts.map((contract) => ({
+  composer_version: contract.composer_version,
+  marketplace_profile_version: contract.marketplace_profile_version
+})), [
+  {
+    composer_version: "thin-marketplace-composer-v3",
+    marketplace_profile_version: "lynca-standard-name-v0.1"
+  },
+  {
+    composer_version: "thin-marketplace-composer-v3",
+    marketplace_profile_version: "lynca-standard-name-v0.2"
+  }
+]);
+assert.equal(bridgeV2Proof.sealed_overlay_forward_read_packet_valid, true);
+assert.equal(bridgeV2Proof.sealed_overlay_forward_readback_projector_valid, true);
+assert.equal(bridgeV2Proof.sealed_overlay_forward_read_negative_count, 5);
+assert.match(bridgeV2Proof.sealed_overlay_forward_read_contract_sha256,
+  /^[0-9a-f]{64}$/);
+assert.equal(bridgeV2Proof.provider_calls, 0);
+assert.equal(bridgeV2Proof.health_bound, false);
+assert.match(bridgeV2Proof.contract_sha256, /^[0-9a-f]{64}$/);
+assert.equal(bridgeV2.contract_sha256, bridgeV2Proof.contract_sha256);
+const sealedOverlayProof = sealedV3OverlayForwardReadContractProof();
+assert.equal(sealedOverlayProof.durable_packet_valid, true);
+assert.equal(sealedOverlayProof.durable_identity_snapshot_bound, true);
+assert.equal(sealedOverlayProof.derived_reference_ignored_for_original_set, true);
+assert.equal(sealedOverlayProof.readback_projector_valid, true);
+assert.equal(sealedOverlayProof.resolution_view_recomposition_valid, true);
+assert.equal(sealedOverlayProof.marketplace_profile_version,
+  "lynca-standard-name-v0.2");
+assert.equal(sealedOverlayProof.negative_resealed_counterexample_count, 5);
+assert.equal(sealedOverlayProof.provider_calls, 0);
 const activeProof = activeV2OrdinaryRuntimeContractProof();
 assert.equal(activeProof.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
 assert.equal(activeProof.transition_marker, ACTIVE_V2_TRANSITION_MARKER);
@@ -265,6 +423,42 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
   selection: { ...ordinary, required_rollback_git_sha: "c".repeat(40) },
   rollbackReceipt: { git_sha: ACTIVE_V2_TRANSITION_PARENT_SHA }
 }), (error) => error.code === "ordinary_release_selection_invalid");
+const bridgeV2Lineage = verifyReleaseRollbackLineage({
+  selection: bridgeV2,
+  rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
+});
+assert.deepEqual(bridgeV2Lineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v3",
+  release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+  bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER,
+  release_git_sha: bridgeV2GitSha,
+  release_parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
+  release_parent_tree_sha: COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
+  failed_run_id: COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID,
+  required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+  captured_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+  lineage_verified: true
+});
+for (const rollbackSha of [COMPATIBILITY_BRIDGE_V2_PARENT_SHA, "c".repeat(40)]) {
+  assert.throws(() => verifyReleaseRollbackLineage({
+    selection: bridgeV2,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "release_rollback_lineage_rollback_mismatch");
+}
+for (const tampered of [
+  { ...bridgeV2, bridge_descriptor_id: "wrong" },
+  { ...bridgeV2, parent_tree_sha: treeSha },
+  { ...bridgeV2, failed_run_id: "31491259743" },
+  { ...bridgeV2, required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA },
+  { ...bridgeV2, artifact_manifest_sha256: "0".repeat(64) },
+  { ...bridgeV2, contract_sha256: "0".repeat(64) }
+]) {
+  assert.throws(() => verifyReleaseRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
+  }), (error) => error.code === "release_rollback_lineage_selection_invalid");
+}
 const nextLineage = verifyOrdinaryRollbackLineage({
   selection: nextOrdinary,
   rollbackReceipt: { git_sha: nextOrdinaryParentSha }
@@ -287,8 +481,11 @@ try {
   const actualHead = git(process.cwd(), ["rev-parse", "HEAD"]);
   const actualParents = parentShas(process.cwd());
   assert.equal(actualParents.length, 1,
-    "the checked-out ordinary release must expose exactly one parent");
+    "the checked-out release must expose exactly one parent");
   const [actualParent] = actualParents;
+  const actualReleaseClass = actualParent === COMPATIBILITY_BRIDGE_V2_PARENT_SHA
+    ? COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    : ORDINARY_RELEASE_CLASS;
   const actualTransitionMarker = actualParent === ACTIVE_V2_TRANSITION_PARENT_SHA
     ? ACTIVE_V2_TRANSITION_MARKER
     : null;
@@ -297,29 +494,30 @@ try {
   const lineagePath = path.join(cliFixtureRoot, "lineage.json");
   const teamId = "team_activeV2Lineage";
   const projectId = "prj_activeV2Lineage";
+  const script = path.resolve("scripts/compatibility-bridge-release.mjs");
+  const env = { ...process.env, VERCEL_ORG_ID: teamId, VERCEL_PROJECT_ID: projectId };
+  execFileSync(process.execPath, [
+    script, "verify-selection",
+    "--release-class", actualReleaseClass,
+    "--git-sha", actualHead,
+    "--out", selectionPath
+  ], { env });
+  const savedSelection = JSON.parse(await readFile(selectionPath, "utf8"));
   await writeFile(rollbackPath, JSON.stringify({
     schema_version: "vercel-production-rollback-receipt-v1",
     canonical_origin: "https://listing.lyncafei.team",
     team_id: teamId,
     project_id: projectId,
-    deployment_id: "dpl_previousOrdinary",
-    deployment_url: "https://lynca-previous-ordinary.vercel.app",
-    git_sha: actualParent,
+    deployment_id: "dpl_previousCanonical",
+    deployment_url: "https://lynca-previous-canonical.vercel.app",
+    git_sha: savedSelection.required_rollback_git_sha,
     ready_state: "READY",
     target: "production",
     captured_at: "2026-08-11T12:00:00.000Z"
   }), { mode: 0o600 });
-  const script = path.resolve("scripts/compatibility-bridge-release.mjs");
-  const env = { ...process.env, VERCEL_ORG_ID: teamId, VERCEL_PROJECT_ID: projectId };
-  execFileSync(process.execPath, [
-    script, "verify-selection",
-    "--release-class", ORDINARY_RELEASE_CLASS,
-    "--git-sha", actualHead,
-    "--out", selectionPath
-  ], { env });
   execFileSync(process.execPath, [
     script, "verify-rollback-lineage",
-    "--release-class", ORDINARY_RELEASE_CLASS,
+    "--release-class", actualReleaseClass,
     "--git-sha", actualHead,
     "--selection", selectionPath,
     "--rollback-receipt", rollbackPath,
@@ -327,20 +525,34 @@ try {
   ], { env });
   assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
   assert.equal((await stat(lineagePath)).mode & 0o777, 0o600);
-  const savedSelection = JSON.parse(await readFile(selectionPath, "utf8"));
-  assert.equal(savedSelection.schema_version, "production-release-selection-v3");
-  assert.equal(savedSelection.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-  assert.equal(savedSelection.transition_marker, actualTransitionMarker);
-  assert.equal(savedSelection.parent_git_sha, actualParent);
-  assert.equal(savedSelection.required_rollback_git_sha, actualParent);
   const savedLineage = JSON.parse(await readFile(lineagePath, "utf8"));
-  assert.equal(savedLineage.schema_version,
-    "production-release-rollback-lineage-receipt-v2");
-  assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+  assert.equal(savedSelection.release_class, actualReleaseClass);
   assert.equal(savedLineage.release_git_sha, actualHead);
   assert.equal(savedLineage.release_parent_git_sha, actualParent);
-  assert.equal(savedLineage.captured_rollback_git_sha, actualParent);
+  assert.equal(savedLineage.captured_rollback_git_sha,
+    savedSelection.required_rollback_git_sha);
   assert.equal(savedLineage.lineage_verified, true);
+  if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
+    assert.equal(savedSelection.schema_version, "production-release-selection-v3");
+    assert.equal(savedSelection.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+    assert.equal(savedSelection.transition_marker, actualTransitionMarker);
+    assert.equal(savedSelection.parent_git_sha, actualParent);
+    assert.equal(savedSelection.required_rollback_git_sha, actualParent);
+    assert.equal(savedLineage.schema_version,
+      "production-release-rollback-lineage-receipt-v2");
+    assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+  } else {
+    assert.equal(savedSelection.schema_version, "production-release-selection-v2");
+    assert.equal(savedSelection.bridge_descriptor_id,
+      COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID);
+    assert.equal(savedSelection.parent_git_sha, COMPATIBILITY_BRIDGE_V2_PARENT_SHA);
+    assert.equal(savedSelection.required_rollback_git_sha,
+      COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA);
+    assert.equal(savedLineage.schema_version,
+      "production-release-rollback-lineage-receipt-v3");
+    assert.equal(savedLineage.bridge_descriptor_id,
+      COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID);
+  }
 } finally {
   await rm(cliFixtureRoot, { recursive: true, force: true });
 }

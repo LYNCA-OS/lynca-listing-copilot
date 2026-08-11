@@ -287,7 +287,12 @@ assert.throws(
     tenantId: "tenant-replay", recognitionSessionId: "session-independent-search-v2",
     fields: youngGunsFields, composed: ordinaryV2, title: ordinaryV2.title
   });
-  assert.deepEqual(replayFromRows(ordinaryRows).fields.search_optimization, ["Young Guns"]);
+  assert.equal(Object.hasOwn(
+    ordinaryRows.output.structured_output,
+    "search_optimization"
+  ), false, "the bridge must not change de55 v2 packet bytes");
+  assert.deepEqual(replayFromRows(ordinaryRows).fields.search_optimization, [],
+    "historical v2 never published an independent search lane");
   assert.ok(verifyReplay(ordinaryRows, ordinaryV2.title).ok);
 
   const ordinaryV1 = composeFromCanonicalFields(youngGunsFields, {

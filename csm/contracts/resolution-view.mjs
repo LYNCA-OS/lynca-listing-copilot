@@ -123,7 +123,8 @@ export function buildCsmResolutionView({
   grammarConfidence = null,
   fieldForBracket = DEFAULT_FIELD_FOR_BRACKET,
   assetId = null,
-  recognitionSessionId = null
+  recognitionSessionId = null,
+  legacyPublicProjection = false
 } = {}) {
   const grammar = composed.grammar || fields.grammar || semGrammarForResolved(fields) || "standard";
   const contractOrder = semCanonicalTitleOrder(grammar);
@@ -135,11 +136,16 @@ export function buildCsmResolutionView({
   // shown, in the composer's own position, and flagged as outside the contract.
   const composedOrder = asArray(composed.brackets);
   const extras = composedOrder.filter((b) => !contractOrder.includes(b));
-  // Display order is a profile decision, not field importance. CNL v0.1 can
-  // therefore place canonical brackets differently from the SEM definition
-  // while still retaining the complete inspector. Show the actual projection
-  // first, then append contract fields the title did not render.
-  const order = [...new Set([...composedOrder, ...contractOrder])];
+  // The forward-reader bridge must leave the already-published v2 Glass Box
+  // byte semantics alone. CNL profiles use the executable projection order;
+  // legacy v2 keeps the historical contract order and extra-field placement.
+  const order = legacyPublicProjection
+    ? (extras.length
+        ? composedOrder.filter((bracket) => (
+          contractOrder.includes(bracket) || extras.includes(bracket)
+        )).concat(contractOrder.filter((bracket) => !composedOrder.includes(bracket)))
+        : contractOrder)
+    : [...new Set([...composedOrder, ...contractOrder])];
   const outsideContract = new Set(extras);
 
   const unreadable = new Set(asArray(fields.unreadable));
@@ -153,10 +159,16 @@ export function buildCsmResolutionView({
 
   const brackets = order.map((bracket) => {
     const field = fieldForBracket[bracket] || bracket;
-    const canonicalFields = SOURCE_FIELDS_FOR_BRACKET[bracket]
-      || [field, ...(EXTRA_FIELDS_FOR_BRACKET[bracket] || [])];
+    const legacyExtraFields = bracket === "search_optimization" ? ["components"] : [];
+    const canonicalFields = legacyPublicProjection
+      ? [field, ...legacyExtraFields]
+      : (SOURCE_FIELDS_FOR_BRACKET[bracket]
+        || [field, ...(EXTRA_FIELDS_FOR_BRACKET[bracket] || [])]);
     const rawParts = canonicalFields.flatMap((sourceField) => asArray(fields[sourceField]));
-    const raw = canonicalFields.length > 1 ? rawParts : fields[field];
+    const raw = legacyPublicProjection
+      ? (legacyExtraFields.flatMap((sourceField) => asArray(fields[sourceField])).length
+          ? rawParts : fields[field])
+      : (canonicalFields.length > 1 ? rawParts : fields[field]);
     const value = renderValue(raw);
     const empty = isEmpty(raw);
 
@@ -164,7 +176,8 @@ export function buildCsmResolutionView({
     let state = BRACKET_STATE.VALUE;
     let rationale = RATIONALE.OBSERVED;
     if (empty) {
-      if (canonicalFields.some((sourceField) => unreadable.has(sourceField))
+      if ((legacyPublicProjection ? unreadable.has(field)
+        : canonicalFields.some((sourceField) => unreadable.has(sourceField)))
           || unreadable.has(bracket)) {
         state = BRACKET_STATE.INSUFFICIENT_EVIDENCE;
         rationale = RATIONALE.MODEL_REPORTED_UNREADABLE;
@@ -177,7 +190,8 @@ export function buildCsmResolutionView({
         state = BRACKET_STATE.ABSENT;
         rationale = RATIONALE.NOT_OBSERVED;
       }
-    } else if (canonicalFields.some((sourceField) => lowConfidence.has(sourceField))
+    } else if ((legacyPublicProjection ? lowConfidence.has(field)
+      : canonicalFields.some((sourceField) => lowConfidence.has(sourceField)))
         || lowConfidence.has(bracket)) {
       rationale = RATIONALE.MODEL_REPORTED_LOW_CONFIDENCE;
     }
@@ -206,7 +220,9 @@ export function buildCsmResolutionView({
       bracket,
       label: labelForCsmField(bracket) || csmFieldLabels[bracket] || bracket,
       canonical_field: field,
-      canonical_fields: Object.freeze([...canonicalFields]),
+      ...(!legacyPublicProjection ? {
+        canonical_fields: Object.freeze([...canonicalFields])
+      } : {}),
       state,
       value: state === BRACKET_STATE.VALUE ? value : "",
       rendered_text: rendered.get(bracket) ?? null,

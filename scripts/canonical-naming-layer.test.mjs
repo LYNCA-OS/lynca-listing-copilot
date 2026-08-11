@@ -2,10 +2,18 @@ import assert from "node:assert/strict";
 
 import {
   LYNCA_STANDARD_NAMING_PROFILE_V01,
+  LYNCA_STANDARD_NAMING_PROFILE_V02,
   composeCanonicalName,
   renderCanonicalNameTokens,
   selectCanonicalNameTokens
 } from "../lib/listing/thin/canonical-naming-layer.mjs";
+import {
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  LYNCA_STANDARD_PROFILE_VERSION_V1,
+  LYNCA_STANDARD_PROFILE_VERSION_V2,
+  composeLyncaStandardNameForProfile
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
 
 const powerChords = {
   year: "2026",
@@ -38,6 +46,25 @@ const bowmanSpotlights = {
   components: ["RC"],
   card_number: "BS-4",
   serial: "5/5"
+};
+
+const leoDeVries = {
+  year: "2024",
+  manufacturer: "Topps",
+  product: "Bowman Chrome",
+  set: "Prospect Auto",
+  subjects: ["Leo De Vries"],
+  print_finish: "Gold Ref",
+  components: ["Auto", "1st Bowman"],
+  team: "Padres",
+  card_number: "CPA-LD",
+  serial: "45/50",
+  grading_info: {
+    company: "PSA",
+    card_grade: "10",
+    auto_grade: "",
+    grade_type: "CARD_ONLY"
+  }
 };
 
 {
@@ -88,6 +115,58 @@ const bowmanSpotlights = {
   assert.equal(result.overBudget, false);
   assert.equal(result.trace.selected.find((row) => row.canonical_value === "RC").source_field,
     "components");
+}
+
+// v0.2 is an append-only projection. It does not rewrite v0.1 replay: the
+// historical profile still emits its exact 80-byte title and trace. The new
+// profile gives the exact Topps/Bowman Chrome product relationship one visible
+// owner, preserving canonical manufacturer truth while admitting the more
+// identifying year.
+{
+  assert.equal(CANONICAL_NAMING_RELEASE_CONTRACT_V1.profile_version, "0.1");
+  assert.equal(CANONICAL_NAMING_RELEASE_CONTRACT_V2.profile_version, "0.2");
+  const historical = composeLyncaStandardNameForProfile(leoDeVries, {
+    marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V1
+  });
+  const next = composeLyncaStandardNameForProfile(leoDeVries, {
+    marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V2
+  });
+  assert.equal(historical.title,
+    "Topps Bowman Chrome Prospect Auto Leo De Vries Gold Ref 1st Bowman #CPA-LD 45/50");
+  assert.equal(historical.length, 80);
+  assert.equal(next.title,
+    "2024 Bowman Chrome Prospect Auto Leo De Vries Gold Ref 1st Bowman #CPA-LD 45/50");
+  assert.equal(next.length, 79);
+  assert.equal(next.canonical_naming_trace.selected.some((row) => (
+    row.field === "manufacturer"
+  )), false);
+  const ownership = next.canonical_naming_trace.omitted.find((row) => (
+    row.reason === "profile_display_ownership"
+  ));
+  assert.deepEqual({
+    field: ownership.field,
+    canonical_value: ownership.canonical_value,
+    rule: ownership.rule
+  }, {
+    field: "manufacturer",
+    canonical_value: "Topps",
+    rule: "topps_bowman_chrome_product_owns_manufacturer_display"
+  });
+  assert.ok(next.canonical_naming_trace.selected.some((row) => (
+    row.key === ownership.redundant_with && row.canonical_value === "Bowman Chrome"
+  )));
+
+  const generic = composeCanonicalName({
+    year: "2024",
+    manufacturer: "Topps",
+    product: "Chrome Universe",
+    subjects: ["Player Name"],
+    card_number: "1"
+  }, { profile: LYNCA_STANDARD_NAMING_PROFILE_V02 });
+  assert.equal(generic.title, "2024 Topps Chrome Universe Player Name #1");
+  assert.equal(generic.trace.omitted.some((row) => (
+    row.reason === "profile_display_ownership"
+  )), false, "an unrelated product cannot own the manufacturer display");
 }
 
 // Selection importance is explicitly independent from render position.
@@ -606,4 +685,4 @@ for (const result of [
   assert.ok(result.title.endsWith(result.canonical.serial), "full serial must survive byte-for-byte");
 }
 
-process.stdout.write("Canonical Naming Layer v0.1 tests passed\n");
+process.stdout.write("Canonical Naming Layer v0.1/v0.2 tests passed\n");

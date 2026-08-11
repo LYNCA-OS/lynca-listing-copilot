@@ -36,8 +36,11 @@ import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
 
 function reorderedPack(pack) {
   return {
@@ -371,9 +374,14 @@ assert.deepEqual(
   "health must expose the exact active pack, index, resolution and Registry release receipts"
 );
 assert.deepEqual(
-  healthBody.runtime.canonical_naming,
-  CANONICAL_NAMING_RELEASE_CONTRACT,
-  "health must expose the exact active Canonical Naming release contract"
+  healthBody.runtime.canonical_naming_target,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  "health must expose the exact target Canonical Naming release contract"
+);
+assert.deepEqual(
+  healthBody.runtime.verified_original_observation,
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  "health must expose only the exact redacted verified-original release receipt"
 );
 for (const receipt of [
   healthBody.runtime.external_identity.support_pack.sha256,

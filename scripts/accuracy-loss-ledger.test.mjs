@@ -22,7 +22,14 @@ import {
   CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
-import { buildCsmStageRows } from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  buildCsmStageRows,
+  EBAY_PROFILE_VERSION,
+  THIN_COMPOSER_VERSION_V2
+} from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  activeStandardWriterProjection
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
 import { resolvedFieldsToSemSuggestion } from "../lib/listing/csm/title-derived-sem.mjs";
 import { toResolvedFields } from "../lib/listing/thin/csm-emit.mjs";
@@ -135,11 +142,26 @@ assert.deepEqual(fieldLedger.find(({ field }) => field === "print_finish").reaso
   ["BASE_APPEARANCE_NOT_PARALLEL", "CSM_ADMISSION_REJECTED", "DESCRIBES_SURFACE_NOT_PARALLEL"]);
 assert.equal(ledger.stages.composed_bracket_ledger.source_sha256,
   ledger.stages.admitted_canonical_fields.sha256);
-assert.ok(!ledger.stages.composed_bracket_ledger.reason_codes.includes("MARKETPLACE_PROFILE_SUPPRESSED"),
+const activeProjection = `${baseline.composer_version}/${baseline.marketplace_profile_version}`;
+assert.ok([
+  "thin-marketplace-composer-v2/ebay-profile-v1",
+  "thin-marketplace-composer-v3/lynca-standard-name-v0.2"
+].includes(activeProjection), "the accuracy ledger must use one of the two atomic release states");
+if (activeProjection === "thin-marketplace-composer-v2/ebay-profile-v1") {
+  assert.ok(ledger.stages.composed_bracket_ledger.reason_codes
+    .includes("MARKETPLACE_PROFILE_SUPPRESSED"),
+  "the dormant bridge must preserve the Production v2 suppression receipt");
+  assert.deepEqual(ledger.stages.composed_bracket_ledger.suppressed_by_profile,
+    ["card_number", "search_optimization"],
+    "the dormant bridge must remain byte-compatible with the captured rollback writer");
+} else {
+  assert.ok(!ledger.stages.composed_bracket_ledger.reason_codes
+    .includes("MARKETPLACE_PROFILE_SUPPRESSED"),
   "the active LYNCA profile must not claim suppression when every selected token fits");
-assert.deepEqual(ledger.stages.composed_bracket_ledger.suppressed_by_profile,
-  [],
-  "Card Number and in-budget commercial features remain visible under the active profile");
+  assert.deepEqual(ledger.stages.composed_bracket_ledger.suppressed_by_profile,
+    [],
+    "Card Number and in-budget commercial features remain visible under the active profile");
+}
 assert.equal(ledger.stages.final_title.source_sha256, ledger.stages.composed_bracket_ledger.sha256);
 assert.equal(ledger.stages.final_title.sha256, sha256(baseline.title));
 assert.equal(ledger.ledger_sha256, accuracyLedgerSha256({
@@ -276,8 +298,12 @@ const emptySuppressionLedger = buildAccuracyLossLedger({
   rawProviderOutput: emptySuppressionRaw,
   result: emptySuppressionResult
 });
+const activeStandardWriter = activeStandardWriterProjection();
 assert.deepEqual(emptySuppressionLedger.stages.composed_bracket_ledger.profile_suppression_policy,
-  []);
+  activeStandardWriter.composer_version === THIN_COMPOSER_VERSION_V2
+    && activeStandardWriter.marketplace_profile_version === EBAY_PROFILE_VERSION
+    ? ["card_number", "search_optimization"]
+    : []);
 assert.deepEqual(emptySuppressionLedger.stages.composed_bracket_ledger.suppressed_by_profile, []);
 assert.ok(!emptySuppressionLedger.stages.composed_bracket_ledger.reason_codes
   .includes("MARKETPLACE_PROFILE_SUPPRESSED"));

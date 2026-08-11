@@ -17,19 +17,28 @@ import { composeActiveCanonicalFields } from "../lib/listing/thin/thin-listing-p
 import {
   composeCanonicalFieldsForStoredOutput,
   replayFromRows,
-  validateCanonicalNamingReplayTrace
+  validateCanonicalNamingReplayTrace,
+  validateVerifiedOriginalObservationReplayPacket
 } from "../lib/listing/thin/csm-replay.mjs";
 import { buildCsmResolutionView, CSM_RESOLUTION_VIEW_VERSION } from "../lib/listing/csm/resolution-view.mjs";
 import {
   buildCsmResolutionReview, CSM_RESOLUTION_REVIEW_VERSION
 } from "../lib/listing/csm/resolution-review.mjs";
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
-import { THIN_RESOLVER_VERSION } from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  EBAY_PROFILE_VERSION,
+  THIN_COMPOSER_VERSION_V1,
+  THIN_COMPOSER_VERSION_V2,
+  THIN_RESOLVER_VERSION
+} from "../lib/listing/thin/csm-persistence.mjs";
 import { publicCsmOwnerExecutionReceipt } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
 import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   validateExternalIdentityPublicReceipt
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
+  validateVerifiedOriginalObservationPublicReceipt
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { readJsonPayload, sendJson } from "../lib/listing/v4/session/http-handler-utils.mjs";
 
@@ -157,6 +166,12 @@ export function publicExternalIdentitySupport(value) {
     : null;
 }
 
+export function publicVerifiedOriginalObservationSupport(value) {
+  return validateVerifiedOriginalObservationPublicReceipt(value)
+    ? structuredClone(value)
+    : null;
+}
+
 function attachExternalIdentitySupport(view, support) {
   if (!support) return view;
   const brackets = view.brackets.map((bracket) => {
@@ -226,6 +241,7 @@ export function composeResolutionView(record) {
   let composed;
   let composerVersion;
   let marketplaceProfileVersion;
+  let legacyPublicProjection = false;
   let composeCorrectedTitle;
   if (record.replay_rows) {
     const storedOutput = record.replay_rows.output;
@@ -233,6 +249,7 @@ export function composeResolutionView(record) {
     fields = replayed.fields;
     composed = replayed.composed;
     const externalRelease = externalIdentityReleaseForOutput(storedOutput);
+    legacyPublicProjection = externalRelease != null;
     if (externalRelease) {
       const support = publicExternalIdentitySupport(record.external_identity_support);
       if (!support
@@ -245,6 +262,17 @@ export function composeResolutionView(record) {
         );
       }
     }
+    if (storedOutput?.structured_output?.verified_original_observation_support != null) {
+      const support = publicVerifiedOriginalObservationSupport(
+        record.verified_original_observation_support
+      );
+      if (!support || !validateVerifiedOriginalObservationReplayPacket(record.replay_rows)) {
+        throw Object.assign(
+          new Error("csm_resolution_verified_original_observation_receipt_invalid"),
+          { statusCode: 409 }
+        );
+      }
+    }
     if (!validateCanonicalNamingReplayTrace(storedOutput, composed)) {
       throw Object.assign(
         new Error("csm_resolution_canonical_naming_trace_invalid"),
@@ -253,6 +281,10 @@ export function composeResolutionView(record) {
     }
     composerVersion = storedOutput?.composer_version;
     marketplaceProfileVersion = storedOutput?.marketplace_profile_version;
+    legacyPublicProjection = legacyPublicProjection || ([
+      THIN_COMPOSER_VERSION_V1,
+      THIN_COMPOSER_VERSION_V2
+    ].includes(composerVersion) && marketplaceProfileVersion === EBAY_PROFILE_VERSION);
     composeCorrectedTitle = (correctedFields) =>
       composeCanonicalFieldsForStoredOutput(correctedFields, record.replay_rows.output).title;
   } else {
@@ -269,6 +301,10 @@ export function composeResolutionView(record) {
     }
     composerVersion = composed.composer_version;
     marketplaceProfileVersion = composed.marketplace_profile_version;
+    legacyPublicProjection = [
+      THIN_COMPOSER_VERSION_V1,
+      THIN_COMPOSER_VERSION_V2
+    ].includes(composerVersion) && marketplaceProfileVersion === EBAY_PROFILE_VERSION;
     composeCorrectedTitle = (correctedFields) => composeActiveCanonicalFields(correctedFields).title;
   }
   return {
@@ -277,12 +313,14 @@ export function composeResolutionView(record) {
       composed,
       assetId: record.asset_id,
       recognitionSessionId: record.recognition_session_id,
-      resolverVersion: record.resolver_version || THIN_RESOLVER_VERSION
+      resolverVersion: record.resolver_version || THIN_RESOLVER_VERSION,
+      legacyPublicProjection
     }),
     fields,
     composed,
     composer_version: composerVersion,
     marketplace_profile_version: marketplaceProfileVersion,
+    legacy_public_projection: legacyPublicProjection,
     compose_corrected_title: composeCorrectedTitle
   };
 }
@@ -299,9 +337,13 @@ export async function handleResolutionViewRequest({
     view,
     composed,
     composer_version: composerVersion,
-    marketplace_profile_version: marketplaceProfileVersion
+    marketplace_profile_version: marketplaceProfileVersion,
+    legacy_public_projection: legacyPublicProjection
   } = composeResolutionView(record);
   const externalIdentitySupport = publicExternalIdentitySupport(record.external_identity_support);
+  const verifiedOriginalObservationSupport = publicVerifiedOriginalObservationSupport(
+    record.verified_original_observation_support
+  );
   const publicView = attachExternalIdentitySupport(view, externalIdentitySupport);
   // If the stored title and the recomposed one disagree, the explanation does
   // not describe what shipped. Say so rather than presenting it as the trace.
@@ -314,10 +356,15 @@ export async function handleResolutionViewRequest({
     // Raw provider/request ids and the full stored execution contract remain
     // server-side; the hash is independently recomputed from the DB value.
     owner_execution_receipt: ownerExecutionReceipt,
+    ...(verifiedOriginalObservationSupport ? {
+      verified_original_observation_support: verifiedOriginalObservationSupport
+    } : {}),
     composer: {
       ...publicView.composer,
       composer_version: composerVersion,
-      marketplace_profile_version: marketplaceProfileVersion,
+      ...(legacyPublicProjection ? {} : {
+        marketplace_profile_version: marketplaceProfileVersion
+      }),
       stored_title: storedTitle || null,
       recomposed_matches_stored: !drift,
       // An operator must not be told a bracket was dropped for budget when the
