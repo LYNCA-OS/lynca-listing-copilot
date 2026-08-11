@@ -238,6 +238,22 @@ const publicPayloadBoundary = spec.match(
   /function publicRecognitionPayloadBoundary[\s\S]+?(?=\nfunction liveExecutionReceiptProof)/
 )?.[0] || "";
 assert.ok(publicPayloadBoundary, "every live route must verify the public recognition projection");
+const publicProjectionSelector = spec.match(
+  /function publicRecognitionProjectionForOwner[\s\S]+?(?=\nfunction publicRecognitionPayloadBoundary)/
+)?.[0] || "";
+assert.ok(publicProjectionSelector,
+  "the public recognition projection must be selected from the sealed owner tuple");
+for (const token of [
+  "CANONICAL_NAMING_RELEASE_CONTRACT_V1",
+  "CANONICAL_NAMING_RELEASE_CONTRACT_V2",
+  "THIN_COMPOSER_VERSION_V2",
+  "EBAY_PROFILE_VERSION",
+  "EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract",
+  "marketplace_profile_public: true",
+  "marketplace_profile_public: false"
+]) {
+  assert.match(publicProjectionSelector, new RegExp(token.replaceAll(".", "\\.")));
+}
 for (const forbidden of [
   "external_identity_support", "csm_persistence_checkpoint", "accuracy_loss_ledger",
   "observed_fields", "resolution_contract", "original_set_sha256", "source_ref"
@@ -245,12 +261,35 @@ for (const forbidden of [
   assert.match(publicPayloadBoundary, new RegExp(forbidden));
 }
 assert.match(publicPayloadBoundary, /hasExactKeys\(payload\.csm_rows, \["output", "resolution"\]\)/);
+assert.match(publicPayloadBoundary, /hasExactKeys\(publicOutput, projection\.output_keys\)/);
+assert.match(publicPayloadBoundary, /publicOutput\.composer_version === owner\.composer/);
+assert.match(publicPayloadBoundary,
+  /publicOutput\.marketplace_profile_version === owner\.marketplace_profile/);
+assert.match(publicPayloadBoundary,
+  /!Object\.prototype\.hasOwnProperty\.call\(publicOutput, "marketplace_profile_version"\)/);
 assert.match(publicPayloadBoundary, /hasExactKeys\(payload\.csm_persistence, \["atomic", "ok", "session"\]\)/);
+const recognitionVersionVerifier = spec.match(
+  /function recognitionVersionReceipt[\s\S]+?(?=\nfunction standardP0LiveEvidence)/
+)?.[0] || "";
+assert.ok(recognitionVersionVerifier,
+  "the version receipt must verify the same owner-selected public projection");
+assert.match(recognitionVersionVerifier, /publicRecognitionProjectionForOwner\(\{/);
+assert.match(recognitionVersionVerifier, /publicProjection\.marketplace_profile_public/);
+assert.match(recognitionVersionVerifier,
+  /!Object\.prototype\.hasOwnProperty\.call\(rows\.output, "marketplace_profile_version"\)/);
+assert.match(recognitionVersionVerifier,
+  /composer === THIN_COMPOSER_VERSION_V2[\s\S]*?marketplaceProfile === EBAY_PROFILE_VERSION/,
+  "only the registered legacy v2 view may omit its profile");
 const executionReceiptVerifier = spec.match(
   /function liveExecutionReceiptProof[\s\S]+?(?=\nfunction assertNoPrivateFixtureKeys)/
 )?.[0] || "";
 assert.ok(executionReceiptVerifier, "the live execution receipt verifier must exist");
-assert.match(executionReceiptVerifier, /publicRecognitionPayloadBoundary\(payload, code\)/);
+assert.match(executionReceiptVerifier, /publicRecognitionPayloadBoundary\(payload, owner, code\)/);
+assert.ok(
+  executionReceiptVerifier.indexOf("computedOwnerExecutionReceiptSha256 === ownerExecutionReceiptSha256")
+    < executionReceiptVerifier.indexOf("publicRecognitionPayloadBoundary(payload, owner, code)"),
+  "the owner receipt must be verified before it selects the public projection"
+);
 assert.match(executionReceiptVerifier, /payload\?\.execution_origin === "FRESH_CURRENT"/);
 assert.match(executionReceiptVerifier,
   /!Object\.prototype\.hasOwnProperty\.call\(owner, "execution_origin"\)/,

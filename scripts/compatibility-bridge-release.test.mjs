@@ -32,6 +32,12 @@ import {
   COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA,
   COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA,
   COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_FAILED_RUN_ID,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_MARKER,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
   activeV2OrdinaryRuntimeContractProof,
@@ -55,7 +61,19 @@ const bridgeV2GitSha = "e".repeat(40);
 const bridgeV2TreeSha = "f".repeat(40);
 const bridgeV2RepairGitSha = "1".repeat(40);
 const bridgeV2RepairTreeSha = "2".repeat(40);
-const nextOrdinaryParentSha = bridgeV2RepairGitSha;
+const bridgeV2WriterReceiptRepairGitSha = "3".repeat(40);
+const bridgeV2WriterReceiptRepairTreeSha = "4".repeat(40);
+const nextOrdinaryParentSha = bridgeV2WriterReceiptRepairGitSha;
+const releaseSource = await readFile(
+  new URL("./compatibility-bridge-release.mjs", import.meta.url),
+  "utf8"
+);
+const verifyHealthDescriptorDispatch = releaseSource.match(
+  /const proof = \[[\s\S]+?\]\.includes\(selection\.bridge_descriptor_id\)/
+)?.[0] || "";
+assert.match(verifyHealthDescriptorDispatch,
+  /COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID/,
+  "the B3 selection must reuse the sealed v2 runtime health proof");
 assert.equal(
   COMPATIBILITY_BRIDGE_PARENT_SHA,
   "ced1a23741e179618e4e7b5eca055cb10ecac8cb"
@@ -90,6 +108,22 @@ assert.deepEqual(COMPATIBILITY_BRIDGE_V2_REPAIR_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-release-boundaries.test.mjs"
 ]);
+assert.equal(COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID,
+  "compatibility-bridge-v2-writer-receipt-repair-v1");
+assert.equal(COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_MARKER,
+  "canonical-naming-v3-overlay-forward-reader-active-v2-bridge-writer-receipt-repair-v1");
+assert.equal(COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA,
+  "45eaeb8b2ec6b0e98ed08c302c6af15b1692deda");
+assert.equal(COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
+  "9aa385321263b04a1615c7783c631c4066419c76");
+assert.equal(COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_FAILED_RUN_ID,
+  "31509043427");
+assert.deepEqual(COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS, [
+  "e2e/production-writer-journey.spec.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs"
+]);
 const git = (cwd, args) => execFileSync("git", args, {
   cwd,
   encoding: "utf8",
@@ -118,6 +152,12 @@ const bridgeV2RepairCommitMessage = [
   "",
   COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
   `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${bridgeV2RepairTreeSha}`
+].join("\n");
+const bridgeV2WriterReceiptRepairCommitMessage = [
+  "repair compatibility bridge Writer Journey receipt",
+  "",
+  COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
+  `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${bridgeV2WriterReceiptRepairTreeSha}`
 ].join("\n");
 const ordinary = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
@@ -159,6 +199,81 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   parentShas: [COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA]
 }), (error) => error.code
   === "ordinary_release_failed_bridge_requires_compatibility_bridge_v2_repair");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: bridgeV2WriterReceiptRepairGitSha,
+  headSha: bridgeV2WriterReceiptRepairGitSha,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA]
+}), (error) => error.code
+  === "ordinary_release_failed_bridge_requires_writer_receipt_repair");
+const bridgeV2WriterReceiptRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: bridgeV2WriterReceiptRepairGitSha,
+  headSha: bridgeV2WriterReceiptRepairGitSha,
+  headTreeSha: bridgeV2WriterReceiptRepairTreeSha,
+  parentTreeSha: COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA],
+  changedPaths: [...COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS],
+  commitMessage: bridgeV2WriterReceiptRepairCommitMessage
+});
+assert.equal(bridgeV2WriterReceiptRepair.schema_version, "production-release-selection-v5");
+assert.equal(bridgeV2WriterReceiptRepair.release_class, COMPATIBILITY_BRIDGE_RELEASE_CLASS);
+assert.equal(bridgeV2WriterReceiptRepair.bridge_descriptor_id,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID);
+assert.equal(bridgeV2WriterReceiptRepair.bridge_marker,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_MARKER);
+assert.equal(bridgeV2WriterReceiptRepair.parent_git_sha,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA);
+assert.equal(bridgeV2WriterReceiptRepair.parent_tree_sha,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA);
+assert.equal(bridgeV2WriterReceiptRepair.failed_run_id,
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_FAILED_RUN_ID);
+assert.equal(bridgeV2WriterReceiptRepair.required_rollback_git_sha,
+  COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA);
+assert.equal(bridgeV2WriterReceiptRepair.writer_journey_manifest,
+  COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION);
+assert.equal(bridgeV2WriterReceiptRepair.parity_required, false);
+assert.match(bridgeV2WriterReceiptRepair.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: bridgeV2WriterReceiptRepairGitSha,
+  headSha: bridgeV2WriterReceiptRepairGitSha,
+  headTreeSha: treeSha,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA],
+  commitMessage: bridgeV2WriterReceiptRepairCommitMessage
+}), (error) => error.code
+  === "compatibility_bridge_v2_writer_receipt_repair_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: bridgeV2WriterReceiptRepairGitSha,
+  headSha: bridgeV2WriterReceiptRepairGitSha,
+  headTreeSha: bridgeV2WriterReceiptRepairTreeSha,
+  parentTreeSha: treeSha,
+  parentShas: [COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA],
+  changedPaths: [...COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS],
+  commitMessage: bridgeV2WriterReceiptRepairCommitMessage
+}), (error) => error.code
+  === "compatibility_bridge_v2_writer_receipt_repair_parent_tree_mismatch");
+for (const changedPaths of [
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS.slice(1),
+  [...COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS,
+    COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    gitSha: bridgeV2WriterReceiptRepairGitSha,
+    headSha: bridgeV2WriterReceiptRepairGitSha,
+    headTreeSha: bridgeV2WriterReceiptRepairTreeSha,
+    parentTreeSha: COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
+    parentShas: [COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA],
+    changedPaths,
+    commitMessage: bridgeV2WriterReceiptRepairCommitMessage
+  }), (error) => [
+    "compatibility_bridge_v2_writer_receipt_repair_changed_paths_invalid",
+    "compatibility_bridge_v2_writer_receipt_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
 const bridgeV2Repair = verifyCompatibilityBridgeSelection({
   releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   gitSha: bridgeV2RepairGitSha,
@@ -275,9 +390,6 @@ assert.equal(bridgeV2.writer_journey_manifest, COMPATIBILITY_BRIDGE_V2_MANIFEST_
 assert.equal(bridgeV2.parity_required, false);
 assert.match(bridgeV2.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
 
-assert.equal(git(process.cwd(), [
-  "rev-parse", `${COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA}^{tree}`
-]), COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA);
 for (const commitMessage of [
   "bridge without trailers",
   `${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${bridgeV2TreeSha}`,
@@ -644,6 +756,54 @@ for (const tampered of [
     "release_rollback_lineage_selection_invalid"
   ].includes(error.code));
 }
+const bridgeV2WriterReceiptRepairLineage = verifyReleaseRollbackLineage({
+  selection: bridgeV2WriterReceiptRepair,
+  rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
+});
+assert.deepEqual(bridgeV2WriterReceiptRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v5",
+  release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID,
+  bridge_marker: COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_MARKER,
+  release_git_sha: bridgeV2WriterReceiptRepairGitSha,
+  release_parent_git_sha: COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_FAILED_RUN_ID,
+  required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+  captured_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+  lineage_verified: true
+});
+for (const rollbackSha of [
+  COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA,
+  COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA,
+  "c".repeat(40)
+]) {
+  assert.throws(() => verifyReleaseRollbackLineage({
+    selection: bridgeV2WriterReceiptRepair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code
+    === "release_rollback_lineage_writer_receipt_repair_rollback_mismatch");
+}
+for (const tampered of [
+  { ...bridgeV2WriterReceiptRepair, bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID },
+  { ...bridgeV2WriterReceiptRepair, bridge_marker: COMPATIBILITY_BRIDGE_V2_REPAIR_MARKER },
+  { ...bridgeV2WriterReceiptRepair, parent_git_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA },
+  { ...bridgeV2WriterReceiptRepair, parent_tree_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA },
+  { ...bridgeV2WriterReceiptRepair, failed_run_id: COMPATIBILITY_BRIDGE_V2_REPAIR_FAILED_RUN_ID },
+  { ...bridgeV2WriterReceiptRepair, required_rollback_git_sha:
+    COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA },
+  { ...bridgeV2WriterReceiptRepair, artifact_manifest_sha256: "0".repeat(64) },
+  { ...bridgeV2WriterReceiptRepair, contract_sha256: "0".repeat(64) }
+]) {
+  assert.throws(() => verifyReleaseRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
+  }), (error) => [
+    "release_rollback_lineage_writer_receipt_repair_selection_invalid",
+    "release_rollback_lineage_repair_selection_invalid",
+    "release_rollback_lineage_selection_invalid"
+  ].includes(error.code));
+}
 const nextLineage = verifyOrdinaryRollbackLineage({
   selection: nextOrdinary,
   rollbackReceipt: { git_sha: nextOrdinaryParentSha }
@@ -670,7 +830,8 @@ try {
   const [actualParent] = actualParents;
   const actualReleaseClass = [
     COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
-    COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA
+    COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA,
+    COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA
   ].includes(actualParent)
     ? COMPATIBILITY_BRIDGE_RELEASE_CLASS
     : ORDINARY_RELEASE_CLASS;
@@ -729,6 +890,20 @@ try {
     assert.equal(savedLineage.schema_version,
       "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
+  } else if (actualParent === COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA) {
+    assert.equal(savedSelection.schema_version, "production-release-selection-v5");
+    assert.equal(savedSelection.bridge_descriptor_id,
+      COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID);
+    assert.equal(savedSelection.bridge_marker,
+      COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_MARKER);
+    assert.equal(savedSelection.parent_git_sha,
+      COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA);
+    assert.equal(savedSelection.required_rollback_git_sha,
+      COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA);
+    assert.equal(savedLineage.schema_version,
+      "production-release-rollback-lineage-receipt-v5");
+    assert.equal(savedLineage.bridge_descriptor_id,
+      COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID);
   } else if (actualParent === COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA) {
     assert.equal(savedSelection.schema_version, "production-release-selection-v4");
     assert.equal(savedSelection.bridge_descriptor_id,
@@ -833,10 +1008,35 @@ assert.equal(reducedRepair.bridge_marker, COMPATIBILITY_BRIDGE_V2_MARKER,
   "the private release selection owns the repair marker, not the runtime manifest");
 assert.equal(reducedRepair.git_sha, bridgeV2RepairGitSha);
 assert.deepEqual(reducedRepair.cases.map((entry) => entry.case_id), ["NON_TCG", "TCG"]);
+const reducedWriterReceiptRepair = buildCompatibilityBridgeManifest({
+  selection: bridgeV2WriterReceiptRepair,
+  sourceManifest
+});
+assert.equal(reducedWriterReceiptRepair.schema_version,
+  COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION);
+assert.equal(reducedWriterReceiptRepair.bridge_descriptor_id,
+  COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+  "the Writer Journey repair must reuse the unchanged runtime descriptor");
+assert.equal(reducedWriterReceiptRepair.bridge_marker, COMPATIBILITY_BRIDGE_V2_MARKER);
+assert.equal(reducedWriterReceiptRepair.git_sha, bridgeV2WriterReceiptRepairGitSha);
+assert.deepEqual(reducedWriterReceiptRepair.cases.map((entry) => entry.case_id),
+  ["NON_TCG", "TCG"]);
 for (const selection of [
   { ...bridgeV2Repair, bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID },
   { ...bridgeV2Repair, bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER },
   { ...bridgeV2Repair, writer_journey_manifest: COMPATIBILITY_BRIDGE_MANIFEST_VERSION }
+]) {
+  assert.throws(() => buildCompatibilityBridgeManifest({
+    selection,
+    sourceManifest
+  }), (error) => error.code === "compatibility_bridge_selection_required");
+}
+for (const selection of [
+  { ...bridgeV2WriterReceiptRepair,
+    bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID },
+  { ...bridgeV2WriterReceiptRepair, bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER },
+  { ...bridgeV2WriterReceiptRepair,
+    writer_journey_manifest: COMPATIBILITY_BRIDGE_MANIFEST_VERSION }
 ]) {
   assert.throws(() => buildCompatibilityBridgeManifest({
     selection,
