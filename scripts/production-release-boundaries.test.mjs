@@ -98,9 +98,13 @@ assert.match(writerJourneyMaterializer,
   "Writer Journey signing must not redirect its server-only apikey");
 const dispatchGate = workflow.indexOf("Fail closed unless this dispatch targets the current main commit");
 const setupNode = workflow.indexOf("actions/setup-node");
+const dependencyBootstrap = workflow.indexOf(
+  "Install exact locked dependencies before release selection"
+);
 const releaseClassBinding = workflow.indexOf(
   "Bind the protected release class to this exact commit"
 );
+const releaseArtifactGate = workflow.indexOf("Verify the CSM thin release artifact");
 const schemaPreflight = workflow.indexOf("Verify CSM persistence and global provider authority before deploy");
 const immutableReleaseGate = workflow.indexOf("Re-confirm the exact main commit before building the immutable release");
 const vercelProjectBinding = workflow.indexOf("Bind the canonical Vercel project from tracked service context");
@@ -148,7 +152,9 @@ const rollbackRestore = workflow.indexOf(
 const releaseEvidence = workflow.indexOf("Upload release evidence");
 assert.ok(dispatchGate >= 0, "production deployment must have an explicit dispatch gate");
 assert.ok(setupNode > dispatchGate, "dispatch validation must run before release setup");
-assert.ok(releaseClassBinding > setupNode && releaseClassBinding < schemaPreflight,
+assert.ok(dependencyBootstrap > setupNode && releaseClassBinding > dependencyBootstrap,
+  "the exact lockfile install must make the selector runnable before selection");
+assert.ok(releaseClassBinding < releaseArtifactGate && releaseArtifactGate < schemaPreflight,
   "the release class and exact commit must be bound before any Production access");
 assert.ok(schemaPreflight > dispatchGate, "dispatch validation must run before production schema access");
 assert.ok(immutableReleaseGate > schemaPreflight, "current main must be re-read after tests and schema preflight");
@@ -181,7 +187,9 @@ assert.ok(canonicalReadbackRecheck > productionAuth && rollbackRestore > canonic
 const candidateJourneyStep = workflow.slice(candidateJourney, candidateAuthorizationCleanup);
 const candidateForwardReadbackStep = workflow.slice(candidateForwardReadback, ownershipGuard);
 const candidateSourceStep = workflow.slice(candidateSource, candidateJourney);
+const dependencyBootstrapStep = workflow.slice(dependencyBootstrap, releaseClassBinding);
 const releaseClassStep = workflow.slice(releaseClassBinding, schemaPreflight);
+const releaseArtifactStep = workflow.slice(releaseArtifactGate, schemaPreflight);
 const compatibilityBridgeProofStep = workflow.slice(compatibilityBridgeProof, candidateSource);
 const rollbackCaptureStep = workflow.slice(rollbackCapture, rollbackLineage);
 const rollbackLineageStep = workflow.slice(rollbackLineage, vercelDeploy);
@@ -208,6 +216,22 @@ assert.match(releaseClassStep, /stat -c '%a'[\s\S]*?= "600"/,
 assert.doesNotMatch(releaseClassStep,
   /VERCEL_TOKEN|OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY/,
   "the zero-call release-class proof must not acquire Production credentials");
+assert.equal(
+  [...workflow.matchAll(/npm ci --no-audit --no-fund/g)].length,
+  1,
+  "the exact lockfile install must run once before selection and never be repeated"
+);
+assert.match(dependencyBootstrapStep,
+  /npm ci --no-audit --no-fund[\s\S]*?git diff --quiet -- \.[\s\S]*?git diff --cached --quiet -- \./,
+  "selection must run only after install leaves both tracked worktree and index exact");
+assert.doesNotMatch(dependencyBootstrapStep,
+  /\$\{\{\s*(?:secrets|vars)\.|SUPABASE|OPENAI|VERCEL|METAVERSE|POSTGRES|Writer Journey|candidate/i,
+  "dependency bootstrap before selection must not acquire Production authority or run runtime work");
+assert.doesNotMatch(releaseArtifactStep, /npm ci/,
+  "the complete artifact proof must reuse the already installed exact dependency tree");
+assert.match(releaseArtifactStep,
+  /npm ls --omit=dev --all[\s\S]*?node scripts\/npm-audit-gate\.mjs[\s\S]*?npm run check[\s\S]*?npm run test:release[\s\S]*?npm run test:e2e:production-writer-journey:contract/,
+  "dependency bootstrap must not split or weaken the complete runtime artifact proof");
 assert.match(compatibilityBridgeProofStep,
   /if: \$\{\{ inputs\.release_class == 'compatibility-bridge' \}\}/);
 assert.match(compatibilityBridgeProofStep,
@@ -550,7 +574,7 @@ assert.equal(
 );
 assert.match(ciWorkflow,
   /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 3/,
-  "PR CI must test the exact head, failed parent, and canonical rollback commits");
+  "PR CI must test the exact head while retaining the failed bridge and its parent");
 assert.match(ciWorkflow, /run: npm run test:release/,
   "CI and production deploy must execute the same release suite");
 assert.doesNotMatch(packageJson.scripts["test:release"], /test:internal-library/,

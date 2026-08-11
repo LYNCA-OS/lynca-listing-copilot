@@ -77,6 +77,15 @@ export const COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA =
 export const COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA =
   "de55b031523237fc5572523886e25e7d3a1529d8";
 export const COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID = "31491259742";
+export const COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID =
+  "compatibility-bridge-v2-bootstrap-repair-v1";
+export const COMPATIBILITY_BRIDGE_V2_REPAIR_MARKER =
+  "canonical-naming-v3-overlay-forward-reader-active-v2-bridge-bootstrap-repair-v1";
+export const COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA =
+  "33f6a4d36ff4635f6e37d6c94660cd0b3e983ef6";
+export const COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA =
+  "8715891a30a80bf8d88f28f49552842b5d53d81f";
+export const COMPATIBILITY_BRIDGE_V2_REPAIR_FAILED_RUN_ID = "31505892407";
 export const ACTIVE_V2_TRANSITION_PARENT_SHA =
   "3755a8f081baa57cf141685f4336999b45373562";
 export const ACTIVE_V2_TRANSITION_MARKER =
@@ -128,6 +137,12 @@ export const COMPATIBILITY_BRIDGE_V2_CHANGED_PATHS = Object.freeze([
   "scripts/production-release-boundaries.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs",
   "scripts/verified-original-observation-support.test.mjs"
+]);
+export const COMPATIBILITY_BRIDGE_V2_REPAIR_CHANGED_PATHS = Object.freeze([
+  ".github/workflows/deploy-production.yml",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-release-boundaries.test.mjs"
 ]);
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -229,6 +244,20 @@ function exactBridgeV2ChangedPaths(values) {
   return actual;
 }
 
+function exactBridgeV2RepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("compatibility_bridge_v2_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...COMPATIBILITY_BRIDGE_V2_REPAIR_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("compatibility_bridge_v2_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -236,6 +265,18 @@ function bridgeV2ArtifactManifestSha256(changedPaths) {
     failed_run_id: COMPATIBILITY_BRIDGE_V2_FAILED_RUN_ID,
     required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
     changed_paths: exactBridgeV2ChangedPaths(changedPaths)
+  }));
+}
+
+function bridgeV2RepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID,
+    repair_marker: COMPATIBILITY_BRIDGE_V2_REPAIR_MARKER,
+    parent_git_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA,
+    parent_tree_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: COMPATIBILITY_BRIDGE_V2_REPAIR_FAILED_RUN_ID,
+    required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+    changed_paths: exactBridgeV2RepairChangedPaths(changedPaths)
   }));
 }
 
@@ -278,6 +319,9 @@ export function verifyCompatibilityBridgeSelection({
     if (parentGitSha === COMPATIBILITY_BRIDGE_V2_PARENT_SHA) {
       throw failure("ordinary_release_failed_parent_requires_compatibility_bridge_v2");
     }
+    if (parentGitSha === COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA) {
+      throw failure("ordinary_release_failed_bridge_requires_compatibility_bridge_v2_repair");
+    }
     const transitionMarker = parentGitSha === ACTIVE_V2_TRANSITION_PARENT_SHA
       ? ACTIVE_V2_TRANSITION_MARKER
       : null;
@@ -300,6 +344,43 @@ export function verifyCompatibilityBridgeSelection({
     throw failure("compatibility_bridge_parent_invalid");
   }
   const bridgeParent = exactGitSha(bridgeParents[0]);
+  if (bridgeParent === COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA) {
+    const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
+    const messageTree = bridgeV2CommitTree(message);
+    const actualTree = exactGitSha(
+      headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
+    );
+    if (messageTree !== actualTree) {
+      throw failure("compatibility_bridge_v2_repair_tree_mismatch");
+    }
+    const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+      "rev-parse", `${COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA}^{tree}`
+    ]));
+    if (actualParentTree !== COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA) {
+      throw failure("compatibility_bridge_v2_repair_parent_tree_mismatch");
+    }
+    const artifactPaths = exactBridgeV2RepairChangedPaths(
+      changedPaths ?? gitChangedPaths(COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA, expectedSha)
+    );
+    const contract = compatibilityBridgeV2RuntimeContractProof();
+    return Object.freeze({
+      schema_version: "production-release-selection-v4",
+      release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID,
+      bridge_marker: COMPATIBILITY_BRIDGE_V2_REPAIR_MARKER,
+      commit_trailer_sha256: sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER),
+      git_tree_sha: actualTree,
+      parent_git_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA,
+      parent_tree_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA,
+      failed_run_id: COMPATIBILITY_BRIDGE_V2_REPAIR_FAILED_RUN_ID,
+      required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+      artifact_manifest_sha256: bridgeV2RepairArtifactManifestSha256(artifactPaths),
+      git_sha: expectedSha,
+      writer_journey_manifest: COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION,
+      parity_required: false,
+      contract_sha256: contract.contract_sha256
+    });
+  }
   if (bridgeParent === COMPATIBILITY_BRIDGE_V2_PARENT_SHA) {
     const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
     const messageTree = bridgeV2CommitTree(message);
@@ -481,9 +562,65 @@ export function verifyOrdinaryRollbackLineage({
   });
 }
 
+function verifyCompatibilityBridgeV2RepairRollbackLineage({
+  selection,
+  rollbackReceipt
+} = {}) {
+  if (!exactKeys(selection, [
+    "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
+    "commit_trailer_sha256", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
+    "failed_run_id", "required_rollback_git_sha", "artifact_manifest_sha256",
+    "git_sha", "writer_journey_manifest", "parity_required", "contract_sha256"
+  ])
+      || selection.schema_version !== "production-release-selection-v4"
+      || selection.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
+      || selection.bridge_descriptor_id !== COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID
+      || selection.bridge_marker !== COMPATIBILITY_BRIDGE_V2_REPAIR_MARKER
+      || selection.commit_trailer_sha256 !== sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER)
+      || selection.parent_git_sha !== COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA
+      || selection.parent_tree_sha !== COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA
+      || selection.failed_run_id !== COMPATIBILITY_BRIDGE_V2_REPAIR_FAILED_RUN_ID
+      || selection.required_rollback_git_sha !== COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA
+      || selection.artifact_manifest_sha256
+        !== bridgeV2RepairArtifactManifestSha256(
+          COMPATIBILITY_BRIDGE_V2_REPAIR_CHANGED_PATHS
+        )
+      || selection.writer_journey_manifest !== COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
+      || selection.parity_required !== false
+      || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))
+      || !/^[0-9a-f]{40}$/.test(String(selection.git_tree_sha || ""))
+      || selection.contract_sha256
+        !== compatibilityBridgeV2RuntimeContractProof().contract_sha256) {
+    throw failure("release_rollback_lineage_repair_selection_invalid");
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha !== COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA) {
+    throw failure("release_rollback_lineage_repair_rollback_mismatch");
+  }
+  return Object.freeze({
+    schema_version: "production-release-rollback-lineage-receipt-v4",
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID,
+    bridge_marker: COMPATIBILITY_BRIDGE_V2_REPAIR_MARKER,
+    release_git_sha: exactGitSha(selection.git_sha),
+    release_parent_git_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_SHA,
+    release_parent_tree_sha: COMPATIBILITY_BRIDGE_V2_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: COMPATIBILITY_BRIDGE_V2_REPAIR_FAILED_RUN_ID,
+    required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
+    captured_rollback_git_sha: capturedRollbackSha,
+    lineage_verified: true
+  });
+}
+
 export function verifyReleaseRollbackLineage({ selection, rollbackReceipt } = {}) {
   if (selection?.release_class === ORDINARY_RELEASE_CLASS) {
     return verifyOrdinaryRollbackLineage({ selection, rollbackReceipt });
+  }
+  if (selection?.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID) {
+    return verifyCompatibilityBridgeV2RepairRollbackLineage({
+      selection,
+      rollbackReceipt
+    });
   }
   if (!exactKeys(selection, [
     "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
@@ -1032,11 +1169,16 @@ export function buildCompatibilityBridgeManifest({ selection, sourceManifest } =
     && selection?.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER
     && selection?.writer_journey_manifest === COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
     && selection?.parity_required === false;
-  if (!historicalV1 && !bridgeV2) {
+  const bridgeV2Repair = selection?.release_class === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && selection?.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID
+    && selection?.bridge_marker === COMPATIBILITY_BRIDGE_V2_REPAIR_MARKER
+    && selection?.writer_journey_manifest === COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
+    && selection?.parity_required === false;
+  if (!historicalV1 && !bridgeV2 && !bridgeV2Repair) {
     throw failure("compatibility_bridge_selection_required");
   }
   const cases = validateOrdinaryCases(sourceManifest);
-  if (bridgeV2) {
+  if (bridgeV2 || bridgeV2Repair) {
     return Object.freeze({
       schema_version: COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION,
       release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
@@ -1157,7 +1299,10 @@ async function main(argv) {
     return;
   }
   const health = await readJson(values.get("--health"), "compatibility_bridge_health");
-  const proof = selection.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID
+  const proof = [
+    COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID,
+    COMPATIBILITY_BRIDGE_V2_REPAIR_DESCRIPTOR_ID
+  ].includes(selection.bridge_descriptor_id)
     ? compatibilityBridgeV2RuntimeContractProof({
       health,
       gitSha: selection.git_sha
