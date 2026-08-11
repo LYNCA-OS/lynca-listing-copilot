@@ -55,6 +55,9 @@ import {
   WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS,
   WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
 } from "./materialize-writer-journey-source.mjs";
+import {
+  PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
+} from "./production-standard-p0-verifier.mjs";
 
 export const ORDINARY_RELEASE_CLASS = "ordinary";
 export const COMPATIBILITY_BRIDGE_RELEASE_CLASS = "compatibility-bridge";
@@ -110,6 +113,17 @@ export const CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA =
   "707e9ba0d14e331ab1e9aa532f15e01c0df5cf1c";
 export const CANONICAL_NAMING_ACTIVATION_MARKER =
   "canonical-naming-v3-v02-verified-overlay-activation-v1";
+export const CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID =
+  "canonical-naming-activation-a2-verifier-repair-v1";
+export const CANONICAL_NAMING_ACTIVATION_A2_MARKER =
+  "canonical-naming-activation-a2-standard-p0-verifier-repair-v1";
+export const CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA =
+  "171dd51b6188de24dd0f6969c265bfd640610e0b";
+export const CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA =
+  "2946066d48c1818262db2fbe9150bf3079f051e4";
+export const CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID = "31515428405";
+export const CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA =
+  CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
@@ -182,6 +196,11 @@ export const CANONICAL_NAMING_ACTIVATION_CHANGED_PATHS = Object.freeze([
   "scripts/csm-resolution-api.test.mjs",
   "scripts/exact-parallel-color-compaction.test.mjs"
 ]);
+export const CANONICAL_NAMING_ACTIVATION_A2_CHANGED_PATHS = Object.freeze([
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-standard-p0-verifier.mjs"
+]);
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const originalSha256 = Object.freeze([
@@ -195,6 +214,18 @@ const HISTORICAL_V01_RELEASE_CONTRACT_SHA256 =
   "eaffac53f6d54347cc2dcd688c6e9028304b66332a9126b5baa342f113ba8afc";
 const HISTORICAL_V01_STORED_REPLAY_SHA256 =
   "a4f338d3567c64f1777ce993333fa1e4eba075270975966a1fc55063094a03a8";
+const CANONICAL_NAMING_ACTIVATION_RUNTIME_CONTRACT_SHA256 =
+  "22b1ae81724522aabf2b022fe8246177b751da86a423e96ad658960e69ecda84";
+const CANONICAL_NAMING_ACTIVATION_A2_VERIFIER_CONTRACT = Object.freeze({
+  source_asset_id: "asset_6fb25b62-0498-8b3a-91a6-30ad4d62f5ef",
+  expected_title:
+    "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50",
+  expected_card_number: "251",
+  rendered_card_number: "#251",
+  expected_serial: "50/50"
+});
+const CANONICAL_NAMING_ACTIVATION_A2_VERIFIER_CONTRACT_SHA256 =
+  "79c9588bc790a54a3a5088ff9ea10901ea89ab74191c69b58c12e5e9871891d5";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const stableJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -328,6 +359,20 @@ function exactCanonicalNamingActivationChangedPaths(values) {
   return actual;
 }
 
+function exactCanonicalNamingActivationA2ChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("canonical_naming_activation_a2_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...CANONICAL_NAMING_ACTIVATION_A2_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("canonical_naming_activation_a2_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -372,7 +417,22 @@ function canonicalNamingActivationArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function canonicalNamingActivationA2ArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID,
+    repair_marker: CANONICAL_NAMING_ACTIVATION_A2_MARKER,
+    parent_git_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA,
+    parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA,
+    failed_run_id: CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID,
+    required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA,
+    changed_paths: exactCanonicalNamingActivationA2ChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA) {
+    return CANONICAL_NAMING_ACTIVATION_A2_MARKER;
+  }
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
     return CANONICAL_NAMING_ACTIVATION_MARKER;
   }
@@ -427,6 +487,35 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA) {
+        throw failure("canonical_naming_activation_a2_parent_tree_mismatch");
+      }
+      const artifactPaths = exactCanonicalNamingActivationA2ChangedPaths(
+        changedPaths ?? gitChangedPaths(CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA, expectedSha)
+      );
+      const repairContract = canonicalNamingActivationA2RuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v6",
+        release_class: selected,
+        repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: CANONICAL_NAMING_ACTIVATION_A2_MARKER,
+        parent_git_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA,
+        parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA,
+        failed_run_id: CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID,
+        required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          canonicalNamingActivationA2ArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: "writer-journey-cases-v3",
+        parity_required: true,
+        contract_sha256: repairContract.contract_sha256
+      });
+    }
     const contract = activeV2OrdinaryRuntimeContractProof({ parentGitSha });
     if (parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
@@ -754,10 +843,98 @@ export function activeV2OrdinaryRuntimeContractProof({
   return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
 }
 
+export function canonicalNamingActivationA2RuntimeContractProof({
+  verifierContract = PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
+} = {}) {
+  const verifierKeys = [
+    "source_asset_id", "expected_title", "expected_card_number",
+    "rendered_card_number", "expected_serial"
+  ];
+  const verifierContractSha256 = sha256(stableJson(verifierContract));
+  if (!exactKeys(verifierContract, verifierKeys)
+      || stableJson(verifierContract)
+        !== stableJson(CANONICAL_NAMING_ACTIVATION_A2_VERIFIER_CONTRACT)
+      || verifierContractSha256
+        !== CANONICAL_NAMING_ACTIVATION_A2_VERIFIER_CONTRACT_SHA256) {
+    throw failure("canonical_naming_activation_a2_verifier_contract_invalid");
+  }
+  const baseActivationProof = activeV2OrdinaryRuntimeContractProof({
+    parentGitSha: CANONICAL_NAMING_ACTIVATION_PARENT_SHA
+  });
+  if (baseActivationProof.contract_sha256
+      !== CANONICAL_NAMING_ACTIVATION_RUNTIME_CONTRACT_SHA256) {
+    throw failure("canonical_naming_activation_a2_base_runtime_contract_invalid");
+  }
+  const body = {
+    schema_version: "canonical-naming-activation-a2-runtime-contract-proof-v1",
+    repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID,
+    repair_marker: CANONICAL_NAMING_ACTIVATION_A2_MARKER,
+    required_parent_git_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA,
+    required_parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA,
+    failed_run_id: CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID,
+    required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA,
+    base_activation_runtime_contract_sha256: baseActivationProof.contract_sha256,
+    verifier_source_asset_id: verifierContract.source_asset_id,
+    verifier_expected_title: verifierContract.expected_title,
+    verifier_expected_card_number: verifierContract.expected_card_number,
+    verifier_rendered_card_number: verifierContract.rendered_card_number,
+    verifier_expected_serial: verifierContract.expected_serial,
+    verifier_contract_sha256: verifierContractSha256,
+    provider_calls: 0
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
 export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v6") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "required_rollback_git_sha", "artifact_manifest_sha256", "git_sha",
+      "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id !== CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== CANONICAL_NAMING_ACTIVATION_A2_MARKER
+        || selection.parent_git_sha !== CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
+        || selection.parent_tree_sha !== CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA
+        || selection.failed_run_id !== CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID
+        || selection.required_rollback_git_sha !== CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== canonicalNamingActivationA2ArtifactManifestSha256(
+            CANONICAL_NAMING_ACTIVATION_A2_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest !== "writer-journey-cases-v3"
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== canonicalNamingActivationA2RuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a2_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v7",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: CANONICAL_NAMING_ACTIVATION_A2_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA,
+      release_parent_tree_sha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_TREE_SHA,
+      failed_run_id: CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID,
+      required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v4") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "lineage_marker", "transition_marker",
@@ -814,6 +991,9 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a2_selection_invalid");
+  }
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
     throw failure("ordinary_release_activation_selection_invalid");
   }
