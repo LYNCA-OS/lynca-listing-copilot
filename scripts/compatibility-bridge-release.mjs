@@ -16,26 +16,31 @@ import {
   CSM_ACTIVE_MODEL_PROFILE
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import {
+  CANONICAL_NAMING_RELEASE_CONTRACT,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
   composeLyncaStandardNameForProfile,
   LYNCA_STANDARD_PROFILE_VERSION_V1,
   LYNCA_STANDARD_PROFILE_VERSION_V2
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   buildCsmStageRows,
-  computeCsmPacketHashes
+  computeCsmPacketHashes,
+  LYNCA_STANDARD_PROFILE_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
-  CSM_PROJECTION_ACTIVATION
+  CSM_PROJECTION_ACTIVATION,
+  CSM_PROJECTION_STATE_ACTIVE,
+  validateCsmProjectionActivation
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
   composeCanonicalFieldsForStoredOutput,
   validateVerifiedOriginalObservationReplayPacket
 } from "../lib/listing/thin/csm-replay.mjs";
 import {
-  finishCanonicalFields
-} from "../lib/listing/thin/thin-listing-path.mjs";
-import {
   resolveVerifiedOriginalObservation,
+  VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY,
+  VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID,
   VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
@@ -99,6 +104,12 @@ export const ACTIVE_V2_TRANSITION_PARENT_SHA =
   "3755a8f081baa57cf141685f4336999b45373562";
 export const ACTIVE_V2_TRANSITION_MARKER =
   "luna-v2-active-from-forward-reader-v1";
+export const CANONICAL_NAMING_ACTIVATION_PARENT_SHA =
+  "62dd9ed697beeb0128ec7d353a2c7560d4a694b1";
+export const CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA =
+  "707e9ba0d14e331ab1e9aa532f15e01c0df5cf1c";
+export const CANONICAL_NAMING_ACTIVATION_MARKER =
+  "canonical-naming-v3-v02-verified-overlay-activation-v1";
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
@@ -159,6 +170,18 @@ export const COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_CHANGED_PATHS = Objec
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
 ]);
+export const CANONICAL_NAMING_ACTIVATION_CHANGED_PATHS = Object.freeze([
+  "lib/listing/thin/canonical-naming-adapter.mjs",
+  "lib/listing/thin/csm-persistence.mjs",
+  "lib/listing/thin/csm-projection-activation.mjs",
+  "scripts/canonical-naming-subset-a-zero-provider.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-projection-activation.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/exact-parallel-color-compaction.test.mjs"
+]);
 
 const repoRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const originalSha256 = Object.freeze([
@@ -168,6 +191,10 @@ const originalSha256 = Object.freeze([
 const targetV2Title =
   "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls";
 const expectedModelProfileId = "openai-gpt-5.6-luna-csm-v1";
+const HISTORICAL_V01_RELEASE_CONTRACT_SHA256 =
+  "eaffac53f6d54347cc2dcd688c6e9028304b66332a9126b5baa342f113ba8afc";
+const HISTORICAL_V01_STORED_REPLAY_SHA256 =
+  "a4f338d3567c64f1777ce993333fa1e4eba075270975966a1fc55063094a03a8";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const stableJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -287,6 +314,20 @@ function exactBridgeV2WriterReceiptRepairChangedPaths(values) {
   return actual;
 }
 
+function exactCanonicalNamingActivationChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("canonical_naming_activation_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...CANONICAL_NAMING_ACTIVATION_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("canonical_naming_activation_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -319,6 +360,25 @@ function bridgeV2WriterReceiptRepairArtifactManifestSha256(changedPaths) {
     required_rollback_git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA,
     changed_paths: exactBridgeV2WriterReceiptRepairChangedPaths(changedPaths)
   }));
+}
+
+function canonicalNamingActivationArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    activation_marker: CANONICAL_NAMING_ACTIVATION_MARKER,
+    parent_git_sha: CANONICAL_NAMING_ACTIVATION_PARENT_SHA,
+    parent_tree_sha: CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA,
+    required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_PARENT_SHA,
+    changed_paths: exactCanonicalNamingActivationChangedPaths(changedPaths)
+  }));
+}
+
+function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
+    return CANONICAL_NAMING_ACTIVATION_MARKER;
+  }
+  return parentGitSha === ACTIVE_V2_TRANSITION_PARENT_SHA
+    ? ACTIVE_V2_TRANSITION_MARKER
+    : null;
 }
 
 function gitParentShas(sha) {
@@ -366,10 +426,34 @@ export function verifyCompatibilityBridgeSelection({
     if (parentGitSha === COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA) {
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
-    const transitionMarker = parentGitSha === ACTIVE_V2_TRANSITION_PARENT_SHA
-      ? ACTIVE_V2_TRANSITION_MARKER
-      : null;
+    const transitionMarker = ordinaryTransitionMarker(parentGitSha);
     const contract = activeV2OrdinaryRuntimeContractProof({ parentGitSha });
+    if (parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${CANONICAL_NAMING_ACTIVATION_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA) {
+        throw failure("canonical_naming_activation_parent_tree_mismatch");
+      }
+      const artifactPaths = exactCanonicalNamingActivationChangedPaths(
+        changedPaths ?? gitChangedPaths(CANONICAL_NAMING_ACTIVATION_PARENT_SHA, expectedSha)
+      );
+      return Object.freeze({
+        schema_version: "production-release-selection-v4",
+        release_class: selected,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: CANONICAL_NAMING_ACTIVATION_MARKER,
+        parent_git_sha: CANONICAL_NAMING_ACTIVATION_PARENT_SHA,
+        parent_tree_sha: CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA,
+        required_rollback_git_sha: CANONICAL_NAMING_ACTIVATION_PARENT_SHA,
+        artifact_manifest_sha256:
+          canonicalNamingActivationArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: "writer-journey-cases-v3",
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     return Object.freeze({
       schema_version: "production-release-selection-v3",
       release_class: selected,
@@ -539,9 +623,64 @@ export function activeV2OrdinaryRuntimeContractProof({
   parentGitSha = ACTIVE_V2_TRANSITION_PARENT_SHA
 } = {}) {
   const parent = exactGitSha(parentGitSha);
-  const transitionMarker = parent === ACTIVE_V2_TRANSITION_PARENT_SHA
-    ? ACTIVE_V2_TRANSITION_MARKER
-    : null;
+  const transitionMarker = ordinaryTransitionMarker(parent);
+  let projectionState;
+  try {
+    projectionState = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
+  } catch {
+    throw failure("canonical_naming_activation_runtime_contract_invalid");
+  }
+  const historicalV01Replay = composeCanonicalFieldsForStoredOutput({
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Chrome",
+    set: "",
+    subjects: ["Bridge Test Player"],
+    team: "Test Team",
+    card_name: "",
+    release_variant: "",
+    print_finish: "",
+    surface_color: "",
+    parallel_family: "",
+    parallel_exact: "",
+    descriptive_rarity: "",
+    card_number: "1",
+    serial: "",
+    attributes: [],
+    components: [],
+    search_optimization: [],
+    grade: "",
+    grading_info: null,
+    grammar: "standard",
+    lot_count: "",
+    unreadable: [],
+    low_confidence: []
+  }, {
+    marketplace: "EBAY",
+    composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V1.composer_version,
+    marketplace_profile_version:
+      CANONICAL_NAMING_RELEASE_CONTRACT_V1.marketplace_profile_version
+  });
+  const projectionActive = projectionState.state === CSM_PROJECTION_STATE_ACTIVE
+    && CANONICAL_NAMING_RELEASE_CONTRACT === CANONICAL_NAMING_RELEASE_CONTRACT_V2
+    && LYNCA_STANDARD_PROFILE_VERSION
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+    && stableJson(CSM_PROJECTION_ACTIVATION.active_writer.standard) === stableJson({
+      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
+      marketplace_profile_version:
+        CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+    })
+    && CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay
+      === VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+    && sha256(stableJson(CANONICAL_NAMING_RELEASE_CONTRACT_V1))
+      === HISTORICAL_V01_RELEASE_CONTRACT_SHA256
+    && historicalV01Replay.title
+      === "2025 Topps Chrome Bridge Test Player Test Team #1"
+    && sha256(stableJson(historicalV01Replay)) === HISTORICAL_V01_STORED_REPLAY_SHA256
+    && CSM_ACTIVE_MODEL_PROFILE.reasoning_effort === "low";
+  if (!projectionActive) {
+    throw failure("canonical_naming_activation_runtime_contract_invalid");
+  }
   const v2 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
     .registry_thin_external_identity_high_risers_v2;
   const corrected = resolveExternalIdentitySupport({
@@ -588,7 +727,7 @@ export function activeV2OrdinaryRuntimeContractProof({
     && replay.title === targetV2Title;
   if (!activeIsV2) throw failure("active_v2_transition_runtime_contract_invalid");
   const body = {
-    schema_version: "active-v2-ordinary-runtime-contract-proof-v1",
+    schema_version: "canonical-naming-activation-runtime-contract-proof-v1",
     lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
     transition_marker: transitionMarker,
     required_parent_git_sha: parent,
@@ -597,7 +736,17 @@ export function activeV2OrdinaryRuntimeContractProof({
     active_conflict_policy_version: v2.resolution.conflict_policy_version,
     active_composer_version: v2.output.composer_version,
     active_marketplace_profile_version: v2.output.marketplace_profile_version,
+    active_standard_writer_composer_version:
+      CSM_PROJECTION_ACTIVATION.active_writer.standard.composer_version,
+    active_standard_writer_marketplace_profile_version:
+      CSM_PROJECTION_ACTIVATION.active_writer.standard.marketplace_profile_version,
+    active_verified_original_observation_overlay:
+      CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay,
+    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
+    historical_v01_release_contract_sha256: HISTORICAL_V01_RELEASE_CONTRACT_SHA256,
+    historical_v01_stored_replay_sha256: HISTORICAL_V01_STORED_REPLAY_SHA256,
     active_model_profile_id: expectedModelProfileId,
+    active_model_reasoning_effort: CSM_ACTIVE_MODEL_PROFILE.reasoning_effort,
     verified_original_set_conflict_behavior: "CORRECTED",
     expected_title_sha256: sha256(targetV2Title),
     provider_calls: 0
@@ -609,6 +758,48 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v4") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "lineage_marker", "transition_marker",
+      "parent_git_sha", "parent_tree_sha", "required_rollback_git_sha",
+      "artifact_manifest_sha256", "git_sha", "writer_journey_manifest",
+      "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== CANONICAL_NAMING_ACTIVATION_MARKER
+        || selection.parent_git_sha !== CANONICAL_NAMING_ACTIVATION_PARENT_SHA
+        || selection.parent_tree_sha !== CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA
+        || selection.required_rollback_git_sha !== CANONICAL_NAMING_ACTIVATION_PARENT_SHA
+        || selection.artifact_manifest_sha256
+          !== canonicalNamingActivationArtifactManifestSha256(
+            CANONICAL_NAMING_ACTIVATION_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest !== "writer-journey-cases-v3"
+        || selection.parity_required !== true
+        || selection.contract_sha256 !== activeV2OrdinaryRuntimeContractProof({
+          parentGitSha: CANONICAL_NAMING_ACTIVATION_PARENT_SHA
+        }).contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v6",
+      release_class: ORDINARY_RELEASE_CLASS,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: CANONICAL_NAMING_ACTIVATION_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: CANONICAL_NAMING_ACTIVATION_PARENT_SHA,
+      release_parent_tree_sha: CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (!exactKeys(selection, [
     "schema_version", "release_class", "lineage_marker", "transition_marker",
     "parent_git_sha", "required_rollback_git_sha", "git_sha",
@@ -623,10 +814,11 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
+    throw failure("ordinary_release_activation_selection_invalid");
+  }
   const requiredRollbackSha = exactGitSha(selection.required_rollback_git_sha);
-  const expectedTransitionMarker = parentGitSha === ACTIVE_V2_TRANSITION_PARENT_SHA
-    ? ACTIVE_V2_TRANSITION_MARKER
-    : null;
+  const expectedTransitionMarker = ordinaryTransitionMarker(parentGitSha);
   if (requiredRollbackSha !== parentGitSha
       || selection.transition_marker !== expectedTransitionMarker) {
     throw failure("ordinary_release_selection_invalid");
@@ -1090,32 +1282,11 @@ export function compatibilityBridgeV2RuntimeContractProof({
     unreadable: [],
     low_confidence: []
   };
-  const active = finishCanonicalFields(fields);
   const historicalV2 = composeCanonicalFieldsForStoredOutput(fields, {
     marketplace: "EBAY",
     composer_version: "thin-marketplace-composer-v2",
     marketplace_profile_version: "ebay-profile-v1"
   });
-  const activeReceipt = {
-    title: active.title,
-    grammar: active.grammar,
-    brackets: active.brackets,
-    bracket_text: active.bracket_text,
-    dropped: active.dropped_brackets,
-    suppressed: active.suppressed_brackets,
-    restored: active.restored_brackets,
-    truncated: active.truncated,
-    empty_fields: active.empty_fields,
-    input_empty_fields: active.input_empty_fields,
-    unreadable: active.unreadable_fields,
-    low_confidence: active.low_confidence_fields,
-    inferred_parent: active.inferred_parent,
-    normalization_reasons: active.normalization_reasons,
-    character_budget: active.character_budget,
-    length: active.length,
-    composer_version: active.composer_version,
-    marketplace_profile_version: active.marketplace_profile_version
-  };
   const historicalV2Receipt = {
     title: historicalV2.title,
     grammar: historicalV2.grammar,
@@ -1136,7 +1307,45 @@ export function compatibilityBridgeV2RuntimeContractProof({
     composer_version: "thin-marketplace-composer-v2",
     marketplace_profile_version: "ebay-profile-v1"
   };
-  const forwardStandard = CSM_PROJECTION_ACTIVATION.forward_readers.standard;
+  const bridgeProjectionActivation = {
+    schema_version: "csm-projection-activation.v2",
+    activation_id: "standard-v2-writer-v3-v01-v02-overlay-forward-reader-bridge-v1",
+    active_writer: {
+      standard: {
+        composer_version: "thin-marketplace-composer-v2",
+        marketplace_profile_version: "ebay-profile-v1"
+      },
+      verified_original_observation_overlay: null
+    },
+    forward_readers: {
+      standard: [
+        CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+        CANONICAL_NAMING_RELEASE_CONTRACT_V2
+      ].map((contract) => ({
+        composer_version: contract.composer_version,
+        marketplace_profile_version: contract.marketplace_profile_version,
+        release_contract_schema_version: contract.schema_version,
+        profile_id: contract.profile_id,
+        profile_version: contract.profile_version
+      })),
+      verified_original_observation_overlay: {
+        replay_registry_schema_version:
+          VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY.schema_version,
+        release_ids: Object.keys(
+          VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY.releases
+        ).sort(),
+        resolution_contract_schema_version:
+          VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.schema_version,
+        resolution_contract_sha256:
+          VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
+        resolver_version: VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.resolver_version,
+        conflict_policy_version:
+          VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.conflict_policy_version
+      }
+    },
+    activation_sha256: "a489cd2685ff1c56efa499ab64eef9184d0fd54dc1ca93c6cbcc0985aa7630a8"
+  };
+  const forwardStandard = bridgeProjectionActivation.forward_readers.standard;
   const forwardReceipts = forwardStandard.map((contract) => ({
     contract,
     replayed: composeCanonicalFieldsForStoredOutput(fields, {
@@ -1148,12 +1357,13 @@ export function compatibilityBridgeV2RuntimeContractProof({
       marketplaceProfileVersion: contract.marketplace_profile_version
     })
   }));
-  const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+  const activeWriter = bridgeProjectionActivation.active_writer;
   const overlayForward =
-    CSM_PROJECTION_ACTIVATION.forward_readers.verified_original_observation_overlay;
-  const runtimeReady = activeWriter.standard.composer_version === active.composer_version
+    bridgeProjectionActivation.forward_readers.verified_original_observation_overlay;
+  const runtimeReady = activeWriter.standard.composer_version
+      === historicalV2Receipt.composer_version
     && activeWriter.standard.marketplace_profile_version
-      === active.marketplace_profile_version
+      === historicalV2Receipt.marketplace_profile_version
     && activeWriter.verified_original_observation_overlay === null
     && stableJson(forwardStandard.map((contract) => ({
       composer_version: contract.composer_version,
@@ -1174,9 +1384,6 @@ export function compatibilityBridgeV2RuntimeContractProof({
       === VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.resolver_version
     && overlayForward.conflict_policy_version
       === VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.conflict_policy_version
-    && stableJson(activeReceipt) === stableJson(historicalV2Receipt)
-    && active.canonical_naming_trace === null
-    && !Object.hasOwn(active, "verified_original_observation_support")
     && forwardReceipts.every(({ replayed, expected }) => (
       stableJson(replayed) === stableJson(expected)
     ))
@@ -1195,11 +1402,11 @@ export function compatibilityBridgeV2RuntimeContractProof({
       && health?.deployment?.git_commit_sha === deploymentSha
       && health?.runtime?.model_profile_id === expectedModelProfileId
       && stableJson(health?.runtime?.projection_activation)
-        === stableJson(CSM_PROJECTION_ACTIVATION)
+        === stableJson(bridgeProjectionActivation)
       && stableJson(health?.runtime?.active_writer)
-        === stableJson(CSM_PROJECTION_ACTIVATION.active_writer)
+        === stableJson(bridgeProjectionActivation.active_writer)
       && stableJson(health?.runtime?.forward_readers)
-        === stableJson(CSM_PROJECTION_ACTIVATION.forward_readers);
+        === stableJson(bridgeProjectionActivation.forward_readers);
     if (!healthBound) throw failure("compatibility_bridge_v2_health_contract_invalid");
   }
 
@@ -1224,7 +1431,7 @@ export function compatibilityBridgeV2RuntimeContractProof({
     sealed_overlay_forward_readback_projector_valid: true,
     sealed_overlay_forward_read_negative_count:
       sealedOverlayForwardRead.negative_resealed_counterexample_count,
-    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
+    projection_activation_sha256: bridgeProjectionActivation.activation_sha256,
     active_model_profile_id: expectedModelProfileId,
     provider_calls: 0,
     health_bound: healthBound,

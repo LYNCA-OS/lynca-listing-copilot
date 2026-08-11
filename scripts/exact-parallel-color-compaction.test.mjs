@@ -90,10 +90,10 @@ const positive = card({
   assert.ok(!candidate.normalization_reasons.includes("print_finish:exact_parallel_color_compacted"));
 }
 
-// The behavior-neutral forward-reader bridge keeps the active Standard writer
-// on the current Production v2/eBay pair. Its default is the measured exact
-// colour compaction; the explicit false arm remains the ablation. CNL v0.1 and
-// v0.2 are exercised through stored-version replay until atomic activation.
+// Activation A routes every Standard write through the registered CNL v0.2
+// contract. Legacy feature switches cannot select a second active writer; the
+// v2/eBay ablation remains covered directly above and historical CNL versions
+// remain available only through stored-version replay.
 {
   const payload = JSON.stringify(positive);
   const baseline = finishCanonicalTitle(payload, {
@@ -105,12 +105,14 @@ const positive = card({
   const active = finishCanonicalTitle(payload);
   assert.equal(JSON.stringify(candidate.fields), JSON.stringify(baseline.fields));
   assert.equal(JSON.stringify(active.fields), JSON.stringify(candidate.fields));
-  assert.notEqual(candidate.title, baseline.title);
+  assert.equal(candidate.title, baseline.title);
   assert.equal(active.title, candidate.title);
-  assert.equal(candidate.composer_version, "thin-marketplace-composer-v2");
-  assert.equal(baseline.composer_version, "thin-marketplace-composer-v2");
-  assert.equal(active.composer_version, "thin-marketplace-composer-v2");
-  assert.equal(active.marketplace_profile_version, "ebay-profile-v1");
+  assert.equal(candidate.composer_version, "thin-marketplace-composer-v3");
+  assert.equal(baseline.composer_version, "thin-marketplace-composer-v3");
+  assert.equal(active.composer_version, "thin-marketplace-composer-v3");
+  assert.equal(active.marketplace_profile_version, "lynca-standard-name-v0.2");
+  assert.equal(active.canonical_naming_publishable, true);
+  assert.ok(active.canonical_naming_trace);
 }
 
 process.stdout.write("exact parallel color compaction: ok\n");
