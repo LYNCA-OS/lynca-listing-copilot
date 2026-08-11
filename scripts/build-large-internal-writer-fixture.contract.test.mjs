@@ -19,6 +19,7 @@ import {
   prepareLargeInternalFixtureOutputDirectory,
   validateApprovedSourceManifest
 } from "./build-large-internal-writer-fixture.mjs";
+import { LISTING_IMAGE_RELAY_MAX_BYTES } from "../api/listing-image-upload-relay.js";
 
 const materializer = await import("./materialize-writer-journey-source.mjs");
 const materializerContracts = materializer.WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS;
@@ -101,7 +102,7 @@ assert.equal(matchingMaterializerContract.hash_provenance,
 assert.deepEqual(LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT, {
   schema_version: "large-internal-writer-fixture-receipt-v1",
   builder_id: "large-internal-writer-fixture-builder",
-  builder_version: "1.0.0",
+  builder_version: "1.1.0",
   source_class: "LYNCA_INTERNAL_SYNTHETIC_TEST",
   allowed_use: "PRODUCTION_RELEASE_TRANSPORT_ONLY",
   forbidden_uses: [
@@ -114,16 +115,22 @@ assert.deepEqual(LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT, {
   seed: 0x4c594e43,
   output_width: 3000,
   output_height: 4200,
-  original_jpeg_quality: 0.9,
+  original_jpeg_quality: 0.8,
   semantic_panel: { x: 240, y: 280, width: 2520, height: 3640, padding: 48 },
   staged_lane_version: "readability-derived-inline-v2",
   staged_long_edge: 1600,
   staged_jpeg_quality: 0.8,
   original_total_min_bytes_exclusive: 3_200_000,
   original_each_max_bytes: 25 * 1024 * 1024,
+  original_each_relay_max_bytes: 3_200_000,
   derived_total_max_bytes: 3_200_000,
   playwright_version: "1.61.1"
 });
+assert.equal(
+  LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT.original_each_relay_max_bytes,
+  LISTING_IMAGE_RELAY_MAX_BYTES,
+  "the transport fixture must use the same per-request relay ceiling as Production"
+);
 
 const normalized = validateApprovedSourceManifest(approvedCasesManifest);
 assert.equal(approvedCasesManifest.cases[0].case_id, "TCG");

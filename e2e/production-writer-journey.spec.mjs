@@ -764,6 +764,7 @@ function validateLargeFixtureReceipt(receipt) {
     || receipt.transform?.staged_jpeg_quality !== contract.staged_jpeg_quality
     || receipt.limits?.original_total_min_bytes_exclusive !== contract.original_total_min_bytes_exclusive
     || receipt.limits?.original_each_max_bytes !== contract.original_each_max_bytes
+    || receipt.limits?.original_each_relay_max_bytes !== contract.original_each_relay_max_bytes
     || receipt.limits?.derived_total_max_bytes !== contract.derived_total_max_bytes
     || !Array.isArray(receipt.originals) || receipt.originals.length !== 2
     || !Array.isArray(receipt.derived) || receipt.derived.length !== 2) {
@@ -782,7 +783,7 @@ function validateLargeFixtureReceipt(receipt) {
     sourceRole: index === 0 ? "front_original" : "back_original",
     width: contract.output_width,
     height: contract.output_height,
-    maxBytes: contract.original_each_max_bytes
+    maxBytes: Math.min(contract.original_each_max_bytes, contract.original_each_relay_max_bytes)
   }));
   const derived = receipt.derived.map((entry, index) => validateFixtureImage(entry, {
     file: `${index + 1}-${index === 0 ? "front" : "back"}-readability-derived.jpg`,
