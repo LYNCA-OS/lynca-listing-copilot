@@ -22,6 +22,16 @@ import {
   ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
   ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
   ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -111,6 +121,7 @@ import {
   ORDINARY_RELEASE_CLASS,
   activationAIdentityAuthorityFailsoftRuntimeContractProof,
   activationAFieldSourceReferenceRepairRuntimeContractProof,
+  activationAUsedWebEvidenceBudgetRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -150,6 +161,7 @@ const activationAGrammarSourceRepairGitSha = "0".repeat(40);
 const activationAIdentityAuthorityFailsoftGitSha = "b".repeat(40);
 const activationAWebSourceBudgetRepairGitSha = "c".repeat(40);
 const activationAFieldSourceReferenceRepairGitSha = "f".repeat(40);
+const activationAUsedWebEvidenceBudgetGitSha = "4".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -402,6 +414,29 @@ assert.deepEqual(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/csm-durable-forward-reader-bridge.test.mjs",
   "scripts/csm-persistence.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "384436a2daaeea866435ee674983756a6eddb54bc9780b469ba13e8dccb83dab");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-used-web-evidence-budget-v1");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER,
+  "founder-beta-used-web-evidence-budget-v1");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+  "d3c19c0157237770705a92d88d75ec13bebfa617");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ALTERNATE_PARENT_SHA,
+  "849a592d6cbb72a1fa3c8cc9006b1186635d5d21");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+  "0d033db94c5cb250b34c3a4f80bce78c6676bdfa");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID, "31627459236");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+  "founder_beta_web_source_budget_exceeded");
+assert.equal(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
+  ACTIVATION_A_ROLLBACK_SHA);
+assert.deepEqual(ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS, [
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
@@ -770,6 +805,82 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   ],
   changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
+const activationAUsedWebEvidenceBudget = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAUsedWebEvidenceBudgetGitSha,
+  headSha: activationAUsedWebEvidenceBudgetGitSha,
+  parentTreeSha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS]
+});
+assert.equal(activationAUsedWebEvidenceBudget.schema_version,
+  "production-release-selection-v14");
+assert.equal(activationAUsedWebEvidenceBudget.repair_descriptor_id,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID);
+assert.equal(activationAUsedWebEvidenceBudget.transition_marker,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER);
+assert.equal(activationAUsedWebEvidenceBudget.parent_git_sha,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA);
+assert.equal(activationAUsedWebEvidenceBudget.parent_tree_sha,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA);
+assert.equal(activationAUsedWebEvidenceBudget.failed_run_id,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID);
+assert.equal(activationAUsedWebEvidenceBudget.failure_code,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE);
+assert.equal(activationAUsedWebEvidenceBudget.required_rollback_git_sha,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA);
+assert.equal(activationAUsedWebEvidenceBudget.writer_journey_manifest,
+  "writer-journey-cases-v4");
+assert.equal(activationAUsedWebEvidenceBudget.parity_required, true);
+assert.match(activationAUsedWebEvidenceBudget.artifact_manifest_sha256,
+  /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS,
+    ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAUsedWebEvidenceBudgetGitSha,
+    headSha: activationAUsedWebEvidenceBudgetGitSha,
+    parentTreeSha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_used_web_evidence_budget_changed_paths_invalid",
+    "activation_a_used_web_evidence_budget_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAUsedWebEvidenceBudgetGitSha,
+  headSha: activationAUsedWebEvidenceBudgetGitSha,
+  parentTreeSha: "5".repeat(40),
+  parentShas: [ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_used_web_evidence_budget_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAUsedWebEvidenceBudgetGitSha,
+  headSha: activationAUsedWebEvidenceBudgetGitSha,
+  parentTreeSha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+  parentShas: [
+    ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+    ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA
+  ],
+  changedPaths: [...ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAUsedWebEvidenceBudgetGitSha,
+  headSha: activationAUsedWebEvidenceBudgetGitSha,
+  parentTreeSha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ALTERNATE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_used_web_evidence_budget_parent_mismatch");
+
 const activationAFieldSourceReferenceRepair = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAFieldSourceReferenceRepairGitSha,
@@ -1711,6 +1822,50 @@ assert.equal(activationAFieldSourceReferenceRepairProof.durable_resolved_state,
 assert.equal(activationAFieldSourceReferenceRepairProof.negative_counterexample_count, 5);
 assert.equal(activationAFieldSourceReferenceRepair.contract_sha256,
   activationAFieldSourceReferenceRepairProof.contract_sha256);
+assert.equal(activationAFieldSourceReferenceRepairProof.contract_sha256,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "selection-v13 must replay its literal proof instead of reading live evidence budget");
+const activationAUsedWebEvidenceBudgetProof =
+  activationAUsedWebEvidenceBudgetRuntimeContractProof();
+assert.equal(activationAUsedWebEvidenceBudgetProof.schema_version,
+  "listing-copilot-activation-a-used-web-evidence-budget-proof-v1");
+assert.equal(activationAUsedWebEvidenceBudgetProof.repair_descriptor_id,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID);
+assert.equal(activationAUsedWebEvidenceBudgetProof.repair_marker,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER);
+assert.equal(activationAUsedWebEvidenceBudgetProof.required_parent_git_sha,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA);
+assert.equal(activationAUsedWebEvidenceBudgetProof.required_parent_tree_sha,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA);
+assert.equal(activationAUsedWebEvidenceBudgetProof.failed_run_id,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID);
+assert.equal(activationAUsedWebEvidenceBudgetProof.failure_code,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE);
+assert.equal(activationAUsedWebEvidenceBudgetProof.required_rollback_git_sha,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA);
+assert.equal(
+  activationAUsedWebEvidenceBudgetProof.base_field_source_reference_contract_sha256,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationAUsedWebEvidenceBudgetProof.returned_trace_role,
+  "strict-sanitized-membership-universe-only");
+assert.equal(activationAUsedWebEvidenceBudgetProof.receipt_url_derivation,
+  "sorted-unique-union-of-final-field-evidence-url-arrays");
+assert.equal(activationAUsedWebEvidenceBudgetProof.used_evidence_url_limit, 20);
+assert.equal(activationAUsedWebEvidenceBudgetProof.returned_trace_url_limit, null);
+assert.equal(activationAUsedWebEvidenceBudgetProof.unreferenced_safe_trace_urls_spend_budget,
+  false);
+assert.equal(activationAUsedWebEvidenceBudgetProof.unsafe_unreferenced_trace_url_policy,
+  "hard-reject");
+assert.equal(activationAUsedWebEvidenceBudgetProof.forty_returned_one_used_accepted, true);
+assert.equal(activationAUsedWebEvidenceBudgetProof.twenty_used_accepted, true);
+assert.equal(activationAUsedWebEvidenceBudgetProof.twenty_one_used_failure_code,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE);
+assert.equal(activationAUsedWebEvidenceBudgetProof.field_source_membership_required, true);
+assert.equal(activationAUsedWebEvidenceBudgetProof.cross_row_evidence_dedupe, true);
+assert.equal(activationAUsedWebEvidenceBudgetProof.historical_reader_compatibility,
+  "v1-superset");
+assert.equal(activationAUsedWebEvidenceBudget.contract_sha256,
+  activationAUsedWebEvidenceBudgetProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -2192,6 +2347,83 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_activation_a_grammar_source_repair_selection_invalid",
 "the failed grammar candidate may not escape through generic ordinary lineage");
+const activationAUsedWebEvidenceBudgetLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAUsedWebEvidenceBudget,
+  rollbackReceipt: { git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAUsedWebEvidenceBudgetLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v15",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER,
+  release_git_sha: activationAUsedWebEvidenceBudgetGitSha,
+  release_parent_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+  required_rollback_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAUsedWebEvidenceBudget.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationAUsedWebEvidenceBudget, repair_descriptor_id: "unknown-repair" },
+  { ...activationAUsedWebEvidenceBudget, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationAUsedWebEvidenceBudget,
+    parent_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA },
+  { ...activationAUsedWebEvidenceBudget, parent_tree_sha: "5".repeat(40) },
+  { ...activationAUsedWebEvidenceBudget, failed_run_id: "31627459235" },
+  { ...activationAUsedWebEvidenceBudget,
+    failure_code: "founder_beta_field_source_not_returned" },
+  { ...activationAUsedWebEvidenceBudget,
+    required_rollback_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA },
+  { ...activationAUsedWebEvidenceBudget, artifact_manifest_sha256: "5".repeat(64) },
+  { ...activationAUsedWebEvidenceBudget, writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationAUsedWebEvidenceBudget, parity_required: false },
+  { ...activationAUsedWebEvidenceBudget,
+    contract_sha256: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256 },
+  { ...activationAUsedWebEvidenceBudget, git_sha: "not-a-git-sha" },
+  { ...activationAUsedWebEvidenceBudget, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_used_web_evidence_budget_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+  "5".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAUsedWebEvidenceBudget,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+for (const parentGitSha of [
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+  ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ALTERNATE_PARENT_SHA
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: {
+      schema_version: "production-release-selection-v3",
+      release_class: ORDINARY_RELEASE_CLASS,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: parentGitSha === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA
+        ? ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER : null,
+      parent_git_sha: parentGitSha,
+      required_rollback_git_sha: parentGitSha,
+      git_sha: activationAUsedWebEvidenceBudgetGitSha,
+      writer_journey_manifest: "writer-journey-cases-v3",
+      parity_required: true,
+      contract_sha256: activationAUsedWebEvidenceBudgetProof.contract_sha256
+    },
+    rollbackReceipt: { git_sha: parentGitSha }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_used_web_evidence_budget_selection_invalid");
+}
+
 const activationAFieldSourceReferenceRepairLineage = verifyOrdinaryRollbackLineage({
   selection: activationAFieldSourceReferenceRepair,
   rollbackReceipt: { git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA }
@@ -2594,6 +2826,8 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationAUsedWebEvidenceBudget =
+    actualParent === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA;
   const actualActivationAFieldSourceReferenceRepair =
     actualParent === ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA;
   const actualActivationAWebSourceBudgetRepair =
@@ -2604,7 +2838,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationAFieldSourceReferenceRepair
+  const actualTransitionMarker = actualActivationAUsedWebEvidenceBudget
+    ? ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER
+    : actualActivationAFieldSourceReferenceRepair
     ? ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER
     : actualActivationAWebSourceBudgetRepair
     ? ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER
@@ -2670,7 +2906,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationAFieldSourceReferenceRepair
+      actualActivationAUsedWebEvidenceBudget
+        ? "production-release-selection-v14"
+        : actualActivationAFieldSourceReferenceRepair
         ? "production-release-selection-v13"
         : actualActivationAWebSourceBudgetRepair
         ? "production-release-selection-v12"
@@ -2693,7 +2931,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationAFieldSourceReferenceRepair
+      actualActivationAUsedWebEvidenceBudget
+        ? ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA
+        : actualActivationAFieldSourceReferenceRepair
         ? ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA
         : actualActivationAWebSourceBudgetRepair
         ? ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA
@@ -2710,8 +2950,10 @@ try {
           : actualActivationA2
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationAFieldSourceReferenceRepair
-      ? "production-release-rollback-lineage-receipt-v14"
+    assert.equal(savedLineage.schema_version, actualActivationAUsedWebEvidenceBudget
+      ? "production-release-rollback-lineage-receipt-v15"
+      : actualActivationAFieldSourceReferenceRepair
+        ? "production-release-rollback-lineage-receipt-v14"
       : actualActivationAWebSourceBudgetRepair
         ? "production-release-rollback-lineage-receipt-v13"
       : actualActivationAIdentityAuthorityFailsoft
@@ -2730,7 +2972,25 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationAFieldSourceReferenceRepair) {
+    if (actualActivationAUsedWebEvidenceBudget) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA);
+    } else if (actualActivationAFieldSourceReferenceRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

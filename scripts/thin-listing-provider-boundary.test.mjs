@@ -608,6 +608,8 @@ for (const sourceIds of [
     result.founder_beta_web_receipt.field_evidence.map((row) => row.field),
     ["card_name", "product", "set"]
   );
+  assert.deepEqual(result.founder_beta_web_receipt.urls, [ungovernedUrl],
+    "one URL shared by multiple evidence rows must persist once");
   assert.equal(result.set_card_name_relation_receipt.set, null);
   assert.equal(result.set_card_name_relation_receipt.card_name, null);
 }
@@ -805,13 +807,13 @@ await assert.rejects(runCanonicalListingPath({
 function repeatedWebSourcesBody(urls, {
   sourceCopies = 1,
   annotationCopies = 1,
-  fieldSource = urls[0]
+  fieldSources = [urls[0]]
 } = {}) {
   const payload = audited({
     product: "Web Source Budget", subjects: ["Grounded Subject"], grammar: "standard"
   });
   payload.field_sources = payload.field_sources.map((row) => (
-    row.field === "product" ? { ...row, source_ids: [fieldSource] } : row
+    row.field === "product" ? { ...row, source_ids: fieldSources } : row
   ));
   return {
     model: "gpt-5.6-luna",
@@ -832,7 +834,7 @@ function repeatedWebSourcesBody(urls, {
   };
 }
 
-for (const count of [11, 20]) {
+for (const count of [21, 40]) {
   const urls = Array.from({ length: count }, (_, index) => (
     `https://www.paniniamerica.net/checklists/source-${String(index).padStart(2, "0")}`
   )).reverse();
@@ -842,28 +844,58 @@ for (const count of [11, 20]) {
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(urls, {
       sourceCopies: 2,
       annotationCopies: 2,
-      fieldSource: urls[0]
+      fieldSources: [urls[0]]
     })), { status: 200, headers: { "content-type": "application/json" } })
   });
-  assert.deepEqual(result.founder_beta_web_receipt.urls, [...urls].sort(),
-    `${count} unique URLs repeated across sources and annotations must persist once, sorted`);
+  assert.deepEqual(result.founder_beta_web_receipt.urls, [urls[0]],
+    `${count} safe returned candidates must not persist when only one is used by evidence`);
 }
 
 {
-  const urls = Array.from({ length: 21 }, (_, index) => (
-    `https://www.paniniamerica.net/checklists/distinct-${String(index).padStart(2, "0")}`
+  const returnedCandidates = Array.from({ length: 25 }, (_, index) => (
+    `https://www.paniniamerica.net/checklists/unreferenced-${String(index).padStart(2, "0")}`
   ));
-  await assert.rejects(runCanonicalListingPath({
+  const unreturned = "https://www.pokemon.com/checklists/not-in-trace";
+  const result = await runCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
-    callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(urls)), {
-      status: 200, headers: { "content-type": "application/json" }
-    })
-  }), (error) => error.name === "CanonicalProviderError"
-    && error.provider_error_code === "founder_beta_web_source_budget_exceeded",
-  "21 distinct sanitized URLs must exceed the source budget");
+    callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(
+      returnedCandidates, { fieldSources: [unreturned] }
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.fields.product, "");
+  assert.deepEqual(result.founder_beta_web_receipt.urls, [],
+    "neither unreferenced search candidates nor an unreturned source may be fabricated into receipt URLs");
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence, [{
+    field: "product", support_urls: [], conflict_urls: [], unresolved_urls: []
+  }], "an unreturned-only identity remains a durable empty withheld marker");
 }
 
+for (const count of [20, 21]) {
+  const urls = Array.from({ length: count + 5 }, (_, index) => (
+    `https://www.paniniamerica.net/checklists/evidence-${String(index).padStart(2, "0")}`
+  ));
+  const execution = runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(urls, {
+      fieldSources: urls.slice(0, count)
+    })), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  if (count === 20) {
+    const result = await execution;
+    assert.deepEqual(result.founder_beta_web_receipt.urls, urls.slice(0, count),
+      "20 actually used evidence URLs must remain accepted and sorted");
+  } else {
+    await assert.rejects(execution, (error) => error.name === "CanonicalProviderError"
+      && error.provider_error_code === "founder_beta_web_source_budget_exceeded",
+    "21 actually used evidence URLs must exceed the source budget");
+  }
+}
+
+const safeReturnedUrl = "https://www.paniniamerica.net/checklists/safe-returned";
 for (const unsafeUrl of [
   "http://www.paniniamerica.net/checklists/unsafe",
   "https://user:secret@www.paniniamerica.net/checklists/unsafe",
@@ -875,13 +907,34 @@ for (const unsafeUrl of [
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(
-      [unsafeUrl], { sourceCopies: 11, annotationCopies: 11 }
+      [safeReturnedUrl, unsafeUrl], {
+        sourceCopies: 11, annotationCopies: 11, fieldSources: [safeReturnedUrl]
+      }
     )), { status: 200, headers: { "content-type": "application/json" } })
   }), (error) => error.name === "CanonicalProviderError"
     && ["founder_beta_web_url_unsafe", "founder_beta_web_url_invalid"].includes(
       error.provider_error_code
     ),
   "repeating an unsafe URL must never make it budget-safe");
+}
+
+{
+  const payload = audited({
+    product: "Image Product", subjects: ["Image Subject"], grammar: "standard"
+  });
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify({
+      model: "gpt-5.6-luna", reasoning: { effort: "low" }, status: "completed",
+      output: [{ type: "message", content: [{
+        type: "output_text", text: JSON.stringify(payload),
+        annotations: [{ type: "url_citation", url: safeReturnedUrl }]
+      }] }]
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_web_sources_without_call",
+  "an annotation-only returned URL without a real Web call must still fail closed");
 }
 
 {
@@ -893,7 +946,7 @@ for (const unsafeUrl of [
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(
-      variants, { sourceCopies: 11, annotationCopies: 11, fieldSource: variants[0] }
+      variants, { sourceCopies: 11, annotationCopies: 11, fieldSources: [variants[0]] }
     )), { status: 200, headers: { "content-type": "application/json" } })
   });
   const sanitized = "https://www.paniniamerica.net/checklists/same-path";
