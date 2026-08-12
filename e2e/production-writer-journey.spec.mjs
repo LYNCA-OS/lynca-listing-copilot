@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 
 import { LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT } from "../scripts/build-large-internal-writer-fixture.mjs";
 import {
@@ -77,6 +78,10 @@ import {
   writeProductionForwardReadbackExpectation
 } from "../scripts/production-forward-readback.mjs";
 import {
+  buildWriterEditableTitleLatencyReceipt,
+  summarizeWriterEditableTitleLatency
+} from "../scripts/production-writer-title-latency.mjs";
+import {
   EBAY_PROFILE_VERSION,
   THIN_COMPOSER_VERSION_V2,
   THIN_RESOLVER_VERSION
@@ -111,6 +116,7 @@ const expectedProviderAdapterVersion = expectedProviderAdapterContract.id;
 const expectedMaxOutputTokens = 8192;
 const expectedEstimatedTokensPerAttempt = 6_500;
 const serverStageRoundingToleranceMs = 4;
+const monotonicNowMs = () => Math.round(performance.now());
 const CODEX_PARITY_EXPECTED_TITLE =
   "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls";
 
@@ -164,7 +170,8 @@ const verifierErrorCodes = Object.freeze({
   LARGE_PRESPEND_GATE_FAILED: "LARGE_PRESPEND_GATE_FAILED",
   LARGE_RELAY_CONTRACT_MISMATCH: "LARGE_RELAY_CONTRACT_MISMATCH",
   LARGE_RESPONSE_CONTRACT_MISMATCH: "LARGE_RESPONSE_CONTRACT_MISMATCH",
-  FEEDBACK_POLICY_MISMATCH: "FEEDBACK_POLICY_MISMATCH"
+  FEEDBACK_POLICY_MISMATCH: "FEEDBACK_POLICY_MISMATCH",
+  WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED: "WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
 const liveFailureCaseIds = new Set([
@@ -212,6 +219,25 @@ function sanitizedFailureCode(error) {
 
 function titleSha256(value) {
   return createHash("sha256").update(String(value ?? ""), "utf8").digest("hex");
+}
+
+async function waitForExactEditableTitle(titleInput, expectedTitleSha256) {
+  await expect(titleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
+  let titleEditableAtMs = null;
+  await expect.poll(async () => {
+    const currentTitle = await titleInput.inputValue();
+    if (/^(?!标题暂不可用$).{1,80}$/u.test(currentTitle)
+        && titleSha256(currentTitle) === expectedTitleSha256) {
+      titleEditableAtMs ??= monotonicNowMs();
+      return true;
+    }
+    return false;
+  }, {
+    timeout: 6 * 60 * 1000,
+    intervals: [250, 500, 1_000, 2_000]
+  }).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
+  if (titleEditableAtMs === null) throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY);
+  return titleEditableAtMs;
 }
 
 function sha256(value) {
@@ -1914,6 +1940,18 @@ test("production writer journey verifies Glass Box and staged large-image transp
     stages: {}
   };
   const feedbackPolicyChecks = [];
+  const writerEditableTitleLatencyReceipts = [];
+  const recordWriterEditableTitleLatency = (input) => {
+    const receipt = buildWriterEditableTitleLatencyReceipt(input);
+    writerEditableTitleLatencyReceipts.push(receipt);
+    evidence.stages.writer_editable_title_latency = summarizeWriterEditableTitleLatency(
+      writerEditableTitleLatencyReceipts,
+      { cohortId: `writer-journey-${expectedSha.slice(0, 12)}` }
+    );
+    requireInvariant(receipt.hard_limit_passed,
+      verifierErrorCodes.WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED);
+    return receipt;
+  };
   const requireFeedbackPolicy = ({ caseId, httpOk, payload }) => {
     const receipt = feedbackPolicyReceipt({ httpOk, payload });
     feedbackPolicyChecks.push(Object.freeze({ case_id: caseId, ...receipt }));
@@ -2391,19 +2429,31 @@ test("production writer journey verifies Glass Box and staged large-image transp
       failureCaseId = sourceCase.case_id;
       failurePhase = "RECOGNITION_RESPONSE";
       normalTransport.active_case_id = sourceCase.case_id;
-      const uploadStartedAt = Date.now();
+      const uploadStartedAt = monotonicNowMs();
+      const result = journeyPage.getByTestId("writer-title-result").first();
+      const titleInput = result.getByTestId("writer-title-input");
       const recognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "POST"
         && recognitionPaths.has(new URL(response.url()).pathname)
-      ), { timeout: 6 * 60 * 1000 }));
+      ), { timeout: 6 * 60 * 1000 }).then((response) => ({
+        response,
+        responseAtMs: monotonicNowMs()
+      })));
       const resolutionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "GET"
         && new URL(response.url()).pathname === "/api/csm-resolution-view"
       ), { timeout: 6 * 60 * 1000 }));
       await uploadInput.setInputFiles(sourceCase.images);
 
-      const recognitionResponse = await recognitionResponsePromise;
+      const {
+        response: recognitionResponse,
+        responseAtMs: recognitionResponseAtMs
+      } = await recognitionResponsePromise;
       const recognitionPayload = await recognitionResponse.json();
+      const generatedTitleSha256 = titleSha256(recognitionPayload.title);
+      const titleEditableAtPromise = ownPageWait(
+        waitForExactEditableTitle(titleInput, generatedTitleSha256)
+      );
       const responseAttempt = normalTransport.attempts.find((attempt) => (
         attempt.request === recognitionResponse.request()
       ));
@@ -2440,14 +2490,19 @@ test("production writer journey verifies Glass Box and staged large-image transp
       let standardP0Identity = null;
 
       failurePhase = "TITLE_UI";
-      const result = journeyPage.getByTestId("writer-title-result").first();
-      const titleInput = result.getByTestId("writer-title-input");
-      await expect(titleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
-      await expect.poll(
-        async () => /^(?!标题暂不可用$).{1,80}$/.test((await titleInput.inputValue()).trim()),
-        { timeout: 6 * 60 * 1000, intervals: [250, 500, 1_000, 2_000] }
-      ).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
+      const titleEditableAtMs = await titleEditableAtPromise;
       const titleBeforePanel = await titleInput.inputValue();
+      const writerEditableTitleLatency = recordWriterEditableTitleLatency({
+        caseId: sourceCase.case_id,
+        lane: "NORMAL",
+        sampleIdSha256: sha256(recognitionPayload.recognition_session_id),
+        uploadStartedAtMs: uploadStartedAt,
+        recognitionResponseAtMs,
+        titleEditableAtMs,
+        executionOrigin: executionReceipt.execution_origin,
+        providerAttemptNumber: recognitionPayload.provider_attempt_number,
+        providerRetryCount: recognitionPayload.provider_retry_count
+      });
       if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
         requireInvariant(codexParityTitleMatches({
           recognitionTitle: recognitionPayload?.title,
@@ -2455,7 +2510,6 @@ test("production writer journey verifies Glass Box and staged large-image transp
         }),
         verifierErrorCodes.CODEX_PARITY_MISMATCH);
       }
-      const generatedTitleSha256 = titleSha256(recognitionPayload.title);
       const panelTitleSha256 = titleSha256(titleBeforePanel);
       requireInvariant(panelTitleSha256 === generatedTitleSha256,
         verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
@@ -2634,7 +2688,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
           feedback
         }),
         ...feedbackPolicy,
-        upload_to_feedback_ms: Date.now() - uploadStartedAt
+        writer_editable_title_latency: writerEditableTitleLatency,
+        upload_to_feedback_ms: monotonicNowMs() - uploadStartedAt
       });
       failurePhase = "CASE_COMPLETE";
       await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
@@ -2643,12 +2698,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
 
     failureCaseId = "LARGE_STAGED_TRANSPORT";
     failurePhase = "LARGE_RECOGNITION";
-    const largeUploadStartedAt = Date.now();
+    const largeUploadStartedAt = monotonicNowMs();
+    const largeResult = journeyPage.getByTestId("writer-title-result").first();
+    const largeTitleInput = largeResult.getByTestId("writer-title-input");
     largeTransport.active = true;
     const largeRecognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
       response.request().method() === "POST"
       && new URL(response.url()).pathname === stagedRecognitionPath
-    ), { timeout: 6 * 60 * 1000 }));
+    ), { timeout: 6 * 60 * 1000 }).then((response) => ({
+      response,
+      responseAtMs: monotonicNowMs()
+    })));
     const largeResolutionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
       response.request().method() === "GET"
       && new URL(response.url()).pathname === "/api/csm-resolution-view"
@@ -2656,14 +2716,19 @@ test("production writer journey verifies Glass Box and staged large-image transp
     await uploadInput.setInputFiles(largeFixture.images);
 
     const recognitionOutcome = await Promise.race([
-      largeRecognitionResponsePromise.then((response) => ({ response })),
+      largeRecognitionResponsePromise,
       largeTransport.violation_signal.then((code) => ({ violation: code }))
     ]);
     if (recognitionOutcome.violation) throw verifierFailure(recognitionOutcome.violation);
     const largeRecognitionResponse = recognitionOutcome.response;
+    const largeRecognitionResponseAtMs = recognitionOutcome.responseAtMs;
     requireInvariant(largeRecognitionResponse.status() === 200 && largeRecognitionResponse.ok(),
       verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
     const largeRecognitionPayload = await largeRecognitionResponse.json();
+    const largeGeneratedTitleSha256 = titleSha256(largeRecognitionPayload.title);
+    const largeTitleEditableAtPromise = ownPageWait(
+      waitForExactEditableTitle(largeTitleInput, largeGeneratedTitleSha256)
+    );
     addIds(largeRecognitionPayload, ids);
     await Promise.all(largeTransport.response_promises);
     await Promise.allSettled([...largeTransport.capture_tasks]);
@@ -2707,15 +2772,19 @@ test("production writer journey verifies Glass Box and staged large-image transp
     largeRecognitionPost.provider_response_id_sha256 =
       transportReceipt.execution_receipt.provider_response_id_sha256;
 
-    const largeResult = journeyPage.getByTestId("writer-title-result").first();
-    const largeTitleInput = largeResult.getByTestId("writer-title-input");
-    await expect(largeTitleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
-    await expect.poll(
-      async () => /^(?!标题暂不可用$).{1,80}$/.test((await largeTitleInput.inputValue()).trim()),
-      { timeout: 6 * 60 * 1000, intervals: [250, 500, 1_000, 2_000] }
-    ).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
+    const largeTitleEditableAtMs = await largeTitleEditableAtPromise;
     const largeTitleBeforePanel = await largeTitleInput.inputValue();
-    const largeGeneratedTitleSha256 = titleSha256(largeRecognitionPayload.title);
+    const largeWriterEditableTitleLatency = recordWriterEditableTitleLatency({
+      caseId: "LARGE_STAGED_TRANSPORT",
+      lane: "LARGE_STAGED_TRANSPORT",
+      sampleIdSha256: sha256(largeRecognitionPayload.recognition_session_id),
+      uploadStartedAtMs: largeUploadStartedAt,
+      recognitionResponseAtMs: largeRecognitionResponseAtMs,
+      titleEditableAtMs: largeTitleEditableAtMs,
+      executionOrigin: transportReceipt.execution_receipt.execution_origin,
+      providerAttemptNumber: largeRecognitionPayload.provider_attempt_number,
+      providerRetryCount: largeRecognitionPayload.provider_retry_count
+    });
     const largePanelTitleSha256 = titleSha256(largeTitleBeforePanel);
     requireInvariant(largePanelTitleSha256 === largeGeneratedTitleSha256,
       verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
@@ -2827,7 +2896,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       ...transportReceipt,
       relay_request_count: largeTransport.relay_receipts.length,
       ...largeFeedbackPolicy,
-      upload_to_feedback_ms: Date.now() - largeUploadStartedAt
+      writer_editable_title_latency: largeWriterEditableTitleLatency,
+      upload_to_feedback_ms: monotonicNowMs() - largeUploadStartedAt
     });
     failurePhase = "FINAL_SEAL";
     largeTransport.phase_complete = true;
@@ -2927,6 +2997,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
           entry.execution_receipt?.provider_authority_receipt?.operation_key_sha256.slice(0, 40)
         }`),
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
+    requireInvariant(
+      evidence.stages.writer_editable_title_latency?.sample_count === expectedProviderCaseCount
+      && evidence.stages.writer_editable_title_latency?.hard_limit_passed === true
+      && evidence.stages.writer_editable_title_latency?.diagnostic_only === true
+      && evidence.stages.writer_editable_title_latency?.optimization_sample_eligible === false,
+    verifierErrorCodes.WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED);
     const recognitionPostReceipt = recognitionPostSeal(recognitionPosts, evidence.cases);
     evidence.stages.warmup = warmupResponseReceipt(warmupTransport.requests);
     expect(ids.asset_id.size, "asset_id must be captured")
@@ -3020,6 +3096,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       exact_authority_token_reservation: expectedEstimatedTokensPerAttempt,
       durable_owner_execution_readback_count: expectedProviderCaseCount,
       feedback_policy_receipt_count: expectedProviderCaseCount,
+      writer_editable_title_latency_sample_count: expectedProviderCaseCount,
+      writer_editable_title_latency_hard_limit_passed: true,
       codex_parity_exact_match_count: parityRequired ? 1 : 0,
       verified_original_set_match_count: parityRequired ? 1 : 0,
       canonical_naming_active_case_count: evidence.cases.filter(

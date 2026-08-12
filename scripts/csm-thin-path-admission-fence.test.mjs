@@ -40,6 +40,10 @@ const ENTRY_POINTS = [
 // Directories the production path must not be able to reach. Each is a
 // retired capability that must remain unreachable.
 const FENCED = [
+  {
+    prefix: "experiments/csm-frontier/",
+    why: "COS-59 frontier semantic state is evaluation-only until a separate accuracy release"
+  },
   { prefix: "lib/listing/catalog/", why: "catalog admission is OFF by default (COS-20)" },
   { prefix: "lib/listing/retrieval/", why: "vector retrieval admission is OFF by default (COS-20)" },
   { prefix: "lib/listing/candidates/", why: "multi-call candidate scoring was measured negative and removed" },
@@ -52,7 +56,41 @@ const FENCED = [
   { prefix: "lib/listing/pipeline/provider-prompt.mjs", why: "the 825-token pipeline prompt was measured negative and replaced" }
 ];
 
-const importPattern = /(?:^|\n)\s*(?:import[\s\S]*?from|export[\s\S]*?from|import)\s*["']([^"']+)["']/g;
+const staticModulePattern =
+  /(?:^|\n)\s*(?:import|export)\s+(?:[\w*$,\s{}]*?\s+from\s+)?(["'])([^"']+)\1/g;
+const moduleCallPattern = /\b(import|require)\s*\(\s*([^)]*?)\s*\)/g;
+
+function moduleSpecifiers(source) {
+  const specifiers = [];
+  for (const match of source.matchAll(staticModulePattern)) specifiers.push(match[2]);
+  for (const match of source.matchAll(moduleCallPattern)) {
+    const argument = match[2].trim();
+    const literal = /^(["'])([^"'\\]+)\1$/.exec(argument);
+    if (!literal) {
+      throw new TypeError(`csm_admission_fence_nonliteral_${match[1]}:${argument}`);
+    }
+    specifiers.push(literal[2]);
+  }
+  return [...new Set(specifiers)];
+}
+
+const syntheticRelativePrefix = ".";
+assert.deepEqual(moduleSpecifiers(`
+import defaultThing from "${syntheticRelativePrefix}/static.mjs";
+import "${syntheticRelativePrefix}/side-effect.mjs";
+export { value } from "${syntheticRelativePrefix}/exported.mjs";
+await import("${syntheticRelativePrefix}/dynamic.mjs");
+const required = require("${syntheticRelativePrefix}/required.cjs");
+`).sort(), [
+  "." + "/dynamic.mjs", "." + "/exported.mjs", "." + "/required.cjs",
+  "." + "/side-effect.mjs", "." + "/static.mjs"
+], "the import fence parser must see static, dynamic, side-effect, export and require edges");
+assert.throws(() => moduleSpecifiers("const target = './hidden.mjs'; import(target);"),
+  /csm_admission_fence_nonliteral_import/,
+  "a computed dynamic import must fail closed instead of bypassing the graph");
+assert.throws(() => moduleSpecifiers("const target = './hidden.cjs'; require(target);"),
+  /csm_admission_fence_nonliteral_require/,
+  "a computed require must fail closed instead of bypassing the graph");
 
 async function importsOf(absolutePath) {
   let source;
@@ -62,8 +100,7 @@ async function importsOf(absolutePath) {
     return [];
   }
   const specifiers = [];
-  for (const match of source.matchAll(importPattern)) {
-    const specifier = match[1];
+  for (const specifier of moduleSpecifiers(source)) {
     // Only repo-relative imports can reach a fenced directory; bare specifiers
     // are node builtins and dependencies.
     if (specifier.startsWith(".")) specifiers.push(resolve(dirname(absolutePath), specifier));

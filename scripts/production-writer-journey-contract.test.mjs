@@ -76,6 +76,26 @@ assert.match(spec, /parity\.files\.some\(\(file, index\) =>/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
 assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
 assert.match(spec, /production-writer-journey-evidence-v6/);
+assert.match(spec, /buildWriterEditableTitleLatencyReceipt/);
+assert.match(spec, /summarizeWriterEditableTitleLatency/);
+assert.match(spec,
+  /async function waitForExactEditableTitle[\s\S]*?toBeEnabled[\s\S]*?titleSha256\(currentTitle\) === expectedTitleSha256[\s\S]*?titleEditableAtMs \?\?= monotonicNowMs\(\)/,
+  "the timestamp must be taken only while an enabled input holds the exact response-title hash");
+assert.match(spec,
+  /const recognitionPayload = await recognitionResponse\.json\(\);[\s\S]*?const generatedTitleSha256 = titleSha256\(recognitionPayload\.title\);[\s\S]*?waitForExactEditableTitle\(titleInput, generatedTitleSha256\)[\s\S]*?recognitionResponseAtMs,[\s\S]*?titleEditableAtMs/,
+  "normal Writer latency must bind its timestamp to the known response title");
+assert.match(spec,
+  /const largeRecognitionPayload = await largeRecognitionResponse\.json\(\);[\s\S]*?const largeGeneratedTitleSha256 = titleSha256\(largeRecognitionPayload\.title\);[\s\S]*?waitForExactEditableTitle\(largeTitleInput, largeGeneratedTitleSha256\)[\s\S]*?lane: "LARGE_STAGED_TRANSPORT"/,
+  "large staged transport must use the same exact-title timestamp contract");
+assert.match(spec, /writer_editable_title_latency: writerEditableTitleLatency/);
+assert.match(spec, /writer_editable_title_latency: largeWriterEditableTitleLatency/);
+assert.match(spec, /WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED/);
+assert.match(spec,
+  /writer_editable_title_latency\?\.diagnostic_only === true[\s\S]*?optimization_sample_eligible === false/,
+  "the 3/4-case live smoke is diagnostic and cannot trigger an optimization decision");
+assert.doesNotMatch(spec,
+  /buildWriterEditableTitleLatencyReceipt\([\s\S]{0,500}upload_to_feedback_ms/,
+  "feedback completion latency must not masquerade as editable-title latency");
 assert.match(spec, /"NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"/);
 assert.match(spec, /CODEX_PARITY_EXPECTED_TITLE/);
 assert.match(spec, /codexParityTitleMatches/);
