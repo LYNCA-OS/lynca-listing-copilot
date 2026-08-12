@@ -28,6 +28,7 @@ import {
   CSM_OPENAI_RESPONSES_ADAPTER
 } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import {
+  buildFounderBetaWebReceipt,
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
   FOUNDER_BETA_WEB_RECEIPT_VERSION
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
@@ -184,6 +185,21 @@ export const ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS = Object.freeze([
 ]);
 export const ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA =
   ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "d81562ab862e7dc7f67be45a3a8d76038de7bf2c64ba2052b9216868aeabb619";
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-grammar-source-repair-v1";
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER =
+  "founder-beta-derived-grammar-source-repair-v1";
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA =
+  "bda7e81670fa746791dcb8fc8cffe30f732a6b2e";
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA =
+  "0a4a37cf71823c421a4a9ea1845f4c0535c2e5f1";
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID = "31616431983";
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE =
+  "founder_beta_field_source_required:grammar";
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA =
+  ACTIVATION_A_ROLLBACK_SHA;
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -302,6 +318,15 @@ export const ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS = Object.freeze([
   "scripts/production-writer-journey-contract.test.mjs",
   "scripts/production-writer-title-latency.mjs",
   "scripts/production-writer-title-latency.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+// The transport-repair candidate never reached Production. Freeze only its
+// grammar admission repair; rollback therefore remains the last Production B
+// SHA rather than this failed Git parent.
+export const ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS = Object.freeze([
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
@@ -637,6 +662,20 @@ function exactActivationATransport502RepairChangedPaths(values) {
   return actual;
 }
 
+function exactActivationAGrammarSourceRepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_grammar_source_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_grammar_source_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -728,7 +767,23 @@ function activationATransport502RepairArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function activationAGrammarSourceRepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
+    required_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
+    changed_paths: exactActivationAGrammarSourceRepairChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA) {
+    return ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA) {
     return ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER;
   }
@@ -792,6 +847,39 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA) {
+        throw failure("activation_a_grammar_source_repair_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationAGrammarSourceRepairChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationAGrammarSourceRepairRuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v10",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+        parent_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
+        required_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationAGrammarSourceRepairArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA}^{tree}`
@@ -1442,56 +1530,143 @@ export function activeV3OrdinaryRuntimeContractProof({
   return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
 }
 
+const ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_BODY = Object.freeze({
+  schema_version: "listing-copilot-activation-a-transport-502-repair-proof-v1",
+  repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+  repair_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+  required_parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+  required_parent_tree_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+  failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+  required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+  base_activation_a_runtime_contract_sha256: ACTIVATION_A_RUNTIME_CONTRACT_SHA256,
+  active_runtime_contract_sha256:
+    "3c958e40dbfb6d9c41fb6486314e92a3d4694c2ab427ff353523f047d0e15ac0",
+  semantic_result_limit: 1,
+  maximum_physical_provider_attempts: 2,
+  automatic_transport_retry_limit: 1,
+  automatic_transport_retry_policy: "definitive-complete-http-502-no-output-no-token-v1",
+  automatic_transport_retry_http_status: 502,
+  automatic_transport_retry_elapsed_limit_ms: 15_000,
+  transport_retry_receipt_schema_version:
+    "luna-definitive-502-transport-retry-receipt-v1",
+  transport_retry_negative_counterexample_count: 14,
+  provider_request_builder_version: "canonical-fields-web-request-v1",
+  provider_response_parser_version: "canonical-output-v3-web-receipt",
+  provider_model: "gpt-5.6-luna",
+  reasoning_effort: "low",
+  web_search_tool_choice: "auto",
+  web_search_max_tool_calls: 1,
+  maximum_provider_request_count: 2,
+  parity_required: true
+});
+
 export function activationATransport502RepairRuntimeContractProof() {
-  const active = activeV3OrdinaryRuntimeContractProof({
-    parentGitSha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
-  });
-  if (active.semantic_result_limit !== 1
-      || active.maximum_physical_provider_attempts !== 2
-      || active.automatic_transport_retry_limit !== 1
-      || active.automatic_transport_retry_policy
-        !== LUNA_DEFINITIVE_502_TRANSPORT_RETRY_POLICY
-      || active.automatic_transport_retry_http_status !== 502
-      || active.automatic_transport_retry_elapsed_limit_ms !== 15_000
-      || active.transport_retry_receipt_schema_version
-        !== LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION
-      || active.required_rollback_git_sha
-        !== ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA
-      || active.transport_retry_negative_counterexample_count !== 14
-      || active.maximum_provider_request_count !== 2) {
-    throw failure("activation_a_transport_502_repair_runtime_contract_invalid");
+  if (sha256(stableJson(ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_BODY))
+      !== ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_transport_502_repair_historical_contract_invalid");
   }
-  const body = {
-    schema_version: "listing-copilot-activation-a-transport-502-repair-proof-v1",
-    repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
-    repair_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
-    required_parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
-    required_parent_tree_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
-    failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
-    required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
-    base_activation_a_runtime_contract_sha256: ACTIVATION_A_RUNTIME_CONTRACT_SHA256,
-    active_runtime_contract_sha256: active.contract_sha256,
-    semantic_result_limit: active.semantic_result_limit,
-    maximum_physical_provider_attempts: active.maximum_physical_provider_attempts,
-    automatic_transport_retry_limit: active.automatic_transport_retry_limit,
-    automatic_transport_retry_policy: active.automatic_transport_retry_policy,
-    automatic_transport_retry_http_status: active.automatic_transport_retry_http_status,
-    automatic_transport_retry_elapsed_limit_ms:
-      active.automatic_transport_retry_elapsed_limit_ms,
-    transport_retry_receipt_schema_version:
-      active.transport_retry_receipt_schema_version,
-    transport_retry_negative_counterexample_count:
-      active.transport_retry_negative_counterexample_count,
-    provider_request_builder_version: active.provider_request_builder_version,
-    provider_response_parser_version: active.provider_response_parser_version,
-    provider_model: active.provider_model,
-    reasoning_effort: active.reasoning_effort,
-    web_search_tool_choice: active.web_search_tool_choice,
-    web_search_max_tool_calls: active.web_search_max_tool_calls,
-    maximum_provider_request_count: active.maximum_provider_request_count,
+  return Object.freeze({
+    ...ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_BODY,
+    contract_sha256: ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+export function activationAGrammarSourceRepairRuntimeContractProof() {
+  const base = activationATransport502RepairRuntimeContractProof();
+  if (base.contract_sha256
+      !== ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_grammar_source_repair_base_contract_invalid");
+  }
+  const request = Object.freeze({
+    model: "gpt-5.6-luna",
+    reasoning: Object.freeze({ effort: "low" })
+  });
+  const body = Object.freeze({
+    model: request.model,
+    reasoning: request.reasoning,
+    status: "completed",
+    output: Object.freeze([])
+  });
+  const receiptFor = (rawOutput, fieldSources, providerBody = body) => (
+    buildFounderBetaWebReceipt(providerBody, {
+      rawOutput: JSON.stringify(rawOutput),
+      request,
+      fieldSources,
+      originalImageCount: 1
+    })
+  );
+  try {
+    receiptFor({ grammar: "standard" }, []);
+    receiptFor({ grammar: "standard" }, [{
+      field: "grammar", source_ids: ["original_image_1"]
+    }]);
+  } catch {
+    throw failure("activation_a_grammar_source_repair_runtime_contract_invalid");
+  }
+  for (const [field, value] of [["subjects", ["Player"]], ["lot_count", "2"]]) {
+    try {
+      receiptFor({ grammar: "standard", [field]: value }, []);
+      throw failure("activation_a_grammar_source_repair_runtime_contract_invalid");
+    } catch (error) {
+      if (error?.message !== `founder_beta_field_source_required:${field}`) {
+        throw failure("activation_a_grammar_source_repair_runtime_contract_invalid");
+      }
+    }
+  }
+  const webUrl = "https://example.invalid/grammar";
+  const webBody = Object.freeze({
+    ...body,
+    output: Object.freeze([Object.freeze({
+      type: "web_search_call",
+      action: Object.freeze({
+        query: "grammar classification",
+        sources: Object.freeze([Object.freeze({ url: webUrl })])
+      })
+    })])
+  });
+  for (const sourceIds of [[webUrl], ["original_image_1", webUrl]]) {
+    try {
+      receiptFor({ grammar: "standard" }, [{
+        field: "grammar", source_ids: sourceIds
+      }], webBody);
+      throw failure("activation_a_grammar_source_repair_runtime_contract_invalid");
+    } catch (error) {
+      if (error?.message !== "founder_beta_web_authority_forbidden:grammar") {
+        throw failure("activation_a_grammar_source_repair_runtime_contract_invalid");
+      }
+    }
+  }
+  const contractBody = {
+    schema_version: "listing-copilot-activation-a-grammar-source-repair-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+    required_parent_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
+    required_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
+    base_transport_502_repair_contract_sha256:
+      ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256,
+    derived_field_source_exemptions: Object.freeze(["grammar"]),
+    grammar_semantics: "derived-structural-classification",
+    grammar_source_trace_policy: "optional-original-image-only",
+    grammar_web_authority: "forbidden",
+    non_grammar_source_completeness_required: true,
+    semantic_grammar_correction_preserved: true,
+    grammar_source_negative_counterexample_count: 4,
+    web_receipt_schema_version: FOUNDER_BETA_WEB_RECEIPT_VERSION,
+    provider_request_builder_version: base.provider_request_builder_version,
+    provider_response_parser_version: base.provider_response_parser_version,
+    semantic_result_limit: base.semantic_result_limit,
+    maximum_physical_provider_attempts: base.maximum_physical_provider_attempts,
+    automatic_transport_retry_policy: base.automatic_transport_retry_policy,
+    writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true
   };
-  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+  return Object.freeze({
+    ...contractBody,
+    contract_sha256: sha256(stableJson(contractBody))
+  });
 }
 
 export function canonicalNamingActivationA2RuntimeContractProof({
@@ -1618,6 +1793,58 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v10") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "required_rollback_git_sha", "artifact_manifest_sha256",
+      "git_sha", "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id
+          !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA
+        || selection.parent_tree_sha
+          !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA
+        || selection.failed_run_id !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID
+        || selection.failure_code !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE
+        || selection.required_rollback_git_sha
+          !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationAGrammarSourceRepairArtifactManifestSha256(
+            ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest
+          !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== activationAGrammarSourceRepairRuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_grammar_source_repair_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v11",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
+      required_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v9") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
@@ -1863,6 +2090,9 @@ export function verifyOrdinaryRollbackLineage({
   const parentGitSha = exactGitSha(selection.parent_git_sha);
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
     throw failure("ordinary_release_activation_a3_selection_invalid");
+  }
+  if (parentGitSha === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_grammar_source_repair_selection_invalid");
   }
   if (parentGitSha === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA) {
     throw failure("ordinary_release_activation_a_transport_502_repair_selection_invalid");

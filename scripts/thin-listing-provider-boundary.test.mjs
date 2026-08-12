@@ -373,6 +373,103 @@ function webIdentityBody(url) {
   };
 }
 
+const completedBody = (payload) => ({
+  model: "gpt-5.6-luna",
+  reasoning: { effort: "low" },
+  status: "completed",
+  output_text: JSON.stringify(payload)
+});
+
+const withoutFieldSource = (payload, ...fields) => ({
+  ...payload,
+  field_sources: payload.field_sources.filter((row) => !fields.includes(row.field))
+});
+
+// Grammar classifies the resolved structure; it is not a source fact. Missing
+// grammar evidence must not block either Standard or the downstream SEM repair.
+for (const [fields, expectedGrammar] of [[{
+  manufacturer: "Topps", product: "Chrome", subjects: ["Player"], grammar: "standard"
+}, "standard"], [{
+  manufacturer: "Pokémon", product: "Mega Brave", subjects: ["Charizard"],
+  grammar: "standard"
+}, "tcg"]]) {
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(
+      withoutFieldSource(audited(fields), "grammar")
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.grammar, expectedGrammar);
+  if (expectedGrammar === "tcg") {
+    assert.equal(result.fields.ip, "Pokemon");
+    assert.ok(result.field_defects.includes("grammar_standard_but_csm_says_tcg"));
+  }
+}
+
+{
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(audited({
+      manufacturer: "Topps", subjects: ["Image Trace"], grammar: "standard"
+    }))), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.grammar, "standard",
+    "an optional image-only grammar trace remains valid");
+}
+
+function webGrammarBody(url, sourceIds) {
+  const payload = audited({ subjects: ["Grammar Authority"], grammar: "standard" });
+  payload.field_sources = payload.field_sources.map((row) => (
+    row.field === "grammar" ? { ...row, source_ids: sourceIds } : row
+  ));
+  return {
+    model: "gpt-5.6-luna",
+    reasoning: { effort: "low" },
+    status: "completed",
+    output: [
+      { type: "web_search_call", action: {
+        query: "card grammar", sources: [{ url }]
+      } },
+      { type: "message", content: [{
+        type: "output_text", text: JSON.stringify(payload),
+        annotations: [{ type: "url_citation", url }]
+      }] }
+    ]
+  };
+}
+
+{
+  const url = "https://attacker-controlled-example.org/grammar";
+  for (const sourceIds of [[url], ["original_image_1", url]]) {
+    await assert.rejects(runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(
+        webGrammarBody(url, sourceIds)
+      ), { status: 200, headers: { "content-type": "application/json" } })
+    }), (error) => error.name === "CanonicalProviderError"
+      && error.provider_error_code === "founder_beta_web_authority_forbidden:grammar",
+    "Web-only and mixed Web/image evidence cannot author grammar");
+  }
+}
+
+{
+  const payload = withoutFieldSource(audited({
+    subjects: ["Still Source Bound"], grammar: "standard"
+  }), "grammar", "subjects");
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_field_source_required:subjects",
+  "the grammar exemption must not weaken source requirements for identity fields");
+}
+
 for (const url of [
   "https://attacker-controlled-example.org/fabricated",
   "https://www.ebay.com/itm/123456789",
