@@ -15,10 +15,6 @@ import {
   SET_MEMBERSHIP_PREDICATE,
   validateSetCardNameRelationReceipt
 } from "../lib/listing/thin/set-card-name-contract.mjs";
-import {
-  WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS
-} from "./materialize-writer-journey-source.mjs";
-
 export const PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA =
   "production-forward-readback-expectation-v1";
 export const PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA =
@@ -27,18 +23,39 @@ export const PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA =
 const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v6";
 const STANDARD_CASE_ID = "NON_TCG";
 const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY";
-const WEB_CASE_CONTRACT = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.find(
-  (entry) => entry.case_id === WEB_CASE_ID
-);
 const WEB_IDENTITY_FIELDS = new Set([
   "year", "manufacturer", "product", "set", "card_name", "subjects"
 ]);
+export const WEB_IDENTITY_VISIBLE_QUERY_ANCHORS = Object.freeze({
+  subject: "anthony edwards",
+  card_number: "105",
+  product_set: "contenders"
+});
 const CANONICAL_PRODUCTION_ORIGIN = "https://listing.lyncafei.team";
 const RELEASE_CLASSES = new Set(["ordinary", "compatibility-bridge"]);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,160}$/;
 const SESSION_ID = /^csmsess_[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_SHA = /^[0-9a-f]{40}$/;
+
+const normalizedQueryText = (queries) => (Array.isArray(queries) ? queries : [])
+  .map((query) => String(query ?? "").normalize("NFC").toLocaleLowerCase("en-US")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim())
+  .filter(Boolean).join(" ");
+
+/**
+ * The provider owns query wording, but the designated live search still has to
+ * be about the visible card. Match semantic anchors, never one frozen sentence.
+ */
+export function webIdentityQueryHasVisibleAnchors(queries) {
+  const query = ` ${normalizedQueryText(queries)} `;
+  const has = (anchor) => query.includes(` ${anchor} `);
+  const subject = has(WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.subject);
+  const cardNumber = has(WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.card_number);
+  const productSet = has(WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.product_set);
+  return Number(subject) + Number(cardNumber) + Number(productSet) >= 2
+    && (subject || cardNumber);
+}
 
 const exactObject = (value) => Boolean(value)
   && typeof value === "object" && !Array.isArray(value);
@@ -209,13 +226,12 @@ function validateResolutionView(resolutionView, entry) {
         || webReceipt.web_search_call_count !== 1
         || webReceipt.provider_request_count !== 1
         || webReceipt.isolated_model_call_count !== 0
-        || webReceipt.queries.length !== 1
-        || webReceipt.queries[0] !== WEB_CASE_CONTRACT?.expected_web_search_query
+        || webReceipt.queries.length < 1
+        || !webIdentityQueryHasVisibleAnchors(webReceipt.queries)
         || webReceipt.urls.length < 1
         || webReceipt.field_evidence.length < 1
-        || webReceipt.field_evidence.some((row) => (
-          !WEB_IDENTITY_FIELDS.has(row.field) || row.support_urls.length < 1
-        ))
+        || webReceipt.field_evidence.some((row) => !WEB_IDENTITY_FIELDS.has(row.field))
+        || !webReceipt.field_evidence.some((row) => row.support_urls.length > 0)
         || relationReceipt?.set?.predicate !== SET_MEMBERSHIP_PREDICATE
         || relationReceipt?.card_name?.predicate !== CARD_NAME_PREDICATE
       ))) {

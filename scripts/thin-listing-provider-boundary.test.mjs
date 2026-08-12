@@ -350,24 +350,29 @@ for (const [lotCount, failureCode] of [
   assert.deepEqual(result.lot_unshared_attributes, ["set"]);
 }
 
-function webIdentityBody(url) {
-  const payload = audited({
-    subjects: ["Governed Web Subject"], grammar: "standard"
-  });
-  payload.field_sources = payload.field_sources.map((row) => (
-    row.field === "subjects" ? { ...row, source_ids: [url] } : row
-  ));
+function webIdentityBody(url, fields = {
+  subjects: ["Governed Web Subject"], grammar: "standard"
+}, sourceIdsByField = { subjects: [url] }) {
+  const payload = audited(fields);
+  payload.field_sources = payload.field_sources.map((row) => ({
+    ...row,
+    source_ids: sourceIdsByField[row.field] || row.source_ids
+  }));
+  const urls = [...new Set(Object.values(sourceIdsByField).flat()
+    .filter((sourceId) => sourceId.startsWith("https://")))];
   return {
     model: "gpt-5.6-luna",
     reasoning: { effort: "low" },
     status: "completed",
     output: [
       { type: "web_search_call", action: {
-        query: "Governed Web Subject checklist", sources: [{ url }]
+        query: "Governed identity checklist", sources: urls.map((sourceUrl) => ({
+          url: sourceUrl
+        }))
       } },
       { type: "message", content: [{
         type: "output_text", text: JSON.stringify(payload),
-        annotations: [{ type: "url_citation", url }]
+        annotations: urls.map((sourceUrl) => ({ type: "url_citation", url: sourceUrl }))
       }] }
     ]
   };
@@ -482,8 +487,8 @@ for (const url of [
       status: 200, headers: { "content-type": "application/json" }
     })
   }), (error) => error.name === "CanonicalProviderError"
-    && error.provider_error_code === "founder_beta_identity_authority_required:subjects",
-  "unknown, marketplace, and suffix-confusion URLs cannot author canonical identity");
+    && error.provider_error_code === "canonical_naming_mandatory_subject_identity_missing",
+  "withholding an ungoverned Web-only subject must leave the single card non-publishable");
 }
 
 {
@@ -500,6 +505,134 @@ for (const url of [
   assert.deepEqual(result.founder_beta_web_receipt.field_evidence, [{
     field: "subjects", support_urls: [officialUrl], conflict_urls: [], unresolved_urls: []
   }]);
+}
+
+const ungovernedUrl = "https://www.ebay.com/itm/ungoverned-identity";
+const officialUrl = "https://www.paniniamerica.net/checklists/governed";
+const identityCases = [
+  ["year", "2099"],
+  ["manufacturer", "Marketplace Maker"],
+  ["product", "Marketplace Product"],
+  ["set", "Marketplace Set"],
+  ["card_name", "Marketplace Card Name"]
+];
+
+for (const [field, value] of identityCases) {
+  const fields = {
+    subjects: ["Grounded Subject"], grammar: "standard", [field]: value
+  };
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webIdentityBody(
+      ungovernedUrl, fields, { [field]: [ungovernedUrl] }
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.fields[field], "", `${field} must be withheld from canonical fields`);
+  assert.ok(!result.title.includes(value), `${field} must not leak into the title`);
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+    (row) => row.field === field
+  ), {
+    field, support_urls: [], conflict_urls: [], unresolved_urls: [ungovernedUrl]
+  });
+  if (["set", "card_name"].includes(field)) {
+    assert.equal(result.set_card_name_relation_receipt[field], null,
+      `withheld ${field} must not leave a stale relation receipt`);
+  }
+}
+
+for (const [field, scalar] of [...identityCases, ["subjects", "Official Subject"]]) {
+  const value = field === "subjects" ? [scalar] : scalar;
+  const fields = {
+    subjects: field === "subjects" ? value : ["Grounded Subject"],
+    grammar: "standard",
+    ...(field === "subjects" ? {} : { [field]: value })
+  };
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webIdentityBody(
+      officialUrl, fields, { [field]: [officialUrl] }
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.deepEqual(result.fields[field], value, `official ${field} authority must remain admitted`);
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+    (row) => row.field === field
+  ), {
+    field, support_urls: [officialUrl], conflict_urls: [], unresolved_urls: []
+  });
+}
+
+for (const sourceIds of [
+  ["original_image_1", ungovernedUrl],
+  [officialUrl, ungovernedUrl]
+]) {
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webIdentityBody(
+      ungovernedUrl,
+      { product: "Admitted Product", subjects: ["Grounded Subject"], grammar: "standard" },
+      { product: sourceIds }
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.fields.product, "Admitted Product");
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+    (row) => row.field === "product"
+  ), {
+    field: "product",
+    support_urls: sourceIds.includes(officialUrl) ? [officialUrl] : [],
+    conflict_urls: [],
+    unresolved_urls: [ungovernedUrl]
+  });
+}
+
+{
+  const fields = {
+    product: "Unsafe Product", set: "Unsafe Set", card_name: "Unsafe Card Name",
+    subjects: ["Grounded Subject"], grammar: "standard"
+  };
+  const sourceIdsByField = Object.fromEntries(
+    ["product", "set", "card_name"].map((field) => [field, [ungovernedUrl]])
+  );
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webIdentityBody(
+      ungovernedUrl, fields, sourceIdsByField
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.title, "Grounded Subject",
+    "multiple ungoverned identity fields must be withheld atomically from the title");
+  assert.deepEqual(
+    result.founder_beta_web_receipt.field_evidence.map((row) => row.field),
+    ["card_name", "product", "set"]
+  );
+  assert.equal(result.set_card_name_relation_receipt.set, null);
+  assert.equal(result.set_card_name_relation_receipt.card_name, null);
+}
+
+for (const [field, value] of [
+  ["card_number", "999"],
+  ["serial", "1/1"],
+  ["parallel_exact", "Unsafe Gold"],
+  ["grading_info", { company: "PSA", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY" }],
+  ["lot_count", "2"]
+]) {
+  const fields = {
+    subjects: ["Grounded Subject"],
+    grammar: field === "lot_count" ? "lot" : "standard",
+    [field]: value
+  };
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webIdentityBody(
+      ungovernedUrl, fields, { [field]: [ungovernedUrl] }
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === `founder_beta_current_copy_source_required:${field}`,
+  `${field} must remain a hard current-copy authority boundary`);
 }
 
 process.stdout.write("thin listing provider boundary: ok\n");

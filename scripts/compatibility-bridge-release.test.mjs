@@ -12,6 +12,14 @@ import {
   ACTIVE_V2_TRANSITION_PARENT_SHA,
   ACTIVATION_A_CHANGED_PATHS,
   ACTIVATION_A_DESCRIPTOR_ID,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
@@ -20,6 +28,7 @@ import {
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256,
   ACTIVATION_A_MARKER,
   ACTIVATION_A_PARENT_SHA,
   ACTIVATION_A_PARENT_TREE_SHA,
@@ -81,6 +90,7 @@ import {
   COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
+  activationAIdentityAuthorityFailsoftRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
   activationATransport502RepairRuntimeContractProof,
@@ -116,6 +126,7 @@ const activationA3GitSha = "7".repeat(40);
 const activationAGitSha = "8".repeat(40);
 const activationATransport502RepairGitSha = "9".repeat(40);
 const activationAGrammarSourceRepairGitSha = "0".repeat(40);
+const activationAIdentityAuthorityFailsoftGitSha = "b".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -289,10 +300,37 @@ assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID, "31616431983");
 assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
   "founder_beta_field_source_required:grammar");
 assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA, ACTIVATION_A_ROLLBACK_SHA);
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "601c6459326067df24cca66a671bffe27323f27db8a032f3178e951655fe6b6b");
 assert.deepEqual(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS, [
   "lib/listing/thin/csm-forward-reader-bridge.mjs",
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-framework-identity-authority-failsoft-v1");
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER,
+  "founder-beta-framework-identity-authority-failsoft-v1");
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+  "f8b7ae9fd779e74f4dd7970665fa63d12f47fb9f");
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
+  "f4b0e3ba27afba6ec4a5af452fa4fc0b76cb5880");
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID, "31618628403");
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
+  "founder_beta_identity_authority_required:product");
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA,
+  ACTIVATION_A_ROLLBACK_SHA);
+assert.deepEqual(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS, [
+  "e2e/production-writer-journey.spec.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-provider-adapter.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
@@ -650,6 +688,74 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
     ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA
   ],
   changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
+const activationAIdentityAuthorityFailsoft = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAIdentityAuthorityFailsoftGitSha,
+  headSha: activationAIdentityAuthorityFailsoftGitSha,
+  parentTreeSha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS]
+});
+assert.equal(activationAIdentityAuthorityFailsoft.schema_version,
+  "production-release-selection-v11");
+assert.equal(activationAIdentityAuthorityFailsoft.repair_descriptor_id,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID);
+assert.equal(activationAIdentityAuthorityFailsoft.transition_marker,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER);
+assert.equal(activationAIdentityAuthorityFailsoft.parent_git_sha,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA);
+assert.equal(activationAIdentityAuthorityFailsoft.parent_tree_sha,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA);
+assert.equal(activationAIdentityAuthorityFailsoft.failed_run_id,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID);
+assert.equal(activationAIdentityAuthorityFailsoft.failure_code,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE);
+assert.equal(activationAIdentityAuthorityFailsoft.required_rollback_git_sha,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA);
+assert.equal(activationAIdentityAuthorityFailsoft.writer_journey_manifest,
+  "writer-journey-cases-v4");
+assert.equal(activationAIdentityAuthorityFailsoft.parity_required, true);
+assert.match(activationAIdentityAuthorityFailsoft.artifact_manifest_sha256,
+  /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS,
+    ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAIdentityAuthorityFailsoftGitSha,
+    headSha: activationAIdentityAuthorityFailsoftGitSha,
+    parentTreeSha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_identity_authority_failsoft_changed_paths_invalid",
+    "activation_a_identity_authority_failsoft_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAIdentityAuthorityFailsoftGitSha,
+  headSha: activationAIdentityAuthorityFailsoftGitSha,
+  parentTreeSha: "e".repeat(40),
+  parentShas: [ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS]
+}), (error) => error.code
+  === "activation_a_identity_authority_failsoft_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAIdentityAuthorityFailsoftGitSha,
+  headSha: activationAIdentityAuthorityFailsoftGitSha,
+  parentTreeSha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
+  parentShas: [
+    ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+    ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA
+  ],
+  changedPaths: [...ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
 const nextOrdinary = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
@@ -1245,8 +1351,58 @@ assert.equal(activationAGrammarSourceRepairProof.semantic_grammar_correction_pre
   true);
 assert.equal(activationAGrammarSourceRepairProof.grammar_source_negative_counterexample_count,
   4);
+assert.equal(activationAGrammarSourceRepairProof.contract_sha256,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "selection-v10 must replay its frozen proof instead of inheriting fail-soft");
 assert.equal(activationAGrammarSourceRepair.contract_sha256,
   activationAGrammarSourceRepairProof.contract_sha256);
+const activationAIdentityAuthorityFailsoftProof =
+  activationAIdentityAuthorityFailsoftRuntimeContractProof();
+assert.equal(activationAIdentityAuthorityFailsoftProof.schema_version,
+  "listing-copilot-activation-a-identity-authority-failsoft-repair-proof-v1");
+assert.equal(activationAIdentityAuthorityFailsoftProof.repair_descriptor_id,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID);
+assert.equal(activationAIdentityAuthorityFailsoftProof.failure_code,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE);
+assert.equal(activationAIdentityAuthorityFailsoftProof.failed_case_id, "TCG");
+assert.equal(activationAIdentityAuthorityFailsoftProof.failed_phase,
+  "RECOGNITION_RESPONSE");
+assert.equal(activationAIdentityAuthorityFailsoftProof.required_rollback_git_sha,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA);
+assert.equal(
+  activationAIdentityAuthorityFailsoftProof.base_grammar_source_repair_contract_sha256,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.deepEqual(
+  activationAIdentityAuthorityFailsoftProof.web_only_identity_demotion_fields,
+  ["year", "manufacturer", "product", "set", "card_name"]);
+assert.equal(activationAIdentityAuthorityFailsoftProof.mandatory_subject_policy,
+  "withhold-and-fail-publication");
+assert.equal(activationAIdentityAuthorityFailsoftProof.unresolved_web_evidence_preserved,
+  true);
+assert.equal(
+  activationAIdentityAuthorityFailsoftProof.relation_receipt_withheld_identity_removed,
+  true);
+assert.equal(activationAIdentityAuthorityFailsoftProof.current_copy_web_only_policy,
+  "hard-reject");
+assert.equal(activationAIdentityAuthorityFailsoftProof.web_search_decision_policy,
+  "model-autonomous");
+assert.deepEqual(activationAIdentityAuthorityFailsoftProof.visible_query_anchor_groups, {
+  subject: "anthony edwards", card_number: "105", product_set: "contenders"
+});
+assert.equal(
+  activationAIdentityAuthorityFailsoftProof.visible_query_minimum_anchor_group_matches,
+  2);
+assert.equal(
+  activationAIdentityAuthorityFailsoftProof.visible_query_subject_or_card_number_required,
+  true);
+assert.equal(activationAIdentityAuthorityFailsoftProof.visible_query_contract_executable,
+  true);
+assert.equal(activationAIdentityAuthorityFailsoftProof.model_owned_query_exact_match_required,
+  false);
+assert.equal(activationAIdentityAuthorityFailsoftProof.cohort_minimum_no_search_receipt_count,
+  1);
+assert.equal(activationAIdentityAuthorityFailsoft.contract_sha256,
+  activationAIdentityAuthorityFailsoftProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -1728,6 +1884,78 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_activation_a_grammar_source_repair_selection_invalid",
 "the failed grammar candidate may not escape through generic ordinary lineage");
+const activationAIdentityAuthorityFailsoftLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAIdentityAuthorityFailsoft,
+  rollbackReceipt: { git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAIdentityAuthorityFailsoftLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v12",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER,
+  release_git_sha: activationAIdentityAuthorityFailsoftGitSha,
+  release_parent_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
+  required_rollback_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAIdentityAuthorityFailsoft.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationAIdentityAuthorityFailsoft, repair_descriptor_id: "unknown-repair" },
+  { ...activationAIdentityAuthorityFailsoft, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationAIdentityAuthorityFailsoft,
+    parent_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA },
+  { ...activationAIdentityAuthorityFailsoft, parent_tree_sha: "e".repeat(40) },
+  { ...activationAIdentityAuthorityFailsoft, failed_run_id: "31618628402" },
+  { ...activationAIdentityAuthorityFailsoft,
+    failure_code: "founder_beta_identity_authority_required:subjects" },
+  { ...activationAIdentityAuthorityFailsoft,
+    required_rollback_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA },
+  { ...activationAIdentityAuthorityFailsoft, artifact_manifest_sha256: "e".repeat(64) },
+  { ...activationAIdentityAuthorityFailsoft,
+    writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationAIdentityAuthorityFailsoft, parity_required: false },
+  { ...activationAIdentityAuthorityFailsoft,
+    contract_sha256: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256 },
+  { ...activationAIdentityAuthorityFailsoft, git_sha: "not-a-git-sha" },
+  { ...activationAIdentityAuthorityFailsoft, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_identity_authority_failsoft_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+  "c".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAIdentityAuthorityFailsoft,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER,
+    parent_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+    git_sha: activationAIdentityAuthorityFailsoftGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: activationAIdentityAuthorityFailsoftProof.contract_sha256
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_identity_authority_failsoft_selection_invalid",
+"the failed identity-authority candidate may not escape generic ordinary lineage");
 const bridgeV2Lineage = verifyReleaseRollbackLineage({
   selection: bridgeV2,
   rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
@@ -1892,12 +2120,16 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationAIdentityAuthorityFailsoft =
+    actualParent === ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA;
   const actualActivationAGrammarSourceRepair =
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationAGrammarSourceRepair
-    ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER
+  const actualTransitionMarker = actualActivationAIdentityAuthorityFailsoft
+    ? ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER
+    : actualActivationAGrammarSourceRepair
+      ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER
     : actualActivationATransport502Repair
       ? ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER
     : actualActivationA
@@ -1956,8 +2188,10 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationAGrammarSourceRepair
-        ? "production-release-selection-v10"
+      actualActivationAIdentityAuthorityFailsoft
+        ? "production-release-selection-v11"
+        : actualActivationAGrammarSourceRepair
+          ? "production-release-selection-v10"
         : actualActivationATransport502Repair
           ? "production-release-selection-v9"
         : actualActivationA
@@ -1973,8 +2207,10 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationAGrammarSourceRepair
-        ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA
+      actualActivationAIdentityAuthorityFailsoft
+        ? ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA
+        : actualActivationAGrammarSourceRepair
+          ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA
         : actualActivationATransport502Repair
           ? ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA
         : actualActivationA
@@ -1984,8 +2220,10 @@ try {
           : actualActivationA2
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationAGrammarSourceRepair
-      ? "production-release-rollback-lineage-receipt-v11"
+    assert.equal(savedLineage.schema_version, actualActivationAIdentityAuthorityFailsoft
+      ? "production-release-rollback-lineage-receipt-v12"
+      : actualActivationAGrammarSourceRepair
+        ? "production-release-rollback-lineage-receipt-v11"
       : actualActivationATransport502Repair
         ? "production-release-rollback-lineage-receipt-v10"
       : actualActivationA
@@ -1998,7 +2236,25 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationAGrammarSourceRepair) {
+    if (actualActivationAIdentityAuthorityFailsoft) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA);
+    } else if (actualActivationAGrammarSourceRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,
