@@ -30,6 +30,9 @@ import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
+  validateDefinitive502TransportRetryReceipt
+} from "../lib/listing/thin/luna-direct-dispatcher.mjs";
+import {
   ADMIN_TEST_DATASET_DISPOSITION,
   FEEDBACK_DATASET_DISPOSITION
 } from "../lib/listing/feedback/feedback-capture.mjs";
@@ -418,6 +421,7 @@ const liveExecutionEvidenceKeys = Object.freeze([
   "owner_execution_receipt_version",
   "owner_execution_receipt_sha256",
   "provider_authority_receipt",
+  "provider_transport_retry_receipt",
   "provider_response_completed",
   "provider_response_status_attested",
   "provider_response_incomplete",
@@ -470,10 +474,11 @@ const providerAuthorityReceiptEvidenceKeys = Object.freeze([
 ]);
 
 function providerAuthorityReceiptProof(payload, owner, code) {
+  const attempt = Number(payload?.provider_attempt_number);
   let receipt;
   try {
     receipt = validateCsmProviderAuthorityReceipt(payload?.provider_authority_receipt, {
-      attempt: 1
+      attempt
     });
   } catch {
     throw verifierFailure(code);
@@ -483,8 +488,9 @@ function providerAuthorityReceiptProof(payload, owner, code) {
     && hasExactKeys(receipt, providerAuthorityReceiptEvidenceKeys)
     && receipt.schema_version === "csm-provider-authority-receipt-v1"
     && /^[0-9a-f]{64}$/.test(receipt.operation_key_sha256)
-    && receipt.attempt === 1
-    && receipt.attempt_class === "fresh"
+    && [1, 2].includes(attempt)
+    && receipt.attempt === attempt
+    && receipt.attempt_class === (attempt === 1 ? "fresh" : "retry")
     && receipt.estimated_tokens === expectedEstimatedTokensPerAttempt
     && ["admitted", "claim_receipt_replayed"].includes(receipt.claim_code)
     && ["settled", "exact_replay"].includes(receipt.settle_code)
@@ -492,6 +498,39 @@ function providerAuthorityReceiptProof(payload, owner, code) {
     && payload?.recognition_session_id
       === `csmsess_${receipt.operation_key_sha256.slice(0, 40)}`
     && !Object.prototype.hasOwnProperty.call(owner, "provider_authority_receipt"),
+  code);
+  return receipt;
+}
+
+function providerTransportRetryReceiptProof(payload, owner, authorityReceipt, code) {
+  const firstAttempt = payload?.provider_attempt_number === 1
+    && payload?.provider_retry_count === 0;
+  const retryAttempt = payload?.provider_attempt_number === 2
+    && payload?.provider_retry_count === 1;
+  requireInvariant(firstAttempt || retryAttempt, code);
+  if (firstAttempt) {
+    requireInvariant(!Object.prototype.hasOwnProperty.call(
+      payload, "provider_transport_retry_receipt"
+    ) && owner?.provider_transport_retry_receipt === null, code);
+    return null;
+  }
+  let receipt;
+  try {
+    receipt = validateDefinitive502TransportRetryReceipt(
+      payload?.provider_transport_retry_receipt
+    );
+  } catch {
+    throw verifierFailure(code);
+  }
+  requireInvariant(receipt.operation_key_sha256 === authorityReceipt.operation_key_sha256
+    && receipt.model === CSM_ACTIVE_MODEL_PROFILE.model
+    && receipt.provider === CSM_ACTIVE_MODEL_PROFILE.provider
+    && receipt.retry_attempt === authorityReceipt.attempt
+    && authorityReceipt.attempt_class === "retry"
+    && stableJson(owner?.provider_transport_retry_receipt) === stableJson(receipt)
+    && payload?.provider_client_request_id === receipt.retry_provider_client_request_id
+    && owner?.provider_client_request_id === receipt.retry_provider_client_request_id
+    && receipt.provider_client_request_id !== receipt.retry_provider_client_request_id,
   code);
   return receipt;
 }
@@ -850,6 +889,9 @@ function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile }
   code);
   publicRecognitionPayloadBoundary(payload, owner, code);
   const providerAuthorityReceipt = providerAuthorityReceiptProof(payload, owner, code);
+  const providerTransportRetryReceipt = providerTransportRetryReceiptProof(
+    payload, owner, providerAuthorityReceipt, code
+  );
 
   const expectedVersionFields = {
     model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
@@ -924,10 +966,10 @@ function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile }
     && Number.isSafeInteger(payload.input_tokens + payload.output_tokens)
     && payload.total_tokens >= payload.input_tokens + payload.output_tokens,
   code);
-  requireInvariant(payload?.provider_attempt_number === 1
-    && owner?.provider_attempt_number === 1
-    && payload?.provider_retry_count === 0
-    && owner?.provider_retry_count === 0,
+  requireInvariant([1, 2].includes(payload?.provider_attempt_number)
+    && owner?.provider_attempt_number === payload.provider_attempt_number
+    && payload?.provider_retry_count === payload.provider_attempt_number - 1
+    && owner?.provider_retry_count === payload.provider_retry_count,
   code);
 
   requireInvariant(typeof payload?.served_model_attested === "boolean"
@@ -966,6 +1008,7 @@ function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile }
     owner_execution_receipt_version: ownerExecutionReceiptVersion,
     owner_execution_receipt_sha256: ownerExecutionReceiptSha256,
     provider_authority_receipt: providerAuthorityReceipt,
+    provider_transport_retry_receipt: providerTransportRetryReceipt,
     provider_response_completed: true,
     provider_response_status_attested: true,
     provider_response_incomplete: false,
@@ -980,8 +1023,8 @@ function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile }
     total_tokens: payload.total_tokens,
     safe_token_usage: true,
     positive_token_usage: true,
-    provider_attempt_number: 1,
-    provider_retry_count: 0,
+    provider_attempt_number: payload.provider_attempt_number,
+    provider_retry_count: payload.provider_retry_count,
     served_model_attested: payload.served_model_attested,
     served_model_consistent: true,
     served_model_unknown: !payload.served_model_attested,
@@ -2622,9 +2665,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
       addIds(recognitionPayload, ids);
       expect(recognitionResponse.ok(), "direct CSM recognition must succeed").toBeTruthy();
       expect(recognitionPayload?.trace_status, "recognition trace must be durable").toBe("PERSISTED");
-      expect(recognitionPayload?.provider_attempt_number, "live verifier requires the first provider attempt")
-        .toBe(1);
-      expect(recognitionPayload?.provider_retry_count, "live verifier excludes provider retries").toBe(0);
+      expect([1, 2], "live verifier allows only first attempt or sealed 502 transport retry")
+        .toContain(recognitionPayload?.provider_attempt_number);
+      expect(recognitionPayload?.provider_retry_count,
+        "live verifier binds retry count to the physical attempt").toBe(
+          recognitionPayload.provider_attempt_number - 1
+        );
       expect(String(recognitionPayload?.asset_id || "")).not.toBe("");
       expect(String(recognitionPayload?.recognition_session_id || "")).not.toBe("");
       failurePhase = "EXECUTION_RECEIPT";
@@ -3180,8 +3226,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && new Set(providerResponseReceiptHashes).size === evidence.cases.length
       && providerAuthorityOperationHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
       && new Set(providerAuthorityOperationHashes).size === evidence.cases.length
-      && evidence.cases.every((entry) => entry.provider_attempt_number === 1
-        && entry.provider_retry_count === 0
+      && evidence.cases.every((entry) => [1, 2].includes(entry.provider_attempt_number)
+        && entry.provider_retry_count === entry.provider_attempt_number - 1
+        && (entry.provider_attempt_number === 1
+          ? entry.execution_receipt?.provider_transport_retry_receipt === null
+          : entry.execution_receipt?.provider_transport_retry_receipt
+            ?.schema_version === "luna-definitive-502-transport-retry-receipt-v1")
         && entry.execution_receipt?.execution_origin === "FRESH_CURRENT"
         && entry.recognition_session_id === `csmsess_${
           entry.execution_receipt?.provider_authority_receipt?.operation_key_sha256.slice(0, 40)
@@ -3232,8 +3282,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
       )
       && entry.execution_receipt?.provider_authority_receipt?.estimated_tokens
         === expectedEstimatedTokensPerAttempt
-      && entry.execution_receipt?.provider_authority_receipt?.attempt === 1
-      && entry.execution_receipt?.provider_authority_receipt?.attempt_class === "fresh"
+      && entry.execution_receipt?.provider_authority_receipt?.attempt
+        === entry.provider_attempt_number
+      && entry.execution_receipt?.provider_authority_receipt?.attempt_class
+        === (entry.provider_attempt_number === 1 ? "fresh" : "retry")
       && ["admitted", "claim_receipt_replayed"].includes(
         entry.execution_receipt?.provider_authority_receipt?.claim_code
       )
@@ -4515,6 +4567,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       provider_client_request_id: "client-request-offline",
       provider_attempt_number: offlineExecutionReceipt.provider_attempt_number,
       provider_retry_count: offlineExecutionReceipt.provider_retry_count,
+      provider_transport_retry_receipt: null,
       latency_ms: 4,
       latency_stages_ms: { provider_ms: 4 },
       input_tokens: offlineExecutionReceipt.input_tokens,
@@ -4720,6 +4773,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
             && value.attempt === 1
             && value.attempt_class === "fresh"
             && value.operation_status === "SUCCEEDED"
+        : key === "provider_transport_retry_receipt"
+          ? value === null
         : typeof value === "boolean" || Number.isSafeInteger(value)
     ))
     && !offlineExecutionArtifact.includes(offlineProviderResponseId)
@@ -4728,6 +4783,86 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && !offlineExecutionArtifact.includes("PRIVATE")
     && !offlineExecutionArtifact.includes("/not-read/"),
   verifierErrorCodes.GENERIC);
+  const offlineRetryReceiptBody = {
+    schema_version: "luna-definitive-502-transport-retry-receipt-v1",
+    operation_key_sha256: recognitionPayload.provider_authority_receipt.operation_key_sha256,
+    payload_sha256: "b".repeat(64),
+    provider: CSM_ACTIVE_MODEL_PROFILE.provider,
+    model: CSM_ACTIVE_MODEL_PROFILE.model,
+    failed_attempt: 1,
+    failed_attempt_class: "fresh",
+    http_status: 502,
+    ambiguous: false,
+    returned_http_response: true,
+    response_body_complete: true,
+    provider_output_present: false,
+    provider_contract_failure: false,
+    provider_business_failure: false,
+    actual_tokens: null,
+    provider_request_id: "req-offline-first-502",
+    provider_client_request_id: "lynca-offline-first-502",
+    retry_provider_client_request_id: "lynca-offline-retry-502",
+    provider_error_code: "server_error",
+    provider_error_type: "server_error",
+    provider_error_param: null,
+    provider_ms: 10,
+    settle_code: "settled",
+    operation_status: "FAILED",
+    retry_attempt: 2,
+    retry_attempt_class: "retry"
+  };
+  const offlineRetryReceipt = {
+    ...offlineRetryReceiptBody,
+    receipt_sha256: sha256(stableJson(offlineRetryReceiptBody))
+  };
+  const offlineRetryPayload = structuredClone(recognitionPayload);
+  offlineRetryPayload.provider_attempt_number = 2;
+  offlineRetryPayload.provider_retry_count = 1;
+  offlineRetryPayload.provider_client_request_id =
+    offlineRetryReceipt.retry_provider_client_request_id;
+  offlineRetryPayload.provider_transport_retry_receipt = offlineRetryReceipt;
+  offlineRetryPayload.provider_authority_receipt.attempt = 2;
+  offlineRetryPayload.provider_authority_receipt.attempt_class = "retry";
+  offlineRetryPayload.csm_owner_versions.provider_attempt_number = 2;
+  offlineRetryPayload.csm_owner_versions.provider_retry_count = 1;
+  offlineRetryPayload.csm_owner_versions.provider_client_request_id =
+    offlineRetryReceipt.retry_provider_client_request_id;
+  offlineRetryPayload.csm_owner_versions.provider_transport_retry_receipt =
+    structuredClone(offlineRetryReceipt);
+  offlineRetryPayload.csm_owner_versions = sealCsmOwnerExecutionReceipt(
+    offlineRetryPayload.csm_owner_versions
+  );
+  const offlineRetryExecutionProof = liveExecutionReceiptProof(offlineRetryPayload, {
+    imageCount: 2,
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+  });
+  requireInvariant(offlineRetryExecutionProof.provider_attempt_number === 2
+    && offlineRetryExecutionProof.provider_retry_count === 1
+    && offlineRetryExecutionProof.provider_transport_retry_receipt?.retry_attempt === 2,
+  verifierErrorCodes.GENERIC);
+  for (const mutate of [
+    (value) => { value.provider_client_request_id = "lynca-retry-id-drift"; },
+    (value) => {
+      value.csm_owner_versions.provider_transport_retry_receipt.provider_error_code = "drift";
+    },
+    (value) => {
+      value.provider_transport_retry_receipt.retry_provider_client_request_id =
+        value.provider_transport_retry_receipt.provider_client_request_id;
+    }
+  ]) {
+    const driftedRetry = structuredClone(offlineRetryPayload);
+    mutate(driftedRetry);
+    let rejected = false;
+    try {
+      liveExecutionReceiptProof(driftedRetry, {
+        imageCount: 2,
+        transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+      });
+    } catch {
+      rejected = true;
+    }
+    requireInvariant(rejected, verifierErrorCodes.GENERIC);
+  }
   const offlineUploadPipelineReceipt = Object.freeze({
     asset_id: recognitionPayload.asset_id,
     client_asset_ref: accepted.identity.client_asset_ref,

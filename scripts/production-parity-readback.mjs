@@ -14,6 +14,10 @@ import {
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import { CSM_ACTIVE_MODEL_PROFILE } from "../lib/listing/thin/csm-model-profile.mjs";
+import {
+  validateDefinitive502TransportRetryReceipt
+} from "../lib/listing/thin/luna-direct-dispatcher.mjs";
 import {
   validateVerifiedOriginalObservationPublicReceipt,
   VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
@@ -201,6 +205,26 @@ function standardEvidence(evidence, { deploymentUrl, gitSha }) {
   const versions = entry.versions;
   const assetId = safeId(entry.asset_id, "production_standard_readback_asset_id_invalid");
   const recognitionSessionId = String(entry.recognition_session_id || "").trim();
+  const firstAttempt = entry.provider_attempt_number === 1
+    && entry.provider_retry_count === 0
+    && entry.execution_receipt?.provider_transport_retry_receipt === null;
+  let repairedRetry = false;
+  if (entry.provider_attempt_number === 2 && entry.provider_retry_count === 1) {
+    try {
+      const transportReceipt = validateDefinitive502TransportRetryReceipt(
+        entry.execution_receipt?.provider_transport_retry_receipt
+      );
+      repairedRetry = transportReceipt.operation_key_sha256
+          === entry.execution_receipt?.provider_authority_receipt?.operation_key_sha256
+        && transportReceipt.provider === CSM_ACTIVE_MODEL_PROFILE.provider
+        && transportReceipt.model === CSM_ACTIVE_MODEL_PROFILE.model
+        && transportReceipt.retry_attempt === 2
+        && entry.execution_receipt?.provider_authority_receipt?.attempt === 2
+        && entry.execution_receipt?.provider_authority_receipt?.attempt_class === "retry";
+    } catch {
+      repairedRetry = false;
+    }
+  }
   if (entry.expected_grammar !== "NON_TCG"
       || !/^csmsess_[0-9a-f]{40}$/.test(recognitionSessionId)
       || entry.canonical_naming_active !== true
@@ -219,8 +243,7 @@ function standardEvidence(evidence, { deploymentUrl, gitSha }) {
       || !productionStandardP0EvidenceProofValid(entry.standard_p0_identity)
       || entry.resolution_http_method !== "GET"
       || entry.resolution_request_count !== 1
-      || entry.provider_attempt_number !== 1
-      || entry.provider_retry_count !== 0
+      || !(firstAttempt || repairedRetry)
       || entry.trace_reliable !== true
       || entry.recomposed_matches_stored !== true
       || !Number.isInteger(entry.title_length)

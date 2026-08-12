@@ -353,7 +353,13 @@ assert.equal(CSM_DIRECT_LOCAL_FALLBACK_CONCURRENCY, 6);
 assert.equal(CSM_DIRECT_CLAIM_POLL_MS, 1_000);
 assert.equal(CSM_DIRECT_CLAIM_TIMEOUT_MS, 145_000);
 assert.equal(CSM_DIRECT_PROVIDER_TIMEOUT_MS, 120_000);
-assert.equal(CSM_DIRECT_MAX_ATTEMPTS, 1);
+assert.equal(CSM_DIRECT_MAX_ATTEMPTS, 2);
+assert.equal(CSM_THIN_RUNTIME_CONTRACT.semanticResultLimit, 1);
+assert.equal(CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryLimit, 1);
+assert.equal(
+  CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryPolicy,
+  "definitive-complete-http-502-no-output-no-token-v1"
+);
 assert.equal(CSM_DIRECT_ESTIMATED_TOKENS, 6_500);
 assert.equal(CSM_DIRECT_PROMPT_VERSION, CANONICAL_FIELDS_PROMPT_VERSION);
 assert.equal(CSM_PERSISTENCE_READINESS_CACHE_TTL_MS, 30_000);

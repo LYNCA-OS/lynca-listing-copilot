@@ -69,7 +69,10 @@ export function buildWriterEditableTitleLatencyReceipt({
   const editable = integer(titleEditableAtMs, "writer_title_latency_editable_time");
   if (response < upload || editable < response) throw new TypeError("writer_title_latency_order");
   if (executionOrigin !== "FRESH_CURRENT") throw new TypeError("writer_title_latency_execution_origin");
-  if (providerAttemptNumber !== 1 || providerRetryCount !== 0) {
+  if (!(
+    (providerAttemptNumber === 1 && providerRetryCount === 0)
+    || (providerAttemptNumber === 2 && providerRetryCount === 1)
+  )) {
     throw new TypeError("writer_title_latency_attempt_contract");
   }
   const uploadToRecognitionResponseMs = response - upload;
@@ -118,8 +121,8 @@ function validReceipt(receipt) {
     && LANES.has(receipt.lane)
     && /^[0-9a-f]{64}$/.test(String(receipt.sample_id_sha256 || ""))
     && receipt.execution_origin === "FRESH_CURRENT"
-    && receipt.provider_attempt_number === 1
-    && receipt.provider_retry_count === 0
+    && [1, 2].includes(receipt.provider_attempt_number)
+    && receipt.provider_retry_count === receipt.provider_attempt_number - 1
     && Number.isSafeInteger(receipt.upload_to_recognition_response_ms)
     && receipt.upload_to_recognition_response_ms >= 0
     && Number.isSafeInteger(receipt.recognition_response_to_editable_title_ms)
@@ -152,12 +155,17 @@ export function summarizeWriterEditableTitleLatency(receipts, { cohortId = "live
   const diagnosticBreach = p50Ms > WRITER_EDITABLE_TITLE_LATENCY_LIMITS.diagnostic_p50_ms
     || p95Ms > WRITER_EDITABLE_TITLE_LATENCY_LIMITS.diagnostic_p95_ms;
   const optimizationSampleEligible = receipts.length
-    >= WRITER_EDITABLE_TITLE_LATENCY_LIMITS.optimization_min_fresh_samples_per_cohort;
+    >= WRITER_EDITABLE_TITLE_LATENCY_LIMITS.optimization_min_fresh_samples_per_cohort
+    && receipts.every((entry) => entry.provider_attempt_number === 1
+      && entry.provider_retry_count === 0);
   return Object.freeze({
     schema_version: WRITER_EDITABLE_TITLE_LATENCY_SUMMARY_VERSION,
     cohort_id: cohortId,
     sample_count: receipts.length,
-    fresh_first_attempt_retry_zero_count: receipts.length,
+    fresh_first_attempt_retry_zero_count: receipts.filter(
+      (entry) => entry.provider_attempt_number === 1
+        && entry.provider_retry_count === 0
+    ).length,
     sample_id_sha256: Object.freeze([...sampleIds].sort()),
     p50_ms: p50Ms,
     p95_ms: p95Ms,
@@ -221,7 +229,7 @@ export function evaluateWriterEditableTitleLatencyOptimizationGate(cohorts) {
     prohibited_shortcuts: Object.freeze([
       "LOW_TO_NONE_WITHOUT_QUALITY_GATE",
       "LOWER_IMAGE_DETAIL_WITHOUT_QUALITY_GATE",
-      "AUTOMATIC_SECOND_PROVIDER_CALL"
+      "AUTOMATIC_SECOND_PROVIDER_CALL_OUTSIDE_SEALED_DEFINITIVE_502_REPAIR"
     ])
   });
 }

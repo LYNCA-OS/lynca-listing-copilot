@@ -732,6 +732,12 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
   const providerError = Object.assign(new Error("provider response contract failed"), {
     status: 502,
     definitive_response: true,
+    returned_http_response: true,
+    response_body_complete: true,
+    provider_output_present: false,
+    provider_contract_failure: true,
+    provider_business_failure: false,
+    safe_to_retry: false,
     provider_attempt_started: true,
     retryable: false
   });
@@ -740,9 +746,67 @@ for (const terminal of ["FAILED", "CANCELLED"]) {
       queuedAttempt: admission.enqueueAttempt(metadata()),
       execute: async () => { throw providerError; }
     }),
-    (error) => error.ambiguous === false && error.provider_attempt_started === true
+    (error) => error.ambiguous === false
+      && error.retryable === false
+      && error.provider_attempt_started === true
+      && error.returned_http_response === true
+      && error.response_body_complete === true
+      && error.provider_contract_failure === true
+      && error.safe_to_retry === false
   );
   assert.equal(store.calls.at(-1).body.p_outcome, "FAILED");
+  assert.equal(store.calls.at(-1).body.p_result.provider_contract_failure, true);
+  assert.equal(store.calls.at(-1).body.p_result.safe_to_retry, false);
+}
+
+// A definitive empty 502 carries a durable, sanitized predecessor receipt.
+// The dispatcher may consume this exact evidence, but cannot infer it later
+// from status alone.
+{
+  const store = fakeRpc({
+    [CSM_PROVIDER_AUTHORITY_RPCS.enqueue]: { ok: true, code: "enqueued" },
+    [CSM_PROVIDER_AUTHORITY_RPCS.claim]: claimReceipt({ lease_fence: 41 }),
+    [CSM_PROVIDER_AUTHORITY_RPCS.settle]: {
+      ok: true, code: "settled", operation_status: "FAILED"
+    }
+  });
+  const admission = authority(store);
+  const providerError = Object.assign(new Error("bad gateway"), {
+    name: "CanonicalProviderError",
+    status: 502,
+    provider_attempt_started: true,
+    returned_http_response: true,
+    response_body_complete: true,
+    provider_output_present: false,
+    provider_contract_failure: false,
+    provider_business_failure: false,
+    definitive_response: true,
+    safe_to_retry: true,
+    retryable: true,
+    provider_request_id: "req-safe-502",
+    provider_client_request_id: "lynca-safe-502",
+    provider_error_code: "server_error",
+    provider_error_type: "server_error",
+    provider_ms: 31
+  });
+  await assert.rejects(
+    admission.runAttempt({
+      queuedAttempt: admission.enqueueAttempt(metadata()),
+      execute: async () => { throw providerError; }
+    }),
+    (error) => error.ambiguous === false
+      && error.provider_failure_result?.status === 502
+      && error.provider_failure_result?.actual_tokens === null
+      && error.provider_failure_result?.provider_request_id === "req-safe-502"
+      && error.provider_failure_result?.provider_client_request_id === "lynca-safe-502"
+      && error.provider_failure_settlement?.attempt === 1
+      && error.provider_failure_settlement?.attempt_class === "fresh"
+      && error.provider_failure_settlement?.settle_code === "settled"
+      && error.provider_failure_settlement?.operation_status === "FAILED"
+  );
+  assert.equal(store.calls.at(-1).body.p_outcome, "FAILED");
+  assert.equal(store.calls.at(-1).body.p_result.response_body_complete, true);
+  assert.equal(store.calls.at(-1).body.p_result.safe_to_retry, true);
 }
 
 // AbortSignal.timeout() uses a DOMException named TimeoutError rather than an

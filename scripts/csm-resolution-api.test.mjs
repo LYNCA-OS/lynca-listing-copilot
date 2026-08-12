@@ -434,6 +434,10 @@ const legacyRecord = {
     model: "gpt-5.6-luna",
     provider_response_id: "resp_private_readback",
     provider_request_id: "req_private_readback",
+    provider_transport_retry_receipt: {
+      schema_version: "luna-definitive-502-transport-retry-receipt-v1",
+      receipt_sha256: "c".repeat(64)
+    },
     composer: "thin-marketplace-composer-v2",
     resolver: "thin-path-observation-only-v1"
   });
@@ -521,6 +525,42 @@ const legacyRecord = {
     }),
     /csm_owner_execution_receipt_invalid/,
     "the GET path must fail closed when durable owner bytes no longer match the saved hash"
+  );
+
+  const nestedRetryTamper = structuredClone(storedOwner);
+  nestedRetryTamper.provider_transport_retry_receipt.receipt_sha256 = "d".repeat(64);
+  await assert.rejects(
+    () => readCsmResolutionRecord({
+      tenantId: "tenant-db",
+      assetId: "asset-db",
+      env: {
+        SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role"
+      },
+      fetchImpl: async (rawUrl) => {
+        const url = new URL(rawUrl);
+        if (url.pathname.endsWith("/v4_recognition_sessions")) {
+          return new Response(JSON.stringify([{
+            id: "session-db", asset_id: "asset-db", created_at: "2026-08-09T00:00:00Z",
+            csm_owner_versions: nestedRetryTamper
+          }]), { status: 200 });
+        }
+        if (url.pathname.endsWith("/csm_marketplace_outputs")) {
+          return new Response(JSON.stringify([{
+            id: "output-db", tenant_id: "tenant-db", recognition_session_id: "session-db",
+            resolution_id: "resolution-db", structured_output: {}, title: "stored-title",
+            composer_version: "thin-marketplace-composer-v2",
+            marketplace: "EBAY", marketplace_profile_version: "ebay-profile-v1",
+            contract_version: "csm-stage-shadow-v2", created_at: "2026-08-09T00:00:00Z"
+          }]), { status: 200 });
+        }
+        if (url.pathname.endsWith("/csm_identity_resolutions")) return new Response("[]", { status: 200 });
+        if (url.pathname.endsWith("/csm_resolved_brackets")) return new Response("[]", { status: 200 });
+        return new Response("[]", { status: 404 });
+      }
+    }),
+    /csm_owner_execution_receipt_invalid/,
+    "zero-call resolution readback must reject nested transport-retry receipt drift"
   );
 }
 

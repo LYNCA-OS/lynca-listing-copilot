@@ -11,8 +11,10 @@ import {
   buildLegacyLowLunaDirectPayloadHash,
   classifyLunaDirectFailure,
   createLunaDirectDispatcher,
+  definitive502TransportRetryEligible,
   lunaRetryDelayMs,
-  retryAfterMs
+  retryAfterMs,
+  validateDefinitive502TransportRetryReceipt
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
 import {
   buildCanonicalFieldsRequest,
@@ -62,6 +64,68 @@ function task(assetId, overrides = {}) {
     execution_contract_sha256: TEST_EXECUTION_SHA256,
     ...overrides
   };
+}
+
+function deterministicClientRequestId(operationKey, payloadHash, attempt) {
+  return `lynca-${createHash("sha256")
+    .update(`${operationKey}\u0000${payloadHash}\u0000${attempt}`)
+    .digest("hex")}`;
+}
+
+function definitive502Failure(payload, overrides = {}) {
+  const providerClientRequestId = deterministicClientRequestId(
+    payload.operation_key,
+    payload.payload_hash,
+    1
+  );
+  const failureResult = {
+    error_name: "CanonicalProviderError",
+    status: 502,
+    actual_tokens: null,
+    ambiguous: false,
+    returned_http_response: true,
+    response_body_complete: true,
+    provider_output_present: false,
+    provider_contract_failure: false,
+    provider_business_failure: false,
+    definitive_response: true,
+    safe_to_retry: true,
+    provider_request_id: "req-definitive-502",
+    provider_client_request_id: providerClientRequestId,
+    provider_error_code: "server_error",
+    provider_error_type: "server_error",
+    provider_error_param: null,
+    provider_ms: 120,
+    ...overrides.failureResult
+  };
+  const providerFailureSettlement = {
+    operation_key_sha256: createHash("sha256").update(payload.operation_key).digest("hex"),
+    payload_sha256: payload.payload_hash,
+    attempt: 1,
+    attempt_class: "fresh",
+    estimated_tokens: payload.estimated_tokens,
+    settle_code: "settled",
+    operation_status: "FAILED",
+    ...overrides.providerFailureSettlement
+  };
+  return Object.assign(new Error("definitive provider 502"), {
+    name: "CsmProviderAdmissionError",
+    status: 502,
+    statusCode: 502,
+    retryable: true,
+    ambiguous: false,
+    provider_attempt_started: true,
+    returned_http_response: true,
+    response_body_complete: true,
+    provider_output_present: false,
+    provider_contract_failure: false,
+    provider_business_failure: false,
+    definitive_response: true,
+    safe_to_retry: true,
+    provider_failure_result: failureResult,
+    provider_failure_settlement: providerFailureSettlement,
+    ...overrides.error
+  });
 }
 
 // The staged execution receipt binds every byte/policy that can change a paid
@@ -456,8 +520,9 @@ assert.throws(
   }), 1_000);
 }
 
-// Retry uses one operation key, honors Retry-After, and never detours through a
-// second execution function.
+// The only automatic provider retry is one durable, definitive HTTP 502. It
+// preserves the logical operation/payload/model while using a distinct
+// per-attempt observability ID; that ID is not provider-side idempotency.
 {
   const calls = [];
   const sleeps = [];
@@ -487,15 +552,29 @@ assert.throws(
     },
     executeTask: async (payload) => {
       calls.push(payload);
-      return calls.length === 1
-        ? new Response("busy", { status: 429, headers: { "retry-after": "2" } })
-        : { title: "recovered" };
+      if (calls.length === 1) {
+        const failure = definitive502Failure(payload);
+        assert.equal(definitive502TransportRetryEligible(failure, {
+          failedAttempt: 1,
+          maximumAttempts: 2,
+          operationKey: payload.operation_key,
+          payloadHash: payload.payload_hash,
+          estimatedTokens: payload.estimated_tokens,
+          elapsedMs: 120
+        }), true);
+        throw failure;
+      }
+      validateDefinitive502TransportRetryReceipt(
+        payload.provider_transport_retry_receipt,
+        { operationKey: payload.operation_key, payloadHash: payload.payload_hash }
+      );
+      return { title: "recovered" };
     }
   });
-  const result = await dispatcher.enqueue(task("retry-after"));
+  const result = await dispatcher.enqueue(task("definitive-502"));
   assert.deepEqual(result, { title: "recovered" });
   assert.equal(dispatcher.csmDirectConcurrency, 9, "direct concurrency must not inherit an old provider cap");
-  assert.deepEqual(sleeps, [2_000]);
+  assert.deepEqual(sleeps, [250]);
   assert.equal(calls.length, 2);
   assert.equal(calls[0].operation_key, calls[1].operation_key);
   assert.equal(calls[0].manual_retry, false);
@@ -503,10 +582,69 @@ assert.throws(
   assert.equal(calls[0].tenant_id, "tenant-1");
   assert.equal(calls[0].estimated_tokens, 5_262);
   assert.deepEqual(calls.map(({ attempt_class }) => attempt_class), ["fresh", "retry"]);
+  assert.equal(calls[0].provider_transport_retry_receipt, undefined);
+  assert.equal(
+    calls[1].provider_transport_retry_receipt.provider_client_request_id,
+    deterministicClientRequestId(calls[0].operation_key, calls[0].payload_hash, 1)
+  );
+  assert.equal(
+    calls[1].provider_transport_retry_receipt.retry_provider_client_request_id,
+    deterministicClientRequestId(calls[0].operation_key, calls[0].payload_hash, 2)
+  );
+  for (const mutate of [
+    (value) => { value.provider_client_request_id = null; },
+    (value) => { value.retry_provider_client_request_id = null; },
+    (value) => {
+      value.retry_provider_client_request_id = value.provider_client_request_id;
+    }
+  ]) {
+    const invalid = structuredClone(calls[1].provider_transport_retry_receipt);
+    mutate(invalid);
+    assert.throws(
+      () => validateDefinitive502TransportRetryReceipt(invalid),
+      /invalid_definitive_502_transport_retry_receipt_contract/,
+      "receipt-only validation must require distinct non-null attempt traces"
+    );
+  }
   assert.deepEqual(admissionEvents, [
-    "enqueue:fresh:1", "claim:1", "settle:1", "sleep:2000",
+    "enqueue:fresh:1", "claim:1", "settle:1", "sleep:250",
     "enqueue:retry:2", "claim:2", "settle:2"
   ]);
+}
+
+// Status alone is never enough. Every non-502 status and every ambiguous,
+// partial-body, output-bearing, token-bearing, contract, or stale 502 is one
+// physical attempt only.
+for (const [name, mutate] of [
+  ["429", (error) => { error.status = error.statusCode = 429; error.provider_failure_result.status = 429; }],
+  ["500", (error) => { error.status = error.statusCode = 500; error.provider_failure_result.status = 500; }],
+  ["503", (error) => { error.status = error.statusCode = 503; error.provider_failure_result.status = 503; }],
+  ["504", (error) => { error.status = error.statusCode = 504; error.provider_failure_result.status = 504; }],
+  ["ambiguous", (error) => { error.ambiguous = true; error.provider_failure_result.ambiguous = true; }],
+  ["partial-body", (error) => { error.response_body_complete = false; error.provider_failure_result.response_body_complete = false; }],
+  ["output", (error) => { error.provider_output_present = true; error.provider_failure_result.provider_output_present = true; }],
+  ["tokens", (error) => { error.provider_failure_result.actual_tokens = 1; }],
+  ["contract", (error) => { error.provider_contract_failure = true; error.provider_failure_result.provider_contract_failure = true; }],
+  ["business", (error) => { error.provider_business_failure = true; error.provider_failure_result.provider_business_failure = true; }],
+  ["late", (error) => { error.provider_failure_result.provider_ms = 15_001; }]
+]) {
+  let calls = 0;
+  let currentError;
+  let clock = 0;
+  const dispatcher = createTestDispatcher({
+    csmDirectConcurrency: 1,
+    maxAttempts: 2,
+    now: () => clock,
+    executeTask: async (payload) => {
+      calls += 1;
+      currentError = definitive502Failure(payload);
+      mutate(currentError);
+      if (name === "late") clock = 15_001;
+      throw currentError;
+    }
+  });
+  await assert.rejects(dispatcher.enqueue(task(`no-auto-${name}`)), (error) => error === currentError);
+  assert.equal(calls, 1, `${name} must not buy a second provider attempt`);
 }
 
 // Appended assets join the live queue; duplicate intake returns the exact same
@@ -663,6 +801,8 @@ assert.throws(
   assert.equal(calls[1].manual_retry, true);
   assert.equal(calls[1].attempt, 2);
   assert.equal(calls[1].attempt_class, "retry");
+  assert.equal(calls[1].provider_transport_retry_receipt, undefined,
+    "manual retry keeps its historical tuple and does not forge an automatic-502 receipt");
 }
 
 // A manual retry in a fresh serverless process resumes from the durable
@@ -719,8 +859,9 @@ assert.throws(
   assert.equal(calls, 1, "manual retry must look up the prior ambiguous operation before resubmitting");
 }
 
-// A transient result-lookup transport failure may retry the lookup itself,
-// but it must never spend another provider call until the lookup says not_found.
+// A transient result-lookup transport failure may retry the lookup itself.
+// Even a later not_found does not turn an ambiguous 504 into an automatic
+// provider retry; that path remains a writer-controlled recovery decision.
 {
   let calls = 0;
   let lookups = 0;
@@ -741,14 +882,15 @@ assert.throws(
       return { title: "lookup recovered" };
     }
   });
-  assert.deepEqual(await dispatcher.enqueue(task("ambiguous-lookup-retry")), { title: "lookup recovered" });
-  assert.equal(calls, 2);
+  await assert.rejects(dispatcher.enqueue(task("ambiguous-lookup-retry")), /gateway timeout/);
+  assert.equal(calls, 1);
   assert.equal(lookups, 2);
-  assert.deepEqual(sleeps, [150, 250]);
+  assert.deepEqual(sleeps, [150]);
 }
 
-// A definitive not_found lookup permits resubmission; a found lookup returns
-// the durable result without spending a second provider call.
+// A definitive not_found lookup proves there is no hidden success, but it does
+// not make an ambiguous transport eligible for automatic resubmission. A found
+// lookup still returns the durable result without another provider call.
 {
   let calls = 0;
   const operationKeys = [];
@@ -769,8 +911,8 @@ assert.throws(
       return { title: "safe retry" };
     }
   });
-  assert.deepEqual(await dispatcher.enqueue(task("ambiguous-not-found")), { title: "safe retry" });
-  assert.equal(calls, 2);
+  await assert.rejects(dispatcher.enqueue(task("ambiguous-not-found")), /headers timeout/);
+  assert.equal(calls, 1);
   assert.equal(new Set(operationKeys).size, 1);
 }
 

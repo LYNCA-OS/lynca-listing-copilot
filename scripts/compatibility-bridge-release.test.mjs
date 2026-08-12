@@ -10,11 +10,20 @@ import { pathToFileURL } from "node:url";
 import {
   ACTIVE_V2_TRANSITION_MARKER,
   ACTIVE_V2_TRANSITION_PARENT_SHA,
+  ACTIVATION_A_CHANGED_PATHS,
   ACTIVATION_A_DESCRIPTOR_ID,
   ACTIVATION_A_MARKER,
   ACTIVATION_A_PARENT_SHA,
   ACTIVATION_A_PARENT_TREE_SHA,
   ACTIVATION_A_ROLLBACK_SHA,
+  ACTIVATION_A_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
   CANONICAL_NAMING_ACTIVATION_A2_CHANGED_PATHS,
   CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID,
   CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID,
@@ -63,7 +72,10 @@ import {
   COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
+  activationAHistoricalRuntimeContractProof,
+  activationATransport502RepairRuntimeContractProof,
   activeV2OrdinaryRuntimeContractProof,
+  activeV3OrdinaryRuntimeContractProof,
   buildCompatibilityBridgeManifest,
   canonicalNamingActivationA2RuntimeContractProof,
   canonicalNamingActivationA3RuntimeContractProof,
@@ -91,6 +103,8 @@ const gitSha = "a".repeat(40);
 const activationGitSha = "5".repeat(40);
 const activationA2GitSha = "6".repeat(40);
 const activationA3GitSha = "7".repeat(40);
+const activationAGitSha = "8".repeat(40);
+const activationATransport502RepairGitSha = "9".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -213,6 +227,42 @@ assert.deepEqual(CANONICAL_NAMING_ACTIVATION_A3_CHANGED_PATHS, [
   "scripts/production-parity-readback.test.mjs",
   "scripts/production-public-composition-projection.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
+]);
+assert.equal(ACTIVATION_A_RUNTIME_CONTRACT_SHA256,
+  "003b3c89580f6bc46d08d82911e82d7f5c7dc30085752b40db65728ec27b4083");
+assert.equal(ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-transport-502-repair-v1");
+assert.equal(ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+  "luna-definitive-empty-502-single-retry-repair-v1");
+assert.equal(ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+  "4772027e1a7f948844afd6414d0812bd15957178");
+assert.equal(ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+  "b1fc50f7a7e967ddd41aa9f839a662bf39885ee6");
+assert.deepEqual(ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+  ["31609922741", "31610848542", "31611390578"]);
+assert.equal(Object.isFrozen(ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS), true);
+assert.equal(ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA, ACTIVATION_A_ROLLBACK_SHA);
+assert.deepEqual(ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS, [
+  "api/csm-listing-title.js",
+  "e2e/production-writer-journey.spec.mjs",
+  "lib/listing/thin/csm-orchestration.mjs",
+  "lib/listing/thin/csm-owner-execution-receipt.mjs",
+  "lib/listing/thin/csm-provider-admission-authority.mjs",
+  "lib/listing/thin/csm-runtime-contract.mjs",
+  "lib/listing/thin/luna-direct-dispatcher.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-provider-admission-authority.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/luna-direct-dispatcher.test.mjs",
+  "scripts/production-parity-readback.mjs",
+  "scripts/production-parity-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/production-writer-title-latency.mjs",
+  "scripts/production-writer-title-latency.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
@@ -418,6 +468,90 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   parentShas: [CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA],
   changedPaths: [...CANONICAL_NAMING_ACTIVATION_A3_CHANGED_PATHS]
 }), (error) => error.code === "canonical_naming_activation_a3_parent_tree_mismatch");
+const activationA = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAGitSha,
+  headSha: activationAGitSha,
+  parentTreeSha: ACTIVATION_A_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_CHANGED_PATHS]
+});
+assert.equal(activationA.schema_version, "production-release-selection-v8");
+assert.equal(activationA.release_class, ORDINARY_RELEASE_CLASS);
+assert.equal(activationA.activation_descriptor_id, ACTIVATION_A_DESCRIPTOR_ID);
+assert.equal(activationA.transition_marker, ACTIVATION_A_MARKER);
+assert.equal(activationA.parent_git_sha, ACTIVATION_A_PARENT_SHA);
+assert.equal(activationA.parent_tree_sha, ACTIVATION_A_PARENT_TREE_SHA);
+assert.equal(activationA.required_rollback_git_sha, ACTIVATION_A_ROLLBACK_SHA);
+assert.equal(activationA.writer_journey_manifest, "writer-journey-cases-v4");
+assert.equal(activationA.contract_sha256, ACTIVATION_A_RUNTIME_CONTRACT_SHA256);
+const activationATransport502Repair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationATransport502RepairGitSha,
+  headSha: activationATransport502RepairGitSha,
+  parentTreeSha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS]
+});
+assert.equal(activationATransport502Repair.schema_version,
+  "production-release-selection-v9");
+assert.equal(activationATransport502Repair.release_class, ORDINARY_RELEASE_CLASS);
+assert.equal(activationATransport502Repair.repair_descriptor_id,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationATransport502Repair.transition_marker,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER);
+assert.equal(activationATransport502Repair.parent_git_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA);
+assert.equal(activationATransport502Repair.parent_tree_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA);
+assert.deepEqual(activationATransport502Repair.failed_run_ids,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS);
+assert.equal(activationATransport502Repair.required_rollback_git_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA);
+assert.equal(activationATransport502Repair.writer_journey_manifest,
+  "writer-journey-cases-v4");
+assert.equal(activationATransport502Repair.parity_required, true);
+assert.match(activationATransport502Repair.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+assert.notEqual(activationATransport502Repair.contract_sha256,
+  ACTIVATION_A_RUNTIME_CONTRACT_SHA256);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationATransport502RepairGitSha,
+    headSha: activationATransport502RepairGitSha,
+    parentTreeSha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_transport_502_repair_changed_paths_invalid",
+    "activation_a_transport_502_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationATransport502RepairGitSha,
+  headSha: activationATransport502RepairGitSha,
+  parentTreeSha: "0".repeat(40),
+  parentShas: [ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_transport_502_repair_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationATransport502RepairGitSha,
+  headSha: activationATransport502RepairGitSha,
+  parentTreeSha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+  parentShas: [
+    ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+    ACTIVATION_A_ROLLBACK_SHA
+  ],
+  changedPaths: [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
 const nextOrdinary = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: nextOrdinaryGitSha,
@@ -913,6 +1047,68 @@ assert.equal(activationProof.active_model_reasoning_effort, "low");
 assert.equal(activationProof.contract_sha256,
   "22b1ae81724522aabf2b022fe8246177b751da86a423e96ad658960e69ecda84");
 assert.equal(activation.contract_sha256, activationProof.contract_sha256);
+const activationAHistoricalProof = activationAHistoricalRuntimeContractProof();
+assert.equal(activationAHistoricalProof.schema_version,
+  "listing-copilot-activation-a-runtime-proof-v1");
+assert.equal(activationAHistoricalProof.required_parent_git_sha, ACTIVATION_A_PARENT_SHA);
+assert.equal(activationAHistoricalProof.required_parent_tree_sha,
+  ACTIVATION_A_PARENT_TREE_SHA);
+assert.equal(activationAHistoricalProof.required_rollback_git_sha,
+  ACTIVATION_A_ROLLBACK_SHA);
+assert.equal(activationAHistoricalProof.automatic_maximum_attempts, 1);
+assert.equal(activationAHistoricalProof.provider_request_count, 1);
+assert.equal(activationAHistoricalProof.contract_sha256,
+  ACTIVATION_A_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationA.contract_sha256, activationAHistoricalProof.contract_sha256);
+assert.throws(() => activationAHistoricalRuntimeContractProof({
+  parentGitSha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+}), (error) => error.code === "activation_a_historical_runtime_contract_invalid");
+const activeV3RepairRuntimeProof = activeV3OrdinaryRuntimeContractProof({
+  parentGitSha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+});
+assert.equal(activeV3RepairRuntimeProof.schema_version,
+  "listing-copilot-active-v3-runtime-proof-v2");
+assert.equal(activeV3RepairRuntimeProof.required_parent_git_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA);
+assert.equal(activeV3RepairRuntimeProof.required_parent_tree_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA);
+assert.equal(activeV3RepairRuntimeProof.required_rollback_git_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA);
+assert.equal(activeV3RepairRuntimeProof.semantic_result_limit, 1);
+assert.equal(activeV3RepairRuntimeProof.maximum_physical_provider_attempts, 2);
+assert.equal(activeV3RepairRuntimeProof.automatic_transport_retry_limit, 1);
+assert.equal(activeV3RepairRuntimeProof.automatic_transport_retry_policy,
+  "definitive-complete-http-502-no-output-no-token-v1");
+assert.equal(activeV3RepairRuntimeProof.automatic_transport_retry_http_status, 502);
+assert.equal(activeV3RepairRuntimeProof.automatic_transport_retry_elapsed_limit_ms, 15_000);
+assert.equal(activeV3RepairRuntimeProof.transport_retry_receipt_schema_version,
+  "luna-definitive-502-transport-retry-receipt-v1");
+assert.equal(activeV3RepairRuntimeProof.transport_retry_negative_counterexample_count, 14);
+assert.equal(activeV3RepairRuntimeProof.maximum_provider_request_count, 2);
+const activationATransport502RepairProof =
+  activationATransport502RepairRuntimeContractProof();
+assert.equal(activationATransport502RepairProof.schema_version,
+  "listing-copilot-activation-a-transport-502-repair-proof-v1");
+assert.equal(activationATransport502RepairProof.repair_descriptor_id,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationATransport502RepairProof.repair_marker,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER);
+assert.equal(activationATransport502RepairProof.required_parent_git_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA);
+assert.equal(activationATransport502RepairProof.required_parent_tree_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA);
+assert.deepEqual(activationATransport502RepairProof.failed_run_ids,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS);
+assert.equal(activationATransport502RepairProof.required_rollback_git_sha,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA);
+assert.equal(activationATransport502RepairProof.base_activation_a_runtime_contract_sha256,
+  ACTIVATION_A_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationATransport502RepairProof.active_runtime_contract_sha256,
+  activeV3RepairRuntimeProof.contract_sha256);
+assert.equal(activationATransport502RepairProof.transport_retry_negative_counterexample_count,
+  14);
+assert.equal(activationATransport502Repair.contract_sha256,
+  activationATransport502RepairProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -1221,6 +1417,105 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
   },
   rollbackReceipt: { git_sha: CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA }
 }), (error) => error.code === "ordinary_release_activation_a3_selection_invalid");
+const activationALineage = verifyOrdinaryRollbackLineage({
+  selection: activationA,
+  rollbackReceipt: { git_sha: ACTIVATION_A_ROLLBACK_SHA }
+});
+assert.deepEqual(activationALineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v9",
+  release_class: ORDINARY_RELEASE_CLASS,
+  activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_MARKER,
+  release_git_sha: activationAGitSha,
+  release_parent_git_sha: ACTIVATION_A_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_PARENT_TREE_SHA,
+  required_rollback_git_sha: ACTIVATION_A_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationA.artifact_manifest_sha256,
+  lineage_verified: true
+});
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    ...activationA,
+    contract_sha256: activeV3RepairRuntimeProof.contract_sha256
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_ROLLBACK_SHA }
+}), (error) => error.code === "ordinary_release_activation_a_selection_invalid",
+"the active retry proof must never rewrite the historical selection-v8 receipt");
+const activationATransport502RepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationATransport502Repair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA }
+});
+assert.deepEqual(activationATransport502RepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v10",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+  release_git_sha: activationATransport502RepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+  failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+  required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationATransport502Repair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationATransport502Repair, repair_descriptor_id: "unknown-repair" },
+  { ...activationATransport502Repair, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationATransport502Repair, parent_git_sha: ACTIVATION_A_PARENT_SHA },
+  { ...activationATransport502Repair, parent_tree_sha: "0".repeat(40) },
+  { ...activationATransport502Repair,
+    failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS.slice(1) },
+  { ...activationATransport502Repair,
+    failed_run_ids: [...ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS].reverse() },
+  { ...activationATransport502Repair,
+    failed_run_ids: [...ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+      ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS[0]] },
+  { ...activationATransport502Repair,
+    required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA },
+  { ...activationATransport502Repair, artifact_manifest_sha256: "0".repeat(64) },
+  { ...activationATransport502Repair, writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationATransport502Repair, parity_required: false },
+  { ...activationATransport502Repair,
+    contract_sha256: ACTIVATION_A_RUNTIME_CONTRACT_SHA256 },
+  { ...activationATransport502Repair, git_sha: "not-a-git-sha" },
+  { ...activationATransport502Repair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_transport_502_repair_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+  "c".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationATransport502Repair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+    git_sha: activationATransport502RepairGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: activeV3RepairRuntimeProof.contract_sha256
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_transport_502_repair_selection_invalid",
+"the failed Activation A parent may not escape through generic ordinary lineage");
 const bridgeV2Lineage = verifyReleaseRollbackLineage({
   selection: bridgeV2,
   rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
@@ -1385,8 +1680,12 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
-  const actualTransitionMarker = actualActivationA
-    ? ACTIVATION_A_MARKER
+  const actualActivationATransport502Repair =
+    actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
+  const actualTransitionMarker = actualActivationATransport502Repair
+    ? ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER
+    : actualActivationA
+      ? ACTIVATION_A_MARKER
     : actualActivationA3
       ? CANONICAL_NAMING_ACTIVATION_A3_MARKER
       : actualActivationA2
@@ -1441,8 +1740,10 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationA
-        ? "production-release-selection-v8"
+      actualActivationATransport502Repair
+        ? "production-release-selection-v9"
+        : actualActivationA
+          ? "production-release-selection-v8"
         : actualActivationA3
           ? "production-release-selection-v7"
           : actualActivationA2
@@ -1454,16 +1755,20 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationA
-        ? ACTIVATION_A_ROLLBACK_SHA
+      actualActivationATransport502Repair
+        ? ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA
+        : actualActivationA
+          ? ACTIVATION_A_ROLLBACK_SHA
         : actualActivationA3
           ? CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA
           : actualActivationA2
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationA
-      ? "production-release-rollback-lineage-receipt-v9"
-      : actualActivationA3
+    assert.equal(savedLineage.schema_version, actualActivationATransport502Repair
+      ? "production-release-rollback-lineage-receipt-v10"
+      : actualActivationA
+        ? "production-release-rollback-lineage-receipt-v9"
+        : actualActivationA3
         ? "production-release-rollback-lineage-receipt-v8"
         : actualActivationA2
           ? "production-release-rollback-lineage-receipt-v7"
@@ -1471,7 +1776,21 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationA) {
+    if (actualActivationATransport502Repair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID);
+      assert.deepEqual(savedSelection.failed_run_ids,
+        ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID);
+      assert.deepEqual(savedLineage.failed_run_ids,
+        ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationA) {
       assert.equal(savedSelection.activation_descriptor_id, ACTIVATION_A_DESCRIPTOR_ID);
       assert.equal(savedSelection.parent_tree_sha, ACTIVATION_A_PARENT_TREE_SHA);
       assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);

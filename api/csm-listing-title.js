@@ -38,7 +38,8 @@ import { checkCsmPersistenceReadiness } from "../lib/listing/thin/csm-supabase-w
 import {
   buildLunaDirectOperationKey,
   buildLunaDirectPayloadHash,
-  createLunaDirectDispatcher
+  createLunaDirectDispatcher,
+  validateDefinitive502TransportRetryReceipt
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
 import { requireTenantAccess } from "../lib/tenant/access.mjs";
 import { publicTenantAuthError } from "../lib/tenant/errors.mjs";
@@ -903,7 +904,8 @@ const PUBLIC_PERSISTED_RESULT_FIELDS = Object.freeze([
   "response_parser_version", "optimization_pack_id", "optimization_pack_sha256",
   "execution_contract_sha256", "execution_contract", "transport_profile_id",
   "transport_profile_sha256", "provider_attempt_number", "provider_retry_count",
-  "csm_contract_version", "csm_owner_versions", "latency_stages_ms"
+  "csm_contract_version", "csm_owner_versions", "latency_stages_ms",
+  "provider_transport_retry_receipt"
 ]);
 
 function publicCsmRows(rows) {
@@ -971,6 +973,26 @@ export function publicPersistedResult(result, executionOrigin = null, canonicalA
   const csmRows = publicCsmRows(result?.csm_rows);
   const csmPersistence = publicCsmPersistence(result?.csm_persistence);
   let freshAuthorityReceipt = null;
+  let transportRetryReceipt = null;
+  const attemptNumber = Number(result?.provider_attempt_number);
+  const retryCount = Number(result?.provider_retry_count);
+  if (result?.provider_transport_retry_receipt != null) {
+    try {
+      transportRetryReceipt = validateDefinitive502TransportRetryReceipt(
+        result.provider_transport_retry_receipt,
+        {
+          operationKey: checkpoint?.operation_key,
+          payloadHash: checkpoint?.payload_sha256
+        }
+      );
+    } catch {
+      throw persistenceCheckpointError("provider_transport_retry_receipt_invalid");
+    }
+  }
+  if (transportRetryReceipt !== null
+      && (attemptNumber !== 2 || retryCount !== 1)) {
+    throw persistenceCheckpointError("provider_transport_retry_tuple_invalid");
+  }
   if (executionOrigin === "FRESH_CURRENT") {
     const authorityOperationKey = String(checkpoint?.operation_key || "").trim();
     const authorityAttempt = Number(result?.provider_attempt_number);
@@ -999,6 +1021,9 @@ export function publicPersistedResult(result, executionOrigin = null, canonicalA
     }),
     ...(freshAuthorityReceipt ? {
       provider_authority_receipt: freshAuthorityReceipt
+    } : {}),
+    ...(transportRetryReceipt ? {
+      provider_transport_retry_receipt: transportRetryReceipt
     } : {}),
     ...(executionOrigin === null ? {} : { execution_origin: executionOrigin })
   };
@@ -1276,6 +1301,7 @@ export async function runDirectCsmAsset({
     tenant_id: tenant,
     intent_id: intent,
     asset_id: canonical.asset_id || asset,
+    provider: CSM_THIN_RUNTIME_CONTRACT.provider,
     model: MODEL,
     detail,
     reasoning_effort: EFFORT,
@@ -1469,6 +1495,21 @@ export async function runDirectCsmAsset({
   }
 
   const executeTask = async (dispatched) => {
+    const transportRetryReceipt = dispatched.provider_transport_retry_receipt
+      ? validateDefinitive502TransportRetryReceipt(
+          dispatched.provider_transport_retry_receipt,
+          {
+            operationKey: dispatched.operation_key,
+            payloadHash: dispatched.payload_hash
+          }
+        )
+      : null;
+    if ((transportRetryReceipt && (Number(dispatched.attempt) !== 2
+          || dispatched.manual_retry === true))
+        || (!transportRetryReceipt && Number(dispatched.attempt) === 2
+          && dispatched.manual_retry !== true)) {
+      throw persistenceCheckpointError("provider_transport_retry_receipt_binding_invalid");
+    }
     let imageUrls;
     let recognitionSessionDeferred = false;
     const attemptStages = { ...latencyStages };
@@ -1478,6 +1519,10 @@ export async function runDirectCsmAsset({
       payloadHash: dispatched.payload_hash,
       attempt: dispatched.attempt
     });
+    if (transportRetryReceipt
+        && transportRetryReceipt.retry_provider_client_request_id !== providerClientRequestId) {
+      throw persistenceCheckpointError("provider_transport_retry_trace_binding_invalid");
+    }
     try {
       const [signedUrls, session] = await Promise.all([
         (async () => {
@@ -1566,6 +1611,9 @@ export async function runDirectCsmAsset({
     const checkpoint = buildCsmPersistenceCheckpoint({
       prepared: {
         ...prepared,
+        ...(transportRetryReceipt ? {
+          provider_transport_retry_receipt: transportRetryReceipt
+        } : {}),
         provider_attempt_number: Number(dispatched.attempt),
         provider_retry_count: Math.max(0, Number(dispatched.attempt) - 1),
         latency_stages_ms: attemptStages
