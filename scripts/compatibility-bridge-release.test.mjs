@@ -20,6 +20,15 @@ import {
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
@@ -91,6 +100,7 @@ import {
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
   activationAIdentityAuthorityFailsoftRuntimeContractProof,
+  activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
   activationATransport502RepairRuntimeContractProof,
@@ -127,6 +137,7 @@ const activationAGitSha = "8".repeat(40);
 const activationATransport502RepairGitSha = "9".repeat(40);
 const activationAGrammarSourceRepairGitSha = "0".repeat(40);
 const activationAIdentityAuthorityFailsoftGitSha = "b".repeat(40);
+const activationAWebSourceBudgetRepairGitSha = "c".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -331,6 +342,27 @@ assert.deepEqual(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS, [
   "scripts/production-forward-readback.mjs",
   "scripts/production-forward-readback.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.equal(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256,
+  "2cc10bf7443f21afd127f60f5a8bc7853dfb751fbd052531fa083cce8b9ce397");
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-web-source-budget-dedupe-repair-v1");
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+  "founder-beta-sanitized-unique-web-source-budget-v1");
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+  "e239e0b5bc56d8c2b03efb5055fcb71b7dd2da7d");
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+  "18f2e7efaa3502bd40d9730de9c644f63c814e68");
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID, "31621942427");
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+  "founder_beta_web_source_budget_exceeded");
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_ROLLBACK_SHA);
+assert.deepEqual(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS, [
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
@@ -689,6 +721,74 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   ],
   changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
+const activationAWebSourceBudgetRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAWebSourceBudgetRepairGitSha,
+  headSha: activationAWebSourceBudgetRepairGitSha,
+  parentTreeSha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS]
+});
+assert.equal(activationAWebSourceBudgetRepair.schema_version,
+  "production-release-selection-v12");
+assert.equal(activationAWebSourceBudgetRepair.repair_descriptor_id,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationAWebSourceBudgetRepair.transition_marker,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER);
+assert.equal(activationAWebSourceBudgetRepair.parent_git_sha,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA);
+assert.equal(activationAWebSourceBudgetRepair.parent_tree_sha,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationAWebSourceBudgetRepair.failed_run_id,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID);
+assert.equal(activationAWebSourceBudgetRepair.failure_code,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE);
+assert.equal(activationAWebSourceBudgetRepair.required_rollback_git_sha,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA);
+assert.equal(activationAWebSourceBudgetRepair.writer_journey_manifest,
+  "writer-journey-cases-v4");
+assert.equal(activationAWebSourceBudgetRepair.parity_required, true);
+assert.match(activationAWebSourceBudgetRepair.artifact_manifest_sha256,
+  /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAWebSourceBudgetRepairGitSha,
+    headSha: activationAWebSourceBudgetRepairGitSha,
+    parentTreeSha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_web_source_budget_repair_changed_paths_invalid",
+    "activation_a_web_source_budget_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAWebSourceBudgetRepairGitSha,
+  headSha: activationAWebSourceBudgetRepairGitSha,
+  parentTreeSha: "d".repeat(40),
+  parentShas: [ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_web_source_budget_repair_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAWebSourceBudgetRepairGitSha,
+  headSha: activationAWebSourceBudgetRepairGitSha,
+  parentTreeSha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+  parentShas: [
+    ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+    ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA
+  ],
+  changedPaths: [...ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
+
 const activationAIdentityAuthorityFailsoft = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAIdentityAuthorityFailsoftGitSha,
@@ -1403,6 +1503,53 @@ assert.equal(activationAIdentityAuthorityFailsoftProof.cohort_minimum_no_search_
   1);
 assert.equal(activationAIdentityAuthorityFailsoft.contract_sha256,
   activationAIdentityAuthorityFailsoftProof.contract_sha256);
+assert.equal(activationAIdentityAuthorityFailsoftProof.contract_sha256,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256,
+  "selection-v11 must replay its literal proof instead of reading live budget logic");
+const activationAWebSourceBudgetRepairProof =
+  activationAWebSourceBudgetRepairRuntimeContractProof();
+assert.equal(activationAWebSourceBudgetRepairProof.schema_version,
+  "listing-copilot-activation-a-web-source-budget-repair-proof-v1");
+assert.equal(activationAWebSourceBudgetRepairProof.repair_descriptor_id,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationAWebSourceBudgetRepairProof.failure_code,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE);
+assert.equal(activationAWebSourceBudgetRepairProof.required_parent_git_sha,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA);
+assert.equal(activationAWebSourceBudgetRepairProof.required_parent_tree_sha,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationAWebSourceBudgetRepairProof.failed_run_id,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID);
+assert.equal(activationAWebSourceBudgetRepairProof.required_rollback_git_sha,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA);
+assert.equal(
+  activationAWebSourceBudgetRepairProof.base_identity_authority_failsoft_contract_sha256,
+  ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationAWebSourceBudgetRepairProof.raw_url_occurrence_limit, null);
+assert.equal(activationAWebSourceBudgetRepairProof.sanitized_unique_url_limit, 20);
+assert.equal(activationAWebSourceBudgetRepairProof.url_identity,
+  "https-origin-plus-pathname");
+assert.equal(activationAWebSourceBudgetRepairProof.query_and_fragment_policy,
+  "strip-before-dedupe");
+assert.deepEqual(activationAWebSourceBudgetRepairProof.dedupe_channels, [
+  "web_search_call.action.sources", "message.content.annotations"
+]);
+assert.equal(activationAWebSourceBudgetRepairProof.sanitize_before_unique_budget, true);
+assert.equal(activationAWebSourceBudgetRepairProof.field_source_sanitized_identity_binding,
+  true);
+assert.equal(activationAWebSourceBudgetRepairProof.duplicate_raw_occurrence_count_proven,
+  80);
+assert.equal(activationAWebSourceBudgetRepairProof.query_hash_raw_occurrence_count_proven,
+  44);
+assert.equal(activationAWebSourceBudgetRepairProof.twenty_unique_accepted, true);
+assert.equal(activationAWebSourceBudgetRepairProof.twenty_one_unique_failure_code,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE);
+assert.equal(activationAWebSourceBudgetRepairProof.unsafe_url_policy,
+  "hard-reject-before-budget");
+assert.equal(activationAWebSourceBudgetRepairProof.unsafe_negative_counterexample_count,
+  5);
+assert.equal(activationAWebSourceBudgetRepair.contract_sha256,
+  activationAWebSourceBudgetRepairProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -1884,6 +2031,79 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_activation_a_grammar_source_repair_selection_invalid",
 "the failed grammar candidate may not escape through generic ordinary lineage");
+const activationAWebSourceBudgetRepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAWebSourceBudgetRepair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAWebSourceBudgetRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v13",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+  release_git_sha: activationAWebSourceBudgetRepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+  required_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAWebSourceBudgetRepair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationAWebSourceBudgetRepair, repair_descriptor_id: "unknown-repair" },
+  { ...activationAWebSourceBudgetRepair, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationAWebSourceBudgetRepair,
+    parent_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA },
+  { ...activationAWebSourceBudgetRepair, parent_tree_sha: "d".repeat(40) },
+  { ...activationAWebSourceBudgetRepair, failed_run_id: "31621942426" },
+  { ...activationAWebSourceBudgetRepair,
+    failure_code: "founder_beta_web_url_unsafe" },
+  { ...activationAWebSourceBudgetRepair,
+    required_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA },
+  { ...activationAWebSourceBudgetRepair, artifact_manifest_sha256: "d".repeat(64) },
+  { ...activationAWebSourceBudgetRepair,
+    writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationAWebSourceBudgetRepair, parity_required: false },
+  { ...activationAWebSourceBudgetRepair,
+    contract_sha256: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256 },
+  { ...activationAWebSourceBudgetRepair, git_sha: "not-a-git-sha" },
+  { ...activationAWebSourceBudgetRepair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_web_source_budget_repair_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+  "d".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAWebSourceBudgetRepair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+    git_sha: activationAWebSourceBudgetRepairGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: activationAWebSourceBudgetRepairProof.contract_sha256
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_web_source_budget_repair_selection_invalid",
+"the failed web-source-budget candidate may not escape generic ordinary lineage");
+
 const activationAIdentityAuthorityFailsoftLineage = verifyOrdinaryRollbackLineage({
   selection: activationAIdentityAuthorityFailsoft,
   rollbackReceipt: { git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA }
@@ -2120,13 +2340,17 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationAWebSourceBudgetRepair =
+    actualParent === ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA;
   const actualActivationAIdentityAuthorityFailsoft =
     actualParent === ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA;
   const actualActivationAGrammarSourceRepair =
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationAIdentityAuthorityFailsoft
+  const actualTransitionMarker = actualActivationAWebSourceBudgetRepair
+    ? ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER
+    : actualActivationAIdentityAuthorityFailsoft
     ? ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER
     : actualActivationAGrammarSourceRepair
       ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER
@@ -2188,7 +2412,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationAIdentityAuthorityFailsoft
+      actualActivationAWebSourceBudgetRepair
+        ? "production-release-selection-v12"
+        : actualActivationAIdentityAuthorityFailsoft
         ? "production-release-selection-v11"
         : actualActivationAGrammarSourceRepair
           ? "production-release-selection-v10"
@@ -2207,7 +2433,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationAIdentityAuthorityFailsoft
+      actualActivationAWebSourceBudgetRepair
+        ? ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA
+        : actualActivationAIdentityAuthorityFailsoft
         ? ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA
         : actualActivationAGrammarSourceRepair
           ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA
@@ -2220,8 +2448,10 @@ try {
           : actualActivationA2
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationAIdentityAuthorityFailsoft
-      ? "production-release-rollback-lineage-receipt-v12"
+    assert.equal(savedLineage.schema_version, actualActivationAWebSourceBudgetRepair
+      ? "production-release-rollback-lineage-receipt-v13"
+      : actualActivationAIdentityAuthorityFailsoft
+        ? "production-release-rollback-lineage-receipt-v12"
       : actualActivationAGrammarSourceRepair
         ? "production-release-rollback-lineage-receipt-v11"
       : actualActivationATransport502Repair
@@ -2236,7 +2466,25 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationAIdentityAuthorityFailsoft) {
+    if (actualActivationAWebSourceBudgetRepair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationAIdentityAuthorityFailsoft) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,
