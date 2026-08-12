@@ -11,6 +11,7 @@ import {
   PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA,
   buildProductionForwardReadbackExpectation,
   productionForwardReadbackAssetId,
+  webIdentityQueryHasVisibleAnchors,
   verifyPromotedProductionForwardReadback,
   verifyProductionForwardReadback,
   writeProductionForwardReadbackExpectation
@@ -301,12 +302,52 @@ assert.equal(ordinaryReceipt.provider_calls, 0);
 assert.equal(ordinaryReceipt.founder_beta_web_receipt_exact_match, true);
 assert.equal(ordinaryReceipt.web_search_used, true);
 assert.equal(ordinaryReceipt.web_search_call_count, 1);
+for (const queries of [
+  ["2020-21 Panini Contenders Anthony Edwards #105 checklist"],
+  ["#105 / Contenders — additional seller words"],
+  ["Anthony Edwards", "Contenders checklist"],
+  ["CONTENDERS 105 Anthony Edwards"]
+]) assert.equal(webIdentityQueryHasVisibleAnchors(queries), true);
+for (const queries of [
+  ["cheap basketball shoes near me"],
+  ["Contenders cheap basketball shoes"],
+  ["Anthony Edwards basketball shoes"],
+  ["105 basketball shoes"],
+  ["Contenders 1050"]
+]) assert.equal(webIdentityQueryHasVisibleAnchors(queries), false);
+const modelOwnedQueryView = clone(ordinaryView);
+modelOwnedQueryView.founder_beta_web_receipt.queries = [
+  "Contenders #105 identity lookup with extra model-selected words"
+];
+const modelOwnedQueryExpectation = buildProductionForwardReadbackExpectation({
+  evidence: ordinaryEvidence,
+  resolutionView: modelOwnedQueryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.doesNotThrow(() => verifyProductionForwardReadback({
+  evidence: ordinaryEvidence,
+  expectation: modelOwnedQueryExpectation,
+  resolutionView: modelOwnedQueryView,
+  responseUrl,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha,
+  rollbackReceipt
+}), "post-promotion readback must not require an exact model-owned query string");
+const irrelevantQueryView = clone(ordinaryView);
+irrelevantQueryView.founder_beta_web_receipt.queries = ["cheap basketball shoes near me"];
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: ordinaryEvidence,
+  resolutionView: irrelevantQueryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_resolution_view_invalid/,
+"an unrelated provider query must fail the designated Web release proof");
 for (const mutate of [
   (value) => { value.founder_beta_web_receipt.web_search_call_count = 0; },
   (value) => { value.founder_beta_web_receipt.queries = []; },
   (value) => { value.founder_beta_web_receipt.urls = []; },
   (value) => { value.founder_beta_web_receipt.field_evidence = []; },
-  (value) => { value.founder_beta_web_receipt.queries[0] = "query drift"; },
   (value) => { value.set_card_name_relation_receipt.card_name.predicate = "wrong"; }
 ]) {
   const changed = clone(ordinaryView);

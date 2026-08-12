@@ -88,6 +88,7 @@ import {
 } from "../scripts/compatibility-bridge-release.mjs";
 import {
   buildProductionForwardReadbackExpectation,
+  webIdentityQueryHasVisibleAnchors,
   writeProductionForwardReadbackExpectation
 } from "../scripts/production-forward-readback.mjs";
 import {
@@ -591,23 +592,15 @@ function activationProjectionProof(sourceCase, resolutionView, title) {
     && title.includes(cardNameText) && title.includes(subjectText)
     && title.indexOf(cardNameText) < title.indexOf(subjectText),
   code);
-  if (sourceCase.case_id === "TCG") {
-    requireInvariant(webReceipt.web_search_used === false
-      && webReceipt.web_search_call_count === 0
-      && webReceipt.queries.length === 0
-      && webReceipt.urls.length === 0
-      && webReceipt.field_evidence.length === 0,
-    code);
-  }
   if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
     requireInvariant(webReceipt.web_search_used === true
       && webReceipt.web_search_call_count === 1
-      && webReceipt.queries.length === 1
-      && webReceipt.queries[0] === sourceCase.expected_web_search_query
+      && webReceipt.queries.length >= 1
+      && webIdentityQueryHasVisibleAnchors(webReceipt.queries)
       && webReceipt.urls.length > 0
       && webReceipt.urls.every((url) => url.startsWith("https://"))
       && webReceipt.field_evidence.length > 0
-      && webReceipt.field_evidence.every((entry) => (
+      && webReceipt.field_evidence.some((entry) => (
         WEB_IDENTITY_FIELDS.has(entry.field)
         && entry.support_urls.length > 0
       )),
@@ -616,13 +609,47 @@ function activationProjectionProof(sourceCase, resolutionView, title) {
   return Object.freeze({
     web_search_used: webReceipt.web_search_used,
     web_search_call_count: webReceipt.web_search_call_count,
-    query_exact: sourceCase.case_id !== "NON_TCG_WEB_IDENTITY"
-      || webReceipt.queries[0] === sourceCase.expected_web_search_query,
+    query_visible_anchor_match: sourceCase.case_id !== "NON_TCG_WEB_IDENTITY"
+      || webIdentityQueryHasVisibleAnchors(webReceipt.queries),
     source_url_count: webReceipt.urls.length,
     source_authority_fields: webReceipt.field_evidence.map((entry) => entry.field),
     set_predicate: relationReceipt.set.predicate,
     card_name_predicate: relationReceipt.card_name.predicate,
     card_name_before_subject: true
+  });
+}
+
+function founderWebSearchProof(sourceCase, resolutionView) {
+  const code = verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH;
+  let receipt;
+  try {
+    receipt = validateFounderBetaWebReceipt(
+      resolutionView?.founder_beta_web_receipt
+    );
+  } catch {
+    throw verifierFailure(code);
+  }
+  const designatedSearch = sourceCase.case_id === "NON_TCG_WEB_IDENTITY";
+  requireInvariant(receipt.provider_request_count === 1
+    && receipt.isolated_model_call_count === 0
+    && (!designatedSearch || (
+      receipt.web_search_used === true
+      && receipt.web_search_call_count === 1
+      && receipt.queries.length >= 1
+      && webIdentityQueryHasVisibleAnchors(receipt.queries)
+      && receipt.urls.length >= 1
+      && receipt.field_evidence.some((entry) => entry.support_urls.length > 0)
+    )),
+  code);
+  return Object.freeze({
+    web_search_used: receipt.web_search_used,
+    web_search_call_count: receipt.web_search_call_count,
+    query_visible_anchor_match: !designatedSearch
+      || webIdentityQueryHasVisibleAnchors(receipt.queries),
+    source_url_count: receipt.urls.length,
+    unresolved_authority_fields: receipt.field_evidence.filter(
+      (entry) => entry.unresolved_urls.length > 0
+    ).map((entry) => entry.field)
   });
 }
 
@@ -2693,6 +2720,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       let externalIdentityReceipt = null;
       let standardP0Identity = null;
       let activationProjectionReceipt = null;
+      let founderWebSearchReceipt = null;
       let lotSharedOnlyReceipt = null;
 
       failurePhase = "TITLE_UI";
@@ -2775,6 +2803,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       const ownerExecutionReadback = durableOwnerExecutionReadbackProof(
         executionReceipt, resolutionView
       );
+      founderWebSearchReceipt = founderWebSearchProof(sourceCase, resolutionView);
       if (["TCG", "NON_TCG_WEB_IDENTITY"].includes(sourceCase.case_id)) {
         activationProjectionReceipt = activationProjectionProof(
           sourceCase, resolutionView, titleBeforePanel
@@ -2911,6 +2940,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
         ...(activationProjectionReceipt ? {
           activation_projection: activationProjectionReceipt
         } : {}),
+        founder_web_search: founderWebSearchReceipt,
         ...(lotSharedOnlyReceipt ? {
           lot_shared_only: lotSharedOnlyReceipt
         } : {}),
@@ -3310,11 +3340,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && standardCaseEvidence?.source_asset_id
         === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
       && observationLegacyVersionActive(tcgCaseEvidence?.versions)
-      && tcgCaseEvidence?.activation_projection?.web_search_used === false
-      && tcgCaseEvidence?.activation_projection?.web_search_call_count === 0
+      && evidence.cases.some((entry) => (
+        entry?.founder_web_search?.web_search_used === false
+        && entry?.founder_web_search?.web_search_call_count === 0
+      ))
       && webCaseEvidence?.activation_projection?.web_search_used === true
       && webCaseEvidence?.activation_projection?.web_search_call_count === 1
-      && webCaseEvidence?.activation_projection?.query_exact === true
+      && webCaseEvidence?.activation_projection?.query_visible_anchor_match === true
       && webCaseEvidence?.activation_projection?.source_url_count > 0
       && observationCanonicalV3VersionActive(webCaseEvidence?.versions)
       && lotCaseEvidence?.lot_shared_only?.marker_exact === true

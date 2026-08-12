@@ -113,8 +113,17 @@ for (const token of [
   "provider_request_count", "source_authority_fields", "SET_MEMBERSHIP_PREDICATE",
   "CARD_NAME_PREDICATE", "card_name_before_subject", "individual_serials_withheld"
 ]) assert.match(spec, new RegExp(token));
-assert.match(spec, /webReceipt\.queries\[0\] === sourceCase\.expected_web_search_query/,
-  "the frozen governed-Web case must pin its one observed exact query");
+assert.match(spec,
+  /designatedSearch[\s\S]*?receipt\.web_search_call_count === 1[\s\S]*?receipt\.queries\.length >= 1[\s\S]*?webIdentityQueryHasVisibleAnchors\(receipt\.queries\)[\s\S]*?receipt\.urls\.length >= 1[\s\S]*?entry\.support_urls\.length > 0/,
+  "the designated Web case must prove one real search with a query, URL and admitted support");
+assert.match(forwardReadback,
+  /webIdentityQueryHasVisibleAnchors\(webReceipt\.queries\)/,
+  "candidate and post-promotion readback must share the visible-query anchor gate");
+assert.match(spec,
+  /evidence\.cases\.some\(\(entry\) => \([\s\S]*?founder_web_search\?\.web_search_used === false[\s\S]*?web_search_call_count === 0/,
+  "the six-case cohort must contain at least one real no-search receipt");
+assert.doesNotMatch(spec, /query_exact/,
+  "the verifier must not pretend the model-owned Web query is an exact application contract");
 assert.match(spec, /title\.startsWith\(`Lot\*\$\{sourceCase\.expected_lot_count\} `\)/);
 assert.match(directApiTest,
   /terminal Lot refusal happens only after durable settlement[\s\S]*?LOT_QUANTITY_UNRESOLVED[\s\S]*?assert\.equal\(providerCalls, 1\)[\s\S]*?assert\.equal\(persistenceCalls, 1\)[\s\S]*?resumeOnly: true[\s\S]*?terminal Lot resume must add zero provider calls[\s\S]*?already-persisted terminal Lot must add zero writes/,
