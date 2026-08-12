@@ -12,6 +12,14 @@ import {
   ACTIVE_V2_TRANSITION_PARENT_SHA,
   ACTIVATION_A_CHANGED_PATHS,
   ACTIVATION_A_DESCRIPTOR_ID,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
   ACTIVATION_A_MARKER,
   ACTIVATION_A_PARENT_SHA,
   ACTIVATION_A_PARENT_TREE_SHA,
@@ -24,6 +32,7 @@ import {
   ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
   ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
   ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256,
   CANONICAL_NAMING_ACTIVATION_A2_CHANGED_PATHS,
   CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID,
   CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID,
@@ -72,6 +81,7 @@ import {
   COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_TREE_SHA,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
+  activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
   activationATransport502RepairRuntimeContractProof,
   activeV2OrdinaryRuntimeContractProof,
@@ -105,6 +115,7 @@ const activationA2GitSha = "6".repeat(40);
 const activationA3GitSha = "7".repeat(40);
 const activationAGitSha = "8".repeat(40);
 const activationATransport502RepairGitSha = "9".repeat(40);
+const activationAGrammarSourceRepairGitSha = "0".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -242,6 +253,8 @@ assert.deepEqual(ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
   ["31609922741", "31610848542", "31611390578"]);
 assert.equal(Object.isFrozen(ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS), true);
 assert.equal(ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA, ACTIVATION_A_ROLLBACK_SHA);
+assert.equal(ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "d81562ab862e7dc7f67be45a3a8d76038de7bf2c64ba2052b9216868aeabb619");
 assert.deepEqual(ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS, [
   "api/csm-listing-title.js",
   "e2e/production-writer-journey.spec.mjs",
@@ -262,6 +275,24 @@ assert.deepEqual(ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS, [
   "scripts/production-writer-journey-contract.test.mjs",
   "scripts/production-writer-title-latency.mjs",
   "scripts/production-writer-title-latency.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-grammar-source-repair-v1");
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+  "founder-beta-derived-grammar-source-repair-v1");
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+  "bda7e81670fa746791dcb8fc8cffe30f732a6b2e");
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+  "0a4a37cf71823c421a4a9ea1845f4c0535c2e5f1");
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID, "31616431983");
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
+  "founder_beta_field_source_required:grammar");
+assert.equal(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA, ACTIVATION_A_ROLLBACK_SHA);
+assert.deepEqual(ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS, [
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
@@ -551,6 +582,74 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
     ACTIVATION_A_ROLLBACK_SHA
   ],
   changedPaths: [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
+const activationAGrammarSourceRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAGrammarSourceRepairGitSha,
+  headSha: activationAGrammarSourceRepairGitSha,
+  parentTreeSha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
+});
+assert.equal(activationAGrammarSourceRepair.schema_version,
+  "production-release-selection-v10");
+assert.equal(activationAGrammarSourceRepair.release_class, ORDINARY_RELEASE_CLASS);
+assert.equal(activationAGrammarSourceRepair.repair_descriptor_id,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationAGrammarSourceRepair.transition_marker,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER);
+assert.equal(activationAGrammarSourceRepair.parent_git_sha,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA);
+assert.equal(activationAGrammarSourceRepair.parent_tree_sha,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationAGrammarSourceRepair.failed_run_id,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID);
+assert.equal(activationAGrammarSourceRepair.failure_code,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE);
+assert.equal(activationAGrammarSourceRepair.required_rollback_git_sha,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA);
+assert.equal(activationAGrammarSourceRepair.writer_journey_manifest,
+  "writer-journey-cases-v4");
+assert.equal(activationAGrammarSourceRepair.parity_required, true);
+assert.match(activationAGrammarSourceRepair.artifact_manifest_sha256,
+  /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAGrammarSourceRepairGitSha,
+    headSha: activationAGrammarSourceRepairGitSha,
+    parentTreeSha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_grammar_source_repair_changed_paths_invalid",
+    "activation_a_grammar_source_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAGrammarSourceRepairGitSha,
+  headSha: activationAGrammarSourceRepairGitSha,
+  parentTreeSha: "f".repeat(40),
+  parentShas: [ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_grammar_source_repair_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAGrammarSourceRepairGitSha,
+  headSha: activationAGrammarSourceRepairGitSha,
+  parentTreeSha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+  parentShas: [
+    ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+    ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA
+  ],
+  changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
 const nextOrdinary = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
@@ -1107,8 +1206,47 @@ assert.equal(activationATransport502RepairProof.active_runtime_contract_sha256,
   activeV3RepairRuntimeProof.contract_sha256);
 assert.equal(activationATransport502RepairProof.transport_retry_negative_counterexample_count,
   14);
+assert.equal(activationATransport502RepairProof.contract_sha256,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "selection-v9 must replay its frozen proof instead of inheriting later repairs");
 assert.equal(activationATransport502Repair.contract_sha256,
   activationATransport502RepairProof.contract_sha256);
+const activationAGrammarSourceRepairProof =
+  activationAGrammarSourceRepairRuntimeContractProof();
+assert.equal(activationAGrammarSourceRepairProof.schema_version,
+  "listing-copilot-activation-a-grammar-source-repair-proof-v1");
+assert.equal(activationAGrammarSourceRepairProof.repair_descriptor_id,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationAGrammarSourceRepairProof.repair_marker,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER);
+assert.equal(activationAGrammarSourceRepairProof.required_parent_git_sha,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA);
+assert.equal(activationAGrammarSourceRepairProof.required_parent_tree_sha,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationAGrammarSourceRepairProof.failed_run_id,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID);
+assert.equal(activationAGrammarSourceRepairProof.failure_code,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE);
+assert.equal(activationAGrammarSourceRepairProof.required_rollback_git_sha,
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA);
+assert.equal(
+  activationAGrammarSourceRepairProof.base_transport_502_repair_contract_sha256,
+  ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.deepEqual(activationAGrammarSourceRepairProof.derived_field_source_exemptions,
+  ["grammar"]);
+assert.equal(activationAGrammarSourceRepairProof.grammar_semantics,
+  "derived-structural-classification");
+assert.equal(activationAGrammarSourceRepairProof.grammar_source_trace_policy,
+  "optional-original-image-only");
+assert.equal(activationAGrammarSourceRepairProof.grammar_web_authority, "forbidden");
+assert.equal(activationAGrammarSourceRepairProof.non_grammar_source_completeness_required,
+  true);
+assert.equal(activationAGrammarSourceRepairProof.semantic_grammar_correction_preserved,
+  true);
+assert.equal(activationAGrammarSourceRepairProof.grammar_source_negative_counterexample_count,
+  4);
+assert.equal(activationAGrammarSourceRepair.contract_sha256,
+  activationAGrammarSourceRepairProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -1481,6 +1619,8 @@ for (const tampered of [
   { ...activationATransport502Repair, parity_required: false },
   { ...activationATransport502Repair,
     contract_sha256: ACTIVATION_A_RUNTIME_CONTRACT_SHA256 },
+  { ...activationATransport502Repair,
+    contract_sha256: activationAGrammarSourceRepairProof.contract_sha256 },
   { ...activationATransport502Repair, git_sha: "not-a-git-sha" },
   { ...activationATransport502Repair, unexpected_key: true }
 ]) {
@@ -1516,6 +1656,78 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_activation_a_transport_502_repair_selection_invalid",
 "the failed Activation A parent may not escape through generic ordinary lineage");
+const activationAGrammarSourceRepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAGrammarSourceRepair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAGrammarSourceRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v11",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+  release_git_sha: activationAGrammarSourceRepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE,
+  required_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAGrammarSourceRepair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationAGrammarSourceRepair, repair_descriptor_id: "unknown-repair" },
+  { ...activationAGrammarSourceRepair, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationAGrammarSourceRepair,
+    parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA },
+  { ...activationAGrammarSourceRepair, parent_tree_sha: "f".repeat(40) },
+  { ...activationAGrammarSourceRepair, failed_run_id: "31616431982" },
+  { ...activationAGrammarSourceRepair,
+    failure_code: "founder_beta_field_source_required:subjects" },
+  { ...activationAGrammarSourceRepair,
+    required_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA },
+  { ...activationAGrammarSourceRepair, artifact_manifest_sha256: "f".repeat(64) },
+  { ...activationAGrammarSourceRepair,
+    writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationAGrammarSourceRepair, parity_required: false },
+  { ...activationAGrammarSourceRepair,
+    contract_sha256: ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_SHA256 },
+  { ...activationAGrammarSourceRepair, git_sha: "not-a-git-sha" },
+  { ...activationAGrammarSourceRepair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_grammar_source_repair_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+  "c".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAGrammarSourceRepair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA,
+    git_sha: activationAGrammarSourceRepairGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: activationAGrammarSourceRepairProof.contract_sha256
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_grammar_source_repair_selection_invalid",
+"the failed grammar candidate may not escape through generic ordinary lineage");
 const bridgeV2Lineage = verifyReleaseRollbackLineage({
   selection: bridgeV2,
   rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
@@ -1680,10 +1892,14 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationAGrammarSourceRepair =
+    actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationATransport502Repair
-    ? ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER
+  const actualTransitionMarker = actualActivationAGrammarSourceRepair
+    ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_MARKER
+    : actualActivationATransport502Repair
+      ? ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER
     : actualActivationA
       ? ACTIVATION_A_MARKER
     : actualActivationA3
@@ -1740,8 +1956,10 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationATransport502Repair
-        ? "production-release-selection-v9"
+      actualActivationAGrammarSourceRepair
+        ? "production-release-selection-v10"
+        : actualActivationATransport502Repair
+          ? "production-release-selection-v9"
         : actualActivationA
           ? "production-release-selection-v8"
         : actualActivationA3
@@ -1755,8 +1973,10 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationATransport502Repair
-        ? ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA
+      actualActivationAGrammarSourceRepair
+        ? ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_ROLLBACK_SHA
+        : actualActivationATransport502Repair
+          ? ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA
         : actualActivationA
           ? ACTIVATION_A_ROLLBACK_SHA
         : actualActivationA3
@@ -1764,8 +1984,10 @@ try {
           : actualActivationA2
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationATransport502Repair
-      ? "production-release-rollback-lineage-receipt-v10"
+    assert.equal(savedLineage.schema_version, actualActivationAGrammarSourceRepair
+      ? "production-release-rollback-lineage-receipt-v11"
+      : actualActivationATransport502Repair
+        ? "production-release-rollback-lineage-receipt-v10"
       : actualActivationA
         ? "production-release-rollback-lineage-receipt-v9"
         : actualActivationA3
@@ -1776,7 +1998,25 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationATransport502Repair) {
+    if (actualActivationAGrammarSourceRepair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILURE_CODE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationATransport502Repair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID);
       assert.deepEqual(savedSelection.failed_run_ids,
