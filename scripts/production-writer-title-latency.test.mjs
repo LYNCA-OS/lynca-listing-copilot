@@ -13,7 +13,7 @@ import {
 
 const sampleHash = (value) => createHash("sha256").update(value).digest("hex");
 
-function receipt({ id, latencyMs, lane = "NORMAL" }) {
+function receipt({ id, latencyMs, lane = "NORMAL", attempt = 1, retry = attempt - 1 }) {
   const uploadStartedAtMs = 1_000_000;
   const responsePart = Math.max(0, latencyMs - 250);
   return buildWriterEditableTitleLatencyReceipt({
@@ -24,8 +24,8 @@ function receipt({ id, latencyMs, lane = "NORMAL" }) {
     recognitionResponseAtMs: uploadStartedAtMs + responsePart,
     titleEditableAtMs: uploadStartedAtMs + latencyMs,
     executionOrigin: "FRESH_CURRENT",
-    providerAttemptNumber: 1,
-    providerRetryCount: 0
+    providerAttemptNumber: attempt,
+    providerRetryCount: retry
   });
 }
 
@@ -70,6 +70,14 @@ assert.throws(() => buildWriterEditableTitleLatencyReceipt({
   providerAttemptNumber: 1,
   providerRetryCount: 1
 }), /writer_title_latency_attempt_contract/);
+const repairedRetry = receipt({ id: "repaired-502", latencyMs: 8_500, attempt: 2 });
+assert.equal(repairedRetry.provider_attempt_number, 2);
+assert.equal(repairedRetry.provider_retry_count, 1);
+for (const [attempt, retry] of [[2, 0], [1, 1], [3, 2]]) {
+  assert.throws(() => receipt({
+    id: `invalid-${attempt}-${retry}`, latencyMs: 1_000, attempt, retry
+  }), /writer_title_latency_attempt_contract/);
+}
 
 const smoke = summarizeWriterEditableTitleLatency([
   receipt({ id: "smoke-1", latencyMs: 6_000 }),
@@ -84,6 +92,19 @@ assert.equal(smoke.diagnostic_only, true,
   "a four-case Writer Journey smoke must not trigger an optimization decision");
 assert.equal(smoke.optimization_sample_eligible, false);
 assert.equal(smoke.hard_limit_passed, true);
+assert.equal(smoke.fresh_first_attempt_retry_zero_count, 4);
+
+const mixedDiagnostic = summarizeWriterEditableTitleLatency([
+  ...Array.from({ length: 29 }, (_, index) => receipt({
+    id: `mixed-first-${index}`, latencyMs: 9_000
+  })),
+  receipt({ id: "mixed-retry", latencyMs: 9_000, attempt: 2 })
+]);
+assert.equal(mixedDiagnostic.sample_count, 30);
+assert.equal(mixedDiagnostic.fresh_first_attempt_retry_zero_count, 29);
+assert.equal(mixedDiagnostic.optimization_sample_eligible, false,
+  "a transport retry remains diagnostic and cannot enter the latency optimization cohort");
+assert.equal(mixedDiagnostic.diagnostic_only, true);
 
 const cohort = (prefix, latencyMs) => ({
   cohort_id: prefix,
@@ -114,6 +135,11 @@ const overlapGate = evaluateWriterEditableTitleLatencyOptimizationGate([slowA, o
 assert.equal(overlapGate.cohorts_non_overlapping, false);
 assert.equal(overlapGate.evidence_eligible, false);
 assert.equal(overlapGate.optimization_required, false);
+assert.deepEqual(gate.prohibited_shortcuts, [
+  "LOW_TO_NONE_WITHOUT_QUALITY_GATE",
+  "LOWER_IMAGE_DETAIL_WITHOUT_QUALITY_GATE",
+  "AUTOMATIC_SECOND_PROVIDER_CALL_OUTSIDE_SEALED_DEFINITIVE_502_REPAIR"
+]);
 assert.throws(() => evaluateWriterEditableTitleLatencyOptimizationGate([
   summarizeWriterEditableTitleLatency(slowA.receipts, { cohortId: "slow-a" }),
   summarizeWriterEditableTitleLatency(slowB.receipts, { cohortId: "slow-b" })

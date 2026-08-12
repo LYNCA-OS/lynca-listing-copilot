@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -65,6 +66,45 @@ const expectedFields = [
   "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
 ];
 const sourceIds = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map(({ source_id: id }) => id).sort();
+const stableJson = (value) => Array.isArray(value)
+  ? `[${value.map(stableJson).join(",")}]`
+  : value && typeof value === "object"
+    ? `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableJson(value[key])}`
+    )).join(",")}}`
+    : JSON.stringify(value);
+const retryReceiptBody = {
+  schema_version: "luna-definitive-502-transport-retry-receipt-v1",
+  operation_key_sha256: "7".repeat(64),
+  payload_sha256: "8".repeat(64),
+  provider: "openai",
+  model: "gpt-5.6-luna",
+  failed_attempt: 1,
+  failed_attempt_class: "fresh",
+  http_status: 502,
+  ambiguous: false,
+  returned_http_response: true,
+  response_body_complete: true,
+  provider_output_present: false,
+  provider_contract_failure: false,
+  provider_business_failure: false,
+  actual_tokens: null,
+  provider_request_id: "req-first-502",
+  provider_client_request_id: "lynca-first-502",
+  retry_provider_client_request_id: "lynca-retry-502",
+  provider_error_code: "server_error",
+  provider_error_type: "server_error",
+  provider_error_param: null,
+  provider_ms: 15,
+  settle_code: "settled",
+  operation_status: "FAILED",
+  retry_attempt: 2,
+  retry_attempt_class: "retry"
+};
+const retryReceipt = {
+  ...retryReceiptBody,
+  receipt_sha256: createHash("sha256").update(stableJson(retryReceiptBody)).digest("hex")
+};
 
 const evidenceExternal = {
   applied: true,
@@ -130,6 +170,14 @@ const evidence = {
       recognition_session_id: standardRecognitionSessionId,
       provider_attempt_number: 1,
       provider_retry_count: 0,
+      execution_receipt: {
+        provider_transport_retry_receipt: null,
+        provider_authority_receipt: {
+          operation_key_sha256: "7".repeat(64),
+          attempt: 1,
+          attempt_class: "fresh"
+        }
+      },
       resolution_http_method: "GET",
       resolution_request_count: 1,
       trace_reliable: true,
@@ -322,6 +370,26 @@ assert.equal(JSON.stringify(standardReceipt).includes(
 assert.equal(Object.hasOwn(standardReceipt, "stored_title"), false);
 assert.equal(Object.hasOwn(standardReceipt, "title"), false);
 
+const repairedEvidence = structuredClone(evidence);
+const repairedCase = repairedEvidence.cases[1];
+repairedCase.provider_attempt_number = 2;
+repairedCase.provider_retry_count = 1;
+repairedCase.execution_receipt = {
+  provider_transport_retry_receipt: structuredClone(retryReceipt),
+  provider_authority_receipt: {
+    operation_key_sha256: retryReceipt.operation_key_sha256,
+    attempt: 2,
+    attempt_class: "retry"
+  }
+};
+assert.equal(verifyProductionStandardReadback({
+  evidence: repairedEvidence,
+  resolutionView: standardResolutionView,
+  deploymentUrl,
+  gitSha
+}).provider_calls, 0,
+"post-promotion readback must accept the exact sealed single-502 retry tuple");
+
 const clone = (value) => structuredClone(value);
 for (const mutate of [
   (value) => { value.passed = false; },
@@ -363,9 +431,31 @@ for (const mutate of [
   (value) => { value.cases[1].versions.resolver = "resolver-drift"; },
   (value) => { value.cases[1].versions.composer = "thin-marketplace-composer-v2"; },
   (value) => { value.cases[1].title_length = 81; },
-  (value) => { value.cases[1].external_identity_support = evidenceExternal; }
+  (value) => { value.cases[1].external_identity_support = evidenceExternal; },
+  (value) => { value.cases[1].provider_attempt_number = 2; },
+  (value) => { value.cases[1].provider_retry_count = 1; }
 ]) {
   const changed = clone(evidence);
+  mutate(changed);
+  assert.throws(() => verifyProductionStandardReadback({
+    evidence: changed,
+    resolutionView: standardResolutionView,
+    deploymentUrl,
+    gitSha
+  }), /production_standard_readback_/);
+}
+for (const mutate of [
+  (value) => { value.cases[1].provider_retry_count = 0; },
+  (value) => {
+    value.cases[1].execution_receipt.provider_authority_receipt.operation_key_sha256 =
+      "9".repeat(64);
+  },
+  (value) => {
+    value.cases[1].execution_receipt.provider_transport_retry_receipt.receipt_sha256 =
+      "0".repeat(64);
+  }
+]) {
+  const changed = clone(repairedEvidence);
   mutate(changed);
   assert.throws(() => verifyProductionStandardReadback({
     evidence: changed,

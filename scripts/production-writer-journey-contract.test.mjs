@@ -42,8 +42,9 @@ assert.doesNotMatch(spec, /startButton\.click\(\)/);
 assert.match(spec, /getByTestId\("start-recognition"\)\)\.toBeHidden/);
 assert.match(spec, /\/api\/v4\/listing-feedback/);
 assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
-assert.match(spec, /provider_attempt_number[\s\S]*?\.toBe\(1\)/);
-assert.match(spec, /provider_retry_count[\s\S]*?\.toBe\(0\)/);
+assert.match(spec, /\[1, 2\][\s\S]*?\.toContain\(recognitionPayload\?\.provider_attempt_number\)/);
+assert.match(spec,
+  /provider_retry_count[\s\S]*?recognitionPayload\.provider_attempt_number - 1/);
 assert.match(spec, /test\.setTimeout\(25 \* 60 \* 1000\)/,
   "six sequential live cases must fit inside the bounded journey budget");
 assert.match(spec, /composer\?\.trace_reliable[\s\S]*?\.toBe\(true\)/);
@@ -210,7 +211,9 @@ assert.match(spec,
   /if \(recognitionPost\) \{\s*normalTransport\.violation \|\|=[\s\S]*?route\.abort\("blockedbyclient"\)/,
   "a late recognition POST after the active normal case must fail closed");
 assert.match(spec, /providerResponseReceiptHashes\.length === expectedProviderCaseCount/);
-assert.match(spec, /evidence\.cases\.every\(\(entry\) => entry\.provider_attempt_number === 1[\s\S]*?entry\.provider_retry_count === 0/);
+assert.match(spec,
+  /evidence\.cases\.every\(\(entry\) => \[1, 2\]\.includes\(entry\.provider_attempt_number\)[\s\S]*?entry\.provider_retry_count === entry\.provider_attempt_number - 1[\s\S]*?provider_transport_retry_receipt/,
+  "the final seal must accept only the exact fresh or single-502-retry tuples");
 assert.match(spec, /entry\.execution_receipt\?\.execution_origin === "FRESH_CURRENT"/,
   "the final seal must reject replayed, historical, or ambiguous provider results");
 assert.match(spec, /offline ordinary route coverage rejects an abort that could reach the provider @offline/);
@@ -230,16 +233,17 @@ for (const field of [
   assert.match(providerAuthorityReceiptVerifier, new RegExp(`"${field}"`));
 }
 assert.match(providerAuthorityReceiptVerifier,
-  /validateCsmProviderAuthorityReceipt\(payload\?\.provider_authority_receipt, \{\s*attempt: 1/,
-  "the journey must use the runtime authority validator for the first physical attempt");
+  /validateCsmProviderAuthorityReceipt\(payload\?\.provider_authority_receipt, \{\s*attempt/,
+  "the journey must validate the authority receipt for the actual physical attempt");
 assert.match(providerAuthorityReceiptVerifier,
   /hasExactKeys\(receipt, providerAuthorityReceiptEvidenceKeys\)/,
   "the sanitized authority receipt must retain the exact public projection only");
 assert.match(providerAuthorityReceiptVerifier,
   /receipt\.schema_version === "csm-provider-authority-receipt-v1"/);
 assert.match(providerAuthorityReceiptVerifier, /\/\^\[0-9a-f\]\{64\}\$\/\.test\(receipt\.operation_key_sha256\)/);
-assert.match(providerAuthorityReceiptVerifier, /receipt\.attempt === 1/);
-assert.match(providerAuthorityReceiptVerifier, /receipt\.attempt_class === "fresh"/);
+assert.match(providerAuthorityReceiptVerifier, /receipt\.attempt === attempt/);
+assert.match(providerAuthorityReceiptVerifier,
+  /receipt\.attempt_class === \(attempt === 1 \? "fresh" : "retry"\)/);
 assert.match(providerAuthorityReceiptVerifier,
   /receipt\.estimated_tokens === expectedEstimatedTokensPerAttempt/);
 assert.match(providerAuthorityReceiptVerifier, /receipt\.operation_status === "SUCCEEDED"/);
@@ -431,8 +435,11 @@ assert.match(executionReceiptVerifier, /owner\?\.provider_response_status === "c
 assert.match(executionReceiptVerifier, /owner\?\.provider_response_id === providerResponseId/);
 assert.match(executionReceiptVerifier, /Number\.isSafeInteger\(payload\?\.\[key\]\)/);
 assert.match(executionReceiptVerifier, /payload\.input_tokens > 0[\s\S]*?payload\.output_tokens > 0[\s\S]*?payload\.total_tokens > 0/);
-assert.match(executionReceiptVerifier, /owner\?\.provider_attempt_number === 1/);
-assert.match(executionReceiptVerifier, /owner\?\.provider_retry_count === 0/);
+assert.match(executionReceiptVerifier,
+  /\[1, 2\]\.includes\(payload\?\.provider_attempt_number\)[\s\S]*?owner\?\.provider_attempt_number === payload\.provider_attempt_number/);
+assert.match(executionReceiptVerifier,
+  /payload\?\.provider_retry_count === payload\.provider_attempt_number - 1[\s\S]*?owner\?\.provider_retry_count === payload\.provider_retry_count/);
+assert.match(executionReceiptVerifier, /providerTransportRetryReceiptProof/);
 assert.match(executionReceiptVerifier, /computeCsmOwnerExecutionReceiptSha256\(owner\)/,
   "the response owner receipt must self-verify before the separate durable readback");
 assert.match(executionReceiptVerifier,
@@ -840,8 +847,10 @@ assert.match(finalCaseReceiptSeal,
 assert.match(finalCaseReceiptSeal, /provider_authority_receipt\.schema_version[\s\S]*?csm-provider-authority-receipt-v1/);
 assert.match(finalCaseReceiptSeal,
   /provider_authority_receipt\?\.estimated_tokens[\s\S]*?expectedEstimatedTokensPerAttempt/);
-assert.match(finalCaseReceiptSeal, /provider_authority_receipt\?\.attempt === 1/);
-assert.match(finalCaseReceiptSeal, /provider_authority_receipt\?\.attempt_class === "fresh"/);
+assert.match(finalCaseReceiptSeal,
+  /provider_authority_receipt\?\.attempt[\s\S]*?=== entry\.provider_attempt_number/);
+assert.match(finalCaseReceiptSeal,
+  /provider_authority_receipt\?\.attempt_class[\s\S]*?=== \(entry\.provider_attempt_number === 1 \? "fresh" : "retry"\)/);
 assert.match(finalCaseReceiptSeal, /provider_authority_receipt\?\.operation_status === "SUCCEEDED"/);
 assert.match(finalCaseReceiptSeal, /owner_execution_readback\?\.durable_read_after_write === true/);
 assert.match(finalCaseReceiptSeal,

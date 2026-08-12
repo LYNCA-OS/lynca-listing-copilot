@@ -173,15 +173,21 @@ await assert.rejects(
   }),
   (error) => error.name === "CanonicalProviderError"
     && error.status === 429
-    && error.safe_to_retry === true
     && error.provider_attempt_started === true
+    && error.returned_http_response === true
+    && error.response_body_complete === true
+    && error.definitive_response === true
+    && error.provider_business_failure === true
+    && error.safe_to_retry === false
+    && error.retryable === false
     && error.provider_request_id === "req-provider-rate-limit"
     && error.provider_client_request_id === "lynca-client-rate-limit"
     && error.provider_error_code === "rate_limit_exceeded"
     && error.provider_error_type === "requests"
     && error.provider_error_param === "model"
     && error.provider_ms >= 0
-    && error.response.headers.get("retry-after") === "2"
+    && error.response.headers.get("retry-after") === "2",
+  "a definitive 429 is a business/rate-limit failure and never buys an automatic provider retry"
 );
 
 await assert.rejects(
@@ -206,7 +212,55 @@ await assert.rejects(
     && error.status === 500
     && error.safe_to_retry === true
     && error.retryable === true,
-  "an explicit provider 500 is safe to retry under the durable idempotency fence"
+  "an explicit provider 500 is classified as definitive, while dispatcher policy still forbids auto-retry"
+);
+
+await assert.rejects(
+  runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    providerClientRequestId: "lynca-client-definitive-502",
+    callProvider: async () => new Response(JSON.stringify({
+      error: { message: "bad gateway", code: "server_error", type: "server_error" }
+    }), {
+      status: 502,
+      headers: { "content-type": "application/json", "x-request-id": "req-definitive-502" }
+    })
+  }),
+  (error) => error.name === "CanonicalProviderError"
+    && error.status === 502
+    && error.ambiguous !== true
+    && error.returned_http_response === true
+    && error.response_body_complete === true
+    && error.provider_output_present === false
+    && error.provider_contract_failure === false
+    && error.definitive_response === true
+    && error.safe_to_retry === true
+    && error.provider_client_request_id === "lynca-client-definitive-502"
+    && error.provider_request_id === "req-definitive-502",
+  "a fully consumed empty-output 502 exposes the narrow transport-retry provenance"
+);
+
+await assert.rejects(
+  runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    providerClientRequestId: "lynca-client-partial-502",
+    callProvider: async () => ({
+      ok: false,
+      status: 502,
+      headers: new Headers({ "x-request-id": "req-partial-502" }),
+      json: async () => { throw new TypeError("terminated"); }
+    })
+  }),
+  (error) => error.name === "CanonicalProviderError"
+    && error.status === 502
+    && error.ambiguous === true
+    && error.response_body_complete === false
+    && error.provider_contract_failure === true
+    && error.definitive_response === false
+    && error.retryable === false,
+  "a 502 whose response body stream terminates is ambiguous and cannot auto-retry"
 );
 
 await assert.rejects(

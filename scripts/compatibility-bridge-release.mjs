@@ -17,6 +17,12 @@ import {
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import {
+  definitive502TransportRetryEligible,
+  LUNA_DEFINITIVE_502_TRANSPORT_RETRY_ELAPSED_LIMIT_MS,
+  LUNA_DEFINITIVE_502_TRANSPORT_RETRY_POLICY,
+  LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION
+} from "../lib/listing/thin/luna-direct-dispatcher.mjs";
+import {
   CSM_CANONICAL_REQUEST_BUILDER_VERSION,
   CSM_CANONICAL_RESPONSE_PARSER_VERSION,
   CSM_OPENAI_RESPONSES_ADAPTER
@@ -163,6 +169,21 @@ export const ACTIVATION_A_PARENT_TREE_SHA =
 export const ACTIVATION_A_ROLLBACK_SHA = ACTIVATION_A_PARENT_SHA;
 export const ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION =
   "writer-journey-cases-v4";
+export const ACTIVATION_A_RUNTIME_CONTRACT_SHA256 =
+  "003b3c89580f6bc46d08d82911e82d7f5c7dc30085752b40db65728ec27b4083";
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-transport-502-repair-v1";
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER =
+  "luna-definitive-empty-502-single-retry-repair-v1";
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA =
+  "4772027e1a7f948844afd6414d0812bd15957178";
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA =
+  "b1fc50f7a7e967ddd41aa9f839a662bf39885ee6";
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS = Object.freeze([
+  "31609922741", "31610848542", "31611390578"
+]);
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA =
+  ACTIVATION_A_ROLLBACK_SHA;
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -256,6 +277,32 @@ export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   "scripts/thin-listing-provider-boundary.test.mjs",
   "scripts/verified-original-observation-support.test.mjs",
   "scripts/verify-founder-decisions-20260804.mjs"
+]);
+// Freeze only the exact transport repair slice. The failed Activation A tree
+// stays replayable as selection-v8; this child is a sealed ordinary-lineage
+// exception whose Production rollback remains Bridge B rather than its failed
+// Git parent.
+export const ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS = Object.freeze([
+  "api/csm-listing-title.js",
+  "e2e/production-writer-journey.spec.mjs",
+  "lib/listing/thin/csm-orchestration.mjs",
+  "lib/listing/thin/csm-owner-execution-receipt.mjs",
+  "lib/listing/thin/csm-provider-admission-authority.mjs",
+  "lib/listing/thin/csm-runtime-contract.mjs",
+  "lib/listing/thin/luna-direct-dispatcher.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-provider-admission-authority.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/luna-direct-dispatcher.test.mjs",
+  "scripts/production-parity-readback.mjs",
+  "scripts/production-parity-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/production-writer-title-latency.mjs",
+  "scripts/production-writer-title-latency.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
@@ -576,6 +623,20 @@ function exactActivationAChangedPaths(values) {
   return actual;
 }
 
+function exactActivationATransport502RepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_transport_502_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_transport_502_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -655,7 +716,22 @@ function activationAArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function activationATransport502RepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+    failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+    required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+    changed_paths: exactActivationATransport502RepairChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA) {
+    return ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER;
+  }
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
     return CANONICAL_NAMING_ACTIVATION_A3_MARKER;
   }
@@ -716,6 +792,38 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA) {
+        throw failure("activation_a_transport_502_repair_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationATransport502RepairChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationATransport502RepairRuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v9",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+        parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+        failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+        required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationATransport502RepairArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_PARENT_SHA}^{tree}`
@@ -726,7 +834,7 @@ export function verifyCompatibilityBridgeSelection({
       const artifactPaths = exactActivationAChangedPaths(
         changedPaths ?? gitChangedPaths(ACTIVATION_A_PARENT_SHA, expectedSha)
       );
-      const contract = activeV3OrdinaryRuntimeContractProof({ parentGitSha });
+      const contract = activationAHistoricalRuntimeContractProof({ parentGitSha });
       return Object.freeze({
         schema_version: "production-release-selection-v8",
         release_class: selected,
@@ -1115,10 +1223,137 @@ export function activeV2OrdinaryRuntimeContractProof({
   return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
 }
 
-export function activeV3OrdinaryRuntimeContractProof({
+const ACTIVATION_A_RUNTIME_CONTRACT_BODY = Object.freeze({
+  schema_version: "listing-copilot-activation-a-runtime-proof-v1",
+  activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
+  activation_marker: ACTIVATION_A_MARKER,
+  required_parent_git_sha: ACTIVATION_A_PARENT_SHA,
+  required_parent_tree_sha: ACTIVATION_A_PARENT_TREE_SHA,
+  required_rollback_git_sha: ACTIVATION_A_ROLLBACK_SHA,
+  active_standard_writer_composer_version: "thin-marketplace-composer-v3",
+  active_standard_writer_marketplace_profile_version: "lynca-standard-name-v0.3",
+  active_verified_original_observation_overlay:
+    "verified_original_closed_projection_subset_a_v2",
+  projection_activation_sha256:
+    "13d49a32aee67b0303bc7a5d33aadaacf10880b35714a4f241b0660be6d8c627",
+  durable_projection_contract_version: "csm-stage-shadow-v3",
+  web_receipt_schema_version: "founder-beta-web-receipt-v1",
+  set_card_name_relation_schema_version: "set-card-name-relations-v1",
+  provider_request_builder_version: "canonical-fields-web-request-v1",
+  provider_response_parser_version: "canonical-output-v3-web-receipt",
+  provider_model: "gpt-5.6-luna",
+  reasoning_effort: "low",
+  automatic_maximum_attempts: 1,
+  web_search_tool_choice: "auto",
+  web_search_max_tool_calls: 1,
+  provider_request_count: 1,
+  parity_required: true
+});
+
+export function activationAHistoricalRuntimeContractProof({
   parentGitSha = ACTIVATION_A_PARENT_SHA
 } = {}) {
+  if (exactGitSha(parentGitSha) !== ACTIVATION_A_PARENT_SHA
+      || sha256(stableJson(ACTIVATION_A_RUNTIME_CONTRACT_BODY))
+        !== ACTIVATION_A_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_historical_runtime_contract_invalid");
+  }
+  return Object.freeze({
+    ...ACTIVATION_A_RUNTIME_CONTRACT_BODY,
+    contract_sha256: ACTIVATION_A_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+function definitive502TransportRetryContractProof() {
+  const operationKey = "luna-direct:v2:release-proof";
+  const payloadHash = sha256("release-proof-payload");
+  const estimatedTokens = CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt;
+  const providerClientRequestId = `lynca-${sha256(
+    `${operationKey}\u0000${payloadHash}\u00001`
+  )}`;
+  const error = {
+    status: 502,
+    provider_attempt_started: true,
+    ambiguous: false,
+    returned_http_response: true,
+    response_body_complete: true,
+    provider_output_present: false,
+    provider_contract_failure: false,
+    provider_business_failure: false,
+    definitive_response: true,
+    safe_to_retry: true,
+    provider_failure_result: {
+      error_name: "CanonicalProviderError",
+      status: 502,
+      actual_tokens: null,
+      ambiguous: false,
+      returned_http_response: true,
+      response_body_complete: true,
+      provider_output_present: false,
+      provider_contract_failure: false,
+      provider_business_failure: false,
+      definitive_response: true,
+      safe_to_retry: true,
+      provider_client_request_id: providerClientRequestId
+    },
+    provider_failure_settlement: {
+      operation_key_sha256: sha256(operationKey),
+      payload_sha256: payloadHash,
+      attempt: 1,
+      attempt_class: "fresh",
+      estimated_tokens: estimatedTokens,
+      settle_code: "settled",
+      operation_status: "FAILED"
+    }
+  };
+  const options = {
+    failedAttempt: 1,
+    maximumAttempts: 2,
+    operationKey,
+    payloadHash,
+    estimatedTokens,
+    elapsedMs: 250
+  };
+  const counterexamples = [
+    [{ ...error, status: 429 }, options],
+    [{ ...error, status: 500 }, options],
+    [{ ...error, status: 503 }, options],
+    [{ ...error, status: 504 }, options],
+    [{ ...error, ambiguous: true }, options],
+    [{ ...error, response_body_complete: false }, options],
+    [{ ...error, provider_output_present: true }, options],
+    [{ ...error, provider_contract_failure: true }, options],
+    [{ ...error, provider_business_failure: true }, options],
+    [{ ...error, provider_failure_result: {
+      ...error.provider_failure_result, actual_tokens: 1
+    } }, options],
+    [error, { ...options, failedAttempt: 2 }],
+    [error, { ...options, maximumAttempts: 3 }],
+    [error, { ...options, elapsedMs: 15_001 }],
+    [{ ...error, provider_failure_settlement: {
+      ...error.provider_failure_settlement, operation_status: "AMBIGUOUS"
+    } }, options]
+  ];
+  if (!definitive502TransportRetryEligible(error, options)
+      || counterexamples.some(([candidate, candidateOptions]) => (
+        definitive502TransportRetryEligible(candidate, candidateOptions)
+      ))) {
+    throw failure("activation_a_transport_502_retry_eligibility_contract_invalid");
+  }
+  return Object.freeze({
+    policy: LUNA_DEFINITIVE_502_TRANSPORT_RETRY_POLICY,
+    receipt_schema_version: LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION,
+    elapsed_limit_ms: LUNA_DEFINITIVE_502_TRANSPORT_RETRY_ELAPSED_LIMIT_MS,
+    exact_http_status: 502,
+    negative_counterexample_count: counterexamples.length
+  });
+}
+
+export function activeV3OrdinaryRuntimeContractProof({
+  parentGitSha = ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+} = {}) {
   const parent = exactGitSha(parentGitSha);
+  const retryProof = definitive502TransportRetryContractProof();
   let projectionState;
   try {
     projectionState = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
@@ -1148,17 +1383,30 @@ export function activeV3OrdinaryRuntimeContractProof({
     && CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay
       === VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
     && CSM_ACTIVE_MODEL_PROFILE.reasoning_effort === "low"
-    && CSM_THIN_RUNTIME_CONTRACT.maximumAttempts === 1
+    && CSM_THIN_RUNTIME_CONTRACT.maximumAttempts === 2
+    && CSM_THIN_RUNTIME_CONTRACT.semanticResultLimit === 1
+    && CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryLimit === 1
+    && CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryPolicy
+      === LUNA_DEFINITIVE_502_TRANSPORT_RETRY_POLICY
+    && LUNA_DEFINITIVE_502_TRANSPORT_RETRY_ELAPSED_LIMIT_MS === 15_000
+    && LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION
+      === "luna-definitive-502-transport-retry-receipt-v1"
     && webContractReady;
   if (!runtimeReady) throw failure("activation_a_runtime_contract_invalid");
   const body = {
-    schema_version: "listing-copilot-activation-a-runtime-proof-v1",
+    schema_version: "listing-copilot-active-v3-runtime-proof-v2",
     activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
     activation_marker: ACTIVATION_A_MARKER,
+    transport_repair_descriptor_id:
+      ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+    transport_repair_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
     required_parent_git_sha: parent,
-    required_parent_tree_sha: parent === ACTIVATION_A_PARENT_SHA
-      ? ACTIVATION_A_PARENT_TREE_SHA : null,
-    required_rollback_git_sha: parent,
+    required_parent_tree_sha:
+      parent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+        ? ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA : null,
+    required_rollback_git_sha:
+      parent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+        ? ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA : parent,
     active_standard_writer_composer_version:
       CSM_PROJECTION_ACTIVATION.active_writer.standard.composer_version,
     active_standard_writer_marketplace_profile_version:
@@ -1173,10 +1421,74 @@ export function activeV3OrdinaryRuntimeContractProof({
     provider_response_parser_version: CSM_CANONICAL_RESPONSE_PARSER_VERSION,
     provider_model: CSM_THIN_RUNTIME_CONTRACT.model,
     reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    automatic_maximum_attempts: CSM_THIN_RUNTIME_CONTRACT.maximumAttempts,
+    semantic_result_limit: CSM_THIN_RUNTIME_CONTRACT.semanticResultLimit,
+    maximum_physical_provider_attempts: CSM_THIN_RUNTIME_CONTRACT.maximumAttempts,
+    automatic_transport_retry_limit:
+      CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryLimit,
+    automatic_transport_retry_policy:
+      CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryPolicy,
+    automatic_transport_retry_http_status: 502,
+    automatic_transport_retry_elapsed_limit_ms:
+      LUNA_DEFINITIVE_502_TRANSPORT_RETRY_ELAPSED_LIMIT_MS,
+    transport_retry_receipt_schema_version:
+      LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION,
+    transport_retry_negative_counterexample_count:
+      retryProof.negative_counterexample_count,
     web_search_tool_choice: request.tool_choice,
     web_search_max_tool_calls: request.max_tool_calls,
-    provider_request_count: 1,
+    maximum_provider_request_count: CSM_THIN_RUNTIME_CONTRACT.maximumAttempts,
+    parity_required: true
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
+export function activationATransport502RepairRuntimeContractProof() {
+  const active = activeV3OrdinaryRuntimeContractProof({
+    parentGitSha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+  });
+  if (active.semantic_result_limit !== 1
+      || active.maximum_physical_provider_attempts !== 2
+      || active.automatic_transport_retry_limit !== 1
+      || active.automatic_transport_retry_policy
+        !== LUNA_DEFINITIVE_502_TRANSPORT_RETRY_POLICY
+      || active.automatic_transport_retry_http_status !== 502
+      || active.automatic_transport_retry_elapsed_limit_ms !== 15_000
+      || active.transport_retry_receipt_schema_version
+        !== LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION
+      || active.required_rollback_git_sha
+        !== ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA
+      || active.transport_retry_negative_counterexample_count !== 14
+      || active.maximum_provider_request_count !== 2) {
+    throw failure("activation_a_transport_502_repair_runtime_contract_invalid");
+  }
+  const body = {
+    schema_version: "listing-copilot-activation-a-transport-502-repair-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+    required_parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+    failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+    required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+    base_activation_a_runtime_contract_sha256: ACTIVATION_A_RUNTIME_CONTRACT_SHA256,
+    active_runtime_contract_sha256: active.contract_sha256,
+    semantic_result_limit: active.semantic_result_limit,
+    maximum_physical_provider_attempts: active.maximum_physical_provider_attempts,
+    automatic_transport_retry_limit: active.automatic_transport_retry_limit,
+    automatic_transport_retry_policy: active.automatic_transport_retry_policy,
+    automatic_transport_retry_http_status: active.automatic_transport_retry_http_status,
+    automatic_transport_retry_elapsed_limit_ms:
+      active.automatic_transport_retry_elapsed_limit_ms,
+    transport_retry_receipt_schema_version:
+      active.transport_retry_receipt_schema_version,
+    transport_retry_negative_counterexample_count:
+      active.transport_retry_negative_counterexample_count,
+    provider_request_builder_version: active.provider_request_builder_version,
+    provider_response_parser_version: active.provider_response_parser_version,
+    provider_model: active.provider_model,
+    reasoning_effort: active.reasoning_effort,
+    web_search_tool_choice: active.web_search_tool_choice,
+    web_search_max_tool_calls: active.web_search_max_tool_calls,
+    maximum_provider_request_count: active.maximum_provider_request_count,
     parity_required: true
   };
   return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
@@ -1306,6 +1618,57 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v9") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_ids",
+      "required_rollback_git_sha", "artifact_manifest_sha256", "git_sha",
+      "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id
+          !== ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+        || selection.parent_tree_sha
+          !== ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA
+        || stableJson(selection.failed_run_ids)
+          !== stableJson(ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS)
+        || selection.required_rollback_git_sha
+          !== ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationATransport502RepairArtifactManifestSha256(
+            ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest
+          !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== activationATransport502RepairRuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_transport_502_repair_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v10",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_TREE_SHA,
+      failed_run_ids: ACTIVATION_A_TRANSPORT_502_REPAIR_FAILED_RUN_IDS,
+      required_rollback_git_sha: ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v8") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "activation_descriptor_id", "lineage_marker",
@@ -1325,7 +1688,7 @@ export function verifyOrdinaryRollbackLineage({
         || selection.writer_journey_manifest
           !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
         || selection.parity_required !== true
-        || selection.contract_sha256 !== activeV3OrdinaryRuntimeContractProof({
+        || selection.contract_sha256 !== activationAHistoricalRuntimeContractProof({
           parentGitSha: ACTIVATION_A_PARENT_SHA
         }).contract_sha256
         || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
@@ -1500,6 +1863,9 @@ export function verifyOrdinaryRollbackLineage({
   const parentGitSha = exactGitSha(selection.parent_git_sha);
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
     throw failure("ordinary_release_activation_a3_selection_invalid");
+  }
+  if (parentGitSha === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_transport_502_repair_selection_invalid");
   }
   if (parentGitSha === ACTIVATION_A_PARENT_SHA) {
     throw failure("ordinary_release_activation_a_selection_invalid");
