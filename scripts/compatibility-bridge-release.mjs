@@ -249,6 +249,23 @@ export const ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE =
   "founder_beta_field_source_not_returned";
 export const ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA =
   ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "384436a2daaeea866435ee674983756a6eddb54bc9780b469ba13e8dccb83dab";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-used-web-evidence-budget-v1";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER =
+  "founder-beta-used-web-evidence-budget-v1";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA =
+  "d3c19c0157237770705a92d88d75ec13bebfa617";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ALTERNATE_PARENT_SHA =
+  "849a592d6cbb72a1fa3c8cc9006b1186635d5d21";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA =
+  "0d033db94c5cb250b34c3a4f80bce78c6676bdfa";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID = "31627459236";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE =
+  "founder_beta_web_source_budget_exceeded";
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA =
+  ACTIVATION_A_ROLLBACK_SHA;
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -404,6 +421,12 @@ export const ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS = Object.f
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/csm-durable-forward-reader-bridge.test.mjs",
   "scripts/csm-persistence.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+export const ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS = Object.freeze([
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
@@ -795,6 +818,20 @@ function exactActivationAFieldSourceReferenceRepairChangedPaths(values) {
   return actual;
 }
 
+function exactActivationAUsedWebEvidenceBudgetChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_used_web_evidence_budget_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_used_web_evidence_budget_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -938,7 +975,23 @@ function activationAFieldSourceReferenceRepairArtifactManifestSha256(changedPath
   }));
 }
 
+function activationAUsedWebEvidenceBudgetArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER,
+    parent_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+    required_rollback_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
+    changed_paths: exactActivationAUsedWebEvidenceBudgetChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA) {
+    return ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA) {
     return ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER;
   }
@@ -1013,10 +1066,46 @@ export function verifyCompatibilityBridgeSelection({
     if (parentGitSha === COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA) {
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
+    if (parentGitSha === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ALTERNATE_PARENT_SHA) {
+      throw failure("activation_a_used_web_evidence_budget_parent_mismatch");
+    }
     if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA) {
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA) {
+        throw failure("activation_a_used_web_evidence_budget_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationAUsedWebEvidenceBudgetChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationAUsedWebEvidenceBudgetRuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v14",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER,
+        parent_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+        required_rollback_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationAUsedWebEvidenceBudgetArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA}^{tree}`
@@ -1986,129 +2075,139 @@ export function activationAWebSourceBudgetRepairRuntimeContractProof() {
   });
 }
 
+const ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_BODY = Object.freeze({
+  schema_version: "listing-copilot-activation-a-field-source-reference-repair-proof-v1",
+  repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID,
+  repair_marker: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER,
+  required_parent_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+  required_parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE,
+  required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA,
+  base_web_source_budget_contract_sha256:
+    ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_RUNTIME_CONTRACT_SHA256,
+  unreturned_source_marker: "all-empty-field-evidence-row-v1",
+  marker_fields: Object.freeze([
+    "year", "manufacturer", "product", "set", "subjects", "card_name"
+  ]),
+  marker_requires_real_web_call: true,
+  unreturned_reference_url_persisted: false,
+  returned_governed_or_image_source_admission_preserved: true,
+  returned_ungoverned_evidence_preserved: true,
+  no_call_source_claim_policy: "hard-reject",
+  current_copy_source_claim_policy: "hard-reject",
+  grammar_web_authority: "forbidden",
+  malformed_or_unsafe_reference_policy: "hard-reject",
+  durable_field_state: "empty",
+  durable_sem_state: "empty",
+  durable_resolved_state: "exactly-one-empty-null",
+  durable_missing_duplicate_or_value_state_policy: "hard-reject",
+  negative_counterexample_count: 5,
+  web_receipt_schema_version: "founder-beta-web-receipt-v1",
+  provider_request_builder_version: "canonical-fields-web-request-v1",
+  provider_response_parser_version: "canonical-output-v3-web-receipt",
+  semantic_result_limit: 1,
+  maximum_physical_provider_attempts: 2,
+  automatic_transport_retry_policy: "definitive-complete-http-502-no-output-no-token-v1",
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true
+});
+
 export function activationAFieldSourceReferenceRepairRuntimeContractProof() {
-  const base = activationAWebSourceBudgetRepairRuntimeContractProof();
+  if (sha256(stableJson(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_BODY))
+      !== ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_field_source_reference_repair_historical_contract_invalid");
+  }
+  return Object.freeze({
+    ...ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_BODY,
+    contract_sha256: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+export function activationAUsedWebEvidenceBudgetRuntimeContractProof() {
+  const base = activationAFieldSourceReferenceRepairRuntimeContractProof();
   const request = Object.freeze({
     model: "gpt-5.6-luna", reasoning: Object.freeze({ effort: "low" })
   });
-  const returnedUrl = "https://www.paniniamerica.net/checklists/returned";
-  const unreturnedUrl = "https://www.pokemon.com/checklists/not-returned?tracking=1#result";
-  const audit = ({
-    field = "product",
-    value = "Unreturned Product",
-    sourceIds = [unreturnedUrl],
-    returnedUrls = [returnedUrl],
-    webCall = true
-  } = {}) => auditFounderBetaCanonicalPayload({
+  const audit = ({ traceUrls, sourceIds }) => auditFounderBetaCanonicalPayload({
     model: request.model,
     reasoning: request.reasoning,
     status: "completed",
-    output: webCall ? [{
+    output: [{
       type: "web_search_call",
       action: {
-        query: "field source reference",
-        sources: returnedUrls.map((url) => ({ url }))
+        query: "used web evidence budget",
+        sources: traceUrls.map((url) => ({ url }))
       }
-    }] : []
+    }]
   }, {
     rawOutput: JSON.stringify({
-      [field]: field === "subjects" ? [value] : value,
-      ...(field === "subjects" ? {} : { subjects: ["Image Subject"] }),
-      grammar: "standard"
+      product: "Used Product", subjects: ["Image Subject"], grammar: "standard"
     }),
     request,
     fieldSources: [
-      ...(field === "subjects" ? [] : [{
-        field: "subjects", source_ids: ["original_image_1"]
-      }]),
-      { field, source_ids: sourceIds }
+      { field: "subjects", source_ids: ["original_image_1"] },
+      { field: "product", source_ids: sourceIds }
     ],
     originalImageCount: 1
   });
-  const identityFields = ["year", "manufacturer", "product", "set", "subjects", "card_name"];
-  let withheld;
-  let admitted;
+  const urls = Array.from(
+    { length: 40 }, (_, index) => `https://www.paniniamerica.net/cards/${index + 1}`
+  );
+  let oneUsed;
+  let twentyUsed;
   try {
-    withheld = identityFields.map((field) => audit({ field, value: `Withheld ${field}` }));
-    admitted = audit({
-      sourceIds: [returnedUrl, unreturnedUrl], returnedUrls: [returnedUrl]
-    });
+    oneUsed = audit({ traceUrls: urls, sourceIds: [urls[0]] });
+    twentyUsed = audit({ traceUrls: urls, sourceIds: urls.slice(0, 20) });
   } catch {
-    throw failure("activation_a_field_source_reference_repair_runtime_contract_invalid");
+    throw failure("activation_a_used_web_evidence_budget_runtime_contract_invalid");
   }
-  const emptyEvidence = (result, field) => result.receipt.field_evidence.some((row) => (
-    row.field === field && row.support_urls.length === 0
-      && row.conflict_urls.length === 0 && row.unresolved_urls.length === 0
-  ));
-  const unreturnedSanitized = "https://www.pokemon.com/checklists/not-returned";
-  const failures = [
-    [() => audit({ webCall: false, returnedUrls: [] }),
-      "founder_beta_field_source_not_returned"],
-    [() => audit({ field: "card_number", value: "105" }),
-      "founder_beta_field_source_not_returned"],
-    [() => audit({ field: "grammar", value: "standard" }),
-      "founder_beta_web_authority_forbidden:grammar"],
-    [() => audit({ sourceIds: ["not a url"] }), "founder_beta_web_url_invalid"],
-    [() => audit({ sourceIds: ["https://user:pass@pokemon.com/card"] }),
-      "founder_beta_web_url_unsafe"]
-  ];
-  const failureChecks = failures.every(([invoke, expected]) => {
-    try { invoke(); } catch (error) { return error?.message === expected; }
-    return false;
-  });
-  const admittedEvidence = admitted.receipt.field_evidence.find(
-    (row) => row.field === "product"
-  );
-  const marker = withheld[2].receipt.field_evidence.find(
-    (row) => row.field === "product"
-  );
-  let stateChecks = true;
+  let twentyOneRejected = false;
   try {
-    validateFounderBetaWebReceipt(marker ? withheld[2].receipt : null);
-    validateFounderBetaWebReceiptAgainstFields(withheld[2].receipt, { product: "" });
-    validateFounderBetaWebReceiptAgainstFields(withheld[2].receipt, {
-      product: "tampered"
-    });
-    stateChecks = false;
+    audit({ traceUrls: urls, sourceIds: urls.slice(0, 21) });
   } catch (error) {
-    stateChecks = error?.message === "founder_beta_withheld_identity_state_invalid";
+    twentyOneRejected = error?.message === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE;
   }
-  if (!withheld.every((result, index) => (
-    emptyEvidence(result, identityFields[index])
-      && !stableJson(result.receipt).includes(unreturnedSanitized)
-  ))
-      || admitted.payload.product !== "Unreturned Product"
-      || stableJson(admittedEvidence?.support_urls) !== stableJson([returnedUrl])
-      || stableJson(admitted.receipt).includes(unreturnedSanitized)
-      || !failureChecks
-      || !stateChecks) {
-    throw failure("activation_a_field_source_reference_repair_runtime_contract_invalid");
+  let unsafeUnreferencedRejected = false;
+  try {
+    audit({
+      traceUrls: [...urls, "https://user:pass@example.com/unsafe"],
+      sourceIds: [urls[0]]
+    });
+  } catch (error) {
+    unsafeUnreferencedRejected = error?.message === "founder_beta_web_url_unsafe";
+  }
+  if (stableJson(oneUsed.receipt.urls) !== stableJson([urls[0]])
+      || stableJson(twentyUsed.receipt.urls) !== stableJson(urls.slice(0, 20).sort())
+      || !twentyOneRejected
+      || !unsafeUnreferencedRejected) {
+    throw failure("activation_a_used_web_evidence_budget_runtime_contract_invalid");
   }
   const contractBody = {
-    schema_version: "listing-copilot-activation-a-field-source-reference-repair-proof-v1",
-    repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID,
-    repair_marker: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER,
-    required_parent_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
-    required_parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
-    failed_run_id: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID,
-    failure_code: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE,
-    required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA,
-    base_web_source_budget_contract_sha256: base.contract_sha256,
-    unreturned_source_marker: "all-empty-field-evidence-row-v1",
-    marker_fields: Object.freeze(identityFields),
-    marker_requires_real_web_call: true,
-    unreturned_reference_url_persisted: false,
-    returned_governed_or_image_source_admission_preserved: true,
-    returned_ungoverned_evidence_preserved: true,
-    no_call_source_claim_policy: "hard-reject",
-    current_copy_source_claim_policy: "hard-reject",
-    grammar_web_authority: "forbidden",
-    malformed_or_unsafe_reference_policy: "hard-reject",
-    durable_field_state: "empty",
-    durable_sem_state: "empty",
-    durable_resolved_state: "exactly-one-empty-null",
-    durable_missing_duplicate_or_value_state_policy: "hard-reject",
-    negative_counterexample_count: failures.length,
+    schema_version: "listing-copilot-activation-a-used-web-evidence-budget-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER,
+    required_parent_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+    required_rollback_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
+    base_field_source_reference_contract_sha256: base.contract_sha256,
+    returned_trace_role: "strict-sanitized-membership-universe-only",
+    receipt_url_derivation: "sorted-unique-union-of-final-field-evidence-url-arrays",
+    used_evidence_url_limit: 20,
+    returned_trace_url_limit: null,
+    unreferenced_safe_trace_urls_spend_budget: false,
+    unsafe_unreferenced_trace_url_policy: "hard-reject",
+    forty_returned_one_used_accepted: true,
+    twenty_used_accepted: true,
+    twenty_one_used_failure_code: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+    field_source_membership_required: true,
+    query_and_fragment_policy: "strip-before-membership-and-dedupe",
+    cross_row_evidence_dedupe: true,
+    no_call_policy: "hard-reject",
+    withheld_url_fabrication: false,
+    historical_reader_compatibility: "v1-superset",
     web_receipt_schema_version: FOUNDER_BETA_WEB_RECEIPT_VERSION,
     provider_request_builder_version: base.provider_request_builder_version,
     provider_response_parser_version: base.provider_response_parser_version,
@@ -2245,6 +2344,58 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v14") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "required_rollback_git_sha", "artifact_manifest_sha256",
+      "git_sha", "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id
+          !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA
+        || selection.parent_tree_sha
+          !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA
+        || selection.failed_run_id !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID
+        || selection.failure_code !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE
+        || selection.required_rollback_git_sha
+          !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationAUsedWebEvidenceBudgetArtifactManifestSha256(
+            ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest
+          !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== activationAUsedWebEvidenceBudgetRuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_used_web_evidence_budget_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v15",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_FAILURE_CODE,
+      required_rollback_git_sha: ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v13") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
@@ -2700,6 +2851,10 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_PARENT_SHA
+      || parentGitSha === ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ALTERNATE_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_used_web_evidence_budget_selection_invalid");
+  }
   if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA) {
     throw failure("ordinary_release_activation_a_field_source_reference_repair_selection_invalid");
   }
