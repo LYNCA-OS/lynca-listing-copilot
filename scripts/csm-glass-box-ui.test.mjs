@@ -3,6 +3,8 @@
 import assert from "node:assert/strict";
 import { renderCsmGlassBox } from "../app/csm-glass-box.mjs";
 
+// A legacy compatibility fixture proves historical extra brackets remain
+// visible without being promoted into the current CSM contract.
 const view = {
   grammar: { value: "NON_TCG", resolver_version: "thin-path-observation-only-v1", review_required: false },
   composer: { length: 62, character_budget: 80, trace_reliable: true },

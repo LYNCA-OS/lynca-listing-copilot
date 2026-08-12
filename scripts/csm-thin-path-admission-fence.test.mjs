@@ -1,4 +1,4 @@
-// COS-20's per-field admission, fenced by the import graph.
+// Retired catalog/vector capability, fenced by the import graph.
 //
 // The decision says catalog and vector admission is OFF by default and may be
 // enabled only for one named canonical field after a frozen positive
@@ -17,9 +17,9 @@
 // production entry points and fails if any of them can reach the retired
 // pipeline, the catalog, or vector retrieval by any path.
 //
-// This is a FENCE, not the missing implementation. COS-20 clauses 3 and 4 --
-// per-field admission with a frozen evaluation gate -- still have nothing to
-// point at, and the founder-decision verifier says so every run.
+// The 2026-08-09 reconciliation says not to build an unused gate while zero
+// field/capability pairs are approved. The fence is the complete current
+// boundary; a smallest explicit gate is deferred until one pair earns it.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve, relative } from "node:path";
@@ -38,7 +38,7 @@ const ENTRY_POINTS = [
 ];
 
 // Directories the production path must not be able to reach. Each is a
-// capability COS-20 puts behind a per-field gate that does not exist yet.
+// retired capability that must remain unreachable.
 const FENCED = [
   { prefix: "lib/listing/catalog/", why: "catalog admission is OFF by default (COS-20)" },
   { prefix: "lib/listing/retrieval/", why: "vector retrieval admission is OFF by default (COS-20)" },

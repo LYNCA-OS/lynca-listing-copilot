@@ -193,6 +193,33 @@ assert.ok(CANONICAL_FIELD_NAMES.includes("language"), "COS-9 language must suppo
   assert.equal(parsed.descriptive_rarity, "SSP");
 }
 
+// Provider variance can repeat an enum item without violating the strict JSON
+// schema. Canonical admission keeps the first exact value, records the defect,
+// and prevents duplicate buyer terms from reaching the title.
+{
+  const { fields: parsed, defects } = parseCanonicalFields({
+    subjects: ["Michael Jordan", "Michael Jordan", "Scottie Pippen", "Dennis Rodman"],
+    card_number: "57",
+    attributes: ["Auto", "Auto", "RC", "Auto", "RC"]
+  });
+  assert.deepEqual(parsed.subjects, ["Michael Jordan", "Scottie Pippen", "Dennis Rodman"],
+    "dedupe precedes the three-subject cap so real identities are not displaced");
+  assert.deepEqual(parsed.attributes, ["Auto", "RC"]);
+  assert.deepEqual(parsed.components, ["RC", "Auto"]);
+  assert.ok(defects.includes("duplicate_subjects"));
+  assert.ok(defects.includes("duplicate_attributes"));
+  const title = composeFromCanonicalFields(parsed).title;
+  assert.equal((title.match(/\bAuto\b/g) || []).length, 1);
+  assert.equal((title.match(/\bRC\b/g) || []).length, 1);
+
+  const fourUnique = parseCanonicalFields({
+    subjects: ["One", "Two", "Three", "Four"]
+  });
+  assert.deepEqual(fourUnique.fields.subjects, ["One", "Two", "Three"]);
+  assert.ok(!fourUnique.defects.includes("duplicate_subjects"),
+    "the governed three-subject cap is not a duplicate defect");
+}
+
 // A field carrying a whole title instead of its own value.
 assert.ok(parseCanonicalFields({
   product: "2023-24 Panini Prizm Silver Refractor LeBron James #1 PSA 10", grammar: "standard"

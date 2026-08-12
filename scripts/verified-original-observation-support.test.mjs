@@ -183,6 +183,45 @@ function observedFor(entry) {
   return fields;
 }
 
+function poisonedObservation() {
+  return {
+    ...structuredClone(EMPTY_OBSERVED_FIELDS),
+    year: "9999",
+    language: "Japanese",
+    manufacturer: "Imaginary",
+    product: "Poison Product",
+    set: "Poison Set",
+    subjects: ["Poison Subject", "Poison Subject"],
+    team: "Imaginary Team",
+    card_name: "Downtown",
+    release_variant: "Variation",
+    surface_color: "Blue",
+    parallel_family: "Wave",
+    parallel_exact: "Blue Wave",
+    print_finish: "Blue Wave",
+    descriptive_rarity: "SSP",
+    card_number: "BAD-1",
+    serial: "30/50",
+    attributes: ["Patch", "Patch"],
+    components: ["Patch", "Patch"],
+    grading_info: {
+      company: "FAKE", card_grade: "10", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+    },
+    grade: "FAKE 10/10",
+    grammar: "lot",
+    lot_count: "99",
+    ip: "Pokemon",
+    special_stamp: "POISON",
+    description: "Case Hit",
+    search_optimization: ["POISON", "POISON"],
+    unreadable: ["serial"],
+    low_confidence: ["year"],
+    observed_surface_color: "Poison Surface",
+    observed_parallel_family: "Poison Family",
+    withheld_finish_terms: [{ value: "Poison Finish", reason: "POISON" }]
+  };
+}
+
 const expectedTitles = Object.freeze({
   a: "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50",
   b: "2001 Donruss Elite Passing the Torch Barry Bonds Willie Mays Auto #PT-18 22/50",
@@ -203,6 +242,7 @@ const expectedTitles = Object.freeze({
 });
 
 let correctionSample = null;
+const closedWorldSamples = [];
 const packetSizeRatios = [];
 for (const entry of fixture.cases) {
   const hashes = entry.images.map(({ sha256 }) => sha256);
@@ -296,6 +336,7 @@ for (const entry of fixture.cases) {
   packetSizeRatios.push({ id: entry.id, ratio });
   assert.ok(ratio <= 2, `${entry.id}: closed packet ratio ${ratio.toFixed(3)} must stay <=2x`);
 
+  closedWorldSamples.push({ entry, applied });
   if (entry.id === "a") correctionSample = { entry, observed, applied };
 }
 const maxPacketSizeRatio = packetSizeRatios.reduce(
@@ -303,6 +344,35 @@ const maxPacketSizeRatio = packetSizeRatios.reduce(
 );
 assert.ok(maxPacketSizeRatio.ratio <= 2,
   "all 16 durable packets stay within the 2x latency/storage guardrail");
+
+// Every exact original set is a closed deterministic projection. Empty or
+// maximally conflicting low observations, and front/back ordering, must not
+// change any resolved field or title. This is the executable zero-drift bound;
+// it intentionally makes no claim about images outside these 16 sets.
+for (const { entry, applied: baseline } of closedWorldSamples) {
+  const hashes = entry.images.map(({ sha256 }) => sha256);
+  for (const [observationName, observed] of [
+    ["empty", structuredClone(EMPTY_OBSERVED_FIELDS)],
+    ["poison", poisonedObservation()]
+  ]) {
+    for (const [orderName, originalImageSha256] of [
+      ["forward", hashes],
+      ["reverse", [...hashes].reverse()]
+    ]) {
+      const resolved = resolveVerifiedOriginalObservation(observed, { originalImageSha256 });
+      assert.equal(resolved.receipt.status, "APPLIED",
+        `${entry.id}: ${observationName}/${orderName} applies`);
+      assert.deepEqual(resolved.fields, baseline.fields,
+        `${entry.id}: ${observationName}/${orderName} cannot perturb closed fields`);
+      assert.equal(composeVerifiedOriginal(resolved.fields).title, expectedTitles[entry.id],
+        `${entry.id}: ${observationName}/${orderName} cannot perturb title`);
+      assert.equal(validateVerifiedOriginalObservationReceipt(resolved.receipt, {
+        observedFields: observed,
+        resolvedFields: resolved.fields
+      }), true, `${entry.id}: ${observationName}/${orderName} receipt validates`);
+    }
+  }
+}
 
 // Reproduce the actual low-effort defect: exact same a/aa bytes, 30/50 raw
 // visual observation, 50/50 reviewed copy stamp, with every other field kept.

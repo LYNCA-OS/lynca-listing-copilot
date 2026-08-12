@@ -131,9 +131,10 @@ export function buildCsmResolutionView({
 
   // A bracket the composer renders but the contract order does not place would
   // otherwise appear in the title with nothing in the inspector explaining it.
-  // `observable_components` is exactly that today -- COS-41 -- and hiding it
-  // would make the read model less honest than the composer it describes. It is
-  // shown, in the composer's own position, and flagged as outside the contract.
+  // Legacy compatibility rows may still carry `observable_components`. Hiding
+  // one would make the read model less honest than the historical composer it
+  // describes, so it stays visible and flagged outside the current contract.
+  // Current Auto/RC/Patch/Relic terms are owned by Search Optimization.
   const composedOrder = asArray(composed.brackets);
   const extras = composedOrder.filter((b) => !contractOrder.includes(b));
   // The forward-reader bridge must leave the already-published v2 Glass Box

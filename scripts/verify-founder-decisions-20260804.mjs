@@ -337,28 +337,6 @@ check("COS-56", "Product > Set > Card Name, with Card Name EMPTY when exhausted"
 // completeness it never measured.
 const UNIMPLEMENTED = [
   {
-    decision: "COS-20",
-    clause: "per-field catalog/vector admission (clauses 3 and 4)",
-    why: [
-      "Admission is capability-level: catalog and vector are off, globally,",
-      "and there is no per-field gate to point at. Clauses 3 and 4 ask for a",
-      "field to be admitted only after a frozen evaluation proves positive",
-      "value FOR THAT FIELD, and no such gate exists in either direction --",
-      "nothing can be admitted, and nothing records what would admit it.",
-      "",
-      "What IS now guarded is the hazard: `provider-options.mjs` defaults",
-      "`ENABLE_CATALOG_ASSIST_DEFAULT` to true, in a module the production",
-      "path does not load. `scripts/csm-thin-path-admission-fence.test.mjs`",
-      "walks the real import graph from both production endpoints and fails",
-      "if catalog, vector retrieval, candidate scoring, or that module ever",
-      "becomes reachable -- so a superseded default cannot become production",
-      "policy through one import and no decision.",
-      "",
-      "A fence is not the implementation. This stays listed until the",
-      "per-field gate exists."
-    ].join("\n        ")
-  },
-  {
     decision: "COS-14",
     clause: "mixed-finish lots: \"shared by every card\" is prompt-only",
     why: [
@@ -376,17 +354,17 @@ const UNIMPLEMENTED = [
   },
   {
     decision: "COS-42",
-    clause: "read-only Resolution View is released in code but lacks a live operator receipt",
+    clause: "accuracy projection lacks EMPTY/omission denominators and provenance",
     why: [
-      "The direct writer path now imports `app/csm-glass-box.mjs`, fetches",
-      "`/api/csm-resolution-view` after a final persisted result, and renders",
-      "the returned read model. The API and UI contract are covered offline.",
-      "The earlier 'built but unreleased' note is therefore stale.",
+      "The read-only Resolution View and its real TCG/NON_TCG operator receipts",
+      "are complete. Protected run 31520433083 rendered the Glass Box for each",
+      "persisted session without changing the generated title.",
       "",
-      "What is still missing is production evidence: one real TCG and one real",
-      "NON_TCG writer journey must show the panel for the same persisted",
-      "session without changing the title. `Listing Copilot Verified` remains",
-      "open until those two receipts exist."
+      "The remaining gap is measurement: `projectReviewAccuracy` exposes only",
+      "correction_rate and by_reason. It does not publish explicit EMPTY-error",
+      "or Composer-omission denominators, nor distinguish FIELD_REVIEWED from",
+      "TITLE_DERIVED provenance. COS-42 stays open until those metrics are",
+      "defined and exercised by governed structured reviews."
     ].join("\n        ")
   },
   {
