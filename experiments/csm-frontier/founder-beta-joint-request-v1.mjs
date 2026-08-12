@@ -22,6 +22,7 @@ export const FOUNDER_BETA_JOINT_REQUEST_VERSION = "founder-beta-joint-request-v1
 export const FOUNDER_BETA_WEB_RECEIPT_VERSION = "founder-beta-web-receipt-v1";
 
 const MAX_WEB_SOURCES = 20;
+const MAX_WEB_TOOL_CALLS = 2;
 const WEB_SEARCH_INCLUDE = Object.freeze(["web_search_call.action.sources"]);
 const CURRENT_COPY_FIELDS = new Set([
   "card_number",
@@ -90,6 +91,7 @@ function validateProviderExecutionProfile(body) {
 }
 
 function searchQueries(action = {}) {
+  if (clean(action.type).toLowerCase() !== "search") return [];
   const values = [
     action.query,
     ...(Array.isArray(action.queries) ? action.queries : [])
@@ -100,16 +102,36 @@ function searchQueries(action = {}) {
   return values;
 }
 
+function actionUrl(action = {}) {
+  const type = clean(action.type).toLowerCase();
+  if (type !== "open_page" && type !== "find_in_page") return null;
+  if (!clean(action.url)) throw new TypeError("founder_beta_web_action_url_missing");
+  return action.url;
+}
+
 function providerWebTrace(body) {
   const output = Array.isArray(body?.output) ? body.output : [];
   const calls = output.filter((item) => item?.type === "web_search_call");
-  if (calls.length > 1) throw new TypeError("founder_beta_web_call_budget_exceeded");
+  if (calls.length > MAX_WEB_TOOL_CALLS) {
+    throw new TypeError("founder_beta_web_call_budget_exceeded");
+  }
+  const actionTypes = new Set(["search", "open_page", "find_in_page"]);
+  for (const call of calls) {
+    if (call?.status !== "completed") {
+      throw new TypeError("founder_beta_web_call_incomplete");
+    }
+    if (!actionTypes.has(clean(call?.action?.type).toLowerCase())) {
+      throw new TypeError("founder_beta_web_action_unsupported");
+    }
+  }
   const queries = unique(calls.flatMap((item) => searchQueries(item.action)));
   const rawUrls = [];
   for (const call of calls) {
     for (const source of Array.isArray(call?.action?.sources) ? call.action.sources : []) {
       if (source?.url) rawUrls.push(source.url);
     }
+    const url = actionUrl(call.action);
+    if (url) rawUrls.push(url);
   }
   for (const item of output) {
     for (const content of Array.isArray(item?.content) ? item.content : []) {
@@ -254,7 +276,7 @@ export function buildFounderBetaJointRequest(envelope) {
     reasoning: { effort: FRONTIER_MODEL_CSM_EVALUATION_PROFILE.reasoning_effort },
     tools: [{ type: "web_search" }],
     tool_choice: "auto",
-    max_tool_calls: 1,
+    max_tool_calls: MAX_WEB_TOOL_CALLS,
     include: [...WEB_SEARCH_INCLUDE],
     text: {
       format: {
@@ -312,17 +334,21 @@ export function auditFounderBetaProviderResponse(envelope, body) {
   const setCardName = validateSetCardNameRelationsV1(state, {
     currentCardSourceIds: originalImageSourceIds
   });
+  const evidence = fieldEvidence(state, trace.urls);
+  if (trace.calls.length && !trace.queries.length && !evidence.length) {
+    throw new TypeError("founder_beta_web_receipt_invalid");
+  }
   const receipt = deepFreeze({
     schema_version: FOUNDER_BETA_WEB_RECEIPT_VERSION,
     provider_request_count: 1,
     isolated_model_call_count: 0,
     provider_model: body.model,
     reasoning_effort: body.reasoning.effort,
-    web_search_used: trace.calls.length === 1,
+    web_search_used: trace.calls.length > 0,
     web_search_call_count: trace.calls.length,
     queries: trace.queries,
     urls: trace.urls,
-    field_evidence: fieldEvidence(state, trace.urls),
+    field_evidence: evidence,
     semantic_state_sha256: sha256SemanticState(state)
   });
   return deepFreeze({

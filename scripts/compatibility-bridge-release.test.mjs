@@ -54,6 +54,19 @@ import {
   ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
   ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
   ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_WIRE_TEMPLATE_SHA256,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -146,6 +159,7 @@ import {
   activationAUsedWebEvidenceBudgetRuntimeContractProof,
   activationAOptionalFieldSourceOmissionRuntimeContractProof,
   activationARelationAbstentionVerifierRepairRuntimeContractProof,
+  activationABoundedWebSearchRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -188,6 +202,7 @@ const activationAFieldSourceReferenceRepairGitSha = "f".repeat(40);
 const activationAUsedWebEvidenceBudgetGitSha = "4".repeat(40);
 const activationAOptionalFieldSourceOmissionGitSha = "2".repeat(40);
 const activationARelationAbstentionVerifierRepairGitSha = "3".repeat(40);
+const activationABoundedWebSearchGitSha = "d".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -516,6 +531,47 @@ assert.deepEqual(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS,
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
+]);
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "9ab0c23c19736caf842b8a82c2c78e9887b9b6c6108d4479d7c8b0b1826b6ce2");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-bounded-web-search-v1");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+  "founder-beta-bounded-web-search-v1");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+  "8b31901182b9766b09507d30197508ca8472a4f6");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+  "b19e0b622f50347dc80798740f614a9d7297a4ef");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID, "31633408496");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE,
+  "founder_beta_web_call_budget_exceeded");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID, "EXTERNAL_IDENTITY");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE, "RECOGNITION_RESPONSE");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA, ACTIVATION_A_ROLLBACK_SHA);
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_WIRE_TEMPLATE_SHA256,
+  "8b14694f8ea9e506c4327f825a79c40f81c6707ff4b87d841f090b36b37e6b1d");
+assert.equal(ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256,
+  "1f79aa05cb5186cadd56c51b77a9249ccf8c5155c341ccb615bf8bb7afa1948a");
+assert.deepEqual(ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS, [
+  "docs/csm/cos-63-founder-beta-mvp-2026-08-12.md",
+  "e2e/production-writer-journey.spec.mjs",
+  "experiments/csm-frontier/founder-beta-joint-request-v1.mjs",
+  "lib/listing/thin/canonical-fields.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-provider-adapter.mjs",
+  "scripts/accuracy-cos59-founder-beta-web.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-model-optimization-pack.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/luna-direct-dispatcher.test.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
@@ -969,6 +1025,77 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   changedPaths: [...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS]
 }), (error) => error.code
   === "activation_a_relation_abstention_verifier_repair_parent_mismatch");
+const activationABoundedWebSearch = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationABoundedWebSearchGitSha,
+  headSha: activationABoundedWebSearchGitSha,
+  parentTreeSha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS]
+});
+assert.deepEqual(Object.keys(activationABoundedWebSearch).sort(), [
+  "artifact_manifest_sha256", "contract_sha256", "failed_case_id", "failed_phase",
+  "failed_run_id", "failure_code", "git_sha", "lineage_marker", "parent_git_sha",
+  "parent_tree_sha", "parity_required", "release_class", "repair_descriptor_id",
+  "required_rollback_git_sha", "schema_version", "transition_marker",
+  "writer_journey_manifest"
+].sort());
+assert.equal(activationABoundedWebSearch.schema_version, "production-release-selection-v17");
+assert.equal(activationABoundedWebSearch.repair_descriptor_id,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID);
+assert.equal(activationABoundedWebSearch.transition_marker,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER);
+assert.equal(activationABoundedWebSearch.parent_git_sha,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA);
+assert.equal(activationABoundedWebSearch.parent_tree_sha,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA);
+assert.equal(activationABoundedWebSearch.failed_run_id,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID);
+assert.equal(activationABoundedWebSearch.failure_code,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE);
+assert.equal(activationABoundedWebSearch.failed_case_id,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID);
+assert.equal(activationABoundedWebSearch.failed_phase,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE);
+assert.equal(activationABoundedWebSearch.required_rollback_git_sha,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA);
+assert.match(activationABoundedWebSearch.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS,
+    ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationABoundedWebSearchGitSha,
+    headSha: activationABoundedWebSearchGitSha,
+    parentTreeSha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_bounded_web_search_changed_paths_invalid",
+    "activation_a_bounded_web_search_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationABoundedWebSearchGitSha,
+  headSha: activationABoundedWebSearchGitSha,
+  parentTreeSha: "d".repeat(40),
+  parentShas: [ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_bounded_web_search_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationABoundedWebSearchGitSha,
+  headSha: activationABoundedWebSearchGitSha,
+  parentTreeSha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+    ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA],
+  changedPaths: [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
 const activationAOptionalFieldSourceOmission = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAOptionalFieldSourceOmissionGitSha,
@@ -2215,6 +2342,64 @@ assert.equal(activationARelationAbstentionVerifierRepairProof.designated_web_sea
 assert.equal(activationARelationAbstentionVerifierRepairProof.query_exact_required, false);
 assert.equal(activationARelationAbstentionVerifierRepair.contract_sha256,
   activationARelationAbstentionVerifierRepairProof.contract_sha256);
+assert.equal(activationARelationAbstentionVerifierRepairProof.contract_sha256,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "selection-v16 must replay a literal proof instead of reading bounded-search logic");
+const activationABoundedWebSearchProof = activationABoundedWebSearchRuntimeContractProof();
+assert.equal(activationABoundedWebSearchProof.schema_version,
+  "listing-copilot-activation-a-bounded-web-search-proof-v1");
+assert.equal(activationABoundedWebSearchProof.repair_descriptor_id,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID);
+assert.equal(activationABoundedWebSearchProof.repair_marker,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER);
+assert.equal(activationABoundedWebSearchProof.required_parent_git_sha,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA);
+assert.equal(activationABoundedWebSearchProof.required_parent_tree_sha,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA);
+assert.equal(activationABoundedWebSearchProof.failed_run_id,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID);
+assert.equal(activationABoundedWebSearchProof.failure_code,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE);
+assert.equal(activationABoundedWebSearchProof.failed_case_id,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID);
+assert.equal(activationABoundedWebSearchProof.failed_phase,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE);
+assert.equal(activationABoundedWebSearchProof.required_rollback_git_sha,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA);
+assert.equal(activationABoundedWebSearchProof
+  .base_relation_abstention_verifier_contract_sha256,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationABoundedWebSearchProof.failed_observed_web_search_call_count, ">1");
+assert.equal(activationABoundedWebSearchProof.failed_exact_web_search_call_count_known, false);
+assert.equal(activationABoundedWebSearchProof.configured_max_tool_calls, 2);
+assert.deepEqual(activationABoundedWebSearchProof.accepted_web_search_call_counts, [0, 1, 2]);
+assert.equal(activationABoundedWebSearchProof.rejected_web_search_call_count, 3);
+assert.equal(activationABoundedWebSearchProof.provider_request_count, 1);
+assert.equal(activationABoundedWebSearchProof.isolated_model_call_count, 0);
+assert.equal(activationABoundedWebSearchProof.semantic_result_limit, 1);
+assert.equal(activationABoundedWebSearchProof.request_builder_version,
+  "canonical-fields-web-request-v2");
+assert.equal(activationABoundedWebSearchProof.response_parser_version,
+  "canonical-output-v4-bounded-web-receipt");
+assert.equal(activationABoundedWebSearchProof.web_receipt_schema_version,
+  "founder-beta-web-receipt-v1");
+assert.deepEqual(activationABoundedWebSearchProof.allowed_web_action_types,
+  ["search", "open_page", "find_in_page"]);
+assert.equal(activationABoundedWebSearchProof.completed_web_actions_required, true);
+assert.equal(activationABoundedWebSearchProof.search_query_optional, true);
+assert.equal(activationABoundedWebSearchProof.generic_used_web_requires_query_or_field_evidence,
+  true);
+assert.deepEqual(activationABoundedWebSearchProof.designated_search_call_count_range, [1, 2]);
+assert.equal(activationABoundedWebSearchProof.designated_visible_query_anchor_required, true);
+assert.equal(activationABoundedWebSearchProof.designated_admitted_support_required, true);
+assert.equal(activationABoundedWebSearchProof.durable_url_projection,
+  "used-field-evidence-union-only");
+assert.equal(activationABoundedWebSearchProof.wire_template_sha256,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_WIRE_TEMPLATE_SHA256);
+assert.equal(activationABoundedWebSearchProof.contract_sha256,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationABoundedWebSearch.contract_sha256,
+  activationABoundedWebSearchProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -2696,6 +2881,79 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_activation_a_grammar_source_repair_selection_invalid",
 "the failed grammar candidate may not escape through generic ordinary lineage");
+const activationABoundedWebSearchLineage = verifyOrdinaryRollbackLineage({
+  selection: activationABoundedWebSearch,
+  rollbackReceipt: { git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA }
+});
+assert.deepEqual(activationABoundedWebSearchLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v18",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+  release_git_sha: activationABoundedWebSearchGitSha,
+  release_parent_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationABoundedWebSearch.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationABoundedWebSearch, schema_version: "unknown" },
+  { ...activationABoundedWebSearch, release_class: "compatibility_bridge" },
+  { ...activationABoundedWebSearch, repair_descriptor_id: "unknown-repair" },
+  { ...activationABoundedWebSearch, lineage_marker: "unknown-lineage" },
+  { ...activationABoundedWebSearch, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationABoundedWebSearch,
+    parent_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA },
+  { ...activationABoundedWebSearch, parent_tree_sha: "d".repeat(40) },
+  { ...activationABoundedWebSearch, failed_run_id: "31633408495" },
+  { ...activationABoundedWebSearch, failure_code: "OTHER_FAILURE" },
+  { ...activationABoundedWebSearch, failed_case_id: "TCG" },
+  { ...activationABoundedWebSearch, failed_phase: "WEB_SEARCH" },
+  { ...activationABoundedWebSearch,
+    required_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA },
+  { ...activationABoundedWebSearch, artifact_manifest_sha256: "d".repeat(64) },
+  { ...activationABoundedWebSearch, writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationABoundedWebSearch, parity_required: false },
+  { ...activationABoundedWebSearch,
+    contract_sha256: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256 },
+  { ...activationABoundedWebSearch, git_sha: "not-a-git-sha" },
+  { ...activationABoundedWebSearch, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_bounded_web_search_selection_invalid");
+}
+for (const rollbackSha of [ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA, "d".repeat(40)]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationABoundedWebSearch,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+    parent_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+    git_sha: activationABoundedWebSearchGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: activationABoundedWebSearchProof.contract_sha256
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA }
+}), (error) => error.code === "ordinary_release_activation_a_bounded_web_search_selection_invalid",
+"the failed bounded-search candidate may not escape through generic ordinary lineage");
 const activationARelationAbstentionVerifierRepairLineage = verifyOrdinaryRollbackLineage({
   selection: activationARelationAbstentionVerifierRepair,
   rollbackReceipt: {
@@ -3343,6 +3601,8 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationABoundedWebSearch =
+    actualParent === ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA;
   const actualActivationARelationAbstentionVerifierRepair =
     actualParent === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA;
   const actualActivationAOptionalFieldSourceOmission =
@@ -3359,7 +3619,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationARelationAbstentionVerifierRepair
+  const actualTransitionMarker = actualActivationABoundedWebSearch
+    ? ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER
+    : actualActivationARelationAbstentionVerifierRepair
     ? ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER
     : actualActivationAOptionalFieldSourceOmission
     ? ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_MARKER
@@ -3431,7 +3693,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationARelationAbstentionVerifierRepair
+      actualActivationABoundedWebSearch
+        ? "production-release-selection-v17"
+        : actualActivationARelationAbstentionVerifierRepair
         ? "production-release-selection-v16"
         : actualActivationAOptionalFieldSourceOmission
         ? "production-release-selection-v15"
@@ -3460,7 +3724,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationARelationAbstentionVerifierRepair
+      actualActivationABoundedWebSearch
+        ? ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA
+        : actualActivationARelationAbstentionVerifierRepair
         ? ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA
         : actualActivationAOptionalFieldSourceOmission
         ? ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ROLLBACK_SHA
@@ -3484,7 +3750,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualActivationARelationAbstentionVerifierRepair
+      actualActivationABoundedWebSearch
+        ? "production-release-rollback-lineage-receipt-v18"
+      : actualActivationARelationAbstentionVerifierRepair
         ? "production-release-rollback-lineage-receipt-v17"
       : actualActivationAOptionalFieldSourceOmission
         ? "production-release-rollback-lineage-receipt-v16"
@@ -3510,7 +3778,33 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationARelationAbstentionVerifierRepair) {
+    if (actualActivationABoundedWebSearch) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE);
+      assert.equal(savedSelection.failed_case_id,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID);
+      assert.equal(savedSelection.failed_phase,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE);
+      assert.equal(savedLineage.failed_case_id,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID);
+      assert.equal(savedLineage.failed_phase,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA);
+    } else if (actualActivationARelationAbstentionVerifierRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

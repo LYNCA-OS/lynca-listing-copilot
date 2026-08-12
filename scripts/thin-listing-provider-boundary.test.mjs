@@ -365,8 +365,8 @@ function webIdentityBody(url, fields = {
     reasoning: { effort: "low" },
     status: "completed",
     output: [
-      { type: "web_search_call", action: {
-        query: "Governed identity checklist", sources: urls.map((sourceUrl) => ({
+      { type: "web_search_call", status: "completed", action: {
+        type: "search", query: "Governed identity checklist", sources: urls.map((sourceUrl) => ({
           url: sourceUrl
         }))
       } },
@@ -434,8 +434,8 @@ function webGrammarBody(url, sourceIds) {
     reasoning: { effort: "low" },
     status: "completed",
     output: [
-      { type: "web_search_call", action: {
-        query: "card grammar", sources: [{ url }]
+      { type: "web_search_call", status: "completed", action: {
+        type: "search", query: "card grammar", sources: [{ url }]
       } },
       { type: "message", content: [{
         type: "output_text", text: JSON.stringify(payload),
@@ -559,6 +559,135 @@ for (const url of [
   assert.deepEqual(result.founder_beta_web_receipt.field_evidence, [{
     field: "subjects", support_urls: [officialUrl], conflict_urls: [], unresolved_urls: []
   }]);
+
+  const boundedBody = webIdentityBody(officialUrl);
+  boundedBody.output.splice(1, 0, {
+    type: "web_search_call",
+    status: "completed",
+    action: {
+      type: "open_page",
+      url: "https://www.paniniamerica.net/checklists/opened-page?step=2#identity"
+    }
+  });
+  const bounded = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(boundedBody), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.equal(bounded.founder_beta_web_receipt.provider_request_count, 1);
+  assert.equal(bounded.founder_beta_web_receipt.web_search_call_count, 2);
+  assert.deepEqual(bounded.founder_beta_web_receipt.queries,
+    ["Governed identity checklist"]);
+  assert.deepEqual(bounded.founder_beta_web_receipt.urls, [officialUrl],
+    "a distinct open-page URL joins returned authority without widening used evidence");
+
+  for (const actionType of ["open_page", "find_in_page"]) {
+    const unsafeSecondActionBody = structuredClone(boundedBody);
+    unsafeSecondActionBody.output[1].action = {
+      type: actionType,
+      url: "http://www.paniniamerica.net/checklists/contenders",
+      ...(actionType === "find_in_page" ? { pattern: "subject" } : {})
+    };
+    await assert.rejects(runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(unsafeSecondActionBody), {
+        status: 200, headers: { "content-type": "application/json" }
+      })
+    }), (error) => error.name === "CanonicalProviderError"
+      && error.provider_error_code === "founder_beta_web_url_unsafe",
+    `one unsafe later ${actionType} must reject the full trace after safe admitted search evidence`);
+  }
+
+  for (const actionType of ["open_page", "find_in_page"]) {
+    const actionOnlyBody = webIdentityBody(officialUrl);
+    actionOnlyBody.output[0].action = {
+      type: actionType,
+      url: `${officialUrl}?lookup=1#fragment`,
+      ...(actionType === "find_in_page" ? { pattern: "subject" } : {})
+    };
+    actionOnlyBody.output[1].content[0].annotations = [];
+    const actionOnly = await runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(actionOnlyBody), {
+        status: 200, headers: { "content-type": "application/json" }
+      })
+    });
+    assert.deepEqual(actionOnly.founder_beta_web_receipt.queries, []);
+    assert.deepEqual(actionOnly.founder_beta_web_receipt.urls, [officialUrl]);
+  }
+
+  const querylessSearchBody = webIdentityBody(officialUrl);
+  delete querylessSearchBody.output[0].action.query;
+  const querylessSearch = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(querylessSearchBody), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.deepEqual(querylessSearch.founder_beta_web_receipt.queries, []);
+  assert.equal(querylessSearch.founder_beta_web_receipt.field_evidence.length, 1,
+    "a queryless search remains valid when its returned evidence is durable");
+
+  const emptyTracePayload = audited({
+    subjects: ["Image Grounded"], grammar: "standard"
+  });
+  const emptyTraceBody = {
+    model: "gpt-5.6-luna",
+    reasoning: { effort: "low" },
+    status: "completed",
+    output: [{
+      type: "web_search_call", status: "completed",
+      action: { type: "search", sources: [] }
+    }, {
+      type: "message",
+      content: [{ type: "output_text", text: JSON.stringify(emptyTracePayload) }]
+    }]
+  };
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(emptyTraceBody), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_web_receipt_invalid",
+  "a used queryless trace without durable field evidence must fail closed");
+
+  for (const [mutate, expectedCode] of [
+    [(body) => { delete body.output[0].status; }, "founder_beta_web_call_incomplete"],
+    [(body) => { body.output[0].status = "in_progress"; },
+      "founder_beta_web_call_incomplete"],
+    [(body) => { body.output[0].action.type = "click"; },
+      "founder_beta_web_action_unsupported"]
+  ]) {
+    const invalidBody = webIdentityBody(officialUrl);
+    mutate(invalidBody);
+    await assert.rejects(runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(invalidBody), {
+        status: 200, headers: { "content-type": "application/json" }
+      })
+    }), (error) => error.name === "CanonicalProviderError"
+      && error.provider_error_code === expectedCode);
+  }
+
+  const threeCallsBody = webIdentityBody(officialUrl);
+  threeCallsBody.output.unshift(structuredClone(threeCallsBody.output[0]));
+  threeCallsBody.output.unshift(structuredClone(threeCallsBody.output[0]));
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(threeCallsBody), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_web_call_budget_exceeded");
 }
 
 const ungovernedUrl = "https://www.ebay.com/itm/ungoverned-identity";
@@ -706,8 +835,8 @@ function webFieldReferenceBody({
     reasoning: { effort: "low" },
     status: "completed",
     output: [
-      { type: "web_search_call", action: {
-        query: "field source reference",
+      { type: "web_search_call", status: "completed", action: {
+        type: "search", query: "field source reference",
         sources: returnedUrls.map((url) => ({ url }))
       } },
       { type: "message", content: [{
@@ -874,8 +1003,8 @@ function repeatedWebSourcesBody(urls, {
     reasoning: { effort: "low" },
     status: "completed",
     output: [
-      { type: "web_search_call", action: {
-        query: "web source budget",
+      { type: "web_search_call", status: "completed", action: {
+        type: "search", query: "web source budget",
         sources: Array.from({ length: sourceCopies }, () => urls)
           .flat().map((url) => ({ url }))
       } },

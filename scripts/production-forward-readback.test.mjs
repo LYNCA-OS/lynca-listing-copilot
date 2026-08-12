@@ -302,6 +302,25 @@ assert.equal(ordinaryReceipt.provider_calls, 0);
 assert.equal(ordinaryReceipt.founder_beta_web_receipt_exact_match, true);
 assert.equal(ordinaryReceipt.web_search_used, true);
 assert.equal(ordinaryReceipt.web_search_call_count, 1);
+const boundedOrdinaryView = clone(ordinaryView);
+boundedOrdinaryView.founder_beta_web_receipt.web_search_call_count = 2;
+const boundedOrdinaryExpectation = buildProductionForwardReadbackExpectation({
+  evidence: ordinaryEvidence,
+  resolutionView: boundedOrdinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+const boundedOrdinaryReceipt = verifyPromotedProductionForwardReadback({
+  evidence: ordinaryEvidence,
+  expectation: boundedOrdinaryExpectation,
+  resolutionView: boundedOrdinaryView,
+  responseUrl,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.equal(boundedOrdinaryReceipt.web_search_used, true);
+assert.equal(boundedOrdinaryReceipt.web_search_call_count, 2,
+  "forward readback must preserve the actual bounded call count");
 for (const queries of [
   ["2020-21 Panini Contenders Anthony Edwards #105 checklist"],
   ["#105 / Contenders — additional seller words"],
@@ -345,6 +364,7 @@ assert.throws(() => buildProductionForwardReadbackExpectation({
 "an unrelated provider query must fail the designated Web release proof");
 for (const mutate of [
   (value) => { value.founder_beta_web_receipt.web_search_call_count = 0; },
+  (value) => { value.founder_beta_web_receipt.web_search_call_count = 3; },
   (value) => { value.founder_beta_web_receipt.queries = []; },
   (value) => { value.founder_beta_web_receipt.urls = []; },
   (value) => { value.founder_beta_web_receipt.field_evidence = []; },

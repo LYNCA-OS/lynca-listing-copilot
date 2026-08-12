@@ -149,13 +149,19 @@ function providerBody(state, { withWeb }) {
     output: [
       ...(withWeb ? [{
         type: "web_search_call",
+        status: "completed",
         action: {
+          type: "search",
           query: "2024 Prizm Rookie Signatures checklist",
           sources: [
             { url: webSetUrl, title: "Checklist" },
             { url: webConflictUrl, title: "Market evidence" }
           ]
         }
+      }, {
+        type: "web_search_call",
+        status: "completed",
+        action: { type: "open_page", url: webSetUrl }
       }] : []),
       {
         type: "message",
@@ -174,7 +180,7 @@ assert.equal(request.model, "gpt-5.6-luna");
 assert.equal(request.reasoning.effort, "low");
 assert.deepEqual(request.tools, [{ type: "web_search" }]);
 assert.equal(request.tool_choice, "auto");
-assert.equal(request.max_tool_calls, 1);
+assert.equal(request.max_tool_calls, 2);
 assert.deepEqual(request.include, ["web_search_call.action.sources"]);
 assert.equal(request.input[0].content.filter((part) => part.type === "input_image").length, 1);
 assert.match(request.input[0].content[0].text, /CURRENT_CARD_MEMBER_OF_SET/);
@@ -193,7 +199,7 @@ assert.equal(audited.web_receipt.isolated_model_call_count, 0);
 assert.equal(audited.web_receipt.provider_model, "gpt-5.6-luna");
 assert.equal(audited.web_receipt.reasoning_effort, "low");
 assert.equal(audited.web_receipt.web_search_used, true);
-assert.equal(audited.web_receipt.web_search_call_count, 1);
+assert.equal(audited.web_receipt.web_search_call_count, 2);
 assert.deepEqual(audited.web_receipt.queries,
   ["2024 Prizm Rookie Signatures checklist"]);
 assert.deepEqual(audited.web_receipt.urls, [
@@ -221,6 +227,14 @@ assert.deepEqual(
 assert.equal(audited.set_card_name_contract.set.value, "Rookie Signatures");
 assert.equal(audited.set_card_name_contract.card_name.value, "Debut Designs");
 
+const querylessWithEvidence = providerBody(withWebState, { withWeb: true });
+delete querylessWithEvidence.output[0].action.query;
+const querylessAudited = auditFounderBetaProviderResponse(
+  envelope, querylessWithEvidence
+);
+assert.deepEqual(querylessAudited.web_receipt.queries, []);
+assert.ok(querylessAudited.web_receipt.field_evidence.length > 0);
+
 const noWeb = auditFounderBetaProviderResponse(
   envelope,
   providerBody(semanticState({ withWeb: false }), { withWeb: false })
@@ -230,6 +244,14 @@ assert.equal(noWeb.web_receipt.web_search_call_count, 0);
 assert.deepEqual(noWeb.web_receipt.queries, []);
 assert.deepEqual(noWeb.web_receipt.urls, []);
 assert.deepEqual(noWeb.web_receipt.field_evidence, []);
+
+const emptyTrace = providerBody(semanticState({ withWeb: false }), { withWeb: false });
+emptyTrace.output.unshift({
+  type: "web_search_call", status: "completed",
+  action: { type: "search", sources: [] }
+});
+assert.throws(() => auditFounderBetaProviderResponse(envelope, emptyTrace),
+  /founder_beta_web_receipt_invalid/);
 
 const wrongModel = providerBody(withWebState, { withWeb: true });
 wrongModel.model = "gpt-5.6";
@@ -255,6 +277,21 @@ const unsafe = providerBody(withWebState, { withWeb: true });
 unsafe.output[0].action.sources[0].url = "http://cards.example/checklist";
 assert.throws(() => auditFounderBetaProviderResponse(envelope, unsafe),
   /founder_beta_web_url_unsafe/);
+
+const unsafeActionUrl = providerBody(withWebState, { withWeb: true });
+unsafeActionUrl.output[1].action.url = "http://cards.example/checklist";
+assert.throws(() => auditFounderBetaProviderResponse(envelope, unsafeActionUrl),
+  /founder_beta_web_url_unsafe/);
+
+const unsupportedAction = providerBody(withWebState, { withWeb: true });
+unsupportedAction.output[1].action.type = "click";
+assert.throws(() => auditFounderBetaProviderResponse(envelope, unsupportedAction),
+  /founder_beta_web_action_unsupported/);
+
+const incompleteCall = providerBody(withWebState, { withWeb: true });
+incompleteCall.output[1].status = "in_progress";
+assert.throws(() => auditFounderBetaProviderResponse(envelope, incompleteCall),
+  /founder_beta_web_call_incomplete/);
 
 const unreturnedState = semanticState({ withWeb: true });
 const unreturnedUrl = "https://cards.example/checklist?id=2";

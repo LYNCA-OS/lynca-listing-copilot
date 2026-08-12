@@ -132,12 +132,12 @@ const wireBytes = JSON.stringify(compiled.provider_request.wire_request);
 assert.equal(wireBytes.length, 12_778);
 assert.equal(
   createHash("sha256").update(wireBytes).digest("hex"),
-  "54f80d2bba1843818faaaaa1e447dd103aba2fca16daee7f334572ccd7bf625d",
+  "8b14694f8ea9e506c4327f825a79c40f81c6707ff4b87d841f090b36b37e6b1d",
   "the Luna Web-capable request must remain an exact frozen wire contract"
 );
 assert.deepEqual(compiled.provider_request.wire_request.tools, [{ type: "web_search" }]);
 assert.equal(compiled.provider_request.wire_request.tool_choice, "auto");
-assert.equal(compiled.provider_request.wire_request.max_tool_calls, 1);
+assert.equal(compiled.provider_request.wire_request.max_tool_calls, 2);
 assert.deepEqual(compiled.provider_request.wire_request.include,
   ["web_search_call.action.sources"]);
 for (const unsupported of ["temperature", "top_p", "seed"]) {

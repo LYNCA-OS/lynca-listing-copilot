@@ -114,8 +114,8 @@ for (const token of [
   "CARD_NAME_PREDICATE", "card_name_before_subject", "individual_serials_withheld"
 ]) assert.match(spec, new RegExp(token));
 assert.match(spec,
-  /designatedSearch[\s\S]*?receipt\.web_search_call_count === 1[\s\S]*?receipt\.queries\.length >= 1[\s\S]*?webIdentityQueryHasVisibleAnchors\(receipt\.queries\)[\s\S]*?receipt\.urls\.length >= 1[\s\S]*?entry\.support_urls\.length > 0/,
-  "the designated Web case must prove one real search with a query, URL and admitted support");
+  /designatedSearch[\s\S]*?receipt\.web_search_call_count >= 1[\s\S]*?receipt\.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS[\s\S]*?receipt\.queries\.length >= 1[\s\S]*?webIdentityQueryHasVisibleAnchors\(receipt\.queries\)[\s\S]*?receipt\.urls\.length >= 1[\s\S]*?entry\.support_urls\.length > 0/,
+  "the designated Web case must prove one or two bounded actions with a search query, URL and admitted support");
 assert.match(forwardReadback,
   /webIdentityQueryHasVisibleAnchors\(webReceipt\.queries\)/,
   "candidate and post-promotion readback must share the visible-query anchor gate");

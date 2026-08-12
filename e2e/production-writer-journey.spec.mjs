@@ -47,6 +47,9 @@ import {
   CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
+  CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
+} from "../lib/listing/thin/canonical-fields.mjs";
+import {
   validateFounderBetaWebReceipt
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import {
@@ -594,7 +597,8 @@ function activationProjectionProof(sourceCase, resolutionView, title) {
   code);
   if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
     requireInvariant(webReceipt.web_search_used === true
-      && webReceipt.web_search_call_count === 1
+      && webReceipt.web_search_call_count >= 1
+      && webReceipt.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
       && webReceipt.queries.length >= 1
       && webIdentityQueryHasVisibleAnchors(webReceipt.queries)
       && webReceipt.urls.length > 0
@@ -639,7 +643,8 @@ function founderWebSearchProof(sourceCase, resolutionView) {
     && receipt.isolated_model_call_count === 0
     && (!designatedSearch || (
       receipt.web_search_used === true
-      && receipt.web_search_call_count === 1
+      && receipt.web_search_call_count >= 1
+      && receipt.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
       && receipt.queries.length >= 1
       && webIdentityQueryHasVisibleAnchors(receipt.queries)
       && receipt.urls.length >= 1
@@ -3352,7 +3357,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
         && entry?.founder_web_search?.web_search_call_count === 0
       ))
       && webCaseEvidence?.activation_projection?.web_search_used === true
-      && webCaseEvidence?.activation_projection?.web_search_call_count === 1
+      && webCaseEvidence?.activation_projection?.web_search_call_count >= 1
+      && webCaseEvidence?.activation_projection?.web_search_call_count
+        <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
       && webCaseEvidence?.activation_projection?.query_visible_anchor_match === true
       && webCaseEvidence?.activation_projection?.source_url_count > 0
       && observationCanonicalV3VersionActive(webCaseEvidence?.versions)

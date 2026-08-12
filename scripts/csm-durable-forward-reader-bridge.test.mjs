@@ -237,7 +237,7 @@ for (const mutate of [
   (receipt) => { receipt.field_evidence = [{ field: "set", support_urls: ["http://bad"],
     conflict_urls: [], unresolved_urls: [] }]; },
   (receipt) => { receipt.web_search_used = false; receipt.web_search_call_count = 0; },
-  (receipt) => { receipt.queries = []; },
+  (receipt) => { receipt.web_search_call_count = 3; },
   (receipt) => { receipt.urls = [`${receipt.urls[0]}?utm_source=forged`]; },
   (receipt) => { receipt.field_evidence = [{ field: "set",
     support_urls: [receipt.urls[0]], conflict_urls: [receipt.urls[0]], unresolved_urls: [] }]; }
@@ -253,6 +253,33 @@ assert.doesNotThrow(
   () => validateFounderBetaWebReceipt(multipleQueries),
   "one web tool call may contain multiple unique provider queries",
 );
+
+const twoCalls = structuredClone(webReceipt);
+twoCalls.web_search_call_count = 2;
+assert.doesNotThrow(
+  () => validateFounderBetaWebReceipt(twoCalls),
+  "one provider request may contain two bounded Web actions",
+);
+
+const openOnly = structuredClone(twoCalls);
+openOnly.queries = [];
+openOnly.field_evidence = [{
+  field: "set",
+  support_urls: [openOnly.urls[0]],
+  conflict_urls: [],
+  unresolved_urls: []
+}];
+assert.doesNotThrow(
+  () => validateFounderBetaWebReceipt(openOnly),
+  "a generic open/find trace is valid when durable field evidence uses its URL",
+);
+
+const usedWithoutTrace = structuredClone(twoCalls);
+usedWithoutTrace.queries = [];
+usedWithoutTrace.field_evidence = [];
+assert.throws(() => validateFounderBetaWebReceipt(usedWithoutTrace),
+  /founder_beta_web_receipt_invalid/,
+  "an action or receipt URL alone is not durable evidence without a query or field row");
 
 const withheldReferenceReceipt = structuredClone(webReceipt);
 withheldReferenceReceipt.field_evidence = [{

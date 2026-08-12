@@ -1152,7 +1152,7 @@ function resealVerifiedOriginalPrepared(prepared) {
   assert.equal(providerCalls, 1);
   assert.deepEqual(JSON.parse(providerWire).tools, [{ type: "web_search" }]);
   assert.equal(JSON.parse(providerWire).tool_choice, "auto");
-  assert.equal(JSON.parse(providerWire).max_tool_calls, 1);
+  assert.equal(JSON.parse(providerWire).max_tool_calls, 2);
   for (const hidden of [...originalSha256, originalSetSha256]) {
     assert.doesNotMatch(providerWire, new RegExp(hidden));
   }

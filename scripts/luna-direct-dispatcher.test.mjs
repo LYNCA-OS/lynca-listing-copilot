@@ -149,13 +149,13 @@ function definitive502Failure(payload, overrides = {}) {
   });
   assert.deepEqual(request.tools, [{ type: "web_search" }]);
   assert.equal(request.tool_choice, "auto");
-  assert.equal(request.max_tool_calls, 1);
+  assert.equal(request.max_tool_calls, 2);
   assert.deepEqual(request.include, ["web_search_call.action.sources"]);
   const requestBytes = JSON.stringify(request);
   assert.equal(requestBytes.length, 12_778);
   assert.equal(
     createHash("sha256").update(requestBytes).digest("hex"),
-    "54f80d2bba1843818faaaaa1e447dd103aba2fca16daee7f334572ccd7bf625d"
+    "8b14694f8ea9e506c4327f825a79c40f81c6707ff4b87d841f090b36b37e6b1d"
   );
 
   const baseOptions = {
