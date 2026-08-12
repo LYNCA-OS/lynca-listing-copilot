@@ -42,6 +42,18 @@ import {
   ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_SHA,
   ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_TREE_SHA,
   ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ROLLBACK_SHA,
+  ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -133,6 +145,7 @@ import {
   activationAFieldSourceReferenceRepairRuntimeContractProof,
   activationAUsedWebEvidenceBudgetRuntimeContractProof,
   activationAOptionalFieldSourceOmissionRuntimeContractProof,
+  activationARelationAbstentionVerifierRepairRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -174,6 +187,7 @@ const activationAWebSourceBudgetRepairGitSha = "c".repeat(40);
 const activationAFieldSourceReferenceRepairGitSha = "f".repeat(40);
 const activationAUsedWebEvidenceBudgetGitSha = "4".repeat(40);
 const activationAOptionalFieldSourceOmissionGitSha = "2".repeat(40);
+const activationARelationAbstentionVerifierRepairGitSha = "3".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -475,6 +489,33 @@ assert.deepEqual(ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/csm-persistence.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.equal(ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256,
+  "1f7e7a622a073cec648fbe4342716b10ba89cf1c2d0a4800293b624cb02e9b4e");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-relation-abstention-verifier-repair-v1");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
+  "founder-beta-tcg-relation-abstention-verifier-v1");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+  "02cd1a5e4f40789aed0ab425597547aad4e85bd3");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA,
+  "4e12b17cba40394c850432f9ae2efbb0d755f4dc");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+  "2101f0bbb5bbe788ddfc84ae87aab5d6935a6f27");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID,
+  "31631444369");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE,
+  "ACTIVATION_RECEIPT_MISMATCH");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID, "TCG");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE,
+  "RESOLUTION_VIEW");
+assert.equal(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_ROLLBACK_SHA);
+assert.deepEqual(ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS, [
+  "e2e/production-writer-journey.spec.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
@@ -842,6 +883,92 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   ],
   changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
+const activationARelationAbstentionVerifierRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationARelationAbstentionVerifierRepairGitSha,
+  headSha: activationARelationAbstentionVerifierRepairGitSha,
+  parentTreeSha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS]
+});
+assert.deepEqual(Object.keys(activationARelationAbstentionVerifierRepair).sort(), [
+  "artifact_manifest_sha256", "contract_sha256", "failed_case_id", "failed_phase",
+  "failed_run_id", "failure_code", "git_sha", "lineage_marker", "parent_git_sha",
+  "parent_tree_sha", "parity_required", "release_class", "repair_descriptor_id",
+  "required_rollback_git_sha", "schema_version", "transition_marker",
+  "writer_journey_manifest"
+].sort());
+assert.equal(activationARelationAbstentionVerifierRepair.schema_version,
+  "production-release-selection-v16");
+assert.equal(activationARelationAbstentionVerifierRepair.repair_descriptor_id,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationARelationAbstentionVerifierRepair.transition_marker,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER);
+assert.equal(activationARelationAbstentionVerifierRepair.parent_git_sha,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA);
+assert.equal(activationARelationAbstentionVerifierRepair.parent_tree_sha,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationARelationAbstentionVerifierRepair.failed_run_id,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID);
+assert.equal(activationARelationAbstentionVerifierRepair.failure_code,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE);
+assert.equal(activationARelationAbstentionVerifierRepair.failed_case_id,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID);
+assert.equal(activationARelationAbstentionVerifierRepair.failed_phase,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE);
+assert.equal(activationARelationAbstentionVerifierRepair.required_rollback_git_sha,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA);
+assert.match(activationARelationAbstentionVerifierRepair.artifact_manifest_sha256,
+  /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS,
+    "api/unrelated.js"],
+  [...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationARelationAbstentionVerifierRepairGitSha,
+    headSha: activationARelationAbstentionVerifierRepairGitSha,
+    parentTreeSha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_relation_abstention_verifier_repair_changed_paths_invalid",
+    "activation_a_relation_abstention_verifier_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationARelationAbstentionVerifierRepairGitSha,
+  headSha: activationARelationAbstentionVerifierRepairGitSha,
+  parentTreeSha: "3".repeat(40),
+  parentShas: [ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS]
+}), (error) => error.code
+  === "activation_a_relation_abstention_verifier_repair_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationARelationAbstentionVerifierRepairGitSha,
+  headSha: activationARelationAbstentionVerifierRepairGitSha,
+  parentTreeSha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+  parentShas: [
+    ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+    ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA
+  ],
+  changedPaths: [...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationARelationAbstentionVerifierRepairGitSha,
+  headSha: activationARelationAbstentionVerifierRepairGitSha,
+  parentTreeSha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS]
+}), (error) => error.code
+  === "activation_a_relation_abstention_verifier_repair_parent_mismatch");
 const activationAOptionalFieldSourceOmission = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAOptionalFieldSourceOmissionGitSha,
@@ -2025,6 +2152,69 @@ assert.equal(activationAOptionalFieldSourceOmissionProof.explicit_negative_count
   4);
 assert.equal(activationAOptionalFieldSourceOmission.contract_sha256,
   activationAOptionalFieldSourceOmissionProof.contract_sha256);
+assert.equal(activationAOptionalFieldSourceOmissionProof.contract_sha256,
+  ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256,
+  "selection-v15 must replay its literal proof instead of reading live verifier logic");
+const activationARelationAbstentionVerifierRepairProof =
+  activationARelationAbstentionVerifierRepairRuntimeContractProof();
+assert.equal(activationARelationAbstentionVerifierRepairProof.schema_version,
+  "listing-copilot-activation-a-relation-abstention-verifier-repair-proof-v1");
+assert.equal(activationARelationAbstentionVerifierRepairProof.repair_descriptor_id,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationARelationAbstentionVerifierRepairProof.repair_marker,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER);
+assert.equal(activationARelationAbstentionVerifierRepairProof.required_parent_git_sha,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA);
+assert.equal(activationARelationAbstentionVerifierRepairProof.required_parent_tree_sha,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationARelationAbstentionVerifierRepairProof.failed_run_id,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID);
+assert.equal(activationARelationAbstentionVerifierRepairProof.failure_code,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE);
+assert.equal(activationARelationAbstentionVerifierRepairProof.failed_case_id,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID);
+assert.equal(activationARelationAbstentionVerifierRepairProof.failed_phase,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE);
+assert.equal(activationARelationAbstentionVerifierRepairProof.required_rollback_git_sha,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA);
+assert.equal(
+  activationARelationAbstentionVerifierRepairProof
+    .base_optional_field_source_omission_contract_sha256,
+  ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256
+);
+assert.equal(activationARelationAbstentionVerifierRepairProof.founder_search_receipt_all_cases,
+  true);
+assert.equal(
+  activationARelationAbstentionVerifierRepairProof
+    .founder_receipt_validation_before_relation_scope,
+  true
+);
+assert.equal(activationARelationAbstentionVerifierRepairProof.tcg_relation_projection_policy,
+  "abstain");
+assert.deepEqual(
+  activationARelationAbstentionVerifierRepairProof.tcg_ungoverned_identity_fields_withheld,
+  ["product", "set"]
+);
+assert.equal(
+  activationARelationAbstentionVerifierRepairProof
+    .tcg_null_set_and_card_name_relations_allowed,
+  true
+);
+assert.equal(
+  activationARelationAbstentionVerifierRepairProof.designated_relation_projection_case_id,
+  "NON_TCG_WEB_IDENTITY"
+);
+assert.equal(activationARelationAbstentionVerifierRepairProof.designated_set_predicate,
+  "CURRENT_CARD_MEMBER_OF_SET");
+assert.equal(activationARelationAbstentionVerifierRepairProof.designated_card_name_predicate,
+  "CURRENT_CARD_NAMED_BY_DESIGN");
+assert.equal(activationARelationAbstentionVerifierRepairProof.designated_card_name_before_subject,
+  true);
+assert.equal(activationARelationAbstentionVerifierRepairProof.designated_web_search_call_count,
+  1);
+assert.equal(activationARelationAbstentionVerifierRepairProof.query_exact_required, false);
+assert.equal(activationARelationAbstentionVerifierRepair.contract_sha256,
+  activationARelationAbstentionVerifierRepairProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -2506,6 +2696,96 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_activation_a_grammar_source_repair_selection_invalid",
 "the failed grammar candidate may not escape through generic ordinary lineage");
+const activationARelationAbstentionVerifierRepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationARelationAbstentionVerifierRepair,
+  rollbackReceipt: {
+    git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA
+  }
+});
+assert.deepEqual(activationARelationAbstentionVerifierRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v17",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
+  release_git_sha: activationARelationAbstentionVerifierRepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256:
+    activationARelationAbstentionVerifierRepair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationARelationAbstentionVerifierRepair, schema_version: "unknown" },
+  { ...activationARelationAbstentionVerifierRepair, release_class: "compatibility_bridge" },
+  { ...activationARelationAbstentionVerifierRepair, repair_descriptor_id: "unknown-repair" },
+  { ...activationARelationAbstentionVerifierRepair, lineage_marker: "unknown-lineage" },
+  { ...activationARelationAbstentionVerifierRepair, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationARelationAbstentionVerifierRepair,
+    parent_git_sha: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_SHA },
+  { ...activationARelationAbstentionVerifierRepair, parent_tree_sha: "3".repeat(40) },
+  { ...activationARelationAbstentionVerifierRepair, failed_run_id: "31631444368" },
+  { ...activationARelationAbstentionVerifierRepair, failure_code: "OTHER_FAILURE" },
+  { ...activationARelationAbstentionVerifierRepair, failed_case_id: "NON_TCG" },
+  { ...activationARelationAbstentionVerifierRepair, failed_phase: "WEB_SEARCH" },
+  { ...activationARelationAbstentionVerifierRepair,
+    required_rollback_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA },
+  { ...activationARelationAbstentionVerifierRepair,
+    artifact_manifest_sha256: "3".repeat(64) },
+  { ...activationARelationAbstentionVerifierRepair,
+    writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationARelationAbstentionVerifierRepair, parity_required: false },
+  { ...activationARelationAbstentionVerifierRepair,
+    contract_sha256: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256 },
+  { ...activationARelationAbstentionVerifierRepair, git_sha: "not-a-git-sha" },
+  { ...activationARelationAbstentionVerifierRepair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: {
+      git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA
+    }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_relation_abstention_verifier_repair_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+  "3".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationARelationAbstentionVerifierRepair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+for (const parentGitSha of [
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+  ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: {
+      schema_version: "production-release-selection-v3",
+      release_class: ORDINARY_RELEASE_CLASS,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: parentGitSha
+        === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA
+        ? ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER : null,
+      parent_git_sha: parentGitSha,
+      required_rollback_git_sha: parentGitSha,
+      git_sha: activationARelationAbstentionVerifierRepairGitSha,
+      writer_journey_manifest: "writer-journey-cases-v3",
+      parity_required: true,
+      contract_sha256: activationARelationAbstentionVerifierRepairProof.contract_sha256
+    },
+    rollbackReceipt: { git_sha: parentGitSha }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_relation_abstention_verifier_repair_selection_invalid");
+}
 const activationAOptionalFieldSourceOmissionLineage = verifyOrdinaryRollbackLineage({
   selection: activationAOptionalFieldSourceOmission,
   rollbackReceipt: { git_sha: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ROLLBACK_SHA }
@@ -3063,6 +3343,8 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationARelationAbstentionVerifierRepair =
+    actualParent === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA;
   const actualActivationAOptionalFieldSourceOmission =
     actualParent === ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_SHA;
   const actualActivationAUsedWebEvidenceBudget =
@@ -3077,7 +3359,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationAOptionalFieldSourceOmission
+  const actualTransitionMarker = actualActivationARelationAbstentionVerifierRepair
+    ? ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER
+    : actualActivationAOptionalFieldSourceOmission
     ? ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_MARKER
     : actualActivationAUsedWebEvidenceBudget
     ? ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_MARKER
@@ -3147,7 +3431,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationAOptionalFieldSourceOmission
+      actualActivationARelationAbstentionVerifierRepair
+        ? "production-release-selection-v16"
+        : actualActivationAOptionalFieldSourceOmission
         ? "production-release-selection-v15"
         : actualActivationAUsedWebEvidenceBudget
         ? "production-release-selection-v14"
@@ -3174,7 +3460,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationAOptionalFieldSourceOmission
+      actualActivationARelationAbstentionVerifierRepair
+        ? ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA
+        : actualActivationAOptionalFieldSourceOmission
         ? ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ROLLBACK_SHA
         : actualActivationAUsedWebEvidenceBudget
         ? ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_ROLLBACK_SHA
@@ -3195,8 +3483,11 @@ try {
           : actualActivationA2
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationAOptionalFieldSourceOmission
-      ? "production-release-rollback-lineage-receipt-v16"
+    assert.equal(savedLineage.schema_version,
+      actualActivationARelationAbstentionVerifierRepair
+        ? "production-release-rollback-lineage-receipt-v17"
+      : actualActivationAOptionalFieldSourceOmission
+        ? "production-release-rollback-lineage-receipt-v16"
       : actualActivationAUsedWebEvidenceBudget
         ? "production-release-rollback-lineage-receipt-v15"
       : actualActivationAFieldSourceReferenceRepair
@@ -3219,7 +3510,33 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationAOptionalFieldSourceOmission) {
+    if (actualActivationARelationAbstentionVerifierRepair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE);
+      assert.equal(savedSelection.failed_case_id,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID);
+      assert.equal(savedSelection.failed_phase,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE);
+      assert.equal(savedLineage.failed_case_id,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID);
+      assert.equal(savedLineage.failed_phase,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationAOptionalFieldSourceOmission) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

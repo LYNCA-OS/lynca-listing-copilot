@@ -619,6 +619,11 @@ function activationProjectionProof(sourceCase, resolutionView, title) {
   });
 }
 
+function activationProjectionProofForCase(sourceCase, resolutionView, title) {
+  if (sourceCase.case_id !== "NON_TCG_WEB_IDENTITY") return null;
+  return activationProjectionProof(sourceCase, resolutionView, title);
+}
+
 function founderWebSearchProof(sourceCase, resolutionView) {
   const code = verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH;
   let receipt;
@@ -2808,11 +2813,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
         executionReceipt, resolutionView
       );
       founderWebSearchReceipt = founderWebSearchProof(sourceCase, resolutionView);
-      if (["TCG", "NON_TCG_WEB_IDENTITY"].includes(sourceCase.case_id)) {
-        activationProjectionReceipt = activationProjectionProof(
-          sourceCase, resolutionView, titleBeforePanel
-        );
-      }
+      activationProjectionReceipt = activationProjectionProofForCase(
+        sourceCase, resolutionView, titleBeforePanel
+      );
       if (sourceCase.case_id === "LOT_SHARED_ONLY") {
         lotSharedOnlyReceipt = lotSharedOnlyProjectionProof(
           sourceCase, resolutionView, titleBeforePanel
@@ -3460,6 +3463,45 @@ test("production writer journey verifies Glass Box and staged large-image transp
       }).catch(() => {});
     }
   }
+});
+
+test("offline TCG authority abstention bypasses designated relation proof @offline", () => {
+  const unresolvedUrl = "https://example.com/unresolved-collectible-identity";
+  const resolutionView = {
+    founder_beta_web_receipt: {
+      schema_version: "founder-beta-web-receipt-v1",
+      provider_request_count: 1,
+      isolated_model_call_count: 0,
+      provider_model: "gpt-5.6-luna",
+      reasoning_effort: "low",
+      web_search_used: true,
+      web_search_call_count: 1,
+      queries: ["unresolved collectible identity"],
+      urls: [unresolvedUrl],
+      field_evidence: ["product", "set"].map((field) => ({
+        field,
+        support_urls: [],
+        conflict_urls: [],
+        unresolved_urls: [unresolvedUrl]
+      })),
+      semantic_state_sha256: "a".repeat(64)
+    },
+    set_card_name_relation_receipt: {
+      schema_version: "set-card-name-relations-v1",
+      set: null,
+      card_name: null
+    }
+  };
+  const tcgCase = { case_id: "TCG" };
+  const founderProof = founderWebSearchProof(tcgCase, resolutionView);
+  expect(founderProof.web_search_used).toBe(true);
+  expect(founderProof.unresolved_authority_fields).toEqual(["product", "set"]);
+  expect(activationProjectionProofForCase(
+    tcgCase, resolutionView, "unused"
+  )).toBeNull();
+  expect(() => activationProjectionProofForCase(
+    { case_id: "NON_TCG_WEB_IDENTITY" }, resolutionView, "Anthony Edwards"
+  )).toThrow(verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH);
 });
 
 test("offline verifier boundaries redact titles and reject identity drift @offline", async () => {
