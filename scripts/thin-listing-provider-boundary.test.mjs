@@ -635,4 +635,107 @@ for (const [field, value] of [
   `${field} must remain a hard current-copy authority boundary`);
 }
 
+function repeatedWebSourcesBody(urls, {
+  sourceCopies = 1,
+  annotationCopies = 1,
+  fieldSource = urls[0]
+} = {}) {
+  const payload = audited({
+    product: "Web Source Budget", subjects: ["Grounded Subject"], grammar: "standard"
+  });
+  payload.field_sources = payload.field_sources.map((row) => (
+    row.field === "product" ? { ...row, source_ids: [fieldSource] } : row
+  ));
+  return {
+    model: "gpt-5.6-luna",
+    reasoning: { effort: "low" },
+    status: "completed",
+    output: [
+      { type: "web_search_call", action: {
+        query: "web source budget",
+        sources: Array.from({ length: sourceCopies }, () => urls)
+          .flat().map((url) => ({ url }))
+      } },
+      { type: "message", content: [{
+        type: "output_text", text: JSON.stringify(payload),
+        annotations: Array.from({ length: annotationCopies }, () => urls)
+          .flat().map((url) => ({ type: "url_citation", url }))
+      }] }
+    ]
+  };
+}
+
+for (const count of [11, 20]) {
+  const urls = Array.from({ length: count }, (_, index) => (
+    `https://www.paniniamerica.net/checklists/source-${String(index).padStart(2, "0")}`
+  )).reverse();
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(urls, {
+      sourceCopies: 2,
+      annotationCopies: 2,
+      fieldSource: urls[0]
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.deepEqual(result.founder_beta_web_receipt.urls, [...urls].sort(),
+    `${count} unique URLs repeated across sources and annotations must persist once, sorted`);
+}
+
+{
+  const urls = Array.from({ length: 21 }, (_, index) => (
+    `https://www.paniniamerica.net/checklists/distinct-${String(index).padStart(2, "0")}`
+  ));
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(urls)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_web_source_budget_exceeded",
+  "21 distinct sanitized URLs must exceed the source budget");
+}
+
+for (const unsafeUrl of [
+  "http://www.paniniamerica.net/checklists/unsafe",
+  "https://user:secret@www.paniniamerica.net/checklists/unsafe",
+  "https://www.paniniamerica.net:444/checklists/unsafe",
+  "not-a-url",
+  `https://www.paniniamerica.net/${"x".repeat(2_100)}`
+]) {
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(
+      [unsafeUrl], { sourceCopies: 11, annotationCopies: 11 }
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && ["founder_beta_web_url_unsafe", "founder_beta_web_url_invalid"].includes(
+      error.provider_error_code
+    ),
+  "repeating an unsafe URL must never make it budget-safe");
+}
+
+{
+  const variants = [
+    "https://www.paniniamerica.net/checklists/same-path?utm_source=search",
+    "https://www.paniniamerica.net/checklists/same-path#result"
+  ];
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(
+      variants, { sourceCopies: 11, annotationCopies: 11, fieldSource: variants[0] }
+    )), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  const sanitized = "https://www.paniniamerica.net/checklists/same-path";
+  assert.deepEqual(result.founder_beta_web_receipt.urls, [sanitized],
+    "query and fragment variants must dedupe by sanitized origin plus pathname");
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+    (row) => row.field === "product"
+  )?.support_urls, [sanitized],
+  "field_sources membership must bind a raw URL variant to its sanitized receipt identity");
+}
+
 process.stdout.write("thin listing provider boundary: ok\n");

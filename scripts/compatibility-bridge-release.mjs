@@ -28,11 +28,10 @@ import {
   CSM_OPENAI_RESPONSES_ADAPTER
 } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import {
-  auditFounderBetaCanonicalPayload,
+  buildFounderBetaWebReceipt,
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
   FOUNDER_BETA_WEB_RECEIPT_VERSION
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
-import { finishCanonicalFields } from "../lib/listing/thin/thin-listing-path.mjs";
 import { SET_CARD_NAME_RELATION_CONTRACT_VERSION } from
   "../lib/listing/thin/set-card-name-contract.mjs";
 import {
@@ -84,10 +83,6 @@ import {
   PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT,
   PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX
 } from "./production-public-composition-projection.mjs";
-import {
-  WEB_IDENTITY_VISIBLE_QUERY_ANCHORS,
-  webIdentityQueryHasVisibleAnchors
-} from "./production-forward-readback.mjs";
 
 export const ORDINARY_RELEASE_CLASS = "ordinary";
 export const COMPATIBILITY_BRIDGE_RELEASE_CLASS = "compatibility-bridge";
@@ -219,6 +214,21 @@ export const ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID = "316186284
 export const ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE =
   "founder_beta_identity_authority_required:product";
 export const ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA =
+  ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256 =
+  "2cc10bf7443f21afd127f60f5a8bc7853dfb751fbd052531fa083cce8b9ce397";
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-web-source-budget-dedupe-repair-v1";
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER =
+  "founder-beta-sanitized-unique-web-source-budget-v1";
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA =
+  "e239e0b5bc56d8c2b03efb5055fcb71b7dd2da7d";
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA =
+  "18f2e7efaa3502bd40d9730de9c644f63c814e68";
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID = "31621942427";
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE =
+  "founder_beta_web_source_budget_exceeded";
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA =
   ACTIVATION_A_ROLLBACK_SHA;
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
@@ -359,6 +369,12 @@ export const ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS = Object.fre
   "scripts/production-forward-readback.mjs",
   "scripts/production-forward-readback.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+export const ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS = Object.freeze([
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
@@ -722,6 +738,20 @@ function exactActivationAIdentityAuthorityFailsoftChangedPaths(values) {
   return actual;
 }
 
+function exactActivationAWebSourceBudgetRepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_web_source_budget_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_web_source_budget_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -839,7 +869,23 @@ function activationAIdentityAuthorityFailsoftArtifactManifestSha256(changedPaths
   }));
 }
 
+function activationAWebSourceBudgetRepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+    required_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+    changed_paths: exactActivationAWebSourceBudgetRepairChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA) {
+    return ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA) {
     return ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER;
   }
@@ -909,6 +955,39 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA) {
+        throw failure("activation_a_web_source_budget_repair_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationAWebSourceBudgetRepairChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationAWebSourceBudgetRepairRuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v12",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+        parent_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+        required_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationAWebSourceBudgetRepairArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA}^{tree}`
@@ -1705,153 +1784,178 @@ export function activationAGrammarSourceRepairRuntimeContractProof() {
   });
 }
 
+const ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_BODY = Object.freeze({
+  schema_version: "listing-copilot-activation-a-identity-authority-failsoft-repair-proof-v1",
+  repair_descriptor_id: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
+  repair_marker: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER,
+  required_parent_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
+  required_parent_tree_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
+  failed_case_id: "TCG",
+  failed_phase: "RECOGNITION_RESPONSE",
+  required_rollback_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA,
+  base_grammar_source_repair_contract_sha256:
+    ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256,
+  web_only_identity_demotion_fields: Object.freeze([
+    "year", "manufacturer", "product", "set", "card_name"
+  ]),
+  mandatory_subject_policy: "withhold-and-fail-publication",
+  unresolved_web_evidence_preserved: true,
+  relation_receipt_withheld_identity_removed: true,
+  governed_or_original_image_identity_admitted: true,
+  mixed_identity_evidence_policy: "admit-valid-preserve-ungoverned-unresolved",
+  current_copy_web_only_policy: "hard-reject",
+  web_search_decision_policy: "model-autonomous",
+  designated_search_exact_call_count: 1,
+  designated_search_minimum_query_count: 1,
+  designated_search_minimum_url_count: 1,
+  designated_search_minimum_admitted_support_rows: 1,
+  visible_query_anchor_groups: Object.freeze({
+    subject: "anthony edwards",
+    card_number: "105",
+    product_set: "contenders"
+  }),
+  visible_query_minimum_anchor_group_matches: 2,
+  visible_query_subject_or_card_number_required: true,
+  visible_query_contract_executable: true,
+  cohort_minimum_no_search_receipt_count: 1,
+  model_owned_query_exact_match_required: false,
+  forward_readback_provider_calls: 0,
+  web_receipt_schema_version: "founder-beta-web-receipt-v1",
+  provider_request_builder_version: "canonical-fields-web-request-v1",
+  provider_response_parser_version: "canonical-output-v3-web-receipt",
+  semantic_result_limit: 1,
+  maximum_physical_provider_attempts: 2,
+  automatic_transport_retry_policy: "definitive-complete-http-502-no-output-no-token-v1",
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true
+});
+
 export function activationAIdentityAuthorityFailsoftRuntimeContractProof() {
-  const base = activationAGrammarSourceRepairRuntimeContractProof();
-  if (base.contract_sha256 !== ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256) {
-    throw failure("activation_a_identity_authority_failsoft_base_contract_invalid");
+  if (sha256(stableJson(ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_BODY))
+      !== ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_identity_authority_failsoft_historical_contract_invalid");
   }
-  const ungovernedUrl = "https://www.ebay.com/itm/framework-product";
-  const officialUrl = "https://www.paniniamerica.net/checklists/framework-product";
-  const request = Object.freeze({
-    model: "gpt-5.6-luna",
-    reasoning: Object.freeze({ effort: "low" })
+  return Object.freeze({
+    ...ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_BODY,
+    contract_sha256: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_RUNTIME_CONTRACT_SHA256
   });
-  const audit = ({ payload, field, sourceIds, url = ungovernedUrl }) => (
-    auditFounderBetaCanonicalPayload({
+}
+
+export function activationAWebSourceBudgetRepairRuntimeContractProof() {
+  const base = activationAIdentityAuthorityFailsoftRuntimeContractProof();
+  const request = Object.freeze({
+    model: "gpt-5.6-luna", reasoning: Object.freeze({ effort: "low" })
+  });
+  const receiptFor = (sourceUrls, annotationUrls = sourceUrls, fieldSources = []) => (
+    buildFounderBetaWebReceipt({
       model: request.model,
       reasoning: request.reasoning,
       status: "completed",
       output: [{
         type: "web_search_call",
-        action: { query: "framework identity", sources: [{ url }] }
+        action: {
+          query: "sanitized unique source budget",
+          sources: sourceUrls.map((url) => ({ url }))
+        }
+      }, {
+        type: "message",
+        content: [{
+          type: "output_text",
+          text: "source evidence",
+          annotations: annotationUrls.map((url) => ({ type: "url_citation", url }))
+        }]
       }]
     }, {
-      rawOutput: JSON.stringify(payload),
+      rawOutput: JSON.stringify(fieldSources.length
+        ? { product: "Contenders", grammar: "standard" }
+        : { grammar: "standard" }),
       request,
-      fieldSources: [
-        ...(field === "subjects" ? [] : [{
-          field: "subjects", source_ids: ["original_image_1"]
-        }]),
-        { field, source_ids: sourceIds }
-      ],
+      fieldSources,
       originalImageCount: 1
     })
   );
-  let unsupportedProduct;
-  let officialProduct;
-  let mixedProduct;
-  let unsupportedSubject;
-  try {
-    unsupportedProduct = audit({
-      payload: {
-        product: "Marketplace Product", subjects: ["Image Subject"], grammar: "standard"
-      },
-      field: "product",
-      sourceIds: [ungovernedUrl]
-    });
-    officialProduct = audit({
-      payload: {
-        product: "Official Product", subjects: ["Image Subject"], grammar: "standard"
-      },
-      field: "product",
-      sourceIds: [officialUrl],
-      url: officialUrl
-    });
-    mixedProduct = audit({
-      payload: {
-        product: "Image Product", subjects: ["Image Subject"], grammar: "standard"
-      },
-      field: "product",
-      sourceIds: ["original_image_1", ungovernedUrl]
-    });
-    unsupportedSubject = audit({
-      payload: { subjects: ["Marketplace Subject"], grammar: "tcg" },
-      field: "subjects",
-      sourceIds: [ungovernedUrl]
-    });
-  } catch {
-    throw failure("activation_a_identity_authority_failsoft_runtime_contract_invalid");
-  }
-  const unsupportedProductEvidence = unsupportedProduct.receipt.field_evidence.find(
-    (entry) => entry.field === "product"
+  const twentyUrls = Array.from(
+    { length: 20 }, (_, index) => `https://example.com/cards/${index + 1}`
   );
-  const officialProductEvidence = officialProduct.receipt.field_evidence.find(
-    (entry) => entry.field === "product"
+  const repeatedTwenty = receiptFor(
+    [...twentyUrls, ...twentyUrls], [...twentyUrls, ...twentyUrls]
   );
-  const mixedProductEvidence = mixedProduct.receipt.field_evidence.find(
-    (entry) => entry.field === "product"
+  const canonicalUrl = "https://www.paniniamerica.net/cards/105";
+  const queryHashVariants = Array.from(
+    { length: 22 }, (_, index) => `${canonicalUrl}?utm=${index}#result-${index}`
   );
-  const subjectProjection = finishCanonicalFields(unsupportedSubject.payload);
-  if (unsupportedProduct.payload.product !== ""
-      || stableJson(unsupportedProduct.withheld_identity_fields) !== stableJson(["product"])
-      || stableJson(unsupportedProductEvidence?.support_urls) !== stableJson([])
-      || stableJson(unsupportedProductEvidence?.unresolved_urls)
-        !== stableJson([ungovernedUrl])
-      || officialProduct.payload.product !== "Official Product"
-      || stableJson(officialProductEvidence?.support_urls) !== stableJson([officialUrl])
-      || mixedProduct.payload.product !== "Image Product"
-      || stableJson(mixedProductEvidence?.unresolved_urls) !== stableJson([ungovernedUrl])
-      || unsupportedSubject.payload.subjects.length !== 0
-      || subjectProjection.canonical_naming_publishable !== false
-      || subjectProjection.canonical_naming_failure_code
-        !== "canonical_naming_mandatory_subject_identity_missing") {
-    throw failure("activation_a_identity_authority_failsoft_runtime_contract_invalid");
-  }
-  try {
-    audit({
-      payload: {
-        card_number: "999", subjects: ["Image Subject"], grammar: "standard"
-      },
-      field: "card_number",
-      sourceIds: [ungovernedUrl]
-    });
-    throw failure("activation_a_identity_authority_failsoft_runtime_contract_invalid");
-  } catch (error) {
-    if (error?.message !== "founder_beta_current_copy_source_required:card_number") {
-      throw failure("activation_a_identity_authority_failsoft_runtime_contract_invalid");
+  const canonicalReceipt = receiptFor(
+    queryHashVariants,
+    [...queryHashVariants].reverse(),
+    [{ field: "product", source_ids: [queryHashVariants[0]] }]
+  );
+  const exactFailure = (sourceUrls, expected) => {
+    try {
+      receiptFor(sourceUrls, []);
+    } catch (error) {
+      return error?.message === expected;
     }
+    return false;
+  };
+  const unsafeCases = [
+    "http://example.com/cards/1",
+    "https://user:pass@example.com/cards/1",
+    "https://example.com:8443/cards/1",
+    "not a url",
+    `https://example.com/${"x".repeat(2_100)}`
+  ];
+  const unsafeExpected = [
+    "founder_beta_web_url_unsafe",
+    "founder_beta_web_url_unsafe",
+    "founder_beta_web_url_unsafe",
+    "founder_beta_web_url_invalid",
+    "founder_beta_web_url_unsafe"
+  ];
+  const twentyOneRejected = exactFailure([
+    ...twentyUrls, "https://example.com/cards/21"
+  ], ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE);
+  const unsafeRejectedBeforeBudget = unsafeCases.every((url, index) => exactFailure(
+    [...twentyUrls, "https://example.com/cards/21", url], unsafeExpected[index]
+  ));
+  const canonicalEvidence = canonicalReceipt.field_evidence.find(
+    (entry) => entry.field === "product"
+  );
+  if (repeatedTwenty.urls.length !== 20
+      || canonicalReceipt.urls.length !== 1
+      || canonicalReceipt.urls[0] !== canonicalUrl
+      || stableJson(canonicalEvidence?.support_urls) !== stableJson([canonicalUrl])
+      || !twentyOneRejected
+      || !unsafeRejectedBeforeBudget) {
+    throw failure("activation_a_web_source_budget_repair_runtime_contract_invalid");
   }
   const contractBody = {
-    schema_version:
-      "listing-copilot-activation-a-identity-authority-failsoft-repair-proof-v1",
-    repair_descriptor_id: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
-    repair_marker: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER,
-    required_parent_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_SHA,
-    required_parent_tree_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_PARENT_TREE_SHA,
-    failed_run_id: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
-    failure_code: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
-    failed_case_id: "TCG",
-    failed_phase: "RECOGNITION_RESPONSE",
-    required_rollback_git_sha: ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA,
-    base_grammar_source_repair_contract_sha256:
-      ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_RUNTIME_CONTRACT_SHA256,
-    web_only_identity_demotion_fields: Object.freeze([
-      "year", "manufacturer", "product", "set", "card_name"
+    schema_version: "listing-copilot-activation-a-web-source-budget-repair-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+    required_parent_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+    required_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+    base_identity_authority_failsoft_contract_sha256: base.contract_sha256,
+    raw_url_occurrence_limit: null,
+    sanitized_unique_url_limit: 20,
+    url_identity: "https-origin-plus-pathname",
+    query_and_fragment_policy: "strip-before-dedupe",
+    dedupe_channels: Object.freeze([
+      "web_search_call.action.sources", "message.content.annotations"
     ]),
-    mandatory_subject_policy: "withhold-and-fail-publication",
-    unresolved_web_evidence_preserved: true,
-    relation_receipt_withheld_identity_removed: true,
-    governed_or_original_image_identity_admitted: true,
-    mixed_identity_evidence_policy: "admit-valid-preserve-ungoverned-unresolved",
-    current_copy_web_only_policy: "hard-reject",
-    web_search_decision_policy: "model-autonomous",
-    designated_search_exact_call_count: 1,
-    designated_search_minimum_query_count: 1,
-    designated_search_minimum_url_count: 1,
-    designated_search_minimum_admitted_support_rows: 1,
-    visible_query_anchor_groups: Object.freeze({
-      subject: WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.subject,
-      card_number: WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.card_number,
-      product_set: WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.product_set
-    }),
-    visible_query_minimum_anchor_group_matches: 2,
-    visible_query_subject_or_card_number_required: true,
-    visible_query_contract_executable: webIdentityQueryHasVisibleAnchors([
-      "Contenders 105 identity lookup"
-    ]) && !webIdentityQueryHasVisibleAnchors(["Contenders basketball shoes"]),
-    cohort_minimum_no_search_receipt_count: 1,
-    model_owned_query_exact_match_required: false,
-    forward_readback_provider_calls: 0,
+    sanitize_before_unique_budget: true,
+    unique_urls_sorted: true,
+    field_source_sanitized_identity_binding: true,
+    duplicate_raw_occurrence_count_proven: 80,
+    query_hash_raw_occurrence_count_proven: 44,
+    twenty_unique_accepted: true,
+    twenty_one_unique_failure_code: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+    unsafe_url_policy: "hard-reject-before-budget",
+    unsafe_negative_counterexample_count: unsafeCases.length,
     web_receipt_schema_version: FOUNDER_BETA_WEB_RECEIPT_VERSION,
     provider_request_builder_version: base.provider_request_builder_version,
     provider_response_parser_version: base.provider_response_parser_version,
@@ -1861,10 +1965,7 @@ export function activationAIdentityAuthorityFailsoftRuntimeContractProof() {
     writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true
   };
-  return Object.freeze({
-    ...contractBody,
-    contract_sha256: sha256(stableJson(contractBody))
-  });
+  return Object.freeze({ ...contractBody, contract_sha256: sha256(stableJson(contractBody)) });
 }
 
 export function canonicalNamingActivationA2RuntimeContractProof({
@@ -1991,6 +2092,58 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v12") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "required_rollback_git_sha", "artifact_manifest_sha256",
+      "git_sha", "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id
+          !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA
+        || selection.parent_tree_sha
+          !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA
+        || selection.failed_run_id !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID
+        || selection.failure_code !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE
+        || selection.required_rollback_git_sha
+          !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationAWebSourceBudgetRepairArtifactManifestSha256(
+            ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest
+          !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== activationAWebSourceBudgetRepairRuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_web_source_budget_repair_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v13",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_FAILURE_CODE,
+      required_rollback_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v11") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
@@ -2340,6 +2493,9 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_web_source_budget_repair_selection_invalid");
+  }
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
     throw failure("ordinary_release_activation_a3_selection_invalid");
   }
