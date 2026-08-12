@@ -6,8 +6,10 @@ import path from "node:path";
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 import {
   materializeWriterJourneySources,
+  validateWriterJourneyActivationSources,
   verifiedExactParitySourceRows,
   verifiedProductionAssetSourceRows,
+  WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS,
   WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
   WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS
 } from "./materialize-writer-journey-source.mjs";
@@ -92,6 +94,7 @@ const runAttempt = async ({
   cases: attemptCases = cases,
   standardCase = verifiedStandardCase,
   parityCase = null,
+  activationCases = null,
   fetchImpl: attemptFetch = fetchImpl
 } = {}) => materializeWriterJourneySources({
   env,
@@ -99,6 +102,7 @@ const runAttempt = async ({
   cases: attemptCases,
   standardCase,
   parityCase,
+  activationCases,
   fetchImpl: attemptFetch
 });
 
@@ -165,6 +169,43 @@ try {
   });
   assert.equal(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS[1].hash_provenance,
     "2026-08-09_DIRECT_EXACT_PATH_BYTE_ACQUISITION");
+  assert.deepEqual(WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map((contract) => ({
+    case_id: contract.case_id,
+    expected_grammar: contract.expected_grammar,
+    source_feedback_id: contract.source_feedback_id,
+    original_set_sha256: contract.original_set_sha256
+  })), [{
+    case_id: "NON_TCG_WEB_IDENTITY",
+    expected_grammar: "NON_TCG",
+    source_feedback_id: "4e22aa27-1702-4189-a3fb-8d159e053571",
+    original_set_sha256:
+      "f2c21929f45fc664aa0136bb5f3ef045018b53bbe05ada9cf799bb914213f2a0"
+  }, {
+    case_id: "LOT_SHARED_ONLY",
+    expected_grammar: "LOT",
+    source_feedback_id: "59305b58-e160-49bd-ba65-3676b1e4619a",
+    original_set_sha256:
+      "ab13bae6159a14cecfd2832288546373a89b4ecd46e8217eeb8b2fbc5c14c65c"
+  }]);
+  const frozenActivationSources = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map(
+    (contract) => ({
+      ...contract,
+      images: ["front", "back"].map((side) => ({
+        image_id: `${contract.source_feedback_id}_${side}`,
+        role: `${side}_original`,
+        content_sha256: contract.image_sha256[`${contract.source_feedback_id}_${side}`]
+      }))
+    })
+  );
+  assert.equal(validateWriterJourneyActivationSources(frozenActivationSources), true);
+  assert.equal(validateWriterJourneyActivationSources(frozenActivationSources.map(
+    (source, index) => index === 0 ? {
+      ...source,
+      images: source.images.map((image, imageIndex) => imageIndex === 0
+        ? { ...image, content_sha256: "f".repeat(64) }
+        : image)
+    } : source
+  )), false, "Activation A source bytes are immutable");
   const parityRows = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image, index) => ({
     object_path: `verified/parity/${index + 1}.jpg`,
     bucket: "listing-card-images",
@@ -346,6 +387,42 @@ try {
   assert.equal(calls[1].init.redirect, "error",
     "a signed download redirect must not escape the exact Storage object");
   assert.doesNotMatch(JSON.stringify(result), /sb_secret_service-test/);
+
+  const activationCases = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map((contract) => ({
+    ...contract,
+    images: ["front", "back"].map((side) => ({
+      bucket: "listing-feedback-images",
+      object_path: `feedback/activation/${contract.case_id.toLowerCase()}/${side}.jpg`,
+      image_id: `${contract.source_feedback_id}_${side}`,
+      role: `${side}_original`,
+      content_sha256: sha256
+    }))
+  })).map((contract) => ({
+    ...contract,
+    image_sha256: Object.fromEntries(contract.images.map((image) => [
+      image.image_id, sha256
+    ])),
+    // The real digest is separately frozen above. The test double needs a
+    // content-addressed digest for its deliberately identical JPEG bytes.
+    original_set_sha256: null
+  }));
+  // A valid activation source requires distinct exact bytes. Verify that a
+  // caller cannot swap in an arbitrary pair even when every other field looks
+  // correct; the default live path is covered by the frozen contract assertions.
+  await assert.rejects(runAttempt({
+    outDir: await freshOutDir("invalid-activation"),
+    parityCase: {
+      ...WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
+      images: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image, index) => ({
+        ...image,
+        bucket: "listing-card-images",
+        object_path: `verified/parity/${index + 1}.jpg`,
+        object_verified: true,
+        content_hash_verified: true
+      }))
+    },
+    activationCases
+  }), /writer_journey_activation_source_invalid/);
 
   await assert.rejects(
     runAttempt({

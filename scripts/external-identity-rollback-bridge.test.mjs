@@ -88,17 +88,36 @@ const observedFields = Object.freeze({
 const rawProviderOutput = JSON.stringify(observedFields);
 
 function completedProvider(providerFields = observedFields) {
-  return async () => new Response(JSON.stringify({
+  return async (request) => {
+    const sourceFields = [
+      "year", "language", "manufacturer", "product", "set", "subjects", "team",
+      "card_name", "release_variant", "surface_color", "parallel_family",
+      "parallel_exact", "descriptive_rarity", "card_number", "serial", "attributes",
+      "grading_info", "grammar", "lot_count", "special_stamp", "description"
+    ];
+    const audited = {
+      ...providerFields,
+      field_sources: sourceFields.filter((field) => {
+        const value = providerFields[field];
+        return Array.isArray(value) ? value.length > 0 : Boolean(String(value ?? "").trim());
+      }).map((field) => ({ field, source_ids: ["original_image_1"] })),
+      set_card_name_relations: {
+        set: providerFields.set ? "CURRENT_CARD_MEMBER_OF_SET" : "",
+        card_name: providerFields.card_name ? "CURRENT_CARD_NAMED_BY_DESIGN" : ""
+      }
+    };
+    return new Response(JSON.stringify({
     id: "resp_v2_historical_fixture",
-    model: "gpt-5.6-luna-2026-08-01",
+    model: request.model,
     status: "completed",
-    output_text: JSON.stringify(providerFields),
-    reasoning: { effort: "low" },
+    output_text: JSON.stringify(audited),
+    reasoning: request.reasoning,
     usage: { input_tokens: 100, output_tokens: 30, total_tokens: 130 }
   }), {
     status: 200,
     headers: { "content-type": "application/json", "x-request-id": "req_v2_historical_fixture" }
   });
+  };
 }
 
 const sourceIdsByField = Object.freeze({
@@ -189,7 +208,8 @@ async function activeV2Prepared(
   assert.equal(validateExternalIdentityDecisionObservation(support, observed, fields), true);
   const composed = composeCanonicalFieldsForStoredOutput(fields, {
     marketplace: "EBAY",
-    ...v2.output
+    ...v2.output,
+    contract_version: "csm-stage-shadow-v3"
   });
   assert.equal(composed.title, expectedTitle);
   const csmRows = buildCsmStageRows({
@@ -199,6 +219,8 @@ async function activeV2Prepared(
     observedFields: observed,
     externalIdentitySupport: support,
     composed,
+    founderBetaWebReceipt: base.founder_beta_web_receipt,
+    setCardNameRelationReceipt: base.set_card_name_relation_receipt,
     title: composed.title,
     registryReleaseId: v2.receipt.registry_release_id,
     createdAt: CREATED_AT
@@ -216,6 +238,7 @@ async function activeV2Prepared(
     empty_fields: composed.empty_fields,
     input_empty_fields: composed.input_empty_fields,
     normalization_reasons: composed.normalization_reasons,
+    publication_coverage: composed.publication_coverage,
     character_budget: composed.character_budget,
     length: composed.length,
     truncated: composed.truncated,

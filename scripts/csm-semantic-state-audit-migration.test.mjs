@@ -18,9 +18,11 @@ assert.equal(existsSync(historicalUrl), false,
   "the audit extension must not be copied into the historical app ledger");
 
 const sql = await readFile(productionUrl, "utf8");
+assert.match(sql, /set lock_timeout = '5s';/);
+assert.match(sql, /set statement_timeout = '60s';/);
 assert.equal(
   createHash("sha256").update(sql).digest("hex"),
-  "3bc8e43a1c94c30398e5b3c6b1071088dc68176114e1d493ea61fb7c39efc4aa",
+  "c92ee37c420acdc388ba8b497f940c92a4714330d61078dc9e557b5cfefdafad",
   "the reviewed audit-only migration must remain byte-immutable"
 );
 assert.match(sql, /create table if not exists public\.csm_collectible_semantic_state_audits/);

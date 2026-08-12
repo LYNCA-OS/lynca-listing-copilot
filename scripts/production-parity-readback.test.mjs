@@ -376,7 +376,6 @@ for (const mutate of [
 }
 for (const mutate of [
   (value) => { value.composer.stored_title = `${standardTitle} drift`; },
-  (value) => { value.composer.title = "#251 50/50"; value.composer.stored_title = "#251 50/50"; value.composer.length = 11; },
   (value) => { value.brackets.push({ ...value.brackets[0] }); },
   (value) => { value.brackets.push({ ...value.brackets[1] }); },
   (value) => { value.brackets[0].canonical_field = "collector_number"; },
@@ -403,6 +402,24 @@ for (const mutate of [
     deploymentUrl,
     gitSha
   }), /production_standard_readback_/);
+}
+
+// Isolate the frozen P0 full-title check: all generic length and evidence
+// invariants agree with the shorter value, so only title identity can reject it.
+{
+  const shortTitle = "#251 50/50";
+  const changedEvidence = clone(evidence);
+  changedEvidence.cases[1].title_length = shortTitle.length;
+  const changedView = clone(standardResolutionView);
+  changedView.composer.title = shortTitle;
+  changedView.composer.stored_title = shortTitle;
+  changedView.composer.length = shortTitle.length;
+  assert.throws(() => verifyProductionStandardReadback({
+    evidence: changedEvidence,
+    resolutionView: changedView,
+    deploymentUrl,
+    gitSha
+  }), /production_standard_readback_persisted_value_mismatch/);
 }
 
 const temp = await mkdtemp(path.join(tmpdir(), "lynca-production-parity-readback-"));

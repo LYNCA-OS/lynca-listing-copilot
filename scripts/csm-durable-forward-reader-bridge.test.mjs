@@ -114,6 +114,24 @@ const rows = {
       search_optimization: [],
       print_finish_layers: { parallel_exact: "", surface_color: "", parallel_family: "" },
       publication_coverage: composed.publication_coverage,
+      founder_beta_web_receipt: {
+        schema_version: "founder-beta-web-receipt-v1",
+        provider_request_count: 1,
+        isolated_model_call_count: 0,
+        provider_model: "gpt-5.6-luna",
+        reasoning_effort: "low",
+        web_search_used: false,
+        web_search_call_count: 0,
+        queries: [],
+        urls: [],
+        field_evidence: [],
+        semantic_state_sha256: "b".repeat(64)
+      },
+      set_card_name_relation_receipt: {
+        schema_version: "set-card-name-relations-v1",
+        set: null,
+        card_name: null
+      },
       lot_terminal: {
         failure_code: null,
         lot_quantity_unresolved: false,
@@ -152,9 +170,21 @@ standardRows.output.structured_output = {
   composition_grammar: "standard", lot_count: "", components: [],
   search_optimization: [],
   print_finish_layers: { parallel_exact: "", surface_color: "", parallel_family: "" },
-  publication_coverage: null
+  publication_coverage: null,
+  founder_beta_web_receipt:
+    structuredClone(rows.output.structured_output.founder_beta_web_receipt)
 };
-standardRows.output.structured_output.sem = {};
+standardRows.output.structured_output.sem = {
+  set: standardFields.set,
+  card_name: standardFields.card_name
+};
+standardRows.output.structured_output.set_card_name_relation_receipt = {
+  schema_version: "set-card-name-relations-v1",
+  set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: standardFields.set },
+  card_name: {
+    predicate: "CURRENT_CARD_NAMED_BY_DESIGN", value: standardFields.card_name
+  }
+};
 standardRows.output.title = standardComposed.title;
 standardRows.output.marketplace_profile_version = "lynca-standard-name-v0.3";
 standardRows.output.composer_version = "thin-marketplace-composer-v3";
@@ -179,7 +209,7 @@ for (const mutate of [
 ]) {
   const invalid = structuredClone(standardRows);
   mutate(invalid.output);
-  assert.throws(() => replayFromRows(invalid), /canonical_naming_v03_trace_invalid/);
+  assert.throws(() => replayFromRows(invalid), /canonical_naming_trace/);
 }
 
 const webReceipt = {
@@ -224,14 +254,16 @@ assert.doesNotThrow(
   "one web tool call may contain multiple unique provider queries",
 );
 
-for (const mutate of [
-  (value) => { delete value.output.structured_output.publication_coverage; },
-  (value) => { delete value.output.structured_output.lot_terminal; },
-  (value) => { value.output.structured_output.lot_terminal.publishable = false; }
+for (const [mutate, expected] of [
+  [(value) => { delete value.output.structured_output.publication_coverage; }, /publication_coverage/],
+  [(value) => { delete value.output.structured_output.lot_terminal; }, /lot_terminal/],
+  [(value) => { delete value.output.structured_output.founder_beta_web_receipt; }, /founder_beta_web_receipt/],
+  [(value) => { delete value.output.structured_output.set_card_name_relation_receipt; }, /set_card_name_relation_receipt/],
+  [(value) => { value.output.structured_output.lot_terminal.publishable = false; }, /lot_terminal/]
 ]) {
   const tampered = structuredClone(rows);
   mutate(tampered);
-  assert.throws(() => replayFromRows(tampered), /publication_coverage|lot_terminal/);
+  assert.throws(() => replayFromRows(tampered), expected);
 }
 
 const legacy = structuredClone(rows);
@@ -239,6 +271,8 @@ legacy.output.contract_version = "csm-stage-shadow-v2";
 assert.throws(() => readDurableProjectionReceipt(legacy), /outside_contract/);
 delete legacy.output.structured_output.publication_coverage;
 delete legacy.output.structured_output.lot_terminal;
+delete legacy.output.structured_output.founder_beta_web_receipt;
+delete legacy.output.structured_output.set_card_name_relation_receipt;
 assert.equal(readDurableProjectionReceipt(legacy), null);
 assert.equal(replayFromRows(legacy).title, rows.output.title);
 

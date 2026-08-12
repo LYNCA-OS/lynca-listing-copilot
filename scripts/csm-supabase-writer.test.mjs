@@ -8,6 +8,7 @@ import {
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   writeCsmStageRows, csmPersistenceEnabled, isCsmPersistenceConfigured,
+  appendCsmResolutionReview,
   checkCsmPersistenceReadiness, writeCsmStagePacketAtomically,
   CSM_PRODUCT_PROJECTION_READINESS_RPC, CSM_PRODUCT_PROJECTION_VERSION,
   CSM_SUPABASE_REQUEST_TIMEOUT_MS,
@@ -16,6 +17,10 @@ import {
   THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import {
+  buildCsmResolutionReview, buildReviewMeasurementSnapshot, REVIEW_VERDICT
+} from "../csm/contracts/resolution-review.mjs";
+import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 
 const FIELDS = {
   grammar: "standard", year: "2023", manufacturer: "Panini", product: "Prizm",
@@ -25,7 +30,11 @@ const FIELDS = {
   unreadable: [], low_confidence: [], lot_count: "", ip: "", language: ""
 };
 
-const composed = composeFromCanonicalFields(FIELDS);
+const composeActive = (fields) => composeFromCanonicalFields(fields, { features: {
+  durable_lot_terminal_shared_only: true,
+  publication_coverage: true
+} });
+const composed = composeActive(FIELDS);
 const rows = buildCsmStageRows({
   tenantId: "tenant-1", recognitionSessionId: "session-1",
   fields: FIELDS, composed, title: composed.title, createdAt: "2026-08-01T00:00:00Z"
@@ -66,6 +75,62 @@ const PRODUCT_PROJECTION_READY = {
   version: CSM_PRODUCT_PROJECTION_VERSION
 };
 
+// The structured-review transport repeats both hashes immediately before
+// PostgREST. A mutated denominator or revision cannot cross the write boundary.
+{
+  const provenance = {
+    asset_id: "review-asset", recognition_session_id: "review-session",
+    resolution_id: "review-resolution", output_id: "review-output",
+    resolver_version: "resolver-v1", composer_version: "composer-v1",
+    view_version: "view-v1", reviewer_id: "owner-1", tenant_id: "tenant-1"
+  };
+  const measurementSnapshot = buildReviewMeasurementSnapshot({
+    composerVersion: provenance.composer_version,
+    view: {
+      ...buildCsmResolutionView({
+        fields: FIELDS,
+        composed,
+        assetId: provenance.asset_id,
+        recognitionSessionId: provenance.recognition_session_id
+      }),
+      schema_version: provenance.view_version
+    }
+  });
+  const review = buildCsmResolutionReview({
+    provenance, verdict: REVIEW_VERDICT.APPROVED,
+    originalFields: { subjects: ["A"] }, originalTitle: "A",
+    measurementSnapshot, reviewedAt: "2026-08-12T00:00:00.000Z"
+  });
+  let writes = 0;
+  const fetchImpl = async (_url, init) => {
+    writes += 1;
+    assert.equal(JSON.parse(init.body)[0].measurement_snapshot_sha256,
+      review.measurement_snapshot_sha256);
+    return jsonResponse([review], 201);
+  };
+  await appendCsmResolutionReview({ tenantId: "tenant-1", review, env: ENV, fetchImpl });
+  assert.equal(writes, 1);
+
+  const tamperedSnapshot = structuredClone(review);
+  tamperedSnapshot.measurement_snapshot.brackets[0].state = "ABSENT";
+  await assert.rejects(
+    appendCsmResolutionReview({ tenantId: "tenant-1", review: tamperedSnapshot, env: ENV, fetchImpl }),
+    /integrity_snapshot_hash_mismatch/
+  );
+  const tamperedRevision = { ...review, note: "changed after review" };
+  await assert.rejects(
+    appendCsmResolutionReview({ tenantId: "tenant-1", review: tamperedRevision, env: ENV, fetchImpl }),
+    /integrity_revision_hash_mismatch/
+  );
+  await assert.rejects(
+    appendCsmResolutionReview({
+      tenantId: "tenant-overwrite", review, env: ENV, fetchImpl
+    }),
+    /integrity_revision_hash_mismatch/
+  );
+  assert.equal(writes, 1, "tampered reviews must fail before PostgREST");
+}
+
 const CSM_TABLES = [
   "csm_evidence_observations", "csm_bracket_candidates", "csm_candidate_evidence_links",
   "csm_identity_resolutions", "csm_resolved_brackets", "csm_marketplace_outputs"
@@ -78,7 +143,7 @@ function jsonResponse(value, status = 200) {
   });
 }
 
-// Registry and atomic-RPC probes share a bounded request contract. A body that
+// Registry and post-registry probes share a bounded request contract. A body that
 // never arrives is classified by phase instead of hanging before the paid
 // provider boundary.
 {
@@ -93,6 +158,7 @@ function jsonResponse(value, status = 200) {
     fetchImpl: async (url, init = {}) => {
       calls += 1;
       assert.ok(init.signal instanceof AbortSignal);
+      if (String(url).includes("/csm_resolution_reviews?")) return jsonResponse([]);
       if (!String(url).includes("/rpc/")) return jsonResponse(REGISTRY_RELEASES);
       return {
         ok: true,
@@ -109,8 +175,8 @@ function jsonResponse(value, status = 200) {
   });
   assert.equal(timedOut.ready, false);
   assert.equal(timedOut.reason, "atomic_rpc_probe_timeout");
-  assert.equal(calls, 6,
-    "one bounded retry must repeat registry plus both concurrent post-registry probes");
+  assert.equal(calls, 8,
+    "one bounded retry must repeat registry plus all concurrent post-registry probes");
   assert.equal(CSM_SUPABASE_REQUEST_TIMEOUT_MS, 5_000);
 }
 
@@ -198,6 +264,7 @@ function fakeStore({ failOnceOn = "" } = {}) {
   const ready = await checkCsmPersistenceReadiness({
     env: ENV,
     fetchImpl: async (url) => {
+      if (String(url).includes("/csm_resolution_reviews?")) return jsonResponse([]);
       if (String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
         return jsonResponse(PRODUCT_PROJECTION_READY);
       }
@@ -209,11 +276,14 @@ function fakeStore({ failOnceOn = "" } = {}) {
   assert.equal(ready.ready, true);
   const projectionMissing = await checkCsmPersistenceReadiness({
     env: ENV,
-    fetchImpl: async (url) => String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)
-      ? jsonResponse({ message: "function missing" }, 404)
-      : String(url).includes("/rpc/")
-        ? jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 })
-        : jsonResponse(REGISTRY_RELEASES)
+    fetchImpl: async (url) => {
+      if (String(url).includes("/csm_resolution_reviews?")) return jsonResponse([]);
+      return String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)
+        ? jsonResponse({ message: "function missing" }, 404)
+        : String(url).includes("/rpc/")
+          ? jsonResponse({ ok: false, code: "missing_csm_stage_row_identity", status_code: 400 })
+          : jsonResponse(REGISTRY_RELEASES);
+    }
   });
   assert.deepEqual(projectionMissing, {
     ready: false,
@@ -237,6 +307,7 @@ function fakeStore({ failOnceOn = "" } = {}) {
   const recovered = await checkCsmPersistenceReadiness({
     env: ENV,
     fetchImpl: async (url) => {
+      if (String(url).includes("/csm_resolution_reviews?")) return jsonResponse([]);
       if (String(url).includes("/rpc/")) {
         if (String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
           return jsonResponse(PRODUCT_PROJECTION_READY);
@@ -441,7 +512,7 @@ function fakeStore({ failOnceOn = "" } = {}) {
   await writeCsmStageRows(rows, { env: ENV, fetchImpl: store.fetchImpl });
   store.markComplete();
   const lebronFields = { ...FIELDS, subjects: ["LeBron James"], team: "Lakers" };
-  const lebronComposed = composeFromCanonicalFields(lebronFields);
+  const lebronComposed = composeActive(lebronFields);
   const lebronRows = buildCsmStageRows({
     tenantId: "tenant-1", recognitionSessionId: "session-1",
     fields: lebronFields, composed: lebronComposed, title: lebronComposed.title,

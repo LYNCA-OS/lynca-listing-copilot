@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// COS-49 names `Lot*N` as the one merchant-facing quantity marker, retiring the
-// interim `Lot*N`. The decision is Fei's and does not need a number to stand.
+// Historical experiment for COS-49. It compared the interim `Lot*N` form with
+// `LotxN`; the 2026-08-08 founder amendment supersedes both measurements as
+// authority and names `Lot*N` as the sole merchant-facing quantity marker.
 // This supplies one anyway, because the change is cheap to measure and a
 // decision that also happens to score better is worth knowing about -- and a
 // decision that scores WORSE is worth knowing about before a demo.
@@ -56,8 +57,8 @@ for (const [label, path, arm] of COHORTS) {
     if (!/^Lot\*\d+\b/.test(composed.title)) continue;
     lotCards += 1;
 
-    const withX = composed.title;
-    const withStar = composed.title.replace(/^Lot\*(\d+)\b/, "Lot*$1");
+    const withStar = composed.title;
+    const withX = composed.title.replace(/^Lot\*(\d+)\b/, "Lotx$1");
     lotPairs.push({
       x: scoreWithEquivalence(withX, reference),
       star: scoreWithEquivalence(withStar, reference),
@@ -86,7 +87,7 @@ for (const [label, path, arm] of COHORTS) {
     const delta = mean(x) - mean(star);
     console.log(
       `${label} [${scale}] n=${lotCards} lot 卡  `
-      + `Lot*=${mean(x).toFixed(6)}  Lot*=${mean(star).toFixed(6)}  `
+      + `Lotx=${mean(x).toFixed(6)}  Lot*=${mean(star).toFixed(6)}  `
       + `Δ=${delta >= 0 ? "+" : ""}${delta.toFixed(6)}  `
       + `${wins}W/${losses}L  p=${signTest(wins, losses).toFixed(4)}`
     );

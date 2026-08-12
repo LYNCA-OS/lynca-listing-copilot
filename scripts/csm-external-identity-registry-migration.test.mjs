@@ -33,8 +33,8 @@ const v1Sql = readFileSync(productionPath(V1_FILE), "utf8");
 const v2Sql = readFileSync(productionPath(V2_FILE), "utf8");
 assert.equal(
   createHash("sha256").update(v1Sql).digest("hex"),
-  "2da6d811661320ed758f66137dea8b159e4af742058892787dfee0a080b4fef8",
-  "the promoted v1 Registry migration is byte-immutable"
+  "6ca2ebd9b4136bd63276188a2d3995fabe2333a54f35b7fb6c935a07ce09b896",
+  "the promoted v1 Registry migration is exact Singapore remote bytes"
 );
 
 const escaped = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

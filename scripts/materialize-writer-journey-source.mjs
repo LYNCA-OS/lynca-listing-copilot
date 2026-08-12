@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { launchGateImageSourceRecords } from
   "../lib/listing/evaluation/launch-gate-image-source-index.generated.mjs";
+import { computeVerifiedOriginalSetSha256 } from
+  "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import { CSM_PRODUCTION_SUPABASE_PROJECT_REF } from
   "../lib/listing/thin/csm-deployment-environment.mjs";
 import { supabaseServiceHeaders } from "../lib/supabase-service-headers.mjs";
@@ -60,6 +62,48 @@ export const WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS = Object.freeze([
   })
 ]);
 
+// Activation A adds only two frozen sources. The existing TCG case above is
+// the no-search acceptance case, so it is deliberately not duplicated here.
+// Expected titles are absent: the live runtime must derive them from the exact
+// original bytes, while the verifier checks only governed behavior and visible
+// semantic relationships.
+export const WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS = Object.freeze([
+  Object.freeze({
+    case_id: "NON_TCG_WEB_IDENTITY",
+    expected_grammar: "NON_TCG",
+    expected_web_search_used: true,
+    expected_web_search_query:
+      "2020-21 Panini Contenders Anthony Edwards #105 checklist",
+    original_set_sha256:
+      "f2c21929f45fc664aa0136bb5f3ef045018b53bbe05ada9cf799bb914213f2a0",
+    source_feedback_id: "4e22aa27-1702-4189-a3fb-8d159e053571",
+    evaluation_cohort: "INTERNAL_REVIEWED_GT",
+    hash_provenance: "2026-08-12_DIRECT_EXACT_PATH_BYTE_ACQUISITION",
+    image_sha256: Object.freeze({
+      "4e22aa27-1702-4189-a3fb-8d159e053571_front":
+        "52e20e096c333ffa4892f67fd01eadbcf3385c5fc62e396fb626458d69e61cb3",
+      "4e22aa27-1702-4189-a3fb-8d159e053571_back":
+        "550bb85ee6dce1176f57067ff350c76ff73eb268ec7c4d6b930b95548b816471"
+    })
+  }),
+  Object.freeze({
+    case_id: "LOT_SHARED_ONLY",
+    expected_grammar: "LOT",
+    expected_lot_count: "3",
+    original_set_sha256:
+      "ab13bae6159a14cecfd2832288546373a89b4ecd46e8217eeb8b2fbc5c14c65c",
+    source_feedback_id: "59305b58-e160-49bd-ba65-3676b1e4619a",
+    evaluation_cohort: "INTERNAL_REVIEWED_GT",
+    hash_provenance: "2026-08-12_DIRECT_EXACT_PATH_BYTE_ACQUISITION",
+    image_sha256: Object.freeze({
+      "59305b58-e160-49bd-ba65-3676b1e4619a_front":
+        "9d77030639409173fbc0864e9fe9da897f6ba756b06223e71ec375146e2dc1e5",
+      "59305b58-e160-49bd-ba65-3676b1e4619a_back":
+        "08caafab16ca5219669bc60dbc5153b8f48999a17c1c8a224ab28da066ef947d"
+    })
+  })
+]);
+
 // The exact card the Owner selected as the Codex-parity acceptance case.
 // Identity and original bytes are pinned here; the title is deliberately not.
 // The release journey must obtain the expected title from the candidate runtime,
@@ -96,9 +140,7 @@ function sourceForContract(contract) {
   ));
   return indexed ? {
     ...indexed,
-    case_id: contract.case_id,
-    expected_grammar: contract.expected_grammar,
-    hash_provenance: contract.hash_provenance,
+    ...contract,
     images: indexed.images.map((image) => ({
       ...image,
       content_sha256: contract.image_sha256[image.image_id] || null
@@ -107,6 +149,35 @@ function sourceForContract(contract) {
 }
 
 const DEFAULT_CASES = WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.map(sourceForContract);
+const DEFAULT_ACTIVATION_CASES = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map(
+  sourceForContract
+);
+
+export function validateWriterJourneyActivationSources(cases) {
+  if (!Array.isArray(cases) || cases.length !== 2) return false;
+  const expectedById = new Map(WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map(
+    (contract) => [contract.case_id, contract]
+  ));
+  return new Set(cases.map((source) => source?.case_id)).size === 2
+    && cases.every((source) => {
+      const contract = expectedById.get(source?.case_id);
+      const hashes = Array.isArray(source?.images)
+        ? source.images.map((image) => image?.content_sha256) : [];
+      return contract
+        && source.expected_grammar === contract.expected_grammar
+        && source.source_feedback_id === contract.source_feedback_id
+        && source.evaluation_cohort === contract.evaluation_cohort
+        && source.hash_provenance === contract.hash_provenance
+        && source.original_set_sha256 === contract.original_set_sha256
+        && Array.isArray(source.images) && source.images.length === 2
+        && source.images[0]?.role === "front_original"
+        && source.images[1]?.role === "back_original"
+        && source.images.every((image) => (
+          image?.content_sha256 === contract.image_sha256[image?.image_id]
+        ))
+        && computeVerifiedOriginalSetSha256(hashes) === contract.original_set_sha256;
+    });
+}
 
 function requiredText(value, name) {
   const text = String(value || "").trim();
@@ -335,6 +406,7 @@ export async function materializeWriterJourneySources({
   cases = DEFAULT_CASES,
   standardCase = undefined,
   parityCase = undefined,
+  activationCases = undefined,
   fetchImpl = globalThis.fetch
 } = {}) {
   const origin = productionSupabaseOrigin(env.SUPABASE_URL);
@@ -345,6 +417,9 @@ export async function materializeWriterJourneySources({
   const resolvedParityCase = parityCase === undefined
     ? await exactParitySource({ origin, serviceKey, fetchImpl })
     : parityCase;
+  const resolvedActivationCases = activationCases === undefined
+    ? (resolvedParityCase ? DEFAULT_ACTIVATION_CASES : null)
+    : activationCases;
   const requestedStandardCase = Array.isArray(cases)
     ? cases.find((source) => source?.case_id === "NON_TCG")
     : null;
@@ -423,12 +498,20 @@ export async function materializeWriterJourneySources({
   )) {
     throw new Error("writer_journey_parity_source_invalid");
   }
+  if (resolvedActivationCases !== null && (
+    resolvedParityCase === null
+      || !validateWriterJourneyActivationSources(resolvedActivationCases)
+  )) {
+    throw new Error("writer_journey_activation_source_invalid");
+  }
   await secureRootDirectory(directory);
 
   const materializedCases = [];
-  for (const source of resolvedParityCase
-    ? [...resolvedCases, resolvedParityCase]
-    : resolvedCases) {
+  for (const source of [
+    ...resolvedCases,
+    ...(resolvedParityCase ? [resolvedParityCase] : []),
+    ...(resolvedActivationCases || [])
+  ]) {
     const caseDirectory = path.join(directory, source.case_id.toLowerCase().replace("_", "-"));
     await secureNewCaseDirectory(caseDirectory);
     const files = [];
@@ -489,6 +572,15 @@ export async function materializeWriterJourneySources({
     materializedCases.push({
       case_id: source.case_id,
       expected_grammar: source.expected_grammar,
+      ...(source.case_id === "NON_TCG_WEB_IDENTITY" ? {
+        expected_web_search_used: source.expected_web_search_used,
+        expected_web_search_query: source.expected_web_search_query,
+        original_set_sha256: source.original_set_sha256
+      } : {}),
+      ...(source.case_id === "LOT_SHARED_ONLY" ? {
+        expected_lot_count: source.expected_lot_count,
+        original_set_sha256: source.original_set_sha256
+      } : {}),
       ...(source.source_kind === "PRODUCTION_ASSET" ? {
         source_kind: source.source_kind,
         source_record_id: source.source_record_id,
@@ -501,11 +593,16 @@ export async function materializeWriterJourneySources({
     });
   }
   return {
-    schema_version: resolvedParityCase ? "writer-journey-cases-v3" : "writer-journey-cases-v2",
+    schema_version: resolvedActivationCases
+      ? "writer-journey-cases-v4"
+      : resolvedParityCase ? "writer-journey-cases-v3" : "writer-journey-cases-v2",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     accuracy_claim: null,
     cases: materializedCases.slice(0, 2),
-    ...(resolvedParityCase ? { parity_case: materializedCases[2] } : {})
+    ...(resolvedParityCase ? { parity_case: materializedCases[2] } : {}),
+    ...(resolvedActivationCases ? {
+      activation_cases: materializedCases.slice(3, 5)
+    } : {})
   };
 }
 

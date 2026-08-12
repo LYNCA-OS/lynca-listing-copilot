@@ -6,6 +6,8 @@ const path = "infrastructure/supabase-production/supabase/migrations/"
   + "20260812055051_csm_resolution_review_measurement_v2.sql";
 const sql = await readFile(path, "utf8");
 
+assert.match(sql, /set lock_timeout = '5s';/);
+assert.match(sql, /set statement_timeout = '60s';/);
 for (const column of [
   "measurement_basis", "measurement_snapshot", "measurement_snapshot_sha256"
 ]) {

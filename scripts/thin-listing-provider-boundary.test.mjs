@@ -4,6 +4,36 @@ import assert from "node:assert/strict";
 
 import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
 
+function audited(fields) {
+  const sourceFields = [
+    "year", "language", "manufacturer", "product", "set", "subjects", "team",
+    "card_name", "release_variant", "surface_color", "parallel_family",
+    "parallel_exact", "descriptive_rarity", "card_number", "serial", "attributes",
+    "grading_info", "grammar", "lot_count", "special_stamp", "description"
+  ];
+  const hasValue = (value) => Array.isArray(value) ? value.length > 0
+    : value && typeof value === "object" ? Object.values(value).some(Boolean)
+      : Boolean(String(value ?? "").trim());
+  return {
+    ...fields,
+    field_sources: sourceFields.filter((field) => hasValue(fields[field])).map((field) => ({
+      field, source_ids: ["original_image_1"]
+    })),
+    set_card_name_relations: {
+      set: fields.set ? "CURRENT_CARD_MEMBER_OF_SET" : "",
+      card_name: fields.card_name ? "CURRENT_CARD_NAMED_BY_DESIGN" : ""
+    }
+  };
+}
+
+const successBody = (fields, extra = {}) => ({
+  model: "gpt-5.6-luna",
+  reasoning: { effort: "low" },
+  status: "completed",
+  output_text: JSON.stringify(audited(fields)),
+  ...extra
+});
+
 {
   let providerCalls = 0;
   await assert.rejects(runCanonicalListingPath({
@@ -27,9 +57,7 @@ import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.m
         "the execution profile's output cap must reach the actual provider request");
       return new Response(JSON.stringify({
         id: "resp_provider_receipt",
-        model: "gpt-5.6-luna-2026-08-01",
-        status: "completed",
-        output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" }),
+        ...successBody({ subjects: ["Test Subject"], grammar: "standard" }),
         usage: {
           input_tokens: 100,
           input_tokens_details: { cached_tokens: 40 },
@@ -47,11 +75,10 @@ import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.m
   assert.equal(result.provider_request_id, "req_provider_receipt");
   assert.equal(result.provider_client_request_id, "lynca-client-receipt");
   assert.equal(result.requested_effort, "low");
-  assert.equal(result.served_effort, null,
-    "a successful response without provider reasoning echo must stay UNKNOWN");
-  assert.equal(result.served_effort_attested, false);
+  assert.equal(result.served_effort, "low");
+  assert.equal(result.served_effort_attested, true);
   assert.equal(result.requested_model, "gpt-5.6-luna");
-  assert.equal(result.served_model, "gpt-5.6-luna-2026-08-01");
+  assert.equal(result.served_model, "gpt-5.6-luna");
   assert.equal(result.served_model_attested, true);
   assert.equal(result.provider_response_status, "completed");
   assert.equal(result.provider_response_status_attested, true);
@@ -75,7 +102,7 @@ for (const body of [
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify({
       ...body,
-      output_text: JSON.stringify({ subjects: ["Must Not Persist"], grammar: "standard" })
+      output_text: JSON.stringify(audited({ subjects: ["Must Not Persist"], grammar: "standard" }))
     }), { status: 200, headers: { "content-type": "application/json" } })
   }), (error) => error.name === "CanonicalProviderError"
     && error.status === 502
@@ -92,8 +119,7 @@ for (const body of [
     effort: "low",
     callProvider: async () => new Response(JSON.stringify({
       id: "resp_provider_effort_receipt",
-      reasoning: { effort: " LOW " },
-      output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" })
+      ...successBody({ subjects: ["Test Subject"], grammar: "standard" })
     }), { status: 200, headers: { "content-type": "application/json" } })
   });
   assert.equal(result.served_effort, "low");
@@ -106,8 +132,7 @@ for (const body of [
   const result = await runCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     callProvider: async () => new Response(JSON.stringify({
-      status: "completed",
-      output_text: JSON.stringify({ subjects: ["Test Subject"], grammar: "standard" }),
+      ...successBody({ subjects: ["Test Subject"], grammar: "standard" }),
       usage: {
         input_tokens: 10,
         output_tokens: 5,
@@ -224,6 +249,106 @@ for (const body of [
       && error.retryable === false,
     "a 200 response without a usable structured title must not cross the persistence boundary"
   );
+}
+
+// COS-49 terminal Lot integration: the paid boundary returns the deterministic
+// terminal state so orchestration can persist it before the HTTP route refuses
+// a usable-200. Throwing here would make the review receipt unreachable.
+for (const [lotCount, failureCode] of [
+  ["", "LOT_QUANTITY_UNRESOLVED"],
+  ["2-3", "LOT_QUANTITY_UNRESOLVED"],
+  ["1/2", "LOT_QUANTITY_UNRESOLVED"],
+  ["1", "LOT_SINGLE_CARD"]
+]) {
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/lot.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify(audited({
+        manufacturer: "Topps", product: "Chrome", subjects: ["A", "B"],
+        grammar: "lot", lot_count: lotCount
+      })),
+      model: "gpt-5.6-luna", reasoning: { effort: "low" }
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.lot_publishable, false);
+  assert.equal(result.lot_publication_failure_code, failureCode);
+  assert.ok(!/^Lot\*(?:23|12)\b/.test(result.title),
+    "ambiguous quantity text must never be digit-concatenated");
+}
+
+{
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/lot.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify(audited({
+        manufacturer: "Topps", product: "Chrome", subjects: ["A", "B"],
+        set: "Update; Sapphire", grammar: "lot", lot_count: "2"
+      })),
+      model: "gpt-5.6-luna", reasoning: { effort: "low" }
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.lot_publishable, true);
+  assert.equal(result.lot_publication_failure_code, null);
+  assert.deepEqual(result.lot_unshared_attributes, ["set"]);
+}
+
+function webIdentityBody(url) {
+  const payload = audited({
+    subjects: ["Governed Web Subject"], grammar: "standard"
+  });
+  payload.field_sources = payload.field_sources.map((row) => (
+    row.field === "subjects" ? { ...row, source_ids: [url] } : row
+  ));
+  return {
+    model: "gpt-5.6-luna",
+    reasoning: { effort: "low" },
+    status: "completed",
+    output: [
+      { type: "web_search_call", action: {
+        query: "Governed Web Subject checklist", sources: [{ url }]
+      } },
+      { type: "message", content: [{
+        type: "output_text", text: JSON.stringify(payload),
+        annotations: [{ type: "url_citation", url }]
+      }] }
+    ]
+  };
+}
+
+for (const url of [
+  "https://attacker-controlled-example.org/fabricated",
+  "https://www.ebay.com/itm/123456789",
+  "https://evil.paniniamerica.net.attacker.com/fabricated"
+]) {
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webIdentityBody(url)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_identity_authority_required:subjects",
+  "unknown, marketplace, and suffix-confusion URLs cannot author canonical identity");
+}
+
+{
+  const officialUrl = "https://www.paniniamerica.net/checklists/contenders";
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webIdentityBody(officialUrl)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.equal(result.title, "Governed Web Subject");
+  assert.equal(result.founder_beta_web_receipt.web_search_used, true);
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence, [{
+    field: "subjects", support_urls: [officialUrl], conflict_urls: [], unresolved_urls: []
+  }]);
 }
 
 process.stdout.write("thin listing provider boundary: ok\n");

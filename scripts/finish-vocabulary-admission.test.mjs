@@ -1,8 +1,111 @@
 #!/usr/bin/env node
 import assert from "node:assert";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   admitFinishVocabulary, isBaseAppearanceColour, isNonNamingFinishFamily
 } from "../lib/listing/thin/finish-vocabulary-admission.mjs";
+import {
+  APPROVED_PRINT_FINISH_CLAIMS,
+  familiesClaiming,
+  familyClaiming,
+  finishRecognitionForProduct,
+  PRINT_FINISH_REGISTRY_RELEASE,
+  productFamilyFor
+} from "../csm/registry/print-finish-taxonomy.mjs";
+
+const deepFrozen = (value) => !value || typeof value !== "object"
+  || (Object.isFrozen(value) && Object.values(value).every(deepFrozen));
+
+// The production taxonomy consumes one immutable, reviewed release. The
+// receipt is executable: source drift or a changed review count fails release.
+{
+  const release = PRINT_FINISH_REGISTRY_RELEASE;
+  assert.equal(release.status, "FROZEN_APPROVED");
+  assert.equal(release.authority.decision_id, "COS-39");
+  assert.equal(release.authority.approval, "GOVERNED_REVIEW_APPROVED");
+  assert.equal(release.authority.completion_authorization, "COS_COMPLETION_AUTHORIZED_2026_08_12");
+  assert.equal(release.review_receipt.status, "APPROVED");
+  assert.equal(release.review_receipt.reviewed_by_role, "PAI");
+  assert.equal(release.review_receipt.linear_comment_id, "2160874a-fd2b-4eaa-90ea-6cf60764791b");
+  assert.ok(deepFrozen(release), "the active Registry release is recursively immutable");
+  assert.deepEqual(APPROVED_PRINT_FINISH_CLAIMS.map(({ term, product_family }) => (
+    [term, product_family]
+  )), [["refractor", "topps"]], "only governed claims receive rejection authority");
+
+  const sourceUrl = new URL(`../${release.source_receipt.path}`, import.meta.url);
+  const sourceBody = await readFile(sourceUrl, "utf8");
+  const source = JSON.parse(sourceBody);
+  assert.equal(createHash("sha256").update(sourceBody).digest("hex"), release.source_receipt.sha256);
+  assert.equal(source.item_count, release.source_receipt.source_item_count);
+  assert.equal(source.source, release.source_receipt.source_description);
+
+  const wholeRefractor = /(?:^|[^a-z0-9])refractor(?=$|[^a-z0-9])/i;
+  const reviewed = source.items.filter((item) => wholeRefractor.test(item.source_titles?.corrected_title || ""));
+  const outsideOwner = reviewed.filter((item) => (
+    !/(?:^|[^a-z0-9])(?:topps|bowman)(?=$|[^a-z0-9])/i.test(item.source_titles.corrected_title)
+  ));
+  assert.equal(reviewed.length, release.review_receipt.matching_reviewed_titles);
+  assert.equal(outsideOwner.length, release.review_receipt.matching_titles_outside_owner_family);
+}
+
+// Exact boundaries and owner priority: a governed owner term wins even when a
+// neutral-looking word is beside it, while substrings never acquire authority.
+{
+  assert.equal(familyClaiming("Holo Refractor"), "topps");
+  for (const unknown of ["Superfractor", "AntiRefractor", "Scope", "Kaleidoscope", "Pulsar", "Lucky"]) {
+    assert.equal(familyClaiming(unknown), "", `${unknown} has no governed owner claim`);
+  }
+  assert.equal(finishRecognitionForProduct("Gold Refractor", {
+    manufacturer: "Topps", product: "Chrome"
+  }), "RECOGNIZED");
+  assert.equal(finishRecognitionForProduct("Gold Refractor", {
+    manufacturer: "Panini", product: "Prizm"
+  }), "FOREIGN");
+  assert.equal(finishRecognitionForProduct("Gold Refractor", {
+    manufacturer: "Pokémon", product: "Mega Brave"
+  }), "FOREIGN");
+  assert.equal(finishRecognitionForProduct("Gold Refractor", {}), "UNVERIFIED");
+}
+
+// Ambiguous product or claim ownership abstains. A future bad release cannot
+// turn object iteration order into a rejection decision.
+{
+  assert.equal(productFamilyFor({ manufacturer: "Topps Panini" }), "");
+  assert.equal(productFamilyFor({ manufacturer: "Topps", product: "Pokémon" }), "");
+  assert.equal(finishRecognitionForProduct("Refractor", {
+    manufacturer: "Topps Panini"
+  }), "UNVERIFIED");
+  assert.equal(finishRecognitionForProduct("Refractor", {
+    manufacturer: "Topps", product: "Pokémon"
+  }), "UNVERIFIED");
+  const conflicting = [
+    { term: "holo", product_family: "pokemon", status: "ACTIVE" },
+    { term: "holo", product_family: "panini", status: "ACTIVE" }
+  ];
+  assert.deepEqual(familiesClaiming("Holo", conflicting), ["panini", "pokemon"]);
+  assert.equal(familyClaiming("Holo", conflicting), "");
+}
+
+// Terms removed from the ungoverned seed table are admitted unchanged. In
+// particular, `scope` must not reject `Kaleidoscope` through substring match.
+for (const term of ["Pulsar", "Lucky", "Scope", "Kaleidoscope"]) {
+  const out = admitFinishVocabulary({
+    manufacturer: "Topps", product: "Chrome", parallel_exact: term, print_finish: term
+  });
+  assert.equal(out.parallel_exact, term);
+  assert.deepEqual(out.withheld, []);
+}
+
+// An adjacent neutral term does not hide the governed owner claim.
+{
+  const out = admitFinishVocabulary({
+    manufacturer: "Pokémon", product: "Mega Brave",
+    parallel_exact: "Holo Refractor", print_finish: "Holo Refractor"
+  });
+  assert.equal(out.print_finish, "");
+  assert.equal(out.withheld[0].reason, "FINISH_NOT_MARKET_RECOGNIZED_FOR_PRODUCT");
+}
 
 // A printed name is never touched: it is the one rung of the ladder that is an
 // observation rather than an inference, at 0.750 token precision against 0.313.

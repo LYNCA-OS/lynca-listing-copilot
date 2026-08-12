@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 
 import { LARGE_INTERNAL_WRITER_FIXTURE_CONTRACT } from "../scripts/build-large-internal-writer-fixture.mjs";
 import {
@@ -39,8 +40,17 @@ import {
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT,
   CANONICAL_NAMING_RELEASE_CONTRACT_V1,
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  validateFounderBetaWebReceipt
+} from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
+import {
+  CARD_NAME_PREDICATE,
+  SET_MEMBERSHIP_PREDICATE,
+  validateSetCardNameRelationReceipt
+} from "../lib/listing/thin/set-card-name-contract.mjs";
 import {
   validateVerifiedOriginalObservationPublicReceipt,
   VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
@@ -48,6 +58,7 @@ import {
   VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
+  WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS,
   WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
   WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS,
   WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
@@ -76,6 +87,10 @@ import {
   buildProductionForwardReadbackExpectation,
   writeProductionForwardReadbackExpectation
 } from "../scripts/production-forward-readback.mjs";
+import {
+  buildWriterEditableTitleLatencyReceipt,
+  summarizeWriterEditableTitleLatency
+} from "../scripts/production-writer-title-latency.mjs";
 import {
   EBAY_PROFILE_VERSION,
   THIN_COMPOSER_VERSION_V2,
@@ -111,6 +126,7 @@ const expectedProviderAdapterVersion = expectedProviderAdapterContract.id;
 const expectedMaxOutputTokens = 8192;
 const expectedEstimatedTokensPerAttempt = 6_500;
 const serverStageRoundingToleranceMs = 4;
+const monotonicNowMs = () => Math.round(performance.now());
 const CODEX_PARITY_EXPECTED_TITLE =
   "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls";
 
@@ -164,11 +180,14 @@ const verifierErrorCodes = Object.freeze({
   LARGE_PRESPEND_GATE_FAILED: "LARGE_PRESPEND_GATE_FAILED",
   LARGE_RELAY_CONTRACT_MISMATCH: "LARGE_RELAY_CONTRACT_MISMATCH",
   LARGE_RESPONSE_CONTRACT_MISMATCH: "LARGE_RESPONSE_CONTRACT_MISMATCH",
-  FEEDBACK_POLICY_MISMATCH: "FEEDBACK_POLICY_MISMATCH"
+  FEEDBACK_POLICY_MISMATCH: "FEEDBACK_POLICY_MISMATCH",
+  ACTIVATION_RECEIPT_MISMATCH: "ACTIVATION_RECEIPT_MISMATCH",
+  WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED: "WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
 const liveFailureCaseIds = new Set([
-  "NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"
+  "NON_TCG", "TCG", "EXTERNAL_IDENTITY", "NON_TCG_WEB_IDENTITY",
+  "LOT_SHARED_ONLY", "LARGE_STAGED_TRANSPORT"
 ]);
 const liveFailurePhases = new Set([
   "HEALTH",
@@ -214,6 +233,25 @@ function titleSha256(value) {
   return createHash("sha256").update(String(value ?? ""), "utf8").digest("hex");
 }
 
+async function waitForExactEditableTitle(titleInput, expectedTitleSha256) {
+  await expect(titleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
+  let titleEditableAtMs = null;
+  await expect.poll(async () => {
+    const currentTitle = await titleInput.inputValue();
+    if (/^(?!标题暂不可用$).{1,80}$/u.test(currentTitle)
+        && titleSha256(currentTitle) === expectedTitleSha256) {
+      titleEditableAtMs ??= monotonicNowMs();
+      return true;
+    }
+    return false;
+  }, {
+    timeout: 6 * 60 * 1000,
+    intervals: [250, 500, 1_000, 2_000]
+  }).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
+  if (titleEditableAtMs === null) throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY);
+  return titleEditableAtMs;
+}
+
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -248,7 +286,7 @@ function healthExternalIdentityContractMatches(runtime) {
 
 function healthCanonicalNamingContractMatches(runtime) {
   return stableJson(runtime?.canonical_naming_target)
-    === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT_V2);
+    === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT);
 }
 
 function healthVerifiedOriginalObservationContractMatches(runtime) {
@@ -306,7 +344,7 @@ function writerJourneyHealthReceipt({
     && receipt.deployment_git_commit_sha === expectedSha
     && receipt.deployment_environment === "production"
     && stableJson(receipt.canonical_naming_release_contract)
-      === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT_V2)
+      === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT)
     && stableJson(receipt.verified_original_observation_release_receipt)
       === stableJson(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT)
     && receipt.runtime_contract_valid,
@@ -474,6 +512,109 @@ function durableOwnerExecutionReadbackProof(executionReceipt, resolutionView) {
   });
   requireInvariant(hasExactKeys(proof, durableOwnerReadbackEvidenceKeys), code);
   return proof;
+}
+
+const WEB_IDENTITY_FIELDS = new Set([
+  "year", "manufacturer", "product", "set", "card_name", "subjects"
+]);
+
+function activationProjectionProof(sourceCase, resolutionView, title) {
+  const code = verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH;
+  let webReceipt;
+  let relationReceipt;
+  try {
+    webReceipt = validateFounderBetaWebReceipt(
+      resolutionView?.founder_beta_web_receipt
+    );
+    const relationFields = {
+      set: resolutionView?.set_card_name_relation_receipt?.set?.value || "",
+      card_name:
+        resolutionView?.set_card_name_relation_receipt?.card_name?.value || ""
+    };
+    relationReceipt = validateSetCardNameRelationReceipt(
+      resolutionView?.set_card_name_relation_receipt,
+      relationFields
+    );
+  } catch {
+    throw verifierFailure(code);
+  }
+  requireInvariant(webReceipt.provider_request_count === 1
+    && webReceipt.isolated_model_call_count === 0
+    && relationReceipt?.set?.predicate === SET_MEMBERSHIP_PREDICATE
+    && relationReceipt?.card_name?.predicate === CARD_NAME_PREDICATE,
+  code);
+  const setText = relationReceipt.set.value;
+  const cardNameText = relationReceipt.card_name.value;
+  const subjectText = resolutionView?.brackets?.find(
+    (entry) => entry?.bracket === "subject"
+  )?.rendered_text;
+  requireInvariant(Boolean(cardNameText) && Boolean(subjectText)
+    && title.includes(cardNameText) && title.includes(subjectText)
+    && title.indexOf(cardNameText) < title.indexOf(subjectText),
+  code);
+  if (sourceCase.case_id === "TCG") {
+    requireInvariant(webReceipt.web_search_used === false
+      && webReceipt.web_search_call_count === 0
+      && webReceipt.queries.length === 0
+      && webReceipt.urls.length === 0
+      && webReceipt.field_evidence.length === 0,
+    code);
+  }
+  if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
+    requireInvariant(webReceipt.web_search_used === true
+      && webReceipt.web_search_call_count === 1
+      && webReceipt.queries.length === 1
+      && webReceipt.queries[0] === sourceCase.expected_web_search_query
+      && webReceipt.urls.length > 0
+      && webReceipt.urls.every((url) => url.startsWith("https://"))
+      && webReceipt.field_evidence.length > 0
+      && webReceipt.field_evidence.every((entry) => (
+        WEB_IDENTITY_FIELDS.has(entry.field)
+        && entry.support_urls.length > 0
+      )),
+    code);
+  }
+  return Object.freeze({
+    web_search_used: webReceipt.web_search_used,
+    web_search_call_count: webReceipt.web_search_call_count,
+    query_exact: sourceCase.case_id !== "NON_TCG_WEB_IDENTITY"
+      || webReceipt.queries[0] === sourceCase.expected_web_search_query,
+    source_url_count: webReceipt.urls.length,
+    source_authority_fields: webReceipt.field_evidence.map((entry) => entry.field),
+    set_predicate: relationReceipt.set.predicate,
+    card_name_predicate: relationReceipt.card_name.predicate,
+    card_name_before_subject: true
+  });
+}
+
+function lotSharedOnlyProjectionProof(sourceCase, resolutionView, title) {
+  const code = verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH;
+  const terminal = resolutionView?.lot_terminal;
+  const lotCount = resolutionView?.brackets?.find(
+    (entry) => entry?.canonical_field === "lot_count" || entry?.bracket === "lot"
+  );
+  const subjectText = resolutionView?.brackets?.find(
+    (entry) => entry?.bracket === "subject"
+  )?.rendered_text || "";
+  const expectedSubjects = ["Sam Petersen", "Luis Cova", "David Davalillo"];
+  requireInvariant(terminal?.applicable === true
+    && terminal?.publishable === true
+    && terminal?.failure_code == null
+    && terminal?.lot_quantity_unresolved === false
+    && terminal?.lot_single_card === false
+    && String(lotCount?.value || "") === sourceCase.expected_lot_count
+    && title.startsWith(`Lot*${sourceCase.expected_lot_count} `)
+    && expectedSubjects.every((subject) => subjectText.includes(subject)
+      && title.includes(subject))
+    && !/(?:034\/499|132\/250|018\/125|\/499|\/250|\/125)/u.test(title),
+  code);
+  return Object.freeze({
+    expected_lot_count: sourceCase.expected_lot_count,
+    marker_exact: true,
+    publishable: true,
+    individual_serials_withheld: true,
+    lot_unshared_attributes: terminal.lot_unshared_attributes
+  });
 }
 
 function externalIdentityParityProof(resolutionView) {
@@ -1539,11 +1680,14 @@ function validateSourceCasesManifest(manifest, {
     || new Set(manifest.cases.map((entry) => entry?.case_id)).size !== 2
     || new Set(manifest.cases.map((entry) => entry?.expected_grammar)).size !== 2
     || (releaseClass === ORDINARY_RELEASE_CLASS && (
-      manifest?.schema_version !== "writer-journey-cases-v3"
+      manifest?.schema_version !== "writer-journey-cases-v4"
       || !hasExactKeys(manifest, [
-        "schema_version", "evidence_scope", "accuracy_claim", "cases", "parity_case"
+        "schema_version", "evidence_scope", "accuracy_claim", "cases", "parity_case",
+        "activation_cases"
       ])
       || !exactObject(manifest.parity_case)
+      || !Array.isArray(manifest.activation_cases)
+      || manifest.activation_cases.length !== 2
     ))
     || (releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS && (
       manifest.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
@@ -1625,7 +1769,45 @@ function validateSourceCasesManifest(manifest, {
     ))) {
     throw new Error("WRITER_JOURNEY_CASES_MANIFEST parity case invalid");
   }
-  return [...manifest.cases, parity];
+  const activationById = new Map(WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map(
+    (contract) => [contract.case_id, contract]
+  ));
+  if (new Set(manifest.activation_cases.map((entry) => entry?.case_id)).size !== 2) {
+    throw new Error("WRITER_JOURNEY_CASES_MANIFEST activation cases invalid");
+  }
+  for (const entry of manifest.activation_cases) {
+    const contract = activationById.get(entry?.case_id);
+    const searchCase = entry?.case_id === "NON_TCG_WEB_IDENTITY";
+    const expectedKeys = [
+      "case_id", "expected_grammar", "source_feedback_id", "evaluation_cohort",
+      "hash_provenance", "image_count", "files", "original_set_sha256",
+      ...(searchCase
+        ? ["expected_web_search_used", "expected_web_search_query"]
+        : ["expected_lot_count"])
+    ];
+    if (!contract || !hasExactKeys(entry, expectedKeys)
+      || entry.expected_grammar !== contract.expected_grammar
+      || entry.source_feedback_id !== contract.source_feedback_id
+      || entry.evaluation_cohort !== contract.evaluation_cohort
+      || entry.hash_provenance !== contract.hash_provenance
+      || entry.original_set_sha256 !== contract.original_set_sha256
+      || (searchCase && (entry.expected_web_search_used !== true
+        || entry.expected_web_search_query !== contract.expected_web_search_query))
+      || (!searchCase && entry.expected_lot_count !== contract.expected_lot_count)
+      || !Array.isArray(entry.files) || entry.files.length !== 2
+      || entry.image_count !== 2
+      || entry.files.some((file) => !hasExactKeys(file, fileKeys))
+      || entry.files[0]?.role !== "front_original"
+      || entry.files[1]?.role !== "back_original"
+      || entry.files.some((file, index) => (
+        file.content_sha256 !== contract.image_sha256[
+          `${contract.source_feedback_id}_${index === 0 ? "front" : "back"}`
+        ]
+      ))) {
+      throw new Error("WRITER_JOURNEY_CASES_MANIFEST activation case invalid");
+    }
+  }
+  return [...manifest.cases, parity, ...manifest.activation_cases];
 }
 
 async function localSourceCases(filePath, options) {
@@ -1762,11 +1944,12 @@ function recognitionVersionReceipt(recognition, view) {
     && publicRowProfileMatches
     && publicViewProfileMatches,
   verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
-  if (composer === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version) {
+  if (composer === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version) {
     requireInvariant(
       [
         CANONICAL_NAMING_RELEASE_CONTRACT_V1.marketplace_profile_version,
-        CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+        CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version,
+        CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version
       ].includes(marketplaceProfile),
       verifierErrorCodes.VERSION_COMPOSER_MISMATCH
     );
@@ -1789,9 +1972,9 @@ function standardP0LiveEvidence({ recognitionTitle, uiTitle, resolutionView }) {
 }
 
 function canonicalNamingVersionActive(versions) {
-  return versions?.composer === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+  return versions?.composer === CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version
     && versions?.marketplace_profile
-      === CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version;
 }
 
 function compatibilityBridgeStandardVersionActive(versions) {
@@ -1804,7 +1987,7 @@ function observationLegacyVersionActive(versions) {
     && compatibilityBridgeStandardVersionActive(versions);
 }
 
-function observationCanonicalV2VersionActive(versions) {
+function observationCanonicalV3VersionActive(versions) {
   return versions?.resolver === THIN_RESOLVER_VERSION
     && canonicalNamingVersionActive(versions);
 }
@@ -1914,6 +2097,18 @@ test("production writer journey verifies Glass Box and staged large-image transp
     stages: {}
   };
   const feedbackPolicyChecks = [];
+  const writerEditableTitleLatencyReceipts = [];
+  const recordWriterEditableTitleLatency = (input) => {
+    const receipt = buildWriterEditableTitleLatencyReceipt(input);
+    writerEditableTitleLatencyReceipts.push(receipt);
+    evidence.stages.writer_editable_title_latency = summarizeWriterEditableTitleLatency(
+      writerEditableTitleLatencyReceipts,
+      { cohortId: `writer-journey-${expectedSha.slice(0, 12)}` }
+    );
+    requireInvariant(receipt.hard_limit_passed,
+      verifierErrorCodes.WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED);
+    return receipt;
+  };
   const requireFeedbackPolicy = ({ caseId, httpOk, payload }) => {
     const receipt = feedbackPolicyReceipt({ httpOk, payload });
     feedbackPolicyChecks.push(Object.freeze({ case_id: caseId, ...receipt }));
@@ -1934,6 +2129,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
   const requestIds = new Set();
   const resolutionRequests = [];
   let standardResolutionView = null;
+  let webResolutionView = null;
   const responseCaptureTasks = new Set();
   const pendingPageWaits = new Set();
   const ownPageWait = (promise) => {
@@ -2391,19 +2587,31 @@ test("production writer journey verifies Glass Box and staged large-image transp
       failureCaseId = sourceCase.case_id;
       failurePhase = "RECOGNITION_RESPONSE";
       normalTransport.active_case_id = sourceCase.case_id;
-      const uploadStartedAt = Date.now();
+      const uploadStartedAt = monotonicNowMs();
+      const result = journeyPage.getByTestId("writer-title-result").first();
+      const titleInput = result.getByTestId("writer-title-input");
       const recognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "POST"
         && recognitionPaths.has(new URL(response.url()).pathname)
-      ), { timeout: 6 * 60 * 1000 }));
+      ), { timeout: 6 * 60 * 1000 }).then((response) => ({
+        response,
+        responseAtMs: monotonicNowMs()
+      })));
       const resolutionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "GET"
         && new URL(response.url()).pathname === "/api/csm-resolution-view"
       ), { timeout: 6 * 60 * 1000 }));
       await uploadInput.setInputFiles(sourceCase.images);
 
-      const recognitionResponse = await recognitionResponsePromise;
+      const {
+        response: recognitionResponse,
+        responseAtMs: recognitionResponseAtMs
+      } = await recognitionResponsePromise;
       const recognitionPayload = await recognitionResponse.json();
+      const generatedTitleSha256 = titleSha256(recognitionPayload.title);
+      const titleEditableAtPromise = ownPageWait(
+        waitForExactEditableTitle(titleInput, generatedTitleSha256)
+      );
       const responseAttempt = normalTransport.attempts.find((attempt) => (
         attempt.request === recognitionResponse.request()
       ));
@@ -2438,16 +2646,23 @@ test("production writer journey verifies Glass Box and staged large-image transp
         executionReceipt.provider_response_id_sha256;
       let externalIdentityReceipt = null;
       let standardP0Identity = null;
+      let activationProjectionReceipt = null;
+      let lotSharedOnlyReceipt = null;
 
       failurePhase = "TITLE_UI";
-      const result = journeyPage.getByTestId("writer-title-result").first();
-      const titleInput = result.getByTestId("writer-title-input");
-      await expect(titleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
-      await expect.poll(
-        async () => /^(?!标题暂不可用$).{1,80}$/.test((await titleInput.inputValue()).trim()),
-        { timeout: 6 * 60 * 1000, intervals: [250, 500, 1_000, 2_000] }
-      ).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
+      const titleEditableAtMs = await titleEditableAtPromise;
       const titleBeforePanel = await titleInput.inputValue();
+      const writerEditableTitleLatency = recordWriterEditableTitleLatency({
+        caseId: sourceCase.case_id,
+        lane: "NORMAL",
+        sampleIdSha256: sha256(recognitionPayload.recognition_session_id),
+        uploadStartedAtMs: uploadStartedAt,
+        recognitionResponseAtMs,
+        titleEditableAtMs,
+        executionOrigin: executionReceipt.execution_origin,
+        providerAttemptNumber: recognitionPayload.provider_attempt_number,
+        providerRetryCount: recognitionPayload.provider_retry_count
+      });
       if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
         requireInvariant(codexParityTitleMatches({
           recognitionTitle: recognitionPayload?.title,
@@ -2455,7 +2670,6 @@ test("production writer journey verifies Glass Box and staged large-image transp
         }),
         verifierErrorCodes.CODEX_PARITY_MISMATCH);
       }
-      const generatedTitleSha256 = titleSha256(recognitionPayload.title);
       const panelTitleSha256 = titleSha256(titleBeforePanel);
       requireInvariant(panelTitleSha256 === generatedTitleSha256,
         verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
@@ -2472,6 +2686,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
       if (sourceCase.case_id === "TCG") {
         requireInvariant(observationLegacyVersionActive(versions),
           verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+      }
+      if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
+        requireInvariant(resolutionView?.grammar?.raw === "standard"
+          && observationCanonicalV3VersionActive(versions),
+        verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+        webResolutionView = structuredClone(resolutionView);
+      }
+      if (sourceCase.case_id === "LOT_SHARED_ONLY") {
+        requireInvariant(resolutionView?.grammar?.raw === "lot"
+          && observationLegacyVersionActive(versions),
+        verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
       }
       if (sourceCase.case_id === "NON_TCG") {
         requireInvariant(resolutionView?.grammar?.raw === "standard"
@@ -2504,6 +2729,16 @@ test("production writer journey verifies Glass Box and staged large-image transp
       const ownerExecutionReadback = durableOwnerExecutionReadbackProof(
         executionReceipt, resolutionView
       );
+      if (["TCG", "NON_TCG_WEB_IDENTITY"].includes(sourceCase.case_id)) {
+        activationProjectionReceipt = activationProjectionProof(
+          sourceCase, resolutionView, titleBeforePanel
+        );
+      }
+      if (sourceCase.case_id === "LOT_SHARED_ONLY") {
+        lotSharedOnlyReceipt = lotSharedOnlyProjectionProof(
+          sourceCase, resolutionView, titleBeforePanel
+        );
+      }
       if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
         failurePhase = "EXTERNAL_IDENTITY_SUPPORT";
         requireInvariant(registeredExternalIdentityVersionActive(versions),
@@ -2627,6 +2862,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
           codex_parity_exact_match: true,
           external_identity_support: externalIdentityReceipt
         } : {}),
+        ...(activationProjectionReceipt ? {
+          activation_projection: activationProjectionReceipt
+        } : {}),
+        ...(lotSharedOnlyReceipt ? {
+          lot_shared_only: lotSharedOnlyReceipt
+        } : {}),
         ...titleEvidenceReceipt({
           titleBeforePanel,
           titleAfterPanel,
@@ -2634,7 +2875,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
           feedback
         }),
         ...feedbackPolicy,
-        upload_to_feedback_ms: Date.now() - uploadStartedAt
+        writer_editable_title_latency: writerEditableTitleLatency,
+        upload_to_feedback_ms: monotonicNowMs() - uploadStartedAt
       });
       failurePhase = "CASE_COMPLETE";
       await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
@@ -2643,12 +2885,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
 
     failureCaseId = "LARGE_STAGED_TRANSPORT";
     failurePhase = "LARGE_RECOGNITION";
-    const largeUploadStartedAt = Date.now();
+    const largeUploadStartedAt = monotonicNowMs();
+    const largeResult = journeyPage.getByTestId("writer-title-result").first();
+    const largeTitleInput = largeResult.getByTestId("writer-title-input");
     largeTransport.active = true;
     const largeRecognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
       response.request().method() === "POST"
       && new URL(response.url()).pathname === stagedRecognitionPath
-    ), { timeout: 6 * 60 * 1000 }));
+    ), { timeout: 6 * 60 * 1000 }).then((response) => ({
+      response,
+      responseAtMs: monotonicNowMs()
+    })));
     const largeResolutionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
       response.request().method() === "GET"
       && new URL(response.url()).pathname === "/api/csm-resolution-view"
@@ -2656,14 +2903,19 @@ test("production writer journey verifies Glass Box and staged large-image transp
     await uploadInput.setInputFiles(largeFixture.images);
 
     const recognitionOutcome = await Promise.race([
-      largeRecognitionResponsePromise.then((response) => ({ response })),
+      largeRecognitionResponsePromise,
       largeTransport.violation_signal.then((code) => ({ violation: code }))
     ]);
     if (recognitionOutcome.violation) throw verifierFailure(recognitionOutcome.violation);
     const largeRecognitionResponse = recognitionOutcome.response;
+    const largeRecognitionResponseAtMs = recognitionOutcome.responseAtMs;
     requireInvariant(largeRecognitionResponse.status() === 200 && largeRecognitionResponse.ok(),
       verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
     const largeRecognitionPayload = await largeRecognitionResponse.json();
+    const largeGeneratedTitleSha256 = titleSha256(largeRecognitionPayload.title);
+    const largeTitleEditableAtPromise = ownPageWait(
+      waitForExactEditableTitle(largeTitleInput, largeGeneratedTitleSha256)
+    );
     addIds(largeRecognitionPayload, ids);
     await Promise.all(largeTransport.response_promises);
     await Promise.allSettled([...largeTransport.capture_tasks]);
@@ -2707,15 +2959,19 @@ test("production writer journey verifies Glass Box and staged large-image transp
     largeRecognitionPost.provider_response_id_sha256 =
       transportReceipt.execution_receipt.provider_response_id_sha256;
 
-    const largeResult = journeyPage.getByTestId("writer-title-result").first();
-    const largeTitleInput = largeResult.getByTestId("writer-title-input");
-    await expect(largeTitleInput).toBeEnabled({ timeout: 6 * 60 * 1000 });
-    await expect.poll(
-      async () => /^(?!标题暂不可用$).{1,80}$/.test((await largeTitleInput.inputValue()).trim()),
-      { timeout: 6 * 60 * 1000, intervals: [250, 500, 1_000, 2_000] }
-    ).toBe(true).catch(() => { throw verifierFailure(verifierErrorCodes.TITLE_NOT_READY); });
+    const largeTitleEditableAtMs = await largeTitleEditableAtPromise;
     const largeTitleBeforePanel = await largeTitleInput.inputValue();
-    const largeGeneratedTitleSha256 = titleSha256(largeRecognitionPayload.title);
+    const largeWriterEditableTitleLatency = recordWriterEditableTitleLatency({
+      caseId: "LARGE_STAGED_TRANSPORT",
+      lane: "LARGE_STAGED_TRANSPORT",
+      sampleIdSha256: sha256(largeRecognitionPayload.recognition_session_id),
+      uploadStartedAtMs: largeUploadStartedAt,
+      recognitionResponseAtMs: largeRecognitionResponseAtMs,
+      titleEditableAtMs: largeTitleEditableAtMs,
+      executionOrigin: transportReceipt.execution_receipt.execution_origin,
+      providerAttemptNumber: largeRecognitionPayload.provider_attempt_number,
+      providerRetryCount: largeRecognitionPayload.provider_retry_count
+    });
     const largePanelTitleSha256 = titleSha256(largeTitleBeforePanel);
     requireInvariant(largePanelTitleSha256 === largeGeneratedTitleSha256,
       verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
@@ -2730,7 +2986,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
     const largeVersions = recognitionVersionReceipt(largeRecognitionPayload, largeResolutionView);
     requireInvariant((parityRequired
-      ? observationCanonicalV2VersionActive(largeVersions)
+      ? observationCanonicalV3VersionActive(largeVersions)
         && largeResolutionView?.verified_original_observation_support == null
         && largeResolutionView?.external_identity_support == null
       : observationLegacyVersionActive(largeVersions)),
@@ -2827,7 +3083,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       ...transportReceipt,
       relay_request_count: largeTransport.relay_receipts.length,
       ...largeFeedbackPolicy,
-      upload_to_feedback_ms: Date.now() - largeUploadStartedAt
+      writer_editable_title_latency: largeWriterEditableTitleLatency,
+      upload_to_feedback_ms: monotonicNowMs() - largeUploadStartedAt
     });
     failurePhase = "FINAL_SEAL";
     largeTransport.phase_complete = true;
@@ -2882,7 +3139,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
         .every((entry) => entry.response_observed === false),
     verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
     const expectedCaseIds = parityRequired
-      ? ["EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"]
+      ? [
+        "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT", "LOT_SHARED_ONLY", "NON_TCG",
+        "NON_TCG_WEB_IDENTITY", "TCG"
+      ]
       : ["LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"];
     const expectedProviderCaseCount = expectedCaseIds.length;
     expect(resolutionRequests).toHaveLength(expectedProviderCaseCount);
@@ -2927,6 +3187,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
           entry.execution_receipt?.provider_authority_receipt?.operation_key_sha256.slice(0, 40)
         }`),
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
+    requireInvariant(
+      evidence.stages.writer_editable_title_latency?.sample_count === expectedProviderCaseCount
+      && evidence.stages.writer_editable_title_latency?.hard_limit_passed === true
+      && evidence.stages.writer_editable_title_latency?.diagnostic_only === true
+      && evidence.stages.writer_editable_title_latency?.optimization_sample_eligible === false,
+    verifierErrorCodes.WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED);
     const recognitionPostReceipt = recognitionPostSeal(recognitionPosts, evidence.cases);
     evidence.stages.warmup = warmupResponseReceipt(warmupTransport.requests);
     expect(ids.asset_id.size, "asset_id must be captured")
@@ -2944,6 +3210,12 @@ test("production writer journey verifies Glass Box and staged large-image transp
       entry.case_id === "NON_TCG"
     ));
     const tcgCaseEvidence = evidence.cases.find((entry) => entry.case_id === "TCG");
+    const webCaseEvidence = evidence.cases.find(
+      (entry) => entry.case_id === "NON_TCG_WEB_IDENTITY"
+    );
+    const lotCaseEvidence = evidence.cases.find(
+      (entry) => entry.case_id === "LOT_SHARED_ONLY"
+    );
     requireInvariant(evidence.cases.every((entry) => (
       hasExactKeys(entry.execution_receipt?.server_stages_ms, requiredServerStageNames)
       && Object.values(entry.execution_receipt.server_stages_ms).every(
@@ -2986,6 +3258,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && standardCaseEvidence?.source_asset_id
         === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
       && observationLegacyVersionActive(tcgCaseEvidence?.versions)
+      && tcgCaseEvidence?.activation_projection?.web_search_used === false
+      && tcgCaseEvidence?.activation_projection?.web_search_call_count === 0
+      && webCaseEvidence?.activation_projection?.web_search_used === true
+      && webCaseEvidence?.activation_projection?.web_search_call_count === 1
+      && webCaseEvidence?.activation_projection?.query_exact === true
+      && webCaseEvidence?.activation_projection?.source_url_count > 0
+      && observationCanonicalV3VersionActive(webCaseEvidence?.versions)
+      && lotCaseEvidence?.lot_shared_only?.marker_exact === true
+      && lotCaseEvidence?.lot_shared_only?.publishable === true
+      && lotCaseEvidence?.lot_shared_only?.individual_serials_withheld === true
+      && observationLegacyVersionActive(lotCaseEvidence?.versions)
       && (parityRequired ? (
         standardCaseEvidence?.canonical_naming_active === true
           && standardCaseEvidence?.compatibility_bridge_standard_active === false
@@ -2995,9 +3278,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
           )
           && verifiedOriginalObservationVersionActive(standardCaseEvidence?.versions)
           && standardCaseEvidence?.versions?.composer
-            === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+            === CANONICAL_NAMING_RELEASE_CONTRACT.composer_version
           && standardCaseEvidence?.versions?.marketplace_profile
-            === CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+            === CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
       ) : (
         standardCaseEvidence?.canonical_naming_active === false
           && standardCaseEvidence?.compatibility_bridge_standard_active === true
@@ -3007,7 +3290,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       ))
       && largeCaseEvidence?.overlap_observed === true
       && (parityRequired
-        ? observationCanonicalV2VersionActive(largeCaseEvidence?.versions)
+        ? observationCanonicalV3VersionActive(largeCaseEvidence?.versions)
         : observationLegacyVersionActive(largeCaseEvidence?.versions))
       && largeCaseEvidence?.relay_durable_before_recognition_response === true,
     verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);
@@ -3020,6 +3303,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       exact_authority_token_reservation: expectedEstimatedTokensPerAttempt,
       durable_owner_execution_readback_count: expectedProviderCaseCount,
       feedback_policy_receipt_count: expectedProviderCaseCount,
+      writer_editable_title_latency_sample_count: expectedProviderCaseCount,
+      writer_editable_title_latency_hard_limit_passed: true,
       codex_parity_exact_match_count: parityRequired ? 1 : 0,
       verified_original_set_match_count: parityRequired ? 1 : 0,
       canonical_naming_active_case_count: evidence.cases.filter(
@@ -3041,11 +3326,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
     };
     evidence.stages.live_contract = { passed: true, case_count: evidence.cases.length };
     evidence.passed = true;
-    requireInvariant(standardResolutionView != null,
+    const forwardReadbackResolutionView = parityRequired
+      ? webResolutionView : standardResolutionView;
+    requireInvariant(forwardReadbackResolutionView != null,
       verifierErrorCodes.RESOLUTION_VIEW_MISMATCH);
     const forwardReadbackExpectation = buildProductionForwardReadbackExpectation({
       evidence,
-      resolutionView: standardResolutionView,
+      resolutionView: forwardReadbackResolutionView,
       deploymentUrl: baseUrl,
       gitSha: expectedSha
     });
@@ -3132,7 +3419,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       execution_contract_sha256_by_transport_lane_and_image_count:
         expectedExecutionContractSha256ByTransportLaneAndImageCount,
       external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT,
       verified_original_observation: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
       max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
       retired_capabilities_disabled: true
@@ -3170,7 +3457,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       runtime: {
         ...offlineHealth.runtime,
         canonical_naming_target: {
-          ...CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+          ...CANONICAL_NAMING_RELEASE_CONTRACT,
           composer_version: "thin-marketplace-composer-v2"
         }
       }
@@ -3330,7 +3617,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     (entry) => entry.case_id === "TCG"
   );
   const manifest = {
-    schema_version: "writer-journey-cases-v3",
+    schema_version: "writer-journey-cases-v4",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     accuracy_claim: null,
     cases: [{
@@ -3381,9 +3668,31 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
         content_type: "image/webp",
         content_sha256: image.content_sha256
       }))
-    }
+    },
+    activation_cases: WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map((contract) => ({
+      case_id: contract.case_id,
+      expected_grammar: contract.expected_grammar,
+      ...(contract.case_id === "NON_TCG_WEB_IDENTITY" ? {
+        expected_web_search_used: contract.expected_web_search_used,
+        expected_web_search_query: contract.expected_web_search_query
+      } : { expected_lot_count: contract.expected_lot_count }),
+      original_set_sha256: contract.original_set_sha256,
+      source_feedback_id: contract.source_feedback_id,
+      evaluation_cohort: contract.evaluation_cohort,
+      hash_provenance: contract.hash_provenance,
+      image_count: 2,
+      files: ["front", "back"].map((side) => ({
+        path: `/not-read/${contract.case_id}/${side}.jpg`,
+        role: `${side}_original`,
+        bytes: 200,
+        content_type: "image/jpeg",
+        content_sha256: contract.image_sha256[
+          `${contract.source_feedback_id}_${side}`
+        ]
+      }))
+    }))
   };
-  requireInvariant(validateSourceCasesManifest(manifest).length === 3
+  requireInvariant(validateSourceCasesManifest(manifest).length === 5
     && validateSourceCasesManifest(manifest).every((entry) => (
     entry.files.map((file) => file.role).join(",") === "front_original,back_original"
     )), verifierErrorCodes.GENERIC);
@@ -3667,7 +3976,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && versions.composer
       === EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
   verifierErrorCodes.GENERIC);
-  requireInvariant(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length === 6
+  requireInvariant(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length === 7
     && PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.every((entry) => (
       productionPublicCompositionProjectionForOwner({
         composer: entry.composer_version,
@@ -3681,19 +3990,19 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   verifierErrorCodes.GENERIC);
   const canonicalRecognition = structuredClone(recognition);
   canonicalRecognition.csm_owner_versions.composer =
-    CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT.composer_version;
   canonicalRecognition.csm_owner_versions.marketplace_profile =
-    CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
   canonicalRecognition.csm_rows.output.composer_version =
-    CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT.composer_version;
   canonicalRecognition.csm_rows.output.marketplace_profile_version =
-    CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
+    CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version;
   const canonicalVersions = recognitionVersionReceipt(canonicalRecognition, {
     ...view,
     composer: {
-      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
+      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT.composer_version,
       marketplace_profile_version:
-        CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+        CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
     }
   });
   requireInvariant(canonicalNamingVersionActive(canonicalVersions),

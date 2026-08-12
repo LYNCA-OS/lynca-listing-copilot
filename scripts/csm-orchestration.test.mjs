@@ -33,12 +33,36 @@ import {
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { buildAccuracyLossLedger } from
   "../lib/listing/thin/accuracy-loss-ledger.mjs";
+import { CANONICAL_FIELDS_PROMPT_VERSION } from
+  "../lib/listing/thin/canonical-fields.mjs";
 
 const enabledEnv = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
   CSM_PERSISTENCE_ENABLED: "1"
 };
+
+function auditedProviderFields(fields, imageCount = 1) {
+  const sourceFields = [
+    "year", "language", "manufacturer", "product", "set", "subjects", "team",
+    "card_name", "release_variant", "surface_color", "parallel_family",
+    "parallel_exact", "descriptive_rarity", "card_number", "serial", "attributes",
+    "grading_info", "grammar", "lot_count", "special_stamp", "description"
+  ];
+  const hasValue = (value) => Array.isArray(value) ? value.length > 0
+    : value && typeof value === "object" ? Object.values(value).some(Boolean)
+      : Boolean(String(value ?? "").trim());
+  return {
+    ...fields,
+    field_sources: sourceFields.filter((field) => hasValue(fields[field])).map((field) => ({
+      field, source_ids: ["original_image_1"]
+    })),
+    set_card_name_relations: {
+      set: fields.set ? "CURRENT_CARD_MEMBER_OF_SET" : "",
+      card_name: fields.card_name ? "CURRENT_CARD_NAMED_BY_DESIGN" : ""
+    }
+  };
+}
 
 function providerFor(fields) {
   return async (request) => {
@@ -50,9 +74,9 @@ function providerFor(fields) {
     assert.equal(request.max_output_tokens, 8192);
     return new Response(JSON.stringify({
       id: "resp_csm_trace",
-      model: "gpt-5.6-luna-2026-08-01",
+      model: "gpt-5.6-luna",
       status: "completed",
-      output_text: JSON.stringify(fields),
+      output_text: JSON.stringify(auditedProviderFields(fields)),
       reasoning: { effort: "low" },
       usage: {
         input_tokens: 100,
@@ -135,7 +159,7 @@ const common = {
     tenantId: "tenant-1", recognitionSessionId: "session-tcg",
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
-    promptVersion: "csm-canonical-fields-v1",
+    promptVersion: CANONICAL_FIELDS_PROMPT_VERSION,
     providerClientRequestId: "lynca-client-trace",
     callProvider: providerFor(common), env: enabledEnv, fetchImpl: writes.fetchImpl,
     createdAt: "2026-08-01T00:00:00Z",
@@ -146,7 +170,7 @@ const common = {
       assert.equal(match.tenant_id, "tenant-1");
       assert.equal(patch.csm_grammar, "TCG");
       assert.equal(patch.csm_recognition_stage_status, "COMPLETE");
-      assert.equal(patch.csm_owner_versions.prompt_version, "csm-canonical-fields-v1");
+      assert.equal(patch.csm_owner_versions.prompt_version, CANONICAL_FIELDS_PROMPT_VERSION);
       assert.equal(patch.csm_owner_versions.provider_response_id, "resp_csm_trace");
       assert.equal(patch.csm_owner_versions.provider_request_id, "req_csm_trace");
       assert.equal(patch.csm_owner_versions.provider_client_request_id, "lynca-client-trace");
@@ -155,7 +179,7 @@ const common = {
       assert.equal(patch.csm_owner_versions.provider, "openai");
       assert.equal(patch.csm_owner_versions.model, "gpt-5.6-luna");
       assert.equal(patch.csm_owner_versions.requested_model, "gpt-5.6-luna");
-      assert.equal(patch.csm_owner_versions.served_model, "gpt-5.6-luna-2026-08-01");
+      assert.equal(patch.csm_owner_versions.served_model, "gpt-5.6-luna");
       assert.equal(patch.csm_owner_versions.served_model_attested, true);
       assert.equal(patch.csm_owner_versions.reasoning_effort, "low");
       assert.equal(patch.csm_owner_versions.reasoning_effort_attested, true);
@@ -175,10 +199,11 @@ const common = {
       );
       assert.equal(patch.csm_owner_versions.account_scope, "lynca-primary");
       assert.equal(patch.csm_owner_versions.provider_adapter_version, "openai-responses-v1");
-      assert.equal(patch.csm_owner_versions.request_builder_version, "canonical-fields-request-v1");
+      assert.equal(patch.csm_owner_versions.request_builder_version,
+        "canonical-fields-web-request-v1");
       assert.equal(
         patch.csm_owner_versions.response_parser_version,
-        "canonical-output-v2-strict-observed-or-null"
+        "canonical-output-v3-web-receipt"
       );
       assert.match(patch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
       assert.equal(
@@ -281,45 +306,20 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   );
 }
 
-// A syntactically valid provider response may omit the reasoning echo. The
-// title still persists, but neither the API result nor the stored owner receipt
-// may convert requested `low` into observed `low`.
+// Activation A binds the durable Web receipt to the served model/effort trace.
+// A response without the effort echo cannot truthfully attest Luna/low.
 {
-  const prepared = await prepareCanonicalListingPath({
+  await assert.rejects(() => prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort",
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: async () => new Response(JSON.stringify({
       id: "resp_without_effort_echo",
-      output_text: JSON.stringify(common),
+      model: "gpt-5.6-luna",
+      output_text: JSON.stringify(auditedProviderFields(common)),
       usage: { input_tokens: 100, output_tokens: 30 }
     }), { status: 200, headers: { "content-type": "application/json" } })
-  });
-  assert.equal(prepared.requested_effort, "low");
-  assert.equal(prepared.prompt_version, prepared.execution_contract.semantic_prompt_version,
-    "default prepare must persist the semantic prompt actually hashed by its contract");
-  assert.equal(prepared.served_effort, null);
-  assert.equal(prepared.served_effort_attested, false);
-  let sessionPatch = null;
-  const persisted = await persistPreparedCanonicalListingPath({
-    tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort", prepared,
-    writeRows: async (_rows, options) => {
-      sessionPatch = options.sessionPatch;
-      return { ok: true, atomic: true, replayed: false, session: { saved: true }, written: {} };
-    }
-  });
-  assert.equal(persisted.title, prepared.title);
-  assert.equal(sessionPatch.csm_owner_versions.effort, "low");
-  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort, null);
-  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort_attested, false);
-  assert.equal(sessionPatch.csm_owner_versions.served_model, null);
-  assert.equal(sessionPatch.csm_owner_versions.served_model_attested, false);
-  assert.equal(sessionPatch.csm_owner_versions.provider_response_status, null);
-  assert.equal(sessionPatch.csm_owner_versions.provider_response_status_attested, false);
-  assert.equal(sessionPatch.csm_owner_versions.total_tokens, 130);
-  assert.equal(sessionPatch.csm_owner_versions.total_tokens_source, "input_plus_output");
-  assert.equal(sessionPatch.csm_owner_versions.prompt_version, prepared.prompt_version);
-  assert.match(sessionPatch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
+  }), /founder_beta_provider_execution_mismatch/);
 }
 
 // Persistence failure is isolated to this attempt, but the production
@@ -557,7 +557,8 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     })
   });
   const historicalV3 = composeLyncaStandardNameForProfile(prepared.fields, {
-    marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V1
+    marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V1,
+    publicationCoverage: true
   });
   Object.assign(prepared, {
     title: historicalV3.title,
@@ -583,7 +584,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     observedFields: prepared.observed_fields || prepared.fields,
     externalIdentitySupport: prepared.external_identity_support,
     composed: historicalV3,
-    title: historicalV3.title
+    title: historicalV3.title,
+    founderBetaWebReceipt: prepared.founder_beta_web_receipt,
+    setCardNameRelationReceipt: prepared.set_card_name_relation_receipt
   });
   prepared.accuracy_loss_ledger = buildAccuracyLossLedger({
     rawProviderOutput: JSON.stringify(prepared.observed_fields || prepared.fields),
@@ -592,7 +595,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   const invalid = structuredClone(prepared);
   invalid.csm_rows.resolved.find((row) => row.bracket === "card_number").canonical_value =
     "X".repeat(80);
-  const invalidComposition = replayFromRows(invalid.csm_rows).composed;
+  const invalidComposition = replayFromRows(invalid.csm_rows, {
+    allowUnsealedMutation: true
+  }).composed;
   assert.equal(invalidComposition.canonical_naming_publishable, false);
   invalid.title = "";
   invalid.csm_rows.output.title = "";

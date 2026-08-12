@@ -17,6 +17,7 @@ import {
 import {
   buildCanonicalFieldsRequest,
   CANONICAL_FIELDS_PROMPT,
+  CANONICAL_FIELDS_PROMPT_VERSION,
   CANONICAL_FIELDS_SCHEMA
 } from "../lib/listing/thin/canonical-fields.mjs";
 import {
@@ -76,16 +77,21 @@ function task(assetId, overrides = {}) {
     buildLunaDirectPayloadHash(normal),
     "2b75511adf93d9bce0735a657b0d2aebd732bce78437eaded11055b70ba1bd8d"
   );
-  const requestBytes = JSON.stringify(buildCanonicalFieldsRequest({
+  const request = buildCanonicalFieldsRequest({
     imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
     model: "gpt-5.6-luna",
     effort: "low",
     imageDetail: "high"
-  }));
-  assert.equal(requestBytes.length, 11_185);
+  });
+  assert.deepEqual(request.tools, [{ type: "web_search" }]);
+  assert.equal(request.tool_choice, "auto");
+  assert.equal(request.max_tool_calls, 1);
+  assert.deepEqual(request.include, ["web_search_call.action.sources"]);
+  const requestBytes = JSON.stringify(request);
+  assert.equal(requestBytes.length, 12_778);
   assert.equal(
     createHash("sha256").update(requestBytes).digest("hex"),
-    "79ff68337c102f8263036747b52834e6f72beee7ff3c7634a8e37d66c3510b45"
+    "54f80d2bba1843818faaaaa1e447dd103aba2fca16daee7f334572ccd7bf625d"
   );
 
   const baseOptions = {
@@ -93,7 +99,7 @@ function task(assetId, overrides = {}) {
     requestedEffort: "low",
     imageDetail: "high",
     maxOutputTokens: 8192,
-    semanticPromptVersion: "csm-canonical-fields-v1",
+    semanticPromptVersion: CANONICAL_FIELDS_PROMPT_VERSION,
     renderedPrompt: CANONICAL_FIELDS_PROMPT,
     schema: CANONICAL_FIELDS_SCHEMA,
     promptStyleVersion: "canonical-direct-v1",

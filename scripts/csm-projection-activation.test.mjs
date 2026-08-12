@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT,
   CANONICAL_NAMING_RELEASE_CONTRACT_V1,
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   CSM_PROJECTION_ACTIVATION,
@@ -30,9 +31,9 @@ import {
 assert.equal(CSM_PROJECTION_ACTIVATION.schema_version, "csm-projection-activation.v2");
 assert.match(CSM_PROJECTION_ACTIVATION.activation_sha256, /^[0-9a-f]{64}$/);
 assert.deepEqual(activeStandardWriterProjection(), {
-  composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
+  composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version,
   marketplace_profile_version:
-    CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+    CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version
 });
 assert.equal(activeVerifiedOriginalObservationReleaseId(),
   VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID);
@@ -42,9 +43,9 @@ assert.equal(
   CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay,
   VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
 );
-assert.equal(CANONICAL_NAMING_RELEASE_CONTRACT, CANONICAL_NAMING_RELEASE_CONTRACT_V2);
+assert.equal(CANONICAL_NAMING_RELEASE_CONTRACT, CANONICAL_NAMING_RELEASE_CONTRACT_V3);
 assert.equal(LYNCA_STANDARD_PROFILE_VERSION,
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version);
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version);
 assert.deepEqual(CSM_PROJECTION_ACTIVATION.forward_readers.standard, [
   {
     composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V1.composer_version,
@@ -61,6 +62,14 @@ assert.deepEqual(CSM_PROJECTION_ACTIVATION.forward_readers.standard, [
     release_contract_schema_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.schema_version,
     profile_id: CANONICAL_NAMING_RELEASE_CONTRACT_V2.profile_id,
     profile_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.profile_version
+  },
+  {
+    composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version,
+    marketplace_profile_version:
+      CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version,
+    release_contract_schema_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.schema_version,
+    profile_id: CANONICAL_NAMING_RELEASE_CONTRACT_V3.profile_id,
+    profile_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.profile_version
   }
 ]);
 assert.equal(

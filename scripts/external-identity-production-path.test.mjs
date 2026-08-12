@@ -54,12 +54,29 @@ function reseal(rows) {
 function completedProvider(fields, inspect = () => {}) {
   return async (request) => {
     inspect(request);
+    const sourceFields = [
+      "year", "language", "manufacturer", "product", "set", "subjects", "team",
+      "card_name", "release_variant", "surface_color", "parallel_family",
+      "parallel_exact", "descriptive_rarity", "card_number", "serial", "attributes",
+      "grading_info", "grammar", "lot_count", "special_stamp", "description"
+    ];
+    const audited = {
+      ...fields,
+      field_sources: sourceFields.filter((field) => {
+        const value = fields[field];
+        return Array.isArray(value) ? value.length > 0 : Boolean(String(value ?? "").trim());
+      }).map((field) => ({ field, source_ids: ["original_image_1"] })),
+      set_card_name_relations: {
+        set: fields.set ? "CURRENT_CARD_MEMBER_OF_SET" : "",
+        card_name: fields.card_name ? "CURRENT_CARD_NAMED_BY_DESIGN" : ""
+      }
+    };
     return new Response(JSON.stringify({
       id: "resp_external_identity_fixture",
-      model: "gpt-5.6-luna-2026-08-01",
+      model: request.model,
       status: "completed",
-      output_text: JSON.stringify(fields),
-      reasoning: { effort: "low" },
+      output_text: JSON.stringify(audited),
+      reasoning: request.reasoning,
       usage: { input_tokens: 100, output_tokens: 30, total_tokens: 130 }
     }), {
       status: 200,
@@ -114,8 +131,10 @@ const prepared = await prepareCanonicalListingPath({
     assert.equal(request.model, "gpt-5.6-luna");
     assert.equal(request.reasoning.effort, "low");
     assert.equal(request.max_output_tokens, 8192);
-    assert.equal(Object.hasOwn(request, "tools"), false,
-      "external identity resolution is deterministic and must not buy a second provider/tool call");
+    assert.deepEqual(request.tools, [{ type: "web_search" }]);
+    assert.equal(request.tool_choice, "auto");
+    assert.equal(request.max_tool_calls, 1,
+      "the one provider request may search once; registry resolution remains post-observation");
     const providerWire = JSON.stringify(request);
     for (const secretIdentity of [...HR14_ORIGINAL_SHA256, HR14_ORIGINAL_SET_SHA256]) {
       assert.doesNotMatch(providerWire, new RegExp(secretIdentity),
@@ -526,8 +545,9 @@ for (const mutate of [
   }), /external_identity_release_receipt_mismatch/);
 }
 
-// No exact support changes neither canonical facts nor any deterministic CSM
-// packet bytes. Only the top-level ABSTAINED diagnostic receipt is additional.
+// No exact registry support changes neither canonical facts nor deterministic
+// CSM packet bytes. The mandatory v3 Web/relation receipts are held identical;
+// only the top-level ABSTAINED registry diagnostic is additional.
 const noMatchFields = {
   ...observedHr14,
   product: "Topps Chrome",
@@ -564,8 +584,11 @@ const baselineRows = buildCsmStageRows({
     composer_version: baseline.composer_version,
     marketplace_profile_version: baseline.marketplace_profile_version,
     canonical_naming_trace: baseline.canonical_naming_trace,
-    canonical_naming_publishable: baseline.canonical_naming_publishable
+    canonical_naming_publishable: baseline.canonical_naming_publishable,
+    publication_coverage: baseline.publication_coverage
   },
+  founderBetaWebReceipt: noMatch.founder_beta_web_receipt,
+  setCardNameRelationReceipt: noMatch.set_card_name_relation_receipt,
   title: baseline.title,
   createdAt
 });

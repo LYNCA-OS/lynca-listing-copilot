@@ -5,7 +5,8 @@ import {
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT_V1,
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   EBAY_PROFILE_VERSION,
@@ -59,6 +60,13 @@ export const PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX = deepFreeze([
     composerVersion: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
     marketplaceProfileVersion:
       CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version,
+    profilePublic: true
+  }),
+  projection({
+    id: "canonical_naming:v3",
+    composerVersion: CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version,
+    marketplaceProfileVersion:
+      CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version,
     profilePublic: true
   }),
   projection({

@@ -10,6 +10,7 @@ import {
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   buildCsmStageRows,
+  CSM_STAGE_LEGACY_CONTRACT_VERSION,
   computeCsmPacketHashes,
   EBAY_PROFILE_VERSION,
   LYNCA_STANDARD_PROFILE_VERSION,
@@ -35,14 +36,46 @@ const base = {
   unreadable: [], low_confidence: []
 };
 
-function stage(input, recognitionSessionId, compose = composeFromCanonicalFields) {
+function activeCompose(fields) {
+  return composeFromCanonicalFields(fields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
+}
+
+function durableReceipts(fields) {
+  const relation = (field, predicate) => fields[field]
+    ? { predicate, value: fields[field] } : null;
+  return {
+    founderBetaWebReceipt: {
+      schema_version: "founder-beta-web-receipt-v1",
+      provider_request_count: 1,
+      isolated_model_call_count: 0,
+      provider_model: "gpt-5.6-luna",
+      reasoning_effort: "low",
+      web_search_used: false,
+      web_search_call_count: 0,
+      queries: [],
+      urls: [],
+      field_evidence: [],
+      semantic_state_sha256: "c".repeat(64)
+    },
+    setCardNameRelationReceipt: {
+      schema_version: "set-card-name-relations-v1",
+      set: relation("set", "CURRENT_CARD_MEMBER_OF_SET"),
+      card_name: relation("card_name", "CURRENT_CARD_NAMED_BY_DESIGN")
+    }
+  };
+}
+
+function stage(input, recognitionSessionId, compose = activeCompose) {
   const fields = parseCanonicalFields(input).fields;
   const composed = compose(fields);
   return {
     composed,
     rows: buildCsmStageRows({
       tenantId: "tenant-replay", recognitionSessionId, fields, composed,
-      title: composed.title
+      title: composed.title, ...durableReceipts(fields)
     })
   };
 }
@@ -96,11 +129,136 @@ const lot = stage({
 }, "session-lot");
 assert.equal(lot.rows.resolution.grammar, "NON_TCG");
 assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
+assert.deepEqual(lot.rows.output.structured_output.lot_terminal, {
+  lot_quantity_unresolved: false,
+  lot_single_card: false,
+  lot_unshared_attributes: [],
+  publishable: true,
+  failure_code: null
+});
 {
   const checked = verifyReplay(lot.rows, lot.composed.title);
   assert.ok(checked.ok, JSON.stringify(checked.problems));
   assert.equal(checked.replayed.grammar, "lot");
   assert.match(checked.replayed.title, /^Lot\*2 /);
+  assert.equal(checked.replayed.composed.lot_terminal_durable, true);
+}
+
+// Durable `lot_terminal` is the feature marker for the stronger shared-only
+// rules. A Composer v2/eBay Lot written before that receipt existed must keep
+// the pre-change component title byte-for-byte instead of being reinterpreted
+// by the current Composer.
+{
+  const fields = parseCanonicalFields({
+    ...base,
+    year: "2023", manufacturer: "Panini", product: "Prizm", set: "",
+    subjects: ["Victor Wembanyama", "LeBron James"], team: "", card_number: "",
+    serial: "", attributes: ["RC", "Auto"], grading_info: null, grade: "",
+    grammar: "lot", lot_count: "2"
+  }).fields;
+  const historicalComposed = composeFromCanonicalFields(fields, {
+    features: {
+      durable_lot_terminal_shared_only: false,
+      publication_coverage: false
+    }
+  });
+  const historicalRows = buildCsmStageRows({
+    tenantId: "tenant-replay", recognitionSessionId: "session-historical-lot-v2",
+    fields, composed: historicalComposed, title: historicalComposed.title,
+    contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
+  });
+  delete historicalRows.output.structured_output.lot_terminal;
+  reseal(historicalRows);
+  const expected = "Lot*2 2023 Panini Prizm Victor Wembanyama LeBron James RC Auto";
+  assert.equal(historicalRows.output.title, expected);
+  const checked = verifyReplay(historicalRows, expected);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.equal(checked.replayed.title, expected);
+  assert.equal(checked.replayed.composed.lot_terminal_durable, undefined);
+}
+
+// A newly persisted non-publishable Lot cannot be downgraded into legacy mode
+// by deleting its terminal receipt and re-sealing the remaining packet.
+{
+  const unresolved = stage({
+    ...base, subjects: ["A", "B"], team: "", card_number: "", serial: "",
+    attributes: [], grading_info: null, grade: "", grammar: "lot", lot_count: ""
+  }, "session-lot-missing-terminal", (fields) => {
+    const composed = activeCompose(fields);
+    return {
+      ...composed,
+      lot_publishable: false,
+      lot_publication_failure_code: "LOT_QUANTITY_UNRESOLVED"
+    };
+  });
+  const forged = clone(unresolved.rows);
+  delete forged.output.structured_output.lot_terminal;
+  reseal(forged);
+  const checked = verifyReplay(forged, unresolved.composed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => problem.kind === "lot_terminal_receipt_missing"),
+    JSON.stringify(checked.problems));
+}
+
+// The same activation marker protects a publishable Lot. Receipt deletion is
+// not a downgrade path merely because no failure code was present.
+{
+  const forged = clone(lot.rows);
+  delete forged.output.structured_output.lot_terminal;
+  reseal(forged);
+  const checked = verifyReplay(forged, lot.composed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => problem.kind === "lot_terminal_receipt_missing"));
+}
+
+// The terminal receipt is hash-sealed and semantically replayed. Re-sealing a
+// forged state proves this is not merely packet-integrity coverage.
+{
+  const forged = clone(lot.rows);
+  forged.output.structured_output.lot_terminal.publishable = false;
+  forged.output.structured_output.lot_terminal.failure_code = "LOT_SINGLE_CARD";
+  reseal(forged);
+  const checked = verifyReplay(forged, lot.composed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => problem.kind === "lot_terminal_receipt_invalid"));
+}
+
+for (const mutate of [
+  (terminal) => { terminal.extra_key = true; },
+  (terminal) => { delete terminal.failure_code; },
+  (terminal) => { terminal.publishable = "true"; },
+  (terminal) => { terminal.lot_quantity_unresolved = 0; },
+  (terminal) => { terminal.lot_unshared_attributes = "set"; },
+  (terminal) => { terminal.lot_unshared_attributes = ["set", "set"]; },
+  (terminal) => { terminal.lot_unshared_attributes = ["not_a_canonical_lot_field"]; },
+  (terminal) => { terminal.lot_unshared_attributes = ["team", "set"]; }
+]) {
+  const forged = clone(lot.rows);
+  mutate(forged.output.structured_output.lot_terminal);
+  reseal(forged);
+  const checked = verifyReplay(forged, lot.composed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some((problem) => problem.kind === "lot_terminal_receipt_invalid"),
+    JSON.stringify(checked.problems));
+}
+
+// Withheld unshared fields survive persistence and are re-derived on replay;
+// no reader needs the original in-memory Composer result.
+{
+  const unshared = stage({
+    ...base,
+    manufacturer: "Panini", product: "Impeccable",
+    set: "Stats Autograph; Jersey Numbers Auto",
+    subjects: ["A", "B"], team: "Warriors; Cavaliers",
+    serial: "", grade: "", grading_info: null,
+    grammar: "lot", lot_count: "2"
+  }, "session-lot-unshared");
+  assert.deepEqual(unshared.rows.output.structured_output.lot_terminal
+    .lot_unshared_attributes, ["components", "set", "team"]);
+  const checked = verifyReplay(unshared.rows, unshared.composed.title);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.deepEqual(checked.replayed.composed.lot_unshared_attributes,
+    ["components", "set", "team"]);
 }
 
 // Composer versions are executable behavior. Ordinary v2 rows keep their
@@ -133,6 +291,7 @@ assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
   });
   assert.doesNotMatch(legacyComposed.title, /\bBlue\b/);
   const legacy = clone(v2.rows);
+  legacy.output.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
   legacy.output.composer_version = THIN_COMPOSER_VERSION_V1;
   legacy.output.title = legacyComposed.title;
   legacy.output.included_brackets = legacyComposed.brackets;
@@ -146,6 +305,9 @@ assert.equal(lot.rows.output.structured_output.composition_grammar, "lot");
     character_budget: legacyComposed.character_budget,
     rendered_length: legacyComposed.length
   };
+  delete legacy.output.structured_output.publication_coverage;
+  delete legacy.output.structured_output.founder_beta_web_receipt;
+  delete legacy.output.structured_output.set_card_name_relation_receipt;
   reseal(legacy);
   const checked = verifyReplay(legacy, legacyComposed.title);
   assert.ok(checked.ok, JSON.stringify(checked.problems));
@@ -200,7 +362,7 @@ assert.ok(canonicalNaming.composed.canonical_naming_trace.selected.some((token) 
 {
   const invalid = clone(canonicalNaming.rows);
   invalid.resolved.find((row) => row.bracket === "card_number").canonical_value = "X".repeat(80);
-  const invalidReplay = replayFromRows(invalid).composed;
+  const invalidReplay = replayFromRows(invalid, { allowUnsealedMutation: true }).composed;
   assert.equal(invalidReplay.canonical_naming_publishable, false);
   invalid.output.title = "";
   invalid.output.included_brackets = invalidReplay.brackets;
@@ -215,6 +377,8 @@ assert.ok(canonicalNaming.composed.canonical_naming_trace.selected.some((token) 
     rendered_length: invalidReplay.length,
     canonical_naming: invalidReplay.canonical_naming_trace
   };
+  invalid.output.structured_output.publication_coverage =
+    invalidReplay.publication_coverage;
   reseal(invalid);
   const checked = verifyReplay(invalid, "");
   assert.equal(checked.ok, false, "a self-consistent empty P0-overbudget packet must fail closed");
@@ -262,7 +426,8 @@ assert.throws(
   const naming = composeLyncaStandardName(youngGunsFields);
   const namingRows = buildCsmStageRows({
     tenantId: "tenant-replay", recognitionSessionId: "session-independent-search-v3",
-    fields: youngGunsFields, composed: naming, title: naming.title
+    fields: youngGunsFields, composed: naming, title: naming.title,
+    ...durableReceipts(youngGunsFields)
   });
   const replayed = replayFromRows(namingRows);
   assert.deepEqual(replayed.fields.search_optimization, ["Young Guns"]);
@@ -278,14 +443,18 @@ assert.throws(
   assert.equal(lostCheck.ok, false);
   assert.ok(lostCheck.problems.some((problem) => (
     problem.kind === "canonical_naming_trace_mismatch"
+      || problem.kind === "publication_coverage_replay_mismatch"
   )));
 
   const withoutIndependentSearch = { ...youngGunsFields, search_optimization: [] };
-  const ordinaryV2 = composeFromCanonicalFields(youngGunsFields);
+  const ordinaryV2 = composeFromCanonicalFields(youngGunsFields, {
+    features: { publication_coverage: false }
+  });
   assert.equal(ordinaryV2.title, composeFromCanonicalFields(withoutIndependentSearch).title);
   const ordinaryRows = buildCsmStageRows({
     tenantId: "tenant-replay", recognitionSessionId: "session-independent-search-v2",
-    fields: youngGunsFields, composed: ordinaryV2, title: ordinaryV2.title
+    fields: youngGunsFields, composed: ordinaryV2, title: ordinaryV2.title,
+    contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
   });
   assert.equal(Object.hasOwn(
     ordinaryRows.output.structured_output,
@@ -342,7 +511,12 @@ for (const [fixture, expectedGrammar] of [
   [standard, "standard"], [tcg, "tcg"], [lot, "lot"]
 ]) {
   const legacy = clone(fixture.rows);
+  legacy.output.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
   delete legacy.output.structured_output.composition_grammar;
+  delete legacy.output.structured_output.publication_coverage;
+  delete legacy.output.structured_output.lot_terminal;
+  delete legacy.output.structured_output.founder_beta_web_receipt;
+  delete legacy.output.structured_output.set_card_name_relation_receipt;
   reseal(legacy);
   const checked = verifyReplay(legacy, fixture.composed.title);
   assert.ok(checked.ok, JSON.stringify(checked.problems));
@@ -350,7 +524,11 @@ for (const [fixture, expectedGrammar] of [
 }
 {
   const ambiguous = clone(standard.rows);
+  ambiguous.output.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
   delete ambiguous.output.structured_output.composition_grammar;
+  delete ambiguous.output.structured_output.publication_coverage;
+  delete ambiguous.output.structured_output.founder_beta_web_receipt;
+  delete ambiguous.output.structured_output.set_card_name_relation_receipt;
   ambiguous.output.included_brackets = [];
   reseal(ambiguous);
   const checked = verifyReplay(ambiguous, standard.composed.title);

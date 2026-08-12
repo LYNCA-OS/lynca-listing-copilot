@@ -7,7 +7,10 @@ import {
   productionPublicCompositionProjectionForOwner
 } from "./production-public-composition-projection.mjs";
 
-const [login, index, app, spec, feedbackApi, workflow, releaseWorkflow, packageText] = await Promise.all([
+const [
+  login, index, app, spec, feedbackApi, workflow, releaseWorkflow, packageText,
+  directApiTest, forwardReadback
+] = await Promise.all([
   readFile(new URL("../app/login.html", import.meta.url), "utf8"),
   readFile(new URL("../app/index.html", import.meta.url), "utf8"),
   readFile(new URL("../app/listing-copilot.js", import.meta.url), "utf8"),
@@ -15,7 +18,9 @@ const [login, index, app, spec, feedbackApi, workflow, releaseWorkflow, packageT
   readFile(new URL("../api/v4/listing-feedback.js", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/production-writer-journey.yml", import.meta.url), "utf8"),
   readFile(new URL("../.github/workflows/deploy-production.yml", import.meta.url), "utf8"),
-  readFile(new URL("../package.json", import.meta.url), "utf8")
+  readFile(new URL("../package.json", import.meta.url), "utf8"),
+  readFile(new URL("./csm-direct-api.test.mjs", import.meta.url), "utf8"),
+  readFile(new URL("./production-forward-readback.mjs", import.meta.url), "utf8")
 ]);
 const packageJson = JSON.parse(packageText);
 
@@ -40,7 +45,7 @@ assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
 assert.match(spec, /provider_attempt_number[\s\S]*?\.toBe\(1\)/);
 assert.match(spec, /provider_retry_count[\s\S]*?\.toBe\(0\)/);
 assert.match(spec, /test\.setTimeout\(25 \* 60 \* 1000\)/,
-  "up to four sequential live cases must fit inside the bounded journey budget");
+  "six sequential live cases must fit inside the bounded journey budget");
 assert.match(spec, /composer\?\.trace_reliable[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /composer\?\.recomposed_matches_stored[\s\S]*?\.toBe\(true\)/);
 assert.match(spec, /panelTitleSha256 === generatedTitleSha256/);
@@ -54,7 +59,9 @@ assert.match(spec, /resolutionRequests\.every\(\(request\) => request\.method ==
 assert.match(spec, /accuracy_claim: null/);
 assert.match(spec, /field_ground_truth_available: false/);
 assert.match(spec, /LIVE_CONTRACT_RECEIPT_ONLY/);
-assert.match(spec, /writer-journey-cases-v3/);
+assert.match(spec, /writer-journey-cases-v4/);
+assert.match(spec, /activation_cases/);
+assert.match(spec, /WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION/);
 assert.match(spec, /manifest\.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID/);
@@ -76,7 +83,48 @@ assert.match(spec, /parity\.files\.some\(\(file, index\) =>/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
 assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
 assert.match(spec, /production-writer-journey-evidence-v6/);
-assert.match(spec, /"NON_TCG", "TCG", "EXTERNAL_IDENTITY", "LARGE_STAGED_TRANSPORT"/);
+assert.match(spec, /buildWriterEditableTitleLatencyReceipt/);
+assert.match(spec, /summarizeWriterEditableTitleLatency/);
+assert.match(spec,
+  /async function waitForExactEditableTitle[\s\S]*?toBeEnabled[\s\S]*?titleSha256\(currentTitle\) === expectedTitleSha256[\s\S]*?titleEditableAtMs \?\?= monotonicNowMs\(\)/,
+  "the timestamp must be taken only while an enabled input holds the exact response-title hash");
+assert.match(spec,
+  /const recognitionPayload = await recognitionResponse\.json\(\);[\s\S]*?const generatedTitleSha256 = titleSha256\(recognitionPayload\.title\);[\s\S]*?waitForExactEditableTitle\(titleInput, generatedTitleSha256\)[\s\S]*?recognitionResponseAtMs,[\s\S]*?titleEditableAtMs/,
+  "normal Writer latency must bind its timestamp to the known response title");
+assert.match(spec,
+  /const largeRecognitionPayload = await largeRecognitionResponse\.json\(\);[\s\S]*?const largeGeneratedTitleSha256 = titleSha256\(largeRecognitionPayload\.title\);[\s\S]*?waitForExactEditableTitle\(largeTitleInput, largeGeneratedTitleSha256\)[\s\S]*?lane: "LARGE_STAGED_TRANSPORT"/,
+  "large staged transport must use the same exact-title timestamp contract");
+assert.match(spec, /writer_editable_title_latency: writerEditableTitleLatency/);
+assert.match(spec, /writer_editable_title_latency: largeWriterEditableTitleLatency/);
+assert.match(spec, /WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED/);
+assert.match(spec,
+  /writer_editable_title_latency\?\.diagnostic_only === true[\s\S]*?optimization_sample_eligible === false/,
+  "the six-case live smoke is diagnostic and cannot trigger an optimization decision");
+assert.doesNotMatch(spec,
+  /buildWriterEditableTitleLatencyReceipt\([\s\S]{0,500}upload_to_feedback_ms/,
+  "feedback completion latency must not masquerade as editable-title latency");
+for (const caseId of [
+  "NON_TCG", "TCG", "EXTERNAL_IDENTITY", "NON_TCG_WEB_IDENTITY",
+  "LOT_SHARED_ONLY", "LARGE_STAGED_TRANSPORT"
+]) assert.match(spec, new RegExp(`"${caseId}"`));
+for (const token of [
+  "validateFounderBetaWebReceipt", "web_search_used", "web_search_call_count",
+  "provider_request_count", "source_authority_fields", "SET_MEMBERSHIP_PREDICATE",
+  "CARD_NAME_PREDICATE", "card_name_before_subject", "individual_serials_withheld"
+]) assert.match(spec, new RegExp(token));
+assert.match(spec, /webReceipt\.queries\[0\] === sourceCase\.expected_web_search_query/,
+  "the frozen governed-Web case must pin its one observed exact query");
+assert.match(spec, /title\.startsWith\(`Lot\*\$\{sourceCase\.expected_lot_count\} `\)/);
+assert.match(directApiTest,
+  /terminal Lot refusal happens only after durable settlement[\s\S]*?LOT_QUANTITY_UNRESOLVED[\s\S]*?assert\.equal\(providerCalls, 1\)[\s\S]*?assert\.equal\(persistenceCalls, 1\)[\s\S]*?resumeOnly: true[\s\S]*?terminal Lot resume must add zero provider calls[\s\S]*?already-persisted terminal Lot must add zero writes/,
+  "unresolved Lot remains a sealed offline persist-before-409 and zero-call resume proof");
+assert.match(forwardReadback, /const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY"/);
+assert.match(forwardReadback,
+  /evidence\.release_class === "ordinary"[\s\S]*?WEB_CASE_ID : STANDARD_CASE_ID/,
+  "ordinary release readback must target the governed-Web case while bridge keeps Standard");
+assert.match(forwardReadback,
+  /provider_calls: 0[\s\S]*?founder_beta_web_receipt_exact_match:[\s\S]*?web_search_used:/,
+  "promoted authenticated GET must prove the stored Web receipt with zero provider calls");
 assert.match(spec, /CODEX_PARITY_EXPECTED_TITLE/);
 assert.match(spec, /codexParityTitleMatches/);
 assert.match(spec, /CODEX_PARITY_MISMATCH/);
@@ -114,12 +162,11 @@ assert.match(spec,
 assert.match(spec,
   /serialDriftCode === verifierErrorCodes\.STANDARD_P0_IDENTITY_MISMATCH[\s\S]*?serial_selected_exact === false/,
   "correct version tuples with serial drift must not be mislabeled as composer drift");
+assert.match(spec, /webResolutionView = structuredClone\(resolutionView\)/,
+  "the ordinary forward-readback expectation must retain the live Web candidate view");
 assert.match(spec,
-  /standardResolutionView = structuredClone\(resolutionView\)/,
-  "the forward-readback expectation must use the live NON_TCG candidate view");
-assert.match(spec,
-  /evidence\.passed = true;[\s\S]*?buildProductionForwardReadbackExpectation\(\{[\s\S]*?evidence,[\s\S]*?resolutionView: standardResolutionView,[\s\S]*?deploymentUrl: baseUrl,[\s\S]*?gitSha: expectedSha/,
-  "the private expectation must bind final live evidence to candidate URL/SHA and the same view");
+  /evidence\.passed = true;[\s\S]*?const forwardReadbackResolutionView = parityRequired[\s\S]*?webResolutionView : standardResolutionView;[\s\S]*?buildProductionForwardReadbackExpectation\(\{[\s\S]*?evidence,[\s\S]*?resolutionView: forwardReadbackResolutionView,[\s\S]*?deploymentUrl: baseUrl,[\s\S]*?gitSha: expectedSha/,
+  "the private expectation must bind ordinary to Web and bridge to Standard on the same URL/SHA");
 assert.match(spec,
   /writeProductionForwardReadbackExpectation\([\s\S]*?requiredEnv\("WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"\)/,
   "the E2E must write the expectation through the exclusive 0600 helper");
@@ -248,10 +295,10 @@ assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.schema_version,
   "production-public-composition-projection-contract-v1");
 assert.match(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.contract_sha256,
   /^[0-9a-f]{64}$/);
-assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length, 6);
+assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length, 7);
 assert.equal(new Set(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.map((entry) => (
   `${entry.composer_version}\0${entry.marketplace_profile_version}`
-))).size, 6);
+))).size, 7);
 for (const entry of PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX) {
   assert.strictEqual(productionPublicCompositionProjectionForOwner({
     composer: entry.composer_version,
@@ -318,7 +365,7 @@ assert.match(recognitionVersionVerifier,
   "registered hidden-profile tuples must require omission in the public view too");
 assert.match(spec, /observationLegacyVersionActive\(tcgCaseEvidence\?\.versions\)/,
   "the final seal must pin the TCG legacy tuple");
-assert.match(spec, /observationCanonicalV2VersionActive\(largeCaseEvidence\?\.versions\)/,
+assert.match(spec, /observationCanonicalV3VersionActive\(largeCaseEvidence\?\.versions\)/,
   "the final seal must pin the active Large Standard tuple");
 assert.match(spec, /registeredExternalIdentityVersionActive\(parityCaseEvidence\?\.versions\)/,
   "the final seal must pin the registered external tuple");
@@ -550,7 +597,7 @@ assert.match(healthVerifier, /canonical_naming_contract_valid/);
 assert.match(healthVerifier,
   /canonical_naming_release_contract:\s*health\?\.runtime\?\.canonical_naming_target/);
 assert.match(healthVerifier,
-  /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(CANONICAL_NAMING_RELEASE_CONTRACT_V2\)/);
+  /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(CANONICAL_NAMING_RELEASE_CONTRACT\)/);
 assert.match(healthVerifier,
   /verified_original_observation_release_receipt:[\s\S]*?verified_original_observation/);
 assert.match(healthVerifier,
@@ -852,10 +899,10 @@ assert.match(releaseWorkflow, /Build executor-bound large staged transport fixtu
 assert.match(releaseWorkflow, /build-large-internal-writer-fixture\.mjs/);
 assert.match(releaseWorkflow, /install -d -m 700 "\$fixture_parent"/);
 assert.match(releaseWorkflow, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT=%s\\n/);
-assert.match(releaseWorkflow, /writer-journey-cases-v3\.json/);
+assert.match(releaseWorkflow, /writer-journey-cases-v4\.json/);
 assert.match(releaseWorkflow, /writer-journey-large-source-v2\.json/);
 assert.match(releaseWorkflow, /Materialize release-class-bound Writer Journey cases/);
-assert.match(releaseWorkflow, /manifest\.schema_version !== 'writer-journey-cases-v3'/);
+assert.match(releaseWorkflow, /manifest\.schema_version !== 'writer-journey-cases-v4'/);
 assert.match(releaseWorkflow, /parity\.source_asset_id !== contract\.source_asset_id/);
 assert.match(releaseWorkflow, /WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT/);
 assert.match(releaseWorkflow, /writer_journey_verifier_fact_leaked/);

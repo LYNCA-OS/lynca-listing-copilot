@@ -10,6 +10,11 @@ import { pathToFileURL } from "node:url";
 import {
   ACTIVE_V2_TRANSITION_MARKER,
   ACTIVE_V2_TRANSITION_PARENT_SHA,
+  ACTIVATION_A_DESCRIPTOR_ID,
+  ACTIVATION_A_MARKER,
+  ACTIVATION_A_PARENT_SHA,
+  ACTIVATION_A_PARENT_TREE_SHA,
+  ACTIVATION_A_ROLLBACK_SHA,
   CANONICAL_NAMING_ACTIVATION_A2_CHANGED_PATHS,
   CANONICAL_NAMING_ACTIVATION_A2_DESCRIPTOR_ID,
   CANONICAL_NAMING_ACTIVATION_A2_FAILED_RUN_ID,
@@ -1379,15 +1384,18 @@ try {
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
-  const actualTransitionMarker = actualActivationA3
-    ? CANONICAL_NAMING_ACTIVATION_A3_MARKER
-    : actualActivationA2
-      ? CANONICAL_NAMING_ACTIVATION_A2_MARKER
-      : actualActivation
-        ? CANONICAL_NAMING_ACTIVATION_MARKER
-        : actualParent === ACTIVE_V2_TRANSITION_PARENT_SHA
-          ? ACTIVE_V2_TRANSITION_MARKER
-          : null;
+  const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualTransitionMarker = actualActivationA
+    ? ACTIVATION_A_MARKER
+    : actualActivationA3
+      ? CANONICAL_NAMING_ACTIVATION_A3_MARKER
+      : actualActivationA2
+        ? CANONICAL_NAMING_ACTIVATION_A2_MARKER
+        : actualActivation
+          ? CANONICAL_NAMING_ACTIVATION_MARKER
+          : actualParent === ACTIVE_V2_TRANSITION_PARENT_SHA
+            ? ACTIVE_V2_TRANSITION_MARKER
+            : null;
   const selectionPath = path.join(cliFixtureRoot, "selection.json");
   const rollbackPath = path.join(cliFixtureRoot, "rollback.json");
   const lineagePath = path.join(cliFixtureRoot, "lineage.json");
@@ -1433,31 +1441,43 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationA3
-        ? "production-release-selection-v7"
-        : actualActivationA2
-          ? "production-release-selection-v6"
-          : actualActivation
-            ? "production-release-selection-v4"
-            : "production-release-selection-v3");
+      actualActivationA
+        ? "production-release-selection-v8"
+        : actualActivationA3
+          ? "production-release-selection-v7"
+          : actualActivationA2
+            ? "production-release-selection-v6"
+            : actualActivation
+              ? "production-release-selection-v4"
+              : "production-release-selection-v3");
     assert.equal(savedSelection.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationA3
-        ? CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA
+      actualActivationA
+        ? ACTIVATION_A_ROLLBACK_SHA
+        : actualActivationA3
+          ? CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA
+          : actualActivationA2
+            ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
+            : actualParent);
+    assert.equal(savedLineage.schema_version, actualActivationA
+      ? "production-release-rollback-lineage-receipt-v9"
+      : actualActivationA3
+        ? "production-release-rollback-lineage-receipt-v8"
         : actualActivationA2
-          ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
-          : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationA3
-      ? "production-release-rollback-lineage-receipt-v8"
-      : actualActivationA2
-        ? "production-release-rollback-lineage-receipt-v7"
-        : actualActivation
-          ? "production-release-rollback-lineage-receipt-v6"
-          : "production-release-rollback-lineage-receipt-v2");
+          ? "production-release-rollback-lineage-receipt-v7"
+          : actualActivation
+            ? "production-release-rollback-lineage-receipt-v6"
+            : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationA3) {
+    if (actualActivationA) {
+      assert.equal(savedSelection.activation_descriptor_id, ACTIVATION_A_DESCRIPTOR_ID);
+      assert.equal(savedSelection.parent_tree_sha, ACTIVATION_A_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.activation_descriptor_id, ACTIVATION_A_DESCRIPTOR_ID);
+      assert.equal(savedLineage.release_parent_tree_sha, ACTIVATION_A_PARENT_TREE_SHA);
+    } else if (actualActivationA3) {
       assert.equal(savedSelection.repair_descriptor_id,
         CANONICAL_NAMING_ACTIVATION_A3_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

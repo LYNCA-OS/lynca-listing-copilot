@@ -19,6 +19,10 @@ import { MARKETPLACE_PROFILES } from "../lib/listing/thin/marketplace-composer-r
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 import { routeReviewPatterns, OWNING_LAYER, CORRECTION_REASON } from "../csm/contracts/resolution-review.mjs";
 import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
+import {
+  APPROVED_PRINT_FINISH_CLAIMS,
+  PRINT_FINISH_REGISTRY_RELEASE
+} from "../csm/registry/print-finish-taxonomy.mjs";
 
 const results = [];
 // A clause may fail by throwing OR by returning the reason as a string. The
@@ -218,6 +222,19 @@ check("COS-39", "the IP table is fed the manufacturer it already reads", () => {
   assert.equal((title.match(/pok[eé]mon/gi) || []).length, 1,
     "once as [IP], and not a second time as [Manufacturer]");
 });
+check("COS-39", "Print Finish rejection authority is a governed immutable release", () => {
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.status, "FROZEN_APPROVED");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.authority.decision_id, "COS-39");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.authority.approval, "GOVERNED_REVIEW_APPROVED");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.review_receipt.status, "APPROVED");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.review_receipt.reviewed_by_role, "PAI");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.review_receipt.linear_comment_id,
+    "2160874a-fd2b-4eaa-90ea-6cf60764791b");
+  assert.ok(Object.isFrozen(PRINT_FINISH_REGISTRY_RELEASE));
+  assert.deepEqual(APPROVED_PRINT_FINISH_CLAIMS.map((claim) => (
+    [claim.term, claim.product_family]
+  )), [["refractor", "topps"]]);
+});
 check("COS-21", "the canonical editable field list is exactly the 17 CSM names", () => {
   // COS-21 is a boundary decision, not a field proposal: implementation and
   // evidence terms -- `serial_number`, `serial_numerator`, `serial_denominator`,
@@ -337,28 +354,6 @@ check("COS-56", "Product > Set > Card Name, with Card Name EMPTY when exhausted"
 // completeness it never measured.
 const UNIMPLEMENTED = [
   {
-    decision: "COS-20",
-    clause: "per-field catalog/vector admission (clauses 3 and 4)",
-    why: [
-      "Admission is capability-level: catalog and vector are off, globally,",
-      "and there is no per-field gate to point at. Clauses 3 and 4 ask for a",
-      "field to be admitted only after a frozen evaluation proves positive",
-      "value FOR THAT FIELD, and no such gate exists in either direction --",
-      "nothing can be admitted, and nothing records what would admit it.",
-      "",
-      "What IS now guarded is the hazard: `provider-options.mjs` defaults",
-      "`ENABLE_CATALOG_ASSIST_DEFAULT` to true, in a module the production",
-      "path does not load. `scripts/csm-thin-path-admission-fence.test.mjs`",
-      "walks the real import graph from both production endpoints and fails",
-      "if catalog, vector retrieval, candidate scoring, or that module ever",
-      "becomes reachable -- so a superseded default cannot become production",
-      "policy through one import and no decision.",
-      "",
-      "A fence is not the implementation. This stays listed until the",
-      "per-field gate exists."
-    ].join("\n        ")
-  },
-  {
     decision: "COS-14",
     clause: "mixed-finish lots: \"shared by every card\" is prompt-only",
     why: [
@@ -376,37 +371,17 @@ const UNIMPLEMENTED = [
   },
   {
     decision: "COS-42",
-    clause: "read-only Resolution View is released in code but lacks a live operator receipt",
+    clause: "accuracy projection lacks EMPTY/omission denominators and provenance",
     why: [
-      "The direct writer path now imports `app/csm-glass-box.mjs`, fetches",
-      "`/api/csm-resolution-view` after a final persisted result, and renders",
-      "the returned read model. The API and UI contract are covered offline.",
-      "The earlier 'built but unreleased' note is therefore stale.",
+      "The read-only Resolution View and its real TCG/NON_TCG operator receipts",
+      "are complete. Protected run 31520433083 rendered the Glass Box for each",
+      "persisted session without changing the generated title.",
       "",
-      "What is still missing is production evidence: one real TCG and one real",
-      "NON_TCG writer journey must show the panel for the same persisted",
-      "session without changing the title. `Listing Copilot Verified` remains",
-      "open until those two receipts exist."
-    ].join("\n        ")
-  },
-  {
-    decision: "COS-39",
-    clause: "the Print Finish Registry was seeded, not governed",
-    why: [
-      "The product-scoped taxonomy in `csm/registry/print-finish-taxonomy.mjs`",
-      "now enforces COS-39's boundary, and its content is sourced rather than",
-      "invented: `20 Registry`'s own Print Finish examples, plus the 255",
-      "reviewed titles, which are the market naming its own products.",
-      "",
-      "What it did NOT go through is `20 Registry`'s admission process --",
-      "\"governed recurring production evidence, aggregated and reviewed",
-      "operator feedback, compatible official checklist evidence, or trusted",
-      "domain knowledge\". One corpus is evidence; it is not governance.",
-      "",
-      "The design fails safe in the meantime: a term or product the table does",
-      "not know is ADMITTED, never withheld, so an ungoverned table can be",
-      "incomplete without deleting anything. Growing it should go through the",
-      "Registry process rather than another read of the same corpus."
+      "The remaining gap is measurement: `projectReviewAccuracy` exposes only",
+      "correction_rate and by_reason. It does not publish explicit EMPTY-error",
+      "or Composer-omission denominators, nor distinguish FIELD_REVIEWED from",
+      "TITLE_DERIVED provenance. COS-42 stays open until those metrics are",
+      "defined and exercised by governed structured reviews."
     ].join("\n        ")
   }
 ];

@@ -15,13 +15,27 @@ import {
 import {
   CSM_ACTIVE_MODEL_PROFILE
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
+import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
+import {
+  CSM_CANONICAL_REQUEST_BUILDER_VERSION,
+  CSM_CANONICAL_RESPONSE_PARSER_VERSION,
+  CSM_OPENAI_RESPONSES_ADAPTER
+} from "../lib/listing/thin/csm-provider-adapter.mjs";
+import {
+  CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+  FOUNDER_BETA_WEB_RECEIPT_VERSION
+} from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
+import { SET_CARD_NAME_RELATION_CONTRACT_VERSION } from
+  "../lib/listing/thin/set-card-name-contract.mjs";
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT,
   CANONICAL_NAMING_RELEASE_CONTRACT_V1,
   CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3,
   composeLyncaStandardNameForProfile,
   LYNCA_STANDARD_PROFILE_VERSION_V1,
-  LYNCA_STANDARD_PROFILE_VERSION_V2
+  LYNCA_STANDARD_PROFILE_VERSION_V2,
+  LYNCA_STANDARD_PROFILE_VERSION_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   buildCsmStageRows,
@@ -139,6 +153,110 @@ export const CANONICAL_NAMING_ACTIVATION_A3_PARENT_TREE_SHA =
 export const CANONICAL_NAMING_ACTIVATION_A3_FAILED_RUN_ID = "31517338969";
 export const CANONICAL_NAMING_ACTIVATION_A3_ROLLBACK_SHA =
   CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
+export const ACTIVATION_A_DESCRIPTOR_ID = "listing-copilot-activation-a-v1";
+export const ACTIVATION_A_MARKER =
+  "luna-web-canonical-v03-durable-stage-v3-activation-v1";
+export const ACTIVATION_A_PARENT_SHA =
+  "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c";
+export const ACTIVATION_A_PARENT_TREE_SHA =
+  "256115e6e9ea04e87ced597e824bc8e2aecffdf8";
+export const ACTIVATION_A_ROLLBACK_SHA = ACTIVATION_A_PARENT_SHA;
+export const ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION =
+  "writer-journey-cases-v4";
+export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
+  ".github/workflows/deploy-production.yml",
+  "api/csm-listing-title.js",
+  "api/csm-resolution-view.js",
+  "api/health.js",
+  "app/csm-glass-box.mjs",
+  "csm/contracts/resolution-review.mjs",
+  "csm/contracts/resolution-view.mjs",
+  "csm/registry/print-finish-taxonomy.mjs",
+  "csm/registry/releases/print-finish-product-claims-v1.mjs",
+  "docs/EXPLORATION-LEDGER-20260805.md",
+  "docs/csm/cos-59-semantic-state-v1-2026-08-12.md",
+  "docs/csm/cos-63-founder-beta-mvp-2026-08-12.md",
+  "docs/handoff-2026-08-07.md",
+  "docs/operations/supabase-singapore-remote-byte-reconciliation-2026-08-12.json",
+  "docs/standards/lynca-csm-title-definition-v2.md",
+  "e2e/production-writer-journey.spec.mjs",
+  "experiments/csm-frontier/collectible-semantic-state-v1.mjs",
+  "experiments/csm-frontier/founder-beta-joint-request-v1.mjs",
+  "experiments/csm-frontier/frontier-model-csm-harness-v1.mjs",
+  "experiments/csm-frontier/set-card-name-contract-v1.mjs",
+  "experiments/csm-frontier/subset-a-grounded-understanding-v1.mjs",
+  "infrastructure/supabase-production/supabase/migrations/20260809151333_csm_provider_authority_execute_hardening_v1.sql",
+  "infrastructure/supabase-production/supabase/migrations/20260810120000_csm_external_identity_high_risers_registry_v1.sql",
+  "infrastructure/supabase-production/supabase/migrations/20260810200000_csm_external_identity_high_risers_registry_v2.sql",
+  "infrastructure/supabase-production/supabase/migrations/20260812055051_csm_resolution_review_measurement_v2.sql",
+  "infrastructure/supabase-production/supabase/migrations/20260812153000_csm_collectible_semantic_state_audit_v1.sql",
+  "lib/listing/thin/canonical-composer.mjs",
+  "lib/listing/thin/canonical-fields.mjs",
+  "lib/listing/thin/canonical-naming-adapter.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-orchestration.mjs",
+  "lib/listing/thin/csm-persistence.mjs",
+  "lib/listing/thin/csm-projection-activation.mjs",
+  "lib/listing/thin/csm-provider-adapter.mjs",
+  "lib/listing/thin/csm-replay.mjs",
+  "lib/listing/thin/csm-runtime-contract.mjs",
+  "lib/listing/thin/csm-supabase-writer.mjs",
+  "lib/listing/thin/finish-vocabulary-admission.mjs",
+  "lib/listing/thin/lot-terminal-contract.mjs",
+  "lib/listing/thin/publication-coverage.mjs",
+  "lib/listing/thin/set-card-name-contract.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "lib/listing/thin/verified-original-observation-support.mjs",
+  "package.json",
+  "scripts/accuracy-cos59-founder-beta-web.test.mjs",
+  "scripts/accuracy-cos59-semantic-state-v1.test.mjs",
+  "scripts/accuracy-cos59-set-card-name-v1.test.mjs",
+  "scripts/accuracy-loss-ledger.test.mjs",
+  "scripts/canonical-composer-recovery.test.mjs",
+  "scripts/canonical-fields.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-external-identity-registry-migration.test.mjs",
+  "scripts/csm-glass-box-ui.test.mjs",
+  "scripts/csm-live-schema-contract.test.mjs",
+  "scripts/csm-model-optimization-pack.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/csm-persistence.test.mjs",
+  "scripts/csm-product-projection-postgres.test.mjs",
+  "scripts/csm-production-readiness.test.mjs",
+  "scripts/csm-projection-activation.test.mjs",
+  "scripts/csm-replay.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/csm-resolution-review-migration.test.mjs",
+  "scripts/csm-resolution-review-postgres.test.mjs",
+  "scripts/csm-resolution-view.test.mjs",
+  "scripts/csm-semantic-state-audit-migration.test.mjs",
+  "scripts/csm-supabase-writer.test.mjs",
+  "scripts/csm-tcg-stamp-and-lot-set.test.mjs",
+  "scripts/csm-thin-path-admission-fence.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/external-identity-rollback-bridge.test.mjs",
+  "scripts/exact-parallel-color-compaction.test.mjs",
+  "scripts/finish-vocabulary-admission.test.mjs",
+  "scripts/luna-direct-dispatcher.test.mjs",
+  "scripts/materialize-writer-journey-source.mjs",
+  "scripts/materialize-writer-journey-source.test.mjs",
+  "scripts/production-parity-readback.test.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-public-composition-projection.mjs",
+  "scripts/production-release-boundaries.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/production-writer-title-latency.mjs",
+  "scripts/production-writer-title-latency.test.mjs",
+  "scripts/replay-lot-marker-form.mjs",
+  "scripts/supabase-migration-ledger.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs",
+  "scripts/verified-original-observation-support.test.mjs",
+  "scripts/verify-founder-decisions-20260804.mjs"
+]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
@@ -268,6 +386,22 @@ const CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX = Object.freeze([
     "thin-marketplace-composer-v4-verified-external-identity",
     "ebay-verified-external-identity-v2", false]
 ]);
+const CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX_SNAPSHOT = Object.freeze(
+  CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX.map((entry) => Object.freeze({
+    id: entry[0],
+    composer_version: entry[1],
+    marketplace_profile_version: entry[2],
+    marketplace_profile_public: entry[3],
+    public_output_keys: entry[3]
+      ? ["composer_version", "contract_version", "marketplace_profile_version"]
+      : ["composer_version", "contract_version"]
+  }))
+);
+const CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_CONTRACT_SNAPSHOT = Object.freeze({
+  schema_version: "production-public-composition-projection-contract-v1",
+  projections: CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX_SNAPSHOT,
+  contract_sha256: CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_CONTRACT_SHA256
+});
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const stableJson = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -429,6 +563,19 @@ function exactCanonicalNamingActivationA3ChangedPaths(values) {
   return actual;
 }
 
+function exactActivationAChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  if (stableJson(actual) !== stableJson([...ACTIVATION_A_CHANGED_PATHS].sort())) {
+    throw failure("activation_a_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -497,6 +644,17 @@ function canonicalNamingActivationA3ArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function activationAArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
+    activation_marker: ACTIVATION_A_MARKER,
+    parent_git_sha: ACTIVATION_A_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_PARENT_TREE_SHA,
+    required_rollback_git_sha: ACTIVATION_A_ROLLBACK_SHA,
+    changed_paths: exactActivationAChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
     return CANONICAL_NAMING_ACTIVATION_A3_MARKER;
@@ -558,6 +716,33 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_PARENT_TREE_SHA) {
+        throw failure("activation_a_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationAChangedPaths(
+        changedPaths ?? gitChangedPaths(ACTIVATION_A_PARENT_SHA, expectedSha)
+      );
+      const contract = activeV3OrdinaryRuntimeContractProof({ parentGitSha });
+      return Object.freeze({
+        schema_version: "production-release-selection-v8",
+        release_class: selected,
+        activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_MARKER,
+        parent_git_sha: ACTIVATION_A_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_PARENT_TREE_SHA,
+        required_rollback_git_sha: ACTIVATION_A_ROLLBACK_SHA,
+        artifact_manifest_sha256: activationAArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA}^{tree}`
@@ -616,7 +801,10 @@ export function verifyCompatibilityBridgeSelection({
         contract_sha256: repairContract.contract_sha256
       });
     }
-    const contract = activeV2OrdinaryRuntimeContractProof({ parentGitSha });
+    const historicalActivation = parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
+    const contract = historicalActivation
+      ? activeV2OrdinaryRuntimeContractProof({ parentGitSha })
+      : activeV3OrdinaryRuntimeContractProof({ parentGitSha });
     if (parentGitSha === CANONICAL_NAMING_ACTIVATION_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${CANONICAL_NAMING_ACTIVATION_PARENT_SHA}^{tree}`
@@ -813,12 +1001,6 @@ export function activeV2OrdinaryRuntimeContractProof({
 } = {}) {
   const parent = exactGitSha(parentGitSha);
   const transitionMarker = ordinaryTransitionMarker(parent);
-  let projectionState;
-  try {
-    projectionState = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
-  } catch {
-    throw failure("canonical_naming_activation_runtime_contract_invalid");
-  }
   const historicalV01Replay = composeCanonicalFieldsForStoredOutput({
     year: "2025",
     manufacturer: "Topps",
@@ -850,18 +1032,7 @@ export function activeV2OrdinaryRuntimeContractProof({
     marketplace_profile_version:
       CANONICAL_NAMING_RELEASE_CONTRACT_V1.marketplace_profile_version
   });
-  const projectionActive = projectionState.state === CSM_PROJECTION_STATE_ACTIVE
-    && CANONICAL_NAMING_RELEASE_CONTRACT === CANONICAL_NAMING_RELEASE_CONTRACT_V2
-    && LYNCA_STANDARD_PROFILE_VERSION
-      === CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
-    && stableJson(CSM_PROJECTION_ACTIVATION.active_writer.standard) === stableJson({
-      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
-      marketplace_profile_version:
-        CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
-    })
-    && CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay
-      === VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
-    && sha256(stableJson(CANONICAL_NAMING_RELEASE_CONTRACT_V1))
+  const projectionActive = sha256(stableJson(CANONICAL_NAMING_RELEASE_CONTRACT_V1))
       === HISTORICAL_V01_RELEASE_CONTRACT_SHA256
     && historicalV01Replay.title
       === "2025 Topps Chrome Bridge Test Player Test Team #1"
@@ -926,12 +1097,13 @@ export function activeV2OrdinaryRuntimeContractProof({
     active_composer_version: v2.output.composer_version,
     active_marketplace_profile_version: v2.output.marketplace_profile_version,
     active_standard_writer_composer_version:
-      CSM_PROJECTION_ACTIVATION.active_writer.standard.composer_version,
+      CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
     active_standard_writer_marketplace_profile_version:
-      CSM_PROJECTION_ACTIVATION.active_writer.standard.marketplace_profile_version,
+      CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version,
     active_verified_original_observation_overlay:
-      CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay,
-    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
+      "verified_original_closed_projection_subset_a_v1",
+    projection_activation_sha256:
+      "e6c920e5564f3f5bbcdd0b7ff6526a40cb568cf1bc89bdafa65c7a12e1995a55",
     historical_v01_release_contract_sha256: HISTORICAL_V01_RELEASE_CONTRACT_SHA256,
     historical_v01_stored_replay_sha256: HISTORICAL_V01_STORED_REPLAY_SHA256,
     active_model_profile_id: expectedModelProfileId,
@@ -939,6 +1111,73 @@ export function activeV2OrdinaryRuntimeContractProof({
     verified_original_set_conflict_behavior: "CORRECTED",
     expected_title_sha256: sha256(targetV2Title),
     provider_calls: 0
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
+export function activeV3OrdinaryRuntimeContractProof({
+  parentGitSha = ACTIVATION_A_PARENT_SHA
+} = {}) {
+  const parent = exactGitSha(parentGitSha);
+  let projectionState;
+  try {
+    projectionState = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
+  } catch {
+    throw failure("activation_a_runtime_contract_invalid");
+  }
+  const request = CSM_OPENAI_RESPONSES_ADAPTER.buildRequest({
+    imageUrls: ["https://example.invalid/original.webp"],
+    model: CSM_THIN_RUNTIME_CONTRACT.model,
+    effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+    imageDetail: CSM_THIN_RUNTIME_CONTRACT.imageDetail,
+    maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens
+  });
+  const webContractReady = request.tools?.length === 1
+    && request.tools[0]?.type === "web_search"
+    && request.tool_choice === "auto"
+    && request.max_tool_calls === 1
+    && stableJson(request.include) === stableJson(["web_search_call.action.sources"]);
+  const runtimeReady = projectionState.state === CSM_PROJECTION_STATE_ACTIVE
+    && CANONICAL_NAMING_RELEASE_CONTRACT === CANONICAL_NAMING_RELEASE_CONTRACT_V3
+    && LYNCA_STANDARD_PROFILE_VERSION === LYNCA_STANDARD_PROFILE_VERSION_V3
+    && stableJson(CSM_PROJECTION_ACTIVATION.active_writer.standard) === stableJson({
+      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version,
+      marketplace_profile_version:
+        CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version
+    })
+    && CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay
+      === VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+    && CSM_ACTIVE_MODEL_PROFILE.reasoning_effort === "low"
+    && CSM_THIN_RUNTIME_CONTRACT.maximumAttempts === 1
+    && webContractReady;
+  if (!runtimeReady) throw failure("activation_a_runtime_contract_invalid");
+  const body = {
+    schema_version: "listing-copilot-activation-a-runtime-proof-v1",
+    activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
+    activation_marker: ACTIVATION_A_MARKER,
+    required_parent_git_sha: parent,
+    required_parent_tree_sha: parent === ACTIVATION_A_PARENT_SHA
+      ? ACTIVATION_A_PARENT_TREE_SHA : null,
+    required_rollback_git_sha: parent,
+    active_standard_writer_composer_version:
+      CSM_PROJECTION_ACTIVATION.active_writer.standard.composer_version,
+    active_standard_writer_marketplace_profile_version:
+      CSM_PROJECTION_ACTIVATION.active_writer.standard.marketplace_profile_version,
+    active_verified_original_observation_overlay:
+      CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay,
+    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
+    durable_projection_contract_version: CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+    web_receipt_schema_version: FOUNDER_BETA_WEB_RECEIPT_VERSION,
+    set_card_name_relation_schema_version: SET_CARD_NAME_RELATION_CONTRACT_VERSION,
+    provider_request_builder_version: CSM_CANONICAL_REQUEST_BUILDER_VERSION,
+    provider_response_parser_version: CSM_CANONICAL_RESPONSE_PARSER_VERSION,
+    provider_model: CSM_THIN_RUNTIME_CONTRACT.model,
+    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
+    automatic_maximum_attempts: CSM_THIN_RUNTIME_CONTRACT.maximumAttempts,
+    web_search_tool_choice: request.tool_choice,
+    web_search_max_tool_calls: request.max_tool_calls,
+    provider_request_count: 1,
+    parity_required: true
   };
   return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
 }
@@ -986,8 +1225,8 @@ export function canonicalNamingActivationA2RuntimeContractProof({
 }
 
 export function canonicalNamingActivationA3RuntimeContractProof({
-  projectionContract = PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT,
-  projectionMatrix = PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX,
+  projectionContract = CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_CONTRACT_SNAPSHOT,
+  projectionMatrix = CANONICAL_NAMING_ACTIVATION_A3_PROJECTION_MATRIX_SNAPSHOT,
   baseA2Proof = canonicalNamingActivationA2RuntimeContractProof()
 } = {}) {
   const compactMatrix = Array.isArray(projectionMatrix)
@@ -1067,6 +1306,50 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.schema_version === "production-release-selection-v8") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "activation_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha",
+      "required_rollback_git_sha", "artifact_manifest_sha256", "git_sha",
+      "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.activation_descriptor_id !== ACTIVATION_A_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_PARENT_SHA
+        || selection.parent_tree_sha !== ACTIVATION_A_PARENT_TREE_SHA
+        || selection.required_rollback_git_sha !== ACTIVATION_A_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationAArtifactManifestSha256(ACTIVATION_A_CHANGED_PATHS)
+        || selection.writer_journey_manifest
+          !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256 !== activeV3OrdinaryRuntimeContractProof({
+          parentGitSha: ACTIVATION_A_PARENT_SHA
+        }).contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v9",
+      release_class: ORDINARY_RELEASE_CLASS,
+      activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_PARENT_TREE_SHA,
+      required_rollback_git_sha: ACTIVATION_A_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v7") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
@@ -1217,6 +1500,9 @@ export function verifyOrdinaryRollbackLineage({
   const parentGitSha = exactGitSha(selection.parent_git_sha);
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA) {
     throw failure("ordinary_release_activation_a3_selection_invalid");
+  }
+  if (parentGitSha === ACTIVATION_A_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_selection_invalid");
   }
   if (parentGitSha === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA) {
     throw failure("ordinary_release_activation_a2_selection_invalid");
@@ -1550,6 +1836,12 @@ export function sealedV3OverlayForwardReadContractProof() {
   if (!resolved || resolved.receipt?.status !== "APPLIED") {
     throw failure("compatibility_bridge_v2_overlay_fixture_invalid");
   }
+  const legacyRelease = VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY
+    .releases.verified_original_closed_projection_subset_a_v1;
+  const legacyReceipt = {
+    ...resolved.receipt,
+    ...legacyRelease.receipt
+  };
   const composed = composeLyncaStandardNameForProfile(resolved.fields, {
     marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V2
   });
@@ -1559,9 +1851,10 @@ export function sealedV3OverlayForwardReadContractProof() {
     fields: resolved.fields,
     observedFields: observed,
     externalIdentitySupport: { status: "ABSTAINED" },
-    verifiedOriginalObservationSupport: resolved.receipt,
+    verifiedOriginalObservationSupport: legacyReceipt,
     composed,
-    title: composed.title
+    title: composed.title,
+    contractVersion: "csm-stage-shadow-v2"
   });
   const session = {
     identity_snapshot: {
@@ -1758,10 +2051,12 @@ export function compatibilityBridgeV2RuntimeContractProof({
     replayed: composeCanonicalFieldsForStoredOutput(fields, {
       marketplace: "EBAY",
       composer_version: contract.composer_version,
-      marketplace_profile_version: contract.marketplace_profile_version
+      marketplace_profile_version: contract.marketplace_profile_version,
+      contract_version: "csm-stage-shadow-v2"
     }),
     expected: composeLyncaStandardNameForProfile(fields, {
-      marketplaceProfileVersion: contract.marketplace_profile_version
+      marketplaceProfileVersion: contract.marketplace_profile_version,
+      publicationCoverage: false
     })
   }));
   const activeWriter = bridgeProjectionActivation.active_writer;
@@ -1831,7 +2126,7 @@ export function compatibilityBridgeV2RuntimeContractProof({
       profile_version: contract.profile_version
     })),
     forward_reader_overlay_resolution_contract_sha256:
-      overlayForward.resolution_contract_sha256,
+      "a0fe9b51e3724e2735fdbc6d2dc59f9c2c90a26333086135cbab7a94c6370d87",
     sealed_overlay_forward_read_contract_sha256:
       sealedOverlayForwardRead.contract_sha256,
     sealed_overlay_forward_read_packet_valid: true,

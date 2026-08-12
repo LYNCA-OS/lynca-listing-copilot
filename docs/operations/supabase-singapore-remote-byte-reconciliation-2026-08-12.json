@@ -1,0 +1,29 @@
+{
+  "schema_version": "supabase-remote-byte-reconciliation.v1",
+  "project_ref": "irpgnhkslrsiucybkufc",
+  "region": "sin1",
+  "observed_at": "2026-08-12",
+  "reason": "Restore exact bytes fetched from the active Singapore migration ledger; the prior Git copies differed only in non-executable formatting.",
+  "migrations": [
+    {
+      "filename": "20260809151333_csm_provider_authority_execute_hardening_v1.sql",
+      "prior_git_sha256": "894346d89e4d0569a8c2491128e20344f186d96550b303d22802b47b7286f782",
+      "remote_sha256": "088b651d4189d88fda0dece32ebf51279a5a9bb7a47d9ecd28c2c55e8d7025f7"
+    },
+    {
+      "filename": "20260810120000_csm_external_identity_high_risers_registry_v1.sql",
+      "prior_git_sha256": "2da6d811661320ed758f66137dea8b159e4af742058892787dfee0a080b4fef8",
+      "remote_sha256": "6ca2ebd9b4136bd63276188a2d3995fabe2333a54f35b7fb6c935a07ce09b896"
+    },
+    {
+      "filename": "20260810200000_csm_external_identity_high_risers_registry_v2.sql",
+      "prior_git_sha256": "97d79a2e4bc5de13ff2b3f5c94dad92edf126c9aa1f50a666e9620803fa553fa",
+      "remote_sha256": "e4cbb2f034406db54231093b054966b333a7b4451da94a359f7d72f896e577a5"
+    }
+  ],
+  "safety": {
+    "exact_remote_bytes_required": true,
+    "ddl_reapply_forbidden": true,
+    "migration_history_repair_forbidden": true
+  }
+}

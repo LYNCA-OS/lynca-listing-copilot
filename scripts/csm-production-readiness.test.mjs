@@ -73,6 +73,7 @@ const fetchImpl = async (url, init = {}) => {
     return response({ ok: false, code: "missing_csm_stage_row_identity" });
   }
   if (parsed.pathname.endsWith("/listing_assets")) return response([]);
+  if (parsed.pathname.endsWith("/csm_resolution_reviews")) return response([]);
   if (parsed.pathname.endsWith(`/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
     return response({
       ok: true,
@@ -139,6 +140,7 @@ assert.deepEqual(calls.map(({ pathname }) => pathname), [
   "/rest/v1/csm_registry_releases",
   "/rest/v1/rpc/persist_csm_stage_packet_v1",
   `/rest/v1/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`,
+  "/rest/v1/csm_resolution_reviews",
   "/rest/v1/listing_assets",
   "/rest/v1/rpc/lookup_csm_thin_provider_operation_v1",
   `/rest/v1/rpc/${CSM_PROVIDER_AUTHORITY_RPCS.lookupByKey}`,
@@ -235,6 +237,21 @@ await assert.rejects(
     }
   }),
   (error) => error.code === "listing_asset_owner_not_ready"
+);
+
+await assert.rejects(
+  checkCsmThinProductionReadiness({
+    env: ENV,
+    fetchImpl: async (url, init) => {
+      if (String(url).includes("/csm_resolution_reviews?")) {
+        return response({ code: "42703" }, 400);
+      }
+      return fetchImpl(url, init);
+    }
+  }),
+  (error) => error.code === "csm_persistence_not_ready"
+    && error.detail === "review_measurement_schema_probe_400",
+  "Production readiness must fail before deployment when review v2 columns are absent"
 );
 
 await assert.rejects(

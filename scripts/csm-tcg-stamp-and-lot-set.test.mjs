@@ -83,7 +83,7 @@ const lot = compose({
   year: "2024", manufacturer: "Topps", product: "Chrome", set: "Update",
   subjects: ["Shohei Ohtani", "Aaron Judge", "Juan Soto"],
   parallel_family: "Refractor", parallel_exact: "Refractor",
-  lot_count: 3, grammar: "lot"
+  lot_count: "3", grammar: "lot"
 });
 // COS-14's approved example, as amended 2026-08-08: the separator is `*`, not
 // `x`. This assertion is the reason the change could not be made in code alone
@@ -99,14 +99,14 @@ assert.equal(lot.title,
 // writer publishes ("Topps Bowman Chrome Bowman Briefing").
 const beside = compose({
   year: "2024", manufacturer: "Topps", product: "Bowman Chrome", set: "Bowman Briefing",
-  subjects: ["Paul Skenes"], lot_count: 2, grammar: "lot"
+  subjects: ["Paul Skenes"], lot_count: "2", grammar: "lot"
 });
 assert.match(beside.title, /^Lot\*2 2024 Topps Bowman Chrome Paul Skenes$/,
   "a set that echoes the product stays out");
 
 // COS-14: at most three commercially salient Subjects.
 const four = parseCanonicalFields(JSON.stringify({
-  subjects: ["A", "B", "C", "D"], lot_count: 4, grammar: "lot"
+  subjects: ["A", "B", "C", "D"], lot_count: "4", grammar: "lot"
 }));
 assert.equal((four.fields || four).subjects.length, 3, "at most three Subjects");
 
@@ -119,14 +119,14 @@ assert.equal((four.fields || four).subjects.length, 3, "at most three Subjects")
   const single = compose({
     year: "2024", manufacturer: "Topps", product: "Stadium Club",
     subjects: ["Ichiro", "Shohei Ohtani"], card_name: "Co-Signers",
-    lot_count: 1, grammar: "lot"
+    lot_count: "1", grammar: "lot"
   });
   assert.ok(!/Lot\*/.test(single.title), "Lot*1 is a lot of one card and must not be published");
   assert.equal(single.lot_single_card, true, "the caller must be told the grammar disagreed with the count");
   assert.equal(single.lot_quantity_unresolved, false, "the count was known; it is the grammar that was wrong");
   const pair = compose({
     year: "2024", manufacturer: "Topps", product: "Stadium Club",
-    subjects: ["Ichiro", "Shohei Ohtani"], lot_count: 2, grammar: "lot"
+    subjects: ["Ichiro", "Shohei Ohtani"], lot_count: "2", grammar: "lot"
   });
   assert.match(pair.title, /^Lot\*2 /, "two cards is a lot");
   assert.equal(pair.lot_single_card, false);
@@ -183,15 +183,17 @@ console.log("csm-tcg-stamp-and-lot-set.test.mjs OK");
   // construction, not shared. It is withheld and NAMED -- the caller routes
   // what it hears about, and a silent drop turns a false claim into a missing
   // field with nobody told the model saw two different answers.
-  assert.deepEqual(merged.lot_unshared_attributes.sort(), ["grade", "set", "team"]);
+  assert.deepEqual(merged.lot_unshared_attributes,
+    ["components", "grade", "set", "team"]);
   assert.ok(!/;/.test(merged.title), `no merged value may reach the title: ${merged.title}`);
   // `1/2` on a two-card lot is NOT withheld: a two-card print run could
   // genuinely cover both, and CSM's Lot grammar carries a shared numerical
   // rarity bracket. Only the provable contradiction goes.
   assert.match(merged.title, /^Lot\*2 /);
-  // What IS shared survives: both cards are Impeccable and both are autographed.
+  // The scalar product survives. Aggregate `components: ["Auto"]` does not
+  // prove that both cards are autographed, so it is withheld by default.
   assert.match(merged.title, /Panini Impeccable/);
-  assert.match(merged.title, /Auto/);
+  assert.doesNotMatch(merged.title, /\bAuto\b/);
 
   // The other production shape: no merge marker anywhere, and a 1/1 that can
   // only belong to one of the two cards.
@@ -201,12 +203,32 @@ console.log("csm-tcg-stamp-and-lot-set.test.mjs OK");
     serial: "1/1", attributes: ["Auto", "Patch"], components: ["Auto", "Patch"],
     lot_count: "2", grammar: "lot"
   });
-  assert.deepEqual(oneOfOne.lot_unshared_attributes, ["serial"]);
+  assert.deepEqual(oneOfOne.lot_unshared_attributes, ["components", "serial"]);
   assert.ok(!/1\/1/.test(oneOfOne.title), `a 1/1 shared by two cards is a contradiction: ${oneOfOne.title}`);
   // And the case the contract protects: /50 across twelve cards is shareable
   // and must survive, which is why the rule is denominator-vs-count and not
   // "lots have no serial".
   assert.match(oneOfOne.title, /Logoman Autographs/, "an unmerged set is genuinely shared and stays");
+}
+
+// Every scalar lane that can feed a Lot title rejects explicit per-card
+// disagreement. Bare slash is meaningful for Serial/Card Number/Grade, but in
+// text identity lanes it is the exact mixed-value evidence `2023/2024` and
+// `Topps/Panini` carry.
+{
+  const mixed = compose({
+    year: "2023/2024", manufacturer: "Topps/Panini",
+    product: "Chrome/Prizm", set: "Update/Mosaic",
+    subjects: ["A", "B"], card_name: "Rookie/Insert",
+    parallel_exact: "Refractor/Prizm", attributes: ["Auto"],
+    lot_count: "2", grammar: "lot"
+  });
+  for (const field of [
+    "year", "manufacturer", "product", "set", "card_name",
+    "print_finish", "parallel_exact", "components"
+  ]) assert.ok(mixed.lot_unshared_attributes.includes(field), field);
+  assert.doesNotMatch(mixed.title,
+    /2023|2024|Topps|Panini|Chrome|Prizm|Update|Mosaic|Rookie|Insert|Auto/);
 }
 
 // A single card keeps its serial: this rule is about lots, not about serials.
