@@ -11,6 +11,7 @@ import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { composeLyncaStandardName } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
+import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
 
 // The schema is the migration, not a copy of it in this file. Parsing the real
 // SQL is what makes drift a test failure instead of an insert-time constraint
@@ -281,6 +282,36 @@ for (const row of rows.candidates) {
   const byBracket = Object.fromEntries(rows.candidates.map((row) => [row.bracket, row]));
   assert.equal(byBracket.card_name.empty_reason, "INSUFFICIENT_EVIDENCE");
   assert.equal(byBracket.language.empty_reason, "ABSENT");
+}
+
+// Provider source fields that fold into a differently named CSM bracket must
+// keep the omission reason through persistence and Bridge B replay.
+for (const [sourceField, bracket] of [
+  ["parallel_family", "print_finish"],
+  ["attributes", "search_optimization"],
+  ["grading_info", "grading_info"],
+  ["serial", "numerical_rarity"]
+]) {
+  const omittedFields = parseCanonicalFields({
+    subjects: ["Grounded Subject"], grammar: "standard",
+    unreadable: [sourceField], low_confidence: []
+  }).fields;
+  const omittedComposed = composeFromCanonicalFields(omittedFields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
+  const omittedRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: `source-omission-${sourceField}`,
+    fields: omittedFields, composed: omittedComposed, title: omittedComposed.title,
+    ...noSearchReceipts(omittedFields)
+  });
+  const candidate = omittedRows.candidates.find((row) => row.bracket === bracket);
+  const resolved = omittedRows.resolved.find((row) => row.bracket === bracket);
+  assert.equal(candidate.value_kind, "EMPTY");
+  assert.equal(candidate.empty_reason, "INSUFFICIENT_EVIDENCE");
+  assert.equal(resolved.selected_kind, "EMPTY");
+  assert.equal(resolved.empty_reason, "INSUFFICIENT_EVIDENCE");
+  assert.ok(replayFromRows(omittedRows).fields.unreadable.includes(bracket));
 }
 
 // COS-9 Language is not only a title token. It is a primary canonical bracket,

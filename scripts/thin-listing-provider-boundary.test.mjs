@@ -471,8 +471,62 @@ function webGrammarBody(url, sourceIds) {
       status: 200, headers: { "content-type": "application/json" }
     })
   }), (error) => error.name === "CanonicalProviderError"
-    && error.provider_error_code === "founder_beta_field_source_required:subjects",
-  "the grammar exemption must not weaken source requirements for identity fields");
+    && error.provider_error_code === "canonical_naming_mandatory_subject_identity_missing",
+  "a subject without a source row must be withheld and leave a single card non-publishable");
+}
+
+// Missing rows are omissions, not affirmative bad authority claims. Withhold
+// every affected value before parsing and preserve the existing unreadable
+// state so the durable CSM row can distinguish it from a genuinely absent fact.
+for (const { field, value, expected } of [
+  { field: "product", value: "Unsupported Product", expected: (result) => (
+    result.fields.product === "" && !result.title.includes("Unsupported Product")
+  ) },
+  { field: "parallel_family", value: "Refractor", expected: (result) => (
+    result.fields.parallel_family === "" && result.fields.print_finish === ""
+      && !result.title.includes("Refractor")
+  ) },
+  { field: "attributes", value: ["Auto"], expected: (result) => (
+    result.fields.attributes.length === 0 && result.fields.components.length === 0
+      && !result.title.includes("Auto")
+  ) },
+  { field: "grading_info", value: {
+    company: "PSA", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY"
+  }, expected: (result) => result.fields.grading_info === null && !result.title.includes("PSA") }
+]) {
+  const payload = withoutFieldSource(audited({
+    manufacturer: "Topps", subjects: ["Grounded Subject"], grammar: "standard",
+    [field]: value, low_confidence: [field]
+  }), field);
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.ok(expected(result), `${field} without a source row must not leak into canonical output`);
+  assert.ok(result.fields.unreadable.includes(field));
+  assert.ok(!result.fields.low_confidence.includes(field),
+    "withheld source omissions are unreadable, not simultaneously low confidence");
+}
+
+{
+  const payload = withoutFieldSource(audited({
+    subjects: ["Card A", "Card B"], grammar: "lot", lot_count: "2"
+  }), "lot_count");
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/lot.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.equal(result.fields.lot_count, "");
+  assert.equal(result.lot_publishable, false);
+  assert.equal(result.lot_publication_failure_code, "LOT_QUANTITY_UNRESOLVED");
+  assert.ok(!result.fields.unreadable.includes("lot_count"),
+    "lot_count uses the durable lot terminal instead of an unsupported unreadable name");
 }
 
 for (const url of [
