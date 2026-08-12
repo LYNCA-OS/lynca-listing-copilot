@@ -71,6 +71,10 @@ import {
   validateVerifiedOriginalObservationReceipt,
   VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
+  LOT_PUBLICATION_FAILURE,
+  validateLotTerminalReceipt
+} from "../lib/listing/thin/lot-terminal-contract.mjs";
 
 const MODEL = CSM_THIN_RUNTIME_CONTRACT.model;
 const EFFORT = CSM_THIN_RUNTIME_CONTRACT.reasoningEffort;
@@ -784,6 +788,44 @@ function alreadyPersisted(result, recognitionSessionId) {
     && result?.csm_rows?.resolution?.recognition_session_id === recognitionSessionId;
 }
 
+function lotReviewRequiredError(result, recognitionSessionId) {
+  const receipt = result?.csm_rows?.output?.structured_output?.lot_terminal ?? null;
+  if (receipt == null) {
+    if (result?.lot_publishable === false) {
+      throw persistenceCheckpointError("lot_terminal_receipt_missing");
+    }
+    return null;
+  }
+  try {
+    validateLotTerminalReceipt(receipt, {
+      lotCount: result?.csm_rows?.output?.structured_output?.lot_count,
+      unsharedAttributes: result?.lot_unshared_attributes
+    });
+  } catch {
+    throw persistenceCheckpointError("lot_terminal_receipt_invalid");
+  }
+  if (result?.lot_quantity_unresolved !== receipt.lot_quantity_unresolved
+      || result?.lot_single_card !== receipt.lot_single_card
+      || result?.lot_publishable !== receipt.publishable
+      || result?.lot_publication_failure_code !== receipt.failure_code) {
+    throw persistenceCheckpointError("lot_terminal_public_receipt_mismatch");
+  }
+  if (receipt.publishable) return null;
+  const code = receipt.failure_code;
+  if (!Object.values(LOT_PUBLICATION_FAILURE).includes(code)) {
+    throw persistenceCheckpointError("lot_publication_failure_code_invalid");
+  }
+  return Object.assign(new Error(code), {
+    code,
+    statusCode: 409,
+    retryable: false,
+    provider_attempt_started: false,
+    recognition_session_id: requiredText(recognitionSessionId, "recognition_session_id"),
+    review_required: true,
+    trace_status: "PERSISTED_REVIEW_REQUIRED"
+  });
+}
+
 function historicalPayloadRecoveryError(status, cause = null) {
   const normalized = String(status || "unavailable").toLowerCase();
   return Object.assign(new Error(`csm_legacy_payload_${normalized}`), {
@@ -918,6 +960,11 @@ export function publicPersistedResult(result, executionOrigin = null, canonicalA
   const publicResult = Object.fromEntries(PUBLIC_PERSISTED_RESULT_FIELDS.flatMap((key) => (
     Object.prototype.hasOwnProperty.call(result || {}, key) ? [[key, result[key]]] : []
   )));
+  const publicLotTerminal = result?.grammar === "lot" ? Object.fromEntries([
+    "lot_quantity_unresolved", "lot_single_card", "lot_unshared_attributes",
+    "lot_publishable", "lot_publication_failure_code"
+  ].flatMap((key) => Object.prototype.hasOwnProperty.call(result || {}, key)
+    ? [[key, result[key]]] : [])) : {};
   const csmRows = publicCsmRows(result?.csm_rows);
   const csmPersistence = publicCsmPersistence(result?.csm_persistence);
   let freshAuthorityReceipt = null;
@@ -941,6 +988,7 @@ export function publicPersistedResult(result, executionOrigin = null, canonicalA
   // FRESH_CURRENT label or authority claim from its durable checkpoint.
   return {
     ...publicResult,
+    ...publicLotTerminal,
     csm_rows: csmRows,
     ...(csmPersistence ? { csm_persistence: csmPersistence } : {}),
     ...(canonicalAssetId === null ? {} : {
@@ -1598,6 +1646,8 @@ export async function runDirectCsmAsset({
         ? "AMBIGUOUS_PROVIDER_RECOVERY"
       : "EXACT_REPLAY";
   if (!historicalPayloadRecovered && alreadyPersisted(settled, sessionId)) {
+    const reviewRequired = lotReviewRequiredError(settled, sessionId);
+    if (reviewRequired) throw reviewRequired;
     return publicPersistedResult(settled, executionOrigin, canonicalAssetId);
   }
   const preparedWithDispatchStages = {
@@ -1715,6 +1765,8 @@ export async function runDirectCsmAsset({
       retryable: Number(persistedWithLatency?.csm_persistence?.statusCode || 503) >= 500
     }));
   }
+  const reviewRequired = lotReviewRequiredError(persistedWithLatency, sessionId);
+  if (reviewRequired) throw reviewRequired;
   return publicPersistedResult(persistedWithLatency, executionOrigin, canonicalAssetId);
 }
 
@@ -1770,10 +1822,16 @@ export function buildCsmDirectFailureResponse(error) {
       ok: false,
       route: "CSM_THIN_DIRECT",
       code: String(error?.message || "csm_thin_path_failed").split(":")[0],
-      error_type: providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
+      error_type: error?.review_required === true
+        ? "CSM_REVIEW_REQUIRED"
+        : providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
       retryable,
       message: String(error?.message || "CSM thin path failed").slice(0, 240),
       recognition_session_id: safeReceiptText(error?.recognition_session_id),
+      ...(error?.review_required === true ? {
+        review_required: true,
+        trace_status: "PERSISTED_REVIEW_REQUIRED"
+      } : {}),
       ...(providerFailureReceipt ? {
         provider_failure_receipt: providerFailureReceipt,
         latency_stages_ms: providerFailureReceipt.latency_stages_ms

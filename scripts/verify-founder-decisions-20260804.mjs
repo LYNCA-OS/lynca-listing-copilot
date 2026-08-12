@@ -16,9 +16,15 @@ import { csmFieldLabels } from "../csm/ontology/field-labels.mjs";
 import { parseCanonicalFields, CANONICAL_FIELDS_SCHEMA, CANONICAL_FIELDS_PROMPT } from "../lib/listing/thin/canonical-fields.mjs";
 import { BRACKET_ORDER, DROP_ORDER, composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { MARKETPLACE_PROFILES } from "../lib/listing/thin/marketplace-composer-rules.mjs";
-import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
-import { routeReviewPatterns, OWNING_LAYER, CORRECTION_REASON } from "../csm/contracts/resolution-review.mjs";
-import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
+import {
+  buildCsmResolutionView, BRACKET_STATE, COMPOSER_DISPOSITION
+} from "../csm/contracts/resolution-view.mjs";
+import {
+  buildCsmResolutionReview, buildReviewMeasurementSnapshot,
+  projectReviewAccuracy, REVIEW_VERDICT, REVIEW_MEASUREMENT_BASIS,
+  routeReviewPatterns, OWNING_LAYER, CORRECTION_REASON
+} from "../csm/contracts/resolution-review.mjs";
+import { TENANT_PERMISSIONS, permissionScopeFor } from "../lib/tenant/permissions.mjs";
 
 const results = [];
 // A clause may fail by throwing OR by returning the reason as a string. The
@@ -122,6 +128,9 @@ check("COS-42", "field review needs a reviewer permission writers lack", () => {
   assert.ok(TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS);
   assert.notEqual(TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS, TENANT_PERMISSIONS.EDIT_TITLE);
   assert.notEqual(TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS, TENANT_PERMISSIONS.SUBMIT_FEEDBACK);
+  assert.equal(permissionScopeFor("WRITER", TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS), "NONE");
+  assert.equal(permissionScopeFor("OWNER", TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS), "TENANT");
+  assert.equal(permissionScopeFor("MANAGER", TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS), "TENANT");
 });
 check("COS-42", "one correction routes nowhere", () => {
   const one = routeReviewPatterns([{
@@ -307,6 +316,73 @@ check("COS-42", "every bracket including EMPTY is exposed", () => {
   assert.ok(v.brackets.some((b) => b.state === "ABSENT"));
   assert.ok(v.brackets.every((b) => b.alternate_candidates.length === 0));
 });
+check("COS-42", "accuracy projection freezes every bracket and Composer denominator", () => {
+  const provenance = {
+    asset_id: "a", recognition_session_id: "s", resolution_id: "r", output_id: "o",
+    resolver_version: "v", composer_version: "v", view_version: "v",
+    reviewer_id: "owner", tenant_id: "tenant"
+  };
+  const measurementSnapshot = buildReviewMeasurementSnapshot({
+    composerVersion: "v",
+    view: {
+      schema_version: "v", asset_id: "a", recognition_session_id: "s",
+      grammar: { raw: "lot" },
+      composer: { title: "Lot*2 A B", character_budget: 80, length: 9 },
+      brackets: [
+        { bracket: "set", canonical_field: "set", state: BRACKET_STATE.ABSENT,
+          composer_disposition: COMPOSER_DISPOSITION.NOT_APPLICABLE, rendered_text: null },
+        { bracket: "print_finish", canonical_field: "print_finish", state: BRACKET_STATE.VALUE,
+          composer_disposition: COMPOSER_DISPOSITION.DROPPED_FOR_BUDGET, rendered_text: null },
+        { bracket: "product", canonical_field: "product", state: BRACKET_STATE.VALUE,
+          composer_disposition: COMPOSER_DISPOSITION.SUPPRESSED_BY_PROFILE, rendered_text: null },
+        { bracket: "search_optimization", canonical_field: "team", state: BRACKET_STATE.VALUE,
+          composer_disposition: COMPOSER_DISPOSITION.NORMALIZED, rendered_text: "RC",
+          partially_published: true }
+      ]
+    }
+  });
+  const review = buildCsmResolutionReview({
+    provenance, verdict: REVIEW_VERDICT.CORRECTED,
+    corrections: [{ bracket: "set", reason: CORRECTION_REASON.MISSED_VALUE,
+      corrected_value: "Update" }],
+    originalFields: { set: "" }, originalTitle: "Lot*2 A B",
+    recomposeTitle: () => "Lot*2 Update A B",
+    measurementSnapshot
+  });
+  const projection = projectReviewAccuracy([review], { cohortId: "founder-verifier" });
+  assert.equal(projection.measurement_basis, REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED);
+  assert.match(projection.cohort_sha256, /^[0-9a-f]{64}$/);
+  const byBracket = Object.fromEntries(projection.cells.map((cell) => [cell.bracket, cell]));
+  assert.equal(byBracket.set.empty_error_rate, 1);
+  assert.equal(byBracket.print_finish.composer_omission_rate, 1);
+  assert.equal(byBracket.product.profile_suppressed, 1);
+  assert.equal(byBracket.search_optimization.partial_publications, 1);
+});
+check("COS-49", "active Lot marker is Lot*N and terminal states fail closed", () => {
+  const valid = composeFromCanonicalFields(card({
+    grammar: "lot", lot_count: "2", subjects: ["A", "B"]
+  }));
+  assert.match(valid.title, /^Lot\*2\b/);
+  const unresolved = composeFromCanonicalFields(card({ grammar: "lot", lot_count: "" }));
+  const single = composeFromCanonicalFields(card({ grammar: "lot", lot_count: "1" }));
+  assert.equal(unresolved.lot_quantity_unresolved, true);
+  assert.equal(single.lot_single_card, true);
+});
+check("COS-14", "provably unshared Lot attributes are withheld and named", () => {
+  const merged = composeFromCanonicalFields(card({
+    grammar: "lot", lot_count: "2", subjects: ["A", "B"],
+    set: "Stats Autograph; Jersey Numbers Auto",
+    team: "Warriors; Cavaliers", grade: "PSA Authentic; 9"
+  }));
+  assert.deepEqual(merged.lot_unshared_attributes,
+    ["components", "grade", "set", "team"]);
+  assert.doesNotMatch(merged.title, /Stats Autograph|Warriors|PSA Authentic/);
+  const notProvable = composeFromCanonicalFields(card({
+    grammar: "lot", lot_count: "2", subjects: ["A", "B"], set: "Update"
+  }));
+  assert.deepEqual(notProvable.lot_unshared_attributes, ["components"],
+    "an unmerged scalar may remain, but aggregate components lack shared proof");
+});
 
 check("COS-56", "Product > Set > Card Name, with Card Name EMPTY when exhausted", () => {
   // Approved 2026-08-07. The rule has to be stated where the MODEL reads it,
@@ -336,37 +412,6 @@ check("COS-56", "Product > Set > Card Name, with Card Name EMPTY when exhausted"
 // a decision being finished. A verifier that only lists what it checks reports
 // completeness it never measured.
 const UNIMPLEMENTED = [
-  {
-    decision: "COS-14",
-    clause: "mixed-finish lots: \"shared by every card\" is prompt-only",
-    why: [
-      "The Lot grammar may only assert an attribute shared by EVERY card in",
-      "the lot. That rule lives in a prompt sentence and nothing verifies it,",
-      "because verifying it needs per-card evidence the system does not have:",
-      "a lot is one set of images of several cards, and the model reports one",
-      "finish for the group.",
-      "",
-      "So this may not be verifiable at all in the current shape, and saying",
-      "that plainly is better than a clause that asserts the sentence exists.",
-      "Making it verifiable means per-card observation within a lot image,",
-      "which is a capability decision, not a test."
-    ].join("\n        ")
-  },
-  {
-    decision: "COS-42",
-    clause: "accuracy projection lacks EMPTY/omission denominators and provenance",
-    why: [
-      "The read-only Resolution View and its real TCG/NON_TCG operator receipts",
-      "are complete. Protected run 31520433083 rendered the Glass Box for each",
-      "persisted session without changing the generated title.",
-      "",
-      "The remaining gap is measurement: `projectReviewAccuracy` exposes only",
-      "correction_rate and by_reason. It does not publish explicit EMPTY-error",
-      "or Composer-omission denominators, nor distinguish FIELD_REVIEWED from",
-      "TITLE_DERIVED provenance. COS-42 stays open until those metrics are",
-      "defined and exercised by governed structured reviews."
-    ].join("\n        ")
-  },
   {
     decision: "COS-39",
     clause: "the Print Finish Registry was seeded, not governed",

@@ -171,6 +171,13 @@ Writer title edits are `Commercial Feedback`, not immediate `Semantic Truth`.
 
 Writers approve or edit one-line marketplace titles. They should not be asked to do semantic labeling. The system may later mine accumulated commercial feedback into semantic learning candidates, hard negatives, reranker rows, and field-level training candidates. A field becomes semantic truth only after explicit field review, trusted source agreement, or a separate promotion workflow.
 
+The existing `Owner` and `Manager` roles perform that explicit field review
+through `REVIEW_SEMANTIC_FIELDS`; no new reviewer role exists. Each structured
+review freezes the full grammar×bracket and Composer measurement snapshot on
+the server and binds it into the append-only revision hash. `Writer` retains
+`EDIT_TITLE` and `SUBMIT_FEEDBACK`, but has no semantic-review permission, so a
+title edit cannot enter `FIELD_REVIEWED` accuracy metrics.
+
 ### COS-14: Lot Workflow
 
 Lot is a separate commercial listing workflow, not a failed single-card route.

@@ -232,7 +232,7 @@ limit.
 |---|---|
 | `reasoning=low` in `CSM_THIN_RUNTIME_CONTRACT` | +0.019042 on 105 (42W/18L, p=0.0027), +0.014190 on 150 |
 | Structured `grading_info` | graded exact 33/38 → 38/38 |
-| Lot marker `Lot*N` → `LotxN` (COS-49) | **+0.0916 on lot cards, 7W/0L, p=0.0156** |
+| Interim lot marker `Lot*N` → `LotxN` (COS-49, superseded 2026-08-08) | **+0.0916 on lot cards, 7W/0L, p=0.0156; founder contract now requires `Lot*N`** |
 | Bare colour is evidence, not canonical Print Finish (COS-49) | 65 canonical fields corrected, **0 titles changed** |
 | Ruler: any year inside a season span is correct | previously only the opening year was credited |
 | Ruler: a safe finish degradation ranks above a wrong claim | previously they scored identically |

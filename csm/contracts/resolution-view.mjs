@@ -29,6 +29,11 @@ import {
   semTcgIpLabel
 } from "../ontology/sem-definition.mjs";
 import { csmFieldLabels, labelForCsmField } from "../ontology/field-labels.mjs";
+import { lotPublicationFailureCode } from "../../lib/listing/thin/lot-terminal-contract.mjs";
+import {
+  PUBLICATION_DISPOSITION,
+  validatePublicationCoverage
+} from "../../lib/listing/thin/publication-coverage.mjs";
 
 export const CSM_RESOLUTION_VIEW_VERSION = "csm-resolution-view-v1";
 
@@ -52,6 +57,10 @@ export const COMPOSER_DISPOSITION = Object.freeze({
   RESTORED: "RESTORED",
   /** Rendered, but not verbatim. */
   NORMALIZED: "NORMALIZED",
+  /** No owning text was emitted because another bracket already covered it. */
+  DEDUPED_COVERED: "DEDUPED_COVERED",
+  /** Canonical evidence existed, but the shared/publication contract forbade it. */
+  WITHHELD_BY_CONTRACT: "WITHHELD_BY_CONTRACT",
   /** The bracket held nothing to render. */
   NOT_APPLICABLE: "NOT_APPLICABLE"
 });
@@ -91,7 +100,9 @@ const EXTRA_FIELDS_FOR_BRACKET = Object.freeze({
 });
 
 const SOURCE_FIELDS_FOR_BRACKET = Object.freeze({
-  search_optimization: Object.freeze(["components", "search_optimization", "team"])
+  manufacturer_product_set: Object.freeze(["manufacturer", "product", "set"]),
+  search_optimization: Object.freeze(["components", "search_optimization", "team"]),
+  grading_info: Object.freeze(["grading_info"])
 });
 
 const asArray = (value) => (Array.isArray(value) ? value : value == null || value === "" ? [] : [value]);
@@ -126,6 +137,16 @@ export function buildCsmResolutionView({
   recognitionSessionId = null,
   legacyPublicProjection = false
 } = {}) {
+  const publicationCoverage = composed.publication_coverage ?? null;
+  if (publicationCoverage != null) validatePublicationCoverage(publicationCoverage);
+  const coverageEnabled = publicationCoverage != null;
+  // Receipt presence is the feature boundary for this pure view only. Durable
+  // replay separately requires it from the immutable packet contract version,
+  // so deleting and resealing a receipt cannot downgrade a stored row.
+  // The caller's immutable stored tuple decides whether public response bytes
+  // are historical. A fresh in-memory compose may expose a coverage trace, but
+  // that trace must not silently upgrade an already-published v1/v2 response.
+  const legacyProjection = legacyPublicProjection;
   const grammar = composed.grammar || fields.grammar || semGrammarForResolved(fields) || "standard";
   const contractOrder = semCanonicalTitleOrder(grammar);
 
@@ -140,13 +161,13 @@ export function buildCsmResolutionView({
   // The forward-reader bridge must leave the already-published v2 Glass Box
   // byte semantics alone. CNL profiles use the executable projection order;
   // legacy v2 keeps the historical contract order and extra-field placement.
-  const order = legacyPublicProjection
+  const order = legacyProjection
     ? (extras.length
         ? composedOrder.filter((bracket) => (
           contractOrder.includes(bracket) || extras.includes(bracket)
         )).concat(contractOrder.filter((bracket) => !composedOrder.includes(bracket)))
         : contractOrder)
-    : [...new Set([...composedOrder, ...contractOrder])];
+    : [...new Set([...contractOrder, ...extras])];
   const outsideContract = new Set(extras);
 
   const unreadable = new Set(asArray(fields.unreadable));
@@ -157,16 +178,31 @@ export function buildCsmResolutionView({
   const dropped = new Set(asArray(composed.dropped));
   const restored = new Set(asArray(composed.restored));
   const normalized = new Set(asArray(composed.normalization_reasons).map((r) => String(r).split(":")[0]));
+  const coverageByBracket = new Map();
+  for (const atom of publicationCoverage?.atoms || []) {
+    const values = coverageByBracket.get(atom.bracket) || [];
+    values.push(atom);
+    coverageByBracket.set(atom.bracket, values);
+  }
+  const lotQuantityUnresolved = Boolean(composed.lot_quantity_unresolved);
+  const lotSingleCard = Boolean(composed.lot_single_card);
+  const lotUnsharedAttributes = Object.freeze([
+    ...new Set(asArray(composed.lot_unshared_attributes).map((field) => String(field).trim()).filter(Boolean))
+  ]);
+  const expectedLotFailureCode = lotPublicationFailureCode({
+    quantityUnresolved: lotQuantityUnresolved,
+    singleCard: lotSingleCard
+  });
 
   const brackets = order.map((bracket) => {
     const field = fieldForBracket[bracket] || bracket;
     const legacyExtraFields = bracket === "search_optimization" ? ["components"] : [];
-    const canonicalFields = legacyPublicProjection
+    const canonicalFields = legacyProjection
       ? [field, ...legacyExtraFields]
       : (SOURCE_FIELDS_FOR_BRACKET[bracket]
         || [field, ...(EXTRA_FIELDS_FOR_BRACKET[bracket] || [])]);
     const rawParts = canonicalFields.flatMap((sourceField) => asArray(fields[sourceField]));
-    const raw = legacyPublicProjection
+    const raw = legacyProjection
       ? (legacyExtraFields.flatMap((sourceField) => asArray(fields[sourceField])).length
           ? rawParts : fields[field])
       : (canonicalFields.length > 1 ? rawParts : fields[field]);
@@ -177,7 +213,7 @@ export function buildCsmResolutionView({
     let state = BRACKET_STATE.VALUE;
     let rationale = RATIONALE.OBSERVED;
     if (empty) {
-      if ((legacyPublicProjection ? unreadable.has(field)
+      if ((legacyProjection ? unreadable.has(field)
         : canonicalFields.some((sourceField) => unreadable.has(sourceField)))
           || unreadable.has(bracket)) {
         state = BRACKET_STATE.INSUFFICIENT_EVIDENCE;
@@ -191,7 +227,7 @@ export function buildCsmResolutionView({
         state = BRACKET_STATE.ABSENT;
         rationale = RATIONALE.NOT_OBSERVED;
       }
-    } else if ((legacyPublicProjection ? lowConfidence.has(field)
+    } else if ((legacyProjection ? lowConfidence.has(field)
       : canonicalFields.some((sourceField) => lowConfidence.has(sourceField)))
         || lowConfidence.has(bracket)) {
       rationale = RATIONALE.MODEL_REPORTED_LOW_CONFIDENCE;
@@ -199,14 +235,53 @@ export function buildCsmResolutionView({
 
     let disposition = COMPOSER_DISPOSITION.NOT_APPLICABLE;
     if (!empty) {
-      if (suppressed.has(bracket)) disposition = COMPOSER_DISPOSITION.SUPPRESSED_BY_PROFILE;
+      const coverage = legacyProjection ? [] : (coverageByBracket.get(bracket) || []);
+      const coverageStates = new Set(coverage.map((atom) => atom.disposition));
+      const covered = coverageStates.has(PUBLICATION_DISPOSITION.PUBLISHED)
+        || coverageStates.has(PUBLICATION_DISPOSITION.DEDUPED_COVERED);
+      const ownRendered = coverageStates.has(PUBLICATION_DISPOSITION.PUBLISHED);
+      const lost = coverageStates.has(PUBLICATION_DISPOSITION.TRUNCATED_LOSS)
+        || coverageStates.has(PUBLICATION_DISPOSITION.DROPPED_FOR_BUDGET)
+        || coverageStates.has(PUBLICATION_DISPOSITION.SUPPRESSED_BY_PROFILE)
+        || coverageStates.has(PUBLICATION_DISPOSITION.WITHHELD_BY_CONTRACT);
+      if (!legacyProjection && coverageEnabled && ownRendered && lost) {
+        disposition = COMPOSER_DISPOSITION.NORMALIZED;
+      } else if (!legacyProjection && coverageEnabled && covered && lost) {
+        disposition = COMPOSER_DISPOSITION.DEDUPED_COVERED;
+      } else if (!legacyProjection && coverageEnabled
+          && coverageStates.has(PUBLICATION_DISPOSITION.TRUNCATED_LOSS)) {
+        disposition = COMPOSER_DISPOSITION.DROPPED_FOR_BUDGET;
+      } else if (!legacyProjection && coverageEnabled
+          && coverageStates.has(PUBLICATION_DISPOSITION.DROPPED_FOR_BUDGET)) {
+        disposition = COMPOSER_DISPOSITION.DROPPED_FOR_BUDGET;
+      } else if (!legacyProjection && coverageEnabled
+          && coverageStates.has(PUBLICATION_DISPOSITION.SUPPRESSED_BY_PROFILE)) {
+        disposition = COMPOSER_DISPOSITION.SUPPRESSED_BY_PROFILE;
+      } else if (!legacyProjection && coverageEnabled
+          && coverageStates.has(PUBLICATION_DISPOSITION.WITHHELD_BY_CONTRACT)) {
+        disposition = COMPOSER_DISPOSITION.WITHHELD_BY_CONTRACT;
+      } else if (!legacyProjection && coverageEnabled && !ownRendered && covered) {
+        disposition = COMPOSER_DISPOSITION.DEDUPED_COVERED;
+      } else if (!legacyProjection && coverageEnabled && ownRendered) {
+        disposition = (coverageStates.has(PUBLICATION_DISPOSITION.DEDUPED_COVERED)
+          || normalized.has(bracket))
+          ? COMPOSER_DISPOSITION.NORMALIZED
+          : COMPOSER_DISPOSITION.INCLUDED;
+      } else if (suppressed.has(bracket)) disposition = COMPOSER_DISPOSITION.SUPPRESSED_BY_PROFILE;
       else if (dropped.has(bracket)) disposition = COMPOSER_DISPOSITION.DROPPED_FOR_BUDGET;
-      else if (restored.has(bracket)) disposition = COMPOSER_DISPOSITION.RESTORED;
-      else if (rendered.has(bracket)) {
+      else if (legacyProjection && restored.has(bracket)) {
+        disposition = COMPOSER_DISPOSITION.RESTORED;
+      } else if (restored.has(bracket) && rendered.has(bracket)) {
+        disposition = COMPOSER_DISPOSITION.RESTORED;
+      } else if (rendered.has(bracket)) {
         const text = rendered.get(bracket);
         disposition = (normalized.has(bracket) || text !== value)
           ? COMPOSER_DISPOSITION.NORMALIZED
           : COMPOSER_DISPOSITION.INCLUDED;
+      } else if (restored.has(bracket) || normalized.has(bracket)) {
+        // A deterministic duplicate removed by an earlier bracket was not an
+        // omission: the meaning is already present elsewhere in the title.
+        disposition = COMPOSER_DISPOSITION.NORMALIZED;
       }
     }
 
@@ -221,12 +296,15 @@ export function buildCsmResolutionView({
       bracket,
       label: labelForCsmField(bracket) || csmFieldLabels[bracket] || bracket,
       canonical_field: field,
-      ...(!legacyPublicProjection ? {
+      ...(!legacyProjection ? {
         canonical_fields: Object.freeze([...canonicalFields])
       } : {}),
       state,
       value: state === BRACKET_STATE.VALUE ? value : "",
-      rendered_text: rendered.get(bracket) ?? null,
+      rendered_text: !legacyProjection && coverageEnabled
+        && !(coverageByBracket.get(bracket) || []).some((atom) => (
+          atom.disposition === PUBLICATION_DISPOSITION.PUBLISHED
+        )) ? null : rendered.get(bracket) ?? null,
       composer_disposition: disposition,
       rationale_codes: Object.freeze([rationale]),
       semantic_confidence: state !== BRACKET_STATE.VALUE ? null
@@ -248,11 +326,28 @@ export function buildCsmResolutionView({
       // -- but the field stays, because the next inference should be visible
       // rather than discovered later by someone reading a title.
       outside_contract_order: outsideContract.has(bracket),
-      // What the bracket HOLDS versus what this marketplace published. A
-      // profile that suppresses the team while retaining RC renders half of
-      // this row, and an operator has to be able to see which half.
-      partially_published: !empty && Boolean(rendered.get(bracket))
-        && rendered.get(bracket) !== value
+      // Only independent source lanes can be partially published. A composed
+      // identity (`manufacturer_product_set`) or array presentation (`subject`)
+      // changing punctuation is normalization, not a source subset loss.
+      // Search Optimization is the current multi-lane projection: e.g. RC may
+      // survive the eBay profile while Team is suppressed.
+      partially_published: legacyProjection
+        ? !empty && Boolean(rendered.get(bracket)) && rendered.get(bracket) !== value
+        : (() => {
+          const states = new Set((coverageByBracket.get(bracket) || [])
+            .map((atom) => atom.disposition));
+          const covered = states.has(PUBLICATION_DISPOSITION.PUBLISHED)
+            || states.has(PUBLICATION_DISPOSITION.DEDUPED_COVERED);
+          const lost = states.has(PUBLICATION_DISPOSITION.SUPPRESSED_BY_PROFILE)
+            || states.has(PUBLICATION_DISPOSITION.DROPPED_FOR_BUDGET)
+            || states.has(PUBLICATION_DISPOSITION.TRUNCATED_LOSS)
+            || states.has(PUBLICATION_DISPOSITION.WITHHELD_BY_CONTRACT);
+          return covered && lost;
+        })(),
+      ...(!legacyProjection ? {
+        publication_coverage: Object.freeze((coverageByBracket.get(bracket) || [])
+          .map((atom) => Object.freeze({ ...atom })))
+      } : {})
     };
   });
 
@@ -283,6 +378,16 @@ export function buildCsmResolutionView({
       review_required: (grammarConfidence != null && grammarConfidence < 0.5)
         || (grammar === "tcg" && !semTcgIpLabel({ manufacturer: fields.manufacturer, product: fields.product, set: fields.set || fields.product, card_name: fields.card_name }))
     }),
+    ...(grammar === "lot" && composed.lot_terminal_durable === true ? {
+      lot_terminal: Object.freeze({
+        applicable: true,
+        lot_quantity_unresolved: lotQuantityUnresolved,
+        lot_single_card: lotSingleCard,
+        lot_unshared_attributes: lotUnsharedAttributes,
+        publishable: expectedLotFailureCode == null,
+        failure_code: expectedLotFailureCode
+      })
+    } : {}),
     brackets: Object.freeze(brackets),
     composer: Object.freeze({
       marketplace: composed.marketplace || null,

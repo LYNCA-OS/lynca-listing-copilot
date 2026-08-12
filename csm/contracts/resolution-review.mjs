@@ -21,7 +21,14 @@
 
 import { createHash } from "node:crypto";
 
-export const CSM_RESOLUTION_REVIEW_VERSION = "csm-resolution-review-v1";
+export const CSM_RESOLUTION_REVIEW_VERSION = "csm-resolution-review-v2";
+export const CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION =
+  "csm-review-measurement-snapshot-v1";
+
+export const REVIEW_MEASUREMENT_BASIS = Object.freeze({
+  FIELD_REVIEWED: "FIELD_REVIEWED",
+  TITLE_DERIVED: "TITLE_DERIVED"
+});
 
 export const REVIEW_VERDICT = Object.freeze({
   /** Every bracket as resolved is correct. */
@@ -51,6 +58,287 @@ const REQUIRED_PROVENANCE = Object.freeze([
   "reviewer_id", "tenant_id"
 ]);
 
+const sha256Json = (value) => createHash("sha256")
+  .update(JSON.stringify(value))
+  .digest("hex");
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort()
+    .filter((key) => value[key] !== undefined)
+    .map((key) => [key, canonicalJson(value[key])]));
+}
+
+const plainRecord = (value) => Boolean(value && typeof value === "object"
+  && !Array.isArray(value));
+const sameCanonicalValue = (left, right) => JSON.stringify(canonicalJson(left))
+  === JSON.stringify(canonicalJson(right));
+
+function correctedValueHasCanonicalType(field, original, corrected) {
+  if (Array.isArray(original)) {
+    return Array.isArray(corrected)
+      && corrected.every((entry) => typeof entry === "string");
+  }
+  if (field === "grading_info") {
+    if (corrected === null) return true;
+    if (!plainRecord(corrected)) return false;
+    const allowed = new Set(["company", "card_grade", "auto_grade", "grade_type"]);
+    return Object.keys(corrected).every((key) => allowed.has(key)
+      && typeof corrected[key] === "string");
+  }
+  if (plainRecord(original)) return plainRecord(corrected);
+  return typeof corrected === typeof original;
+}
+
+function canonicalValueIsEmpty(value) {
+  if (Array.isArray(value)) return value.every(canonicalValueIsEmpty);
+  if (plainRecord(value)) return Object.values(value).every(canonicalValueIsEmpty);
+  return value == null || String(value).trim() === "";
+}
+
+function validateCorrectionSemantics(reason, original, corrected, canonicalField) {
+  const originalEmpty = canonicalValueIsEmpty(original);
+  const correctedEmpty = canonicalValueIsEmpty(corrected);
+  if (reason === CORRECTION_REASON.MISSED_VALUE
+      && (!originalEmpty || correctedEmpty)) {
+    throw new Error(`csm_review_missed_value_semantics_invalid:${canonicalField}`);
+  }
+  if (reason === CORRECTION_REASON.INVENTED_VALUE
+      && (originalEmpty || !correctedEmpty)) {
+    throw new Error(`csm_review_invented_value_semantics_invalid:${canonicalField}`);
+  }
+}
+
+function normalizeReviewCorrections(corrections, { measurementSnapshot, originalFields }) {
+  const measured = new Map(measurementSnapshot.brackets.map((row) => [row.bracket, row]));
+  const seen = new Set();
+  return corrections.map((correction) => {
+    const bracket = String(correction.bracket || "").trim();
+    if (!Object.values(CORRECTION_REASON).includes(correction.reason)) {
+      throw new Error(`csm_review_unknown_reason:${correction.reason}`);
+    }
+    const measurement = measured.get(bracket);
+    if (!measurement) throw new Error(`csm_review_correction_outside_snapshot:${bracket}`);
+    const allowedFields = Array.isArray(measurement.canonical_fields)
+      ? measurement.canonical_fields : [];
+    const requestedField = String(correction.canonical_field || "").trim();
+    const canonicalField = requestedField || (allowedFields.length === 1 ? allowedFields[0] : "");
+    if (!canonicalField) {
+      throw new Error(`csm_review_correction_canonical_field_required:${bracket}`);
+    }
+    if (!allowedFields.includes(canonicalField)) {
+      throw new Error(`csm_review_correction_field_outside_bracket:${bracket}:${canonicalField}`);
+    }
+    const correctionKey = `${bracket}\u0000${canonicalField}`;
+    if (seen.has(correctionKey)) {
+      throw new Error(`csm_review_duplicate_bracket_field_correction:${bracket}:${canonicalField}`);
+    }
+    seen.add(correctionKey);
+    if (!Object.prototype.hasOwnProperty.call(originalFields, canonicalField)
+        || originalFields[canonicalField] === undefined) {
+      throw new Error(`csm_review_correction_original_field_missing:${canonicalField}`);
+    }
+    const actualOriginal = canonicalJson(originalFields[canonicalField]);
+    if (Object.prototype.hasOwnProperty.call(correction, "original_value")
+        && !sameCanonicalValue(correction.original_value, actualOriginal)) {
+      throw new Error(`csm_review_correction_original_value_mismatch:${canonicalField}`);
+    }
+    if (!correctedValueHasCanonicalType(
+      canonicalField, actualOriginal, correction.corrected_value
+    )) {
+      throw new Error(`csm_review_correction_value_type_invalid:${canonicalField}`);
+    }
+    if (sameCanonicalValue(actualOriginal, correction.corrected_value)) {
+      throw new Error(`csm_review_correction_noop:${canonicalField}`);
+    }
+    validateCorrectionSemantics(
+      correction.reason, actualOriginal, correction.corrected_value, canonicalField
+    );
+    return canonicalJson({
+      bracket,
+      canonical_field: canonicalField,
+      reason: correction.reason,
+      original_value: actualOriginal,
+      corrected_value: correction.corrected_value,
+      note: correction.note || ""
+    });
+  });
+}
+
+/**
+ * Freeze the complete field-review denominator at the server boundary.
+ *
+ * The client is intentionally not an input. The snapshot is projected from
+ * the same CsmResolutionView and Composer receipt that the API just replayed,
+ * so later aggregation can count every bracket -- including brackets with no
+ * correction -- without reconstructing historical UI state.
+ */
+export function buildReviewMeasurementSnapshot({
+  view,
+  composerVersion,
+  marketplaceProfileVersion = null
+} = {}) {
+  if (!view || typeof view !== "object" || !Array.isArray(view.brackets)
+      || !view.brackets.length) {
+    throw new Error("csm_review_measurement_view_required");
+  }
+  const assetId = String(view.asset_id || "").trim();
+  const recognitionSessionId = String(view.recognition_session_id || "").trim();
+  const grammar = String(view.grammar?.raw || "").trim();
+  const version = String(composerVersion || "").trim();
+  if (!assetId || !recognitionSessionId || !grammar || !version) {
+    throw new Error("csm_review_measurement_provenance_incomplete");
+  }
+  const seen = new Set();
+  const brackets = view.brackets.map((row) => {
+    const bracket = String(row?.bracket || "").trim();
+    if (!bracket || seen.has(bracket)) {
+      throw new Error(`csm_review_measurement_bracket_invalid:${bracket || "missing"}`);
+    }
+    seen.add(bracket);
+    if (!["VALUE", "ABSENT", "INSUFFICIENT_EVIDENCE"].includes(row.state)) {
+      throw new Error(`csm_review_measurement_bracket_state_invalid:${bracket}`);
+    }
+    if (!["INCLUDED", "SUPPRESSED_BY_PROFILE", "DROPPED_FOR_BUDGET", "RESTORED",
+      "NORMALIZED", "DEDUPED_COVERED", "WITHHELD_BY_CONTRACT",
+      "NOT_APPLICABLE"].includes(row.composer_disposition)) {
+      throw new Error(`csm_review_measurement_disposition_invalid:${bracket}`);
+    }
+    const canonicalFields = [
+      ...(Array.isArray(row.canonical_fields) && row.canonical_fields.length
+        ? row.canonical_fields
+        : (row.bracket === "manufacturer_product_set"
+          ? ["manufacturer", "product", "set"] : [row.canonical_field]))
+    ].map((field) => String(field || "").trim()).filter(Boolean);
+    if (!canonicalFields.length) {
+      throw new Error(`csm_review_measurement_canonical_fields_missing:${bracket}`);
+    }
+    const coverageAtoms = Array.isArray(row.publication_coverage)
+      ? row.publication_coverage : [];
+    const coverageCounts = Object.fromEntries(Object.values({
+      PUBLISHED: "PUBLISHED",
+      SUPPRESSED_BY_PROFILE: "SUPPRESSED_BY_PROFILE",
+      DROPPED_FOR_BUDGET: "DROPPED_FOR_BUDGET",
+      DEDUPED_COVERED: "DEDUPED_COVERED",
+      TRUNCATED_LOSS: "TRUNCATED_LOSS",
+      WITHHELD_BY_CONTRACT: "WITHHELD_BY_CONTRACT"
+    }).map((disposition) => [disposition.toLowerCase(), coverageAtoms
+      .filter((atom) => atom.disposition === disposition).length]));
+    const coverageSummary = {
+      schema_version: "csm-publication-coverage-summary-v1",
+      atoms_sha256: sha256Json(canonicalJson(coverageAtoms)),
+      ...coverageCounts
+    };
+    if (row.state === "VALUE" && !coverageAtoms.length) {
+      throw new Error(`csm_review_measurement_publication_coverage_missing:${bracket}`);
+    }
+    if (row.state !== "VALUE" && coverageAtoms.length) {
+      throw new Error(`csm_review_measurement_publication_coverage_unexpected:${bracket}`);
+    }
+    return {
+      bracket,
+      state: row.state,
+      canonical_fields: [...new Set(canonicalFields)],
+      composer_disposition: row.composer_disposition,
+      rendered_text_present: row.rendered_text != null && String(row.rendered_text).length > 0,
+      // Historical rows have no authoritative atom receipt. Preserve their
+      // public View bytes, but do not manufacture a partial-publication metric
+      // in a new field-review denominator.
+      partially_published: coverageAtoms.length > 0
+        ? Boolean(row.partially_published) : false,
+      publication_coverage: coverageSummary,
+      outside_contract_order: Boolean(row.outside_contract_order)
+    };
+  });
+  const snapshot = canonicalJson({
+    schema_version: CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION,
+    measurement_basis: REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED,
+    view_version: String(view.schema_version || "").trim(),
+    asset_id: assetId,
+    recognition_session_id: recognitionSessionId,
+    grammar,
+    composer: {
+      composer_version: version,
+      marketplace_profile_version: String(marketplaceProfileVersion || "").trim() || null,
+      title_sha256: sha256Json(String(view.composer?.title || "")),
+      character_budget: view.composer?.character_budget ?? null,
+      rendered_length: view.composer?.length ?? null,
+      truncated: Boolean(view.composer?.truncated)
+    },
+    brackets
+  });
+  return deepFreeze(snapshot);
+}
+
+export function reviewMeasurementSnapshotSha256(snapshot) {
+  if (snapshot?.schema_version !== CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION
+      || snapshot?.measurement_basis !== REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED
+      || !Array.isArray(snapshot?.brackets) || !snapshot.brackets.length) {
+    throw new Error("csm_review_measurement_snapshot_invalid");
+  }
+  return sha256Json(canonicalJson(snapshot));
+}
+
+export function reviewRevisionSha256(record = {}) {
+  return sha256Json(canonicalJson({
+    schema_version: record.schema_version,
+    provenance: Object.fromEntries(REQUIRED_PROVENANCE.map((key) => [key, record[key]])),
+    verdict: record.verdict,
+    corrections: record.corrections,
+    original_fields: record.original_fields,
+    original_title: record.original_title,
+    corrected_fields: record.corrected_fields,
+    corrected_title: record.corrected_title,
+    measurement_basis: record.measurement_basis,
+    measurement_snapshot_sha256: record.measurement_snapshot_sha256,
+    excluded_from_metrics: record.excluded_from_metrics,
+    note: record.note,
+    reviewed_at: record.reviewed_at
+  }));
+}
+
+export function validateCsmResolutionReviewIntegrity(review = {}) {
+  if (review?.schema_version !== CSM_RESOLUTION_REVIEW_VERSION
+      || review?.measurement_basis !== REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED) {
+    throw new Error("csm_review_integrity_contract_invalid");
+  }
+  const snapshotSha256 = reviewMeasurementSnapshotSha256(review.measurement_snapshot);
+  if (snapshotSha256 !== review.measurement_snapshot_sha256) {
+    throw new Error("csm_review_integrity_snapshot_hash_mismatch");
+  }
+  if (review.measurement_snapshot.asset_id !== review.asset_id
+      || review.measurement_snapshot.recognition_session_id !== review.recognition_session_id
+      || review.measurement_snapshot.view_version !== review.view_version
+      || review.measurement_snapshot.composer?.composer_version !== review.composer_version) {
+    throw new Error("csm_review_integrity_snapshot_provenance_mismatch");
+  }
+  const normalizedCorrections = normalizeReviewCorrections(review.corrections || [], {
+    measurementSnapshot: review.measurement_snapshot,
+    originalFields: review.original_fields || {}
+  });
+  if (!sameCanonicalValue(normalizedCorrections, review.corrections)) {
+    throw new Error("csm_review_integrity_correction_binding_mismatch");
+  }
+  const expectedCorrectedFields = canonicalJson(review.original_fields || {});
+  for (const correction of normalizedCorrections) {
+    expectedCorrectedFields[correction.canonical_field] = correction.corrected_value;
+  }
+  if (!sameCanonicalValue(expectedCorrectedFields, review.corrected_fields)) {
+    throw new Error("csm_review_integrity_corrected_fields_mismatch");
+  }
+  if (reviewRevisionSha256(review) !== review.revision_sha256) {
+    throw new Error("csm_review_integrity_revision_hash_mismatch");
+  }
+  return true;
+}
+
 /**
  * Validate and normalise one review before it is persisted.
  *
@@ -65,6 +353,7 @@ export function buildCsmResolutionReview({
   originalFields = {},
   originalTitle = "",
   recomposeTitle,
+  measurementSnapshot,
   reviewedAt = null,
   excludedFromMetrics = false,
   note = ""
@@ -94,10 +383,26 @@ export function buildCsmResolutionReview({
     throw new Error("csm_review_approved_with_corrections");
   }
 
+  const snapshotSha256 = reviewMeasurementSnapshotSha256(measurementSnapshot);
+  if (measurementSnapshot.asset_id !== String(provenance.asset_id).trim()
+      || measurementSnapshot.recognition_session_id
+        !== String(provenance.recognition_session_id).trim()
+      || measurementSnapshot.composer?.composer_version
+        !== String(provenance.composer_version).trim()
+      || measurementSnapshot.view_version !== String(provenance.view_version).trim()) {
+    throw new Error("csm_review_measurement_snapshot_provenance_mismatch");
+  }
+  const normalizedCorrections = normalizeReviewCorrections(corrections, {
+    measurementSnapshot,
+    originalFields
+  });
+
   // Corrected fields are the ONLY input to the corrected title. A reviewer's
   // own wording never becomes canonical.
-  const correctedFields = { ...originalFields };
-  for (const c of corrections) correctedFields[c.canonical_field || c.bracket] = c.corrected_value;
+  const correctedFields = canonicalJson(originalFields);
+  for (const correction of normalizedCorrections) {
+    correctedFields[correction.canonical_field] = correction.corrected_value;
+  }
 
   let correctedTitle = originalTitle;
   if (corrections.length) {
@@ -109,30 +414,23 @@ export function buildCsmResolutionReview({
     schema_version: CSM_RESOLUTION_REVIEW_VERSION,
     ...Object.fromEntries(REQUIRED_PROVENANCE.map((k) => [k, String(provenance[k]).trim()])),
     verdict,
-    corrections: corrections.map((c) => Object.freeze({
-      bracket: c.bracket,
-      canonical_field: c.canonical_field || c.bracket,
-      reason: c.reason,
-      original_value: c.original_value ?? "",
-      corrected_value: c.corrected_value,
-      note: c.note || ""
-    })),
+    corrections: canonicalJson(normalizedCorrections),
     // Both sides preserved. The original is never rewritten by the correction.
-    original_fields: originalFields,
+    original_fields: canonicalJson(originalFields),
     original_title: originalTitle,
-    corrected_fields: correctedFields,
+    corrected_fields: canonicalJson(correctedFields),
     corrected_title: correctedTitle,
+    measurement_basis: REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED,
+    measurement_snapshot: canonicalJson(measurementSnapshot),
+    measurement_snapshot_sha256: snapshotSha256,
     excluded_from_metrics: Boolean(excludedFromMetrics) || verdict === REVIEW_VERDICT.UNDECIDED,
     note,
     reviewed_at: reviewedAt
   };
   // Content hash over the decision, so an append-only log can detect a replayed
   // or altered revision without trusting row order.
-  record.revision_sha256 = createHash("sha256")
-    .update(JSON.stringify([record.asset_id, record.resolution_id, record.verdict,
-      record.corrections, record.corrected_title]))
-    .digest("hex");
-  return Object.freeze(record);
+  record.revision_sha256 = reviewRevisionSha256(record);
+  return deepFreeze(record);
 }
 
 /**
@@ -192,7 +490,8 @@ export function routeReviewPatterns(reviews = [], {
 } = {}) {
   const patterns = new Map();
   for (const review of reviews) {
-    if (review.excluded_from_metrics) continue;
+    if (review.excluded_from_metrics
+        || review.measurement_basis === REVIEW_MEASUREMENT_BASIS.TITLE_DERIVED) continue;
     const grammar = grammarOf(review);
     for (const c of review.corrections) {
       const key = `${grammar}|${c.bracket}|${c.reason}`;
@@ -226,27 +525,130 @@ export function routeReviewPatterns(reviews = [], {
   });
 }
 
-export function projectReviewAccuracy(reviews = [], { grammarOf = () => "standard" } = {}) {
+export function projectReviewAccuracy(reviews = [], { cohortId } = {}) {
+  const cohort = String(cohortId || "").trim();
+  if (!cohort) throw new Error("csm_review_accuracy_cohort_id_required");
   const cells = new Map();
-  let counted = 0; let excluded = 0;
+  const reviewerCounts = new Map();
+  const revisions = [];
+  const assets = new Set();
+  let counted = 0; let excluded = 0; let titleDerivedExcluded = 0;
   for (const review of reviews) {
+    if (review.measurement_basis === REVIEW_MEASUREMENT_BASIS.TITLE_DERIVED) {
+      titleDerivedExcluded++; continue;
+    }
     if (review.excluded_from_metrics) { excluded++; continue; }
+    if (review.schema_version !== CSM_RESOLUTION_REVIEW_VERSION
+        || review.measurement_basis !== REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED) {
+      excluded++; continue;
+    }
+    try {
+      validateCsmResolutionReviewIntegrity(review);
+    } catch (error) {
+      throw new Error(`csm_review_accuracy_integrity:${review.asset_id}:${error.message}`);
+    }
+    if (assets.has(review.asset_id)) {
+      throw new Error(`csm_review_accuracy_duplicate_asset:${review.asset_id}`);
+    }
+    assets.add(review.asset_id);
+    revisions.push(review.revision_sha256);
+    reviewerCounts.set(review.reviewer_id, (reviewerCounts.get(review.reviewer_id) || 0) + 1);
     counted++;
-    const grammar = grammarOf(review);
-    for (const c of review.corrections) {
-      const key = `${grammar}|${c.bracket}`;
-      const cell = cells.get(key) || { grammar, bracket: c.bracket, corrections: 0, by_reason: {} };
-      cell.corrections++;
-      cell.by_reason[c.reason] = (cell.by_reason[c.reason] || 0) + 1;
+    const grammar = review.measurement_snapshot.grammar;
+    const correctionsByBracket = new Map();
+    for (const correction of review.corrections) {
+      const bracketCorrections = correctionsByBracket.get(correction.bracket) || [];
+      bracketCorrections.push(correction);
+      correctionsByBracket.set(correction.bracket, bracketCorrections);
+    }
+    for (const bracket of review.measurement_snapshot.brackets) {
+      const key = `${grammar}|${bracket.bracket}`;
+      const cell = cells.get(key) || {
+        grammar,
+        bracket: bracket.bracket,
+        reviewed: 0,
+        corrections: 0,
+        empty_reviewed: 0,
+        empty_errors: 0,
+        absent_reviewed: 0,
+        absent_errors: 0,
+        insufficient_evidence_reviewed: 0,
+        insufficient_evidence_errors: 0,
+        composer_eligible: 0,
+        composer_omissions: 0,
+        profile_suppressed: 0,
+        partial_publications: 0,
+        by_reason: {}
+      };
+      cell.reviewed++;
+      const bracketCorrections = correctionsByBracket.get(bracket.bracket) || [];
+      if (bracketCorrections.length) {
+        cell.corrections++;
+        for (const reason of new Set(bracketCorrections.map((entry) => entry.reason))) {
+          cell.by_reason[reason] = (cell.by_reason[reason] || 0) + 1;
+        }
+      }
+      const empty = bracket.state !== "VALUE";
+      const correctionAddsValue = bracketCorrections.some((correction) => {
+        const value = correction.corrected_value;
+        if (Array.isArray(value)) return value.some((entry) => String(entry ?? "").trim());
+        if (value && typeof value === "object") {
+          return Object.values(value).some((entry) => String(entry ?? "").trim());
+        }
+        return String(value ?? "").trim().length > 0;
+      });
+      if (empty) cell.empty_reviewed++;
+      if (empty && correctionAddsValue) cell.empty_errors++;
+      if (bracket.state === "ABSENT") cell.absent_reviewed++;
+      if (bracket.state === "ABSENT" && correctionAddsValue) cell.absent_errors++;
+      if (bracket.state === "INSUFFICIENT_EVIDENCE") cell.insufficient_evidence_reviewed++;
+      if (bracket.state === "INSUFFICIENT_EVIDENCE" && correctionAddsValue) {
+        cell.insufficient_evidence_errors++;
+      }
+      const coverage = bracket.publication_coverage || {};
+      const suppressed = Number(coverage.suppressed_by_profile || 0) > 0;
+      if (suppressed) cell.profile_suppressed++;
+      const renderedDisposition = ["INCLUDED", "NORMALIZED", "RESTORED"]
+        .includes(bracket.composer_disposition) && bracket.rendered_text_present;
+      const budgetLoss = Number(coverage.dropped_for_budget || 0)
+        + Number(coverage.truncated_loss || 0) > 0;
+      const coveredAtom = Number(coverage.published || 0)
+        + Number(coverage.deduped_covered || 0) > 0;
+      const eligible = bracket.state === "VALUE" && (budgetLoss || coveredAtom);
+      if (eligible) cell.composer_eligible++;
+      if (bracket.state === "VALUE" && budgetLoss) {
+        cell.composer_omissions++;
+      }
+      if (bracket.partially_published) cell.partial_publications++;
       cells.set(key, cell);
     }
   }
-  return Object.freeze({
+  const cohortSha256 = sha256Json(canonicalJson({
+    cohort_id: cohort,
+    review_revision_sha256: [...revisions].sort()
+  }));
+  return deepFreeze({
+    schema_version: "csm-review-accuracy-projection-v2",
+    measurement_basis: REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED,
+    cohort_id: cohort,
+    cohort_sha256: cohortSha256,
     reviews_counted: counted,
     reviews_excluded: excluded,
-    cells: Object.freeze([...cells.values()].map((cell) => Object.freeze({
+    title_derived_reviews_excluded: titleDerivedExcluded,
+    distinct_reviewers: reviewerCounts.size,
+    reviewer_counts: Object.fromEntries([...reviewerCounts.entries()].sort()),
+    cells: [...cells.values()].map((cell) => ({
       ...cell,
-      correction_rate: counted ? cell.corrections / counted : 0
-    })).sort((a, b) => b.corrections - a.corrections))
+      correction_rate: cell.reviewed ? cell.corrections / cell.reviewed : 0,
+      empty_error_rate: cell.empty_reviewed ? cell.empty_errors / cell.empty_reviewed : null,
+      absent_error_rate: cell.absent_reviewed ? cell.absent_errors / cell.absent_reviewed : null,
+      insufficient_evidence_error_rate: cell.insufficient_evidence_reviewed
+        ? cell.insufficient_evidence_errors / cell.insufficient_evidence_reviewed
+        : null,
+      composer_omission_rate: cell.composer_eligible
+        ? cell.composer_omissions / cell.composer_eligible
+        : null
+    })).sort((a, b) => a.grammar.localeCompare(b.grammar)
+      || a.bracket.localeCompare(b.bracket))
   });
 }

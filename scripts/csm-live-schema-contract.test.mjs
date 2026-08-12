@@ -51,7 +51,8 @@ const CONTRACT = {
     "resolution_id", "output_id", "resolver_version", "composer_version",
     "view_version", "reviewer_id", "verdict", "corrections", "original_fields",
     "original_title", "corrected_fields", "corrected_title",
-    "excluded_from_metrics", "note", "revision_sha256", "reviewed_at"
+    "excluded_from_metrics", "note", "revision_sha256", "reviewed_at",
+    "measurement_basis", "measurement_snapshot", "measurement_snapshot_sha256"
   ]
 };
 
@@ -61,13 +62,39 @@ for (const [table, wanted] of Object.entries(CONTRACT)) {
   assert.ok(actual.size > 0, `${table} is missing from ${SNAPSHOT_PATH}; refresh the snapshot`);
   for (const column of wanted) {
     checked += 1;
-    assert.ok(actual.has(column),
+    const pendingAdditiveMigration = table === "csm_resolution_reviews"
+      && ["measurement_basis", "measurement_snapshot", "measurement_snapshot_sha256"]
+        .includes(column);
+    assert.ok(actual.has(column) || pendingAdditiveMigration,
       `${table}.${column} is named in code but absent from the live schema -- this is a production 400`);
   }
 }
 
-// The exact names that caused the outage must stay out of the read path.
+// The three pending columns are permitted only because their additive
+// migration ships in this exact changeset. Once Production is refreshed, the
+// snapshot should include them and this exception can be removed.
+const migration = await readFile(
+  "infrastructure/supabase-production/supabase/migrations/20260812055051_csm_resolution_review_measurement_v2.sql",
+  "utf8"
+);
+for (const column of ["measurement_basis", "measurement_snapshot", "measurement_snapshot_sha256"]) {
+  if (!new Set(live.csm_resolution_reviews || []).has(column)) {
+    assert.match(migration, new RegExp(`add column if not exists ${column}\\b`));
+  }
+}
 const writer = await readFile("lib/listing/thin/csm-supabase-writer.mjs", "utf8");
+const readiness = writer.slice(
+  writer.indexOf("export async function checkCsmPersistenceReadiness"),
+  writer.indexOf("export async function readCsmSessionPacketState")
+);
+assert.match(readiness, /csm_resolution_reviews/);
+for (const column of [
+  "measurement_basis", "measurement_snapshot", "measurement_snapshot_sha256"
+]) assert.ok(writer.includes(`"${column}"`), `${column} must be in the readiness column contract`);
+assert.match(readiness, /searchParams\.set\("limit", "0"\)/,
+  "pre-provider readiness must probe the pending review columns before deployment can pass");
+
+// The exact names that caused the outage must stay out of the read path.
 const read = writer.slice(
   writer.indexOf("export async function readCsmResolutionRecord"),
   writer.indexOf("export async function appendCsmResolutionReview")

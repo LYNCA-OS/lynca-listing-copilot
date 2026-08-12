@@ -396,9 +396,28 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
   assert.ok(!/Lot\*0/.test(zero.title), "zero cards is not a lot");
   assert.equal(zero.lot_quantity_unresolved, true);
 
-  const counted = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 4 }));
+  const counted = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: "4" }));
   assert.ok(counted.title.startsWith("Lot*4"));
   assert.equal(counted.lot_quantity_unresolved, false);
+
+  for (const ambiguous of ["2-3", "1/2", " 2 cards ", 2]) {
+    const { fields: parsed, defects } = parseCanonicalFields({
+      subjects: ["A", "B"], grammar: "lot", lot_count: ambiguous
+    });
+    const result = composeFromCanonicalFields(parsed);
+    assert.equal(parsed.lot_count, "");
+    assert.equal(result.lot_quantity_unresolved, true);
+    assert.doesNotMatch(result.title, /^Lot\*(?:23|12|2)\b/,
+      `ambiguous quantity ${JSON.stringify(ambiguous)} must not become N`);
+    assert.ok(defects.includes("lot_count_not_strict_positive_integer_text"));
+  }
+  assert.equal(parseCanonicalFields({ grammar: "lot", lot_count: "9999" })
+    .fields.lot_count, "9999");
+  for (const unsafe of ["01", "10000", "9".repeat(100)]) {
+    const parsed = parseCanonicalFields({ grammar: "lot", lot_count: unsafe });
+    assert.equal(parsed.fields.lot_count, "");
+    assert.ok(parsed.defects.includes("lot_count_not_strict_positive_integer_text"));
+  }
 }
 
 // ------------------------------------------------------------ empty and team

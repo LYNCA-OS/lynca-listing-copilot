@@ -96,7 +96,8 @@ const baselineRows = buildCsmStageRows({
     composer_version: baseline.composer_version,
     marketplace_profile_version: baseline.marketplace_profile_version,
     canonical_naming_trace: baseline.canonical_naming_trace,
-    canonical_naming_publishable: baseline.canonical_naming_publishable
+    canonical_naming_publishable: baseline.canonical_naming_publishable,
+    publication_coverage: baseline.publication_coverage
   },
   title: baseline.title
 });

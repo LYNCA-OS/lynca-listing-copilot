@@ -1758,10 +1758,12 @@ export function compatibilityBridgeV2RuntimeContractProof({
     replayed: composeCanonicalFieldsForStoredOutput(fields, {
       marketplace: "EBAY",
       composer_version: contract.composer_version,
-      marketplace_profile_version: contract.marketplace_profile_version
+      marketplace_profile_version: contract.marketplace_profile_version,
+      contract_version: "csm-stage-shadow-v2"
     }),
     expected: composeLyncaStandardNameForProfile(fields, {
-      marketplaceProfileVersion: contract.marketplace_profile_version
+      marketplaceProfileVersion: contract.marketplace_profile_version,
+      publicationCoverage: false
     })
   }));
   const activeWriter = bridgeProjectionActivation.active_writer;

@@ -189,7 +189,8 @@ async function activeV2Prepared(
   assert.equal(validateExternalIdentityDecisionObservation(support, observed, fields), true);
   const composed = composeCanonicalFieldsForStoredOutput(fields, {
     marketplace: "EBAY",
-    ...v2.output
+    ...v2.output,
+    contract_version: "csm-stage-shadow-v3"
   });
   assert.equal(composed.title, expectedTitle);
   const csmRows = buildCsmStageRows({
@@ -216,6 +217,7 @@ async function activeV2Prepared(
     empty_fields: composed.empty_fields,
     input_empty_fields: composed.input_empty_fields,
     normalization_reasons: composed.normalization_reasons,
+    publication_coverage: composed.publication_coverage,
     character_budget: composed.character_budget,
     length: composed.length,
     truncated: composed.truncated,

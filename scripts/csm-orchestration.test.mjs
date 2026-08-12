@@ -592,7 +592,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   const invalid = structuredClone(prepared);
   invalid.csm_rows.resolved.find((row) => row.bracket === "card_number").canonical_value =
     "X".repeat(80);
-  const invalidComposition = replayFromRows(invalid.csm_rows).composed;
+  const invalidComposition = replayFromRows(invalid.csm_rows, {
+    allowUnsealedMutation: true
+  }).composed;
   assert.equal(invalidComposition.canonical_naming_publishable, false);
   invalid.title = "";
   invalid.csm_rows.output.title = "";

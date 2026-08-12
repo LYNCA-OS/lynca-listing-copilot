@@ -22,7 +22,8 @@ import {
 } from "../lib/listing/thin/csm-replay.mjs";
 import { buildCsmResolutionView, CSM_RESOLUTION_VIEW_VERSION } from "../lib/listing/csm/resolution-view.mjs";
 import {
-  buildCsmResolutionReview, CSM_RESOLUTION_REVIEW_VERSION
+  buildCsmResolutionReview, buildReviewMeasurementSnapshot,
+  CSM_RESOLUTION_REVIEW_VERSION
 } from "../lib/listing/csm/resolution-review.mjs";
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
@@ -285,8 +286,19 @@ export function composeResolutionView(record) {
       THIN_COMPOSER_VERSION_V1,
       THIN_COMPOSER_VERSION_V2
     ].includes(composerVersion) && marketplaceProfileVersion === EBAY_PROFILE_VERSION);
-    composeCorrectedTitle = (correctedFields) =>
-      composeCanonicalFieldsForStoredOutput(correctedFields, record.replay_rows.output).title;
+    composeCorrectedTitle = (correctedFields) => {
+      const corrected = { ...correctedFields };
+      // print_finish is the correction authority. Persisted layers explain the
+      // original value, but must not override an explicit semantic review.
+      if (corrected.print_finish !== fields.print_finish) {
+        corrected.parallel_exact = corrected.print_finish || "";
+        corrected.surface_color = "";
+        corrected.parallel_family = "";
+      }
+      return composeCanonicalFieldsForStoredOutput(
+        corrected, record.replay_rows.output
+      ).title;
+    };
   } else {
     // Compatibility for injected/legacy flat records that predate the stored
     // replay bundle. They can only be interpreted as the current contract;
@@ -385,11 +397,22 @@ export async function handleResolutionReviewRequest({
   const record = await readRecord({ tenantId, assetId, env, fetchImpl });
   if (!record) throw Object.assign(new Error("csm_resolution_not_found"), { statusCode: 404 });
   const {
+    view,
     fields,
     composed,
     composer_version: composerVersion,
+    marketplace_profile_version: marketplaceProfileVersion,
     compose_corrected_title: composeCorrectedTitle
   } = composeResolutionView(record);
+  const originalTitle = String(record.output_title || composed.title).trim();
+  if (originalTitle !== composed.title) {
+    throw Object.assign(new Error("csm_review_composer_replay_mismatch"), { statusCode: 409 });
+  }
+  const measurementSnapshot = buildReviewMeasurementSnapshot({
+    view,
+    composerVersion,
+    marketplaceProfileVersion
+  });
 
   const review = buildCsmResolutionReview({
     provenance: {
@@ -406,11 +429,14 @@ export async function handleResolutionReviewRequest({
     verdict: payload.verdict,
     corrections: Array.isArray(payload.corrections) ? payload.corrections : [],
     originalFields: fields,
-    originalTitle: String(record.output_title || composed.title).trim(),
+    originalTitle,
     // The ONLY way a corrected title comes into existence. A title in the
     // payload is ignored: parsing a reviewer's string back into fields is the
     // one thing this contract exists to prevent.
     recomposeTitle: composeCorrectedTitle,
+    // Built from the server-replayed view. Any similarly named client payload
+    // field is ignored and therefore cannot choose its own denominator.
+    measurementSnapshot,
     reviewedAt: new Date().toISOString(),
     note: String(payload.note || "")
   });

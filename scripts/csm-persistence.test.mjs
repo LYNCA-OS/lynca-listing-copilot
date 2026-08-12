@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 import {
   buildCsmStageRows, CSM_BRACKETS, MODALITIES, EMPTY_REASONS, VALUE_KINDS,
-  THIN_REGISTRY_RELEASE_ID
+  CSM_STAGE_LEGACY_CONTRACT_VERSION, THIN_REGISTRY_RELEASE_ID
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
@@ -143,14 +143,17 @@ const rows = buildCsmStageRows({
   // The bridge's active writer is still v2/eBay. Even when a caller carries a
   // future independent search lane, its complete stage packet must stay
   // byte-identical to de55; only registered CNL v3 profiles may persist it.
-  const legacyComposed = composeFromCanonicalFields(youngGunsFields);
+  const legacyComposed = composeFromCanonicalFields(youngGunsFields, {
+    features: { publication_coverage: false }
+  });
   const legacyRows = buildCsmStageRows({
     tenantId: "tenant-legacy",
     recognitionSessionId: "session-legacy",
     fields: youngGunsFields,
     composed: legacyComposed,
     title: legacyComposed.title,
-    createdAt: "2026-08-11T00:00:00.000Z"
+    createdAt: "2026-08-11T00:00:00.000Z",
+    contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
   });
   assert.equal(Object.hasOwn(
     legacyRows.output.structured_output,

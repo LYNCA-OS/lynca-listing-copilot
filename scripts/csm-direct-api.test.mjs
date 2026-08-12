@@ -83,6 +83,7 @@ import {
 import {
   buildCsmStageRows,
   computeCsmPacketHashes,
+  CSM_STAGE_LEGACY_CONTRACT_VERSION,
   EBAY_PROFILE_VERSION,
   THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
@@ -181,7 +182,8 @@ assert.deepEqual(Object.keys(providerResponseAttestation).sort(), [
     recognitionSessionId: "session-byte-probe-plain",
     fields,
     composed: historical,
-    title: historical.title
+    title: historical.title,
+    contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
   });
   assert.equal(
     createHash("sha256").update(JSON.stringify(publicPersistedResult({
@@ -192,12 +194,15 @@ assert.deepEqual(Object.keys(providerResponseAttestation).sort(), [
     "the complete dormant v2 public result must remain byte-identical to de55"
   );
   const active = finishCanonicalFields(fields);
+  const historicalActive = { ...active };
+  delete historicalActive.publication_coverage;
   const activeRows = buildCsmStageRows({
     tenantId: "tenant-byte-probe",
     recognitionSessionId: "session-byte-probe-plain",
     fields: active.fields,
-    composed: active,
-    title: active.title
+    composed: historicalActive,
+    title: active.title,
+    contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
   });
   assert.equal(
     createHash("sha256").update(JSON.stringify(publicPersistedResult({
@@ -474,7 +479,7 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   resetCsmPersistenceReadinessCache();
 }
 
-// The default cached preflight is the integration boundary: six global
+// The default cached preflight is the integration boundary: seven global
 // probes are shared by the whole warm-instance burst, a stale pacer fails
 // closed, and fixing it is visible immediately because failures are uncached.
 {
@@ -501,6 +506,9 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
           registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
         }
       ]));
+    }
+    if (pathname.endsWith("/csm_resolution_reviews")) {
+      return new Response(JSON.stringify([]));
     }
     if (pathname.endsWith("/persist_csm_stage_packet_v1")) {
       return new Response(JSON.stringify({ code: "missing_csm_stage_row_identity" }));
@@ -543,12 +551,12 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
     checkCachedCsmPersistenceReadiness(options)
   )));
   assert.ok(burst.every(({ ready }) => ready === true));
-  assert.equal(calls.length, 6, "120 cards must share one six-probe pre-spend receipt");
+  assert.equal(calls.length, 7, "120 cards must share one seven-probe pre-spend receipt");
   await checkCachedCsmPersistenceReadiness(options);
-  assert.equal(calls.length, 6, "a successful receipt must be reused inside its TTL");
+  assert.equal(calls.length, 7, "a successful receipt must be reused inside its TTL");
   clockMs += CSM_PERSISTENCE_READINESS_CACHE_TTL_MS + 1;
   await checkCachedCsmPersistenceReadiness(options);
-  assert.equal(calls.length, 12, "all six probes must refresh after cache expiry");
+  assert.equal(calls.length, 14, "all seven probes must refresh after cache expiry");
 
   resetCsmPersistenceReadinessCache();
   pacerReady = false;
@@ -558,7 +566,7 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   pacerReady = true;
   const healed = await checkCachedCsmPersistenceReadiness(options);
   assert.equal(healed.ready, true, "pacer recovery must not wait for a failure TTL");
-  assert.equal(calls.length, 24, "failure and immediate recovery each require one six-probe receipt");
+  assert.equal(calls.length, 28, "failure and immediate recovery each require one seven-probe receipt");
   resetCsmPersistenceReadinessCache();
 }
 
@@ -1627,6 +1635,104 @@ function stagedSuccessfulDependencies(options = {}) {
       }))
     })
   };
+}
+
+// COS-49: a terminal Lot refusal happens only after durable settlement and
+// atomic persistence. Resume reads the same authority receipt, spends zero
+// provider calls, and returns the same nonretryable review-required error.
+for (const [failureCode, terminal] of [
+  ["LOT_QUANTITY_UNRESOLVED", {
+    lot_quantity_unresolved: true, lot_single_card: false,
+    lot_unshared_attributes: [], publishable: false,
+    failure_code: "LOT_QUANTITY_UNRESOLVED"
+  }],
+  ["LOT_SINGLE_CARD", {
+    lot_quantity_unresolved: false, lot_single_card: true,
+    lot_unshared_attributes: [], publishable: false,
+    failure_code: "LOT_SINGLE_CARD"
+  }]
+]) {
+  let durable = null;
+  let providerCalls = 0;
+  let persistenceCalls = 0;
+  const authority = passthroughAuthority({
+    shallowWrapAfterSettle: true,
+    lookup: async () => durable
+      ? { status: "found", result: durable }
+      : { status: "not_found" }
+  });
+  const dependencies = successfulDependencies({ authority });
+  dependencies.preparePath = async (input) => {
+    providerCalls += 1;
+    return {
+      ...preparedResult(input.recognitionSessionId, "Diagnostic Lot title"),
+      grammar: "lot",
+      lot_quantity_unresolved: terminal.lot_quantity_unresolved,
+      lot_single_card: terminal.lot_single_card,
+      lot_unshared_attributes: terminal.lot_unshared_attributes,
+      lot_publishable: false,
+      lot_publication_failure_code: failureCode,
+      csm_rows: {
+        ...preparedResult(input.recognitionSessionId).csm_rows,
+        output: {
+          title: "Diagnostic Lot title",
+          structured_output: {
+            lot_count: failureCode === "LOT_SINGLE_CARD" ? "1" : "",
+            lot_terminal: terminal
+          }
+        }
+      },
+      execution_contract_sha256: buildCsmModelExecutionContractSha256({
+        provider: input.provider,
+        model: input.model,
+        requestedEffort: input.effort,
+        imageDetail: input.imageDetail,
+        maxOutputTokens: input.maxOutputTokens,
+        semanticPromptVersion: input.promptVersion,
+        transportProfile: input.transportProfile,
+        imageUrls: input.imageUrls
+      })
+    };
+  };
+  dependencies.persistPath = async ({ prepared }) => {
+    persistenceCalls += 1;
+    durable = {
+      ...prepared,
+      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
+    };
+    return durable;
+  };
+  const request = {
+    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
+    intentId: `terminal-${failureCode.toLowerCase()}`, dependencies
+  };
+  let first;
+  await assert.rejects(runDirectCsmAsset(request), (error) => {
+    first = error;
+    return error.code === failureCode
+      && error.statusCode === 409
+      && error.retryable === false
+      && error.review_required === true
+      && error.trace_status === "PERSISTED_REVIEW_REQUIRED"
+      && /^csmsess_[0-9a-f]{40}$/.test(error.recognition_session_id);
+  });
+  assert.equal(providerCalls, 1);
+  assert.equal(persistenceCalls, 1);
+  assert.deepEqual(durable.csm_rows.output.structured_output.lot_terminal, terminal);
+
+  await assert.rejects(runDirectCsmAsset({ ...request, resumeOnly: true }), (error) => (
+    error.code === failureCode
+      && error.recognition_session_id === first.recognition_session_id
+      && error.review_required === true
+      && error.retryable === false
+  ));
+  assert.equal(providerCalls, 1, "terminal Lot resume must add zero provider calls");
+  assert.equal(persistenceCalls, 1, "already-persisted terminal Lot must add zero writes");
+  const response = buildCsmDirectFailureResponse(first);
+  assert.equal(response.status, 409);
+  assert.equal(response.body.error_type, "CSM_REVIEW_REQUIRED");
+  assert.equal(response.body.trace_status, "PERSISTED_REVIEW_REQUIRED");
+  assert.equal(response.body.review_required, true);
 }
 
 // Ordinary integrated ingest sends original bytes as data URLs. Its task,

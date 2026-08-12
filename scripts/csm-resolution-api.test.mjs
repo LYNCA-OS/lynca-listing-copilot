@@ -118,6 +118,42 @@ for (const [grammar, canonicalPayload] of legacyFlatCases) {
   assert.equal(Object.hasOwn(publicView.composer, "marketplace_profile_version"), false);
   assert.ok(publicView.brackets.every((entry) => !Object.hasOwn(entry, "canonical_fields")));
 }
+
+// New durable Lot rows expose terminal review state without changing archived
+// de55 flat/replay bytes. These are diagnostic stored titles, never usable-200
+// writer responses; the direct route refuses them after atomic persistence.
+for (const [name, lotCount, expected] of [
+  ["unresolved", "", "LOT_QUANTITY_UNRESOLVED"],
+  ["single", "1", "LOT_SINGLE_CARD"]
+]) {
+  const fields = parseCanonicalFields({
+    manufacturer: "Topps", product: "Chrome", subjects: ["A", "B"],
+    grammar: "lot", lot_count: lotCount
+  }).fields;
+  const raw = composeFromCanonicalFields(fields);
+  const composed = {
+    ...raw,
+    lot_publishable: false,
+    lot_publication_failure_code: expected
+  };
+  const rows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: `lot-${name}-session`,
+    fields, composed, title: composed.title
+  });
+  const view = await handleResolutionViewRequest({
+    tenantId: "t1", assetId: `lot-${name}-asset`,
+    dependencies: { readRecord: async () => ({
+      asset_id: `lot-${name}-asset`, recognition_session_id: `lot-${name}-session`,
+      resolution_id: rows.resolution.id, output_id: rows.output.id,
+      output_title: composed.title, resolver_version: rows.resolution.resolver_version,
+      replay_rows: rows
+    }) }
+  });
+  assert.equal(view.lot_terminal.publishable, false);
+  assert.equal(view.lot_terminal.failure_code, expected);
+  assert.equal(view.lot_terminal.lot_quantity_unresolved, name === "unresolved");
+  assert.equal(view.lot_terminal.lot_single_card, name === "single");
+}
 {
   const currentStandard = composeResolutionView({
     canonical_payload: payload,
@@ -182,11 +218,12 @@ const legacyPayload = {
 };
 const legacyFields = parseCanonicalFields(legacyPayload).fields;
 const legacyComposed = composeFromCanonicalFields(legacyFields, {
-  features: { exact_parallel_color_compaction: false }
+  features: { exact_parallel_color_compaction: false, publication_coverage: false }
 });
 const legacyRows = buildCsmStageRows({
   tenantId: "t1", recognitionSessionId: "legacy-session",
-  fields: legacyFields, composed: legacyComposed, title: legacyComposed.title
+  fields: legacyFields, composed: legacyComposed, title: legacyComposed.title,
+  contractVersion: "csm-stage-shadow-v2"
 });
 legacyRows.output.composer_version = THIN_COMPOSER_VERSION_V1;
 legacyRows.output.title = legacyComposed.title;
@@ -1049,7 +1086,7 @@ const legacyRecord = {
   assert.equal(sha256Json(view), DE55_V1_REPLAY_VIEW_SHA256,
     "historical v1 rows also retain their complete de55 public projection");
 
-  const review = await handleResolutionReviewRequest({
+  await assert.rejects(handleResolutionReviewRequest({
     tenantId: "t1", reviewerId: "u1",
     payload: {
       asset_id: legacyRecord.asset_id,
@@ -1060,9 +1097,8 @@ const legacyRecord = {
       }]
     },
     dependencies: { readRecord: async () => legacyRecord, appendReview: async ({ review: value }) => value }
-  });
-  assert.equal(review.composer_version, THIN_COMPOSER_VERSION_V1);
-  assert.equal(review.original_title, legacyComposed.title);
+  }), /csm_review_measurement_publication_coverage_missing/,
+  "historical rows remain readable but cannot manufacture a v2 field-measurement denominator");
 }
 
 // --- a missing run is 404, not an empty view ---------------------------------
@@ -1082,7 +1118,8 @@ const legacyRecord = {
       verdict: REVIEW_VERDICT.CORRECTED,
       corrections: [{ bracket: "set", canonical_field: "set", reason: CORRECTION_REASON.MISSED_VALUE, original_value: "", corrected_value: "Sapphire Selections" }],
       // A reviewer's own title, which must be ignored entirely.
-      corrected_title: "WHATEVER THE REVIEWER TYPED"
+      corrected_title: "WHATEVER THE REVIEWER TYPED",
+      measurement_snapshot: { schema_version: "client-forgery", brackets: [] }
     },
     dependencies: { ...deps, appendReview: async ({ review: r }) => { appended = r; return r; } }
   });
@@ -1096,6 +1133,11 @@ const legacyRecord = {
   assert.equal(review.resolution_id, "res-1");
   assert.equal(review.output_id, "out-1");
   assert.equal(review.reviewer_id, "u1");
+  assert.equal(review.measurement_basis, "FIELD_REVIEWED");
+  assert.equal(review.measurement_snapshot.asset_id, "asset-1");
+  assert.notEqual(review.measurement_snapshot.schema_version, "client-forgery",
+    "the server-replayed view owns the measurement denominator");
+  assert.match(review.measurement_snapshot_sha256, /^[0-9a-f]{64}$/);
 }
 
 // --- review: an approval cannot carry corrections ----------------------------

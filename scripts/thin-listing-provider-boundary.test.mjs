@@ -226,4 +226,47 @@ for (const body of [
   );
 }
 
+// COS-49 terminal Lot integration: the paid boundary returns the deterministic
+// terminal state so orchestration can persist it before the HTTP route refuses
+// a usable-200. Throwing here would make the review receipt unreachable.
+for (const [lotCount, failureCode] of [
+  ["", "LOT_QUANTITY_UNRESOLVED"],
+  ["2-3", "LOT_QUANTITY_UNRESOLVED"],
+  ["1/2", "LOT_QUANTITY_UNRESOLVED"],
+  ["1", "LOT_SINGLE_CARD"]
+]) {
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/lot.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify({
+        manufacturer: "Topps", product: "Chrome", subjects: ["A", "B"],
+        grammar: "lot", lot_count: lotCount
+      })
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.lot_publishable, false);
+  assert.equal(result.lot_publication_failure_code, failureCode);
+  assert.ok(!/^Lot\*(?:23|12)\b/.test(result.title),
+    "ambiguous quantity text must never be digit-concatenated");
+}
+
+{
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/lot.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify({
+      status: "completed",
+      output_text: JSON.stringify({
+        manufacturer: "Topps", product: "Chrome", subjects: ["A", "B"],
+        set: "Update; Sapphire", grammar: "lot", lot_count: "2"
+      })
+    }), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.lot_publishable, true);
+  assert.equal(result.lot_publication_failure_code, null);
+  assert.deepEqual(result.lot_unshared_attributes, ["set"]);
+}
+
 process.stdout.write("thin listing provider boundary: ok\n");
