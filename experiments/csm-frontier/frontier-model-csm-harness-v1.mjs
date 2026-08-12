@@ -10,6 +10,14 @@ import {
 export const FRONTIER_MODEL_CSM_HARNESS_VERSION = "frontier-model-csm-harness-v1";
 export const FRONTIER_MODEL_CSM_ENVELOPE_VERSION = "frontier-model-csm-envelope-v1";
 export const FRONTIER_MODEL_CSM_AUDIT_BUNDLE_VERSION = "frontier-model-csm-audit-bundle-v1";
+export const FRONTIER_MODEL_CSM_EXECUTION_MODE_OFFLINE = "EVALUATION_ONLY_NO_NETWORK";
+export const FRONTIER_MODEL_CSM_EXECUTION_MODE_FOUNDER_BETA =
+  "FOUNDER_BETA_SHADOW_OPTIONAL_WEB";
+
+const EXECUTION_MODES = new Set([
+  FRONTIER_MODEL_CSM_EXECUTION_MODE_OFFLINE,
+  FRONTIER_MODEL_CSM_EXECUTION_MODE_FOUNDER_BETA
+]);
 
 export const FRONTIER_MODEL_CSM_PROFILE_TARGETS = Object.freeze([
   Object.freeze({
@@ -141,7 +149,7 @@ function validateEnvelope(envelope) {
   exactKeys(envelope, ENVELOPE_KEYS, "frontier_harness_envelope_shape");
   if (envelope.schema_version !== FRONTIER_MODEL_CSM_ENVELOPE_VERSION
       || envelope.harness_version !== FRONTIER_MODEL_CSM_HARNESS_VERSION
-      || envelope.execution_mode !== "EVALUATION_ONLY_NO_NETWORK"
+      || !EXECUTION_MODES.has(envelope.execution_mode)
       || envelope.provider_call_budget !== 1
       || envelope.isolated_stage_model_calls !== 0
       || !/^[a-zA-Z0-9._:-]{1,120}$/.test(String(envelope.case_id || ""))) {
@@ -179,6 +187,10 @@ function validateEnvelope(envelope) {
   return [...sourceIds];
 }
 
+export function validateFrontierModelCsmEnvelope(envelope) {
+  return Object.freeze(validateEnvelope(envelope));
+}
+
 /**
  * Build inert input for one future frontier-model evaluation. It performs no
  * I/O and exposes no dispatch function. Every admitted source is present in
@@ -187,6 +199,7 @@ function validateEnvelope(envelope) {
 export function buildFrontierModelCsmEnvelope({
   caseId,
   sources,
+  executionMode = FRONTIER_MODEL_CSM_EXECUTION_MODE_OFFLINE,
   profileTargets = FRONTIER_MODEL_CSM_PROFILE_TARGETS
 } = {}) {
   if (!/^[a-zA-Z0-9._:-]{1,120}$/.test(String(caseId || ""))) {
@@ -194,6 +207,9 @@ export function buildFrontierModelCsmEnvelope({
   }
   if (!Array.isArray(sources) || !sources.length) {
     throw new TypeError("frontier_harness_sources_required");
+  }
+  if (!EXECUTION_MODES.has(executionMode)) {
+    throw new TypeError("frontier_harness_execution_mode_invalid");
   }
   const sourceIds = new Set();
   sources.forEach((source, index) => {
@@ -217,7 +233,7 @@ export function buildFrontierModelCsmEnvelope({
   return Object.freeze({
     schema_version: FRONTIER_MODEL_CSM_ENVELOPE_VERSION,
     harness_version: FRONTIER_MODEL_CSM_HARNESS_VERSION,
-    execution_mode: "EVALUATION_ONLY_NO_NETWORK",
+    execution_mode: executionMode,
     case_id: String(caseId),
     provider_call_budget: 1,
     isolated_stage_model_calls: 0,
@@ -236,6 +252,9 @@ export function buildFrontierModelCsmEnvelope({
  */
 export function buildFrontierModelCsmRequest(envelope) {
   validateEnvelope(envelope);
+  if (envelope.execution_mode !== FRONTIER_MODEL_CSM_EXECUTION_MODE_OFFLINE) {
+    throw new TypeError("frontier_harness_request_builder_mode_mismatch");
+  }
   const originalImages = envelope.source_inventory.filter((source) => (
     source.source_kind === "ORIGINAL_IMAGE"
   ));
