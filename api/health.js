@@ -19,7 +19,7 @@ import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   CSM_PROJECTION_ACTIVATION
@@ -104,7 +104,7 @@ export default function handler(req, res) {
       provider_timeout_ms: CSM_ACTIVE_MODEL_PROFILE.provider_timeout_ms,
       recognition_transport_profiles: activeRecognitionTransportProfiles,
       external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT_V3,
       verified_original_observation: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
       projection_activation: CSM_PROJECTION_ACTIVATION,
       active_writer: CSM_PROJECTION_ACTIVATION.active_writer,

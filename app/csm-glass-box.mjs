@@ -14,8 +14,8 @@
 //     whole-card observation; a populated-looking column would imply a
 //     multi-source conflict resolver that does not exist.
 //   * A bracket the composer places but the grammar does not name is marked.
-//     Today that is Visible Components (COS-41), and an operator reading a
-//     title containing RC deserves to know the position is an inference.
+//     Only legacy compatibility views can still carry Visible Components;
+//     current Auto/RC/Patch/Relic terms belong to Search Optimization.
 
 const STATE_LABEL = Object.freeze({
   VALUE: "已识别",

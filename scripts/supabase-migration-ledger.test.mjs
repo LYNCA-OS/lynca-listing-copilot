@@ -188,6 +188,42 @@ try {
     canonicalEntries.length,
     "the single Production ledger must not contain duplicate migration versions"
   );
+  const remoteReconciliation = JSON.parse(await readFile(join(
+    repoRoot, "docs/operations/supabase-singapore-remote-byte-reconciliation-2026-08-12.json"
+  ), "utf8"));
+  assert.deepEqual({
+    schema_version: remoteReconciliation.schema_version,
+    project_ref: remoteReconciliation.project_ref,
+    region: remoteReconciliation.region,
+    safety: remoteReconciliation.safety
+  }, {
+    schema_version: "supabase-remote-byte-reconciliation.v1",
+    project_ref: "irpgnhkslrsiucybkufc",
+    region: "sin1",
+    safety: {
+      exact_remote_bytes_required: true,
+      ddl_reapply_forbidden: true,
+      migration_history_repair_forbidden: true
+    }
+  });
+  assert.deepEqual(remoteReconciliation.migrations, [
+    ["20260809151333_csm_provider_authority_execute_hardening_v1.sql",
+      "894346d89e4d0569a8c2491128e20344f186d96550b303d22802b47b7286f782",
+      "088b651d4189d88fda0dece32ebf51279a5a9bb7a47d9ecd28c2c55e8d7025f7"],
+    ["20260810120000_csm_external_identity_high_risers_registry_v1.sql",
+      "2da6d811661320ed758f66137dea8b159e4af742058892787dfee0a080b4fef8",
+      "6ca2ebd9b4136bd63276188a2d3995fabe2333a54f35b7fb6c935a07ce09b896"],
+    ["20260810200000_csm_external_identity_high_risers_registry_v2.sql",
+      "97d79a2e4bc5de13ff2b3f5c94dad92edf126c9aa1f50a666e9620803fa553fa",
+      "e4cbb2f034406db54231093b054966b333a7b4451da94a359f7d72f896e577a5"]
+  ].map(([filename, prior_git_sha256, remote_sha256]) => ({
+    filename, prior_git_sha256, remote_sha256
+  })));
+  for (const migration of remoteReconciliation.migrations) {
+    const sql = await readFile(join(canonicalMigrationDir, migration.filename));
+    assert.equal(createHash("sha256").update(sql).digest("hex"), migration.remote_sha256,
+      `${migration.filename} must remain exact Singapore remote bytes`);
+  }
   const externalIdentityMigration =
     "20260810120000_csm_external_identity_high_risers_registry_v1.sql";
   const externalIdentitySql = await readFile(
@@ -196,8 +232,8 @@ try {
   );
   assert.equal(
     createHash("sha256").update(externalIdentitySql).digest("hex"),
-    "2da6d811661320ed758f66137dea8b159e4af742058892787dfee0a080b4fef8",
-    "the additive external identity Registry migration is immutable"
+    "6ca2ebd9b4136bd63276188a2d3995fabe2333a54f35b7fb6c935a07ce09b896",
+    "the additive external identity Registry migration matches Singapore remote bytes"
   );
   const externalIdentityPayload = {
     mode: "post_observation_exact_external_identity",
@@ -247,8 +283,8 @@ try {
   );
   assert.equal(
     createHash("sha256").update(externalIdentitySqlV2).digest("hex"),
-    "97d79a2e4bc5de13ff2b3f5c94dad92edf126c9aa1f50a666e9620803fa553fa",
-    "the additive v2 external identity Registry migration is immutable"
+    "e4cbb2f034406db54231093b054966b333a7b4451da94a359f7d72f896e577a5",
+    "the additive v2 external identity Registry migration matches Singapore remote bytes"
   );
   const externalIdentityPayloadV2 = {
     mode: "post_observation_exact_external_identity",

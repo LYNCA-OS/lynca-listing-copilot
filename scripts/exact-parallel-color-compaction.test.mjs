@@ -90,7 +90,7 @@ const positive = card({
   assert.ok(!candidate.normalization_reasons.includes("print_finish:exact_parallel_color_compacted"));
 }
 
-// Activation A routes every Standard write through the registered CNL v0.2
+// Activation A routes every Standard write through the registered CNL v0.3
 // contract. Legacy feature switches cannot select a second active writer; the
 // v2/eBay ablation remains covered directly above and historical CNL versions
 // remain available only through stored-version replay.
@@ -110,7 +110,7 @@ const positive = card({
   assert.equal(candidate.composer_version, "thin-marketplace-composer-v3");
   assert.equal(baseline.composer_version, "thin-marketplace-composer-v3");
   assert.equal(active.composer_version, "thin-marketplace-composer-v3");
-  assert.equal(active.marketplace_profile_version, "lynca-standard-name-v0.2");
+  assert.equal(active.marketplace_profile_version, "lynca-standard-name-v0.3");
   assert.equal(active.canonical_naming_publishable, true);
   assert.ok(active.canonical_naming_trace);
 }

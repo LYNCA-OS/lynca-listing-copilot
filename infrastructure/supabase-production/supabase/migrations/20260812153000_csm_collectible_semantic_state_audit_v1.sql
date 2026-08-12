@@ -5,6 +5,9 @@
 -- A separately reviewed release must wire any producer after grounded-
 -- understanding evidence passes; until then the schema is inert.
 
+set lock_timeout = '5s';
+set statement_timeout = '60s';
+
 create table if not exists public.csm_collectible_semantic_state_audits (
   id text primary key,
   tenant_id text not null,

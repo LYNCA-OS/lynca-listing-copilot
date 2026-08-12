@@ -230,7 +230,7 @@ jobs:
             EXTERNAL_IDENTITY_RELEASE_CONTRACT
           } from './lib/listing/knowledge/csm-external-identity-support.mjs';
           import {
-            CANONICAL_NAMING_RELEASE_CONTRACT_V2
+            CANONICAL_NAMING_RELEASE_CONTRACT_V3
           } from './lib/listing/thin/canonical-naming-adapter.mjs';
           import {
             VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
@@ -275,7 +275,7 @@ jobs:
             && JSON.stringify(h.runtime?.external_identity)
               === JSON.stringify(EXTERNAL_IDENTITY_RELEASE_CONTRACT)
             && JSON.stringify(h.runtime?.canonical_naming_target)
-              === JSON.stringify(CANONICAL_NAMING_RELEASE_CONTRACT_V2)
+              === JSON.stringify(CANONICAL_NAMING_RELEASE_CONTRACT_V3)
             && JSON.stringify(h.runtime?.verified_original_observation)
               === JSON.stringify(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT)
             && JSON.stringify(h.runtime?.projection_activation)
@@ -307,7 +307,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           source_dir="$RUNNER_TEMP/writer-journey-source"
-          canonical_cases_manifest="$RUNNER_TEMP/writer-journey-cases-v3.json"
+          canonical_cases_manifest="$RUNNER_TEMP/writer-journey-cases-v4.json"
           bridge_cases_manifest="$RUNNER_TEMP/writer-journey-compatibility-bridge-cases-v1.json"
           large_source_manifest="$RUNNER_TEMP/writer-journey-large-source-v2.json"
           forward_readback_expectation="$RUNNER_TEMP/production-forward-readback-expectation.json"
@@ -319,8 +319,10 @@ jobs:
           import { readFile, stat, writeFile } from 'node:fs/promises';
           import path from 'node:path';
           import {
+            WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS,
             WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
-            WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
+            WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT,
+            validateWriterJourneyActivationSources
           } from './scripts/materialize-writer-journey-source.mjs';
 
           const sourcePath = process.env.CASES_MANIFEST;
@@ -332,6 +334,7 @@ jobs:
           const contract = WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT;
           const parity = manifest.parity_case;
           const standard = manifest.cases?.find((entry) => entry?.case_id === 'NON_TCG');
+          const activationCases = manifest.activation_cases;
           const validParityFiles = Array.isArray(parity?.files)
             && parity.files.length === 2
             && parity.files.every((file, index) => (
@@ -355,12 +358,45 @@ jobs:
                 === WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images[index].content_sha256
             ));
           if (!exactKeys(manifest, [
-            'schema_version', 'evidence_scope', 'accuracy_claim', 'cases', 'parity_case'
+            'schema_version', 'evidence_scope', 'accuracy_claim', 'cases', 'parity_case',
+            'activation_cases'
           ])
-            || manifest.schema_version !== 'writer-journey-cases-v3'
+            || manifest.schema_version !== 'writer-journey-cases-v4'
             || manifest.evidence_scope !== 'LIVE_CONTRACT_RECEIPT_ONLY'
             || manifest.accuracy_claim !== null
             || !Array.isArray(manifest.cases) || manifest.cases.length !== 2
+            || !Array.isArray(activationCases) || activationCases.length !== 2
+            || !validateWriterJourneyActivationSources(activationCases.map((entry) => ({
+              ...entry,
+              images: entry.files.map((file, index) => ({
+                image_id: `${entry.source_feedback_id}_${index === 0 ? 'front' : 'back'}`,
+                role: file.role,
+                content_sha256: file.content_sha256
+              }))
+            })))
+            || activationCases.some((entry, index) => {
+              const contract = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS[index];
+              const expectedKeys = entry.case_id === 'NON_TCG_WEB_IDENTITY'
+                ? ['case_id', 'expected_grammar', 'expected_web_search_used',
+                  'expected_web_search_query', 'original_set_sha256', 'source_feedback_id',
+                  'evaluation_cohort', 'hash_provenance', 'image_count', 'files']
+                : ['case_id', 'expected_grammar', 'expected_lot_count',
+                  'original_set_sha256', 'source_feedback_id', 'evaluation_cohort',
+                  'hash_provenance', 'image_count', 'files'];
+              return !exactKeys(entry, expectedKeys)
+                || entry.case_id !== contract.case_id
+                || entry.expected_grammar !== contract.expected_grammar
+                || entry.source_feedback_id !== contract.source_feedback_id
+                || entry.evaluation_cohort !== contract.evaluation_cohort
+                || entry.hash_provenance !== contract.hash_provenance
+                || entry.original_set_sha256 !== contract.original_set_sha256
+                || (entry.case_id === 'NON_TCG_WEB_IDENTITY'
+                  ? entry.expected_web_search_used !== contract.expected_web_search_used
+                    || entry.expected_web_search_query !== contract.expected_web_search_query
+                  : entry.expected_lot_count !== contract.expected_lot_count)
+                || entry.image_count !== 2
+                || !Array.isArray(entry.files) || entry.files.length !== 2;
+            })
             || !exactKeys(standard, [
               'case_id', 'expected_grammar', 'source_kind', 'source_record_id',
               'source_asset_id', 'evaluation_cohort', 'hash_provenance', 'image_count', 'files'
@@ -392,7 +428,7 @@ jobs:
             || parity.image_count !== 2
             || !validParityFiles
             || ((await stat(sourcePath)).mode & 0o077) !== 0) {
-            throw new Error('writer_journey_cases_v3_invalid');
+            throw new Error('writer_journey_cases_v4_invalid');
           }
           const v2 = {
             schema_version: 'writer-journey-cases-v2',

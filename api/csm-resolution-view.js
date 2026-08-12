@@ -22,7 +22,8 @@ import {
 } from "../lib/listing/thin/csm-replay.mjs";
 import { buildCsmResolutionView, CSM_RESOLUTION_VIEW_VERSION } from "../lib/listing/csm/resolution-view.mjs";
 import {
-  buildCsmResolutionReview, CSM_RESOLUTION_REVIEW_VERSION
+  buildCsmResolutionReview, buildReviewMeasurementSnapshot,
+  CSM_RESOLUTION_REVIEW_VERSION
 } from "../lib/listing/csm/resolution-review.mjs";
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
@@ -32,6 +33,8 @@ import {
   THIN_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { publicCsmOwnerExecutionReceipt } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
+import { readDurableProjectionReceipt } from
+  "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   validateExternalIdentityPublicReceipt
@@ -172,6 +175,27 @@ export function publicVerifiedOriginalObservationSupport(value) {
     : null;
 }
 
+export function publicDurableProjectionReceipts(replayRows) {
+  if (!replayRows) return null;
+  let receipt;
+  try { receipt = readDurableProjectionReceipt(replayRows); }
+  catch (error) {
+    throw Object.assign(new Error("csm_resolution_durable_projection_receipt_invalid"), {
+      statusCode: 409,
+      cause: error
+    });
+  }
+  if (!receipt) return null;
+  // Both receipts have already crossed the strict durable bridge validator.
+  // Clone only these two allow-listed structures: publication coverage and the
+  // internal bridge/version metadata are unnecessary for public acceptance.
+  return Object.freeze({
+    founder_beta_web_receipt: structuredClone(receipt.founder_beta_web_receipt),
+    set_card_name_relation_receipt:
+      structuredClone(receipt.set_card_name_relation_receipt)
+  });
+}
+
 function attachExternalIdentitySupport(view, support) {
   if (!support) return view;
   const brackets = view.brackets.map((bracket) => {
@@ -285,8 +309,19 @@ export function composeResolutionView(record) {
       THIN_COMPOSER_VERSION_V1,
       THIN_COMPOSER_VERSION_V2
     ].includes(composerVersion) && marketplaceProfileVersion === EBAY_PROFILE_VERSION);
-    composeCorrectedTitle = (correctedFields) =>
-      composeCanonicalFieldsForStoredOutput(correctedFields, record.replay_rows.output).title;
+    composeCorrectedTitle = (correctedFields) => {
+      const corrected = { ...correctedFields };
+      // print_finish is the correction authority. Persisted layers explain the
+      // original value, but must not override an explicit semantic review.
+      if (corrected.print_finish !== fields.print_finish) {
+        corrected.parallel_exact = corrected.print_finish || "";
+        corrected.surface_color = "";
+        corrected.parallel_family = "";
+      }
+      return composeCanonicalFieldsForStoredOutput(
+        corrected, record.replay_rows.output
+      ).title;
+    };
   } else {
     // Compatibility for injected/legacy flat records that predate the stored
     // replay bundle. They can only be interpreted as the current contract;
@@ -344,6 +379,7 @@ export async function handleResolutionViewRequest({
   const verifiedOriginalObservationSupport = publicVerifiedOriginalObservationSupport(
     record.verified_original_observation_support
   );
+  const durableProjectionReceipts = publicDurableProjectionReceipts(record.replay_rows);
   const publicView = attachExternalIdentitySupport(view, externalIdentitySupport);
   // If the stored title and the recomposed one disagree, the explanation does
   // not describe what shipped. Say so rather than presenting it as the trace.
@@ -356,6 +392,7 @@ export async function handleResolutionViewRequest({
     // Raw provider/request ids and the full stored execution contract remain
     // server-side; the hash is independently recomputed from the DB value.
     owner_execution_receipt: ownerExecutionReceipt,
+    ...(durableProjectionReceipts || {}),
     ...(verifiedOriginalObservationSupport ? {
       verified_original_observation_support: verifiedOriginalObservationSupport
     } : {}),
@@ -385,11 +422,22 @@ export async function handleResolutionReviewRequest({
   const record = await readRecord({ tenantId, assetId, env, fetchImpl });
   if (!record) throw Object.assign(new Error("csm_resolution_not_found"), { statusCode: 404 });
   const {
+    view,
     fields,
     composed,
     composer_version: composerVersion,
+    marketplace_profile_version: marketplaceProfileVersion,
     compose_corrected_title: composeCorrectedTitle
   } = composeResolutionView(record);
+  const originalTitle = String(record.output_title || composed.title).trim();
+  if (originalTitle !== composed.title) {
+    throw Object.assign(new Error("csm_review_composer_replay_mismatch"), { statusCode: 409 });
+  }
+  const measurementSnapshot = buildReviewMeasurementSnapshot({
+    view,
+    composerVersion,
+    marketplaceProfileVersion
+  });
 
   const review = buildCsmResolutionReview({
     provenance: {
@@ -406,11 +454,14 @@ export async function handleResolutionReviewRequest({
     verdict: payload.verdict,
     corrections: Array.isArray(payload.corrections) ? payload.corrections : [],
     originalFields: fields,
-    originalTitle: String(record.output_title || composed.title).trim(),
+    originalTitle,
     // The ONLY way a corrected title comes into existence. A title in the
     // payload is ignored: parsing a reviewer's string back into fields is the
     // one thing this contract exists to prevent.
     recomposeTitle: composeCorrectedTitle,
+    // Built from the server-replayed view. Any similarly named client payload
+    // field is ignored and therefore cannot choose its own denominator.
+    measurementSnapshot,
     reviewedAt: new Date().toISOString(),
     note: String(payload.note || "")
   });

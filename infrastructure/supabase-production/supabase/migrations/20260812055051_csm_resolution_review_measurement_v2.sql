@@ -1,5 +1,8 @@
 -- COS-42 additive forward-reader bridge. Historical v1 reviews remain intact;
 -- only v2 field reviews carry a frozen denominator and hash binding.
+set lock_timeout = '5s';
+set statement_timeout = '60s';
+
 alter table public.csm_resolution_reviews
   add column if not exists measurement_basis text,
   add column if not exists measurement_snapshot jsonb,

@@ -237,7 +237,7 @@ assert.match(compatibilityBridgeProofStep,
 assert.match(compatibilityBridgeProofStep,
   /compatibility-bridge-release\.mjs verify-health[\s\S]*?--health \/tmp\/csm-thin-health-prepromotion\.json/,
   "the bridge must prove its selected runtime contract on the immutable candidate");
-assert.match(candidateSourceStep, /writer-journey-cases-v3\.json/);
+assert.match(candidateSourceStep, /writer-journey-cases-v4\.json/);
 assert.match(candidateSourceStep, /writer-journey-compatibility-bridge-cases-v1\.json/);
 assert.match(candidateSourceStep, /writer-journey-large-source-v2\.json/);
 assert.match(candidateSourceStep,
@@ -246,7 +246,7 @@ assert.match(candidateSourceStep,
 assert.match(candidateSourceStep,
   /WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT/,
   "the ordinary Writer source must bind the verified low-reasoning Production asset");
-assert.match(candidateSourceStep, /manifest\.schema_version !== 'writer-journey-cases-v3'/);
+assert.match(candidateSourceStep, /manifest\.schema_version !== 'writer-journey-cases-v4'/);
 assert.match(candidateSourceStep, /parity\.source_asset_id !== contract\.source_asset_id/);
 assert.match(candidateSourceStep, /file\.content_sha256 === contract\.images\[index\]\.content_sha256/);
 assert.match(candidateSourceStep,
@@ -700,13 +700,13 @@ assert.doesNotMatch(workflow, /--data\s+"\$\(node/,
   "production smoke must not expose the password in curl's process arguments");
 assert.match(health, /LYNCA_RELEASE_GIT_SHA\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_SHA/);
 assert.match(health, /LYNCA_RELEASE_GIT_REF\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_REF/);
-assert.match(health, /canonical_naming_target:\s*CANONICAL_NAMING_RELEASE_CONTRACT_V2/,
+assert.match(health, /canonical_naming_target:\s*CANONICAL_NAMING_RELEASE_CONTRACT_V3/,
   "health must publish the exact target Canonical Naming release contract");
 assert.match(health,
   /verified_original_observation:\s*VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT/,
   "health must publish the exact redacted verified-original receipt");
 assert.match(workflow,
-  /h\.runtime\?\.canonical_naming_target[\s\S]*?CANONICAL_NAMING_RELEASE_CONTRACT_V2/,
+  /h\.runtime\?\.canonical_naming_target[\s\S]*?CANONICAL_NAMING_RELEASE_CONTRACT_V3/,
   "the immutable candidate must match the exact target Canonical Naming contract before spend");
 assert.match(workflow,
   /h\.runtime\?\.verified_original_observation[\s\S]*?VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT/,

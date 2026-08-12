@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 import {
   buildCsmStageRows, CSM_BRACKETS, MODALITIES, EMPTY_REASONS, VALUE_KINDS,
-  THIN_REGISTRY_RELEASE_ID
+  CSM_STAGE_LEGACY_CONTRACT_VERSION, THIN_REGISTRY_RELEASE_ID
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
@@ -61,10 +61,34 @@ const fields = parseCanonicalFields({
   // observation confidence.
   unreadable: ["card_name"], low_confidence: ["surface_color"]
 }).fields;
-const composed = composeFromCanonicalFields(fields);
+const composed = composeFromCanonicalFields(fields, { features: {
+  durable_lot_terminal_shared_only: true,
+  publication_coverage: true
+} });
+const noSearchReceipts = (value) => ({
+  founderBetaWebReceipt: {
+    schema_version: "founder-beta-web-receipt-v1",
+    provider_request_count: 1,
+    isolated_model_call_count: 0,
+    provider_model: "gpt-5.6-luna",
+    reasoning_effort: "low",
+    web_search_used: false,
+    web_search_call_count: 0,
+    queries: [],
+    urls: [],
+    field_evidence: [],
+    semantic_state_sha256: "d".repeat(64)
+  },
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: value.set ? { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: value.set } : null,
+    card_name: value.card_name
+      ? { predicate: "CURRENT_CARD_NAMED_BY_DESIGN", value: value.card_name } : null
+  }
+});
 const rows = buildCsmStageRows({
   tenantId: "t1", recognitionSessionId: "s1", fields, composed,
-  title: composed.title, createdAt: "2026-08-01T00:00:00Z"
+  title: composed.title, createdAt: "2026-08-01T00:00:00Z", ...noSearchReceipts(fields)
 });
 
 // Active Canonical Naming is one exact executable identity: v3, its named
@@ -143,14 +167,17 @@ const rows = buildCsmStageRows({
   // The bridge's active writer is still v2/eBay. Even when a caller carries a
   // future independent search lane, its complete stage packet must stay
   // byte-identical to de55; only registered CNL v3 profiles may persist it.
-  const legacyComposed = composeFromCanonicalFields(youngGunsFields);
+  const legacyComposed = composeFromCanonicalFields(youngGunsFields, {
+    features: { publication_coverage: false }
+  });
   const legacyRows = buildCsmStageRows({
     tenantId: "tenant-legacy",
     recognitionSessionId: "session-legacy",
     fields: youngGunsFields,
     composed: legacyComposed,
     title: legacyComposed.title,
-    createdAt: "2026-08-11T00:00:00.000Z"
+    createdAt: "2026-08-11T00:00:00.000Z",
+    contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
   });
   assert.equal(Object.hasOwn(
     legacyRows.output.structured_output,
@@ -234,7 +261,10 @@ for (const row of rows.candidates) {
     manufacturer: "", product: "", set: "Mega Brave",
     subjects: ["Mega Absol Ex"], card_number: "089/063"
   }).fields;
-  const tcgComposed = composeFromCanonicalFields(tcgFields);
+  const tcgComposed = composeFromCanonicalFields(tcgFields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
 const tcgRows = buildCsmStageRows({
     tenantId: "t1", recognitionSessionId: "tcg-language", fields: tcgFields,
     composed: tcgComposed, title: tcgComposed.title
@@ -284,12 +314,16 @@ assert.equal(rows.output.dropped_trace.rendered_length, composed.length);
 // normalized bracket later renders a parent inferred from Product.
 {
   const inferredFields = { ...fields, manufacturer: "", product: "Prizm" };
-  const inferredComposition = composeFromCanonicalFields(inferredFields);
+  const inferredComposition = composeFromCanonicalFields(inferredFields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
   assert.ok(inferredComposition.input_empty_fields.includes("manufacturer"));
   assert.equal(inferredComposition.empty_fields.includes("manufacturer"), false);
   const inferredRows = buildCsmStageRows({
     tenantId: "t1", recognitionSessionId: "inferred-parent-trace",
-    fields: inferredFields, composed: inferredComposition, title: inferredComposition.title
+    fields: inferredFields, composed: inferredComposition, title: inferredComposition.title,
+    ...noSearchReceipts(inferredFields)
   });
   assert.ok(inferredRows.output.dropped_trace.empty_at_input.includes("manufacturer"));
 }
@@ -317,7 +351,7 @@ process.stdout.write("csm persistence: ok\n");
 {
   const again = buildCsmStageRows({
     tenantId: "t1", recognitionSessionId: "s1", fields, composed,
-    title: composed.title, createdAt: "2026-08-01T00:00:00Z"
+    title: composed.title, createdAt: "2026-08-01T00:00:00Z", ...noSearchReceipts(fields)
   });
   assert.deepEqual(again.evidence.map((row) => row.id), rows.evidence.map((row) => row.id));
   assert.equal(again.resolution.id, rows.resolution.id);

@@ -57,7 +57,7 @@ const fields = (overrides = {}) => parseCanonicalFields({
 // TCG Grammar already names and neither of which this schema could carry. The
 // number is a brake on invention, not on the contract: raise it only alongside
 // the CSM clause that requires the field.
-assert.ok(Object.keys(CANONICAL_FIELDS_SCHEMA.properties).length <= 23);
+assert.ok(Object.keys(CANONICAL_FIELDS_SCHEMA.properties).length <= 25);
 for (const field of ["special_stamp", "description"]) {
   assert.ok(semTcgTitleOrder.includes(field), `${field} is only here because TCG Grammar names it`);
 }
@@ -181,6 +181,39 @@ assert.ok(CANONICAL_FIELD_NAMES.includes("language"), "COS-9 language must suppo
   assert.equal(tcg.fields.serial, "");
 }
 
+// COS-39 classification precedes product finish admission. The classifier must
+// receive every field its own contract reads; omitting Manufacturer/IP left a
+// provider-reported Standard Pokemon card uncorrected, so Refractor survived.
+{
+  const pokemon = parseCanonicalFields({
+    grammar: "standard", manufacturer: "Pokémon", product: "Mega Brave",
+    subjects: ["Charizard"], parallel_exact: "Gold Refractor"
+  });
+  assert.equal(pokemon.fields.grammar, "tcg");
+  assert.ok(pokemon.defects.includes("grammar_standard_but_csm_says_tcg"));
+  assert.equal(pokemon.fields.print_finish, "",
+    "grammar correction must complete before product finish admission");
+  assert.ok(pokemon.fields.withheld_finish_terms.some((term) => (
+    term.reason === "FINISH_NOT_MARKET_RECOGNIZED_FOR_PRODUCT"
+  )));
+
+  const topps = parseCanonicalFields({
+    grammar: "standard", manufacturer: "Topps", product: "Chrome",
+    subjects: ["Player"], parallel_exact: "Gold Refractor"
+  });
+  assert.equal(topps.fields.grammar, "standard");
+  assert.ok(!topps.defects.includes("grammar_standard_but_csm_says_tcg"));
+  assert.equal(topps.fields.print_finish, "Gold Refractor");
+
+  const panini = parseCanonicalFields({
+    grammar: "standard", manufacturer: "Panini", product: "Prizm",
+    subjects: ["Player"], parallel_exact: "Silver Prizm"
+  });
+  assert.equal(panini.fields.grammar, "standard");
+  assert.ok(!panini.defects.includes("grammar_standard_but_csm_says_tcg"));
+  assert.equal(panini.fields.print_finish, "Silver Prizm");
+}
+
 // SSP is [Descriptive Rarity], a CSM bracket of its own, not a component.
 {
   const parsed = fields({ attributes: ["Auto", "RC", "SSP"] });
@@ -191,6 +224,33 @@ assert.ok(CANONICAL_FIELD_NAMES.includes("language"), "COS-9 language must suppo
   // the contract's costs nothing.
   assert.deepEqual(parsed.components, ["RC", "Auto"]);
   assert.equal(parsed.descriptive_rarity, "SSP");
+}
+
+// Provider variance can repeat an enum item without violating the strict JSON
+// schema. Canonical admission keeps the first exact value, records the defect,
+// and prevents duplicate buyer terms from reaching the title.
+{
+  const { fields: parsed, defects } = parseCanonicalFields({
+    subjects: ["Michael Jordan", "Michael Jordan", "Scottie Pippen", "Dennis Rodman"],
+    card_number: "57",
+    attributes: ["Auto", "Auto", "RC", "Auto", "RC"]
+  });
+  assert.deepEqual(parsed.subjects, ["Michael Jordan", "Scottie Pippen", "Dennis Rodman"],
+    "dedupe precedes the three-subject cap so real identities are not displaced");
+  assert.deepEqual(parsed.attributes, ["Auto", "RC"]);
+  assert.deepEqual(parsed.components, ["RC", "Auto"]);
+  assert.ok(defects.includes("duplicate_subjects"));
+  assert.ok(defects.includes("duplicate_attributes"));
+  const title = composeFromCanonicalFields(parsed).title;
+  assert.equal((title.match(/\bAuto\b/g) || []).length, 1);
+  assert.equal((title.match(/\bRC\b/g) || []).length, 1);
+
+  const fourUnique = parseCanonicalFields({
+    subjects: ["One", "Two", "Three", "Four"]
+  });
+  assert.deepEqual(fourUnique.fields.subjects, ["One", "Two", "Three"]);
+  assert.ok(!fourUnique.defects.includes("duplicate_subjects"),
+    "the governed three-subject cap is not a duplicate defect");
 }
 
 // A field carrying a whole title instead of its own value.
@@ -369,9 +429,28 @@ for (const [grammar, order] of Object.entries(DROP_ORDER)) {
   assert.ok(!/Lot\*0/.test(zero.title), "zero cards is not a lot");
   assert.equal(zero.lot_quantity_unresolved, true);
 
-  const counted = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: 4 }));
+  const counted = composeFromCanonicalFields(fields({ subjects: ["A"], grammar: "lot", lot_count: "4" }));
   assert.ok(counted.title.startsWith("Lot*4"));
   assert.equal(counted.lot_quantity_unresolved, false);
+
+  for (const ambiguous of ["2-3", "1/2", " 2 cards ", 2]) {
+    const { fields: parsed, defects } = parseCanonicalFields({
+      subjects: ["A", "B"], grammar: "lot", lot_count: ambiguous
+    });
+    const result = composeFromCanonicalFields(parsed);
+    assert.equal(parsed.lot_count, "");
+    assert.equal(result.lot_quantity_unresolved, true);
+    assert.doesNotMatch(result.title, /^Lot\*(?:23|12|2)\b/,
+      `ambiguous quantity ${JSON.stringify(ambiguous)} must not become N`);
+    assert.ok(defects.includes("lot_count_not_strict_positive_integer_text"));
+  }
+  assert.equal(parseCanonicalFields({ grammar: "lot", lot_count: "9999" })
+    .fields.lot_count, "9999");
+  for (const unsafe of ["01", "10000", "9".repeat(100)]) {
+    const parsed = parseCanonicalFields({ grammar: "lot", lot_count: unsafe });
+    assert.equal(parsed.fields.lot_count, "");
+    assert.ok(parsed.defects.includes("lot_count_not_strict_positive_integer_text"));
+  }
 }
 
 // ------------------------------------------------------------ empty and team

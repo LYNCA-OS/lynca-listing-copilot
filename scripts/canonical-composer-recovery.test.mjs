@@ -163,8 +163,9 @@ const card = (overrides = {}) => ({
 // rather than silently changed. COS-41 (founder, 2026-08-04) places Auto, RC,
 // Patch and Relic in [Search Optimization] and says a profile that drops them
 // too early has a Composer priority problem, not a missing CSM bracket. The lot
-// grammar's own order carries search_optimization, so RC belongs in a lot title
-// -- and a reviewed lot title in the evaluation set does carry it.
+// grammar's own order carries search_optimization, but the aggregate component
+// array does not prove RC belongs to EVERY card in a lot. The closed-world
+// replay rejected promoting that inference, so Lot serialization withholds it.
 //
 // The grade boundary is untouched and still asserted: semLotTitleOrder has no
 // grading_info, so PSA 10 stays out.
@@ -173,8 +174,15 @@ const card = (overrides = {}) => ({
     year: "2025", manufacturer: "Topps", product: "Chrome",
     subjects: ["A", "B"], components: ["RC"], grade: "PSA 10",
     grammar: "lot", lot_count: "2"
-  }));
-  assert.match(lot.title, /\bRC\b/, "COS-41: a retained search term survives profile suppression");
+  }), {
+    features: {
+      durable_lot_terminal_shared_only: true,
+      publication_coverage: true
+    }
+  });
+  assert.doesNotMatch(lot.title, /\bRC\b/,
+    "an aggregate component must not become a false Lot-wide assertion");
+  assert.deepEqual(lot.lot_unshared_attributes, ["components"]);
   assert.ok(!/PSA 10/.test(lot.title), "the lot grammar still has no grading bracket");
 
   const standard = composeFromCanonicalFields(card({

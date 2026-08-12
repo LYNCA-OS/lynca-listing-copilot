@@ -1,6 +1,6 @@
 begin;
 
--- Provider admission is a server-only spend boundary. Supabase's public API
+-- Provider admission is a server-only spend boundary.  Supabase's public API
 -- roles must never enqueue, claim, settle, cancel, or read paid operations.
 revoke all on function public.enqueue_csm_thin_provider_attempt_v1(
   text, text, text, text, text, text, integer, text, integer, numeric,
@@ -67,3 +67,4 @@ alter default privileges for role postgres in schema public
   grant execute on functions to service_role;
 
 commit;
+;

@@ -7,6 +7,17 @@ import { fileURLToPath } from "node:url";
 import {
   readVercelProductionRollbackReceipt
 } from "./vercel-production-rollback-receipt.mjs";
+import {
+  validateFounderBetaWebReceipt
+} from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
+import {
+  CARD_NAME_PREDICATE,
+  SET_MEMBERSHIP_PREDICATE,
+  validateSetCardNameRelationReceipt
+} from "../lib/listing/thin/set-card-name-contract.mjs";
+import {
+  WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS
+} from "./materialize-writer-journey-source.mjs";
 
 export const PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA =
   "production-forward-readback-expectation-v1";
@@ -15,6 +26,13 @@ export const PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA =
 
 const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v6";
 const STANDARD_CASE_ID = "NON_TCG";
+const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY";
+const WEB_CASE_CONTRACT = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.find(
+  (entry) => entry.case_id === WEB_CASE_ID
+);
+const WEB_IDENTITY_FIELDS = new Set([
+  "year", "manufacturer", "product", "set", "card_name", "subjects"
+]);
 const CANONICAL_PRODUCTION_ORIGIN = "https://listing.lyncafei.team";
 const RELEASE_CLASSES = new Set(["ordinary", "compatibility-bridge"]);
 const SAFE_ID = /^[A-Za-z0-9_-]{1,160}$/;
@@ -73,7 +91,7 @@ function safeVersion(value, code) {
   return version;
 }
 
-function candidateStandardCase(evidence, { deploymentUrl, gitSha }) {
+function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
   if (!exactObject(evidence)
       || evidence.schema_version !== WRITER_JOURNEY_EVIDENCE_SCHEMA
       || evidence.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
@@ -86,8 +104,10 @@ function candidateStandardCase(evidence, { deploymentUrl, gitSha }) {
       || evidence.deployment_environment !== "production") {
     throw failure("production_forward_readback_evidence_invalid");
   }
+  const expectedCaseId = evidence.release_class === "ordinary"
+    ? WEB_CASE_ID : STANDARD_CASE_ID;
   const matches = (Array.isArray(evidence.cases) ? evidence.cases : [])
-    .filter((entry) => entry?.case_id === STANDARD_CASE_ID);
+    .filter((entry) => entry?.case_id === expectedCaseId);
   if (matches.length !== 1) {
     throw failure("production_forward_readback_standard_case_invalid");
   }
@@ -97,7 +117,7 @@ function candidateStandardCase(evidence, { deploymentUrl, gitSha }) {
   const assetId = safeId(entry.asset_id,
     "production_forward_readback_asset_id_invalid");
   const recognitionSessionId = String(entry.recognition_session_id || "").trim();
-  if (entry.expected_grammar !== STANDARD_CASE_ID
+  if (entry.expected_grammar !== "NON_TCG"
       || !SESSION_ID.test(recognitionSessionId)
       || entry.resolution_http_method !== "GET"
       || entry.resolution_request_count !== 1
@@ -116,6 +136,7 @@ function candidateStandardCase(evidence, { deploymentUrl, gitSha }) {
   }
   return Object.freeze({
     release_class: evidence.release_class,
+    case_id: expectedCaseId,
     asset_id: assetId,
     recognition_session_id: recognitionSessionId,
     title_length: entry.title_length,
@@ -146,6 +167,22 @@ function validateResolutionView(resolutionView, entry) {
   const legacyV2View = entry.versions.composer === "thin-marketplace-composer-v2"
     && entry.versions.marketplace_profile === "ebay-profile-v1"
     && composer?.marketplace_profile_version == null;
+  let webReceipt = null;
+  let relationReceipt = null;
+  if (entry.case_id === WEB_CASE_ID) {
+    try {
+      webReceipt = validateFounderBetaWebReceipt(
+        resolutionView?.founder_beta_web_receipt
+      );
+      const publicRelation = resolutionView?.set_card_name_relation_receipt;
+      relationReceipt = validateSetCardNameRelationReceipt(publicRelation, {
+        set: publicRelation?.set?.value || "",
+        card_name: publicRelation?.card_name?.value || ""
+      });
+    } catch {
+      throw failure("production_forward_readback_web_receipt_invalid");
+    }
+  }
   if (!exactObject(resolutionView)
       || resolutionView.asset_id !== entry.asset_id
       || resolutionView.recognition_session_id !== entry.recognition_session_id
@@ -165,14 +202,30 @@ function validateResolutionView(resolutionView, entry) {
       || !Array.isArray(resolutionView.brackets)
       || !exactKeys(resolutionView.owner_execution_receipt, ["version", "sha256"])
       || stableJson(resolutionView.owner_execution_receipt)
-        !== stableJson(entry.owner_execution_receipt)) {
+        !== stableJson(entry.owner_execution_receipt)
+      || (entry.case_id === WEB_CASE_ID && (
+        entry.versions.csm_contract !== "csm-stage-shadow-v3"
+        || webReceipt.web_search_used !== true
+        || webReceipt.web_search_call_count !== 1
+        || webReceipt.provider_request_count !== 1
+        || webReceipt.isolated_model_call_count !== 0
+        || webReceipt.queries.length !== 1
+        || webReceipt.queries[0] !== WEB_CASE_CONTRACT?.expected_web_search_query
+        || webReceipt.urls.length < 1
+        || webReceipt.field_evidence.length < 1
+        || webReceipt.field_evidence.some((row) => (
+          !WEB_IDENTITY_FIELDS.has(row.field) || row.support_urls.length < 1
+        ))
+        || relationReceipt?.set?.predicate !== SET_MEMBERSHIP_PREDICATE
+        || relationReceipt?.card_name?.predicate !== CARD_NAME_PREDICATE
+      ))) {
     throw failure("production_forward_readback_resolution_view_invalid");
   }
   return structuredClone(resolutionView);
 }
 
 function validateExpectation(expectation, { evidence, deploymentUrl, gitSha }) {
-  const entry = candidateStandardCase(evidence, { deploymentUrl, gitSha });
+  const entry = candidateReadbackCase(evidence, { deploymentUrl, gitSha });
   if (!exactKeys(expectation, [
     "schema_version", "candidate_deployment_origin", "candidate_git_sha",
     "release_class", "case_id", "asset_id", "recognition_session_id",
@@ -182,7 +235,7 @@ function validateExpectation(expectation, { evidence, deploymentUrl, gitSha }) {
       || expectation.candidate_deployment_origin !== deploymentUrl
       || expectation.candidate_git_sha !== gitSha
       || expectation.release_class !== entry.release_class
-      || expectation.case_id !== STANDARD_CASE_ID
+      || expectation.case_id !== entry.case_id
       || expectation.asset_id !== entry.asset_id
       || expectation.recognition_session_id !== entry.recognition_session_id) {
     throw failure("production_forward_readback_expectation_invalid");
@@ -199,7 +252,7 @@ export function buildProductionForwardReadbackExpectation({
 } = {}) {
   const candidateOrigin = exactCandidateOrigin(deploymentUrl);
   const sha = exactGitSha(gitSha);
-  const entry = candidateStandardCase(evidence, {
+  const entry = candidateReadbackCase(evidence, {
     deploymentUrl: candidateOrigin,
     gitSha: sha
   });
@@ -208,7 +261,7 @@ export function buildProductionForwardReadbackExpectation({
     candidate_deployment_origin: candidateOrigin,
     candidate_git_sha: sha,
     release_class: entry.release_class,
-    case_id: STANDARD_CASE_ID,
+    case_id: entry.case_id,
     asset_id: entry.asset_id,
     recognition_session_id: entry.recognition_session_id,
     resolution_view: validateResolutionView(resolutionView, entry)
@@ -291,6 +344,9 @@ function verifyExactProductionForwardReadback({
     owner_execution_receipt_exact_match: true,
     trace_exact_match: true,
     support_receipts_exact_match: true,
+    founder_beta_web_receipt_exact_match: validated.entry.case_id === WEB_CASE_ID,
+    web_search_used: validated.entry.case_id === WEB_CASE_ID,
+    web_search_call_count: validated.entry.case_id === WEB_CASE_ID ? 1 : 0,
     full_resolution_view_exact_match: true,
     composer_version: validated.entry.versions.composer,
     marketplace_profile_version: validated.entry.versions.marketplace_profile,

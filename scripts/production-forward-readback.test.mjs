@@ -145,6 +145,9 @@ assert.equal(receipt.composer_profile_exact_match, true);
 assert.equal(receipt.owner_execution_receipt_exact_match, true);
 assert.equal(receipt.trace_exact_match, true);
 assert.equal(receipt.support_receipts_exact_match, true);
+assert.equal(receipt.founder_beta_web_receipt_exact_match, false);
+assert.equal(receipt.web_search_used, false);
+assert.equal(receipt.web_search_call_count, 0);
 assert.equal(receipt.full_resolution_view_exact_match, true);
 assert.equal(receipt.verified_at, "2026-08-11T12:05:00.000Z");
 assert.equal(JSON.stringify(receipt).includes(title), false);
@@ -240,20 +243,41 @@ for (const changedRollback of [
   }), /production_forward_readback_/);
 }
 
-// The same verifier is deliberately version-neutral. A later ordinary release
-// can prove that the bridge reads a stored v3 projection plus its overlay
-// receipt without changing the release gate.
+// Ordinary Activation A binds this existing zero-call GET lane to the frozen
+// governed-Web case. Compatibility Bridge above remains bound to NON_TCG.
 const ordinaryEvidence = clone(evidence);
 ordinaryEvidence.release_class = "ordinary";
+ordinaryEvidence.cases[0].case_id = "NON_TCG_WEB_IDENTITY";
 ordinaryEvidence.cases[0].versions.composer = "thin-marketplace-composer-v3";
-ordinaryEvidence.cases[0].versions.marketplace_profile = "lynca-standard-name-v0.1";
+ordinaryEvidence.cases[0].versions.marketplace_profile = "lynca-standard-name-v0.3";
+ordinaryEvidence.cases[0].versions.csm_contract = "csm-stage-shadow-v3";
 const ordinaryView = clone(resolutionView);
 ordinaryView.composer.composer_version = "thin-marketplace-composer-v3";
-ordinaryView.composer.marketplace_profile_version = "lynca-standard-name-v0.1";
-ordinaryView.verified_original_observation_support = {
-  schema_version: "csm-verified-original-closed-projection-public-receipt.v1",
-  status: "APPLIED",
-  record_id: "subset-a-a"
+ordinaryView.composer.marketplace_profile_version = "lynca-standard-name-v0.3";
+ordinaryView.founder_beta_web_receipt = {
+  schema_version: "founder-beta-web-receipt-v1",
+  provider_request_count: 1,
+  isolated_model_call_count: 0,
+  provider_model: "gpt-5.6-luna",
+  reasoning_effort: "low",
+  web_search_used: true,
+  web_search_call_count: 1,
+  queries: ["2020-21 Panini Contenders Anthony Edwards #105 checklist"],
+  urls: ["https://example.com/checklist"],
+  field_evidence: [{
+    field: "card_name",
+    support_urls: ["https://example.com/checklist"],
+    conflict_urls: [],
+    unresolved_urls: []
+  }],
+  semantic_state_sha256: "f".repeat(64)
+};
+ordinaryView.set_card_name_relation_receipt = {
+  schema_version: "set-card-name-relations-v1",
+  set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "Rookie Ticket" },
+  card_name: {
+    predicate: "CURRENT_CARD_NAMED_BY_DESIGN", value: "Variation Autograph"
+  }
 };
 const ordinaryExpectation = buildProductionForwardReadbackExpectation({
   evidence: ordinaryEvidence,
@@ -273,6 +297,29 @@ const ordinaryReceipt = verifyProductionForwardReadback({
 assert.equal(ordinaryReceipt.release_class, "ordinary");
 assert.equal(ordinaryReceipt.support_receipts_exact_match, true);
 assert.equal(ordinaryReceipt.composer_version, "thin-marketplace-composer-v3");
+assert.equal(ordinaryReceipt.provider_calls, 0);
+assert.equal(ordinaryReceipt.founder_beta_web_receipt_exact_match, true);
+assert.equal(ordinaryReceipt.web_search_used, true);
+assert.equal(ordinaryReceipt.web_search_call_count, 1);
+for (const mutate of [
+  (value) => { value.founder_beta_web_receipt.web_search_call_count = 0; },
+  (value) => { value.founder_beta_web_receipt.queries = []; },
+  (value) => { value.founder_beta_web_receipt.urls = []; },
+  (value) => { value.founder_beta_web_receipt.field_evidence = []; },
+  (value) => { value.founder_beta_web_receipt.queries[0] = "query drift"; },
+  (value) => { value.set_card_name_relation_receipt.card_name.predicate = "wrong"; }
+]) {
+  const changed = clone(ordinaryView);
+  mutate(changed);
+  assert.throws(() => verifyPromotedProductionForwardReadback({
+    evidence: ordinaryEvidence,
+    expectation: ordinaryExpectation,
+    resolutionView: changed,
+    responseUrl,
+    deploymentUrl: candidateOrigin,
+    gitSha: candidateGitSha
+  }), /production_forward_readback_/);
+}
 
 const temp = await mkdtemp(path.join(tmpdir(), "lynca-forward-readback-"));
 try {

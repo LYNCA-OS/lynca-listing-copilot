@@ -10,7 +10,7 @@ import { computeVerifiedOriginalSetSha256 } from
 import {
   composeLyncaStandardNameForProfile,
   LYNCA_STANDARD_PROFILE_VERSION_V1,
-  LYNCA_STANDARD_PROFILE_VERSION_V2
+  LYNCA_STANDARD_PROFILE_VERSION_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   handleResolutionViewRequest,
@@ -67,10 +67,32 @@ const canonicalJson = (value) => {
 };
 const privateSha256 = (value) => createHash("sha256").update(canonicalJson(value)).digest("hex");
 const composeVerifiedOriginal = (fields) => composeLyncaStandardNameForProfile(fields, {
-  marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V2
+  marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V3,
+  publicationCoverage: true
 });
 const composeHistoricalStandard = (fields) => composeLyncaStandardNameForProfile(fields, {
   marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V1
+});
+const noSearchReceipts = (fields) => ({
+  founderBetaWebReceipt: {
+    schema_version: "founder-beta-web-receipt-v1",
+    provider_request_count: 1,
+    isolated_model_call_count: 0,
+    provider_model: "gpt-5.6-luna",
+    reasoning_effort: "low",
+    web_search_used: false,
+    web_search_call_count: 0,
+    queries: [],
+    urls: [],
+    field_evidence: [],
+    semantic_state_sha256: "f".repeat(64)
+  },
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: fields.set ? { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: fields.set } : null,
+    card_name: fields.card_name
+      ? { predicate: "CURRENT_CARD_NAMED_BY_DESIGN", value: fields.card_name } : null
+  }
 });
 
 const sourceEvidence = fixture.cases.map(({
@@ -118,11 +140,11 @@ assert.equal(
 );
 assert.equal(
   VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
-  "a0fe9b51e3724e2735fdbc6d2dc59f9c2c90a26333086135cbab7a94c6370d87"
+  "7eff4c74ccb32683ebb11ba778e2763e0b08062863956c2e64452b39575a4a87"
 );
 assert.equal(
   COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
-  "f3a1b84f0990ad2e00e179f96985f8e7b96e19ce1b5fca55687f968e08e18e42"
+  "3c5e9260011db7a017af7fbe0dc1faa631e0338aab68111870caa83e6a861efb"
 );
 for (const digest of [
   VERIFIED_ORIGINAL_SET_INDEX.index_sha256,
@@ -183,6 +205,45 @@ function observedFor(entry) {
   return fields;
 }
 
+function poisonedObservation() {
+  return {
+    ...structuredClone(EMPTY_OBSERVED_FIELDS),
+    year: "9999",
+    language: "Japanese",
+    manufacturer: "Imaginary",
+    product: "Poison Product",
+    set: "Poison Set",
+    subjects: ["Poison Subject", "Poison Subject"],
+    team: "Imaginary Team",
+    card_name: "Downtown",
+    release_variant: "Variation",
+    surface_color: "Blue",
+    parallel_family: "Wave",
+    parallel_exact: "Blue Wave",
+    print_finish: "Blue Wave",
+    descriptive_rarity: "SSP",
+    card_number: "BAD-1",
+    serial: "30/50",
+    attributes: ["Patch", "Patch"],
+    components: ["Patch", "Patch"],
+    grading_info: {
+      company: "FAKE", card_grade: "10", auto_grade: "10", grade_type: "CARD_AND_AUTO"
+    },
+    grade: "FAKE 10/10",
+    grammar: "lot",
+    lot_count: "99",
+    ip: "Pokemon",
+    special_stamp: "POISON",
+    description: "Case Hit",
+    search_optimization: ["POISON", "POISON"],
+    unreadable: ["serial"],
+    low_confidence: ["year"],
+    observed_surface_color: "Poison Surface",
+    observed_parallel_family: "Poison Family",
+    withheld_finish_terms: [{ value: "Poison Finish", reason: "POISON" }]
+  };
+}
+
 const expectedTitles = Object.freeze({
   a: "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50",
   b: "2001 Donruss Elite Passing the Torch Barry Bonds Willie Mays Auto #PT-18 22/50",
@@ -203,6 +264,7 @@ const expectedTitles = Object.freeze({
 });
 
 let correctionSample = null;
+const closedWorldSamples = [];
 const packetSizeRatios = [];
 for (const entry of fixture.cases) {
   const hashes = entry.images.map(({ sha256 }) => sha256);
@@ -278,7 +340,8 @@ for (const entry of fixture.cases) {
     observedFields: observed,
     externalIdentitySupport: { status: "ABSTAINED" },
     composed,
-    title: composed.title
+    title: composed.title,
+    ...noSearchReceipts(applied.fields)
   };
   const supportedRows = buildCsmStageRows({
     ...packetArgs,
@@ -289,13 +352,17 @@ for (const entry of fixture.cases) {
     ...packetArgs,
     recognitionSessionId: `session-packet-${entry.id}-1`,
     composed: composeHistoricalStandard(applied.fields),
-    title: composeHistoricalStandard(applied.fields).title
+    title: composeHistoricalStandard(applied.fields).title,
+    contractVersion: "csm-stage-shadow-v2",
+    founderBetaWebReceipt: null,
+    setCardNameRelationReceipt: null
   });
   const ratio = Buffer.byteLength(JSON.stringify(supportedRows))
     / Buffer.byteLength(JSON.stringify(baselineRows));
   packetSizeRatios.push({ id: entry.id, ratio });
   assert.ok(ratio <= 2, `${entry.id}: closed packet ratio ${ratio.toFixed(3)} must stay <=2x`);
 
+  closedWorldSamples.push({ entry, applied });
   if (entry.id === "a") correctionSample = { entry, observed, applied };
 }
 const maxPacketSizeRatio = packetSizeRatios.reduce(
@@ -303,6 +370,35 @@ const maxPacketSizeRatio = packetSizeRatios.reduce(
 );
 assert.ok(maxPacketSizeRatio.ratio <= 2,
   "all 16 durable packets stay within the 2x latency/storage guardrail");
+
+// Every exact original set is a closed deterministic projection. Empty or
+// maximally conflicting low observations, and front/back ordering, must not
+// change any resolved field or title. This is the executable zero-drift bound;
+// it intentionally makes no claim about images outside these 16 sets.
+for (const { entry, applied: baseline } of closedWorldSamples) {
+  const hashes = entry.images.map(({ sha256 }) => sha256);
+  for (const [observationName, observed] of [
+    ["empty", structuredClone(EMPTY_OBSERVED_FIELDS)],
+    ["poison", poisonedObservation()]
+  ]) {
+    for (const [orderName, originalImageSha256] of [
+      ["forward", hashes],
+      ["reverse", [...hashes].reverse()]
+    ]) {
+      const resolved = resolveVerifiedOriginalObservation(observed, { originalImageSha256 });
+      assert.equal(resolved.receipt.status, "APPLIED",
+        `${entry.id}: ${observationName}/${orderName} applies`);
+      assert.deepEqual(resolved.fields, baseline.fields,
+        `${entry.id}: ${observationName}/${orderName} cannot perturb closed fields`);
+      assert.equal(composeVerifiedOriginal(resolved.fields).title, expectedTitles[entry.id],
+        `${entry.id}: ${observationName}/${orderName} cannot perturb title`);
+      assert.equal(validateVerifiedOriginalObservationReceipt(resolved.receipt, {
+        observedFields: observed,
+        resolvedFields: resolved.fields
+      }), true, `${entry.id}: ${observationName}/${orderName} receipt validates`);
+    }
+  }
+}
 
 // Reproduce the actual low-effort defect: exact same a/aa bytes, 30/50 raw
 // visual observation, 50/50 reviewed copy stamp, with every other field kept.
@@ -464,7 +560,8 @@ function resealRows(rows) {
     externalIdentitySupport: { status: "ABSTAINED" },
     verifiedOriginalObservationSupport: applied.receipt,
     composed,
-    title: composed.title
+    title: composed.title,
+    ...noSearchReceipts(applied.fields)
   });
   const activeV2NonmatchRows = buildCsmStageRows({
     tenantId: "tenant-verified-original",
@@ -473,11 +570,12 @@ function resealRows(rows) {
     observedFields: observed,
     externalIdentitySupport: { status: "ABSTAINED" },
     composed,
-    title: composed.title
+    title: composed.title,
+    ...noSearchReceipts(applied.fields)
   });
   assert.equal(activeV2NonmatchRows.output.marketplace_profile_version,
-    LYNCA_STANDARD_PROFILE_VERSION_V2,
-    "active Standard v0.2 remains valid when the exact overlay abstains");
+    LYNCA_STANDARD_PROFILE_VERSION_V3,
+    "active Standard v0.3 remains valid when the exact overlay abstains");
   const historicalComposed = composeHistoricalStandard(applied.fields);
   assert.throws(() => buildCsmStageRows({
     tenantId: "tenant-verified-original",
@@ -487,7 +585,8 @@ function resealRows(rows) {
     externalIdentitySupport: { status: "ABSTAINED" },
     verifiedOriginalObservationSupport: applied.receipt,
     composed: historicalComposed,
-    title: historicalComposed.title
+    title: historicalComposed.title,
+    contractVersion: "csm-stage-shadow-v2"
   }), /verified_original_observation_profile_mismatch/,
   "an applied overlay receipt cannot be mixed with historical Standard v0.1");
   assert.equal(verifyReplay(rows, composed.title).ok, true,
@@ -702,7 +801,8 @@ function resealRows(rows) {
     observedFields: observed,
     externalIdentitySupport: { status: "ABSTAINED" },
     composed: composeHistoricalStandard(applied.fields),
-    title: composeHistoricalStandard(applied.fields).title
+    title: composeHistoricalStandard(applied.fields).title,
+    contractVersion: "csm-stage-shadow-v2"
   });
   const supportedBytes = Buffer.byteLength(JSON.stringify(rows));
   const baselineBytes = Buffer.byteLength(JSON.stringify(baselineRows));
@@ -787,21 +887,21 @@ const dormantSelection = postObservationResolutionContractForVerifiedOriginals({
 assert.equal(dormantSelection.mode, "EXTERNAL_IDENTITY_ONLY",
   "bridge writer stays dormant even for an indexed exact original set");
 const activeSelection = postObservationResolutionContractForVerifiedOriginals({
-  activeReleaseId: "verified_original_closed_projection_subset_a_v1",
+  activeReleaseId: "verified_original_closed_projection_subset_a_v2",
   originalImageSha256: [...first].reverse()
 });
 assert.equal(activeSelection.mode, "EXTERNAL_AND_VERIFIED_ORIGINAL_CLOSED_PROJECTION");
 assert.equal(activeSelection.resolution_contract_sha256,
   COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256);
 assert.equal(validatePostObservationResolutionContractSelection(activeSelection, {
-  activeReleaseId: "verified_original_closed_projection_subset_a_v1",
+  activeReleaseId: "verified_original_closed_projection_subset_a_v2",
   originalImageSha256: first
 }), true, "pre-provider contract selection is exact-set and order independent");
 assert.equal(validatePostObservationResolutionContractSelection({
   ...activeSelection,
   matched_original_set_sha256: "0".repeat(64)
 }, {
-  activeReleaseId: "verified_original_closed_projection_subset_a_v1",
+  activeReleaseId: "verified_original_closed_projection_subset_a_v2",
   originalImageSha256: first
 }), false, "operation/checkpoint selection drift fails closed");
 assert.throws(() => postObservationResolutionContractForVerifiedOriginals({
@@ -828,8 +928,11 @@ const unknownReceipt = {
 assert.equal(verifiedOriginalObservationReleaseForReceipt(unknownReceipt), null);
 assert.deepEqual(
   Object.keys(VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY.releases),
-  ["verified_original_closed_projection_subset_a_v1"],
-  "only explicitly shipped historical releases can replay"
+  [
+    "verified_original_closed_projection_subset_a_v1",
+    "verified_original_closed_projection_subset_a_v2"
+  ],
+  "only explicitly shipped historical and active releases can replay"
 );
 
 console.log(

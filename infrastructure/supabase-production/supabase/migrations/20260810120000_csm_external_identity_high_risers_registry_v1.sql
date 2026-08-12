@@ -25,7 +25,6 @@ insert into public.csm_registry_releases (
   '2026-08-10T12:00:00Z'::timestamptz
 )
 on conflict (id) do nothing;
-
 do $external_identity_registry_contract$
 begin
   if not exists (

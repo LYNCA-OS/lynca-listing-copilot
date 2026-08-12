@@ -39,7 +39,7 @@ import {
   validateCsmPersistenceCheckpoint
 } from "../api/csm-listing-title.js";
 
-const raw = `  ${JSON.stringify({
+const providerFields = {
   year: "2025", manufacturer: "Topps", product: "Chrome", set: "Cosmic",
   subjects: ["Victor Wembanyama"], team: "Spurs", card_name: "中文",
   release_variant: "", surface_color: "Rainbow", parallel_family: "Foil",
@@ -48,7 +48,30 @@ const raw = `  ${JSON.stringify({
   grammar: "standard", lot_count: "", language: "", unreadable: [],
   low_confidence: [], description: "   ",
   provider_internal_note: "DO_NOT_PERSIST_RAW_PROVIDER_CONTENT"
+};
+const hasValue = (value) => Array.isArray(value) ? value.length > 0
+  : value && typeof value === "object" ? Object.keys(value).length > 0
+    : Boolean(String(value ?? "").trim());
+const raw = `  ${JSON.stringify({
+  ...providerFields,
+  field_sources: Object.keys(providerFields).filter((field) => (
+    field !== "provider_internal_note" && hasValue(providerFields[field])
+      && [
+        "year", "language", "manufacturer", "product", "set", "subjects", "team",
+        "card_name", "release_variant", "surface_color", "parallel_family",
+        "parallel_exact", "descriptive_rarity", "card_number", "serial", "attributes",
+        "grading_info", "grammar", "lot_count", "special_stamp", "description"
+      ].includes(field)
+  )).map((field) => ({ field, source_ids: ["original_image_1"] })),
+  set_card_name_relations: {
+    set: "CURRENT_CARD_MEMBER_OF_SET",
+    card_name: "CURRENT_CARD_NAMED_BY_DESIGN"
+  }
 })}\n`;
+// The adapter audits provenance and relation fields before it hands the
+// canonical payload to admission. The accuracy ledger binds that canonical
+// payload; the audit envelope is bound separately by the durable receipts.
+const canonicalRaw = JSON.stringify(providerFields);
 const baseline = finishCanonicalTitle(raw);
 let calls = 0;
 const prepared = await prepareCanonicalListingPath({
@@ -61,7 +84,12 @@ const prepared = await prepareCanonicalListingPath({
     calls += 1;
     return new Response(JSON.stringify({
       id: "resp_ledger_1",
-      output_text: raw,
+      model: "gpt-5.6-luna",
+      status: "completed",
+      output: [{
+        type: "message",
+        content: [{ type: "output_text", text: raw, annotations: [] }]
+      }],
       reasoning: { effort: "low" },
       usage: { input_tokens: 77, output_tokens: 23 }
     }), {
@@ -96,8 +124,11 @@ const baselineRows = buildCsmStageRows({
     composer_version: baseline.composer_version,
     marketplace_profile_version: baseline.marketplace_profile_version,
     canonical_naming_trace: baseline.canonical_naming_trace,
-    canonical_naming_publishable: baseline.canonical_naming_publishable
+    canonical_naming_publishable: baseline.canonical_naming_publishable,
+    publication_coverage: baseline.publication_coverage
   },
+  founderBetaWebReceipt: prepared.founder_beta_web_receipt,
+  setCardNameRelationReceipt: prepared.set_card_name_relation_receipt,
   title: baseline.title
 });
 assert.deepEqual(prepared.csm_rows, baselineRows,
@@ -109,10 +140,10 @@ assert.equal(ledger.version, ACCURACY_LOSS_LEDGER_VERSION);
 assert.equal(ACCURACY_LOSS_LEDGER_VERSION, ACCURACY_LOSS_LEDGER_V1);
 assert.deepEqual(ACCURACY_LOSS_LEDGER_SUPPORTED_VERSIONS, [ACCURACY_LOSS_LEDGER_V1],
   "published ledger validators stay registered for durable checkpoint recovery");
-assert.equal(ledger.stages.raw_provider_output.sha256, sha256(raw));
-assert.equal(ledger.stages.raw_provider_output.byte_length, Buffer.byteLength(raw, "utf8"));
+assert.equal(ledger.stages.raw_provider_output.sha256, sha256(canonicalRaw));
+assert.equal(ledger.stages.raw_provider_output.byte_length, Buffer.byteLength(canonicalRaw, "utf8"));
 assert.equal(ledger.stages.parsed_fields.source_sha256, ledger.stages.raw_provider_output.sha256);
-assert.equal(ledger.stages.parsed_fields.sha256, accuracyLedgerSha256(JSON.parse(raw)));
+assert.equal(ledger.stages.parsed_fields.sha256, accuracyLedgerSha256(JSON.parse(canonicalRaw)));
 assert.equal(ledger.stages.admitted_canonical_fields.source_sha256, ledger.stages.parsed_fields.sha256);
 assert.equal(ledger.stages.admitted_canonical_fields.sha256, accuracySemValueSha256(
   resolvedFieldsToSemSuggestion(toResolvedFields(baseline.fields))
@@ -145,7 +176,7 @@ assert.equal(ledger.stages.composed_bracket_ledger.source_sha256,
 const activeProjection = `${baseline.composer_version}/${baseline.marketplace_profile_version}`;
 assert.ok([
   "thin-marketplace-composer-v2/ebay-profile-v1",
-  "thin-marketplace-composer-v3/lynca-standard-name-v0.2"
+  "thin-marketplace-composer-v3/lynca-standard-name-v0.3"
 ].includes(activeProjection), "the accuracy ledger must use one of the two atomic release states");
 if (activeProjection === "thin-marketplace-composer-v2/ebay-profile-v1") {
   assert.ok(ledger.stages.composed_bracket_ledger.reason_codes

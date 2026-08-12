@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import {
-  buildCsmStageRows, CSM_STAGE_CONTRACT_VERSION, computeCsmPacketHashes,
+  buildCsmStageRows, computeCsmPacketHashes,
   EBAY_PROFILE_VERSION, THIN_COMPOSER_VERSION_V2, THIN_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
 
@@ -125,7 +125,10 @@ const observed = parseCanonicalFields({
   card_number: "089/063", serial: "", attributes: [], grade: "CGC 10",
   grammar: "tcg", lot_count: "", unreadable: [], low_confidence: []
 }).fields;
-const composed = composeFromCanonicalFields(observed);
+const composed = composeFromCanonicalFields(observed, { features: {
+  durable_lot_terminal_shared_only: true,
+  publication_coverage: true
+} });
 
 function stageRows(sessionId, tenantId = "tenant-1") {
   return buildCsmStageRows({
@@ -140,7 +143,7 @@ function stageRows(sessionId, tenantId = "tenant-1") {
 
 function sessionPatch(rows) {
   return {
-    csm_contract_version: CSM_STAGE_CONTRACT_VERSION,
+    csm_contract_version: rows.resolution.contract_version,
     csm_registry_release_id: rows.resolution.registry_release_id,
     csm_grammar: rows.resolution.grammar,
     csm_grammar_confidence: 0.8,

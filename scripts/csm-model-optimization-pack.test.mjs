@@ -36,7 +36,7 @@ import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
@@ -129,12 +129,17 @@ const directRequest = buildCanonicalFieldsRequest({
 });
 assert.deepEqual(compiled.provider_request.wire_request, directRequest);
 const wireBytes = JSON.stringify(compiled.provider_request.wire_request);
-assert.equal(wireBytes.length, 11_185);
+assert.equal(wireBytes.length, 12_778);
 assert.equal(
   createHash("sha256").update(wireBytes).digest("hex"),
-  "79ff68337c102f8263036747b52834e6f72beee7ff3c7634a8e37d66c3510b45",
-  "extracting the Luna pack must not alter ordinary OpenAI request bytes"
+  "54f80d2bba1843818faaaaa1e447dd103aba2fca16daee7f334572ccd7bf625d",
+  "the Luna Web-capable request must remain an exact frozen wire contract"
 );
+assert.deepEqual(compiled.provider_request.wire_request.tools, [{ type: "web_search" }]);
+assert.equal(compiled.provider_request.wire_request.tool_choice, "auto");
+assert.equal(compiled.provider_request.wire_request.max_tool_calls, 1);
+assert.deepEqual(compiled.provider_request.wire_request.include,
+  ["web_search_call.action.sources"]);
 for (const unsupported of ["temperature", "top_p", "seed"]) {
   assert.equal(Object.hasOwn(compiled.provider_request.wire_request, unsupported), false);
 }
@@ -375,7 +380,7 @@ assert.deepEqual(
 );
 assert.deepEqual(
   healthBody.runtime.canonical_naming_target,
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3,
   "health must expose the exact target Canonical Naming release contract"
 );
 assert.deepEqual(
