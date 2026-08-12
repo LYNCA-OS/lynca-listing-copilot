@@ -181,6 +181,39 @@ assert.ok(CANONICAL_FIELD_NAMES.includes("language"), "COS-9 language must suppo
   assert.equal(tcg.fields.serial, "");
 }
 
+// COS-39 classification precedes product finish admission. The classifier must
+// receive every field its own contract reads; omitting Manufacturer/IP left a
+// provider-reported Standard Pokemon card uncorrected, so Refractor survived.
+{
+  const pokemon = parseCanonicalFields({
+    grammar: "standard", manufacturer: "Pokémon", product: "Mega Brave",
+    subjects: ["Charizard"], parallel_exact: "Gold Refractor"
+  });
+  assert.equal(pokemon.fields.grammar, "tcg");
+  assert.ok(pokemon.defects.includes("grammar_standard_but_csm_says_tcg"));
+  assert.equal(pokemon.fields.print_finish, "",
+    "grammar correction must complete before product finish admission");
+  assert.ok(pokemon.fields.withheld_finish_terms.some((term) => (
+    term.reason === "FINISH_NOT_MARKET_RECOGNIZED_FOR_PRODUCT"
+  )));
+
+  const topps = parseCanonicalFields({
+    grammar: "standard", manufacturer: "Topps", product: "Chrome",
+    subjects: ["Player"], parallel_exact: "Gold Refractor"
+  });
+  assert.equal(topps.fields.grammar, "standard");
+  assert.ok(!topps.defects.includes("grammar_standard_but_csm_says_tcg"));
+  assert.equal(topps.fields.print_finish, "Gold Refractor");
+
+  const panini = parseCanonicalFields({
+    grammar: "standard", manufacturer: "Panini", product: "Prizm",
+    subjects: ["Player"], parallel_exact: "Silver Prizm"
+  });
+  assert.equal(panini.fields.grammar, "standard");
+  assert.ok(!panini.defects.includes("grammar_standard_but_csm_says_tcg"));
+  assert.equal(panini.fields.print_finish, "Silver Prizm");
+}
+
 // SSP is [Descriptive Rarity], a CSM bracket of its own, not a component.
 {
   const parsed = fields({ attributes: ["Auto", "RC", "SSP"] });

@@ -15,22 +15,12 @@
 // the IP table. It produced the right answers on the reviewed corpus, but it
 // made grammar carry an IP claim, which the contract forbids in as many words.
 //
-// WHERE THE TABLE COMES FROM
+// RELEASE AUTHORITY
 //
-// Not invented. Two sources, both authoritative:
-//
-//   1. `20 Registry`'s own Print Finish Registry examples, which deliberately
-//      mix domains -- Mojo Refractor and Superfractor sit beside Master Ball
-//      Reverse Holo and Ghost Rare. CSM does not partition finish vocabulary by
-//      domain, so neither does this.
-//   2. The 255 reviewed titles: what the market actually calls these products.
-//      That is the plainest available evidence of "market-recognized for the
-//      product", because it is the market writing the names.
-//
-// The corpus is unambiguous where it speaks: `refractor` appears with 22
-// product families and every one is Topps; `prizm` with 9 and every one is
-// Panini; `holo` with Panini Donruss Optic AND Pokemon, so it crosses domains
-// legitimately and is claimed by neither.
+// The active table is intentionally tiny. Only claims in the immutable,
+// governed-review-approved release may reject a finish. Seed examples and raw
+// corpus counts are evidence, not authority. This prevents another useful-looking
+// vocabulary expansion from quietly acquiring deletion power.
 //
 // ABSENCE IS NOT REJECTION
 //
@@ -45,6 +35,8 @@
 // can grow without ever silently deleting a finish nobody has catalogued yet.
 
 import { semTcgIpLabel } from "../ontology/sem-definition.mjs";
+import { PRINT_FINISH_PRODUCT_CLAIMS_V1 } from
+  "./releases/print-finish-product-claims-v1.mjs";
 
 /**
  * Finish terms whose market recognition is anchored to a product family.
@@ -52,49 +44,29 @@ import { semTcgIpLabel } from "../ontology/sem-definition.mjs";
  * Keyed by the family token as it appears in Manufacturer / Product / Set text.
  * A term absent from every list is domain-neutral by default.
  */
-export const PRINT_FINISH_FAMILIES = Object.freeze({
-  topps: Object.freeze([
-    // Corpus: 22 product families, all Topps.
-    "refractor",
-    "xfractor",
-    "raywave",
-    "superfractor",
-    "sapphire",
-    "pulsar"
-  ]),
-  panini: Object.freeze([
-    // Corpus: 9 product families, all Panini.
-    "prizm",
-    "hyper",
-    "lucky",
-    "shock",
-    "cracked ice",
-    "disco",
-    "velocity",
-    "scope"
-  ]),
-  // `20 Registry` lists these beside the Topps and Panini terms, in the same
-  // table, which is the point: CSM does not partition the vocabulary, it scopes
-  // recognition to the product. The corpus adds `holo` for Pokemon, but `holo`
-  // is domain-neutral -- Panini Donruss Optic uses it too -- so it is not
-  // claimed here.
-  pokemon: Object.freeze(["master ball reverse holo", "poke ball reverse holo"]),
-  "yu-gi-oh!": Object.freeze(["ghost rare", "starlight rare", "collector rare"])
-});
-
-/**
- * Terms the corpus or `20 Registry` shows on more than one family, or that name
- * a surface rather than a product line. These are never withheld on product
- * grounds.
- */
-export const DOMAIN_NEUTRAL_FINISHES = Object.freeze([
-  "holo", "reverse holo", "foil", "wave", "shimmer", "sparkle",
-  "geometric", "mojo", "prismatic", "marble", "lucky"
-]);
+export const PRINT_FINISH_REGISTRY_RELEASE = PRINT_FINISH_PRODUCT_CLAIMS_V1;
+const releaseApproved = PRINT_FINISH_REGISTRY_RELEASE.status === "FROZEN_APPROVED"
+  && PRINT_FINISH_REGISTRY_RELEASE.authority?.approval === "GOVERNED_REVIEW_APPROVED"
+  && PRINT_FINISH_REGISTRY_RELEASE.review_receipt?.status === "APPROVED";
+export const APPROVED_PRINT_FINISH_CLAIMS = Object.freeze(
+  releaseApproved
+    ? PRINT_FINISH_REGISTRY_RELEASE.claims.filter((claim) => claim.status === "ACTIVE")
+    : []
+);
 
 const fold = (value) => String(value ?? "")
   .normalize("NFD").replace(/[̀-ͯ]/g, "")
   .toLowerCase().replace(/\s+/g, " ").trim();
+
+const escapePattern = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Exact word/phrase matching; `scope` must never match `kaleidoscope`. */
+function containsPhrase(value, phrase) {
+  const source = fold(value);
+  const words = fold(phrase).split(" ").filter(Boolean).map(escapePattern);
+  if (!source || !words.length) return false;
+  return new RegExp(`(?:^|[^a-z0-9])${words.join("\\s+")}(?=$|[^a-z0-9])`).test(source);
+}
 
 /** The product family this card belongs to, or "" when the table cannot tell. */
 export function productFamilyFor(fields = {}) {
@@ -114,26 +86,27 @@ export function productFamilyFor(fields = {}) {
     card_name: fields.card_name,
     ip: fields.ip
   }));
-  if (ip && ip in PRINT_FINISH_FAMILIES) return ip;
-  if (ip) return ip;
-
   const text = fold([fields.manufacturer, fields.product, fields.set, fields.ip].filter(Boolean).join(" "));
-  if (!text) return "";
-  for (const family of Object.keys(PRINT_FINISH_FAMILIES)) {
-    if (new RegExp(`(?:^|\\s)${family}(?:\\s|$)`).test(text)) return family;
+  const matches = new Set(ip ? [ip] : []);
+  for (const family of PRINT_FINISH_REGISTRY_RELEASE.product_families) {
+    if (family.exact_phrases.some((phrase) => containsPhrase(text, phrase))) {
+      matches.add(family.id);
+    }
   }
-  return "";
+  return matches.size === 1 ? [...matches][0] : "";
 }
 
-/** The family that claims this finish term, or "" when nobody does. */
-export function familyClaiming(term) {
-  const text = fold(term);
-  if (!text) return "";
-  if (DOMAIN_NEUTRAL_FINISHES.some((neutral) => text.includes(neutral))) return "";
-  for (const [family, terms] of Object.entries(PRINT_FINISH_FAMILIES)) {
-    if (terms.some((claimed) => text.includes(claimed))) return family;
-  }
-  return "";
+/** All approved owner families matching a term. Exposed for release tests. */
+export function familiesClaiming(term, claims = APPROVED_PRINT_FINISH_CLAIMS) {
+  return Object.freeze([...new Set(claims
+    .filter((claim) => claim.status === "ACTIVE" && containsPhrase(term, claim.term))
+    .map((claim) => claim.product_family))].sort());
+}
+
+/** The unique owner family, or "" for unknown/ambiguous terms. */
+export function familyClaiming(term, claims = APPROVED_PRINT_FINISH_CLAIMS) {
+  const families = familiesClaiming(term, claims);
+  return families.length === 1 ? families[0] : "";
 }
 
 /**

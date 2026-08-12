@@ -19,6 +19,10 @@ import { MARKETPLACE_PROFILES } from "../lib/listing/thin/marketplace-composer-r
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 import { routeReviewPatterns, OWNING_LAYER, CORRECTION_REASON } from "../csm/contracts/resolution-review.mjs";
 import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
+import {
+  APPROVED_PRINT_FINISH_CLAIMS,
+  PRINT_FINISH_REGISTRY_RELEASE
+} from "../csm/registry/print-finish-taxonomy.mjs";
 
 const results = [];
 // A clause may fail by throwing OR by returning the reason as a string. The
@@ -218,6 +222,19 @@ check("COS-39", "the IP table is fed the manufacturer it already reads", () => {
   assert.equal((title.match(/pok[eé]mon/gi) || []).length, 1,
     "once as [IP], and not a second time as [Manufacturer]");
 });
+check("COS-39", "Print Finish rejection authority is a governed immutable release", () => {
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.status, "FROZEN_APPROVED");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.authority.decision_id, "COS-39");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.authority.approval, "GOVERNED_REVIEW_APPROVED");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.review_receipt.status, "APPROVED");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.review_receipt.reviewed_by_role, "PAI");
+  assert.equal(PRINT_FINISH_REGISTRY_RELEASE.review_receipt.linear_comment_id,
+    "2160874a-fd2b-4eaa-90ea-6cf60764791b");
+  assert.ok(Object.isFrozen(PRINT_FINISH_REGISTRY_RELEASE));
+  assert.deepEqual(APPROVED_PRINT_FINISH_CLAIMS.map((claim) => (
+    [claim.term, claim.product_family]
+  )), [["refractor", "topps"]]);
+});
 check("COS-21", "the canonical editable field list is exactly the 17 CSM names", () => {
   // COS-21 is a boundary decision, not a field proposal: implementation and
   // evidence terms -- `serial_number`, `serial_numerator`, `serial_denominator`,
@@ -365,26 +382,6 @@ const UNIMPLEMENTED = [
       "or Composer-omission denominators, nor distinguish FIELD_REVIEWED from",
       "TITLE_DERIVED provenance. COS-42 stays open until those metrics are",
       "defined and exercised by governed structured reviews."
-    ].join("\n        ")
-  },
-  {
-    decision: "COS-39",
-    clause: "the Print Finish Registry was seeded, not governed",
-    why: [
-      "The product-scoped taxonomy in `csm/registry/print-finish-taxonomy.mjs`",
-      "now enforces COS-39's boundary, and its content is sourced rather than",
-      "invented: `20 Registry`'s own Print Finish examples, plus the 255",
-      "reviewed titles, which are the market naming its own products.",
-      "",
-      "What it did NOT go through is `20 Registry`'s admission process --",
-      "\"governed recurring production evidence, aggregated and reviewed",
-      "operator feedback, compatible official checklist evidence, or trusted",
-      "domain knowledge\". One corpus is evidence; it is not governance.",
-      "",
-      "The design fails safe in the meantime: a term or product the table does",
-      "not know is ADMITTED, never withheld, so an ungoverned table can be",
-      "incomplete without deleting anything. Growing it should go through the",
-      "Registry process rather than another read of the same corpus."
     ].join("\n        ")
   }
 ];
