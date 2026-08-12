@@ -122,6 +122,19 @@ assert.match(forwardReadback,
 assert.match(spec,
   /evidence\.cases\.some\(\(entry\) => \([\s\S]*?founder_web_search\?\.web_search_used === false[\s\S]*?web_search_call_count === 0/,
   "the six-case cohort must contain at least one real no-search receipt");
+const activationProjectionCallSite = spec.match(
+  /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView\);[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
+)?.[0] || "";
+assert.ok(activationProjectionCallSite,
+  "the per-case Web and activation proof call site must remain explicit");
+assert.match(activationProjectionCallSite,
+  /activationProjectionReceipt = activationProjectionProofForCase\(/,
+  "all cases must route relation proof through the scoped activation helper");
+assert.doesNotMatch(activationProjectionCallSite, /"TCG"/,
+  "TCG authority abstention must keep its Web receipt proof without entering relation proof");
+assert.match(spec,
+  /function activationProjectionProofForCase\(sourceCase, resolutionView, title\) \{\s*if \(sourceCase\.case_id !== "NON_TCG_WEB_IDENTITY"\) return null;\s*return activationProjectionProof\(/,
+  "only the designated Web identity case may require Set/Card Name relation projection");
 assert.doesNotMatch(spec, /query_exact/,
   "the verifier must not pretend the model-owned Web query is an exact application contract");
 assert.match(spec, /title\.startsWith\(`Lot\*\$\{sourceCase\.expected_lot_count\} `\)/);

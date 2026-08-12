@@ -2,6 +2,7 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,14 +29,11 @@ import {
   CSM_OPENAI_RESPONSES_ADAPTER
 } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import {
-  auditFounderBetaCanonicalPayload,
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
   FOUNDER_BETA_WEB_RECEIPT_VERSION,
   validateFounderBetaWebReceipt,
   validateFounderBetaWebReceiptAgainstFields
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
-import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
-import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { SET_CARD_NAME_RELATION_CONTRACT_VERSION } from
   "../lib/listing/thin/set-card-name-contract.mjs";
 import {
@@ -285,6 +283,27 @@ export const ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_FAILURE_CODE =
   "founder_beta_field_source_required:parallel_family";
 export const ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ROLLBACK_SHA =
   ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256 =
+  "1f7e7a622a073cec648fbe4342716b10ba89cf1c2d0a4800293b624cb02e9b4e";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-relation-abstention-verifier-repair-v1";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER =
+  "founder-beta-tcg-relation-abstention-verifier-v1";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA =
+  "02cd1a5e4f40789aed0ab425597547aad4e85bd3";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA =
+  "4e12b17cba40394c850432f9ae2efbb0d755f4dc";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA =
+  "2101f0bbb5bbe788ddfc84ae87aab5d6935a6f27";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID =
+  "31631444369";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE =
+  "ACTIVATION_RECEIPT_MISMATCH";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID = "TCG";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE =
+  "RESOLUTION_VIEW";
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA =
+  ACTIVATION_A_ROLLBACK_SHA;
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -455,6 +474,12 @@ export const ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_CHANGED_PATHS = Object.
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/csm-persistence.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS = Object.freeze([
+  "e2e/production-writer-journey.spec.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
@@ -873,6 +898,22 @@ function exactActivationAOptionalFieldSourceOmissionChangedPaths(values) {
   return actual;
 }
 
+function exactActivationARelationAbstentionVerifierRepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_relation_abstention_verifier_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [
+    ...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS
+  ].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_relation_abstention_verifier_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -1042,7 +1083,25 @@ function activationAOptionalFieldSourceOmissionArtifactManifestSha256(changedPat
   }));
 }
 
+function activationARelationAbstentionVerifierRepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+    changed_paths: exactActivationARelationAbstentionVerifierRepairChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA) {
+    return ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_SHA) {
     return ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_MARKER;
   }
@@ -1129,10 +1188,51 @@ export function verifyCompatibilityBridgeSelection({
     if (parentGitSha === ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ALTERNATE_PARENT_SHA) {
       throw failure("activation_a_optional_field_source_omission_parent_mismatch");
     }
+    if (parentGitSha
+        === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA) {
+      throw failure("activation_a_relation_abstention_verifier_repair_parent_mismatch");
+    }
     if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA) {
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA) {
+        throw failure("activation_a_relation_abstention_verifier_repair_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationARelationAbstentionVerifierRepairChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationARelationAbstentionVerifierRepairRuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v16",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
+        parent_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE,
+        failed_case_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID,
+        failed_phase: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE,
+        required_rollback_git_sha:
+          ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationARelationAbstentionVerifierRepairArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_SHA}^{tree}`
@@ -2264,140 +2364,7 @@ export function activationAUsedWebEvidenceBudgetRuntimeContractProof() {
   });
 }
 
-export function activationAOptionalFieldSourceOmissionRuntimeContractProof() {
-  const base = activationAUsedWebEvidenceBudgetRuntimeContractProof();
-  const request = Object.freeze({
-    model: "gpt-5.6-luna", reasoning: Object.freeze({ effort: "low" })
-  });
-  const omit = ({ field, value, payload = {}, sourcedFields = [] }) => {
-    const raw = {
-      subjects: ["Grounded Subject"], grammar: "standard",
-      unreadable: [], low_confidence: [], [field]: value, ...payload
-    };
-    return auditFounderBetaCanonicalPayload({
-      model: request.model, reasoning: request.reasoning,
-      status: "completed", output: []
-    }, {
-      rawOutput: JSON.stringify(raw), request,
-      fieldSources: [
-        ...(field === "subjects" ? [] : [{
-          field: "subjects", source_ids: ["original_image_1"]
-        }]),
-        ...sourcedFields.map((name) => ({
-          field: name, source_ids: ["original_image_1"]
-        }))
-      ],
-      originalImageCount: 1
-    });
-  };
-  const omissions = [
-    ["parallel_family", "Refractor", "print_finish"],
-    ["attributes", ["Auto"], "search_optimization"],
-    ["grading_info", {
-      company: "PSA", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY"
-    }, "grading_info"],
-    ["serial", "17/50", "numerical_rarity"]
-  ];
-  let results;
-  let aggregate;
-  let grammar;
-  let lot;
-  try {
-    results = omissions.map(([field, value]) => omit({ field, value }));
-    aggregate = omit({
-      field: "parallel_family", value: "Refractor",
-      payload: { parallel_exact: "Gold Refractor" },
-      sourcedFields: ["parallel_exact"]
-    });
-    grammar = omit({ field: "grammar", value: "standard" });
-    lot = omit({
-      field: "lot_count", value: "2",
-      payload: { subjects: ["Card A", "Card B"], grammar: "lot" }
-    });
-  } catch {
-    throw failure("activation_a_optional_field_source_omission_runtime_contract_invalid");
-  }
-  const rowsFor = (payload, id) => {
-    const fields = parseCanonicalFields(payload).fields;
-    const composed = composeFromCanonicalFields(fields, { features: {
-      durable_lot_terminal_shared_only: true,
-      publication_coverage: true
-    } });
-    return { fields, composed, rows: buildCsmStageRows({
-      tenantId: "tenant-optional-source-omission",
-      recognitionSessionId: `session-${id}`,
-      fields, composed, title: composed.title
-    }) };
-  };
-  const persisted = results.map((result, index) => rowsFor(
-    result.payload, omissions[index][0]
-  ));
-  const aggregateRows = rowsFor(aggregate.payload, "aggregate");
-  const lotFields = parseCanonicalFields(lot.payload).fields;
-  const lotComposed = composeFromCanonicalFields(lotFields, { features: {
-    durable_lot_terminal_shared_only: true,
-    publication_coverage: true
-  } });
-  const explicitFailure = ({ sourceId, returned = false }) => {
-    try {
-      auditFounderBetaCanonicalPayload({
-        model: request.model, reasoning: request.reasoning, status: "completed",
-        output: returned ? [{
-          type: "web_search_call",
-          action: { query: "explicit source", sources: [{ url: sourceId }] }
-        }] : []
-      }, {
-        rawOutput: JSON.stringify({
-          parallel_family: "Refractor", subjects: ["Grounded Subject"],
-          grammar: "standard"
-        }),
-        request,
-        fieldSources: [
-          { field: "subjects", source_ids: ["original_image_1"] },
-          { field: "parallel_family", source_ids: [sourceId] }
-        ],
-        originalImageCount: 1
-      });
-    } catch (error) { return error?.message; }
-    return null;
-  };
-  const explicitFailures = [
-    explicitFailure({ sourceId: "not a url" }) === "founder_beta_web_url_invalid",
-    explicitFailure({ sourceId: "https://user:pass@example.com/card" })
-      === "founder_beta_web_url_unsafe",
-    explicitFailure({ sourceId: "https://example.com/not-returned" })
-      === "founder_beta_field_source_not_returned",
-    explicitFailure({ sourceId: "https://example.com/returned", returned: true })
-      === "founder_beta_current_copy_source_required:parallel_family"
-  ];
-  const persistedEmpty = persisted.every(({ rows }, index) => {
-    const resolved = rows.resolved.find((row) => row.bracket === omissions[index][2]);
-    return resolved?.selected_kind === "EMPTY"
-      && resolved?.canonical_value == null
-      && resolved?.empty_reason === "INSUFFICIENT_EVIDENCE";
-  });
-  const aggregateResolved = aggregateRows.rows.resolved.find(
-    (row) => row.bracket === "print_finish"
-  );
-  if (!results.every((result, index) => (
-    result.payload[omissions[index][0]] == null
-      || result.payload[omissions[index][0]] === ""
-      || result.payload[omissions[index][0]].length === 0
-  ))
-      || !results.every((result, index) => (
-        result.payload.unreadable.includes(omissions[index][0])
-      ))
-      || !persistedEmpty
-      || aggregateResolved?.selected_kind !== "VALUE"
-      || aggregateResolved?.canonical_value !== "Gold Refractor"
-      || grammar.payload.grammar !== "standard"
-      || lot.payload.lot_count !== ""
-      || lot.payload.unreadable.includes("lot_count")
-      || lotComposed.lot_quantity_unresolved !== true
-      || !explicitFailures.every(Boolean)) {
-    throw failure("activation_a_optional_field_source_omission_runtime_contract_invalid");
-  }
-  const contractBody = {
+const ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_BODY = Object.freeze({
     schema_version: "listing-copilot-activation-a-optional-field-source-omission-proof-v1",
     repair_descriptor_id: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_DESCRIPTOR_ID,
     repair_marker: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_MARKER,
@@ -2406,7 +2373,8 @@ export function activationAOptionalFieldSourceOmissionRuntimeContractProof() {
     failed_run_id: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_FAILED_RUN_ID,
     failure_code: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_FAILURE_CODE,
     required_rollback_git_sha: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ROLLBACK_SHA,
-    base_used_web_evidence_budget_contract_sha256: base.contract_sha256,
+    base_used_web_evidence_budget_contract_sha256:
+      ACTIVATION_A_USED_WEB_EVIDENCE_BUDGET_RUNTIME_CONTRACT_SHA256,
     omission_scope: "missing-entire-field-source-row",
     omitted_value_policy: "clear-before-canonical-parse",
     unreadable_whitelist_policy: "canonical-field-names-only",
@@ -2421,18 +2389,96 @@ export function activationAOptionalFieldSourceOmissionRuntimeContractProof() {
     grammar_source_exemption_preserved: true,
     lot_count_omission_terminal: "LOT_QUANTITY_UNRESOLVED",
     explicit_source_claim_policy: "hard-reject",
-    explicit_negative_counterexample_count: explicitFailures.length,
+    explicit_negative_counterexample_count: 4,
     malformed_unsafe_unreturned_current_copy_hard: true,
-    web_receipt_schema_version: FOUNDER_BETA_WEB_RECEIPT_VERSION,
-    provider_request_builder_version: base.provider_request_builder_version,
-    provider_response_parser_version: base.provider_response_parser_version,
-    semantic_result_limit: base.semantic_result_limit,
-    maximum_physical_provider_attempts: base.maximum_physical_provider_attempts,
-    automatic_transport_retry_policy: base.automatic_transport_retry_policy,
+    web_receipt_schema_version: "founder-beta-web-receipt-v1",
+    provider_request_builder_version: "canonical-fields-web-request-v1",
+    provider_response_parser_version: "canonical-output-v3-web-receipt",
+    semantic_result_limit: 1,
+    maximum_physical_provider_attempts: 2,
+    automatic_transport_retry_policy: "definitive-complete-http-502-no-output-no-token-v1",
+    writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true
+});
+
+export function activationAOptionalFieldSourceOmissionRuntimeContractProof() {
+  if (sha256(stableJson(ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_BODY))
+      !== ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_optional_field_source_omission_historical_contract_invalid");
+  }
+  return Object.freeze({
+    ...ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_BODY,
+    contract_sha256: ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+export function activationARelationAbstentionVerifierRepairRuntimeContractProof() {
+  const spec = readFileSync(
+    path.join(repoRoot, "e2e/production-writer-journey.spec.mjs"), "utf8"
+  );
+  const scopedHelper = spec.match(
+    /function activationProjectionProofForCase\(sourceCase, resolutionView, title\) \{[\s\S]+?\n\}/
+  )?.[0] || "";
+  const proofCallSite = spec.match(
+    /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView\);[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
+  )?.[0] || "";
+  const strictProjection = spec.match(
+    /function activationProjectionProof\(sourceCase, resolutionView, title\) \{[\s\S]+?(?=\nfunction activationProjectionProofForCase)/
+  )?.[0] || "";
+  const founderReceipt = spec.match(
+    /function founderWebSearchProof\(sourceCase, resolutionView\) \{[\s\S]+?(?=\nfunction lotSharedOnlyProjectionProof)/
+  )?.[0] || "";
+  const valid = /case_id !== "NON_TCG_WEB_IDENTITY"\) return null/.test(scopedHelper)
+    && /return activationProjectionProof\(sourceCase, resolutionView, title\)/.test(scopedHelper)
+    && proofCallSite.indexOf("founderWebSearchProof")
+      < proofCallSite.indexOf("activationProjectionProofForCase")
+    && /SET_MEMBERSHIP_PREDICATE/.test(strictProjection)
+    && /CARD_NAME_PREDICATE/.test(strictProjection)
+    && /title\.indexOf\(cardNameText\) < title\.indexOf\(subjectText\)/.test(strictProjection)
+    && /web_search_call_count === 1/.test(strictProjection)
+    && /webIdentityQueryHasVisibleAnchors/.test(strictProjection)
+    && /support_urls\.length > 0/.test(strictProjection)
+    && /validateFounderBetaWebReceipt/.test(founderReceipt)
+    && /provider_request_count === 1/.test(founderReceipt)
+    && /const designatedSearch = sourceCase\.case_id === "NON_TCG_WEB_IDENTITY"/.test(
+      founderReceipt
+    );
+  if (!valid) {
+    throw failure("activation_a_relation_abstention_verifier_repair_runtime_contract_invalid");
+  }
+  const body = {
+    schema_version: "listing-copilot-activation-a-relation-abstention-verifier-repair-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
+    required_parent_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+    base_optional_field_source_omission_contract_sha256:
+      ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_RUNTIME_CONTRACT_SHA256,
+    founder_search_receipt_all_cases: true,
+    founder_receipt_validation_before_relation_scope: true,
+    tcg_relation_projection_policy: "abstain",
+    tcg_ungoverned_identity_fields_withheld: Object.freeze(["product", "set"]),
+    tcg_null_set_and_card_name_relations_allowed: true,
+    designated_relation_projection_case_id: "NON_TCG_WEB_IDENTITY",
+    designated_set_predicate: "CURRENT_CARD_MEMBER_OF_SET",
+    designated_card_name_predicate: "CURRENT_CARD_NAMED_BY_DESIGN",
+    designated_card_name_before_subject: true,
+    designated_web_search_call_count: 1,
+    designated_visible_query_anchor_required: true,
+    designated_min_url_count: 1,
+    designated_admitted_support_required: true,
+    query_exact_required: false,
+    cohort_min_no_search_count: 1,
+    verifier_only: true,
     writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true
   };
-  return Object.freeze({ ...contractBody, contract_sha256: sha256(stableJson(contractBody)) });
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
 }
 
 export function canonicalNamingActivationA2RuntimeContractProof({
@@ -2559,6 +2605,83 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if ([
+    ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+    ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA
+  ].includes(selection?.parent_git_sha)
+      && selection?.schema_version !== "production-release-selection-v16") {
+    throw failure(
+      "ordinary_release_activation_a_relation_abstention_verifier_repair_selection_invalid"
+    );
+  }
+  if (selection?.schema_version === "production-release-selection-v16") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "failed_case_id", "failed_phase", "required_rollback_git_sha",
+      "artifact_manifest_sha256", "git_sha", "writer_journey_manifest",
+      "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER
+        || selection.parent_git_sha
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA
+        || selection.parent_tree_sha
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA
+        || selection.failed_run_id
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID
+        || selection.failure_code
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE
+        || selection.failed_case_id
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID
+        || selection.failed_phase
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE
+        || selection.required_rollback_git_sha
+          !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationARelationAbstentionVerifierRepairArtifactManifestSha256(
+            ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest
+          !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== activationARelationAbstentionVerifierRepairRuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure(
+        "ordinary_release_activation_a_relation_abstention_verifier_repair_selection_invalid"
+      );
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha
+        !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v17",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
+      release_parent_tree_sha:
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILURE_CODE,
+      failed_case_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_CASE_ID,
+      failed_phase: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE,
+      required_rollback_git_sha:
+        ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.schema_version === "production-release-selection-v15") {
     if (!exactKeys(selection, [
       "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
@@ -3120,6 +3243,13 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA
+      || parentGitSha
+        === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA) {
+    throw failure(
+      "ordinary_release_activation_a_relation_abstention_verifier_repair_selection_invalid"
+    );
+  }
   if (parentGitSha === ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_PARENT_SHA
       || parentGitSha === ACTIVATION_A_OPTIONAL_FIELD_SOURCE_OMISSION_ALTERNATE_PARENT_SHA) {
     throw failure("ordinary_release_activation_a_optional_field_source_omission_selection_invalid");
