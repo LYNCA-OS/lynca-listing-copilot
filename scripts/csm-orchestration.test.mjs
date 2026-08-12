@@ -200,10 +200,10 @@ const common = {
       assert.equal(patch.csm_owner_versions.account_scope, "lynca-primary");
       assert.equal(patch.csm_owner_versions.provider_adapter_version, "openai-responses-v1");
       assert.equal(patch.csm_owner_versions.request_builder_version,
-        "canonical-fields-web-request-v1");
+        "canonical-fields-web-request-v2");
       assert.equal(
         patch.csm_owner_versions.response_parser_version,
-        "canonical-output-v3-web-receipt"
+        "canonical-output-v4-bounded-web-receipt"
       );
       assert.match(patch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
       assert.equal(

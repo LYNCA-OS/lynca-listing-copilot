@@ -8,7 +8,8 @@ Status: dormant/shadow selectable; Production unchanged
 
 Keep the current execution chain and let the same `gpt-5.6-luna` low-effort
 Responses request decide whether built-in Web Search is needed. The request has
-`tool_choice: "auto"` and `max_tool_calls: 1`. There is no second model call,
+`tool_choice: "auto"` and `max_tool_calls: 2`: zero to two bounded Web actions
+may run inside that one provider request. There is no second model call,
 application-side search, retry path, new Runtime, database writer, or migration.
 
 ## Executable semantic amendment
@@ -35,14 +36,17 @@ The response adapter derives, rather than trusts, one receipt containing:
 
 - one provider request, zero isolated model calls;
 - exact served `gpt-5.6-luna` model and `low` reasoning effort;
-- Web Search used/count and query strings;
-- sanitized HTTPS source URLs returned by the provider tool trace;
+- Web Search used/count and any search-action query strings;
+- sanitized HTTPS source URLs used by field evidence;
 - per-field supporting, conflicting, and unresolved URLs;
 - the validated semantic-state hash.
 
-A model-cited URL must occur in the provider-returned tool sources or
-annotations. HTTP, credentials, ports, overlong URLs, unreturned URLs, more
-than one Web Search call, and sources without a tool call fail closed. Query
+A model-cited URL must occur in the provider-returned tool sources,
+annotations, or open/find action URL universe. Every URL occurrence crosses
+the same sanitizer even when no field uses it. HTTP, credentials, ports,
+overlong URLs, unreturned URLs, more
+than two Web actions, unsupported/incomplete actions, and sources without a
+tool call fail closed. Query
 strings and fragments are removed from the public receipt. Current-card image
 evidence remains authoritative for card number, serial, grading, finish,
 surface/parallel identity, and special stamps when Web evidence conflicts.
@@ -60,8 +64,9 @@ surface/parallel identity, and special stamps when Web evidence conflicts.
 
 ## Evidence and activation gate
 
-Focused tests must prove no-search and search-used responses, the one-tool-call
-budget, URL sanitation/rejection, support/conflict/unresolved mapping, relation
+Focused tests must prove no-search and search-used responses, the zero-to-two
+action budget with three rejected, URL sanitation/rejection,
+support/conflict/unresolved mapping, relation
 validation, title-independent confusion counts, v0.3 order, mandatory Subject,
 and unchanged v0.1/v0.2 output. A later explicit activation must additionally
 prove one fresh no-search Writer Journey and one fresh search-used Writer

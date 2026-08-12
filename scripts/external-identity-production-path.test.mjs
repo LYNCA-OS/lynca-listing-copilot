@@ -133,8 +133,8 @@ const prepared = await prepareCanonicalListingPath({
     assert.equal(request.max_output_tokens, 8192);
     assert.deepEqual(request.tools, [{ type: "web_search" }]);
     assert.equal(request.tool_choice, "auto");
-    assert.equal(request.max_tool_calls, 1,
-      "the one provider request may search once; registry resolution remains post-observation");
+    assert.equal(request.max_tool_calls, 2,
+      "one provider request may use two bounded Web actions; registry resolution remains post-observation");
     const providerWire = JSON.stringify(request);
     for (const secretIdentity of [...HR14_ORIGINAL_SHA256, HR14_ORIGINAL_SET_SHA256]) {
       assert.doesNotMatch(providerWire, new RegExp(secretIdentity),

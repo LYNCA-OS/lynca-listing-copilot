@@ -11,6 +11,9 @@ import {
   validateFounderBetaWebReceipt
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import {
+  CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
+} from "../lib/listing/thin/canonical-fields.mjs";
+import {
   CARD_NAME_PREDICATE,
   SET_MEMBERSHIP_PREDICATE,
   validateSetCardNameRelationReceipt
@@ -223,7 +226,8 @@ function validateResolutionView(resolutionView, entry) {
       || (entry.case_id === WEB_CASE_ID && (
         entry.versions.csm_contract !== "csm-stage-shadow-v3"
         || webReceipt.web_search_used !== true
-        || webReceipt.web_search_call_count !== 1
+        || webReceipt.web_search_call_count < 1
+        || webReceipt.web_search_call_count > CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
         || webReceipt.provider_request_count !== 1
         || webReceipt.isolated_model_call_count !== 0
         || webReceipt.queries.length < 1
@@ -362,7 +366,8 @@ function verifyExactProductionForwardReadback({
     support_receipts_exact_match: true,
     founder_beta_web_receipt_exact_match: validated.entry.case_id === WEB_CASE_ID,
     web_search_used: validated.entry.case_id === WEB_CASE_ID,
-    web_search_call_count: validated.entry.case_id === WEB_CASE_ID ? 1 : 0,
+    web_search_call_count: validated.entry.case_id === WEB_CASE_ID
+      ? readback.founder_beta_web_receipt.web_search_call_count : 0,
     full_resolution_view_exact_match: true,
     composer_version: validated.entry.versions.composer,
     marketplace_profile_version: validated.entry.versions.marketplace_profile,

@@ -304,6 +304,26 @@ export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_FAILED_PHASE =
   "RESOLUTION_VIEW";
 export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA =
   ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "9ab0c23c19736caf842b8a82c2c78e9887b9b6c6108d4479d7c8b0b1826b6ce2";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-bounded-web-search-v1";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER =
+  "founder-beta-bounded-web-search-v1";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA =
+  "8b31901182b9766b09507d30197508ca8472a4f6";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA =
+  "b19e0b622f50347dc80798740f614a9d7297a4ef";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID = "31633408496";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE =
+  "founder_beta_web_call_budget_exceeded";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID = "EXTERNAL_IDENTITY";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE = "RECOGNITION_RESPONSE";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA = ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_WIRE_TEMPLATE_SHA256 =
+  "8b14694f8ea9e506c4327f825a79c40f81c6707ff4b87d841f090b36b37e6b1d";
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256 =
+  "1f79aa05cb5186cadd56c51b77a9249ccf8c5155c341ccb615bf8bb7afa1948a";
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -480,6 +500,27 @@ export const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_CHANGED_PATHS = Ob
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
+]);
+export const ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS = Object.freeze([
+  "docs/csm/cos-63-founder-beta-mvp-2026-08-12.md",
+  "e2e/production-writer-journey.spec.mjs",
+  "experiments/csm-frontier/founder-beta-joint-request-v1.mjs",
+  "lib/listing/thin/canonical-fields.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-provider-adapter.mjs",
+  "scripts/accuracy-cos59-founder-beta-web.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-model-optimization-pack.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/luna-direct-dispatcher.test.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
@@ -914,6 +955,20 @@ function exactActivationARelationAbstentionVerifierRepairChangedPaths(values) {
   return actual;
 }
 
+function exactActivationABoundedWebSearchChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_bounded_web_search_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_bounded_web_search_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -1098,7 +1153,25 @@ function activationARelationAbstentionVerifierRepairArtifactManifestSha256(chang
   }));
 }
 
+function activationABoundedWebSearchArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+    parent_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
+    changed_paths: exactActivationABoundedWebSearchChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA) {
+    return ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA) {
     return ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER;
   }
@@ -1196,6 +1269,41 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA) {
+        throw failure("activation_a_bounded_web_search_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationABoundedWebSearchChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationABoundedWebSearchRuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v17",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+        parent_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE,
+        failed_case_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID,
+        failed_phase: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE,
+        required_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationABoundedWebSearchArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA}^{tree}`
@@ -1992,52 +2100,14 @@ export function activeV3OrdinaryRuntimeContractProof({
   parentGitSha = ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
 } = {}) {
   const parent = exactGitSha(parentGitSha);
-  const retryProof = definitive502TransportRetryContractProof();
-  let projectionState;
-  try {
-    projectionState = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
-  } catch {
-    throw failure("activation_a_runtime_contract_invalid");
-  }
-  const request = CSM_OPENAI_RESPONSES_ADAPTER.buildRequest({
-    imageUrls: ["https://example.invalid/original.webp"],
-    model: CSM_THIN_RUNTIME_CONTRACT.model,
-    effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    imageDetail: CSM_THIN_RUNTIME_CONTRACT.imageDetail,
-    maxOutputTokens: CSM_THIN_RUNTIME_CONTRACT.maxOutputTokens
-  });
-  const webContractReady = request.tools?.length === 1
-    && request.tools[0]?.type === "web_search"
-    && request.tool_choice === "auto"
-    && request.max_tool_calls === 1
-    && stableJson(request.include) === stableJson(["web_search_call.action.sources"]);
-  const runtimeReady = projectionState.state === CSM_PROJECTION_STATE_ACTIVE
-    && CANONICAL_NAMING_RELEASE_CONTRACT === CANONICAL_NAMING_RELEASE_CONTRACT_V3
-    && LYNCA_STANDARD_PROFILE_VERSION === LYNCA_STANDARD_PROFILE_VERSION_V3
-    && stableJson(CSM_PROJECTION_ACTIVATION.active_writer.standard) === stableJson({
-      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version,
-      marketplace_profile_version:
-        CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version
-    })
-    && CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay
-      === VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
-    && CSM_ACTIVE_MODEL_PROFILE.reasoning_effort === "low"
-    && CSM_THIN_RUNTIME_CONTRACT.maximumAttempts === 2
-    && CSM_THIN_RUNTIME_CONTRACT.semanticResultLimit === 1
-    && CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryLimit === 1
-    && CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryPolicy
-      === LUNA_DEFINITIVE_502_TRANSPORT_RETRY_POLICY
-    && LUNA_DEFINITIVE_502_TRANSPORT_RETRY_ELAPSED_LIMIT_MS === 15_000
-    && LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION
-      === "luna-definitive-502-transport-retry-receipt-v1"
-    && webContractReady;
-  if (!runtimeReady) throw failure("activation_a_runtime_contract_invalid");
+  // Historical selection-v9 and its generic successor contract are a replay
+  // artifact. They must not read today's request builder: later Web changes
+  // are proven only by their own versioned selector.
   const body = {
     schema_version: "listing-copilot-active-v3-runtime-proof-v2",
     activation_descriptor_id: ACTIVATION_A_DESCRIPTOR_ID,
     activation_marker: ACTIVATION_A_MARKER,
-    transport_repair_descriptor_id:
-      ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
+    transport_repair_descriptor_id: ACTIVATION_A_TRANSPORT_502_REPAIR_DESCRIPTOR_ID,
     transport_repair_marker: ACTIVATION_A_TRANSPORT_502_REPAIR_MARKER,
     required_parent_git_sha: parent,
     required_parent_tree_sha:
@@ -2046,39 +2116,39 @@ export function activeV3OrdinaryRuntimeContractProof({
     required_rollback_git_sha:
       parent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
         ? ACTIVATION_A_TRANSPORT_502_REPAIR_ROLLBACK_SHA : parent,
-    active_standard_writer_composer_version:
-      CSM_PROJECTION_ACTIVATION.active_writer.standard.composer_version,
-    active_standard_writer_marketplace_profile_version:
-      CSM_PROJECTION_ACTIVATION.active_writer.standard.marketplace_profile_version,
+    active_standard_writer_composer_version: "thin-marketplace-composer-v3",
+    active_standard_writer_marketplace_profile_version: "lynca-standard-name-v0.3",
     active_verified_original_observation_overlay:
-      CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay,
-    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
-    durable_projection_contract_version: CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
-    web_receipt_schema_version: FOUNDER_BETA_WEB_RECEIPT_VERSION,
-    set_card_name_relation_schema_version: SET_CARD_NAME_RELATION_CONTRACT_VERSION,
-    provider_request_builder_version: CSM_CANONICAL_REQUEST_BUILDER_VERSION,
-    provider_response_parser_version: CSM_CANONICAL_RESPONSE_PARSER_VERSION,
-    provider_model: CSM_THIN_RUNTIME_CONTRACT.model,
-    reasoning_effort: CSM_THIN_RUNTIME_CONTRACT.reasoningEffort,
-    semantic_result_limit: CSM_THIN_RUNTIME_CONTRACT.semanticResultLimit,
-    maximum_physical_provider_attempts: CSM_THIN_RUNTIME_CONTRACT.maximumAttempts,
-    automatic_transport_retry_limit:
-      CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryLimit,
-    automatic_transport_retry_policy:
-      CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryPolicy,
+      "verified_original_closed_projection_subset_a_v2",
+    projection_activation_sha256:
+      "13d49a32aee67b0303bc7a5d33aadaacf10880b35714a4f241b0660be6d8c627",
+    durable_projection_contract_version: "csm-stage-shadow-v3",
+    web_receipt_schema_version: "founder-beta-web-receipt-v1",
+    set_card_name_relation_schema_version: "set-card-name-relations-v1",
+    provider_request_builder_version: "canonical-fields-web-request-v1",
+    provider_response_parser_version: "canonical-output-v3-web-receipt",
+    provider_model: "gpt-5.6-luna",
+    reasoning_effort: "low",
+    semantic_result_limit: 1,
+    maximum_physical_provider_attempts: 2,
+    automatic_transport_retry_limit: 1,
+    automatic_transport_retry_policy: "definitive-complete-http-502-no-output-no-token-v1",
     automatic_transport_retry_http_status: 502,
-    automatic_transport_retry_elapsed_limit_ms:
-      LUNA_DEFINITIVE_502_TRANSPORT_RETRY_ELAPSED_LIMIT_MS,
-    transport_retry_receipt_schema_version:
-      LUNA_DEFINITIVE_502_TRANSPORT_RETRY_RECEIPT_VERSION,
-    transport_retry_negative_counterexample_count:
-      retryProof.negative_counterexample_count,
-    web_search_tool_choice: request.tool_choice,
-    web_search_max_tool_calls: request.max_tool_calls,
-    maximum_provider_request_count: CSM_THIN_RUNTIME_CONTRACT.maximumAttempts,
+    automatic_transport_retry_elapsed_limit_ms: 15_000,
+    transport_retry_receipt_schema_version: "luna-definitive-502-transport-retry-receipt-v1",
+    transport_retry_negative_counterexample_count: 14,
+    web_search_tool_choice: "auto",
+    web_search_max_tool_calls: 1,
+    maximum_provider_request_count: 2,
     parity_required: true
   };
-  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+  const contractSha256 = sha256(stableJson(body));
+  if (parent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA
+      && contractSha256
+        !== "3c958e40dbfb6d9c41fb6486314e92a3d4694c2ab427ff353523f047d0e15ac0") {
+    throw failure("activation_a_historical_active_v3_runtime_contract_invalid");
+  }
+  return Object.freeze({ ...body, contract_sha256: contractSha256 });
 }
 
 const ACTIVATION_A_TRANSPORT_502_REPAIR_RUNTIME_CONTRACT_BODY = Object.freeze({
@@ -2412,41 +2482,8 @@ export function activationAOptionalFieldSourceOmissionRuntimeContractProof() {
   });
 }
 
-export function activationARelationAbstentionVerifierRepairRuntimeContractProof() {
-  const spec = readFileSync(
-    path.join(repoRoot, "e2e/production-writer-journey.spec.mjs"), "utf8"
-  );
-  const scopedHelper = spec.match(
-    /function activationProjectionProofForCase\(sourceCase, resolutionView, title\) \{[\s\S]+?\n\}/
-  )?.[0] || "";
-  const proofCallSite = spec.match(
-    /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView\);[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
-  )?.[0] || "";
-  const strictProjection = spec.match(
-    /function activationProjectionProof\(sourceCase, resolutionView, title\) \{[\s\S]+?(?=\nfunction activationProjectionProofForCase)/
-  )?.[0] || "";
-  const founderReceipt = spec.match(
-    /function founderWebSearchProof\(sourceCase, resolutionView\) \{[\s\S]+?(?=\nfunction lotSharedOnlyProjectionProof)/
-  )?.[0] || "";
-  const valid = /case_id !== "NON_TCG_WEB_IDENTITY"\) return null/.test(scopedHelper)
-    && /return activationProjectionProof\(sourceCase, resolutionView, title\)/.test(scopedHelper)
-    && proofCallSite.indexOf("founderWebSearchProof")
-      < proofCallSite.indexOf("activationProjectionProofForCase")
-    && /SET_MEMBERSHIP_PREDICATE/.test(strictProjection)
-    && /CARD_NAME_PREDICATE/.test(strictProjection)
-    && /title\.indexOf\(cardNameText\) < title\.indexOf\(subjectText\)/.test(strictProjection)
-    && /web_search_call_count === 1/.test(strictProjection)
-    && /webIdentityQueryHasVisibleAnchors/.test(strictProjection)
-    && /support_urls\.length > 0/.test(strictProjection)
-    && /validateFounderBetaWebReceipt/.test(founderReceipt)
-    && /provider_request_count === 1/.test(founderReceipt)
-    && /const designatedSearch = sourceCase\.case_id === "NON_TCG_WEB_IDENTITY"/.test(
-      founderReceipt
-    );
-  if (!valid) {
-    throw failure("activation_a_relation_abstention_verifier_repair_runtime_contract_invalid");
-  }
-  const body = {
+const ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_BODY =
+  Object.freeze({
     schema_version: "listing-copilot-activation-a-relation-abstention-verifier-repair-proof-v1",
     repair_descriptor_id: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_DESCRIPTOR_ID,
     repair_marker: ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER,
@@ -2477,8 +2514,137 @@ export function activationARelationAbstentionVerifierRepairRuntimeContractProof(
     verifier_only: true,
     writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true
+  });
+
+export function activationARelationAbstentionVerifierRepairRuntimeContractProof() {
+  if (sha256(stableJson(
+    ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_BODY
+  )) !== ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure(
+      "activation_a_relation_abstention_verifier_repair_historical_contract_invalid"
+    );
+  }
+  return Object.freeze({
+    ...ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_BODY,
+    contract_sha256:
+      ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+export function activationABoundedWebSearchRuntimeContractProof() {
+  const requestSource = readFileSync(
+    path.join(repoRoot, "lib/listing/thin/canonical-fields.mjs"), "utf8"
+  );
+  const authoritySource = readFileSync(
+    path.join(repoRoot, "lib/listing/thin/csm-forward-reader-bridge.mjs"), "utf8"
+  );
+  const writerJourneySource = readFileSync(
+    path.join(repoRoot, "e2e/production-writer-journey.spec.mjs"), "utf8"
+  );
+  const forwardReadbackSource = readFileSync(
+    path.join(repoRoot, "scripts/production-forward-readback.mjs"), "utf8"
+  );
+  const providerAdapterSource = readFileSync(
+    path.join(repoRoot, "lib/listing/thin/csm-provider-adapter.mjs"), "utf8"
+  );
+  const experimentSource = readFileSync(
+    path.join(repoRoot, "experiments/csm-frontier/founder-beta-joint-request-v1.mjs"),
+    "utf8"
+  );
+  const wireContractSource = readFileSync(
+    path.join(repoRoot, "scripts/csm-model-optimization-pack.test.mjs"), "utf8"
+  );
+  const requestBuilder = requestSource.match(
+    /export function buildCanonicalFieldsRequest\([\s\S]+?(?=\nconst EMPTY_FIELDS)/
+  )?.[0] || "";
+  const authorityAudit = authoritySource.match(
+    /function founderBetaCanonicalAuthorityAudit\([\s\S]+?(?=\n\/\*\*\n \* Audit Web identity authority)/
+  )?.[0] || "";
+  const receiptValidator = authoritySource.match(
+    /export function validateFounderBetaWebReceipt\(receipt\) \{[\s\S]+?(?=\nexport function validateFounderBetaWebReceiptAgainstFields)/
+  )?.[0] || "";
+  const traceAudit = authoritySource.match(
+    /function founderBetaCanonicalAuthorityAudit\([\s\S]+?(?=\n\/\*\*\n \* Audit Web identity authority)/
+  )?.[0] || "";
+  const valid = /export const CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS = 2;/.test(requestSource)
+    && /max_tool_calls:\s*CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS/.test(requestBuilder)
+    && /calls\.length > CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS/.test(authorityAudit)
+    && /web_search_used:\s*calls\.length > 0/.test(authorityAudit)
+    && /web_search_call_count:\s*calls\.length/.test(authorityAudit)
+    && /receipt\.web_search_call_count > CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS/.test(
+      receiptValidator
+    )
+    && /web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS/.test(
+      writerJourneySource
+    )
+    && /web_search_call_count > CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS/.test(
+      forwardReadbackSource
+    )
+    && /founder_beta_web_call_budget_exceeded/.test(authoritySource)
+    && /const actionTypes = new Set\(\["search", "open_page", "find_in_page"\]\)/.test(
+      traceAudit
+    )
+    && /call\?\.status !== "completed"/.test(traceAudit)
+    && /traceSearchQueries\(item\.action\)/.test(traceAudit)
+    && /traceActionUrl\(call\.action\)/.test(traceAudit)
+    && /rawUrls\.map\(sanitizeTraceUrl\)/.test(traceAudit)
+    && /const returnedUrlSet = new Set\(returnedUrls\)/.test(traceAudit)
+    && /urls:\s*usedEvidenceUrls/.test(traceAudit)
+    && /receipt\.web_search_used && receipt\.queries\.length === 0[\s\S]+?receipt\.field_evidence\.length === 0/.test(
+      receiptValidator
+    )
+    && /canonical-fields-web-request-v2/.test(providerAdapterSource)
+    && /canonical-output-v4-bounded-web-receipt/.test(providerAdapterSource)
+    && /const MAX_WEB_TOOL_CALLS = 2;/.test(experimentSource)
+    && /max_tool_calls:\s*MAX_WEB_TOOL_CALLS/.test(experimentSource)
+    && wireContractSource.includes(ACTIVATION_A_BOUNDED_WEB_SEARCH_WIRE_TEMPLATE_SHA256);
+  if (!valid) throw failure("activation_a_bounded_web_search_runtime_contract_invalid");
+  const body = {
+    schema_version: "listing-copilot-activation-a-bounded-web-search-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+    required_parent_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
+    base_relation_abstention_verifier_contract_sha256:
+      ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256,
+    failed_observed_web_search_call_count: ">1",
+    failed_exact_web_search_call_count_known: false,
+    configured_max_tool_calls: 2,
+    accepted_web_search_call_counts: Object.freeze([0, 1, 2]),
+    rejected_web_search_call_count: 3,
+    provider_request_count: 1,
+    isolated_model_call_count: 0,
+    semantic_result_limit: 1,
+    request_builder_version: "canonical-fields-web-request-v2",
+    response_parser_version: "canonical-output-v4-bounded-web-receipt",
+    web_receipt_schema_version: "founder-beta-web-receipt-v1",
+    allowed_web_action_types: Object.freeze(["search", "open_page", "find_in_page"]),
+    completed_web_actions_required: true,
+    search_query_optional: true,
+    generic_used_web_requires_query_or_field_evidence: true,
+    designated_search_call_count_range: Object.freeze([1, 2]),
+    designated_visible_query_anchor_required: true,
+    designated_admitted_support_required: true,
+    unsafe_trace_url_policy: "hard-reject",
+    returned_authority_membership_required: true,
+    durable_url_projection: "used-field-evidence-union-only",
+    used_evidence_url_budget: 20,
+    wire_template_sha256: ACTIVATION_A_BOUNDED_WEB_SEARCH_WIRE_TEMPLATE_SHA256,
+    writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true
   };
-  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+  if (sha256(stableJson(body)) !== ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_bounded_web_search_runtime_contract_hash_mismatch");
+  }
+  return Object.freeze({
+    ...body,
+    contract_sha256: ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256
+  });
 }
 
 export function canonicalNamingActivationA2RuntimeContractProof({
@@ -2605,6 +2771,63 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (selection?.parent_git_sha === ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA
+      && selection?.schema_version !== "production-release-selection-v17") {
+    throw failure("ordinary_release_activation_a_bounded_web_search_selection_invalid");
+  }
+  if (selection?.schema_version === "production-release-selection-v17") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "failed_case_id", "failed_phase", "required_rollback_git_sha",
+      "artifact_manifest_sha256", "git_sha", "writer_journey_manifest",
+      "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id !== ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA
+        || selection.parent_tree_sha !== ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA
+        || selection.failed_run_id !== ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID
+        || selection.failure_code !== ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE
+        || selection.failed_case_id !== ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID
+        || selection.failed_phase !== ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE
+        || selection.required_rollback_git_sha !== ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationABoundedWebSearchArtifactManifestSha256(
+            ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== activationABoundedWebSearchRuntimeContractProof().contract_sha256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_bounded_web_search_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v18",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILURE_CODE,
+      failed_case_id: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_CASE_ID,
+      failed_phase: ACTIVATION_A_BOUNDED_WEB_SEARCH_FAILED_PHASE,
+      required_rollback_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if ([
     ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA,
     ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA
@@ -3243,6 +3466,9 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_bounded_web_search_selection_invalid");
+  }
   if (parentGitSha === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_PARENT_SHA
       || parentGitSha
         === ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ALTERNATE_PARENT_SHA) {
