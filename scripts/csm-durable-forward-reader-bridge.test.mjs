@@ -254,6 +254,71 @@ assert.doesNotThrow(
   "one web tool call may contain multiple unique provider queries",
 );
 
+const withheldReferenceReceipt = structuredClone(webReceipt);
+withheldReferenceReceipt.field_evidence = [{
+  field: "product", support_urls: [], conflict_urls: [], unresolved_urls: []
+}];
+const withheldReferenceRows = structuredClone(standardRows);
+withheldReferenceRows.output.structured_output.founder_beta_web_receipt =
+  withheldReferenceReceipt;
+withheldReferenceRows.output.structured_output.sem.product = "";
+Object.assign(withheldReferenceRows.resolved.find((row) => row.bracket === "product"), {
+  selected_kind: "EMPTY", canonical_value: null, empty_reason: "ABSENT"
+});
+assert.deepEqual(
+  readDurableProjectionReceipt(withheldReferenceRows).founder_beta_web_receipt,
+  withheldReferenceReceipt,
+  "an empty identity evidence row is the durable v1 unreturned-source withheld marker"
+);
+const withheldReferenceTamper = structuredClone(withheldReferenceRows);
+withheldReferenceTamper.output.structured_output.sem.product = "Chrome";
+assert.throws(() => readDurableProjectionReceipt(withheldReferenceTamper),
+  /founder_beta_withheld_identity_state_invalid/,
+  "an empty marker must be paired with an empty post-withhold canonical field");
+const withheldResolvedTamper = structuredClone(withheldReferenceRows);
+Object.assign(withheldResolvedTamper.resolved.find((row) => row.bracket === "product"), {
+  selected_kind: "VALUE", canonical_value: "Chrome", empty_reason: null
+});
+assert.throws(() => readDurableProjectionReceipt(withheldResolvedTamper),
+  /founder_beta_withheld_identity_state_invalid/,
+  "an empty marker must also bind the canonical resolved row, not only SEM");
+const withheldResolvedMissing = structuredClone(withheldReferenceRows);
+withheldResolvedMissing.resolved = withheldResolvedMissing.resolved.filter(
+  (row) => row.bracket !== "product"
+);
+assert.throws(() => readDurableProjectionReceipt(withheldResolvedMissing),
+  /founder_beta_withheld_identity_state_invalid/,
+  "an empty marker cannot be paired with a missing canonical resolved row");
+const withheldResolvedDuplicate = structuredClone(withheldReferenceRows);
+withheldResolvedDuplicate.resolved.push({
+  ...structuredClone(withheldResolvedDuplicate.resolved.find(
+    (row) => row.bracket === "product"
+  )),
+  selected_kind: "VALUE", canonical_value: "Chrome", empty_reason: null
+});
+assert.throws(() => readDurableProjectionReceipt(withheldResolvedDuplicate),
+  /founder_beta_withheld_identity_state_invalid/,
+  "a duplicate VALUE row cannot hide behind an earlier EMPTY marker row");
+for (const invalidReceipt of [
+  {
+    ...structuredClone(withheldReferenceReceipt),
+    field_evidence: [{
+      field: "card_number", support_urls: [], conflict_urls: [], unresolved_urls: []
+    }]
+  },
+  {
+    ...structuredClone(withheldReferenceReceipt),
+    web_search_used: false,
+    web_search_call_count: 0,
+    queries: [],
+    urls: []
+  }
+]) {
+  assert.throws(() => validateFounderBetaWebReceipt(invalidReceipt),
+    /founder_beta_web_receipt_invalid/,
+    "an empty row is valid only for an identity field after a real Web call");
+}
+
 for (const [mutate, expected] of [
   [(value) => { delete value.output.structured_output.publication_coverage; }, /publication_coverage/],
   [(value) => { delete value.output.structured_output.lot_terminal; }, /lot_terminal/],

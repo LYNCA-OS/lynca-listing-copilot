@@ -635,6 +635,173 @@ for (const [field, value] of [
   `${field} must remain a hard current-copy authority boundary`);
 }
 
+function webFieldReferenceBody({
+  field = "product",
+  fields,
+  sourceIds,
+  returnedUrls = []
+}) {
+  const payload = audited(fields);
+  payload.field_sources = payload.field_sources.map((row) => (
+    row.field === field ? { ...row, source_ids: sourceIds } : row
+  ));
+  return {
+    model: "gpt-5.6-luna",
+    reasoning: { effort: "low" },
+    status: "completed",
+    output: [
+      { type: "web_search_call", action: {
+        query: "field source reference",
+        sources: returnedUrls.map((url) => ({ url }))
+      } },
+      { type: "message", content: [{
+        type: "output_text", text: JSON.stringify(payload),
+        annotations: returnedUrls.map((url) => ({ type: "url_citation", url }))
+      }] }
+    ]
+  };
+}
+
+const unreturnedReference = "https://www.pokemon.com/checklists/not-returned";
+const returnedOfficialReference = "https://www.paniniamerica.net/checklists/returned";
+const returnedUnknownReference = "https://www.ebay.com/itm/returned-reference";
+
+for (const [sourceId, returnedUrls] of [
+  [unreturnedReference, [returnedOfficialReference]]
+]) {
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+      fields: {
+        product: "Unreturned Product", subjects: ["Grounded Subject"], grammar: "standard"
+      },
+      sourceIds: [sourceId],
+      returnedUrls
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.fields.product, "");
+  assert.ok(!result.title.includes("Unreturned Product"));
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+    (row) => row.field === "product"
+  ), { field: "product", support_urls: [], conflict_urls: [], unresolved_urls: [] });
+  assert.ok(!JSON.stringify(result.founder_beta_web_receipt).includes(sourceId),
+    "an unreturned reference must never be fabricated into the durable URL receipt");
+}
+
+for (const [sourceIds, returnedUrls, expectedEvidence] of [
+  [["original_image_1", unreturnedReference], [], null],
+  [[returnedOfficialReference, unreturnedReference], [returnedOfficialReference], {
+    field: "product", support_urls: [returnedOfficialReference],
+    conflict_urls: [], unresolved_urls: []
+  }]
+]) {
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+      fields: {
+        product: "Admitted Product", subjects: ["Grounded Subject"], grammar: "standard"
+      },
+      sourceIds,
+      returnedUrls
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.fields.product, "Admitted Product",
+    "an image or returned governed source must admit despite an extra unreturned reference");
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+    (row) => row.field === "product"
+  ) || null, expectedEvidence);
+  assert.ok(!JSON.stringify(result.founder_beta_web_receipt).includes(unreturnedReference));
+}
+
+{
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+      fields: {
+        product: "Unsupported Product", subjects: ["Grounded Subject"], grammar: "standard"
+      },
+      sourceIds: [returnedUnknownReference, unreturnedReference],
+      returnedUrls: [returnedUnknownReference]
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  });
+  assert.equal(result.fields.product, "");
+  assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+    (row) => row.field === "product"
+  ), {
+    field: "product", support_urls: [], conflict_urls: [],
+    unresolved_urls: [returnedUnknownReference]
+  });
+  assert.ok(!JSON.stringify(result.founder_beta_web_receipt).includes(unreturnedReference));
+}
+
+{
+  const payload = audited({
+    product: "No-call Reference", subjects: ["Grounded Subject"], grammar: "standard"
+  });
+  payload.field_sources = payload.field_sources.map((row) => (
+    row.field === "product" ? { ...row, source_ids: [unreturnedReference] } : row
+  ));
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_field_source_not_returned",
+  "a non-image source claim without a real Web call must still fail closed");
+}
+
+for (const [field, fields, expectedCode] of [
+  ["card_number", {
+    card_number: "105", subjects: ["Grounded Subject"], grammar: "standard"
+  }, "founder_beta_field_source_not_returned"],
+  ["grammar", {
+    subjects: ["Grounded Subject"], grammar: "standard"
+  }, "founder_beta_web_authority_forbidden:grammar"]
+]) {
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+      field,
+      fields,
+      sourceIds: ["original_image_1", unreturnedReference]
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === expectedCode,
+  `${field} must preserve its hard authority boundary for an unreturned reference`);
+}
+
+await assert.rejects(runCanonicalListingPath({
+  imageUrls: ["https://example.invalid/card.jpg"],
+  model: "gpt-5.6-luna",
+  callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+    fields: {
+      product: "Unsafe Reference", subjects: ["Grounded Subject"], grammar: "standard"
+    },
+    sourceIds: ["https://user:secret@www.pokemon.com/checklists/unsafe"]
+  })), { status: 200, headers: { "content-type": "application/json" } })
+}), (error) => error.name === "CanonicalProviderError"
+  && error.provider_error_code === "founder_beta_web_url_unsafe",
+"URL-shaped unreturned references must still cross the HTTPS safety boundary");
+
+await assert.rejects(runCanonicalListingPath({
+  imageUrls: ["https://example.invalid/card.jpg"],
+  model: "gpt-5.6-luna",
+  callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+    fields: {
+      product: "Opaque Reference", subjects: ["Grounded Subject"], grammar: "standard"
+    },
+    sourceIds: ["provider-internal-source-reference"]
+  })), { status: 200, headers: { "content-type": "application/json" } })
+}), (error) => error.name === "CanonicalProviderError"
+  && error.provider_error_code === "founder_beta_web_url_invalid",
+"an opaque identity reference must remain a malformed provider source");
+
 function repeatedWebSourcesBody(urls, {
   sourceCopies = 1,
   annotationCopies = 1,

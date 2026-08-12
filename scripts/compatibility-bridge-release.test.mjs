@@ -13,6 +13,15 @@ import {
   ACTIVATION_A_CHANGED_PATHS,
   ACTIVATION_A_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -29,6 +38,7 @@ import {
   ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA,
   ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_TREE_SHA,
   ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_RUNTIME_CONTRACT_SHA256,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_DESCRIPTOR_ID,
   ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_FAILED_RUN_ID,
@@ -100,6 +110,7 @@ import {
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
   activationAIdentityAuthorityFailsoftRuntimeContractProof,
+  activationAFieldSourceReferenceRepairRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -138,6 +149,7 @@ const activationATransport502RepairGitSha = "9".repeat(40);
 const activationAGrammarSourceRepairGitSha = "0".repeat(40);
 const activationAIdentityAuthorityFailsoftGitSha = "b".repeat(40);
 const activationAWebSourceBudgetRepairGitSha = "c".repeat(40);
+const activationAFieldSourceReferenceRepairGitSha = "f".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -363,6 +375,33 @@ assert.deepEqual(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_CHANGED_PATHS, [
   "lib/listing/thin/csm-forward-reader-bridge.mjs",
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.equal(ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "ef9bacde20098903418784d335e28cfc81b0e19355e1647884b59d8da8f537bb");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-field-source-reference-repair-v1");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER,
+  "founder-beta-unreturned-source-withheld-v1");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+  "9713219eb271ac756532ad25bf3c51d2dc4e4bb9");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA,
+  "150e7c3edd2857d2c15fb1232f0e26af03ed14e5");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+  "d2113ec33a7bbceadc892875ae78b9bd9662b412");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID, "31623710607");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE,
+  "founder_beta_field_source_not_returned");
+assert.equal(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_ROLLBACK_SHA);
+assert.deepEqual(ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS, [
+  "e2e/production-writer-journey.spec.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-persistence.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-persistence.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
@@ -653,6 +692,16 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   ],
   changedPaths: [...ACTIVATION_A_TRANSPORT_502_REPAIR_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAFieldSourceReferenceRepairGitSha,
+  headSha: activationAFieldSourceReferenceRepairGitSha,
+  parentTreeSha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS]
+}), (error) => error.code
+  === "activation_a_field_source_reference_repair_parent_mismatch",
+"the same-tree squash parent must not impersonate the failed merge parent");
 const activationAGrammarSourceRepair = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAGrammarSourceRepairGitSha,
@@ -721,6 +770,75 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   ],
   changedPaths: [...ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
+const activationAFieldSourceReferenceRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAFieldSourceReferenceRepairGitSha,
+  headSha: activationAFieldSourceReferenceRepairGitSha,
+  parentTreeSha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS]
+});
+assert.equal(activationAFieldSourceReferenceRepair.schema_version,
+  "production-release-selection-v13");
+assert.equal(activationAFieldSourceReferenceRepair.repair_descriptor_id,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationAFieldSourceReferenceRepair.transition_marker,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER);
+assert.equal(activationAFieldSourceReferenceRepair.parent_git_sha,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA);
+assert.equal(activationAFieldSourceReferenceRepair.parent_tree_sha,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationAFieldSourceReferenceRepair.failed_run_id,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID);
+assert.equal(activationAFieldSourceReferenceRepair.failure_code,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE);
+assert.equal(activationAFieldSourceReferenceRepair.required_rollback_git_sha,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA);
+assert.equal(activationAFieldSourceReferenceRepair.writer_journey_manifest,
+  "writer-journey-cases-v4");
+assert.equal(activationAFieldSourceReferenceRepair.parity_required, true);
+assert.match(activationAFieldSourceReferenceRepair.artifact_manifest_sha256,
+  /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAFieldSourceReferenceRepairGitSha,
+    headSha: activationAFieldSourceReferenceRepairGitSha,
+    parentTreeSha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_field_source_reference_repair_changed_paths_invalid",
+    "activation_a_field_source_reference_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAFieldSourceReferenceRepairGitSha,
+  headSha: activationAFieldSourceReferenceRepairGitSha,
+  parentTreeSha: "a".repeat(40),
+  parentShas: [ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS]
+}), (error) => error.code
+  === "activation_a_field_source_reference_repair_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAFieldSourceReferenceRepairGitSha,
+  headSha: activationAFieldSourceReferenceRepairGitSha,
+  parentTreeSha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+  parentShas: [
+    ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+    ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA
+  ],
+  changedPaths: [...ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
+
 const activationAWebSourceBudgetRepair = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAWebSourceBudgetRepairGitSha,
@@ -1550,6 +1668,49 @@ assert.equal(activationAWebSourceBudgetRepairProof.unsafe_negative_counterexampl
   5);
 assert.equal(activationAWebSourceBudgetRepair.contract_sha256,
   activationAWebSourceBudgetRepairProof.contract_sha256);
+assert.equal(activationAWebSourceBudgetRepairProof.contract_sha256,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "selection-v12 must replay its literal proof instead of reading live reference logic");
+const activationAFieldSourceReferenceRepairProof =
+  activationAFieldSourceReferenceRepairRuntimeContractProof();
+assert.equal(activationAFieldSourceReferenceRepairProof.schema_version,
+  "listing-copilot-activation-a-field-source-reference-repair-proof-v1");
+assert.equal(activationAFieldSourceReferenceRepairProof.repair_descriptor_id,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID);
+assert.equal(activationAFieldSourceReferenceRepairProof.repair_marker,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER);
+assert.equal(activationAFieldSourceReferenceRepairProof.required_parent_git_sha,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA);
+assert.equal(activationAFieldSourceReferenceRepairProof.required_parent_tree_sha,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationAFieldSourceReferenceRepairProof.failed_run_id,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID);
+assert.equal(activationAFieldSourceReferenceRepairProof.failure_code,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE);
+assert.equal(activationAFieldSourceReferenceRepairProof.required_rollback_git_sha,
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA);
+assert.equal(
+  activationAFieldSourceReferenceRepairProof.base_web_source_budget_contract_sha256,
+  ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationAFieldSourceReferenceRepairProof.unreturned_source_marker,
+  "all-empty-field-evidence-row-v1");
+assert.deepEqual(activationAFieldSourceReferenceRepairProof.marker_fields,
+  ["year", "manufacturer", "product", "set", "subjects", "card_name"]);
+assert.equal(activationAFieldSourceReferenceRepairProof.marker_requires_real_web_call,
+  true);
+assert.equal(activationAFieldSourceReferenceRepairProof.unreturned_reference_url_persisted,
+  false);
+assert.equal(activationAFieldSourceReferenceRepairProof.no_call_source_claim_policy,
+  "hard-reject");
+assert.equal(activationAFieldSourceReferenceRepairProof.current_copy_source_claim_policy,
+  "hard-reject");
+assert.equal(activationAFieldSourceReferenceRepairProof.grammar_web_authority,
+  "forbidden");
+assert.equal(activationAFieldSourceReferenceRepairProof.durable_resolved_state,
+  "exactly-one-empty-null");
+assert.equal(activationAFieldSourceReferenceRepairProof.negative_counterexample_count, 5);
+assert.equal(activationAFieldSourceReferenceRepair.contract_sha256,
+  activationAFieldSourceReferenceRepairProof.contract_sha256);
 const activationA2Proof = activeV2OrdinaryRuntimeContractProof({
   parentGitSha: CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA
 });
@@ -2031,6 +2192,99 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_activation_a_grammar_source_repair_selection_invalid",
 "the failed grammar candidate may not escape through generic ordinary lineage");
+const activationAFieldSourceReferenceRepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAFieldSourceReferenceRepair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAFieldSourceReferenceRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v14",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER,
+  release_git_sha: activationAFieldSourceReferenceRepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE,
+  required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAFieldSourceReferenceRepair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationAFieldSourceReferenceRepair, repair_descriptor_id: "unknown-repair" },
+  { ...activationAFieldSourceReferenceRepair, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationAFieldSourceReferenceRepair,
+    parent_git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA },
+  { ...activationAFieldSourceReferenceRepair, parent_tree_sha: "a".repeat(40) },
+  { ...activationAFieldSourceReferenceRepair, failed_run_id: "31623710606" },
+  { ...activationAFieldSourceReferenceRepair,
+    failure_code: "founder_beta_field_sources_invalid" },
+  { ...activationAFieldSourceReferenceRepair,
+    required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA },
+  { ...activationAFieldSourceReferenceRepair, artifact_manifest_sha256: "a".repeat(64) },
+  { ...activationAFieldSourceReferenceRepair,
+    writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationAFieldSourceReferenceRepair, parity_required: false },
+  { ...activationAFieldSourceReferenceRepair,
+    contract_sha256: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_RUNTIME_CONTRACT_SHA256 },
+  { ...activationAFieldSourceReferenceRepair, git_sha: "not-a-git-sha" },
+  { ...activationAFieldSourceReferenceRepair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_field_source_reference_repair_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+  "a".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAFieldSourceReferenceRepair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA,
+    git_sha: activationAFieldSourceReferenceRepairGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: activationAFieldSourceReferenceRepairProof.contract_sha256
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_field_source_reference_repair_selection_invalid",
+"the failed field-source candidate may not escape generic ordinary lineage");
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: null,
+    parent_git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA,
+    required_rollback_git_sha:
+      ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA,
+    git_sha: activationAFieldSourceReferenceRepairGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: activationAFieldSourceReferenceRepairProof.contract_sha256
+  },
+  rollbackReceipt: {
+    git_sha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ALTERNATE_PARENT_SHA
+  }
+}), (error) => error.code
+  === "ordinary_release_activation_a_field_source_reference_repair_selection_invalid",
+"the same-tree squash parent may not escape through generic ordinary lineage");
+
 const activationAWebSourceBudgetRepairLineage = verifyOrdinaryRollbackLineage({
   selection: activationAWebSourceBudgetRepair,
   rollbackReceipt: { git_sha: ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA }
@@ -2340,6 +2594,8 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationAFieldSourceReferenceRepair =
+    actualParent === ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_SHA;
   const actualActivationAWebSourceBudgetRepair =
     actualParent === ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_PARENT_SHA;
   const actualActivationAIdentityAuthorityFailsoft =
@@ -2348,7 +2604,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationAWebSourceBudgetRepair
+  const actualTransitionMarker = actualActivationAFieldSourceReferenceRepair
+    ? ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_MARKER
+    : actualActivationAWebSourceBudgetRepair
     ? ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_MARKER
     : actualActivationAIdentityAuthorityFailsoft
     ? ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_MARKER
@@ -2412,7 +2670,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationAWebSourceBudgetRepair
+      actualActivationAFieldSourceReferenceRepair
+        ? "production-release-selection-v13"
+        : actualActivationAWebSourceBudgetRepair
         ? "production-release-selection-v12"
         : actualActivationAIdentityAuthorityFailsoft
         ? "production-release-selection-v11"
@@ -2433,7 +2693,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationAWebSourceBudgetRepair
+      actualActivationAFieldSourceReferenceRepair
+        ? ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_ROLLBACK_SHA
+        : actualActivationAWebSourceBudgetRepair
         ? ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_ROLLBACK_SHA
         : actualActivationAIdentityAuthorityFailsoft
         ? ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_ROLLBACK_SHA
@@ -2448,8 +2710,10 @@ try {
           : actualActivationA2
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
-    assert.equal(savedLineage.schema_version, actualActivationAWebSourceBudgetRepair
-      ? "production-release-rollback-lineage-receipt-v13"
+    assert.equal(savedLineage.schema_version, actualActivationAFieldSourceReferenceRepair
+      ? "production-release-rollback-lineage-receipt-v14"
+      : actualActivationAWebSourceBudgetRepair
+        ? "production-release-rollback-lineage-receipt-v13"
       : actualActivationAIdentityAuthorityFailsoft
         ? "production-release-rollback-lineage-receipt-v12"
       : actualActivationAGrammarSourceRepair
@@ -2466,7 +2730,25 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationAWebSourceBudgetRepair) {
+    if (actualActivationAFieldSourceReferenceRepair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_FAILURE_CODE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationAWebSourceBudgetRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_WEB_SOURCE_BUDGET_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

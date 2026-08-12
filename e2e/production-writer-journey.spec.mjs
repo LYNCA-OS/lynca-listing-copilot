@@ -648,7 +648,11 @@ function founderWebSearchProof(sourceCase, resolutionView) {
       || webIdentityQueryHasVisibleAnchors(receipt.queries),
     source_url_count: receipt.urls.length,
     unresolved_authority_fields: receipt.field_evidence.filter(
-      (entry) => entry.unresolved_urls.length > 0
+      (entry) => entry.unresolved_urls.length > 0 || (
+        entry.support_urls.length === 0
+        && entry.conflict_urls.length === 0
+        && entry.unresolved_urls.length === 0
+      )
     ).map((entry) => entry.field)
   });
 }

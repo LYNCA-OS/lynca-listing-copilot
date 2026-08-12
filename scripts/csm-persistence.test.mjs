@@ -91,6 +91,36 @@ const rows = buildCsmStageRows({
   title: composed.title, createdAt: "2026-08-01T00:00:00Z", ...noSearchReceipts(fields)
 });
 
+{
+  const withheldFields = { ...structuredClone(fields), product: "" };
+  const withheldComposed = composeFromCanonicalFields(withheldFields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
+  const withheldReceipts = noSearchReceipts(withheldFields);
+  withheldReceipts.founderBetaWebReceipt = {
+    ...withheldReceipts.founderBetaWebReceipt,
+    web_search_used: true,
+    web_search_call_count: 1,
+    queries: ["Topps Chrome source"],
+    urls: [],
+    field_evidence: [{
+      field: "product", support_urls: [], conflict_urls: [], unresolved_urls: []
+    }]
+  };
+  assert.doesNotThrow(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "withheld-product", fields: withheldFields,
+    composed: withheldComposed, title: withheldComposed.title,
+    createdAt: "2026-08-01T00:00:00Z", ...withheldReceipts
+  }), "an empty withheld marker may persist only with an empty canonical field");
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "tampered-product", fields,
+    composed, title: composed.title, createdAt: "2026-08-01T00:00:00Z",
+    ...withheldReceipts
+  }), /founder_beta_web_receipt_invalid/,
+  "writer persistence must reject an empty withheld marker with a nonempty canonical field");
+}
+
 // Active Canonical Naming is one exact executable identity: v3, its named
 // profile, and the profile's 80-character budget. A missing version must not
 // silently relabel a CNL receipt as historical v2, and a shorter ad-hoc budget
