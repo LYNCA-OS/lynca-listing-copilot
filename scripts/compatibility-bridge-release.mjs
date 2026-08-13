@@ -31,14 +31,9 @@ import {
 import {
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
   FOUNDER_BETA_WEB_RECEIPT_VERSION,
-  governedIdentityAuthorityUrl,
   validateFounderBetaWebReceipt,
   validateFounderBetaWebReceiptAgainstFields
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
-import {
-  CANONICAL_FIELDS_PROMPT,
-  CANONICAL_FIELDS_PROMPT_VERSION
-} from "../lib/listing/thin/canonical-fields.mjs";
 import { SET_CARD_NAME_RELATION_CONTRACT_VERSION } from
   "../lib/listing/thin/set-card-name-contract.mjs";
 import {
@@ -86,14 +81,6 @@ import {
 import {
   PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
 } from "./production-standard-p0-verifier.mjs";
-import {
-  governedIdentityAppliedSupportUrl,
-  governedAppliedWebSupportProof,
-  strictNoSearchReceipt,
-  WEB_IDENTITY_CONTENT_ACCEPTANCE,
-  webIdentityContentProjectionProof,
-  webIdentityQueryHasVisibleAnchors
-} from "./production-forward-readback.mjs";
 import {
   PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT,
   PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX
@@ -362,6 +349,30 @@ export const ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PROMPT_SHA256 =
   "b34ca3b2d9ef6fd8b9727548985d21a6bc1cfe481e34c49ca32de5187f8ef29f";
 export const ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256 =
   "00f343e7fc25e1b036a4474d834d335e427cb87a4ee3cc9168b565df9a37d61a";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-field-source-ledger-repair-v1";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER =
+  "founder-beta-field-source-ledger-repair-v1";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA =
+  "3f06cc0f55aec1065a0ef454752763297cf19a72";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA =
+  "c6c2b01fe623f3c2aed225db1ff9141205e5b3d6";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ALTERNATE_PARENT_SHA =
+  "562b050c09bcac522a77955d5d3da749ad1fe8cd";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_RUN_ID = "31718162992";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILURE_CODE =
+  "founder_beta_field_sources_invalid";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_CASE_ID = "NON_TCG";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_PHASE =
+  "RECOGNITION_RESPONSE";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA =
+  ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_DIFF_SHA256 =
+  "1bcdaad966a3586112a8617d0e86612fafb02cbe97708ff83981c080e105eea5";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256 =
+  "023ef0d7241d49c4dcfdd45a2d550005c82dd3de1fc5b89f5531f4acea94b3d8";
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "a21d6b23fd711d71e8c2d5d308f6944b39f6122e2ef2b81ecc2dc44abea9dbbd";
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -575,6 +586,12 @@ export const ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS = Object.freeze
   "scripts/production-forward-readback.mjs",
   "scripts/production-forward-readback.test.mjs",
   "scripts/production-writer-journey-contract.test.mjs"
+]);
+export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS = Object.freeze([
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
@@ -1037,6 +1054,20 @@ function exactActivationAOfficialIdentitySearchChangedPaths(values) {
   return actual;
 }
 
+function exactActivationAFieldSourceLedgerRepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_field_source_ledger_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_field_source_ledger_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -1253,7 +1284,28 @@ function activationAOfficialIdentitySearchArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function activationAFieldSourceLedgerRepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA,
+    runtime_diff_sha256: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_DIFF_SHA256,
+    runtime_content_manifest_sha256:
+      ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+    changed_paths: exactActivationAFieldSourceLedgerRepairChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA) {
+    return ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA) {
     return ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_MARKER;
   }
@@ -1311,7 +1363,7 @@ function gitChangedPaths(parentSha, sha) {
   return value ? value.split("\n") : [];
 }
 
-function committedRuntimeContentManifest(candidateSha, runtimePaths) {
+function committedRuntimeContentManifest(candidateSha, runtimePaths, failureCode) {
   const sha = exactGitSha(candidateSha);
   try {
     return runtimePaths.map((entry) => Object.freeze({
@@ -1322,7 +1374,7 @@ function committedRuntimeContentManifest(candidateSha, runtimePaths) {
       }))
     }));
   } catch {
-    throw failure("activation_a_official_identity_search_committed_content_invalid");
+    throw failure(failureCode);
   }
 }
 
@@ -1335,7 +1387,8 @@ export function verifyCompatibilityBridgeSelection({
   parentTreeSha = null,
   parentShas = null,
   changedPaths = null,
-  officialIdentityRuntimeContentManifest = null
+  officialIdentityRuntimeContentManifest = null,
+  fieldSourceLedgerRuntimeContentManifest = null
 } = {}) {
   const selected = String(releaseClass || "").trim();
   if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(selected)) {
@@ -1359,6 +1412,9 @@ export function verifyCompatibilityBridgeSelection({
     if (parentGitSha === COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA) {
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
+    if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ALTERNATE_PARENT_SHA) {
+      throw failure("activation_a_field_source_ledger_repair_parent_mismatch");
+    }
     if (parentGitSha === ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ALTERNATE_PARENT_SHA) {
       throw failure("activation_a_official_identity_search_parent_mismatch");
     }
@@ -1376,6 +1432,44 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA) {
+        throw failure("activation_a_field_source_ledger_repair_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationAFieldSourceLedgerRepairChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationAFieldSourceLedgerRepairRuntimeContractProof({
+        candidateGitSha: expectedSha,
+        runtimeContentManifest: fieldSourceLedgerRuntimeContentManifest
+      });
+      return Object.freeze({
+        schema_version: "production-release-selection-v19",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER,
+        parent_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILURE_CODE,
+        failed_case_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_CASE_ID,
+        failed_phase: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_PHASE,
+        required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationAFieldSourceLedgerRepairArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA}^{tree}`
@@ -2727,109 +2821,130 @@ export function activationABoundedWebSearchRuntimeContractProof() {
   });
 }
 
-export function activationAOfficialIdentitySearchRuntimeContractProof({
+const ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_BODY = Object.freeze({
+  schema_version: "listing-copilot-activation-a-official-identity-search-proof-v1",
+  repair_descriptor_id: "listing-copilot-activation-a-official-identity-search-v1",
+  repair_marker: "founder-beta-official-identity-search-v1",
+  required_parent_git_sha: "fa16f68d4502a9ab8a9377c4f53c1732fb1826f7",
+  required_parent_tree_sha: "dc929f7580d899036037808a0a7b3fb629d0970f",
+  failed_run_id: "31709127458",
+  failure_code: "ACTIVATION_RECEIPT_MISMATCH",
+  failed_case_id: "NON_TCG_WEB_IDENTITY",
+  failed_phase: "RESOLUTION_VIEW",
+  required_rollback_git_sha: "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c",
+  base_bounded_web_search_contract_sha256:
+    "1f79aa05cb5186cadd56c51b77a9249ccf8c5155c341ccb615bf8bb7afa1948a",
+  runtime_content_manifest_sha256:
+    "1419691be9f34d6603e4230a24ddefb4e2703ddf0c712b9c3307245a630adcad",
+  runtime_content_source: "candidate-git-object-blobs",
+  prompt_version: "csm-canonical-fields-web-v2",
+  prompt_sha256: "b34ca3b2d9ef6fd8b9727548985d21a6bc1cfe481e34c49ca32de5187f8ef29f",
+  wire_template_sha256:
+    "c024fe60ebac7e955fb8bbc0db19184bae08dfa8f648f60b890b858f4afb6ca6",
+  original_set_sha256: "f2c21929f45fc664aa0136bb5f3ef045018b53bbe05ada9cf799bb914213f2a0",
+  query_anchor_policy: "exact-card-number-and-subject-or-product",
+  governed_support_policy: "official-checklist-set-or-card-name-only",
+  governed_host_validator_sha256:
+    "ae6d0ddcb96f4c4bcc6e1074cba69cd6495233ea0ad1b1767e7d896513a5d6e1",
+  query_anchor_validator_sha256:
+    "56a982ebbcd5c00407ae53a4f4de0d38b5f6bd227cf5f5a93b6d12c26de85869",
+  checklist_resource_validator_sha256:
+    "ac000d0b2a512eab056e34240b9917d70ad25fffa5e3de5d797df992c93d2f18",
+  content_projection_validator_sha256:
+    "de20d756143270c155f51612c73caa926c30ec63a5aded3ebb033f1ca041b318",
+  applied_search_validator_sha256:
+    "6732c508dec7c2864c13450ba9857bdfdbec7ea6023b1dc7ddd56d04386912d0",
+  strict_no_search_validator_sha256:
+    "8539f98fa4894de2b77d9aa59690bb00bf190b39df193f0b12fe53f4c39a2ac2",
+  qualified_governed_search_case_count: 1,
+  strict_no_search_case_count_minimum: 1,
+  canonical_relation_binding: "unique-value-bracket",
+  public_projection_binding: "unique-rendered-span-and-one-published-atom",
+  public_title_order: "set-card_name-subject-card_number",
+  selected_forward_readback_case: "qualified-governed-search-case",
+  candidate_forward_readback_provider_calls: 0,
+  promoted_forward_readback_provider_calls: 0,
+  promoted_full_resolution_view_exact_match: true,
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true
+});
+
+export function activationAOfficialIdentitySearchRuntimeContractProof() {
+  if (sha256(stableJson(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_BODY))
+      !== ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_official_identity_search_historical_contract_invalid");
+  }
+  return Object.freeze({
+    ...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_BODY,
+    contract_sha256: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+export function activationAFieldSourceLedgerRepairRuntimeContractProof({
   candidateGitSha = null,
   runtimeContentManifest = null
 } = {}) {
-  const requestSource = readFileSync(
-    path.join(repoRoot, "lib/listing/thin/canonical-fields.mjs"), "utf8"
-  );
-  const authoritySource = readFileSync(
+  const bridgeSource = readFileSync(
     path.join(repoRoot, "lib/listing/thin/csm-forward-reader-bridge.mjs"), "utf8"
   );
-  const writerJourneySource = readFileSync(
-    path.join(repoRoot, "e2e/production-writer-journey.spec.mjs"), "utf8"
+  const boundarySource = readFileSync(
+    path.join(repoRoot, "scripts/thin-listing-provider-boundary.test.mjs"), "utf8"
   );
-  const forwardReadbackSource = readFileSync(
-    path.join(repoRoot, "scripts/production-forward-readback.mjs"), "utf8"
-  );
-  const wireContractSource = readFileSync(
-    path.join(repoRoot, "scripts/csm-model-optimization-pack.test.mjs"), "utf8"
-  );
-  const receiptValidator = authoritySource.match(
-    /export function validateFounderBetaWebReceipt\(receipt\) \{[\s\S]+?(?=\nexport function validateFounderBetaWebReceiptAgainstFields)/
-  )?.[0] || "";
-  const functionSha256 = (fn) => sha256(fn.toString());
-  const runtimePaths = ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS.filter(
+  const runtimePaths = ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS.filter(
     (entry) => !entry.startsWith("scripts/compatibility-bridge-release")
   );
-  const committedContent = runtimeContentManifest
-    ?? committedRuntimeContentManifest(candidateGitSha ?? gitText(["rev-parse", "HEAD"]),
-      runtimePaths);
+  const committedContent = runtimeContentManifest ?? committedRuntimeContentManifest(
+    candidateGitSha ?? gitText(["rev-parse", "HEAD"]), runtimePaths,
+    "activation_a_field_source_ledger_repair_committed_content_invalid"
+  );
   const valid = sha256(stableJson(committedContent))
-      === ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTENT_MANIFEST_SHA256
-    && CANONICAL_FIELDS_PROMPT_VERSION === "csm-canonical-fields-web-v2"
-    && sha256(CANONICAL_FIELDS_PROMPT)
-      === ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PROMPT_SHA256
-    && wireContractSource.includes(
-      ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_WIRE_TEMPLATE_SHA256
-    )
-    && /row\.support_urls\.some\(\(url\) => !governedIdentityAuthorityUrl\(url\)\)/.test(
-      receiptValidator
-    )
-    && writerJourneySource.includes("governedAppliedWebSupportProof")
-    && writerJourneySource.includes("strictNoSearchReceipt")
-    && writerJourneySource.includes("qualifiedGovernedWebCases.length === 1")
-    && writerJourneySource.includes("strictNoSearchCases.length >= 1")
-    && writerJourneySource.includes("selected_forward_readback_case_id")
-    && writerJourneySource.includes("resolutionViewsByCaseId")
-    && forwardReadbackSource.includes("governedIdentityAppliedSupportUrl")
-    && forwardReadbackSource.includes("exactRenderedSpan")
-    && forwardReadbackSource.includes("publication_coverage")
-    && forwardReadbackSource.includes("matches.length !== 1")
-    && forwardReadbackSource.includes("verify-promoted")
-    && functionSha256(governedIdentityAuthorityUrl)
-      === "ae6d0ddcb96f4c4bcc6e1074cba69cd6495233ea0ad1b1767e7d896513a5d6e1"
-    && functionSha256(webIdentityQueryHasVisibleAnchors)
-      === "56a982ebbcd5c00407ae53a4f4de0d38b5f6bd227cf5f5a93b6d12c26de85869";
-  if (!valid) throw failure("activation_a_official_identity_search_runtime_contract_invalid");
+      === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256
+    && bridgeSource.includes("const normalizedSourceRows = new Map()")
+    && bridgeSource.includes("!Array.isArray(row?.source_ids)")
+    && bridgeSource.includes("for (const sourceId of row.source_ids.map(clean).filter(Boolean))")
+    && bridgeSource.includes("if (!sourceIds.length) continue")
+    && bridgeSource.includes("founder_beta_field_source_not_returned")
+    && bridgeSource.includes("founder_beta_current_copy_source_required")
+    && boundarySource.includes("malformed ledger rows must remain a hard provider-contract failure")
+    && boundarySource.includes("duplicate-row order must not hide an unsafe source")
+    && boundarySource.includes("duplicate-row order must retain the unreturned-reference hard gate")
+    && boundarySource.includes("duplicate Web rows must not replace current-copy authority");
+  if (!valid) throw failure("activation_a_field_source_ledger_repair_runtime_contract_invalid");
   const body = {
-    schema_version: "listing-copilot-activation-a-official-identity-search-proof-v1",
-    repair_descriptor_id: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_DESCRIPTOR_ID,
-    repair_marker: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_MARKER,
-    required_parent_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
-    required_parent_tree_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA,
-    failed_run_id: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_RUN_ID,
-    failure_code: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILURE_CODE,
-    failed_case_id: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_CASE_ID,
-    failed_phase: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_PHASE,
-    required_rollback_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA,
-    base_bounded_web_search_contract_sha256:
-      ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256,
+    schema_version: "listing-copilot-activation-a-field-source-ledger-repair-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER,
+    required_parent_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA,
+    base_official_identity_search_contract_sha256:
+      ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256,
+    runtime_diff_sha256: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_DIFF_SHA256,
     runtime_content_manifest_sha256:
-      ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTENT_MANIFEST_SHA256,
+      ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
     runtime_content_source: "candidate-git-object-blobs",
-    prompt_version: CANONICAL_FIELDS_PROMPT_VERSION,
-    prompt_sha256: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PROMPT_SHA256,
-    wire_template_sha256: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_WIRE_TEMPLATE_SHA256,
-    original_set_sha256: WEB_IDENTITY_CONTENT_ACCEPTANCE.original_set_sha256,
-    query_anchor_policy: "exact-card-number-and-subject-or-product",
-    governed_support_policy: "official-checklist-set-or-card-name-only",
-    governed_host_validator_sha256: functionSha256(governedIdentityAuthorityUrl),
-    query_anchor_validator_sha256: functionSha256(webIdentityQueryHasVisibleAnchors),
-    checklist_resource_validator_sha256: functionSha256(governedIdentityAppliedSupportUrl),
-    content_projection_validator_sha256: functionSha256(webIdentityContentProjectionProof),
-    applied_search_validator_sha256: functionSha256(governedAppliedWebSupportProof),
-    strict_no_search_validator_sha256: functionSha256(strictNoSearchReceipt),
-    qualified_governed_search_case_count: 1,
-    strict_no_search_case_count_minimum: 1,
-    canonical_relation_binding: "unique-value-bracket",
-    public_projection_binding: "unique-rendered-span-and-one-published-atom",
-    public_title_order: "set-card_name-subject-card_number",
-    selected_forward_readback_case: "qualified-governed-search-case",
-    candidate_forward_readback_provider_calls: 0,
-    promoted_forward_readback_provider_calls: 0,
-    promoted_full_resolution_view_exact_match: true,
+    duplicate_field_row_policy: "stable-ordered-source-union",
+    duplicate_source_policy: "first-seen-stable-deduplication",
+    normalized_empty_group_policy: "equivalent-to-omitted-row-clear-or-unreadable",
+    malformed_row_policy: "hard-reject",
+    unsafe_url_policy: "hard-reject",
+    unreturned_source_policy: "hard-reject",
+    current_copy_authority_policy: "hard-reject",
+    downstream_sem_composer_unsupported_value_policy: "excluded",
     writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true
   };
   if (sha256(stableJson(body))
-      !== ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256) {
-    throw failure("activation_a_official_identity_search_runtime_contract_hash_mismatch");
+      !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_field_source_ledger_repair_runtime_contract_hash_mismatch");
   }
   return Object.freeze({
     ...body,
-    contract_sha256: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256
+    contract_sha256: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256
   });
 }
 
@@ -2957,6 +3072,70 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if ([
+    ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
+    ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ALTERNATE_PARENT_SHA
+  ].includes(selection?.parent_git_sha)
+      && selection?.schema_version !== "production-release-selection-v19") {
+    throw failure("ordinary_release_activation_a_field_source_ledger_repair_selection_invalid");
+  }
+  if (selection?.schema_version === "production-release-selection-v19") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "failed_case_id", "failed_phase", "required_rollback_git_sha",
+      "artifact_manifest_sha256", "git_sha", "writer_journey_manifest",
+      "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id
+          !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA
+        || selection.parent_tree_sha
+          !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA
+        || selection.failed_run_id !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_RUN_ID
+        || selection.failure_code !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILURE_CODE
+        || selection.failed_case_id
+          !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_CASE_ID
+        || selection.failed_phase !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_PHASE
+        || selection.required_rollback_git_sha
+          !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationAFieldSourceLedgerRepairArtifactManifestSha256(
+            ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_field_source_ledger_repair_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v20",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILURE_CODE,
+      failed_case_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_CASE_ID,
+      failed_phase: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_PHASE,
+      required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if (selection?.parent_git_sha === ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA
       && selection?.schema_version !== "production-release-selection-v18") {
     throw failure("ordinary_release_activation_a_official_identity_search_selection_invalid");
@@ -3713,6 +3892,10 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA
+      || parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ALTERNATE_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_field_source_ledger_repair_selection_invalid");
+  }
   if (parentGitSha === ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA) {
     throw failure("ordinary_release_activation_a_bounded_web_search_selection_invalid");
   }
