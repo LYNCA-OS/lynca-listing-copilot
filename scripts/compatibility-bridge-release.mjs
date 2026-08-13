@@ -2,7 +2,6 @@
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -373,6 +372,24 @@ export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SH
   "023ef0d7241d49c4dcfdd45a2d550005c82dd3de1fc5b89f5531f4acea94b3d8";
 export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256 =
   "a21d6b23fd711d71e8c2d5d308f6944b39f6122e2ef2b81ecc2dc44abea9dbbd";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-depth2-history-repair-v1";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER =
+  "founder-beta-depth2-history-repair-v1";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA =
+  "51d677fe4cf700b136447a99d51a722687343c58";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA =
+  "ad69858d5064c0f7f20b07bf4d3c96abdeea8f7f";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA =
+  "856a122eaf3d53537adedbbe837c9583abce3f3e";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID = "31722175159";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE =
+  "git_checkout_unable_to_read_tree";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID = "RELEASE_ARTIFACT";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE = "RELEASE_ARTIFACT";
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA = ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "3536c10f9125c17fba6b0cc8cd2b17c4713b3a236f6036888cf44caa58b079a2";
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -592,6 +609,10 @@ export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS = Object.free
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS = Object.freeze([
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
@@ -1068,6 +1089,20 @@ function exactActivationAFieldSourceLedgerRepairChangedPaths(values) {
   return actual;
 }
 
+function exactActivationADepth2HistoryRepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_depth2_history_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_depth2_history_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -1302,7 +1337,25 @@ function activationAFieldSourceLedgerRepairArtifactManifestSha256(changedPaths) 
   }));
 }
 
+function activationADepth2HistoryRepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+    changed_paths: exactActivationADepth2HistoryRepairChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA) {
+    return ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA) {
     return ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER;
   }
@@ -1363,21 +1416,6 @@ function gitChangedPaths(parentSha, sha) {
   return value ? value.split("\n") : [];
 }
 
-function committedRuntimeContentManifest(candidateSha, runtimePaths, failureCode) {
-  const sha = exactGitSha(candidateSha);
-  try {
-    return runtimePaths.map((entry) => Object.freeze({
-      path: entry,
-      sha256: sha256(execFileSync("git", ["show", `${sha}:${entry}`], {
-        cwd: repoRoot,
-        maxBuffer: 16 * 1024 * 1024
-      }))
-    }));
-  } catch {
-    throw failure(failureCode);
-  }
-}
-
 export function verifyCompatibilityBridgeSelection({
   releaseClass,
   gitSha,
@@ -1412,6 +1450,9 @@ export function verifyCompatibilityBridgeSelection({
     if (parentGitSha === COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA) {
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
     }
+    if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA) {
+      throw failure("activation_a_depth2_history_repair_parent_mismatch");
+    }
     if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ALTERNATE_PARENT_SHA) {
       throw failure("activation_a_field_source_ledger_repair_parent_mismatch");
     }
@@ -1432,6 +1473,39 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA) {
+        throw failure("activation_a_depth2_history_repair_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationADepth2HistoryRepairChangedPaths(
+        changedPaths ?? gitChangedPaths(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+          expectedSha)
+      );
+      const contract = activationADepth2HistoryRepairRuntimeContractProof();
+      return Object.freeze({
+        schema_version: "production-release-selection-v20",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+        parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+        failed_case_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID,
+        failed_phase: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE,
+        required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationADepth2HistoryRepairArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA}^{tree}`
@@ -2880,71 +2954,81 @@ export function activationAOfficialIdentitySearchRuntimeContractProof() {
   });
 }
 
-export function activationAFieldSourceLedgerRepairRuntimeContractProof({
-  candidateGitSha = null,
-  runtimeContentManifest = null
-} = {}) {
-  const bridgeSource = readFileSync(
-    path.join(repoRoot, "lib/listing/thin/csm-forward-reader-bridge.mjs"), "utf8"
-  );
-  const boundarySource = readFileSync(
-    path.join(repoRoot, "scripts/thin-listing-provider-boundary.test.mjs"), "utf8"
-  );
-  const runtimePaths = ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS.filter(
-    (entry) => !entry.startsWith("scripts/compatibility-bridge-release")
-  );
-  const committedContent = runtimeContentManifest ?? committedRuntimeContentManifest(
-    candidateGitSha ?? gitText(["rev-parse", "HEAD"]), runtimePaths,
-    "activation_a_field_source_ledger_repair_committed_content_invalid"
-  );
-  const valid = sha256(stableJson(committedContent))
-      === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256
-    && bridgeSource.includes("const normalizedSourceRows = new Map()")
-    && bridgeSource.includes("!Array.isArray(row?.source_ids)")
-    && bridgeSource.includes("for (const sourceId of row.source_ids.map(clean).filter(Boolean))")
-    && bridgeSource.includes("if (!sourceIds.length) continue")
-    && bridgeSource.includes("founder_beta_field_source_not_returned")
-    && bridgeSource.includes("founder_beta_current_copy_source_required")
-    && boundarySource.includes("malformed ledger rows must remain a hard provider-contract failure")
-    && boundarySource.includes("duplicate-row order must not hide an unsafe source")
-    && boundarySource.includes("duplicate-row order must retain the unreturned-reference hard gate")
-    && boundarySource.includes("duplicate Web rows must not replace current-copy authority");
-  if (!valid) throw failure("activation_a_field_source_ledger_repair_runtime_contract_invalid");
+const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_BODY = Object.freeze({
+  schema_version: "listing-copilot-activation-a-field-source-ledger-repair-proof-v1",
+  repair_descriptor_id: "listing-copilot-activation-a-field-source-ledger-repair-v1",
+  repair_marker: "founder-beta-field-source-ledger-repair-v1",
+  required_parent_git_sha: "3f06cc0f55aec1065a0ef454752763297cf19a72",
+  required_parent_tree_sha: "c6c2b01fe623f3c2aed225db1ff9141205e5b3d6",
+  failed_run_id: "31718162992",
+  failure_code: "founder_beta_field_sources_invalid",
+  failed_case_id: "NON_TCG",
+  failed_phase: "RECOGNITION_RESPONSE",
+  required_rollback_git_sha: "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c",
+  base_official_identity_search_contract_sha256:
+    "00f343e7fc25e1b036a4474d834d335e427cb87a4ee3cc9168b565df9a37d61a",
+  runtime_diff_sha256: "1bcdaad966a3586112a8617d0e86612fafb02cbe97708ff83981c080e105eea5",
+  runtime_content_manifest_sha256:
+    "023ef0d7241d49c4dcfdd45a2d550005c82dd3de1fc5b89f5531f4acea94b3d8",
+  runtime_content_source: "candidate-git-object-blobs",
+  duplicate_field_row_policy: "stable-ordered-source-union",
+  duplicate_source_policy: "first-seen-stable-deduplication",
+  normalized_empty_group_policy: "equivalent-to-omitted-row-clear-or-unreadable",
+  malformed_row_policy: "hard-reject",
+  unsafe_url_policy: "hard-reject",
+  unreturned_source_policy: "hard-reject",
+  current_copy_authority_policy: "hard-reject",
+  downstream_sem_composer_unsupported_value_policy: "excluded",
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true
+});
+
+export function activationAFieldSourceLedgerRepairRuntimeContractProof() {
+  if (sha256(stableJson(ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_BODY))
+      !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_field_source_ledger_repair_historical_contract_invalid");
+  }
+  return Object.freeze({
+    ...ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_BODY,
+    contract_sha256: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+export function activationADepth2HistoryRepairRuntimeContractProof() {
   const body = {
-    schema_version: "listing-copilot-activation-a-field-source-ledger-repair-proof-v1",
-    repair_descriptor_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID,
-    repair_marker: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER,
-    required_parent_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
-    required_parent_tree_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_TREE_SHA,
-    failed_run_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_RUN_ID,
-    failure_code: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILURE_CODE,
-    failed_case_id: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_CASE_ID,
-    failed_phase: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_FAILED_PHASE,
-    required_rollback_git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA,
-    base_official_identity_search_contract_sha256:
+    schema_version: "listing-copilot-activation-a-depth2-history-repair-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+    required_parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+    failed_case_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+    base_field_source_ledger_contract_sha256:
+      ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256,
+    checkout_depth: 2,
+    historical_fixture_mode: "literal-self-contained",
+    forbidden_historical_checkout_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
+    exact_command_signature:
+      "git checkout --quiet --detach fa16f68d4502a9ab8a9377c4f53c1732fb1826f7",
+    stderr_signature:
+      "fatal: unable to read tree (fa16f68d4502a9ab8a9377c4f53c1732fb1826f7)",
+    failed_step: "Verify the CSM thin release artifact",
+    historical_selection_v18_contract_sha256:
       ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256,
-    runtime_diff_sha256: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_DIFF_SHA256,
-    runtime_content_manifest_sha256:
-      ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
-    runtime_content_source: "candidate-git-object-blobs",
-    duplicate_field_row_policy: "stable-ordered-source-union",
-    duplicate_source_policy: "first-seen-stable-deduplication",
-    normalized_empty_group_policy: "equivalent-to-omitted-row-clear-or-unreadable",
-    malformed_row_policy: "hard-reject",
-    unsafe_url_policy: "hard-reject",
-    unreturned_source_policy: "hard-reject",
-    current_copy_authority_policy: "hard-reject",
-    downstream_sem_composer_unsupported_value_policy: "excluded",
+    historical_selection_v19_contract_sha256:
+      ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256,
     writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true
   };
-  if (sha256(stableJson(body))
-      !== ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256) {
-    throw failure("activation_a_field_source_ledger_repair_runtime_contract_hash_mismatch");
+  if (sha256(stableJson(body)) !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_depth2_history_repair_runtime_contract_hash_mismatch");
   }
   return Object.freeze({
     ...body,
-    contract_sha256: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256
+    contract_sha256: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256
   });
 }
 
@@ -3072,6 +3156,65 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if ([
+    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA
+  ].includes(selection?.parent_git_sha)
+      && selection?.schema_version !== "production-release-selection-v20") {
+    throw failure("ordinary_release_activation_a_depth2_history_repair_selection_invalid");
+  }
+  if (selection?.schema_version === "production-release-selection-v20") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "failed_case_id", "failed_phase", "required_rollback_git_sha",
+      "artifact_manifest_sha256", "git_sha", "writer_journey_manifest",
+      "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA
+        || selection.parent_tree_sha !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA
+        || selection.failed_run_id !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID
+        || selection.failure_code !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE
+        || selection.failed_case_id !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID
+        || selection.failed_phase !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE
+        || selection.required_rollback_git_sha !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationADepth2HistoryRepairArtifactManifestSha256(
+            ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256 !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_depth2_history_repair_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v21",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+      failed_case_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID,
+      failed_phase: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE,
+      required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if ([
     ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA,
     ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ALTERNATE_PARENT_SHA
@@ -3892,6 +4035,10 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA
+      || parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_depth2_history_repair_selection_invalid");
+  }
   if (parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA
       || parentGitSha === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ALTERNATE_PARENT_SHA) {
     throw failure("ordinary_release_activation_a_field_source_ledger_repair_selection_invalid");
