@@ -21,9 +21,12 @@ export const PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA =
 export const PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA =
   "production-forward-readback-receipt-v1";
 
-const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v6";
+const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v7";
 const STANDARD_CASE_ID = "NON_TCG";
 const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY";
+const ORDINARY_SEMANTIC_CASE_IDS = Object.freeze([
+  "EXTERNAL_IDENTITY", "LOT_SHARED_ONLY", "NON_TCG", "NON_TCG_WEB_IDENTITY", "TCG"
+]);
 export const WEB_IDENTITY_VISIBLE_QUERY_ANCHORS = Object.freeze({
   subject: "anthony edwards",
   card_number: "105",
@@ -185,6 +188,52 @@ export function governedAppliedWebSupportProof(receipt, resolutionView, {
     && webIdentityContentProjectionProof(resolutionView);
 }
 
+export const FOUNDER_WEB_SEARCH_CLASSIFICATION = Object.freeze({
+  STRICT_NO_SEARCH: "STRICT_NO_SEARCH",
+  GOVERNED_APPLIED_SUPPORT: "GOVERNED_APPLIED_SUPPORT",
+  USED_WITHOUT_GOVERNED_APPLIED_SUPPORT: "USED_WITHOUT_GOVERNED_APPLIED_SUPPORT"
+});
+
+export function classifyFounderWebSearchSignals({
+  webSearchUsed,
+  governedAppliedSupport,
+  strictNoSearch
+} = {}) {
+  const matches = [
+    [FOUNDER_WEB_SEARCH_CLASSIFICATION.GOVERNED_APPLIED_SUPPORT,
+      webSearchUsed === true && governedAppliedSupport === true && strictNoSearch === false],
+    [FOUNDER_WEB_SEARCH_CLASSIFICATION.STRICT_NO_SEARCH,
+      webSearchUsed === false && governedAppliedSupport === false && strictNoSearch === true],
+    [FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT,
+      webSearchUsed === true && governedAppliedSupport === false && strictNoSearch === false]
+  ].filter(([, matched]) => matched === true);
+  return matches.length === 1 ? matches[0][0] : null;
+}
+
+export function classifyFounderWebSearch(receipt, resolutionView, {
+  originalSetSha256
+} = {}) {
+  try { validateFounderBetaWebReceipt(receipt); } catch { return null; }
+  const governedAppliedSupport = governedAppliedWebSupportProof(receipt, resolutionView, {
+    originalSetSha256
+  });
+  const strictNoSearch = strictNoSearchReceipt(receipt);
+  const usedWithoutGovernedAppliedSupport = receipt.web_search_used
+    && !governedAppliedSupport;
+  const classification = classifyFounderWebSearchSignals({
+    webSearchUsed: receipt.web_search_used,
+    governedAppliedSupport,
+    strictNoSearch
+  });
+  if (!classification) return null;
+  return Object.freeze({
+    classification,
+    governed_applied_support: governedAppliedSupport,
+    strict_no_search: strictNoSearch,
+    used_without_governed_applied_support: usedWithoutGovernedAppliedSupport
+  });
+}
+
 const exactObject = (value) => Boolean(value)
   && typeof value === "object" && !Array.isArray(value);
 const exactKeys = (value, keys) => exactObject(value)
@@ -250,22 +299,74 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
     throw failure("production_forward_readback_evidence_invalid");
   }
   const cases = Array.isArray(evidence.cases) ? evidence.cases : [];
+  const transportOnlyCases = cases.filter((entry) => entry?.transport_only === true);
+  if (transportOnlyCases.length !== 1
+      || transportOnlyCases[0]?.case_id !== "LARGE_STAGED_TRANSPORT"
+      || transportOnlyCases[0]?.founder_web_search != null
+      || cases.some((entry) => entry?.case_id === "LARGE_STAGED_TRANSPORT"
+        ? entry.transport_only !== true : entry?.transport_only === true)) {
+    throw failure("production_forward_readback_standard_case_invalid");
+  }
+  const semanticCases = cases.filter((entry) => entry?.transport_only !== true);
+  const webClassifications = semanticCases.map((entry) => {
+    const proof = entry?.founder_web_search;
+    const classification = exactKeys(proof, [
+      "classification", "governed_applied_support", "governed_support_fields",
+      "governed_support_url_count", "query_recorded", "query_visible_anchor_match",
+      "source_url_count", "strict_no_search", "unresolved_authority_fields",
+      "used_without_governed_applied_support", "web_search_call_count", "web_search_used"
+    ]) ? classifyFounderWebSearchSignals({
+        webSearchUsed: proof.web_search_used,
+        governedAppliedSupport: proof.governed_applied_support,
+        strictNoSearch: proof.strict_no_search
+      }) : null;
+    return Object.freeze({ entry, proof, classification });
+  });
   const matches = evidence.release_class === "ordinary"
-    ? cases.filter((entry) => (
-      entry?.founder_web_search?.governed_applied_support === true
+    ? webClassifications.filter(({ entry, classification }) => (
+      classification === FOUNDER_WEB_SEARCH_CLASSIFICATION.GOVERNED_APPLIED_SUPPORT
       && entry?.original_set_sha256
         === WEB_IDENTITY_CONTENT_ACCEPTANCE.original_set_sha256
-    )).sort((left, right) => Number(right.case_id === WEB_CASE_ID)
+    )).map(({ entry }) => entry).sort((left, right) => Number(right.case_id === WEB_CASE_ID)
       - Number(left.case_id === WEB_CASE_ID))
-    : cases.filter((entry) => entry?.case_id === STANDARD_CASE_ID);
-  const strictNoSearchCount = cases.filter((entry) => (
-    entry?.founder_web_search?.strict_no_search === true
+    : webClassifications.filter(({ entry }) => entry?.case_id === STANDARD_CASE_ID)
+      .map(({ entry }) => entry);
+  const strictNoSearchCount = webClassifications.filter(({ classification }) => (
+    classification === FOUNDER_WEB_SEARCH_CLASSIFICATION.STRICT_NO_SEARCH
   )).length;
-  if (matches.length !== 1
+  const governedClassificationCount = webClassifications.filter(({ classification }) => (
+    classification === FOUNDER_WEB_SEARCH_CLASSIFICATION.GOVERNED_APPLIED_SUPPORT
+  )).length;
+  const usedWithoutGovernedAppliedSupportCount = webClassifications.filter(
+    ({ classification }) => (
+      classification
+        === FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT
+    )
+  ).length;
+  if (webClassifications.some(({ proof, classification }) => (
+    !classification || proof.classification !== classification
+    || proof.used_without_governed_applied_support !== (
+      classification
+        === FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT
+    )
+  ))
+      || matches.length !== 1
+      || governedClassificationCount + strictNoSearchCount
+        + usedWithoutGovernedAppliedSupportCount !== semanticCases.length
       || (evidence.release_class === "ordinary" && (
-        strictNoSearchCount < 1
-        || evidence.final_seal?.qualified_governed_web_support_case_count !== 1
+        semanticCases.length !== 5
+        || semanticCases.map((entry) => entry?.case_id).sort().join("\0")
+          !== ORDINARY_SEMANTIC_CASE_IDS.join("\0")
+        || strictNoSearchCount < 1
+        || governedClassificationCount !== 1
+        || evidence.final_seal?.qualified_governed_web_support_case_count
+          !== governedClassificationCount
         || evidence.final_seal?.strict_no_search_case_count !== strictNoSearchCount
+        || evidence.final_seal?.used_without_governed_applied_support_case_count
+          !== usedWithoutGovernedAppliedSupportCount
+        || evidence.final_seal?.semantic_web_case_count !== semanticCases.length
+        || evidence.final_seal?.transport_only_web_excluded_case_count
+          !== transportOnlyCases.length
         || evidence.final_seal?.selected_forward_readback_case_id !== matches[0]?.case_id
       ))) {
     throw failure("production_forward_readback_standard_case_invalid");
@@ -329,12 +430,16 @@ function validateResolutionView(resolutionView, entry) {
     && entry.versions.marketplace_profile === "ebay-profile-v1"
     && composer?.marketplace_profile_version == null;
   let webReceipt = null;
+  let webClassification = null;
   let relationReceipt = null;
   if (entry.release_class === "ordinary") {
     try {
       webReceipt = validateFounderBetaWebReceipt(
         resolutionView?.founder_beta_web_receipt
       );
+      webClassification = classifyFounderWebSearch(webReceipt, resolutionView, {
+        originalSetSha256: entry.original_set_sha256
+      });
       if (entry.release_class === "ordinary") {
         const publicRelation = resolutionView?.set_card_name_relation_receipt;
         relationReceipt = validateSetCardNameRelationReceipt(publicRelation, {
@@ -379,9 +484,8 @@ function validateResolutionView(resolutionView, entry) {
         || !webIdentityQueryHasVisibleAnchors(webReceipt.queries)
         || webReceipt.urls.length < 1
         || webReceipt.field_evidence.length < 1
-        || !governedAppliedWebSupportProof(webReceipt, resolutionView, {
-          originalSetSha256: entry.original_set_sha256
-        })
+        || webClassification?.classification
+          !== FOUNDER_WEB_SEARCH_CLASSIFICATION.GOVERNED_APPLIED_SUPPORT
       ))) {
     throw failure("production_forward_readback_resolution_view_invalid");
   }

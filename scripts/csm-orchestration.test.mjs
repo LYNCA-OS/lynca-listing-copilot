@@ -203,7 +203,7 @@ const common = {
         "canonical-fields-web-request-v2");
       assert.equal(
         patch.csm_owner_versions.response_parser_version,
-        "canonical-output-v4-bounded-web-receipt"
+        "canonical-output-v5-web-receipt-outcome"
       );
       assert.match(patch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
       assert.equal(

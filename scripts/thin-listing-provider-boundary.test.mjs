@@ -821,15 +821,44 @@ for (const url of [
       content: [{ type: "output_text", text: JSON.stringify(emptyTracePayload) }]
     }]
   };
-  await assert.rejects(runCanonicalListingPath({
+  const emptyTrace = await runCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(emptyTraceBody), {
       status: 200, headers: { "content-type": "application/json" }
     })
+  });
+  assert.deepEqual({
+    schema_version: emptyTrace.founder_beta_web_receipt.schema_version,
+    outcome: emptyTrace.founder_beta_web_receipt.outcome,
+    web_search_used: emptyTrace.founder_beta_web_receipt.web_search_used,
+    web_search_call_count: emptyTrace.founder_beta_web_receipt.web_search_call_count,
+    queries: emptyTrace.founder_beta_web_receipt.queries,
+    urls: emptyTrace.founder_beta_web_receipt.urls,
+    field_evidence: emptyTrace.founder_beta_web_receipt.field_evidence
+  }, {
+    schema_version: "founder-beta-web-receipt-v2",
+    outcome: "USED_WITHOUT_FIELD_EVIDENCE",
+    web_search_used: true,
+    web_search_call_count: 1,
+    queries: [],
+    urls: [],
+    field_evidence: []
+  }, "a completed queryless action remains a real trace without field evidence");
+
+  const unsafeUnusedActionBody = structuredClone(emptyTraceBody);
+  unsafeUnusedActionBody.output[0].action = {
+    type: "open_page", url: "http://www.paniniamerica.net/checklists/unsafe"
+  };
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(unsafeUnusedActionBody), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
   }), (error) => error.name === "CanonicalProviderError"
-    && error.provider_error_code === "founder_beta_web_receipt_invalid",
-  "a used queryless trace without durable field evidence must fail closed");
+    && error.provider_error_code === "founder_beta_web_url_unsafe",
+  "an unused action URL must still cross trace URL sanitization");
 
   for (const [mutate, expectedCode] of [
     [(body) => { delete body.output[0].status; }, "founder_beta_web_call_incomplete"],
@@ -1047,13 +1076,26 @@ for (const [sourceId, returnedUrls] of [
     "an unreturned reference must never be fabricated into the durable URL receipt");
 }
 
-for (const [sourceIds, returnedUrls, expectedEvidence] of [
-  [["original_image_1", unreturnedReference], [], null],
-  [[returnedOfficialReference, unreturnedReference], [returnedOfficialReference], {
-    field: "product", support_urls: [returnedOfficialReference],
-    conflict_urls: [], unresolved_urls: []
-  }]
-]) {
+const noFieldEvidenceWithUnreturned = await runCanonicalListingPath({
+  imageUrls: ["https://example.invalid/card.jpg"],
+  model: "gpt-5.6-luna",
+  callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+    fields: {
+      product: "Admitted Product", subjects: ["Grounded Subject"], grammar: "standard"
+    },
+    sourceIds: ["original_image_1", unreturnedReference],
+    returnedUrls: []
+  })), { status: 200, headers: { "content-type": "application/json" } })
+});
+assert.equal(noFieldEvidenceWithUnreturned.fields.product, "Admitted Product");
+assert.equal(noFieldEvidenceWithUnreturned.founder_beta_web_receipt.outcome,
+  "USED_WITHOUT_FIELD_EVIDENCE");
+assert.deepEqual(noFieldEvidenceWithUnreturned.founder_beta_web_receipt.field_evidence, []);
+assert.ok(!JSON.stringify(noFieldEvidenceWithUnreturned.founder_beta_web_receipt)
+  .includes(unreturnedReference),
+"the frozen image-admitted boundary must not fabricate an unreturned source into receipt evidence");
+
+{
   const result = await runCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
@@ -1061,15 +1103,17 @@ for (const [sourceIds, returnedUrls, expectedEvidence] of [
       fields: {
         product: "Admitted Product", subjects: ["Grounded Subject"], grammar: "standard"
       },
-      sourceIds,
-      returnedUrls
+      sourceIds: [returnedOfficialReference, unreturnedReference],
+      returnedUrls: [returnedOfficialReference]
     })), { status: 200, headers: { "content-type": "application/json" } })
   });
-  assert.equal(result.fields.product, "Admitted Product",
-    "an image or returned governed source must admit despite an extra unreturned reference");
+  assert.equal(result.fields.product, "Admitted Product");
   assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
     (row) => row.field === "product"
-  ) || null, expectedEvidence);
+  ), {
+    field: "product", support_urls: [returnedOfficialReference],
+    conflict_urls: [], unresolved_urls: []
+  }, "used field evidence preserves the frozen admitted-plus-unreturned behavior");
   assert.ok(!JSON.stringify(result.founder_beta_web_receipt).includes(unreturnedReference));
 }
 

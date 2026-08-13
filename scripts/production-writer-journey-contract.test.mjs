@@ -83,7 +83,7 @@ assert.match(spec, /parity\.source_asset_id !== WRITER_JOURNEY_EXACT_PARITY_SOUR
 assert.match(spec, /parity\.files\.some\(\(file, index\) =>/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
 assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
-assert.match(spec, /production-writer-journey-evidence-v6/);
+assert.match(spec, /production-writer-journey-evidence-v7/);
 assert.match(spec, /buildWriterEditableTitleLatencyReceipt/);
 assert.match(spec, /summarizeWriterEditableTitleLatency/);
 assert.match(spec,
@@ -114,8 +114,11 @@ for (const token of [
   "CARD_NAME_PREDICATE", "card_name_before_subject", "individual_serials_withheld"
 ]) assert.match(spec, new RegExp(token));
 assert.match(spec,
-  /actualSearch[\s\S]*?receipt\.web_search_call_count >= 1[\s\S]*?receipt\.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS[\s\S]*?receipt\.queries\.length >= 1 \|\| receipt\.field_evidence\.length >= 1/,
-  "every actual Web path must remain a bounded one-request trace");
+  /actualSearch[\s\S]*?classification != null[\s\S]*?receipt\.web_search_call_count >= 1[\s\S]*?receipt\.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS/,
+  "every actual Web path must remain a valid classified bounded one-request trace");
+assert.match(spec,
+  /offline TCG authority abstention[\s\S]*?USED_WITHOUT_GOVERNED_APPLIED_SUPPORT[\s\S]*?used_without_governed_applied_support[\s\S]*?unresolved_authority_fields/,
+  "unresolved-only durable Web evidence must enter the exhaustive third class");
 assert.match(spec,
   /governedSupportRows[\s\S]*?entry\.support_urls\.every\(governedIdentityAuthorityUrl\)/,
   "only governed official support can satisfy the cohort Web-positive proof");
@@ -138,8 +141,8 @@ assert.match(forwardReadback,
   /webIdentityQueryHasVisibleAnchors\(webReceipt\.queries\)/,
   "candidate and post-promotion readback must share the visible-query anchor gate");
 assert.match(spec,
-  /webReceiptClassifications = evidence\.cases\.map[\s\S]*?governedAppliedWebSupportProof[\s\S]*?strictNoSearchReceipt[\s\S]*?webReceiptClaimsMatchViews[\s\S]*?strictNoSearchCases\.length >= 1/,
-  "the six-case cohort must reclassify stored receipts and contain strict no-search proof");
+  /semanticCases = evidence\.cases\.filter[\s\S]*?webReceiptClassifications = semanticCases\.map[\s\S]*?classifyFounderWebSearch[\s\S]*?USED_WITHOUT_GOVERNED_APPLIED_SUPPORT[\s\S]*?webReceiptClaimsMatchViews[\s\S]*?qualifiedGovernedWebCases\.length \+ strictNoSearchCases\.length[\s\S]*?usedWithoutGovernedAppliedSupportCases\.length === semanticCases\.length[\s\S]*?strictNoSearchCases\.length >= 1/,
+  "the six-case cohort must use one shared exhaustive three-way Web classifier");
 const activationProjectionCallSite = spec.match(
   /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView\);[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
 )?.[0] || "";
@@ -161,7 +164,7 @@ assert.match(directApiTest,
   "unresolved Lot remains a sealed offline persist-before-409 and zero-call resume proof");
 assert.match(forwardReadback, /const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY"/);
 assert.match(forwardReadback,
-  /evidence\.release_class === "ordinary"[\s\S]*?governed_applied_support === true[\s\S]*?: cases\.filter\(\(entry\) => entry\?\.case_id === STANDARD_CASE_ID\)/,
+  /evidence\.release_class === "ordinary"[\s\S]*?classification === FOUNDER_WEB_SEARCH_CLASSIFICATION\.GOVERNED_APPLIED_SUPPORT[\s\S]*?: webClassifications\.filter\(\(\{ entry \}\) => entry\?\.case_id === STANDARD_CASE_ID\)/,
   "ordinary release readback must target an actual governed-Web case while bridge keeps Standard");
 assert.match(forwardReadback,
   /provider_calls: 0[\s\S]*?founder_beta_web_receipt_exact_match:[\s\S]*?web_search_used:/,

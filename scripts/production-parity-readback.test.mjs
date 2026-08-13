@@ -122,7 +122,7 @@ const evidenceExternal = {
   source_ids: sourceIds
 };
 const evidence = {
-  schema_version: "production-writer-journey-evidence-v6",
+  schema_version: "production-writer-journey-evidence-v7",
   evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
   accuracy_claim: null,
   release_class: "ordinary",

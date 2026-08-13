@@ -44,7 +44,7 @@ export const PRODUCTION_STANDARD_READBACK_RECEIPT_SCHEMA =
   "production-standard-canonical-naming-readback-receipt-v2";
 
 const CANONICAL_PRODUCTION_ORIGIN = "https://listing.lyncafei.team";
-const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v6";
+const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v7";
 const PARITY_CASE_ID = "EXTERNAL_IDENTITY";
 const STANDARD_CASE_ID = "NON_TCG";
 const SAFE_ID = /^[A-Za-z0-9_-]{1,160}$/;

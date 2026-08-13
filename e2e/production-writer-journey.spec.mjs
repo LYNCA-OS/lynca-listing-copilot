@@ -92,8 +92,8 @@ import {
 } from "../scripts/compatibility-bridge-release.mjs";
 import {
   buildProductionForwardReadbackExpectation,
-  governedAppliedWebSupportProof,
-  strictNoSearchReceipt,
+  classifyFounderWebSearch,
+  FOUNDER_WEB_SEARCH_CLASSIFICATION,
   WEB_IDENTITY_CONTENT_ACCEPTANCE,
   webIdentityContentProjectionProof,
   webIdentityQueryHasVisibleAnchors,
@@ -636,12 +636,15 @@ function founderWebSearchProof(sourceCase, resolutionView) {
     WEB_IDENTITY_FIELDS.has(entry.field) && entry.support_urls.length > 0
     && entry.support_urls.every(governedIdentityAuthorityUrl)
   ));
+  const classification = classifyFounderWebSearch(receipt, resolutionView, {
+    originalSetSha256: sourceCase.original_set_sha256
+  });
   requireInvariant(receipt.provider_request_count === 1
     && receipt.isolated_model_call_count === 0
+    && classification != null
     && (!actualSearch || (
       receipt.web_search_call_count >= 1
       && receipt.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
-      && (receipt.queries.length >= 1 || receipt.field_evidence.length >= 1)
       && (!visibleAnchorCase || receipt.queries.length === 0
         || webIdentityQueryHasVisibleAnchors(receipt.queries))
     )),
@@ -658,10 +661,11 @@ function founderWebSearchProof(sourceCase, resolutionView) {
       (entry) => entry.support_urls
     )).size,
     governed_support_fields: governedSupportRows.map((entry) => entry.field),
-    governed_applied_support: governedAppliedWebSupportProof(receipt, resolutionView, {
-      originalSetSha256: sourceCase.original_set_sha256
-    }),
-    strict_no_search: strictNoSearchReceipt(receipt),
+    classification: classification.classification,
+    governed_applied_support: classification.governed_applied_support,
+    strict_no_search: classification.strict_no_search,
+    used_without_governed_applied_support:
+      classification.used_without_governed_applied_support,
     unresolved_authority_fields: receipt.field_evidence.filter(
       (entry) => entry.unresolved_urls.length > 0 || (
         entry.support_urls.length === 0
@@ -2163,7 +2167,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
   });
   const largeFixture = await localLargeFixture(requiredEnv("WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT"));
   const evidence = {
-    schema_version: "production-writer-journey-evidence-v6",
+    schema_version: "production-writer-journey-evidence-v7",
     evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
     field_ground_truth_available: false,
     accuracy_claim: null,
@@ -3311,29 +3315,41 @@ test("production writer journey verifies Glass Box and staged large-image transp
     const webCaseEvidence = evidence.cases.find(
       (entry) => entry.case_id === "NON_TCG_WEB_IDENTITY"
     );
-    const webReceiptClassifications = evidence.cases.map((entry) => {
+    const transportOnlyCases = evidence.cases.filter((entry) => entry.transport_only === true);
+    const semanticCases = evidence.cases.filter((entry) => entry.transport_only !== true);
+    const webReceiptClassifications = semanticCases.map((entry) => {
       const view = resolutionViewsByCaseId.get(entry.case_id);
       return Object.freeze({
         entry,
-        governed_applied_support: governedAppliedWebSupportProof(
+        proof: classifyFounderWebSearch(
           view?.founder_beta_web_receipt, view, {
             originalSetSha256: entry.original_set_sha256
           }
-        ),
-        strict_no_search: strictNoSearchReceipt(view?.founder_beta_web_receipt)
+        )
       });
     });
     const qualifiedGovernedWebCases = webReceiptClassifications.filter(
-      (classification) => classification.governed_applied_support
+      ({ proof }) => proof?.classification
+        === FOUNDER_WEB_SEARCH_CLASSIFICATION.GOVERNED_APPLIED_SUPPORT
     ).map((classification) => classification.entry);
     const strictNoSearchCases = webReceiptClassifications.filter(
-      (classification) => classification.strict_no_search
+      ({ proof }) => proof?.classification
+        === FOUNDER_WEB_SEARCH_CLASSIFICATION.STRICT_NO_SEARCH
+    ).map((classification) => classification.entry);
+    const usedWithoutGovernedAppliedSupportCases = webReceiptClassifications.filter(
+      ({ proof }) => proof?.classification
+        === FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT
     ).map((classification) => classification.entry);
     const governedWebCaseEvidence = qualifiedGovernedWebCases[0];
     const webReceiptClaimsMatchViews = webReceiptClassifications.every(
-      ({ entry, governed_applied_support: applied, strict_no_search: noSearch }) => (
-        entry?.founder_web_search?.governed_applied_support === applied
-        && entry?.founder_web_search?.strict_no_search === noSearch
+      ({ entry, proof }) => (
+        proof != null
+        && entry?.founder_web_search?.classification === proof.classification
+        && entry?.founder_web_search?.governed_applied_support
+          === proof.governed_applied_support
+        && entry?.founder_web_search?.strict_no_search === proof.strict_no_search
+        && entry?.founder_web_search?.used_without_governed_applied_support
+          === proof.used_without_governed_applied_support
       )
     );
     const lotCaseEvidence = evidence.cases.find(
@@ -3383,7 +3399,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && standardCaseEvidence?.source_asset_id
         === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
       && observationLegacyVersionActive(tcgCaseEvidence?.versions)
+      && transportOnlyCases.length === 1
+      && transportOnlyCases[0]?.case_id === "LARGE_STAGED_TRANSPORT"
+      && transportOnlyCases[0]?.founder_web_search == null
+      && evidence.cases.every((entry) => (
+        entry.case_id === "LARGE_STAGED_TRANSPORT"
+          ? entry.transport_only === true
+          : entry.transport_only !== true
+      ))
       && webReceiptClaimsMatchViews
+      && qualifiedGovernedWebCases.length + strictNoSearchCases.length
+        + usedWithoutGovernedAppliedSupportCases.length === semanticCases.length
       && strictNoSearchCases.length >= 1
       && qualifiedGovernedWebCases.length === 1
       && governedWebCaseEvidence?.case_id === qualifiedGovernedWebCases[0]?.case_id
@@ -3449,6 +3475,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
       ).length,
       qualified_governed_web_support_case_count: qualifiedGovernedWebCases.length,
       strict_no_search_case_count: strictNoSearchCases.length,
+      used_without_governed_applied_support_case_count:
+        usedWithoutGovernedAppliedSupportCases.length,
+      semantic_web_case_count: semanticCases.length,
+      transport_only_web_excluded_case_count: transportOnlyCases.length,
       selected_forward_readback_case_id: governedWebCaseEvidence?.case_id,
       warmup_real_response_observed: true,
       staged_overlap_observed: true,
@@ -3537,6 +3567,10 @@ test("offline TCG authority abstention bypasses designated relation proof @offli
   const tcgCase = { case_id: "TCG" };
   const founderProof = founderWebSearchProof(tcgCase, resolutionView);
   expect(founderProof.web_search_used).toBe(true);
+  expect(founderProof.classification).toBe(
+    FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT
+  );
+  expect(founderProof.used_without_governed_applied_support).toBe(true);
   expect(founderProof.unresolved_authority_fields).toEqual(["product", "set"]);
   expect(activationProjectionProofForCase(
     tcgCase, resolutionView, "unused"
