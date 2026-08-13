@@ -390,6 +390,32 @@ export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE = "RELEASE_ARTIFACT
 export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA = ACTIVATION_A_ROLLBACK_SHA;
 export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256 =
   "3536c10f9125c17fba6b0cc8cd2b17c4713b3a236f6036888cf44caa58b079a2";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-activation-a-canonical-sem-projection-completeness-repair-v1";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER =
+  "founder-beta-canonical-sem-projection-completeness-repair-v1";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA =
+  "0528940c508f24e246b8ea21744d8eb1feb2e4b0";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA =
+  "a7b7680800d6814a23b224105d1bbf37e0cdbf5d";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA =
+  "b6f34e04c0e775f33f87e8dea74b0aa989ba965a";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID = "31724431098";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE =
+  "csm_prepared_result_invalid";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL =
+  "publication_coverage_replay_mismatch";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID = "TCG";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE =
+  "RECOGNITION_RESPONSE";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA =
+  ACTIVATION_A_ROLLBACK_SHA;
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_DIFF_SHA256 =
+  "7fa4751ee7a9c57b0edb4e65a3c6fc1db6108783b7ccf1d600f298ac37e840c1";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256 =
+  "272d4676e54480ab6d0bc2797eeb7965608428b9de2a90ed3dd1d67bc119bd08";
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "edff785c61990f416270ea7b23cfe7159bca0e30ae04ac1d95b9b2c278283149";
 export const ACTIVATION_A_CHANGED_PATHS = Object.freeze([
   ".github/workflows/deploy-production.yml",
   "api/csm-listing-title.js",
@@ -613,6 +639,14 @@ export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS = Object.free
 export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS = Object.freeze([
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs"
+]);
+export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS = Object.freeze([
+  "csm/ontology/title-derived-sem.mjs",
+  "lib/listing/thin/csm-emit.mjs",
+  "scripts/accuracy-loss-ledger.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-persistence.test.mjs"
 ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
@@ -1103,6 +1137,20 @@ function exactActivationADepth2HistoryRepairChangedPaths(values) {
   return actual;
 }
 
+function exactActivationACanonicalSemProjectionRepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("activation_a_canonical_sem_projection_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  const expected = [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS].sort();
+  if (stableJson(actual) !== stableJson(expected)) {
+    throw failure("activation_a_canonical_sem_projection_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function bridgeV2ArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     parent_git_sha: COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -1352,7 +1400,29 @@ function activationADepth2HistoryRepairArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function activationACanonicalSemProjectionRepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER,
+    parent_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+    parent_tree_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE,
+    failure_detail: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL,
+    failed_case_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+    runtime_diff_sha256: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_DIFF_SHA256,
+    runtime_content_manifest_sha256:
+      ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+    changed_paths: exactActivationACanonicalSemProjectionRepairChangedPaths(changedPaths)
+  }));
+}
+
 function ordinaryTransitionMarker(parentGitSha) {
+  if (parentGitSha === ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA) {
+    return ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER;
+  }
   if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA) {
     return ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER;
   }
@@ -1416,6 +1486,21 @@ function gitChangedPaths(parentSha, sha) {
   return value ? value.split("\n") : [];
 }
 
+function committedRuntimeContentManifest(candidateSha, runtimePaths, failureCode) {
+  const sha = exactGitSha(candidateSha);
+  try {
+    return runtimePaths.map((entry) => Object.freeze({
+      path: entry,
+      sha256: sha256(execFileSync("git", ["show", `${sha}:${entry}`], {
+        cwd: repoRoot,
+        maxBuffer: 16 * 1024 * 1024
+      }))
+    }));
+  } catch {
+    throw failure(failureCode);
+  }
+}
+
 export function verifyCompatibilityBridgeSelection({
   releaseClass,
   gitSha,
@@ -1426,7 +1511,8 @@ export function verifyCompatibilityBridgeSelection({
   parentShas = null,
   changedPaths = null,
   officialIdentityRuntimeContentManifest = null,
-  fieldSourceLedgerRuntimeContentManifest = null
+  fieldSourceLedgerRuntimeContentManifest = null,
+  canonicalSemProjectionRuntimeContentManifest = null
 } = {}) {
   const selected = String(releaseClass || "").trim();
   if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(selected)) {
@@ -1449,6 +1535,10 @@ export function verifyCompatibilityBridgeSelection({
     }
     if (parentGitSha === COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_PARENT_SHA) {
       throw failure("ordinary_release_failed_bridge_requires_writer_receipt_repair");
+    }
+    if (parentGitSha
+        === ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA) {
+      throw failure("activation_a_canonical_sem_projection_repair_parent_mismatch");
     }
     if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA) {
       throw failure("activation_a_depth2_history_repair_parent_mismatch");
@@ -1473,6 +1563,45 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA) {
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA) {
+        throw failure("activation_a_canonical_sem_projection_repair_parent_tree_mismatch");
+      }
+      const artifactPaths = exactActivationACanonicalSemProjectionRepairChangedPaths(
+        changedPaths ?? gitChangedPaths(
+          ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+          expectedSha
+        )
+      );
+      const contract = activationACanonicalSemProjectionRepairRuntimeContractProof({
+        candidateGitSha: expectedSha,
+        runtimeContentManifest: canonicalSemProjectionRuntimeContentManifest
+      });
+      return Object.freeze({
+        schema_version: "production-release-selection-v21",
+        release_class: selected,
+        repair_descriptor_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER,
+        parent_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+        parent_tree_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+        failed_run_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID,
+        failure_code: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE,
+        failure_detail: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL,
+        failed_case_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID,
+        failed_phase: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE,
+        required_rollback_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+        artifact_manifest_sha256:
+          activationACanonicalSemProjectionRepairArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
     if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA) {
       const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
         "rev-parse", `${ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA}^{tree}`
@@ -3032,6 +3161,57 @@ export function activationADepth2HistoryRepairRuntimeContractProof() {
   });
 }
 
+export function activationACanonicalSemProjectionRepairRuntimeContractProof({
+  candidateGitSha = null,
+  runtimeContentManifest = null
+} = {}) {
+  const runtimePaths = ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS.filter(
+    (entry) => !entry.startsWith("scripts/compatibility-bridge-release")
+  );
+  const committedContent = runtimeContentManifest ?? committedRuntimeContentManifest(
+    candidateGitSha ?? gitText(["rev-parse", "HEAD"]),
+    runtimePaths,
+    "activation_a_canonical_sem_projection_repair_committed_content_invalid"
+  );
+  const body = {
+    schema_version:
+      "listing-copilot-activation-a-canonical-sem-projection-completeness-repair-proof-v1",
+    repair_descriptor_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID,
+    repair_marker: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER,
+    required_parent_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+    required_parent_tree_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID,
+    failure_code: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE,
+    failure_detail: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL,
+    failed_case_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID,
+    failed_phase: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+    base_depth2_history_contract_sha256:
+      ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256,
+    runtime_diff_sha256: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_DIFF_SHA256,
+    runtime_content_manifest_sha256:
+      ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+    runtime_content_source: "candidate-git-object-blobs",
+    canonical_sem_projection_coverage: "all-canonical-editable-fields",
+    description_projection: "direct-canonical-value",
+    special_stamp_projection: "explicit-stable-exact-dedupe-with-legacy-fallback",
+    cross_bracket_derivation_policy: "forbidden",
+    persistence_replay_required: true,
+    publication_coverage_exact_match_required: true,
+    writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true
+  };
+  if (sha256(stableJson(committedContent))
+      !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256) {
+    throw failure("activation_a_canonical_sem_projection_repair_runtime_content_invalid");
+  }
+  if (sha256(stableJson(body))
+      !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("activation_a_canonical_sem_projection_repair_runtime_contract_hash_mismatch");
+  }
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
 export function canonicalNamingActivationA2RuntimeContractProof({
   verifierContract = PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
 } = {}) {
@@ -3156,6 +3336,71 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if ([
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA
+  ].includes(selection?.parent_git_sha)
+      && selection?.schema_version !== "production-release-selection-v21") {
+    throw failure("ordinary_release_activation_a_canonical_sem_projection_repair_selection_invalid");
+  }
+  if (selection?.schema_version === "production-release-selection-v21") {
+    if (!exactKeys(selection, [
+      "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+      "transition_marker", "parent_git_sha", "parent_tree_sha", "failed_run_id",
+      "failure_code", "failure_detail", "failed_case_id", "failed_phase",
+      "required_rollback_git_sha", "artifact_manifest_sha256", "git_sha",
+      "writer_journey_manifest", "parity_required", "contract_sha256"
+    ])
+        || selection.release_class !== ORDINARY_RELEASE_CLASS
+        || selection.repair_descriptor_id
+          !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID
+        || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+        || selection.transition_marker !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER
+        || selection.parent_git_sha !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
+        || selection.parent_tree_sha
+          !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA
+        || selection.failed_run_id !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID
+        || selection.failure_code !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE
+        || selection.failure_detail !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL
+        || selection.failed_case_id !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID
+        || selection.failed_phase !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE
+        || selection.required_rollback_git_sha
+          !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA
+        || selection.artifact_manifest_sha256
+          !== activationACanonicalSemProjectionRepairArtifactManifestSha256(
+            ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS
+          )
+        || selection.writer_journey_manifest !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        || selection.parity_required !== true
+        || selection.contract_sha256
+          !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256
+        || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))) {
+      throw failure("ordinary_release_activation_a_canonical_sem_projection_repair_selection_invalid");
+    }
+    const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+    if (capturedRollbackSha !== ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA) {
+      throw failure("ordinary_release_rollback_mismatch");
+    }
+    return Object.freeze({
+      schema_version: "production-release-rollback-lineage-receipt-v22",
+      release_class: ORDINARY_RELEASE_CLASS,
+      repair_descriptor_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER,
+      release_git_sha: exactGitSha(selection.git_sha),
+      release_parent_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+      release_parent_tree_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+      failed_run_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID,
+      failure_code: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE,
+      failure_detail: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL,
+      failed_case_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID,
+      failed_phase: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE,
+      required_rollback_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+      captured_rollback_git_sha: capturedRollbackSha,
+      artifact_manifest_sha256: selection.artifact_manifest_sha256,
+      lineage_verified: true
+    });
+  }
   if ([
     ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
     ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA
@@ -4035,6 +4280,10 @@ export function verifyOrdinaryRollbackLineage({
     throw failure("ordinary_release_selection_invalid");
   }
   const parentGitSha = exactGitSha(selection.parent_git_sha);
+  if (parentGitSha === ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
+      || parentGitSha === ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA) {
+    throw failure("ordinary_release_activation_a_canonical_sem_projection_repair_selection_invalid");
+  }
   if (parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA
       || parentGitSha === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA) {
     throw failure("ordinary_release_activation_a_depth2_history_repair_selection_invalid");

@@ -112,6 +112,21 @@ import {
   ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
   ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
   ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_DIFF_SHA256,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -208,6 +223,7 @@ import {
   activationAOfficialIdentitySearchRuntimeContractProof,
   activationAFieldSourceLedgerRepairRuntimeContractProof,
   activationADepth2HistoryRepairRuntimeContractProof,
+  activationACanonicalSemProjectionRepairRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -254,6 +270,7 @@ const activationABoundedWebSearchGitSha = "d".repeat(40);
 const activationAOfficialIdentitySearchGitSha = "e".repeat(40);
 const activationAFieldSourceLedgerRepairGitSha = "1".repeat(40);
 const activationADepth2HistoryRepairGitSha = "6".repeat(40);
+const activationACanonicalSemProjectionRepairGitSha = "7".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -718,6 +735,40 @@ assert.deepEqual(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs"
 ]);
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-canonical-sem-projection-completeness-repair-v1");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER,
+  "founder-beta-canonical-sem-projection-completeness-repair-v1");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+  "0528940c508f24e246b8ea21744d8eb1feb2e4b0");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+  "a7b7680800d6814a23b224105d1bbf37e0cdbf5d");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA,
+  "b6f34e04c0e775f33f87e8dea74b0aa989ba965a");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID, "31724431098");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE,
+  "csm_prepared_result_invalid");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL,
+  "publication_coverage_replay_mismatch");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID, "TCG");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE,
+  "RECOGNITION_RESPONSE");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+  "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_DIFF_SHA256,
+  "7fa4751ee7a9c57b0edb4e65a3c6fc1db6108783b7ccf1d600f298ac37e840c1");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+  "272d4676e54480ab6d0bc2797eeb7965608428b9de2a90ed3dd1d67bc119bd08");
+assert.equal(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "edff785c61990f416270ea7b23cfe7159bca0e30ae04ac1d95b9b2c278283149");
+assert.deepEqual(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS, [
+  "csm/ontology/title-derived-sem.mjs",
+  "lib/listing/thin/csm-emit.mjs",
+  "scripts/accuracy-loss-ledger.test.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-persistence.test.mjs"
+]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
 assert.equal(standardP0TitleIdentityExact(
@@ -746,6 +797,13 @@ const officialIdentityRuntimeContentManifest =
     }));
 const fieldSourceLedgerRuntimeContentManifest =
   ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS
+    .filter((entry) => !entry.startsWith("scripts/compatibility-bridge-release"))
+    .map((entry) => ({
+      path: entry,
+      sha256: createHash("sha256").update(readFileSync(entry)).digest("hex")
+    }));
+const canonicalSemProjectionRuntimeContentManifest =
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS
     .filter((entry) => !entry.startsWith("scripts/compatibility-bridge-release"))
     .map((entry) => ({
       path: entry,
@@ -1223,6 +1281,65 @@ const activationADepth2HistoryRepair = verifyCompatibilityBridgeSelection({
   parentShas: [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA],
   changedPaths: [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS]
 });
+const activationACanonicalSemProjectionRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationACanonicalSemProjectionRepairGitSha,
+  headSha: activationACanonicalSemProjectionRepairGitSha,
+  parentTreeSha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS],
+  canonicalSemProjectionRuntimeContentManifest
+});
+assert.equal(activationACanonicalSemProjectionRepair.schema_version,
+  "production-release-selection-v21");
+assert.equal(activationACanonicalSemProjectionRepair.parent_git_sha,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA);
+assert.equal(activationACanonicalSemProjectionRepair.parent_tree_sha,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationACanonicalSemProjectionRepair.failed_run_id,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID);
+assert.equal(activationACanonicalSemProjectionRepair.failure_code,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE);
+assert.equal(activationACanonicalSemProjectionRepair.failure_detail,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL);
+assert.equal(activationACanonicalSemProjectionRepair.failed_case_id,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID);
+assert.equal(activationACanonicalSemProjectionRepair.failed_phase,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE);
+assert.equal(activationACanonicalSemProjectionRepair.required_rollback_git_sha,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA);
+assert.equal(activationACanonicalSemProjectionRepair.contract_sha256,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationACanonicalSemProjectionRepairGitSha,
+    headSha: activationACanonicalSemProjectionRepairGitSha,
+    parentTreeSha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA],
+    changedPaths,
+    canonicalSemProjectionRuntimeContentManifest
+  }), (error) => [
+    "activation_a_canonical_sem_projection_repair_changed_paths_invalid",
+    "activation_a_canonical_sem_projection_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationACanonicalSemProjectionRepairGitSha,
+  headSha: activationACanonicalSemProjectionRepairGitSha,
+  parentTreeSha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS],
+  canonicalSemProjectionRuntimeContentManifest
+}), (error) => error.code
+  === "activation_a_canonical_sem_projection_repair_parent_mismatch");
 assert.equal(activationADepth2HistoryRepair.schema_version,
   "production-release-selection-v20");
 assert.equal(activationADepth2HistoryRepair.parent_git_sha,
@@ -2202,62 +2319,97 @@ try {
   await rm(shallowFixtureRoot, { recursive: true, force: true });
 }
 
-const depth2HistoryFixtureRoot = await mkdtemp(
-  path.join(tmpdir(), "lynca-depth2-history-repair-")
+// Historical selectors are immutable data, not live Git integration tests.
+// Reconstructing selection-v20 by checking out its parent makes every new
+// release require one more ancestor than the protected depth-two checkout can
+// contain. Keep the historical proof literal and self-contained; only the
+// current selector below may exercise a real candidate/parent checkout.
+assert.deepEqual(activationADepth2HistoryRepairRuntimeContractProof(), {
+  schema_version: "listing-copilot-activation-a-depth2-history-repair-proof-v1",
+  repair_descriptor_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+  repair_marker: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+  required_parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+  required_parent_tree_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+  base_field_source_ledger_contract_sha256:
+    ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256,
+  checkout_depth: 2,
+  historical_fixture_mode: "literal-self-contained",
+  forbidden_historical_checkout_git_sha:
+    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
+  exact_command_signature:
+    "git checkout --quiet --detach fa16f68d4502a9ab8a9377c4f53c1732fb1826f7",
+  stderr_signature:
+    "fatal: unable to read tree (fa16f68d4502a9ab8a9377c4f53c1732fb1826f7)",
+  failed_step: "Verify the CSM thin release artifact",
+  historical_selection_v18_contract_sha256:
+    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256,
+  historical_selection_v19_contract_sha256:
+    ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256,
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true,
+  contract_sha256: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256
+});
+
+const canonicalSemProjectionFixtureRoot = await mkdtemp(
+  path.join(tmpdir(), "lynca-canonical-sem-projection-repair-")
 );
 try {
-  const seed = path.join(depth2HistoryFixtureRoot, "seed");
-  git(depth2HistoryFixtureRoot, [
+  const seed = path.join(canonicalSemProjectionFixtureRoot, "seed");
+  git(canonicalSemProjectionFixtureRoot, [
     "clone", "--quiet", "--depth=2", pathToFileURL(process.cwd()).href, seed
   ]);
   git(seed, [
-    "checkout", "--quiet", "--detach", ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA
+    "checkout", "--quiet", "--detach",
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
   ]);
-  assert.equal(git(seed, ["rev-parse", "HEAD"]),
-    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA);
-  for (const relativePath of ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS) {
+  for (const relativePath of ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS) {
     await copyFile(path.resolve(relativePath), path.join(seed, relativePath));
   }
-  git(seed, ["add", "--", ...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS]);
+  git(seed, ["add", "--", ...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS]);
   git(seed, [
     "-c", "commit.gpgsign=false",
     "-c", "user.name=LYNCA fixture",
     "-c", "user.email=fixture@example.invalid",
-    "commit", "--quiet", "-m", "repair depth-two historical fixture"
+    "commit", "--quiet", "-m", "repair canonical sem projection completeness"
   ]);
   const fixtureGitSha = git(seed, ["rev-parse", "HEAD"]);
-  assert.deepEqual(parentShas(seed), [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA]);
+  assert.deepEqual(parentShas(seed), [
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
+  ]);
 
-  const checkout = path.join(depth2HistoryFixtureRoot, "checkout");
-  git(depth2HistoryFixtureRoot, [
+  const checkout = path.join(canonicalSemProjectionFixtureRoot, "checkout");
+  git(canonicalSemProjectionFixtureRoot, [
     "clone", "--quiet", "--depth=2", pathToFileURL(seed).href, checkout
   ]);
   assert.equal(git(checkout, ["rev-parse", "HEAD"]), fixtureGitSha);
-  assert.deepEqual(parentShas(checkout), [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA],
-    "a depth-two candidate checkout must retain exactly the selector parent");
+  assert.deepEqual(parentShas(checkout), [
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
+  ], "a depth-two candidate checkout must retain exactly the selector parent");
   assert.equal(git(checkout, ["rev-list", "--count", "HEAD"]), "2");
-  assert.throws(() => git(checkout, [
-    "cat-file", "-e", "fa16f68d4502a9ab8a9377c4f53c1732fb1826f7^{tree}"
-  ]), "the depth-two candidate must not require the historical v18 parent object");
-  assert.throws(() => git(checkout, [
-    "cat-file", "-e", "3f06cc0f55aec1065a0ef454752763297cf19a72^{commit}"
-  ]), "the depth-two candidate must not rely on its parent's parent object");
+  assert.equal(git(checkout, ["rev-parse",
+    `${ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA}^{tree}`]),
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA);
   assert.deepEqual(
     git(checkout, [
-      "diff", "--name-only", ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+      "diff", "--name-only", ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
       "HEAD", "--"
     ]).split("\n").filter(Boolean).sort(),
-    [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS].sort()
+    [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS].sort()
   );
 
   await symlink(dependencyNodeModules, path.join(checkout, "node_modules"), "dir");
-  const selectionPath = path.join(depth2HistoryFixtureRoot, "selection.json");
-  const rollbackPath = path.join(depth2HistoryFixtureRoot, "rollback.json");
-  const lineagePath = path.join(depth2HistoryFixtureRoot, "lineage.json");
+  const selectionPath = path.join(canonicalSemProjectionFixtureRoot, "selection.json");
+  const rollbackPath = path.join(canonicalSemProjectionFixtureRoot, "rollback.json");
+  const lineagePath = path.join(canonicalSemProjectionFixtureRoot, "lineage.json");
   const fixtureEnv = {
     ...process.env,
-    VERCEL_ORG_ID: "team_depth2HistoryRepair",
-    VERCEL_PROJECT_ID: "prj_depth2HistoryRepair"
+    VERCEL_ORG_ID: "team_canonicalSemProjectionRepair",
+    VERCEL_PROJECT_ID: "prj_canonicalSemProjectionRepair"
   };
   const fixtureScript = realpathSync(path.join(checkout,
     "scripts/compatibility-bridge-release.mjs"));
@@ -2268,19 +2420,21 @@ try {
     "--out", selectionPath
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureSelection = JSON.parse(await readFile(selectionPath, "utf8"));
-  assert.equal(fixtureSelection.schema_version, "production-release-selection-v20");
+  assert.equal(fixtureSelection.schema_version, "production-release-selection-v21");
   assert.equal(fixtureSelection.parent_git_sha,
-    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA);
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA);
+  assert.equal(fixtureSelection.failure_detail,
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL);
   assert.equal(fixtureSelection.contract_sha256,
-    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256);
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256);
   await writeFile(rollbackPath, JSON.stringify({
     schema_version: "vercel-production-rollback-receipt-v1",
     canonical_origin: "https://listing.lyncafei.team",
     team_id: fixtureEnv.VERCEL_ORG_ID,
     project_id: fixtureEnv.VERCEL_PROJECT_ID,
-    deployment_id: "dpl_depth2PreviousCanonical",
-    deployment_url: "https://lynca-depth2-previous.vercel.app",
-    git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+    deployment_id: "dpl_canonicalSemProjectionPreviousCanonical",
+    deployment_url: "https://lynca-canonical-sem-projection-previous.vercel.app",
+    git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
     ready_state: "READY",
     target: "production",
     captured_at: "2026-08-14T00:00:00.000Z"
@@ -2295,15 +2449,17 @@ try {
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureLineage = JSON.parse(await readFile(lineagePath, "utf8"));
   assert.equal(fixtureLineage.schema_version,
-    "production-release-rollback-lineage-receipt-v21");
+    "production-release-rollback-lineage-receipt-v22");
   assert.equal(fixtureLineage.release_git_sha, fixtureGitSha);
+  assert.equal(fixtureLineage.failure_detail,
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL);
   assert.equal(fixtureLineage.captured_rollback_git_sha,
-    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA);
+    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA);
   assert.equal(fixtureLineage.lineage_verified, true);
   assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
   assert.equal((await stat(lineagePath)).mode & 0o777, 0o600);
 } finally {
-  await rm(depth2HistoryFixtureRoot, { recursive: true, force: true });
+  await rm(canonicalSemProjectionFixtureRoot, { recursive: true, force: true });
 }
 
 for (const commitMessage of [
@@ -2859,6 +3015,29 @@ const activationAFieldSourceLedgerRepairProof =
     runtimeContentManifest: fieldSourceLedgerRuntimeContentManifest
   });
 const activationADepth2HistoryRepairProof = activationADepth2HistoryRepairRuntimeContractProof();
+const activationACanonicalSemProjectionRepairProof =
+  activationACanonicalSemProjectionRepairRuntimeContractProof({
+    candidateGitSha: activationACanonicalSemProjectionRepairGitSha,
+    runtimeContentManifest: canonicalSemProjectionRuntimeContentManifest
+  });
+assert.equal(activationACanonicalSemProjectionRepairProof
+  .base_depth2_history_contract_sha256,
+ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationACanonicalSemProjectionRepairProof.runtime_diff_sha256,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_DIFF_SHA256);
+assert.equal(activationACanonicalSemProjectionRepairProof.runtime_content_manifest_sha256,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256);
+assert.equal(activationACanonicalSemProjectionRepairProof.canonical_sem_projection_coverage,
+  "all-canonical-editable-fields");
+assert.equal(activationACanonicalSemProjectionRepairProof.cross_bracket_derivation_policy,
+  "forbidden");
+assert.equal(activationACanonicalSemProjectionRepairProof.contract_sha256,
+  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.throws(() => activationACanonicalSemProjectionRepairRuntimeContractProof({
+  candidateGitSha: activationACanonicalSemProjectionRepairGitSha,
+  runtimeContentManifest: []
+}), (error) => error.code
+  === "activation_a_canonical_sem_projection_repair_runtime_content_invalid");
 assert.equal(activationADepth2HistoryRepairProof.checkout_depth, 2);
 assert.equal(activationADepth2HistoryRepairProof.historical_fixture_mode,
   "literal-self-contained");
@@ -3453,6 +3632,57 @@ const activationADepth2HistoryRepairLineage = verifyOrdinaryRollbackLineage({
   selection: activationADepth2HistoryRepair,
   rollbackReceipt: { git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA }
 });
+const activationACanonicalSemProjectionRepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationACanonicalSemProjectionRepair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA }
+});
+assert.deepEqual(activationACanonicalSemProjectionRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v22",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER,
+  release_git_sha: activationACanonicalSemProjectionRepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE,
+  failure_detail: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL,
+  failed_case_id: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256:
+    activationACanonicalSemProjectionRepair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationACanonicalSemProjectionRepair, schema_version: "unknown" },
+  { ...activationACanonicalSemProjectionRepair, repair_descriptor_id: "unknown" },
+  { ...activationACanonicalSemProjectionRepair,
+    parent_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA },
+  { ...activationACanonicalSemProjectionRepair, parent_tree_sha: "0".repeat(40) },
+  { ...activationACanonicalSemProjectionRepair, failed_run_id: "31724431097" },
+  { ...activationACanonicalSemProjectionRepair, failure_code: "unknown" },
+  { ...activationACanonicalSemProjectionRepair, failure_detail: "unknown" },
+  { ...activationACanonicalSemProjectionRepair, failed_case_id: "UNKNOWN" },
+  { ...activationACanonicalSemProjectionRepair, failed_phase: "UNKNOWN" },
+  { ...activationACanonicalSemProjectionRepair,
+    required_rollback_git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA },
+  { ...activationACanonicalSemProjectionRepair, artifact_manifest_sha256: "0".repeat(64) },
+  { ...activationACanonicalSemProjectionRepair, contract_sha256: "0".repeat(64) },
+  { ...activationACanonicalSemProjectionRepair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_canonical_sem_projection_repair_selection_invalid");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: activationACanonicalSemProjectionRepair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA }
+}), (error) => error.code === "ordinary_release_rollback_mismatch");
 assert.deepEqual(activationADepth2HistoryRepairLineage, {
   schema_version: "production-release-rollback-lineage-receipt-v21",
   release_class: ORDINARY_RELEASE_CLASS,
@@ -4360,6 +4590,8 @@ try {
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
   const actualActivationADepth2HistoryRepair =
     actualParent === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA;
+  const actualActivationACanonicalSemProjectionRepair =
+    actualParent === ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA;
   const actualActivationAFieldSourceLedgerRepair =
     actualParent === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA;
   const actualActivationAOfficialIdentitySearch =
@@ -4382,7 +4614,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationADepth2HistoryRepair
+  const actualTransitionMarker = actualActivationACanonicalSemProjectionRepair
+    ? ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER
+    : actualActivationADepth2HistoryRepair
     ? ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER
     : actualActivationAFieldSourceLedgerRepair
     ? ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER
@@ -4462,7 +4696,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationADepth2HistoryRepair
+      actualActivationACanonicalSemProjectionRepair
+        ? "production-release-selection-v21"
+        : actualActivationADepth2HistoryRepair
         ? "production-release-selection-v20"
         : actualActivationAFieldSourceLedgerRepair
         ? "production-release-selection-v19"
@@ -4499,7 +4735,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationADepth2HistoryRepair
+      actualActivationACanonicalSemProjectionRepair
+        ? ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA
+        : actualActivationADepth2HistoryRepair
         ? ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA
         : actualActivationAFieldSourceLedgerRepair
         ? ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA
@@ -4531,7 +4769,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualActivationADepth2HistoryRepair
+      actualActivationACanonicalSemProjectionRepair
+        ? "production-release-rollback-lineage-receipt-v22"
+        : actualActivationADepth2HistoryRepair
         ? "production-release-rollback-lineage-receipt-v21"
         : actualActivationAFieldSourceLedgerRepair
         ? "production-release-rollback-lineage-receipt-v20"
@@ -4565,7 +4805,29 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationADepth2HistoryRepair) {
+    if (actualActivationACanonicalSemProjectionRepair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_CODE);
+      assert.equal(savedSelection.failure_detail,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL);
+      assert.equal(savedSelection.failed_case_id,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_CASE_ID);
+      assert.equal(savedSelection.failed_phase,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILED_PHASE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failure_detail,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationADepth2HistoryRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

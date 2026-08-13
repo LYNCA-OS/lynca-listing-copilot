@@ -314,14 +314,18 @@ const derivedIp = derivedLedger.stages.admitted_canonical_fields.fields
 assert.equal(derivedIp.status, "derived");
 assert.deepEqual(derivedIp.reason_codes, ["CSM_SEM_DERIVED"]);
 
-const droppedRaw = JSON.stringify({ description: "Visible Kings Signatures phrase" });
-const droppedResult = finishCanonicalTitle(droppedRaw);
-const droppedLedger = buildAccuracyLossLedger({ rawProviderOutput: droppedRaw, result: droppedResult });
-assert.equal(droppedLedger.stages.admitted_canonical_fields.fields
-  .find(({ field }) => field === "description").status, "dropped");
-assert.ok(droppedLedger.stages.admitted_canonical_fields.reason_codes.includes("CANONICAL_FIELD_DROPPED"));
-assert.ok(!droppedLedger.stages.admitted_canonical_fields.reason_codes
-  .includes("NO_CANONICAL_LOSS_RECORDED"));
+const admittedDescriptionRaw = JSON.stringify({ description: "Case Hit" });
+const admittedDescriptionResult = finishCanonicalTitle(admittedDescriptionRaw);
+const admittedDescriptionLedger = buildAccuracyLossLedger({
+  rawProviderOutput: admittedDescriptionRaw,
+  result: admittedDescriptionResult
+});
+const admittedDescription = admittedDescriptionLedger.stages.admitted_canonical_fields.fields
+  .find(({ field }) => field === "description");
+assert.equal(admittedDescription.status, "unchanged");
+assert.deepEqual(admittedDescription.reason_codes, ["VALUE_UNCHANGED"]);
+assert.ok(!admittedDescriptionLedger.stages.admitted_canonical_fields.reason_codes
+  .includes("CANONICAL_FIELD_DROPPED"));
 
 const emptySuppressionRaw = JSON.stringify({ year: "2024", subjects: ["A"], grammar: "standard" });
 const emptySuppressionResult = finishCanonicalTitle(emptySuppressionRaw);
