@@ -18,12 +18,16 @@ import {
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   composeCanonicalFieldsForStoredOutput,
+  replayFromRows,
   verifyReplay
 } from "../lib/listing/thin/csm-replay.mjs";
 import {
   VERIFIED_EXTERNAL_IDENTITY_DROP_ORDER_V2
 } from "../lib/listing/thin/canonical-composer.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  validateSetCardNameRelationTransition
+} from "../lib/listing/thin/set-card-name-reconciliation.mjs";
 import {
   computeVerifiedOriginalSetSha256,
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
@@ -159,6 +163,11 @@ assert.equal(prepared.fields.year, "1996-97");
 assert.equal(prepared.fields.set, "High Risers");
 assert.equal(prepared.fields.team, "Chicago Bulls");
 assert.equal(prepared.fields.card_number, "HR14");
+assert.deepEqual(prepared.set_card_name_relation_receipt.set, {
+  predicate: "CURRENT_CARD_MEMBER_OF_SET",
+  value: "High Risers"
+}, "the final Set relation is re-issued only after the external resolver receipt validates");
+assert.equal(prepared.set_card_name_relation_receipt.card_name, null);
 for (const physicalField of [
   "surface_color", "parallel_family", "parallel_exact", "print_finish", "serial", "grade"
 ]) {
@@ -205,6 +214,27 @@ for (const bracket of ["year", "manufacturer", "product", "set", "subject", "car
 }
 assert.deepEqual(verifyReplay(prepared.csm_rows, prepared.title).problems, []);
 
+{
+  const forgedObservedCardName = clone(prepared.csm_rows);
+  const visualTemplate = forgedObservedCardName.evidence.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL"
+  ));
+  forgedObservedCardName.evidence.push({
+    ...clone(visualTemplate),
+    id: `${visualTemplate.id}-forged-card-name`,
+    bracket: "card_name",
+    raw_value: "FORGED OBSERVED CARD NAME",
+    normalized_value: "FORGED OBSERVED CARD NAME"
+  });
+  reseal(forgedObservedCardName);
+  const checked = verifyReplay(forgedObservedCardName, prepared.title);
+  assert.equal(checked.ok, false,
+    "a resealed visual Card Name transition cannot hide behind external Set authority");
+  assert.ok(checked.problems.some((problem) => (
+    problem.kind === "set_card_name_relation_transition_invalid"
+  )));
+}
+
 // Producer and validator must agree that identity-equivalent spacing is a
 // presentation alias, not a canonical presentation. Exercise the full path so
 // a valid HR 14 receipt cannot be produced and then rejected by build/replay.
@@ -228,6 +258,51 @@ assert.equal(aliasPrepared.fields.card_number, "HR14");
 assert.equal(aliasPrepared.external_identity_support.field_decisions.card_number.action,
   "NORMALIZE_ALIAS");
 assert.deepEqual(verifyReplay(aliasPrepared.csm_rows, aliasPrepared.title).problems, []);
+
+for (const [index, setAlias] of ["high risers", "HIGH RISERS"].entries()) {
+  const setAliasPrepared = await prepareCanonicalListingPath({
+    tenantId: "tenant-external",
+    recognitionSessionId: `session-hr14-set-alias-${index}`,
+    imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+    createdAt,
+    callProvider: completedProvider({ ...liveCandidateObservation, set: setAlias })
+  });
+  assert.equal(setAliasPrepared.observed_fields.set, setAlias);
+  assert.equal(setAliasPrepared.fields.set, "High Risers");
+  assert.equal(setAliasPrepared.external_identity_support.field_decisions.set.action,
+    "CORROBORATE");
+  assert.deepEqual(setAliasPrepared.set_card_name_relation_receipt.set, {
+    predicate: "CURRENT_CARD_MEMBER_OF_SET",
+    value: "High Risers"
+  });
+  assert.deepEqual(verifyReplay(
+    setAliasPrepared.csm_rows, setAliasPrepared.title
+  ).problems, []);
+}
+
+const setFillPrepared = await prepareCanonicalListingPath({
+  tenantId: "tenant-external",
+  recognitionSessionId: "session-hr14-set-fill",
+  imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+  createdAt,
+  callProvider: completedProvider({ ...liveCandidateObservation, set: "" })
+});
+assert.equal(setFillPrepared.external_identity_support.field_decisions.set.action, "FILL");
+assert.deepEqual(setFillPrepared.set_card_name_relation_receipt.set, {
+  predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "High Risers"
+});
+assert.deepEqual(verifyReplay(setFillPrepared.csm_rows, setFillPrepared.title).problems, []);
+
+assert.throws(() => validateSetCardNameRelationTransition({
+  observedFields: prepared.observed_fields,
+  resolvedFields: { ...prepared.fields, card_name: "Forged Card Name" },
+  externalIdentitySupport: prepared.external_identity_support
+}), /set_card_name_relation_authority_missing:card_name/,
+"external identity authority cannot change Card Name under any decision action");
 
 // An absent team does not imply an absent search_optimization observation:
 // component signals share that SEM bracket. The replay binding must remove the
@@ -423,7 +498,11 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
   duplicateCoverage.evidence.push(clone(
     duplicateCoverage.evidence.find((row) => row.modality === "REGISTRY")
   ));
-  const checked = verifyReplay(reseal(duplicateCoverage), prepared.title);
+  reseal(duplicateCoverage);
+  assert.throws(() => replayFromRows(duplicateCoverage),
+    /external_identity_field_evidence_cardinality_invalid/,
+    "direct replay must reject duplicate Registry authority evidence");
+  const checked = verifyReplay(duplicateCoverage, prepared.title);
   assert.equal(checked.ok, false);
   assert.ok(checked.problems.some((problem) => (
     problem.kind === "external_identity_field_evidence_cardinality_invalid"
@@ -437,7 +516,11 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
   extra.source_ref.field = "parallel_exact";
   extra.bracket = "print_finish";
   extraCoverage.evidence.push(extra);
-  const checked = verifyReplay(reseal(extraCoverage), prepared.title);
+  reseal(extraCoverage);
+  assert.throws(() => replayFromRows(extraCoverage),
+    /external_identity_source_provenance_invalid/,
+    "direct replay must reject extra Registry authority evidence");
+  const checked = verifyReplay(extraCoverage, prepared.title);
   assert.equal(checked.ok, false);
   assert.ok(checked.problems.some((problem) => (
     problem.kind === "external_identity_field_evidence_unexpected"

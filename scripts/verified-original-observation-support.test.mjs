@@ -25,6 +25,7 @@ import {
   readCsmResolutionRecord
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
+  replayFromRows,
   validateVerifiedOriginalObservationReplayPacket,
   verifyReplay
 } from "../lib/listing/thin/csm-replay.mjs";
@@ -371,6 +372,44 @@ const maxPacketSizeRatio = packetSizeRatios.reduce(
 assert.ok(maxPacketSizeRatio.ratio <= 2,
   "all 16 durable packets stay within the 2x latency/storage guardrail");
 
+{
+  const relationMatrix = [
+    { id: "b", field: "set", observed: "", action: "FILL", expected: "Passing the Torch" },
+    { id: "b", field: "set", observed: "Poison Set", action: "CORRECT_CONFLICT",
+      expected: "Passing the Torch" },
+    { id: "a", field: "set", observed: "Poison Set", action: "CLEAR_CONFLICT", expected: "" },
+    { id: "a", field: "card_name", observed: "Poison Card Name",
+      action: "CLEAR_CONFLICT", expected: "" }
+  ];
+  for (const [index, testCase] of relationMatrix.entries()) {
+    const entry = fixture.cases.find(({ id }) => id === testCase.id);
+    const observed = observedFor(entry);
+    observed[testCase.field] = testCase.observed;
+    const applied = resolveVerifiedOriginalObservation(observed, {
+      originalImageSha256: entry.images.map(({ sha256 }) => sha256)
+    });
+    assert.equal(applied.receipt.field_decisions[testCase.field].action, testCase.action);
+    assert.equal(applied.fields[testCase.field], testCase.expected);
+    const composed = composeVerifiedOriginal(applied.fields);
+    const rows = buildCsmStageRows({
+      tenantId: "tenant-verified-original-relation",
+      recognitionSessionId: `session-verified-original-relation-${index}`,
+      fields: applied.fields,
+      observedFields: observed,
+      externalIdentitySupport: { status: "ABSTAINED" },
+      verifiedOriginalObservationSupport: applied.receipt,
+      composed,
+      title: composed.title,
+      ...noSearchReceipts(applied.fields)
+    });
+    const relation = rows.output.structured_output.set_card_name_relation_receipt[testCase.field];
+    if (testCase.expected) assert.equal(relation.value, testCase.expected);
+    else assert.equal(relation, null);
+    assert.equal(verifyReplay(rows, composed.title).ok, true,
+      `${testCase.field}/${testCase.action} authority survives durable replay`);
+  }
+}
+
 // Every exact original set is a closed deterministic projection. Empty or
 // maximally conflicting low observations, and front/back ordering, must not
 // change any resolved field or title. This is the executable zero-drift bound;
@@ -593,6 +632,12 @@ function resealRows(rows) {
     "fresh closed projection replays from durable rows");
   assert.equal(validateVerifiedOriginalObservationReplayPacket(rows), true,
     "historical forward reader is independent of the active writer gate");
+  const missingAuthority = structuredClone(rows);
+  delete missingAuthority.output.structured_output.verified_original_observation_support;
+  resealRows(missingAuthority);
+  assert.throws(() => replayFromRows(missingAuthority), (error) => (
+    error?.code === "verified_original_receipt_missing_or_unexpected"
+  ), "a resealed verified-original resolver signal cannot be relabelled as ordinary v3");
   const supportEvidence = rows.evidence.filter((row) => (
     row.source_ref?.support_type === "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
   ));
