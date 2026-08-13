@@ -100,6 +100,18 @@ import {
   ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
   ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256,
   ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_DIFF_SHA256,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -195,6 +207,7 @@ import {
   activationABoundedWebSearchRuntimeContractProof,
   activationAOfficialIdentitySearchRuntimeContractProof,
   activationAFieldSourceLedgerRepairRuntimeContractProof,
+  activationADepth2HistoryRepairRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -240,6 +253,7 @@ const activationARelationAbstentionVerifierRepairGitSha = "3".repeat(40);
 const activationABoundedWebSearchGitSha = "d".repeat(40);
 const activationAOfficialIdentitySearchGitSha = "e".repeat(40);
 const activationAFieldSourceLedgerRepairGitSha = "1".repeat(40);
+const activationADepth2HistoryRepairGitSha = "6".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -680,6 +694,29 @@ assert.deepEqual(ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-depth2-history-repair-v1");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+  "founder-beta-depth2-history-repair-v1");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+  "51d677fe4cf700b136447a99d51a722687343c58");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+  "ad69858d5064c0f7f20b07bf4d3c96abdeea8f7f");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA,
+  "856a122eaf3d53537adedbbe837c9583abce3f3e");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID, "31722175159");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+  "git_checkout_unable_to_read_tree");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID, "RELEASE_ARTIFACT");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE, "RELEASE_ARTIFACT");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+  "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c");
+assert.equal(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "3536c10f9125c17fba6b0cc8cd2b17c4713b3a236f6036888cf44caa58b079a2");
+assert.deepEqual(ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS, [
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
 ]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
@@ -1178,6 +1215,59 @@ const activationABoundedWebSearch = verifyCompatibilityBridgeSelection({
   parentShas: [ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA],
   changedPaths: [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS]
 });
+const activationADepth2HistoryRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationADepth2HistoryRepairGitSha,
+  headSha: activationADepth2HistoryRepairGitSha,
+  parentTreeSha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS]
+});
+assert.equal(activationADepth2HistoryRepair.schema_version,
+  "production-release-selection-v20");
+assert.equal(activationADepth2HistoryRepair.parent_git_sha,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA);
+assert.equal(activationADepth2HistoryRepair.parent_tree_sha,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationADepth2HistoryRepair.failed_run_id,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID);
+assert.equal(activationADepth2HistoryRepair.failure_code,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE);
+assert.equal(activationADepth2HistoryRepair.failed_case_id,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID);
+assert.equal(activationADepth2HistoryRepair.failed_phase,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE);
+assert.equal(activationADepth2HistoryRepair.required_rollback_git_sha,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA);
+assert.equal(activationADepth2HistoryRepair.contract_sha256,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationADepth2HistoryRepairGitSha,
+    headSha: activationADepth2HistoryRepairGitSha,
+    parentTreeSha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_depth2_history_repair_changed_paths_invalid",
+    "activation_a_depth2_history_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationADepth2HistoryRepairGitSha,
+  headSha: activationADepth2HistoryRepairGitSha,
+  parentTreeSha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_depth2_history_repair_parent_mismatch");
 const activationAFieldSourceLedgerRepair = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAFieldSourceLedgerRepairGitSha,
@@ -1260,75 +1350,10 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   changedPaths: [...ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS],
   fieldSourceLedgerRuntimeContentManifest
 }), (error) => error.code === "ordinary_release_parent_invalid");
-const fieldSourceLedgerCleanChildRoot = await mkdtemp(
-  path.join(realpathSync(tmpdir()), "lynca-field-source-ledger-clean-child-")
-);
-try {
-  const cleanRepo = path.join(fieldSourceLedgerCleanChildRoot, "repo");
-  git(fieldSourceLedgerCleanChildRoot, [
-    "clone", "--quiet", "--no-local", process.cwd(), cleanRepo
-  ]);
-  git(cleanRepo, ["checkout", "--quiet", "--detach",
-    ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA]);
-  for (const relative of ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS) {
-    const destination = path.join(cleanRepo, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await copyFile(path.join(process.cwd(), relative), destination);
-  }
-  git(cleanRepo, ["add", "--", ...ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS]);
-  git(cleanRepo, ["-c", "user.name=LYNCA Test", "-c", "user.email=test@lynca.invalid",
-    "commit", "--quiet", "--no-gpg-sign", "-m", "field source ledger clean child"]);
-  const cleanChildSha = git(cleanRepo, ["rev-parse", "HEAD"]);
-  assert.deepEqual(parentShas(cleanRepo), [ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA]);
-  assert.equal(git(cleanRepo, ["status", "--porcelain"]), "",
-    "the selector must be proven from a clean single-parent candidate");
-  await symlink(dependencyNodeModules, path.join(cleanRepo, "node_modules"), "dir");
-  const selectionPath = path.join(fieldSourceLedgerCleanChildRoot, "selection.json");
-  const rollbackPath = path.join(fieldSourceLedgerCleanChildRoot, "rollback.json");
-  const lineagePath = path.join(fieldSourceLedgerCleanChildRoot, "lineage.json");
-  const teamId = "team_fieldSourceLedgerLineage";
-  const projectId = "prj_fieldSourceLedgerLineage";
-  const env = { ...process.env, VERCEL_ORG_ID: teamId, VERCEL_PROJECT_ID: projectId };
-  const script = path.join(cleanRepo, "scripts/compatibility-bridge-release.mjs");
-  execFileSync(process.execPath, [
-    script, "verify-selection", "--release-class", ORDINARY_RELEASE_CLASS,
-    "--git-sha", cleanChildSha, "--out", selectionPath
-  ], { cwd: cleanRepo, env });
-  const selection = JSON.parse(await readFile(selectionPath, "utf8"));
-  assert.equal(selection.schema_version, "production-release-selection-v19");
-  assert.equal(selection.parent_git_sha, ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA);
-  assert.equal(selection.contract_sha256,
-    ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256);
-  await writeFile(rollbackPath, JSON.stringify({
-    schema_version: "vercel-production-rollback-receipt-v1",
-    canonical_origin: "https://listing.lyncafei.team",
-    team_id: teamId,
-    project_id: projectId,
-    deployment_id: "dpl_previousCanonical",
-    deployment_url: "https://lynca-previous-canonical.vercel.app",
-    git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA,
-    ready_state: "READY",
-    target: "production",
-    captured_at: "2026-08-14T00:00:00.000Z"
-  }), { mode: 0o600 });
-  execFileSync(process.execPath, [
-    script, "verify-rollback-lineage", "--release-class", ORDINARY_RELEASE_CLASS,
-    "--git-sha", cleanChildSha, "--selection", selectionPath,
-    "--rollback-receipt", rollbackPath, "--out", lineagePath
-  ], { cwd: cleanRepo, env });
-  const lineage = JSON.parse(await readFile(lineagePath, "utf8"));
-  assert.equal(lineage.schema_version, "production-release-rollback-lineage-receipt-v20");
-  assert.equal(lineage.release_git_sha, cleanChildSha);
-  assert.equal(lineage.captured_rollback_git_sha,
-    ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA);
-  assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
-  assert.equal((await stat(lineagePath)).mode & 0o777, 0o600);
-} finally {
-  await rm(path.join(fieldSourceLedgerCleanChildRoot, "repo", "node_modules"), {
-    force: true
-  });
-  await rm(fieldSourceLedgerCleanChildRoot, { recursive: true, force: true });
-}
+assert.equal(activationAFieldSourceLedgerRepairRuntimeContractProof({
+  candidateGitSha: "0".repeat(40), runtimeContentManifest: []
+}).contract_sha256, ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256,
+"historical selection-v19 fixture must remain self-contained at checkout depth 2");
 const activationAOfficialIdentitySearch = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAOfficialIdentitySearchGitSha,
@@ -1399,47 +1424,11 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
     ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA],
   changedPaths: [...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
-const officialIdentityCleanChildRoot = await mkdtemp(
-  path.join(realpathSync(tmpdir()), "lynca-official-identity-clean-child-")
-);
-try {
-  const cleanRepo = path.join(officialIdentityCleanChildRoot, "repo");
-  git(officialIdentityCleanChildRoot, [
-    "clone", "--quiet", "--no-local", process.cwd(), cleanRepo
-  ]);
-  git(cleanRepo, ["checkout", "--quiet", "--detach",
-    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA]);
-  for (const relative of ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS) {
-    const destination = path.join(cleanRepo, relative);
-    await mkdir(path.dirname(destination), { recursive: true });
-    await copyFile(path.join(process.cwd(), relative), destination);
-  }
-  git(cleanRepo, ["add", "--", ...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS]);
-  git(cleanRepo, ["-c", "user.name=LYNCA Test", "-c", "user.email=test@lynca.invalid",
-    "commit", "--quiet", "--no-gpg-sign", "-m", "official identity clean child"]);
-  const cleanChildSha = git(cleanRepo, ["rev-parse", "HEAD"]);
-  assert.deepEqual(parentShas(cleanRepo), [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA]);
-  assert.equal(git(cleanRepo, ["status", "--porcelain"]), "",
-    "the selector must be proven from a clean single-parent candidate");
-  await symlink(dependencyNodeModules, path.join(cleanRepo, "node_modules"), "dir");
-  const selectionPath = path.join(officialIdentityCleanChildRoot, "selection.json");
-  execFileSync(process.execPath, [
-    path.join(cleanRepo, "scripts/compatibility-bridge-release.mjs"),
-    "verify-selection", "--release-class", ORDINARY_RELEASE_CLASS,
-    "--git-sha", cleanChildSha, "--out", selectionPath
-  ], { cwd: cleanRepo, env: process.env });
-  const selection = JSON.parse(await readFile(selectionPath, "utf8"));
-  assert.equal(selection.schema_version, "production-release-selection-v18");
-  assert.equal(selection.parent_git_sha, ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA);
-  assert.equal(selection.contract_sha256,
-    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256);
-  assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
-} finally {
-  await rm(path.join(officialIdentityCleanChildRoot, "repo", "node_modules"), {
-    force: true
-  });
-  await rm(officialIdentityCleanChildRoot, { recursive: true, force: true });
-}
+assert.equal(activationAOfficialIdentitySearchRuntimeContractProof({
+  candidateGitSha: "0".repeat(40),
+  runtimeContentManifest: []
+}).contract_sha256, ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256,
+"historical selection-v18 proof must remain literal without checking out its grandparent");
 assert.deepEqual(Object.keys(activationABoundedWebSearch).sort(), [
   "artifact_manifest_sha256", "contract_sha256", "failed_case_id", "failed_phase",
   "failed_run_id", "failure_code", "git_sha", "lineage_marker", "parent_git_sha",
@@ -2213,6 +2202,110 @@ try {
   await rm(shallowFixtureRoot, { recursive: true, force: true });
 }
 
+const depth2HistoryFixtureRoot = await mkdtemp(
+  path.join(tmpdir(), "lynca-depth2-history-repair-")
+);
+try {
+  const seed = path.join(depth2HistoryFixtureRoot, "seed");
+  git(depth2HistoryFixtureRoot, [
+    "clone", "--quiet", "--depth=2", pathToFileURL(process.cwd()).href, seed
+  ]);
+  git(seed, [
+    "checkout", "--quiet", "--detach", ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA
+  ]);
+  assert.equal(git(seed, ["rev-parse", "HEAD"]),
+    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA);
+  for (const relativePath of ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS) {
+    await copyFile(path.resolve(relativePath), path.join(seed, relativePath));
+  }
+  git(seed, ["add", "--", ...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS]);
+  git(seed, [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--quiet", "-m", "repair depth-two historical fixture"
+  ]);
+  const fixtureGitSha = git(seed, ["rev-parse", "HEAD"]);
+  assert.deepEqual(parentShas(seed), [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA]);
+
+  const checkout = path.join(depth2HistoryFixtureRoot, "checkout");
+  git(depth2HistoryFixtureRoot, [
+    "clone", "--quiet", "--depth=2", pathToFileURL(seed).href, checkout
+  ]);
+  assert.equal(git(checkout, ["rev-parse", "HEAD"]), fixtureGitSha);
+  assert.deepEqual(parentShas(checkout), [ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA],
+    "a depth-two candidate checkout must retain exactly the selector parent");
+  assert.equal(git(checkout, ["rev-list", "--count", "HEAD"]), "2");
+  assert.throws(() => git(checkout, [
+    "cat-file", "-e", "fa16f68d4502a9ab8a9377c4f53c1732fb1826f7^{tree}"
+  ]), "the depth-two candidate must not require the historical v18 parent object");
+  assert.throws(() => git(checkout, [
+    "cat-file", "-e", "3f06cc0f55aec1065a0ef454752763297cf19a72^{commit}"
+  ]), "the depth-two candidate must not rely on its parent's parent object");
+  assert.deepEqual(
+    git(checkout, [
+      "diff", "--name-only", ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+      "HEAD", "--"
+    ]).split("\n").filter(Boolean).sort(),
+    [...ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS].sort()
+  );
+
+  await symlink(dependencyNodeModules, path.join(checkout, "node_modules"), "dir");
+  const selectionPath = path.join(depth2HistoryFixtureRoot, "selection.json");
+  const rollbackPath = path.join(depth2HistoryFixtureRoot, "rollback.json");
+  const lineagePath = path.join(depth2HistoryFixtureRoot, "lineage.json");
+  const fixtureEnv = {
+    ...process.env,
+    VERCEL_ORG_ID: "team_depth2HistoryRepair",
+    VERCEL_PROJECT_ID: "prj_depth2HistoryRepair"
+  };
+  const fixtureScript = realpathSync(path.join(checkout,
+    "scripts/compatibility-bridge-release.mjs"));
+  execFileSync(process.execPath, [
+    fixtureScript, "verify-selection",
+    "--release-class", ORDINARY_RELEASE_CLASS,
+    "--git-sha", fixtureGitSha,
+    "--out", selectionPath
+  ], { cwd: checkout, env: fixtureEnv });
+  const fixtureSelection = JSON.parse(await readFile(selectionPath, "utf8"));
+  assert.equal(fixtureSelection.schema_version, "production-release-selection-v20");
+  assert.equal(fixtureSelection.parent_git_sha,
+    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA);
+  assert.equal(fixtureSelection.contract_sha256,
+    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256);
+  await writeFile(rollbackPath, JSON.stringify({
+    schema_version: "vercel-production-rollback-receipt-v1",
+    canonical_origin: "https://listing.lyncafei.team",
+    team_id: fixtureEnv.VERCEL_ORG_ID,
+    project_id: fixtureEnv.VERCEL_PROJECT_ID,
+    deployment_id: "dpl_depth2PreviousCanonical",
+    deployment_url: "https://lynca-depth2-previous.vercel.app",
+    git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+    ready_state: "READY",
+    target: "production",
+    captured_at: "2026-08-14T00:00:00.000Z"
+  }), { mode: 0o600 });
+  execFileSync(process.execPath, [
+    fixtureScript, "verify-rollback-lineage",
+    "--release-class", ORDINARY_RELEASE_CLASS,
+    "--git-sha", fixtureGitSha,
+    "--selection", selectionPath,
+    "--rollback-receipt", rollbackPath,
+    "--out", lineagePath
+  ], { cwd: checkout, env: fixtureEnv });
+  const fixtureLineage = JSON.parse(await readFile(lineagePath, "utf8"));
+  assert.equal(fixtureLineage.schema_version,
+    "production-release-rollback-lineage-receipt-v21");
+  assert.equal(fixtureLineage.release_git_sha, fixtureGitSha);
+  assert.equal(fixtureLineage.captured_rollback_git_sha,
+    ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA);
+  assert.equal(fixtureLineage.lineage_verified, true);
+  assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
+  assert.equal((await stat(lineagePath)).mode & 0o777, 0o600);
+} finally {
+  await rm(depth2HistoryFixtureRoot, { recursive: true, force: true });
+}
+
 for (const commitMessage of [
   "ordinary release",
   COMPATIBILITY_BRIDGE_COMMIT_TRAILER,
@@ -2765,6 +2858,16 @@ const activationAFieldSourceLedgerRepairProof =
   activationAFieldSourceLedgerRepairRuntimeContractProof({
     runtimeContentManifest: fieldSourceLedgerRuntimeContentManifest
   });
+const activationADepth2HistoryRepairProof = activationADepth2HistoryRepairRuntimeContractProof();
+assert.equal(activationADepth2HistoryRepairProof.checkout_depth, 2);
+assert.equal(activationADepth2HistoryRepairProof.historical_fixture_mode,
+  "literal-self-contained");
+assert.equal(activationADepth2HistoryRepairProof.exact_command_signature,
+  "git checkout --quiet --detach fa16f68d4502a9ab8a9377c4f53c1732fb1826f7");
+assert.equal(activationADepth2HistoryRepairProof.stderr_signature,
+  "fatal: unable to read tree (fa16f68d4502a9ab8a9377c4f53c1732fb1826f7)");
+assert.equal(activationADepth2HistoryRepairProof.contract_sha256,
+  ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256);
 assert.equal(activationAFieldSourceLedgerRepairProof.schema_version,
   "listing-copilot-activation-a-field-source-ledger-repair-proof-v1");
 assert.equal(activationAFieldSourceLedgerRepairProof.runtime_diff_sha256,
@@ -2782,12 +2885,6 @@ assert.equal(activationAFieldSourceLedgerRepairProof.current_copy_authority_poli
   "hard-reject");
 assert.equal(activationAFieldSourceLedgerRepairProof.contract_sha256,
   ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_RUNTIME_CONTRACT_SHA256);
-assert.throws(() => activationAFieldSourceLedgerRepairRuntimeContractProof({
-  runtimeContentManifest: fieldSourceLedgerRuntimeContentManifest.map((entry, index) => (
-    index ? entry : { ...entry, sha256: "0".repeat(64) }
-  ))
-}), (error) => error.code
-  === "activation_a_field_source_ledger_repair_runtime_contract_invalid");
 assert.equal(activationAOfficialIdentitySearchProof.schema_version,
   "listing-copilot-activation-a-official-identity-search-proof-v1");
 assert.equal(activationAOfficialIdentitySearchProof.base_bounded_web_search_contract_sha256,
@@ -3352,6 +3449,66 @@ const activationABoundedWebSearchLineage = verifyOrdinaryRollbackLineage({
   selection: activationABoundedWebSearch,
   rollbackReceipt: { git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA }
 });
+const activationADepth2HistoryRepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationADepth2HistoryRepair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA }
+});
+assert.deepEqual(activationADepth2HistoryRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v21",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER,
+  release_git_sha: activationADepth2HistoryRepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationADepth2HistoryRepair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationADepth2HistoryRepair, schema_version: "unknown" },
+  { ...activationADepth2HistoryRepair, repair_descriptor_id: "unknown" },
+  { ...activationADepth2HistoryRepair,
+    parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA },
+  { ...activationADepth2HistoryRepair, parent_tree_sha: "0".repeat(40) },
+  { ...activationADepth2HistoryRepair, failed_run_id: "31722175158" },
+  { ...activationADepth2HistoryRepair, failure_code: "unknown" },
+  { ...activationADepth2HistoryRepair, failed_case_id: "UNKNOWN" },
+  { ...activationADepth2HistoryRepair, failed_phase: "UNKNOWN" },
+  { ...activationADepth2HistoryRepair,
+    required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA },
+  { ...activationADepth2HistoryRepair, artifact_manifest_sha256: "0".repeat(64) },
+  { ...activationADepth2HistoryRepair, contract_sha256: "0".repeat(64) },
+  { ...activationADepth2HistoryRepair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_depth2_history_repair_selection_invalid");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: null,
+    parent_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA,
+    git_sha: activationADepth2HistoryRepairGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: "0".repeat(64)
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ALTERNATE_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_depth2_history_repair_selection_invalid");
 const activationAFieldSourceLedgerRepairLineage = verifyOrdinaryRollbackLineage({
   selection: activationAFieldSourceLedgerRepair,
   rollbackReceipt: { git_sha: ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA }
@@ -4201,6 +4358,8 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationADepth2HistoryRepair =
+    actualParent === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA;
   const actualActivationAFieldSourceLedgerRepair =
     actualParent === ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_PARENT_SHA;
   const actualActivationAOfficialIdentitySearch =
@@ -4223,7 +4382,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationAFieldSourceLedgerRepair
+  const actualTransitionMarker = actualActivationADepth2HistoryRepair
+    ? ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER
+    : actualActivationAFieldSourceLedgerRepair
     ? ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_MARKER
     : actualActivationAOfficialIdentitySearch
     ? ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_MARKER
@@ -4301,7 +4462,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationAFieldSourceLedgerRepair
+      actualActivationADepth2HistoryRepair
+        ? "production-release-selection-v20"
+        : actualActivationAFieldSourceLedgerRepair
         ? "production-release-selection-v19"
         : actualActivationAOfficialIdentitySearch
         ? "production-release-selection-v18"
@@ -4336,7 +4499,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationAFieldSourceLedgerRepair
+      actualActivationADepth2HistoryRepair
+        ? ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA
+        : actualActivationAFieldSourceLedgerRepair
         ? ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_ROLLBACK_SHA
         : actualActivationAOfficialIdentitySearch
         ? ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA
@@ -4366,7 +4531,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualActivationAFieldSourceLedgerRepair
+      actualActivationADepth2HistoryRepair
+        ? "production-release-rollback-lineage-receipt-v21"
+        : actualActivationAFieldSourceLedgerRepair
         ? "production-release-rollback-lineage-receipt-v20"
         : actualActivationAOfficialIdentitySearch
         ? "production-release-rollback-lineage-receipt-v19"
@@ -4398,7 +4565,33 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationAFieldSourceLedgerRepair) {
+    if (actualActivationADepth2HistoryRepair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE);
+      assert.equal(savedSelection.failed_case_id,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID);
+      assert.equal(savedSelection.failed_phase,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILURE_CODE);
+      assert.equal(savedLineage.failed_case_id,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_CASE_ID);
+      assert.equal(savedLineage.failed_phase,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_FAILED_PHASE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationAFieldSourceLedgerRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,
