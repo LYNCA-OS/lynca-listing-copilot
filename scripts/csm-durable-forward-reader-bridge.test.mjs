@@ -273,6 +273,18 @@ assert.doesNotThrow(
   () => validateFounderBetaWebReceipt(openOnly),
   "a generic open/find trace is valid when durable field evidence uses its URL",
 );
+const ungovernedSupport = structuredClone(openOnly);
+ungovernedSupport.urls = ["https://example.com/checklist"];
+ungovernedSupport.field_evidence[0].support_urls = ungovernedSupport.urls;
+assert.throws(() => validateFounderBetaWebReceipt(ungovernedSupport),
+  /founder_beta_web_receipt_invalid/,
+  "unknown hosts may not enter applied support_urls");
+const ungovernedUnresolved = structuredClone(openOnly);
+ungovernedUnresolved.urls = ["https://example.com/checklist"];
+ungovernedUnresolved.field_evidence[0].support_urls = [];
+ungovernedUnresolved.field_evidence[0].unresolved_urls = ungovernedUnresolved.urls;
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(ungovernedUnresolved),
+  "unknown hosts remain durable unresolved evidence");
 
 const usedWithoutTrace = structuredClone(twoCalls);
 usedWithoutTrace.queries = [];

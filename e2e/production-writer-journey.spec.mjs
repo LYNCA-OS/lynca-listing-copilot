@@ -50,6 +50,7 @@ import {
   CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
 } from "../lib/listing/thin/canonical-fields.mjs";
 import {
+  governedIdentityAuthorityUrl,
   validateFounderBetaWebReceipt
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import {
@@ -91,6 +92,10 @@ import {
 } from "../scripts/compatibility-bridge-release.mjs";
 import {
   buildProductionForwardReadbackExpectation,
+  governedAppliedWebSupportProof,
+  strictNoSearchReceipt,
+  WEB_IDENTITY_CONTENT_ACCEPTANCE,
+  webIdentityContentProjectionProof,
   webIdentityQueryHasVisibleAnchors,
   writeProductionForwardReadbackExpectation
 } from "../scripts/production-forward-readback.mjs";
@@ -588,32 +593,15 @@ function activationProjectionProof(sourceCase, resolutionView, title) {
   code);
   const setText = relationReceipt.set.value;
   const cardNameText = relationReceipt.card_name.value;
-  const subjectText = resolutionView?.brackets?.find(
-    (entry) => entry?.bracket === "subject"
-  )?.rendered_text;
-  requireInvariant(Boolean(cardNameText) && Boolean(subjectText)
-    && title.includes(cardNameText) && title.includes(subjectText)
-    && title.indexOf(cardNameText) < title.indexOf(subjectText),
+  requireInvariant(setText === WEB_IDENTITY_CONTENT_ACCEPTANCE.set
+    && cardNameText === WEB_IDENTITY_CONTENT_ACCEPTANCE.card_name
+    && title === resolutionView?.composer?.stored_title
+    && webIdentityContentProjectionProof(resolutionView),
   code);
-  if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
-    requireInvariant(webReceipt.web_search_used === true
-      && webReceipt.web_search_call_count >= 1
-      && webReceipt.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
-      && webReceipt.queries.length >= 1
-      && webIdentityQueryHasVisibleAnchors(webReceipt.queries)
-      && webReceipt.urls.length > 0
-      && webReceipt.urls.every((url) => url.startsWith("https://"))
-      && webReceipt.field_evidence.length > 0
-      && webReceipt.field_evidence.some((entry) => (
-        WEB_IDENTITY_FIELDS.has(entry.field)
-        && entry.support_urls.length > 0
-      )),
-    code);
-  }
   return Object.freeze({
     web_search_used: webReceipt.web_search_used,
     web_search_call_count: webReceipt.web_search_call_count,
-    query_visible_anchor_match: sourceCase.case_id !== "NON_TCG_WEB_IDENTITY"
+    query_visible_anchor_match: !webReceipt.web_search_used
       || webIdentityQueryHasVisibleAnchors(webReceipt.queries),
     source_url_count: webReceipt.urls.length,
     source_authority_fields: webReceipt.field_evidence.map((entry) => entry.field),
@@ -638,25 +626,42 @@ function founderWebSearchProof(sourceCase, resolutionView) {
   } catch {
     throw verifierFailure(code);
   }
-  const designatedSearch = sourceCase.case_id === "NON_TCG_WEB_IDENTITY";
+  const actualSearch = receipt.web_search_used;
+  const visibleAnchorContract = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.find(
+    (contract) => contract.case_id === "NON_TCG_WEB_IDENTITY"
+  );
+  const visibleAnchorCase = sourceCase.original_set_sha256
+    === visibleAnchorContract?.original_set_sha256;
+  const governedSupportRows = receipt.field_evidence.filter((entry) => (
+    WEB_IDENTITY_FIELDS.has(entry.field) && entry.support_urls.length > 0
+    && entry.support_urls.every(governedIdentityAuthorityUrl)
+  ));
   requireInvariant(receipt.provider_request_count === 1
     && receipt.isolated_model_call_count === 0
-    && (!designatedSearch || (
-      receipt.web_search_used === true
-      && receipt.web_search_call_count >= 1
+    && (!actualSearch || (
+      receipt.web_search_call_count >= 1
       && receipt.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
-      && receipt.queries.length >= 1
-      && webIdentityQueryHasVisibleAnchors(receipt.queries)
-      && receipt.urls.length >= 1
-      && receipt.field_evidence.some((entry) => entry.support_urls.length > 0)
+      && (receipt.queries.length >= 1 || receipt.field_evidence.length >= 1)
+      && (!visibleAnchorCase || receipt.queries.length === 0
+        || webIdentityQueryHasVisibleAnchors(receipt.queries))
     )),
   code);
   return Object.freeze({
     web_search_used: receipt.web_search_used,
     web_search_call_count: receipt.web_search_call_count,
-    query_visible_anchor_match: !designatedSearch
+    query_recorded: receipt.queries.length > 0,
+    query_visible_anchor_match: !actualSearch || !visibleAnchorCase
+      || receipt.queries.length === 0
       || webIdentityQueryHasVisibleAnchors(receipt.queries),
     source_url_count: receipt.urls.length,
+    governed_support_url_count: new Set(governedSupportRows.flatMap(
+      (entry) => entry.support_urls
+    )).size,
+    governed_support_fields: governedSupportRows.map((entry) => entry.field),
+    governed_applied_support: governedAppliedWebSupportProof(receipt, resolutionView, {
+      originalSetSha256: sourceCase.original_set_sha256
+    }),
+    strict_no_search: strictNoSearchReceipt(receipt),
     unresolved_authority_fields: receipt.field_evidence.filter(
       (entry) => entry.unresolved_urls.length > 0 || (
         entry.support_urls.length === 0
@@ -1861,12 +1866,12 @@ function validateSourceCasesManifest(manifest, {
   }
   for (const entry of manifest.activation_cases) {
     const contract = activationById.get(entry?.case_id);
-    const searchCase = entry?.case_id === "NON_TCG_WEB_IDENTITY";
+    const identityCase = entry?.case_id === "NON_TCG_WEB_IDENTITY";
     const expectedKeys = [
       "case_id", "expected_grammar", "source_feedback_id", "evaluation_cohort",
       "hash_provenance", "image_count", "files", "original_set_sha256",
-      ...(searchCase
-        ? ["expected_web_search_used", "expected_web_search_query"]
+      ...(identityCase
+        ? []
         : ["expected_lot_count"])
     ];
     if (!contract || !hasExactKeys(entry, expectedKeys)
@@ -1875,9 +1880,7 @@ function validateSourceCasesManifest(manifest, {
       || entry.evaluation_cohort !== contract.evaluation_cohort
       || entry.hash_provenance !== contract.hash_provenance
       || entry.original_set_sha256 !== contract.original_set_sha256
-      || (searchCase && (entry.expected_web_search_used !== true
-        || entry.expected_web_search_query !== contract.expected_web_search_query))
-      || (!searchCase && entry.expected_lot_count !== contract.expected_lot_count)
+      || (!identityCase && entry.expected_lot_count !== contract.expected_lot_count)
       || !Array.isArray(entry.files) || entry.files.length !== 2
       || entry.image_count !== 2
       || entry.files.some((file) => !hasExactKeys(file, fileKeys))
@@ -2213,7 +2216,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
   const requestIds = new Set();
   const resolutionRequests = [];
   let standardResolutionView = null;
-  let webResolutionView = null;
+  const resolutionViewsByCaseId = new Map();
   const responseCaptureTasks = new Set();
   const pendingPageWaits = new Set();
   const ownPageWait = (promise) => {
@@ -2765,6 +2768,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       failurePhase = "RESOLUTION_VIEW";
       const resolutionResponse = await resolutionResponsePromise;
       const resolutionView = await resolutionResponse.json();
+      resolutionViewsByCaseId.set(sourceCase.case_id, structuredClone(resolutionView));
       addIds(resolutionView, ids);
       expect(resolutionResponse.ok(), "resolution view must be readable in the live writer journey").toBeTruthy();
       expect(resolutionView?.asset_id).toBe(recognitionPayload.asset_id);
@@ -2779,7 +2783,6 @@ test("production writer journey verifies Glass Box and staged large-image transp
         requireInvariant(resolutionView?.grammar?.raw === "standard"
           && observationCanonicalV3VersionActive(versions),
         verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
-        webResolutionView = structuredClone(resolutionView);
       }
       if (sourceCase.case_id === "LOT_SHARED_ONLY") {
         requireInvariant(resolutionView?.grammar?.raw === "lot"
@@ -2919,6 +2922,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
           source_asset_id: sourceCase.source_asset_id
         } : { source_feedback_id: sourceCase.source_feedback_id }),
         hash_provenance: sourceCase.hash_provenance,
+        ...(sourceCase.original_set_sha256 ? {
+          original_set_sha256: sourceCase.original_set_sha256
+        } : {}),
         image_sha256: sourceCase.files.map(({ role, content_sha256: contentSha256 }) => ({
           role,
           content_sha256: contentSha256
@@ -3305,6 +3311,31 @@ test("production writer journey verifies Glass Box and staged large-image transp
     const webCaseEvidence = evidence.cases.find(
       (entry) => entry.case_id === "NON_TCG_WEB_IDENTITY"
     );
+    const webReceiptClassifications = evidence.cases.map((entry) => {
+      const view = resolutionViewsByCaseId.get(entry.case_id);
+      return Object.freeze({
+        entry,
+        governed_applied_support: governedAppliedWebSupportProof(
+          view?.founder_beta_web_receipt, view, {
+            originalSetSha256: entry.original_set_sha256
+          }
+        ),
+        strict_no_search: strictNoSearchReceipt(view?.founder_beta_web_receipt)
+      });
+    });
+    const qualifiedGovernedWebCases = webReceiptClassifications.filter(
+      (classification) => classification.governed_applied_support
+    ).map((classification) => classification.entry);
+    const strictNoSearchCases = webReceiptClassifications.filter(
+      (classification) => classification.strict_no_search
+    ).map((classification) => classification.entry);
+    const governedWebCaseEvidence = qualifiedGovernedWebCases[0];
+    const webReceiptClaimsMatchViews = webReceiptClassifications.every(
+      ({ entry, governed_applied_support: applied, strict_no_search: noSearch }) => (
+        entry?.founder_web_search?.governed_applied_support === applied
+        && entry?.founder_web_search?.strict_no_search === noSearch
+      )
+    );
     const lotCaseEvidence = evidence.cases.find(
       (entry) => entry.case_id === "LOT_SHARED_ONLY"
     );
@@ -3352,16 +3383,15 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && standardCaseEvidence?.source_asset_id
         === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id
       && observationLegacyVersionActive(tcgCaseEvidence?.versions)
-      && evidence.cases.some((entry) => (
-        entry?.founder_web_search?.web_search_used === false
-        && entry?.founder_web_search?.web_search_call_count === 0
-      ))
-      && webCaseEvidence?.activation_projection?.web_search_used === true
-      && webCaseEvidence?.activation_projection?.web_search_call_count >= 1
-      && webCaseEvidence?.activation_projection?.web_search_call_count
-        <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
-      && webCaseEvidence?.activation_projection?.query_visible_anchor_match === true
-      && webCaseEvidence?.activation_projection?.source_url_count > 0
+      && webReceiptClaimsMatchViews
+      && strictNoSearchCases.length >= 1
+      && qualifiedGovernedWebCases.length === 1
+      && governedWebCaseEvidence?.case_id === qualifiedGovernedWebCases[0]?.case_id
+      && webCaseEvidence?.activation_projection?.set_predicate
+        === SET_MEMBERSHIP_PREDICATE
+      && webCaseEvidence?.activation_projection?.card_name_predicate
+        === CARD_NAME_PREDICATE
+      && webCaseEvidence?.activation_projection?.card_name_before_subject === true
       && observationCanonicalV3VersionActive(webCaseEvidence?.versions)
       && lotCaseEvidence?.lot_shared_only?.marker_exact === true
       && lotCaseEvidence?.lot_shared_only?.publishable === true
@@ -3417,6 +3447,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
       verified_original_observation_active_case_count: evidence.cases.filter(
         (entry) => entry.verified_original_observation_active === true
       ).length,
+      qualified_governed_web_support_case_count: qualifiedGovernedWebCases.length,
+      strict_no_search_case_count: strictNoSearchCases.length,
+      selected_forward_readback_case_id: governedWebCaseEvidence?.case_id,
       warmup_real_response_observed: true,
       staged_overlap_observed: true,
       staged_relays_durable_before_recognition_response: true,
@@ -3425,7 +3458,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
     evidence.stages.live_contract = { passed: true, case_count: evidence.cases.length };
     evidence.passed = true;
     const forwardReadbackResolutionView = parityRequired
-      ? webResolutionView : standardResolutionView;
+      ? resolutionViewsByCaseId.get(governedWebCaseEvidence?.case_id)
+      : standardResolutionView;
     requireInvariant(forwardReadbackResolutionView != null,
       verifierErrorCodes.RESOLUTION_VIEW_MISMATCH);
     const forwardReadbackExpectation = buildProductionForwardReadbackExpectation({
@@ -3440,6 +3474,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     );
     evidence.stages.forward_readback_expectation = {
       passed: true,
+      case_id: forwardReadbackExpectation.case_id,
       asset_id: forwardReadbackExpectation.asset_id,
       recognition_session_id: forwardReadbackExpectation.recognition_session_id,
       provider_calls: 0
@@ -3809,10 +3844,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     activation_cases: WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map((contract) => ({
       case_id: contract.case_id,
       expected_grammar: contract.expected_grammar,
-      ...(contract.case_id === "NON_TCG_WEB_IDENTITY" ? {
-        expected_web_search_used: contract.expected_web_search_used,
-        expected_web_search_query: contract.expected_web_search_query
-      } : { expected_lot_count: contract.expected_lot_count }),
+      ...(contract.case_id === "NON_TCG_WEB_IDENTITY"
+        ? {} : { expected_lot_count: contract.expected_lot_count }),
       original_set_sha256: contract.original_set_sha256,
       source_feedback_id: contract.source_feedback_id,
       evaluation_cohort: contract.evaluation_cohort,

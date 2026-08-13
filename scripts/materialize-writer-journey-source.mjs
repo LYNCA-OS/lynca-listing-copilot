@@ -63,7 +63,9 @@ export const WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS = Object.freeze([
 ]);
 
 // Activation A adds only two frozen sources. The existing TCG case above is
-// the no-search acceptance case, so it is deliberately not duplicated here.
+// a no-search-capable acceptance case, so it is deliberately not duplicated
+// here. Search is model-autonomous; this source freezes visible content, not a
+// tool decision.
 // Expected titles are absent: the live runtime must derive them from the exact
 // original bytes, while the verifier checks only governed behavior and visible
 // semantic relationships.
@@ -71,9 +73,6 @@ export const WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS = Object.freeze([
   Object.freeze({
     case_id: "NON_TCG_WEB_IDENTITY",
     expected_grammar: "NON_TCG",
-    expected_web_search_used: true,
-    expected_web_search_query:
-      "2020-21 Panini Contenders Anthony Edwards #105 checklist",
     original_set_sha256:
       "f2c21929f45fc664aa0136bb5f3ef045018b53bbe05ada9cf799bb914213f2a0",
     source_feedback_id: "4e22aa27-1702-4189-a3fb-8d159e053571",
@@ -573,8 +572,6 @@ export async function materializeWriterJourneySources({
       case_id: source.case_id,
       expected_grammar: source.expected_grammar,
       ...(source.case_id === "NON_TCG_WEB_IDENTITY" ? {
-        expected_web_search_used: source.expected_web_search_used,
-        expected_web_search_query: source.expected_web_search_query,
         original_set_sha256: source.original_set_sha256
       } : {}),
       ...(source.case_id === "LOT_SHARED_ONLY" ? {
