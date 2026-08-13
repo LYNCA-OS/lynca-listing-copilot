@@ -6,11 +6,19 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
+import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { composeLyncaStandardName } from
+  "../lib/listing/thin/canonical-naming-adapter.mjs";
+
 import {
   PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA,
   PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA,
   buildProductionForwardReadbackExpectation,
+  governedIdentityAppliedSupportUrl,
+  governedAppliedWebSupportProof,
   productionForwardReadbackAssetId,
+  strictNoSearchReceipt,
   webIdentityQueryHasVisibleAnchors,
   verifyPromotedProductionForwardReadback,
   verifyProductionForwardReadback,
@@ -252,9 +260,70 @@ ordinaryEvidence.cases[0].case_id = "NON_TCG_WEB_IDENTITY";
 ordinaryEvidence.cases[0].versions.composer = "thin-marketplace-composer-v3";
 ordinaryEvidence.cases[0].versions.marketplace_profile = "lynca-standard-name-v0.3";
 ordinaryEvidence.cases[0].versions.csm_contract = "csm-stage-shadow-v3";
-const ordinaryView = clone(resolutionView);
-ordinaryView.composer.composer_version = "thin-marketplace-composer-v3";
-ordinaryView.composer.marketplace_profile_version = "lynca-standard-name-v0.3";
+ordinaryEvidence.cases[0].original_set_sha256 =
+  "f2c21929f45fc664aa0136bb5f3ef045018b53bbe05ada9cf799bb914213f2a0";
+const ordinaryFields = parseCanonicalFields({
+  year: "2020-21", manufacturer: "Panini", product: "Contenders",
+  set: "Rookie Ticket", card_name: "Variation Autograph",
+  subjects: ["Anthony Edwards"], card_number: "105", grammar: "standard"
+}).fields;
+const ordinaryComposed = composeLyncaStandardName(ordinaryFields, {
+  publicationCoverage: true
+});
+const ordinaryTitle = ordinaryComposed.title;
+ordinaryEvidence.cases[0].title_length = ordinaryTitle.length;
+ordinaryEvidence.cases[0].founder_web_search = {
+  web_search_used: true,
+  web_search_call_count: 1,
+  query_recorded: true,
+  query_visible_anchor_match: true,
+  source_url_count: 1,
+  governed_support_url_count: 1,
+  governed_support_fields: ["set"],
+  governed_applied_support: true,
+  strict_no_search: false,
+  unresolved_authority_fields: []
+};
+ordinaryEvidence.final_seal = {
+  qualified_governed_web_support_case_count: 1,
+  strict_no_search_case_count: 1,
+  selected_forward_readback_case_id: "NON_TCG_WEB_IDENTITY"
+};
+ordinaryEvidence.cases.push({
+  ...clone(ordinaryEvidence.cases[0]),
+  case_id: "TCG",
+  asset_id: "asset-forward-readback-no-search",
+  recognition_session_id: `csmsess_${"9".repeat(40)}`,
+  original_set_sha256: null,
+  founder_web_search: {
+    web_search_used: false,
+    web_search_call_count: 0,
+    query_recorded: false,
+    query_visible_anchor_match: true,
+    source_url_count: 0,
+    governed_support_url_count: 0,
+    governed_support_fields: [],
+    governed_applied_support: false,
+    strict_no_search: true,
+    unresolved_authority_fields: []
+  }
+});
+const ordinaryView = clone(buildCsmResolutionView({
+  fields: ordinaryFields,
+  composed: ordinaryComposed,
+  assetId,
+  recognitionSessionId: sessionId
+}));
+ordinaryEvidence.cases[0].versions.resolver = ordinaryView.grammar.resolver_version;
+ordinaryView.composer = {
+  ...ordinaryView.composer,
+  stored_title: ordinaryTitle,
+  composer_version: "thin-marketplace-composer-v3",
+  marketplace_profile_version: "lynca-standard-name-v0.3",
+  recomposed_matches_stored: true,
+  trace_reliable: true
+};
+ordinaryView.owner_execution_receipt = clone(resolutionView.owner_execution_receipt);
 ordinaryView.founder_beta_web_receipt = {
   schema_version: "founder-beta-web-receipt-v1",
   provider_request_count: 1,
@@ -264,10 +333,10 @@ ordinaryView.founder_beta_web_receipt = {
   web_search_used: true,
   web_search_call_count: 1,
   queries: ["2020-21 Panini Contenders Anthony Edwards #105 checklist"],
-  urls: ["https://example.com/checklist"],
+  urls: ["https://www.paniniamerica.net/checklist"],
   field_evidence: [{
-    field: "card_name",
-    support_urls: ["https://example.com/checklist"],
+    field: "set",
+    support_urls: ["https://www.paniniamerica.net/checklist"],
     conflict_urls: [],
     unresolved_urls: []
   }],
@@ -280,6 +349,25 @@ ordinaryView.set_card_name_relation_receipt = {
     predicate: "CURRENT_CARD_NAMED_BY_DESIGN", value: "Variation Autograph"
   }
 };
+assert.equal(governedAppliedWebSupportProof(
+  ordinaryView.founder_beta_web_receipt, ordinaryView, {
+    originalSetSha256: ordinaryEvidence.cases[0].original_set_sha256
+  }
+), true);
+assert.equal(governedAppliedWebSupportProof(
+  ordinaryView.founder_beta_web_receipt, ordinaryView, {
+    originalSetSha256: "0".repeat(64)
+  }
+), false);
+assert.equal(strictNoSearchReceipt(ordinaryView.founder_beta_web_receipt), false);
+assert.equal(strictNoSearchReceipt({
+  ...ordinaryView.founder_beta_web_receipt,
+  web_search_used: false,
+  web_search_call_count: 0,
+  queries: [],
+  urls: [],
+  field_evidence: []
+}), true);
 const ordinaryExpectation = buildProductionForwardReadbackExpectation({
   evidence: ordinaryEvidence,
   resolutionView: ordinaryView,
@@ -321,19 +409,81 @@ const boundedOrdinaryReceipt = verifyPromotedProductionForwardReadback({
 assert.equal(boundedOrdinaryReceipt.web_search_used, true);
 assert.equal(boundedOrdinaryReceipt.web_search_call_count, 2,
   "forward readback must preserve the actual bounded call count");
+const dynamicOrdinaryEvidence = clone(ordinaryEvidence);
+dynamicOrdinaryEvidence.cases[0].case_id = "EXTERNAL_IDENTITY";
+dynamicOrdinaryEvidence.final_seal.selected_forward_readback_case_id = "EXTERNAL_IDENTITY";
+const dynamicOrdinaryView = clone(ordinaryView);
+const dynamicOrdinaryExpectation = buildProductionForwardReadbackExpectation({
+  evidence: dynamicOrdinaryEvidence,
+  resolutionView: dynamicOrdinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.equal(dynamicOrdinaryExpectation.case_id, "EXTERNAL_IDENTITY");
+const dynamicOrdinaryReceipt = verifyPromotedProductionForwardReadback({
+  evidence: dynamicOrdinaryEvidence,
+  expectation: dynamicOrdinaryExpectation,
+  resolutionView: dynamicOrdinaryView,
+  responseUrl,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.equal(dynamicOrdinaryReceipt.provider_calls, 0);
+assert.equal(dynamicOrdinaryReceipt.full_resolution_view_exact_match, true,
+  "post-promotion readback must preserve the dynamically selected full view");
+const missingCardNumberDynamicView = clone(dynamicOrdinaryView);
+missingCardNumberDynamicView.composer.title =
+  "2020-21 Panini Contenders Rookie Ticket Variation Autograph Anthony Edwards";
+missingCardNumberDynamicView.composer.stored_title =
+  missingCardNumberDynamicView.composer.title;
+missingCardNumberDynamicView.composer.length = missingCardNumberDynamicView.composer.title.length;
+assert.equal(governedAppliedWebSupportProof(
+  missingCardNumberDynamicView.founder_beta_web_receipt,
+  missingCardNumberDynamicView,
+  { originalSetSha256: dynamicOrdinaryEvidence.cases[0].original_set_sha256 }
+), false);
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: dynamicOrdinaryEvidence,
+  resolutionView: missingCardNumberDynamicView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_resolution_view_invalid/,
+"a dynamically selected non-Web-ID case cannot omit the public #105 token");
+for (const mutate of [
+  (value) => { value.final_seal.qualified_governed_web_support_case_count = 2; },
+  (value) => { value.final_seal.strict_no_search_case_count = 0; },
+  (value) => { value.final_seal.selected_forward_readback_case_id = "TCG"; },
+  (value) => { value.cases[1].founder_web_search.strict_no_search = false; }
+]) {
+  const changed = clone(ordinaryEvidence);
+  mutate(changed);
+  assert.throws(() => buildProductionForwardReadbackExpectation({
+    evidence: changed,
+    resolutionView: ordinaryView,
+    deploymentUrl: candidateOrigin,
+    gitSha: candidateGitSha
+  }), /production_forward_readback_standard_case_invalid/);
+}
 for (const queries of [
   ["2020-21 Panini Contenders Anthony Edwards #105 checklist"],
   ["#105 / Contenders — additional seller words"],
-  ["Anthony Edwards", "Contenders checklist"],
   ["CONTENDERS 105 Anthony Edwards"]
 ]) assert.equal(webIdentityQueryHasVisibleAnchors(queries), true);
 for (const queries of [
   ["cheap basketball shoes near me"],
   ["Contenders cheap basketball shoes"],
   ["Anthony Edwards basketball shoes"],
+  ["Anthony Edwards", "Contenders checklist"],
+  ["Anthony Edwards Contenders basketball shoes"],
   ["105 basketball shoes"],
   ["Contenders 1050"]
 ]) assert.equal(webIdentityQueryHasVisibleAnchors(queries), false);
+assert.equal(governedIdentityAppliedSupportUrl(
+  "https://www.paniniamerica.net/checklist.html"
+), true);
+assert.equal(governedIdentityAppliedSupportUrl(
+  "https://www.paniniamerica.net/privacy-policy"
+), false);
 const modelOwnedQueryView = clone(ordinaryView);
 modelOwnedQueryView.founder_beta_web_receipt.queries = [
   "Contenders #105 identity lookup with extra model-selected words"
@@ -368,10 +518,77 @@ for (const mutate of [
   (value) => { value.founder_beta_web_receipt.queries = []; },
   (value) => { value.founder_beta_web_receipt.urls = []; },
   (value) => { value.founder_beta_web_receipt.field_evidence = []; },
-  (value) => { value.set_card_name_relation_receipt.card_name.predicate = "wrong"; }
+  (value) => { value.set_card_name_relation_receipt.card_name.predicate = "wrong"; },
+  (value) => {
+    value.founder_beta_web_receipt.urls = ["https://example.com/checklist"];
+    value.founder_beta_web_receipt.field_evidence[0].support_urls =
+      ["https://example.com/checklist"];
+  },
+  (value) => {
+    value.founder_beta_web_receipt.urls =
+      ["https://www.paniniamerica.net/privacy-policy"];
+    value.founder_beta_web_receipt.field_evidence[0].support_urls =
+      ["https://www.paniniamerica.net/privacy-policy"];
+  },
+  (value) => {
+    value.founder_beta_web_receipt.field_evidence[0].field = "year";
+  },
+  (value) => { value.set_card_name_relation_receipt.set.value = "Rookie Tickets"; },
+  (value) => {
+    value.brackets.find((entry) => entry.canonical_field === "card_name")
+      .selected_candidate = "Rookie Autograph";
+  },
+  (value) => {
+    value.composer.title = value.composer.stored_title =
+      "2020-21 Panini Contenders Variation Autograph Rookie Ticket #105 Anthony Edwards";
+    value.composer.length = value.composer.title.length;
+  },
+  (value) => {
+    value.composer.title = value.composer.stored_title =
+      "2020-21 Panini Contenders Rookie Ticket Variation Autograph Anthony Edwards #105";
+    value.composer.length = value.composer.title.length;
+  },
+  (value) => {
+    value.brackets.push(structuredClone(
+      value.brackets.find((entry) => entry.canonical_field === "card_name")
+    ));
+  },
+  (value) => {
+    value.brackets.find((entry) => entry.canonical_field === "card_name")
+      .publication_coverage.push({
+        bracket: "card_name",
+        source_field: "card_name",
+        source_index: 0,
+        canonical_value: "Variation Autograph",
+        disposition: "SUPPRESSED_BY_PROFILE"
+      });
+  },
+  (value) => {
+    const bracket = value.brackets.find((entry) => entry.canonical_field === "card_name");
+    bracket.rendered_text = null;
+    bracket.composer_disposition = "SUPPRESSED_BY_PROFILE";
+    bracket.publication_coverage = [{
+      bracket: "card_name", source_field: "card_name", source_index: 0,
+      canonical_value: "Variation Autograph", disposition: "SUPPRESSED_BY_PROFILE"
+    }];
+  },
+  (value) => {
+    const bracket = value.brackets.find((entry) => entry.canonical_field === "card_name");
+    bracket.rendered_text = null;
+    bracket.composer_disposition = "DROPPED_FOR_BUDGET";
+    bracket.publication_coverage = [{
+      bracket: "card_name", source_field: "card_name", source_index: 0,
+      canonical_value: "Variation Autograph", disposition: "DROPPED_FOR_BUDGET"
+    }];
+  }
 ]) {
   const changed = clone(ordinaryView);
   mutate(changed);
+  assert.equal(governedAppliedWebSupportProof(
+    changed.founder_beta_web_receipt, changed, {
+      originalSetSha256: ordinaryEvidence.cases[0].original_set_sha256
+    }
+  ), false, "every tampered view must fail the shared release qualification proof");
   assert.throws(() => verifyPromotedProductionForwardReadback({
     evidence: ordinaryEvidence,
     expectation: ordinaryExpectation,

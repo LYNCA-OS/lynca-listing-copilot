@@ -114,14 +114,32 @@ for (const token of [
   "CARD_NAME_PREDICATE", "card_name_before_subject", "individual_serials_withheld"
 ]) assert.match(spec, new RegExp(token));
 assert.match(spec,
-  /designatedSearch[\s\S]*?receipt\.web_search_call_count >= 1[\s\S]*?receipt\.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS[\s\S]*?receipt\.queries\.length >= 1[\s\S]*?webIdentityQueryHasVisibleAnchors\(receipt\.queries\)[\s\S]*?receipt\.urls\.length >= 1[\s\S]*?entry\.support_urls\.length > 0/,
-  "the designated Web case must prove one or two bounded actions with a search query, URL and admitted support");
+  /actualSearch[\s\S]*?receipt\.web_search_call_count >= 1[\s\S]*?receipt\.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS[\s\S]*?receipt\.queries\.length >= 1 \|\| receipt\.field_evidence\.length >= 1/,
+  "every actual Web path must remain a bounded one-request trace");
+assert.match(spec,
+  /governedSupportRows[\s\S]*?entry\.support_urls\.every\(governedIdentityAuthorityUrl\)/,
+  "only governed official support can satisfy the cohort Web-positive proof");
+assert.match(spec,
+  /sourceCase\.original_set_sha256[\s\S]*?visibleAnchorContract\?\.original_set_sha256/,
+  "visible-query anchors must bind to the immutable fixture identity, not only a case label");
+assert.match(forwardReadback,
+  /export function governedAppliedWebSupportProof[\s\S]*?row\.field === "set"[\s\S]*?row\.field === "card_name"[\s\S]*?governedIdentityAppliedSupportUrl[\s\S]*?webIdentityContentProjectionProof/,
+  "one shared predicate must bind governed applied support to the content projection proof");
+assert.match(forwardReadback,
+  /const publishedBracket[\s\S]*?coverage\.length === 1[\s\S]*?partially_published === false[\s\S]*?composer_disposition/,
+  "the projection proof must require one lossless published canonical bracket");
+assert.match(forwardReadback,
+  /const exactRenderedSpan[\s\S]*?matches\.length === 1[\s\S]*?setSpan\.end < cardNameSpan\.index[\s\S]*?cardNameSpan\.end < subjectSpan\.index[\s\S]*?subjectSpan\.end < cardNumberSpan\.index/,
+  "public title proof must use unique complete rendered spans in profile order");
+assert.match(forwardReadback,
+  /export function strictNoSearchReceipt[\s\S]*?web_search_used === false[\s\S]*?web_search_call_count === 0[\s\S]*?queries\.length === 0[\s\S]*?urls\.length === 0[\s\S]*?field_evidence\.length === 0/,
+  "no-search qualification must prove the entire Web trace is empty");
 assert.match(forwardReadback,
   /webIdentityQueryHasVisibleAnchors\(webReceipt\.queries\)/,
   "candidate and post-promotion readback must share the visible-query anchor gate");
 assert.match(spec,
-  /evidence\.cases\.some\(\(entry\) => \([\s\S]*?founder_web_search\?\.web_search_used === false[\s\S]*?web_search_call_count === 0/,
-  "the six-case cohort must contain at least one real no-search receipt");
+  /webReceiptClassifications = evidence\.cases\.map[\s\S]*?governedAppliedWebSupportProof[\s\S]*?strictNoSearchReceipt[\s\S]*?webReceiptClaimsMatchViews[\s\S]*?strictNoSearchCases\.length >= 1/,
+  "the six-case cohort must reclassify stored receipts and contain strict no-search proof");
 const activationProjectionCallSite = spec.match(
   /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView\);[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
 )?.[0] || "";
@@ -143,8 +161,8 @@ assert.match(directApiTest,
   "unresolved Lot remains a sealed offline persist-before-409 and zero-call resume proof");
 assert.match(forwardReadback, /const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY"/);
 assert.match(forwardReadback,
-  /evidence\.release_class === "ordinary"[\s\S]*?WEB_CASE_ID : STANDARD_CASE_ID/,
-  "ordinary release readback must target the governed-Web case while bridge keeps Standard");
+  /evidence\.release_class === "ordinary"[\s\S]*?governed_applied_support === true[\s\S]*?: cases\.filter\(\(entry\) => entry\?\.case_id === STANDARD_CASE_ID\)/,
+  "ordinary release readback must target an actual governed-Web case while bridge keeps Standard");
 assert.match(forwardReadback,
   /provider_calls: 0[\s\S]*?founder_beta_web_receipt_exact_match:[\s\S]*?web_search_used:/,
   "promoted authenticated GET must prove the stored Web receipt with zero provider calls");
@@ -185,14 +203,19 @@ assert.match(spec,
 assert.match(spec,
   /serialDriftCode === verifierErrorCodes\.STANDARD_P0_IDENTITY_MISMATCH[\s\S]*?serial_selected_exact === false/,
   "correct version tuples with serial drift must not be mislabeled as composer drift");
-assert.match(spec, /webResolutionView = structuredClone\(resolutionView\)/,
-  "the ordinary forward-readback expectation must retain the live Web candidate view");
 assert.match(spec,
-  /evidence\.passed = true;[\s\S]*?const forwardReadbackResolutionView = parityRequired[\s\S]*?webResolutionView : standardResolutionView;[\s\S]*?buildProductionForwardReadbackExpectation\(\{[\s\S]*?evidence,[\s\S]*?resolutionView: forwardReadbackResolutionView,[\s\S]*?deploymentUrl: baseUrl,[\s\S]*?gitSha: expectedSha/,
-  "the private expectation must bind ordinary to Web and bridge to Standard on the same URL/SHA");
+  /governedWebCaseEvidence[\s\S]*?resolutionViewsByCaseId\.get\(governedWebCaseEvidence\?\.case_id\)[\s\S]*?buildProductionForwardReadbackExpectation\(\{[\s\S]*?evidence,[\s\S]*?resolutionView: forwardReadbackResolutionView/,
+  "the actual governed-Web-positive view must seed both zero-call readbacks");
+for (const key of [
+  "qualified_governed_web_support_case_count", "strict_no_search_case_count",
+  "selected_forward_readback_case_id"
+]) assert.match(spec, new RegExp(key));
 assert.match(spec,
   /writeProductionForwardReadbackExpectation\([\s\S]*?requiredEnv\("WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"\)/,
   "the E2E must write the expectation through the exclusive 0600 helper");
+assert.match(releaseWorkflow,
+  /if \[ "\$PRODUCTION_RELEASE_CLASS" = "ordinary" \]; then[\s\S]*?fi\n\s+test "\$\(stat -c '%a' "\$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION"\)" = "600"[\s\S]*?production-forward-readback\.mjs verify-promoted/,
+  "ordinary and bridge releases must both perform the exact promoted zero-call forward readback");
 assert.doesNotMatch(releaseWorkflow,
   /(?:printf|cat|echo)[^\n]*WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION[^\n]*\{\s*"/,
   "the workflow must not fabricate candidate readback evidence");

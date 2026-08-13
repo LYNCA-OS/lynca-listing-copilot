@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readFileSync, realpathSync } from "node:fs";
+import {
+  copyFile, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -67,6 +71,21 @@ import {
   ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA,
   ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256,
   ACTIVATION_A_BOUNDED_WEB_SEARCH_WIRE_TEMPLATE_SHA256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_DESCRIPTOR_ID,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_CASE_ID,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_PHASE,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_RUN_ID,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILURE_CODE,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_MARKER,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PROMPT_SHA256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTENT_MANIFEST_SHA256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_WIRE_TEMPLATE_SHA256,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -160,6 +179,7 @@ import {
   activationAOptionalFieldSourceOmissionRuntimeContractProof,
   activationARelationAbstentionVerifierRepairRuntimeContractProof,
   activationABoundedWebSearchRuntimeContractProof,
+  activationAOfficialIdentitySearchRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -203,6 +223,7 @@ const activationAUsedWebEvidenceBudgetGitSha = "4".repeat(40);
 const activationAOptionalFieldSourceOmissionGitSha = "2".repeat(40);
 const activationARelationAbstentionVerifierRepairGitSha = "3".repeat(40);
 const activationABoundedWebSearchGitSha = "d".repeat(40);
+const activationAOfficialIdentitySearchGitSha = "e".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -573,6 +594,47 @@ assert.deepEqual(ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS, [
   "scripts/production-writer-journey-contract.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-official-identity-search-v1");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_MARKER,
+  "founder-beta-official-identity-search-v1");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
+  "fa16f68d4502a9ab8a9377c4f53c1732fb1826f7");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA,
+  "dc929f7580d899036037808a0a7b3fb629d0970f");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ALTERNATE_PARENT_SHA,
+  "96f321105a442ba58db3c0e9d1dd0ae252bd71fe");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_RUN_ID, "31709127458");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILURE_CODE,
+  "ACTIVATION_RECEIPT_MISMATCH");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_CASE_ID,
+  "NON_TCG_WEB_IDENTITY");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_PHASE, "RESOLUTION_VIEW");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA, ACTIVATION_A_ROLLBACK_SHA);
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTENT_MANIFEST_SHA256,
+  "1419691be9f34d6603e4230a24ddefb4e2703ddf0c712b9c3307245a630adcad");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PROMPT_SHA256,
+  "b34ca3b2d9ef6fd8b9727548985d21a6bc1cfe481e34c49ca32de5187f8ef29f");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_WIRE_TEMPLATE_SHA256,
+  "c024fe60ebac7e955fb8bbc0db19184bae08dfa8f648f60b890b858f4afb6ca6");
+assert.equal(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256,
+  "00f343e7fc25e1b036a4474d834d335e427cb87a4ee3cc9168b565df9a37d61a");
+assert.deepEqual(ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS, [
+  ".github/workflows/deploy-production.yml",
+  "e2e/production-writer-journey.spec.mjs",
+  "lib/listing/thin/canonical-fields.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-model-optimization-pack.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/luna-direct-dispatcher.test.mjs",
+  "scripts/materialize-writer-journey-source.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs"
+]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
 assert.equal(standardP0TitleIdentityExact(
@@ -592,6 +654,14 @@ const parentShas = (cwd) => {
   assert.equal(head, git(cwd, ["rev-parse", "HEAD"]));
   return parents;
 };
+const officialIdentityRuntimeContentManifest =
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS
+    .filter((entry) => !entry.startsWith("scripts/compatibility-bridge-release"))
+    .map((entry) => ({
+      path: entry,
+      sha256: createHash("sha256").update(readFileSync(entry)).digest("hex")
+    }));
+const dependencyNodeModules = realpathSync("node_modules");
 const bridgeCommitMessage = [
   "rollback forward reader",
   "",
@@ -863,6 +933,28 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
 }), (error) => error.code === "ordinary_release_parent_invalid");
 assert.throws(() => verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAOfficialIdentitySearchGitSha,
+  headSha: activationAOfficialIdentitySearchGitSha,
+  parentShas: [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ALTERNATE_PARENT_SHA]
+}), (error) => error.code === "activation_a_official_identity_search_parent_mismatch");
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: null,
+    parent_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ALTERNATE_PARENT_SHA,
+    required_rollback_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ALTERNATE_PARENT_SHA,
+    git_sha: activationAOfficialIdentitySearchGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: "1".repeat(64)
+  },
+  rollbackReceipt: { git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ALTERNATE_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_official_identity_search_selection_invalid");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationAFieldSourceReferenceRepairGitSha,
   headSha: activationAFieldSourceReferenceRepairGitSha,
   parentTreeSha: ACTIVATION_A_FIELD_SOURCE_REFERENCE_REPAIR_PARENT_TREE_SHA,
@@ -1033,6 +1125,117 @@ const activationABoundedWebSearch = verifyCompatibilityBridgeSelection({
   parentShas: [ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA],
   changedPaths: [...ACTIVATION_A_BOUNDED_WEB_SEARCH_CHANGED_PATHS]
 });
+const activationAOfficialIdentitySearch = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAOfficialIdentitySearchGitSha,
+  headSha: activationAOfficialIdentitySearchGitSha,
+  parentTreeSha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS],
+  officialIdentityRuntimeContentManifest
+});
+assert.deepEqual(Object.keys(activationAOfficialIdentitySearch).sort(), [
+  "artifact_manifest_sha256", "contract_sha256", "failed_case_id", "failed_phase",
+  "failed_run_id", "failure_code", "git_sha", "lineage_marker", "parent_git_sha",
+  "parent_tree_sha", "parity_required", "release_class", "repair_descriptor_id",
+  "required_rollback_git_sha", "schema_version", "transition_marker",
+  "writer_journey_manifest"
+].sort());
+assert.equal(activationAOfficialIdentitySearch.schema_version,
+  "production-release-selection-v18");
+assert.equal(activationAOfficialIdentitySearch.parent_git_sha,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA);
+assert.equal(activationAOfficialIdentitySearch.parent_tree_sha,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA);
+assert.equal(activationAOfficialIdentitySearch.failed_run_id,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_RUN_ID);
+assert.equal(activationAOfficialIdentitySearch.failure_code,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILURE_CODE);
+assert.equal(activationAOfficialIdentitySearch.failed_case_id,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_CASE_ID);
+assert.equal(activationAOfficialIdentitySearch.failed_phase,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_PHASE);
+assert.equal(activationAOfficialIdentitySearch.required_rollback_git_sha,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA);
+assert.equal(activationAOfficialIdentitySearch.contract_sha256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS,
+    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAOfficialIdentitySearchGitSha,
+    headSha: activationAOfficialIdentitySearchGitSha,
+    parentTreeSha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA],
+    changedPaths
+  }), (error) => [
+    "activation_a_official_identity_search_changed_paths_invalid",
+    "activation_a_official_identity_search_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAOfficialIdentitySearchGitSha,
+  headSha: activationAOfficialIdentitySearchGitSha,
+  parentTreeSha: "f".repeat(40),
+  parentShas: [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS]
+}), (error) => error.code === "activation_a_official_identity_search_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAOfficialIdentitySearchGitSha,
+  headSha: activationAOfficialIdentitySearchGitSha,
+  parentTreeSha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
+    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA],
+  changedPaths: [...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS]
+}), (error) => error.code === "ordinary_release_parent_invalid");
+const officialIdentityCleanChildRoot = await mkdtemp(
+  path.join(realpathSync(tmpdir()), "lynca-official-identity-clean-child-")
+);
+try {
+  const cleanRepo = path.join(officialIdentityCleanChildRoot, "repo");
+  git(officialIdentityCleanChildRoot, [
+    "clone", "--quiet", "--no-local", process.cwd(), cleanRepo
+  ]);
+  git(cleanRepo, ["checkout", "--quiet", "--detach",
+    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA]);
+  for (const relative of ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS) {
+    const destination = path.join(cleanRepo, relative);
+    await mkdir(path.dirname(destination), { recursive: true });
+    await copyFile(path.join(process.cwd(), relative), destination);
+  }
+  git(cleanRepo, ["add", "--", ...ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_CHANGED_PATHS]);
+  git(cleanRepo, ["-c", "user.name=LYNCA Test", "-c", "user.email=test@lynca.invalid",
+    "commit", "--quiet", "--no-gpg-sign", "-m", "official identity clean child"]);
+  const cleanChildSha = git(cleanRepo, ["rev-parse", "HEAD"]);
+  assert.deepEqual(parentShas(cleanRepo), [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA]);
+  assert.equal(git(cleanRepo, ["status", "--porcelain"]), "",
+    "the selector must be proven from a clean single-parent candidate");
+  await symlink(dependencyNodeModules, path.join(cleanRepo, "node_modules"), "dir");
+  const selectionPath = path.join(officialIdentityCleanChildRoot, "selection.json");
+  execFileSync(process.execPath, [
+    path.join(cleanRepo, "scripts/compatibility-bridge-release.mjs"),
+    "verify-selection", "--release-class", ORDINARY_RELEASE_CLASS,
+    "--git-sha", cleanChildSha, "--out", selectionPath
+  ], { cwd: cleanRepo, env: process.env });
+  const selection = JSON.parse(await readFile(selectionPath, "utf8"));
+  assert.equal(selection.schema_version, "production-release-selection-v18");
+  assert.equal(selection.parent_git_sha, ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA);
+  assert.equal(selection.contract_sha256,
+    ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256);
+  assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
+} finally {
+  await rm(path.join(officialIdentityCleanChildRoot, "repo", "node_modules"), {
+    force: true
+  });
+  await rm(officialIdentityCleanChildRoot, { recursive: true, force: true });
+}
 assert.deepEqual(Object.keys(activationABoundedWebSearch).sort(), [
   "artifact_manifest_sha256", "contract_sha256", "failed_case_id", "failed_phase",
   "failed_run_id", "failure_code", "git_sha", "lineage_marker", "parent_git_sha",
@@ -2346,6 +2549,35 @@ assert.equal(activationARelationAbstentionVerifierRepairProof.contract_sha256,
   ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_RUNTIME_CONTRACT_SHA256,
   "selection-v16 must replay a literal proof instead of reading bounded-search logic");
 const activationABoundedWebSearchProof = activationABoundedWebSearchRuntimeContractProof();
+const activationAOfficialIdentitySearchProof =
+  activationAOfficialIdentitySearchRuntimeContractProof({
+    runtimeContentManifest: officialIdentityRuntimeContentManifest
+  });
+assert.equal(activationAOfficialIdentitySearchProof.schema_version,
+  "listing-copilot-activation-a-official-identity-search-proof-v1");
+assert.equal(activationAOfficialIdentitySearchProof.base_bounded_web_search_contract_sha256,
+  ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationAOfficialIdentitySearchProof.runtime_content_manifest_sha256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTENT_MANIFEST_SHA256);
+assert.equal(activationAOfficialIdentitySearchProof.runtime_content_source,
+  "candidate-git-object-blobs");
+assert.equal(activationAOfficialIdentitySearchProof.prompt_sha256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PROMPT_SHA256);
+assert.equal(activationAOfficialIdentitySearchProof.wire_template_sha256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_WIRE_TEMPLATE_SHA256);
+assert.equal(activationAOfficialIdentitySearchProof.query_anchor_policy,
+  "exact-card-number-and-subject-or-product");
+assert.equal(activationAOfficialIdentitySearchProof.governed_support_policy,
+  "official-checklist-set-or-card-name-only");
+assert.equal(activationAOfficialIdentitySearchProof.qualified_governed_search_case_count, 1);
+assert.equal(activationAOfficialIdentitySearchProof.strict_no_search_case_count_minimum, 1);
+assert.equal(activationAOfficialIdentitySearchProof.public_title_order,
+  "set-card_name-subject-card_number");
+assert.equal(activationAOfficialIdentitySearchProof.candidate_forward_readback_provider_calls, 0);
+assert.equal(activationAOfficialIdentitySearchProof.promoted_forward_readback_provider_calls, 0);
+assert.equal(activationAOfficialIdentitySearchProof.promoted_full_resolution_view_exact_match, true);
+assert.equal(activationAOfficialIdentitySearchProof.contract_sha256,
+  ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_RUNTIME_CONTRACT_SHA256);
 assert.equal(activationABoundedWebSearchProof.schema_version,
   "listing-copilot-activation-a-bounded-web-search-proof-v1");
 assert.equal(activationABoundedWebSearchProof.repair_descriptor_id,
@@ -2885,6 +3117,64 @@ const activationABoundedWebSearchLineage = verifyOrdinaryRollbackLineage({
   selection: activationABoundedWebSearch,
   rollbackReceipt: { git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA }
 });
+const activationAOfficialIdentitySearchLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAOfficialIdentitySearch,
+  rollbackReceipt: { git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAOfficialIdentitySearchLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v19",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_MARKER,
+  release_git_sha: activationAOfficialIdentitySearchGitSha,
+  release_parent_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAOfficialIdentitySearch.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationAOfficialIdentitySearch, schema_version: "unknown" },
+  { ...activationAOfficialIdentitySearch, release_class: "compatibility-bridge" },
+  { ...activationAOfficialIdentitySearch, repair_descriptor_id: "unknown-repair" },
+  { ...activationAOfficialIdentitySearch, lineage_marker: "unknown-lineage" },
+  { ...activationAOfficialIdentitySearch, transition_marker: ACTIVATION_A_MARKER },
+  { ...activationAOfficialIdentitySearch,
+    parent_git_sha: ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA },
+  { ...activationAOfficialIdentitySearch, parent_tree_sha: "f".repeat(40) },
+  { ...activationAOfficialIdentitySearch, failed_run_id: "31709127457" },
+  { ...activationAOfficialIdentitySearch, failure_code: "OTHER_FAILURE" },
+  { ...activationAOfficialIdentitySearch, failed_case_id: "TCG" },
+  { ...activationAOfficialIdentitySearch, failed_phase: "RECOGNITION_RESPONSE" },
+  { ...activationAOfficialIdentitySearch,
+    required_rollback_git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA },
+  { ...activationAOfficialIdentitySearch, artifact_manifest_sha256: "f".repeat(64) },
+  { ...activationAOfficialIdentitySearch, writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationAOfficialIdentitySearch, parity_required: false },
+  { ...activationAOfficialIdentitySearch,
+    contract_sha256: ACTIVATION_A_BOUNDED_WEB_SEARCH_RUNTIME_CONTRACT_SHA256 },
+  { ...activationAOfficialIdentitySearch, git_sha: "not-a-git-sha" },
+  { ...activationAOfficialIdentitySearch, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_official_identity_search_selection_invalid");
+}
+for (const rollbackSha of [ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA,
+  "f".repeat(40)]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAOfficialIdentitySearch,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
 assert.deepEqual(activationABoundedWebSearchLineage, {
   schema_version: "production-release-rollback-lineage-receipt-v18",
   release_class: ORDINARY_RELEASE_CLASS,
@@ -3601,6 +3891,8 @@ try {
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
+  const actualActivationAOfficialIdentitySearch =
+    actualParent === ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_SHA;
   const actualActivationABoundedWebSearch =
     actualParent === ACTIVATION_A_BOUNDED_WEB_SEARCH_PARENT_SHA;
   const actualActivationARelationAbstentionVerifierRepair =
@@ -3619,7 +3911,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationABoundedWebSearch
+  const actualTransitionMarker = actualActivationAOfficialIdentitySearch
+    ? ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_MARKER
+    : actualActivationABoundedWebSearch
     ? ACTIVATION_A_BOUNDED_WEB_SEARCH_MARKER
     : actualActivationARelationAbstentionVerifierRepair
     ? ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_MARKER
@@ -3693,7 +3987,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationABoundedWebSearch
+      actualActivationAOfficialIdentitySearch
+        ? "production-release-selection-v18"
+        : actualActivationABoundedWebSearch
         ? "production-release-selection-v17"
         : actualActivationARelationAbstentionVerifierRepair
         ? "production-release-selection-v16"
@@ -3724,7 +4020,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationABoundedWebSearch
+      actualActivationAOfficialIdentitySearch
+        ? ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_ROLLBACK_SHA
+        : actualActivationABoundedWebSearch
         ? ACTIVATION_A_BOUNDED_WEB_SEARCH_ROLLBACK_SHA
         : actualActivationARelationAbstentionVerifierRepair
         ? ACTIVATION_A_RELATION_ABSTENTION_VERIFIER_REPAIR_ROLLBACK_SHA
@@ -3750,7 +4048,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualActivationABoundedWebSearch
+      actualActivationAOfficialIdentitySearch
+        ? "production-release-rollback-lineage-receipt-v19"
+        : actualActivationABoundedWebSearch
         ? "production-release-rollback-lineage-receipt-v18"
       : actualActivationARelationAbstentionVerifierRepair
         ? "production-release-rollback-lineage-receipt-v17"
@@ -3778,7 +4078,33 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationABoundedWebSearch) {
+    if (actualActivationAOfficialIdentitySearch) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILURE_CODE);
+      assert.equal(savedSelection.failed_case_id,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_CASE_ID);
+      assert.equal(savedSelection.failed_phase,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_PHASE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILURE_CODE);
+      assert.equal(savedLineage.failed_case_id,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_CASE_ID);
+      assert.equal(savedLineage.failed_phase,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_FAILED_PHASE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_OFFICIAL_IDENTITY_SEARCH_PARENT_TREE_SHA);
+    } else if (actualActivationABoundedWebSearch) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_BOUNDED_WEB_SEARCH_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

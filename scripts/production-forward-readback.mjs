@@ -8,16 +8,14 @@ import {
   readVercelProductionRollbackReceipt
 } from "./vercel-production-rollback-receipt.mjs";
 import {
+  governedIdentityAuthorityUrl,
   validateFounderBetaWebReceipt
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import {
   CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
 } from "../lib/listing/thin/canonical-fields.mjs";
-import {
-  CARD_NAME_PREDICATE,
-  SET_MEMBERSHIP_PREDICATE,
-  validateSetCardNameRelationReceipt
-} from "../lib/listing/thin/set-card-name-contract.mjs";
+import { validateSetCardNameRelationReceipt } from
+  "../lib/listing/thin/set-card-name-contract.mjs";
 export const PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA =
   "production-forward-readback-expectation-v1";
 export const PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA =
@@ -26,13 +24,17 @@ export const PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA =
 const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v6";
 const STANDARD_CASE_ID = "NON_TCG";
 const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY";
-const WEB_IDENTITY_FIELDS = new Set([
-  "year", "manufacturer", "product", "set", "card_name", "subjects"
-]);
 export const WEB_IDENTITY_VISIBLE_QUERY_ANCHORS = Object.freeze({
   subject: "anthony edwards",
   card_number: "105",
   product_set: "contenders"
+});
+export const WEB_IDENTITY_CONTENT_ACCEPTANCE = Object.freeze({
+  original_set_sha256:
+    "f2c21929f45fc664aa0136bb5f3ef045018b53bbe05ada9cf799bb914213f2a0",
+  set: "Rookie Ticket",
+  card_name: "Variation Autograph",
+  card_number: "105"
 });
 const CANONICAL_PRODUCTION_ORIGIN = "https://listing.lyncafei.team";
 const RELEASE_CLASSES = new Set(["ordinary", "compatibility-bridge"]);
@@ -56,8 +58,131 @@ export function webIdentityQueryHasVisibleAnchors(queries) {
   const subject = has(WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.subject);
   const cardNumber = has(WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.card_number);
   const productSet = has(WEB_IDENTITY_VISIBLE_QUERY_ANCHORS.product_set);
-  return Number(subject) + Number(cardNumber) + Number(productSet) >= 2
-    && (subject || cardNumber);
+  return cardNumber && (subject || productSet);
+}
+
+export const governedIdentityAppliedSupportUrl = (value) => {
+  if (!governedIdentityAuthorityUrl(value)) return false;
+  const url = new URL(value);
+  const host = url.hostname.toLowerCase();
+  const pathname = url.pathname.toLowerCase();
+  if (host === "paniniamerica.net" || host.endsWith(".paniniamerica.net")) {
+    return pathname.includes("/checklist");
+  }
+  if (host === "topps.com" || host.endsWith(".topps.com")) {
+    return /(?:checklists?|card[-_]?lists?)(?:[./_-]|$)/.test(pathname);
+  }
+  if (host === "pokemon.com" || host.endsWith(".pokemon.com")) {
+    return /(?:card[-_]?database|card[-_]?lists?)(?:[./_-]|$)/.test(pathname);
+  }
+  return false;
+};
+
+const canonicalBracket = (resolutionView, field) => {
+  const matches = resolutionView?.brackets?.filter((bracket) => (
+    bracket?.canonical_field === field
+      || bracket?.canonical_fields?.includes?.(field)
+  )) || [];
+  return matches.length === 1 ? matches[0] : null;
+};
+const canonicalBracketValue = (resolutionView, field) => (
+  canonicalBracket(resolutionView, field)?.selected_candidate
+);
+
+const publishedBracket = (resolutionView, field) => {
+  const bracket = canonicalBracket(resolutionView, field);
+  const canonical = String(bracket?.selected_candidate || "").normalize("NFC");
+  const renderedText = String(bracket?.rendered_text || "").normalize("NFC");
+  const coverage = bracket?.publication_coverage;
+  const atom = Array.isArray(coverage) && coverage.length === 1 ? coverage[0] : null;
+  const published = atom
+    && Object.keys(atom).sort().join("\0") === [
+      "bracket", "canonical_value", "disposition", "source_field", "source_index"
+    ].sort().join("\0")
+    && atom.bracket === bracket.bracket
+    && atom.source_field === field
+    && atom.source_index === 0
+    && atom.canonical_value === canonical
+    && atom.disposition === "PUBLISHED";
+  return bracket?.state === "VALUE"
+    && bracket.partially_published === false
+    && canonical && renderedText && published
+    && ["INCLUDED", "NORMALIZED"].includes(bracket.composer_disposition)
+    ? Object.freeze({ canonical, rendered: renderedText })
+    : null;
+};
+
+const exactRenderedSpan = (title, rendered) => {
+  const text = String(title || "").normalize("NFC");
+  const token = String(rendered || "").normalize("NFC");
+  if (!token) return null;
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const matches = [...text.matchAll(new RegExp(
+    `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "gu"
+  ))];
+  return matches.length === 1
+    ? Object.freeze({ index: matches[0].index, end: matches[0].index + token.length })
+    : null;
+};
+
+export function webIdentityContentProjectionProof(resolutionView) {
+  const relation = resolutionView?.set_card_name_relation_receipt;
+  const set = publishedBracket(resolutionView, "set");
+  const cardName = publishedBracket(resolutionView, "card_name");
+  const subject = publishedBracket(resolutionView, "subjects");
+  const cardNumber = publishedBracket(resolutionView, "card_number");
+  const title = String(resolutionView?.composer?.stored_title || "").normalize("NFC");
+  const setSpan = exactRenderedSpan(title, set?.rendered);
+  const cardNameSpan = exactRenderedSpan(title, cardName?.rendered);
+  const subjectSpan = exactRenderedSpan(title, subject?.rendered);
+  const cardNumberSpan = exactRenderedSpan(title, cardNumber?.rendered);
+  try {
+    validateSetCardNameRelationReceipt(relation, {
+      set: set?.canonical || "",
+      card_name: cardName?.canonical || ""
+    });
+  } catch { return false; }
+  return Boolean(set?.canonical === WEB_IDENTITY_CONTENT_ACCEPTANCE.set
+    && cardName?.canonical === WEB_IDENTITY_CONTENT_ACCEPTANCE.card_name
+    && cardNumber?.canonical === WEB_IDENTITY_CONTENT_ACCEPTANCE.card_number
+    && Boolean(subject?.canonical)
+    && relation?.set?.value === set.canonical
+    && relation?.card_name?.value === cardName.canonical
+    && setSpan && cardNameSpan && subjectSpan && cardNumberSpan
+    && setSpan.end < cardNameSpan.index
+    && cardNameSpan.end < subjectSpan.index
+    && subjectSpan.end < cardNumberSpan.index);
+}
+
+export function strictNoSearchReceipt(receipt) {
+  try { validateFounderBetaWebReceipt(receipt); } catch { return false; }
+  return receipt.web_search_used === false
+    && receipt.provider_request_count === 1
+    && receipt.isolated_model_call_count === 0
+    && receipt.web_search_call_count === 0
+    && receipt.queries.length === 0
+    && receipt.urls.length === 0
+    && receipt.field_evidence.length === 0;
+}
+
+export function governedAppliedWebSupportProof(receipt, resolutionView, {
+  originalSetSha256
+} = {}) {
+  try { validateFounderBetaWebReceipt(receipt); } catch { return false; }
+  const appliedOfficialIdentitySupport = receipt.field_evidence.some((row) => (
+    (row.field === "set" || row.field === "card_name")
+    && row.support_urls.length > 0
+    && row.support_urls.some(governedIdentityAppliedSupportUrl)
+  ));
+  return receipt.web_search_used === true
+    && originalSetSha256 === WEB_IDENTITY_CONTENT_ACCEPTANCE.original_set_sha256
+    && receipt.web_search_call_count >= 1
+    && receipt.web_search_call_count <= CANONICAL_WEB_SEARCH_MAX_TOOL_CALLS
+    && receipt.queries.length >= 1
+    && webIdentityQueryHasVisibleAnchors(receipt.queries)
+    && receipt.urls.length >= 1
+    && appliedOfficialIdentitySupport
+    && webIdentityContentProjectionProof(resolutionView);
 }
 
 const exactObject = (value) => Boolean(value)
@@ -124,11 +249,25 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
       || evidence.deployment_environment !== "production") {
     throw failure("production_forward_readback_evidence_invalid");
   }
-  const expectedCaseId = evidence.release_class === "ordinary"
-    ? WEB_CASE_ID : STANDARD_CASE_ID;
-  const matches = (Array.isArray(evidence.cases) ? evidence.cases : [])
-    .filter((entry) => entry?.case_id === expectedCaseId);
-  if (matches.length !== 1) {
+  const cases = Array.isArray(evidence.cases) ? evidence.cases : [];
+  const matches = evidence.release_class === "ordinary"
+    ? cases.filter((entry) => (
+      entry?.founder_web_search?.governed_applied_support === true
+      && entry?.original_set_sha256
+        === WEB_IDENTITY_CONTENT_ACCEPTANCE.original_set_sha256
+    )).sort((left, right) => Number(right.case_id === WEB_CASE_ID)
+      - Number(left.case_id === WEB_CASE_ID))
+    : cases.filter((entry) => entry?.case_id === STANDARD_CASE_ID);
+  const strictNoSearchCount = cases.filter((entry) => (
+    entry?.founder_web_search?.strict_no_search === true
+  )).length;
+  if (matches.length !== 1
+      || (evidence.release_class === "ordinary" && (
+        strictNoSearchCount < 1
+        || evidence.final_seal?.qualified_governed_web_support_case_count !== 1
+        || evidence.final_seal?.strict_no_search_case_count !== strictNoSearchCount
+        || evidence.final_seal?.selected_forward_readback_case_id !== matches[0]?.case_id
+      ))) {
     throw failure("production_forward_readback_standard_case_invalid");
   }
   const entry = matches[0];
@@ -137,7 +276,7 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
   const assetId = safeId(entry.asset_id,
     "production_forward_readback_asset_id_invalid");
   const recognitionSessionId = String(entry.recognition_session_id || "").trim();
-  if (entry.expected_grammar !== "NON_TCG"
+  if (!["NON_TCG", "TCG", "LOT"].includes(entry.expected_grammar)
       || !SESSION_ID.test(recognitionSessionId)
       || entry.resolution_http_method !== "GET"
       || entry.resolution_request_count !== 1
@@ -156,7 +295,9 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
   }
   return Object.freeze({
     release_class: evidence.release_class,
-    case_id: expectedCaseId,
+    case_id: entry.case_id,
+    expected_grammar: entry.expected_grammar,
+    original_set_sha256: entry.original_set_sha256 || null,
     asset_id: assetId,
     recognition_session_id: recognitionSessionId,
     title_length: entry.title_length,
@@ -189,26 +330,30 @@ function validateResolutionView(resolutionView, entry) {
     && composer?.marketplace_profile_version == null;
   let webReceipt = null;
   let relationReceipt = null;
-  if (entry.case_id === WEB_CASE_ID) {
+  if (entry.release_class === "ordinary") {
     try {
       webReceipt = validateFounderBetaWebReceipt(
         resolutionView?.founder_beta_web_receipt
       );
-      const publicRelation = resolutionView?.set_card_name_relation_receipt;
-      relationReceipt = validateSetCardNameRelationReceipt(publicRelation, {
-        set: publicRelation?.set?.value || "",
-        card_name: publicRelation?.card_name?.value || ""
-      });
+      if (entry.release_class === "ordinary") {
+        const publicRelation = resolutionView?.set_card_name_relation_receipt;
+        relationReceipt = validateSetCardNameRelationReceipt(publicRelation, {
+          set: canonicalBracketValue(resolutionView, "set") || "",
+          card_name: canonicalBracketValue(resolutionView, "card_name") || ""
+        });
+      }
     } catch {
       throw failure("production_forward_readback_web_receipt_invalid");
     }
   }
+  const expectedRawGrammar = entry.expected_grammar === "NON_TCG"
+    ? "standard" : entry.expected_grammar.toLowerCase();
   if (!exactObject(resolutionView)
       || resolutionView.asset_id !== entry.asset_id
       || resolutionView.recognition_session_id !== entry.recognition_session_id
       || resolutionView.schema_version !== entry.versions.resolution_view_schema
-      || resolutionView.grammar?.value !== STANDARD_CASE_ID
-      || resolutionView.grammar?.raw !== "standard"
+      || resolutionView.grammar?.value !== entry.expected_grammar
+      || resolutionView.grammar?.raw !== expectedRawGrammar
       || resolutionView.grammar?.contract_version !== entry.versions.resolution_view_schema
       || resolutionView.grammar?.resolver_version !== entry.versions.resolver
       || composer?.composer_version !== entry.versions.composer
@@ -223,7 +368,7 @@ function validateResolutionView(resolutionView, entry) {
       || !exactKeys(resolutionView.owner_execution_receipt, ["version", "sha256"])
       || stableJson(resolutionView.owner_execution_receipt)
         !== stableJson(entry.owner_execution_receipt)
-      || (entry.case_id === WEB_CASE_ID && (
+      || (entry.release_class === "ordinary" && (
         entry.versions.csm_contract !== "csm-stage-shadow-v3"
         || webReceipt.web_search_used !== true
         || webReceipt.web_search_call_count < 1
@@ -234,10 +379,9 @@ function validateResolutionView(resolutionView, entry) {
         || !webIdentityQueryHasVisibleAnchors(webReceipt.queries)
         || webReceipt.urls.length < 1
         || webReceipt.field_evidence.length < 1
-        || webReceipt.field_evidence.some((row) => !WEB_IDENTITY_FIELDS.has(row.field))
-        || !webReceipt.field_evidence.some((row) => row.support_urls.length > 0)
-        || relationReceipt?.set?.predicate !== SET_MEMBERSHIP_PREDICATE
-        || relationReceipt?.card_name?.predicate !== CARD_NAME_PREDICATE
+        || !governedAppliedWebSupportProof(webReceipt, resolutionView, {
+          originalSetSha256: entry.original_set_sha256
+        })
       ))) {
     throw failure("production_forward_readback_resolution_view_invalid");
   }
@@ -364,9 +508,9 @@ function verifyExactProductionForwardReadback({
     owner_execution_receipt_exact_match: true,
     trace_exact_match: true,
     support_receipts_exact_match: true,
-    founder_beta_web_receipt_exact_match: validated.entry.case_id === WEB_CASE_ID,
-    web_search_used: validated.entry.case_id === WEB_CASE_ID,
-    web_search_call_count: validated.entry.case_id === WEB_CASE_ID
+    founder_beta_web_receipt_exact_match: validated.entry.release_class === "ordinary",
+    web_search_used: validated.entry.release_class === "ordinary",
+    web_search_call_count: validated.entry.release_class === "ordinary"
       ? readback.founder_beta_web_receipt.web_search_call_count : 0,
     full_resolution_view_exact_match: true,
     composer_version: validated.entry.versions.composer,

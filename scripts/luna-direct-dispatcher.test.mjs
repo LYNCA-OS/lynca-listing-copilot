@@ -152,10 +152,10 @@ function definitive502Failure(payload, overrides = {}) {
   assert.equal(request.max_tool_calls, 2);
   assert.deepEqual(request.include, ["web_search_call.action.sources"]);
   const requestBytes = JSON.stringify(request);
-  assert.equal(requestBytes.length, 12_778);
+  assert.equal(requestBytes.length, 13_375);
   assert.equal(
     createHash("sha256").update(requestBytes).digest("hex"),
-    "8b14694f8ea9e506c4327f825a79c40f81c6707ff4b87d841f090b36b37e6b1d"
+    "c024fe60ebac7e955fb8bbc0db19184bae08dfa8f648f60b890b858f4afb6ca6"
   );
 
   const baseOptions = {

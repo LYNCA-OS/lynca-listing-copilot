@@ -67,10 +67,10 @@ const webSearchDurableReceipts = (fields) => ({
     web_search_used: true,
     web_search_call_count: 1,
     queries: ["2020-21 Panini Contenders Anthony Edwards #105 checklist"],
-    urls: ["https://example.com/checklist"],
+    urls: ["https://www.paniniamerica.net/checklist"],
     field_evidence: [{
       field: "card_name",
-      support_urls: ["https://example.com/checklist"],
+      support_urls: ["https://www.paniniamerica.net/checklist"],
       conflict_urls: [],
       unresolved_urls: []
     }],

@@ -377,8 +377,7 @@ jobs:
             || activationCases.some((entry, index) => {
               const contract = WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS[index];
               const expectedKeys = entry.case_id === 'NON_TCG_WEB_IDENTITY'
-                ? ['case_id', 'expected_grammar', 'expected_web_search_used',
-                  'expected_web_search_query', 'original_set_sha256', 'source_feedback_id',
+                ? ['case_id', 'expected_grammar', 'original_set_sha256', 'source_feedback_id',
                   'evaluation_cohort', 'hash_provenance', 'image_count', 'files']
                 : ['case_id', 'expected_grammar', 'expected_lot_count',
                   'original_set_sha256', 'source_feedback_id', 'evaluation_cohort',
@@ -390,10 +389,8 @@ jobs:
                 || entry.evaluation_cohort !== contract.evaluation_cohort
                 || entry.hash_provenance !== contract.hash_provenance
                 || entry.original_set_sha256 !== contract.original_set_sha256
-                || (entry.case_id === 'NON_TCG_WEB_IDENTITY'
-                  ? entry.expected_web_search_used !== contract.expected_web_search_used
-                    || entry.expected_web_search_query !== contract.expected_web_search_query
-                  : entry.expected_lot_count !== contract.expected_lot_count)
+                || (entry.case_id !== 'NON_TCG_WEB_IDENTITY'
+                  && entry.expected_lot_count !== contract.expected_lot_count)
                 || entry.image_count !== 2
                 || !Array.isArray(entry.files) || entry.files.length !== 2;
             })
@@ -705,32 +702,32 @@ jobs:
           test "$(stat -c '%a' "$standard_receipt")" = "600"
           else
             test "$PRODUCTION_RELEASE_CLASS" = "compatibility-bridge"
-            test "$(stat -c '%a' "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION")" = "600"
-            bridge_asset_id="$(node scripts/production-forward-readback.mjs asset-id \
-              --evidence "$writer_evidence" \
-              --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
-              --deployment-url "$DEPLOYMENT_URL" \
-              --git-sha "$GITHUB_SHA")"
-            bridge_query="$(ASSET_ID="$bridge_asset_id" node -e \
-              'process.stdout.write(new URLSearchParams({asset_id:process.env.ASSET_ID}).toString())')"
-            bridge_url="https://listing.lyncafei.team/api/csm-resolution-view?$bridge_query"
-            install -m 600 /dev/null "$bridge_response"
-            mapfile -t bridge_meta < <(
-              curl -sS --max-time 30 --max-redirs 0 -b "$cookie_jar" \
-                -o "$bridge_response" -w '%{http_code}\n%{url_effective}\n' "$bridge_url"
-            )
-            test "${bridge_meta[0]}" = "200"
-            test "${bridge_meta[1]}" = "$bridge_url"
-            node scripts/production-forward-readback.mjs verify-promoted \
-              --evidence "$writer_evidence" \
-              --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
-              --readback "$bridge_response" \
-              --response-url "${bridge_meta[1]}" \
-              --deployment-url "$DEPLOYMENT_URL" \
-              --git-sha "$GITHUB_SHA" \
-              --out "$bridge_receipt"
-            test "$(stat -c '%a' "$bridge_receipt")" = "600"
           fi
+          test "$(stat -c '%a' "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION")" = "600"
+          bridge_asset_id="$(node scripts/production-forward-readback.mjs asset-id \
+            --evidence "$writer_evidence" \
+            --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA")"
+          bridge_query="$(ASSET_ID="$bridge_asset_id" node -e \
+            'process.stdout.write(new URLSearchParams({asset_id:process.env.ASSET_ID}).toString())')"
+          bridge_url="https://listing.lyncafei.team/api/csm-resolution-view?$bridge_query"
+          install -m 600 /dev/null "$bridge_response"
+          mapfile -t bridge_meta < <(
+            curl -sS --max-time 30 --max-redirs 0 -b "$cookie_jar" \
+              -o "$bridge_response" -w '%{http_code}\n%{url_effective}\n' "$bridge_url"
+          )
+          test "${bridge_meta[0]}" = "200"
+          test "${bridge_meta[1]}" = "$bridge_url"
+          node scripts/production-forward-readback.mjs verify-promoted \
+            --evidence "$writer_evidence" \
+            --expectation "$WRITER_JOURNEY_FORWARD_READBACK_EXPECTATION" \
+            --readback "$bridge_response" \
+            --response-url "${bridge_meta[1]}" \
+            --deployment-url "$DEPLOYMENT_URL" \
+            --git-sha "$GITHUB_SHA" \
+            --out "$bridge_receipt"
+          test "$(stat -c '%a' "$bridge_receipt")" = "600"
       - name: Re-confirm the exact canonical deployment after parity readback
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
