@@ -327,6 +327,56 @@ const fieldEvidenceV2 = {
 };
 assert.doesNotThrow(() => validateFounderBetaWebReceipt(fieldEvidenceV2));
 
+const currentCopySupportV1 = structuredClone(openOnly);
+currentCopySupportV1.field_evidence[0].field = "card_number";
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(currentCopySupportV1),
+  "the byte-frozen v1 reader retains its historical non-identity support boundary");
+
+const mixedAuthorityV2 = structuredClone(fieldEvidenceV2);
+mixedAuthorityV2.field_evidence = [{
+  field: "card_number", support_urls: [], conflict_urls: [],
+  unresolved_urls: [mixedAuthorityV2.urls[0]]
+}, {
+  field: "product", support_urls: [mixedAuthorityV2.urls[0]],
+  conflict_urls: [], unresolved_urls: []
+}];
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(mixedAuthorityV2),
+  "one returned URL may support identity while remaining unresolved for current-copy evidence");
+
+const currentCopySupportV2 = structuredClone(mixedAuthorityV2);
+currentCopySupportV2.field_evidence[0].support_urls = currentCopySupportV2.urls;
+currentCopySupportV2.field_evidence[0].unresolved_urls = [];
+assert.throws(() => validateFounderBetaWebReceipt(currentCopySupportV2),
+  /founder_beta_web_receipt_invalid/,
+  "v2 must reject Web support authority for a non-identity current-copy field");
+for (const [field, evidence] of [
+  ["grammar", { support_urls: [], conflict_urls: [],
+    unresolved_urls: fieldEvidenceV2.urls }],
+  ["description", { support_urls: [], conflict_urls: fieldEvidenceV2.urls,
+    unresolved_urls: [] }]
+]) {
+  const invalidLane = structuredClone(fieldEvidenceV2);
+  invalidLane.field_evidence = [{ field, ...evidence }];
+  assert.throws(() => validateFounderBetaWebReceipt(invalidLane),
+    /founder_beta_web_receipt_invalid/,
+    `${field} must reject its forbidden v2 Web evidence lane`);
+}
+
+const mixedAuthorityRows = structuredClone(standardRows);
+mixedAuthorityRows.output.structured_output.founder_beta_web_receipt = mixedAuthorityV2;
+assert.deepEqual(
+  readDurableProjectionReceipt(mixedAuthorityRows).founder_beta_web_receipt,
+  mixedAuthorityV2,
+  "durable replay must preserve the exact mixed identity/current-copy v2 receipt"
+);
+assert.equal(replayFromRows(mixedAuthorityRows).title, mixedAuthorityRows.output.title);
+const mixedAuthorityTamperRows = structuredClone(mixedAuthorityRows);
+mixedAuthorityTamperRows.output.structured_output.founder_beta_web_receipt =
+  currentCopySupportV2;
+assert.throws(() => readDurableProjectionReceipt(mixedAuthorityTamperRows),
+  /founder_beta_web_receipt_invalid/,
+  "durable readback must reject current-copy evidence promoted from unresolved to support");
+
 const crossRowSharedUrlV2 = structuredClone(fieldEvidenceV2);
 crossRowSharedUrlV2.field_evidence = ["product", "set"].map((field) => ({
   field,
