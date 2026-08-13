@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import { CANONICAL_FIELD_SOURCE_FIELDS } from "../lib/listing/thin/canonical-fields.mjs";
 import { validateFounderBetaWebReceipt } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  projectSetCardNameRelationReceipt
+} from "../lib/listing/thin/set-card-name-reconciliation.mjs";
 
 function audited(fields) {
   const sourceFields = [
@@ -35,6 +38,94 @@ const successBody = (fields, extra = {}) => ({
   output_text: JSON.stringify(audited(fields)),
   ...extra
 });
+
+const rawRelationReceipt = (set = null, cardName = null) => ({
+  schema_version: "set-card-name-relations-v1",
+  set: set == null ? null : {
+    predicate: "CURRENT_CARD_MEMBER_OF_SET", value: set
+  },
+  card_name: cardName == null ? null : {
+    predicate: "CURRENT_CARD_NAMED_BY_DESIGN", value: cardName
+  }
+});
+
+assert.deepEqual(projectSetCardNameRelationReceipt(
+  rawRelationReceipt(null, "Card Name 中文"),
+  { set: "", card_name: "Card Name" }
+).card_name, {
+  predicate: "CURRENT_CARD_NAMED_BY_DESIGN", value: "Card Name"
+}, "deterministic sanitizer cleanup preserves the typed provider relation");
+assert.deepEqual(projectSetCardNameRelationReceipt(
+  rawRelationReceipt("Alpha\nBeta"),
+  { set: "Alpha Beta", card_name: "" }
+).set, {
+  predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "Alpha Beta"
+}, "canonical whitespace normalization runs before first-line title sanitization");
+assert.throws(() => projectSetCardNameRelationReceipt(
+  rawRelationReceipt("Observed Set"),
+  { set: "Different Set", card_name: "" }
+), /set_card_name_relation_sanitizer_projection_mismatch:set/,
+"an arbitrary value replacement is not a sanitizer projection");
+
+{
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(successBody({
+      subjects: ["Test Subject"], grammar: "standard", set: ""
+    })), { status: 200, headers: { "content-type": "application/json" } }),
+    resolveObservation: (observation) => ({
+      ...observation,
+      fields: { ...observation.fields, set: "FORGED SET" },
+      set_card_name_relation_receipt: {
+        schema_version: "set-card-name-relations-v1",
+        set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "FORGED SET" },
+        card_name: null
+      }
+    })
+  }), (error) => error?.provider_error_code === "post_observation_relation_failed"
+    && error?.cause?.message === "set_card_name_relation_authority_missing:set",
+  "a resolver callback cannot self-authorize a Set relation");
+}
+
+{
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(successBody({
+      subjects: ["Test Subject"], grammar: "standard", set: "High Risers"
+    })), { status: 200, headers: { "content-type": "application/json" } }),
+    resolveObservation: (observation) => ({
+      ...observation,
+      fields: { ...observation.fields, set: "  High   Risers  " }
+    })
+  }), (error) => error?.provider_error_code === "post_observation_relation_failed"
+    && error?.cause?.message === "set_card_name_relation_resolved_noncanonical:set",
+  "a callback cannot disguise a byte-changing Set transition as whitespace equivalence");
+}
+
+for (const mutateFields of [
+  (fields) => ({ ...fields, card_name: null }),
+  (fields) => {
+    const changed = { ...fields };
+    delete changed.card_name;
+    return changed;
+  }
+]) {
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(successBody({
+      subjects: ["Test Subject"], grammar: "standard", card_name: ""
+    })), { status: 200, headers: { "content-type": "application/json" } }),
+    resolveObservation: (observation) => ({
+      ...observation,
+      fields: mutateFields(observation.fields)
+    })
+  }), (error) => error?.provider_error_code === "post_observation_relation_failed"
+    && error?.cause?.message === "set_card_name_relation_resolved_noncanonical:card_name",
+  "a callback cannot erase the canonical Card Name string type");
+}
 
 {
   let providerCalls = 0;

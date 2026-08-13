@@ -3,11 +3,16 @@
 import assert from "node:assert/strict";
 
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { composeLyncaStandardName } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
+  VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
+  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
   buildCsmStageRows,
   CSM_STAGE_LEGACY_CONTRACT_VERSION,
@@ -342,6 +347,168 @@ assert.ok(canonicalNaming.composed.canonical_naming_trace.selected.some((token) 
     checked.replayed.composed.canonical_naming_trace,
     canonicalNaming.composed.canonical_naming_trace
   );
+}
+for (const visualValue of ["  High   Risers  ", "   "]) {
+  const driftedVisual = clone(canonicalNaming.rows);
+  const setVisual = driftedVisual.evidence.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
+  ));
+  if (setVisual) {
+    setVisual.raw_value = visualValue;
+    setVisual.normalized_value = visualValue;
+  } else {
+    driftedVisual.evidence.push({
+      modality: "WHOLE_CARD_VISUAL", bracket: "set",
+      raw_value: visualValue, normalized_value: visualValue,
+      source_ref: { images: driftedVisual.output.recognition_session_id },
+      observation_confidence: 0.8,
+      normalization_version: SEM_STANDARD_VERSION,
+      normalization_outcome: "KEPT",
+      normalization_reason_code: "DIRECT_OBSERVATION"
+    });
+  }
+  reseal(driftedVisual);
+  assert.throws(() => replayFromRows(driftedVisual),
+    /set_card_name_relation_transition_invalid/,
+    "durable relation observations must already be exact canonical strings");
+}
+
+{
+  const arraySet = clone(canonicalNaming.rows);
+  arraySet.resolved.find((row) => row.bracket === "set").canonical_value =
+    arraySet.output.structured_output.sem.set
+      ? [arraySet.output.structured_output.sem.set]
+      : ["Forged Set"];
+  reseal(arraySet);
+  assert.throws(() => replayFromRows(arraySet),
+    /set_card_name_resolved_projection_invalid:set/,
+    "a relation-bearing resolved value cannot be an array that replay joins into a string");
+
+  const invalidSem = clone(standard.rows);
+  invalidSem.output.structured_output.sem = [];
+  reseal(invalidSem);
+  assert.throws(() => replayFromRows(invalidSem),
+    /set_card_name_resolved_projection_invalid:sem/,
+    "even an empty relation projection requires a plain SEM object");
+
+  for (const field of ["set", "card_name"]) {
+    for (const mode of ["missing", "duplicate"]) {
+      const cardinalityDrift = clone(canonicalNaming.rows);
+      const row = cardinalityDrift.resolved.find((entry) => entry.bracket === field);
+      cardinalityDrift.resolved = mode === "missing"
+        ? cardinalityDrift.resolved.filter((entry) => entry.bracket !== field)
+        : [...cardinalityDrift.resolved, clone(row)];
+      reseal(cardinalityDrift);
+      assert.throws(() => replayFromRows(cardinalityDrift),
+        new RegExp(`set_card_name_resolved_cardinality_invalid:${field}`),
+        `durable ${field} resolved rows must be exactly one`);
+    }
+  }
+}
+
+{
+  const releases = Object.values(EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases);
+  const external = releases.at(-1);
+  const signalMutations = [
+    (rows) => { rows.resolution.registry_release_id = external.resolution.registry_release_id; },
+    (rows) => { rows.resolution.resolver_version = external.resolution.resolver_version; },
+    (rows) => {
+      rows.resolution.conflict_policy_version = external.resolution.conflict_policy_version;
+    },
+    (rows) => { Object.assign(rows.resolution, external.resolution); },
+    (rows) => {
+      rows.evidence.push({
+        bracket: "set", raw_value: "High Risers", normalized_value: "High Risers",
+        modality: "REGISTRY",
+        source_ref: { support_type: "EXACT_EXTERNAL_IDENTITY" }
+      });
+    },
+    (rows) => {
+      rows.candidates.push({ source_trust: "REVIEWED_REGISTRY_EXACT" });
+    },
+    (rows) => {
+      rows.resolved.find((row) => row.bracket === "set").rationale_codes =
+        ["EXACT_EXTERNAL_IDENTITY_SUPPORT"];
+    }
+  ];
+  for (const mutate of signalMutations) {
+    const erasedAuthority = clone(canonicalNaming.rows);
+    mutate(erasedAuthority);
+    reseal(erasedAuthority);
+    assert.throws(() => replayFromRows(erasedAuthority),
+      /external_identity_receipt_missing_or_unexpected/,
+      "any durable external-only signal requires the full private receipt");
+    assert.equal(verifyReplay(erasedAuthority, canonicalNaming.composed.title).ok, false);
+  }
+
+  const verifiedSignalMutations = [
+    (rows) => {
+      rows.resolution.resolver_version = VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION;
+    },
+    (rows) => {
+      rows.resolution.conflict_policy_version =
+        VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION;
+    },
+    (rows) => {
+      rows.evidence.push({
+        bracket: "set", raw_value: "High Risers", normalized_value: "High Risers",
+        modality: "REGISTRY",
+        source_ref: { support_type: "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION" }
+      });
+    },
+    (rows) => {
+      rows.candidates.push({ source_trust: "REVIEWED_CLOSED_PROJECTION_EXACT" });
+    },
+    (rows) => {
+      rows.resolved.find((row) => row.bracket === "set").rationale_codes =
+        ["EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"];
+    }
+  ];
+  for (const mutate of verifiedSignalMutations) {
+    const erasedVerifiedAuthority = clone(canonicalNaming.rows);
+    mutate(erasedVerifiedAuthority);
+    reseal(erasedVerifiedAuthority);
+    assert.throws(() => replayFromRows(erasedVerifiedAuthority),
+      /verified_original_receipt_missing_or_unexpected/,
+      "any durable verified-only signal requires the full private receipt");
+    assert.equal(verifyReplay(
+      erasedVerifiedAuthority, canonicalNaming.composed.title
+    ).ok, false);
+  }
+
+  const visualAuthoritySignals = [
+    (row) => { row.normalization_reason_code = "EXTERNAL_IDENTITY_FILL"; },
+    (row) => { row.normalization_version = external.receipt.index_version; },
+    (row) => {
+      row.normalization_reason_code = "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION";
+    },
+    (row) => {
+      row.normalization_version = "verified_original_closed_projection_subset_a_v2";
+    },
+    (row) => { row.source_ref.release_id = "verified_original_closed_projection_subset_a_v2"; },
+    (row) => { row.source_ref.registry_release_id = external.receipt.registry_release_id; },
+    (row) => { row.source_ref.pack_id = external.receipt.pack_id; },
+    (row) => { row.source_ref.sources = [{ source_id: "tcdb.set.2551" }]; }
+  ];
+  for (const mutate of visualAuthoritySignals) {
+    const residualAuthority = clone(canonicalNaming.rows);
+    mutate(residualAuthority.evidence.find((row) => row.modality === "WHOLE_CARD_VISUAL"));
+    reseal(residualAuthority);
+    assert.throws(() => replayFromRows(residualAuthority),
+      /durable_visual_evidence_invalid/,
+      "a resolver-only marker cannot survive inside ordinary visual evidence");
+    assert.equal(verifyReplay(residualAuthority, canonicalNaming.composed.title).ok, false);
+  }
+
+  const unclaimedRegistry = clone(canonicalNaming.rows);
+  unclaimedRegistry.evidence.push({
+    bracket: "set", raw_value: "High Risers", normalized_value: "High Risers",
+    modality: "REGISTRY", source_ref: { registry_release_id: "unknown" }
+  });
+  reseal(unclaimedRegistry);
+  assert.throws(() => replayFromRows(unclaimedRegistry),
+    /durable_registry_evidence_unclaimed/,
+    "durable v3 has no anonymous third Registry authority lane");
 }
 {
   const tampered = clone(canonicalNaming.rows);

@@ -155,6 +155,20 @@ import {
   ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
   ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTRACT_SHA256,
   ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_DIFF_SHA256,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_DESCRIPTOR_ID,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_CASE_ID,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_PHASE,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_RUN_ID,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILURE_CODE,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_MARKER,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTENT_MANIFEST_SHA256,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_DIFF_SHA256,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -254,6 +268,7 @@ import {
   activationACanonicalSemProjectionRepairRuntimeContractProof,
   activationAWebReceiptOutcomeRepairRuntimeContractProof,
   activationACurrentCopyWebTraceRepairRuntimeContractProof,
+  activationAResolverRelationRebaseRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -303,6 +318,7 @@ const activationADepth2HistoryRepairGitSha = "6".repeat(40);
 const activationACanonicalSemProjectionRepairGitSha = "7".repeat(40);
 const activationAWebReceiptOutcomeRepairGitSha = "9".repeat(40);
 const activationACurrentCopyWebTraceRepairGitSha = "5".repeat(40);
+const activationAResolverRelationRebaseGitSha = "a".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -873,6 +889,47 @@ assert.deepEqual(ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_CHANGED_PATHS, [
   "scripts/csm-durable-forward-reader-bridge.test.mjs",
   "scripts/thin-listing-provider-boundary.test.mjs"
 ]);
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-resolver-relation-rebase-v1");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_MARKER,
+  "set-card-name-resolver-relation-rebase-v1");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA,
+  "b4926a74b4696f7be5d91a572a3bea316027aee1");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA,
+  "dac1805736e5ce7f1a58bd31e5a4ed4e77c8bf6e");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_ALTERNATE_PARENT_SHA,
+  "6f0ffcbcb82c6147851b2ab24882d73d540518c3");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_RUN_ID, "31738194708");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILURE_CODE,
+  "set_card_name_relation_required:set");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_CASE_ID,
+  "EXTERNAL_IDENTITY");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_PHASE,
+  "RECOGNITION_RESPONSE");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA,
+  "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_DIFF_SHA256,
+  "8af7fd78dfaab62676cdff8569bb13c2dcd01a2b603ac334b35bfb2b66c2d688");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTENT_MANIFEST_SHA256,
+  "d13285de16258f0e09c1f387b70d766b4e08ef0a8e1a78e35e1da695f4354454");
+assert.equal(ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTRACT_SHA256,
+  "9cc9210f4f9d04debfd277237ce7e0fd2b9cf69c70253b82857b4d147a676b13");
+assert.deepEqual(ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS, [
+  "lib/listing/thin/csm-persistence.mjs",
+  "lib/listing/thin/csm-replay.mjs",
+  "lib/listing/thin/csm-supabase-writer.mjs",
+  "lib/listing/thin/set-card-name-reconciliation.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-persistence.test.mjs",
+  "scripts/csm-replay.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs",
+  "scripts/verified-original-observation-support.test.mjs"
+]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
 assert.equal(standardP0TitleIdentityExact(
@@ -927,6 +984,13 @@ const currentCopyWebTraceRuntimeContentManifest = Object.freeze([
     sha256: "eb4ce48ea586dd4a34f17fe4f8fe073a1bf37e4fc3abde808dc29c863388f348"
   })
 ]);
+const resolverRelationRebaseRuntimeContentManifest =
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS
+    .filter((entry) => !entry.startsWith("scripts/compatibility-bridge-release"))
+    .map((entry) => ({
+      path: entry,
+      sha256: createHash("sha256").update(readFileSync(entry)).digest("hex")
+    }));
 const dependencyNodeModules = realpathSync("node_modules");
 const bridgeCommitMessage = [
   "rollback forward reader",
@@ -1520,6 +1584,80 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   changedPaths: [...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS],
   webReceiptOutcomeRuntimeContentManifest
 }), (error) => error.code === "activation_a_web_receipt_outcome_repair_parent_mismatch");
+const activationAResolverRelationRebase = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAResolverRelationRebaseGitSha,
+  headSha: activationAResolverRelationRebaseGitSha,
+  parentTreeSha: ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS],
+  resolverRelationRebaseRuntimeContentManifest
+});
+assert.equal(activationAResolverRelationRebase.schema_version,
+  "production-release-selection-v26");
+assert.equal(activationAResolverRelationRebase.parent_git_sha,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA);
+assert.equal(activationAResolverRelationRebase.parent_tree_sha,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA);
+assert.equal(activationAResolverRelationRebase.failed_run_id,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_RUN_ID);
+assert.equal(activationAResolverRelationRebase.failure_code,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILURE_CODE);
+assert.equal(activationAResolverRelationRebase.failed_case_id,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_CASE_ID);
+assert.equal(activationAResolverRelationRebase.failed_phase,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_PHASE);
+assert.equal(activationAResolverRelationRebase.required_rollback_git_sha,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA);
+assert.equal(activationAResolverRelationRebase.contract_sha256,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTRACT_SHA256);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS,
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAResolverRelationRebaseGitSha,
+    headSha: activationAResolverRelationRebaseGitSha,
+    parentTreeSha: ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA],
+    changedPaths,
+    resolverRelationRebaseRuntimeContentManifest
+  }), (error) => [
+    "activation_a_resolver_relation_rebase_changed_paths_invalid",
+    "activation_a_resolver_relation_rebase_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAResolverRelationRebaseGitSha,
+  headSha: activationAResolverRelationRebaseGitSha,
+  parentTreeSha: "0".repeat(40),
+  parentShas: [ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS],
+  resolverRelationRebaseRuntimeContentManifest
+}), (error) => error.code === "activation_a_resolver_relation_rebase_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAResolverRelationRebaseGitSha,
+  headSha: activationAResolverRelationRebaseGitSha,
+  parentTreeSha: ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_RESOLVER_RELATION_REBASE_ALTERNATE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS],
+  resolverRelationRebaseRuntimeContentManifest
+}), (error) => error.code === "activation_a_resolver_relation_rebase_parent_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAResolverRelationRebaseGitSha,
+  headSha: activationAResolverRelationRebaseGitSha,
+  parentTreeSha: ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS],
+  resolverRelationRebaseRuntimeContentManifest: []
+}), (error) => error.code === "activation_a_resolver_relation_rebase_runtime_content_invalid");
 const activationACurrentCopyWebTraceRepair = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationACurrentCopyWebTraceRepairGitSha,
@@ -1585,7 +1723,7 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   changedPaths: [...ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_CHANGED_PATHS],
   currentCopyWebTraceRuntimeContentManifest
 }), (error) => error.code === "activation_a_current_copy_web_trace_repair_parent_mismatch");
-assert.throws(() => verifyCompatibilityBridgeSelection({
+assert.equal(verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: activationACurrentCopyWebTraceRepairGitSha,
   headSha: activationACurrentCopyWebTraceRepairGitSha,
@@ -1593,7 +1731,8 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   parentShas: [ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA],
   changedPaths: [...ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_CHANGED_PATHS],
   currentCopyWebTraceRuntimeContentManifest: []
-}), (error) => error.code === "activation_a_current_copy_web_trace_repair_runtime_content_invalid");
+}).contract_sha256, ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTRACT_SHA256,
+"historical selection-v24 must not validate injected candidate runtime blobs");
 assert.equal(activationADepth2HistoryRepair.schema_version,
   "production-release-selection-v20");
 assert.equal(activationADepth2HistoryRepair.parent_git_sha,
@@ -2609,69 +2748,123 @@ assert.deepEqual(activationADepth2HistoryRepairRuntimeContractProof(), {
   contract_sha256: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256
 });
 
-// Historical selection-v22 is a literal replay above. The current selector is
-// the only one exercised against Git, using exactly candidate plus d179 parent.
-const currentCopyWebTraceFixtureRoot = await mkdtemp(
-  path.join(tmpdir(), "lynca-current-copy-web-trace-repair-")
+// Historical selection-v24 is immutable data. It must remain replayable after
+// its d179 parent falls outside the protected depth-two checkout.
+assert.deepEqual(activationACurrentCopyWebTraceRepairRuntimeContractProof({
+  candidateGitSha: "0".repeat(40),
+  runtimeContentManifest: []
+}), {
+  schema_version: "listing-copilot-activation-a-current-copy-web-trace-repair-proof-v1",
+  repair_descriptor_id: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_DESCRIPTOR_ID,
+  repair_marker: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_MARKER,
+  required_parent_git_sha: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA,
+  required_parent_tree_sha: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_ROLLBACK_SHA,
+  base_web_receipt_outcome_contract_sha256:
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTRACT_SHA256,
+  runtime_diff_sha256: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_DIFF_SHA256,
+  runtime_content_manifest_sha256:
+    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+  runtime_content_source: "candidate-git-object-blobs",
+  response_parser_version: "canonical-output-v5-web-receipt-outcome",
+  receipt_producer_schema_version: "founder-beta-web-receipt-v2",
+  receipt_reader_schema_versions: [
+    "founder-beta-web-receipt-v1", "founder-beta-web-receipt-v2"
+  ],
+  receipt_outcomes: [
+    "NOT_USED", "USED_WITH_FIELD_EVIDENCE", "USED_WITHOUT_FIELD_EVIDENCE"
+  ],
+  receipt_v1_shape: "frozen-exact",
+  receipt_v1_validator_sha256:
+    "e1f4389392b99f265c4a3b754b75e719d6edac0fd0946e00d8d11624436ae3da",
+  source_field_vocabulary: "canonical-field-source-fields-exhaustive",
+  current_copy_web_evidence_policy: "unresolved-trace-only",
+  current_copy_web_support_authority: "forbidden",
+  grammar_web_evidence_policy: "forbidden",
+  identity_governed_support_authority: "unchanged",
+  unsafe_and_unreturned_web_sources: "hard-reject",
+  producer_reader_consistency: "same-v2-validator",
+  durable_replay_tamper_rejection: true,
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true,
+  contract_sha256: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTRACT_SHA256
+});
+
+// Only the current selector exercises Git. The shallow checkout contains the
+// candidate and exact b492 parent, while d179 and the same-tree PR head do not
+// provide an alternate lineage.
+const resolverRelationFixtureRoot = await mkdtemp(
+  path.join(tmpdir(), "lynca-resolver-relation-rebase-")
 );
 try {
-  const seed = path.join(currentCopyWebTraceFixtureRoot, "seed");
-  git(currentCopyWebTraceFixtureRoot, [
+  const seed = path.join(resolverRelationFixtureRoot, "seed");
+  git(resolverRelationFixtureRoot, [
     "clone", "--quiet", "--depth=2", pathToFileURL(process.cwd()).href, seed
   ]);
   git(seed, [
     "checkout", "--quiet", "--detach",
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA
   ]);
   assert.equal(git(seed, ["rev-parse", "HEAD"]),
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA);
   assert.equal(git(seed, ["rev-parse", "HEAD^{tree}"]),
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_TREE_SHA);
-  for (const relativePath of ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_CHANGED_PATHS) {
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA);
+  for (const relativePath of ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS) {
     await copyFile(path.resolve(relativePath), path.join(seed, relativePath));
   }
-  git(seed, ["add", "--", ...ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_CHANGED_PATHS]);
+  git(seed, ["add", "--", ...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS]);
   git(seed, [
     "-c", "commit.gpgsign=false",
     "-c", "user.name=LYNCA fixture",
     "-c", "user.email=fixture@example.invalid",
-    "commit", "--quiet", "-m", "repair current-copy Web trace contract"
+    "commit", "--quiet", "-m", "rebase Set Card Name relation authority"
   ]);
   const fixtureGitSha = git(seed, ["rev-parse", "HEAD"]);
-  assert.deepEqual(parentShas(seed), [ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA]);
+  assert.deepEqual(parentShas(seed), [ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA]);
 
-  const checkout = path.join(currentCopyWebTraceFixtureRoot, "checkout");
-  git(currentCopyWebTraceFixtureRoot, [
+  const checkout = path.join(resolverRelationFixtureRoot, "checkout");
+  git(resolverRelationFixtureRoot, [
     "clone", "--quiet", "--depth=2", pathToFileURL(seed).href, checkout
   ]);
   assert.equal(git(checkout, ["rev-parse", "HEAD"]), fixtureGitSha);
   assert.equal(git(checkout, ["rev-parse", "--is-shallow-repository"]), "true");
   assert.equal(git(checkout, ["rev-list", "--count", "HEAD"]), "2");
   assert.deepEqual(parentShas(checkout), [
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA
-  ], "a depth-two checkout must retain exactly candidate plus d179 parent");
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA
+  ], "a depth-two checkout must retain exactly candidate plus b492 parent");
   assert.equal(git(checkout, [
-    "rev-parse", `${ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA}^{tree}`
-  ]), ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_TREE_SHA);
-  for (const suffix of ["commit", "tree"]) {
-    assert.throws(() => git(checkout, [
-      "cat-file", "-e", `${ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA}^{${suffix}}`
-    ]), `the depth-two candidate must not retain grandparent f70 ${suffix}`);
-  }
+    "rev-parse", `${ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA}^{tree}`
+  ]), ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA);
+  assert.doesNotThrow(() => git(checkout, [
+    "cat-file", "-e", `${ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA}^{tree}`
+  ]), "the required b492/alternate shared tree must remain present");
+  assert.throws(() => git(checkout, [
+    "cat-file", "-e", `${ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA}^{commit}`
+  ]), "the depth-two candidate must not retain grandparent d179");
+  assert.throws(() => git(checkout, [
+    "cat-file", "-e", `${ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_TREE_SHA}^{tree}`
+  ]), "the depth-two candidate must not retain the d179 tree");
+  assert.throws(() => git(checkout, [
+    "cat-file", "-e", `${ACTIVATION_A_RESOLVER_RELATION_REBASE_ALTERNATE_PARENT_SHA}^{commit}`
+  ]), "the same-tree PR head must not provide an alternate parent commit");
   assert.deepEqual(git(checkout, [
-    "diff", "--name-only", ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA,
+    "diff", "--name-only", ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA,
     "HEAD", "--"
   ]).split("\n").filter(Boolean).sort(),
-  [...ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_CHANGED_PATHS].sort());
+  [...ACTIVATION_A_RESOLVER_RELATION_REBASE_CHANGED_PATHS].sort());
 
   await symlink(dependencyNodeModules, path.join(checkout, "node_modules"), "dir");
-  const selectionPath = path.join(currentCopyWebTraceFixtureRoot, "selection.json");
-  const rollbackPath = path.join(currentCopyWebTraceFixtureRoot, "rollback.json");
-  const lineagePath = path.join(currentCopyWebTraceFixtureRoot, "lineage.json");
+  const selectionPath = path.join(resolverRelationFixtureRoot, "selection.json");
+  const rollbackPath = path.join(resolverRelationFixtureRoot, "rollback.json");
+  const lineagePath = path.join(resolverRelationFixtureRoot, "lineage.json");
   const fixtureEnv = {
     ...process.env,
-    VERCEL_ORG_ID: "team_currentCopyWebTraceRepair",
-    VERCEL_PROJECT_ID: "prj_currentCopyWebTraceRepair"
+    VERCEL_ORG_ID: "team_resolverRelationRebase",
+    VERCEL_PROJECT_ID: "prj_resolverRelationRebase"
   };
   const fixtureScript = realpathSync(path.join(checkout,
     "scripts/compatibility-bridge-release.mjs"));
@@ -2682,33 +2875,33 @@ try {
     "--out", selectionPath
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureSelection = JSON.parse(await readFile(selectionPath, "utf8"));
-  assert.equal(fixtureSelection.schema_version, "production-release-selection-v24");
+  assert.equal(fixtureSelection.schema_version, "production-release-selection-v26");
   assert.equal(fixtureSelection.repair_descriptor_id,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_DESCRIPTOR_ID);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_DESCRIPTOR_ID);
   assert.equal(fixtureSelection.parent_git_sha,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA);
   assert.equal(fixtureSelection.parent_tree_sha,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_TREE_SHA);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA);
   assert.equal(fixtureSelection.failed_run_id,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILED_RUN_ID);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_RUN_ID);
   assert.equal(fixtureSelection.failure_code,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILURE_CODE);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILURE_CODE);
   assert.equal(fixtureSelection.failed_case_id,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILED_CASE_ID);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_CASE_ID);
   assert.equal(fixtureSelection.failed_phase,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_FAILED_PHASE);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_PHASE);
   assert.equal(fixtureSelection.required_rollback_git_sha,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_ROLLBACK_SHA);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA);
   assert.equal(fixtureSelection.contract_sha256,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTRACT_SHA256);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTRACT_SHA256);
   await writeFile(rollbackPath, JSON.stringify({
     schema_version: "vercel-production-rollback-receipt-v1",
     canonical_origin: "https://listing.lyncafei.team",
     team_id: fixtureEnv.VERCEL_ORG_ID,
     project_id: fixtureEnv.VERCEL_PROJECT_ID,
-    deployment_id: "dpl_currentCopyWebTracePreviousCanonical",
-    deployment_url: "https://lynca-current-copy-web-trace-previous.vercel.app",
-    git_sha: ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_ROLLBACK_SHA,
+    deployment_id: "dpl_resolverRelationPreviousCanonical",
+    deployment_url: "https://lynca-resolver-relation-previous.vercel.app",
+    git_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA,
     ready_state: "READY",
     target: "production",
     captured_at: "2026-08-14T00:00:00.000Z"
@@ -2723,19 +2916,19 @@ try {
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureLineage = JSON.parse(await readFile(lineagePath, "utf8"));
   assert.equal(fixtureLineage.schema_version,
-    "production-release-rollback-lineage-receipt-v25");
+    "production-release-rollback-lineage-receipt-v27");
   assert.equal(fixtureLineage.release_git_sha, fixtureGitSha);
   assert.equal(fixtureLineage.release_parent_git_sha,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA);
   assert.equal(fixtureLineage.release_parent_tree_sha,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_TREE_SHA);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA);
   assert.equal(fixtureLineage.captured_rollback_git_sha,
-    ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_ROLLBACK_SHA);
+    ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA);
   assert.equal(fixtureLineage.lineage_verified, true);
   assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
   assert.equal((await stat(lineagePath)).mode & 0o777, 0o600);
 } finally {
-  await rm(currentCopyWebTraceFixtureRoot, { recursive: true, force: true });
+  await rm(resolverRelationFixtureRoot, { recursive: true, force: true });
 }
 
 for (const commitMessage of [
@@ -3373,6 +3566,47 @@ assert.equal(activationACurrentCopyWebTraceRepairProof.unsafe_and_unreturned_web
   "hard-reject");
 assert.equal(activationACurrentCopyWebTraceRepairProof.contract_sha256,
   ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationACurrentCopyWebTraceRepairRuntimeContractProof({
+  candidateGitSha: "0".repeat(40),
+  runtimeContentManifest: []
+}).contract_sha256, ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTRACT_SHA256,
+"historical selection-v24 proof must not read live runtime or injected candidate blobs");
+const activationAResolverRelationRebaseProof =
+  activationAResolverRelationRebaseRuntimeContractProof({
+    candidateGitSha: activationAResolverRelationRebaseGitSha,
+    runtimeContentManifest: resolverRelationRebaseRuntimeContentManifest
+  });
+assert.equal(activationAResolverRelationRebaseProof
+  .base_current_copy_web_trace_contract_sha256,
+ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationAResolverRelationRebaseProof.runtime_diff_sha256,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_DIFF_SHA256);
+assert.equal(activationAResolverRelationRebaseProof.runtime_content_manifest_sha256,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTENT_MANIFEST_SHA256);
+assert.equal(activationAResolverRelationRebaseProof.relation_contract_schema_version,
+  "set-card-name-relations-v1");
+assert.equal(activationAResolverRelationRebaseProof.relation_contract_v1_shape,
+  "frozen-exact");
+assert.equal(activationAResolverRelationRebaseProof.provider_relation_receipt,
+  "immutable-observed-projection");
+assert.equal(activationAResolverRelationRebaseProof.post_observation_final_relation,
+  "deterministic-resolver-reconciliation");
+assert.equal(activationAResolverRelationRebaseProof.changed_field_authority_cardinality,
+  "exactly-one");
+assert.deepEqual(activationAResolverRelationRebaseProof.external_identity_authority_fields,
+  ["set"]);
+assert.deepEqual(activationAResolverRelationRebaseProof.external_identity_authority_actions,
+  ["FILL", "CORROBORATE", "CORRECT_CONFLICT"]);
+assert.deepEqual(activationAResolverRelationRebaseProof.verified_original_authority_fields,
+  ["set", "card_name"]);
+assert.deepEqual(activationAResolverRelationRebaseProof.verified_original_authority_actions,
+  ["FILL", "CORRECT_CONFLICT", "CLEAR_CONFLICT"]);
+assert.equal(activationAResolverRelationRebaseProof.durable_transition_cross_binding, true);
+assert.equal(activationAResolverRelationRebaseProof.durable_evidence_classification,
+  "exact-v3-private-evidence");
+assert.equal(activationAResolverRelationRebaseProof.durable_database_v3_private_readback, true);
+assert.equal(activationAResolverRelationRebaseProof.contract_sha256,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTRACT_SHA256);
 assert.equal(activationAWebReceiptOutcomeRepairProof.transport_only_case_id,
   "LARGE_STAGED_TRANSPORT");
 assert.equal(activationAWebReceiptOutcomeRepairProof.transport_only_case_count, 1);
@@ -4108,6 +4342,77 @@ for (const parentGitSha of [
     rollbackReceipt: { git_sha: parentGitSha }
   }), (error) => error.code
     === "ordinary_release_activation_a_web_receipt_outcome_repair_selection_invalid",
+  "the failed or same-tree alternate parent may not escape through generic v3 lineage");
+}
+const activationAResolverRelationRebaseLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAResolverRelationRebase,
+  rollbackReceipt: { git_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAResolverRelationRebaseLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v27",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_RESOLVER_RELATION_REBASE_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_RESOLVER_RELATION_REBASE_MARKER,
+  release_git_sha: activationAResolverRelationRebaseGitSha,
+  release_parent_git_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAResolverRelationRebase.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const key of Object.keys(activationAResolverRelationRebase)) {
+  const value = key === "parity_required"
+    ? false
+    : key.endsWith("sha256") ? "0".repeat(64)
+      : key === "git_sha" ? "not-a-git-sha"
+        : "unknown";
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: { ...activationAResolverRelationRebase, [key]: value },
+    rollbackReceipt: { git_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_resolver_relation_rebase_selection_invalid");
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: { ...activationAResolverRelationRebase, unexpected_key: true },
+  rollbackReceipt: { git_sha: ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA }
+}), (error) => error.code
+  === "ordinary_release_activation_a_resolver_relation_rebase_selection_invalid");
+for (const rollbackSha of [
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_ALTERNATE_PARENT_SHA,
+  "c".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAResolverRelationRebase,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+for (const parentGitSha of [
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA,
+  ACTIVATION_A_RESOLVER_RELATION_REBASE_ALTERNATE_PARENT_SHA
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: {
+      schema_version: "production-release-selection-v3",
+      release_class: ORDINARY_RELEASE_CLASS,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_RESOLVER_RELATION_REBASE_MARKER,
+      parent_git_sha: parentGitSha,
+      required_rollback_git_sha: parentGitSha,
+      git_sha: activationAResolverRelationRebaseGitSha,
+      writer_journey_manifest: "writer-journey-cases-v3",
+      parity_required: true,
+      contract_sha256: ACTIVATION_A_RESOLVER_RELATION_REBASE_RUNTIME_CONTRACT_SHA256
+    },
+    rollbackReceipt: { git_sha: parentGitSha }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_resolver_relation_rebase_selection_invalid",
   "the failed or same-tree alternate parent may not escape through generic v3 lineage");
 }
 const activationACurrentCopyWebTraceRepairLineage = verifyOrdinaryRollbackLineage({
@@ -5088,6 +5393,8 @@ try {
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
   const actualActivationADepth2HistoryRepair =
     actualParent === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA;
+  const actualActivationAResolverRelationRebase =
+    actualParent === ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_SHA;
   const actualActivationACurrentCopyWebTraceRepair =
     actualParent === ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_PARENT_SHA;
   const actualActivationAWebReceiptOutcomeRepair =
@@ -5116,7 +5423,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationACurrentCopyWebTraceRepair
+  const actualTransitionMarker = actualActivationAResolverRelationRebase
+    ? ACTIVATION_A_RESOLVER_RELATION_REBASE_MARKER
+    : actualActivationACurrentCopyWebTraceRepair
     ? ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_MARKER
     : actualActivationAWebReceiptOutcomeRepair
     ? ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_MARKER
@@ -5202,7 +5511,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationACurrentCopyWebTraceRepair
+      actualActivationAResolverRelationRebase
+        ? "production-release-selection-v26"
+        : actualActivationACurrentCopyWebTraceRepair
         ? "production-release-selection-v24"
         : actualActivationAWebReceiptOutcomeRepair
         ? "production-release-selection-v22"
@@ -5245,7 +5556,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationACurrentCopyWebTraceRepair
+      actualActivationAResolverRelationRebase
+        ? ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA
+        : actualActivationACurrentCopyWebTraceRepair
         ? ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_ROLLBACK_SHA
         : actualActivationAWebReceiptOutcomeRepair
         ? ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA
@@ -5283,7 +5596,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualActivationACurrentCopyWebTraceRepair
+      actualActivationAResolverRelationRebase
+        ? "production-release-rollback-lineage-receipt-v27"
+        : actualActivationACurrentCopyWebTraceRepair
         ? "production-release-rollback-lineage-receipt-v25"
         : actualActivationAWebReceiptOutcomeRepair
         ? "production-release-rollback-lineage-receipt-v23"
@@ -5323,7 +5638,35 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationACurrentCopyWebTraceRepair) {
+    if (actualActivationAResolverRelationRebase) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILURE_CODE);
+      assert.equal(savedSelection.failed_case_id,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_CASE_ID);
+      assert.equal(savedSelection.failed_phase,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_PHASE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA);
+      assert.equal(savedSelection.required_rollback_git_sha,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILURE_CODE);
+      assert.equal(savedLineage.failed_case_id,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_CASE_ID);
+      assert.equal(savedLineage.failed_phase,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_FAILED_PHASE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_RESOLVER_RELATION_REBASE_PARENT_TREE_SHA);
+    } else if (actualActivationACurrentCopyWebTraceRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_CURRENT_COPY_WEB_TRACE_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

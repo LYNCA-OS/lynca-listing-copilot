@@ -8,6 +8,7 @@ import {
 } from "../api/csm-resolution-view.js";
 import { REVIEW_VERDICT, CORRECTION_REASON } from "../lib/listing/csm/resolution-review.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import {
   composeLyncaStandardName,
@@ -364,6 +365,105 @@ const legacyRecord = {
   ));
 }
 
+// A real Supabase read reconstructs ordinary v3 relation observations from
+// private evidence rows. The final Set/Card Name receipt cannot stand in for
+// the observation that authorized it.
+{
+  const fields = parseCanonicalFields({
+    year: "2020-21", manufacturer: "Panini", product: "Contenders",
+    set: "Rookie Ticket", card_name: "Variation Autograph",
+    subjects: ["Anthony Edwards"], card_number: "105", grammar: "standard"
+  }).fields;
+  const composed = composeLyncaStandardName(fields, { publicationCoverage: true });
+  const rows = buildCsmStageRows({
+    tenantId: "tenant-ordinary-v3",
+    recognitionSessionId: "session-ordinary-v3",
+    fields,
+    composed,
+    title: composed.title,
+    ...noSearchDurableReceipts(fields)
+  });
+  const read = async (evidence = rows.evidence) => readCsmResolutionRecord({
+    tenantId: "tenant-ordinary-v3",
+    assetId: "asset-ordinary-v3",
+    env: {
+      SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role"
+    },
+    fetchImpl: async (rawUrl) => {
+      const url = new URL(rawUrl);
+      if (url.pathname.endsWith("/v4_recognition_sessions")) {
+        return new Response(JSON.stringify([{
+          id: "session-ordinary-v3", asset_id: "asset-ordinary-v3",
+          created_at: "2026-08-14T00:00:00Z", csm_owner_versions: null
+        }]), { status: 200 });
+      }
+      if (url.pathname.endsWith("/csm_marketplace_outputs")) {
+        return new Response(JSON.stringify([rows.output]), { status: 200 });
+      }
+      if (url.pathname.endsWith("/csm_identity_resolutions")) {
+        return new Response(JSON.stringify([rows.resolution]), { status: 200 });
+      }
+      if (url.pathname.endsWith("/csm_resolved_brackets")) {
+        return new Response(JSON.stringify(rows.resolved), { status: 200 });
+      }
+      if (url.pathname.endsWith("/csm_evidence_observations")) {
+        return new Response(JSON.stringify(evidence), { status: 200 });
+      }
+      return new Response("[]", { status: 404 });
+    }
+  });
+  const durable = await read();
+  assert.doesNotThrow(() => composeResolutionView(durable),
+    "ordinary v3 partial DB read retains exact relation observations");
+
+  const missing = await read([]);
+  assert.throws(() => composeResolutionView(missing), (error) => (
+    error?.code === "set_card_name_relation_transition_invalid"
+  ), "ordinary v3 readback rejects missing relation evidence");
+
+  const forged = structuredClone(rows.evidence);
+  const setVisual = forged.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
+  ));
+  setVisual.raw_value = "Forged Set";
+  setVisual.normalized_value = "Forged Set";
+  const forgedRecord = await read(forged);
+  assert.throws(() => composeResolutionView(forgedRecord), (error) => (
+    error?.code === "set_card_name_relation_transition_invalid"
+  ), "ordinary v3 readback rejects a forged visual Set transition");
+
+  const normalizedTamper = structuredClone(rows.evidence);
+  normalizedTamper.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
+  )).normalized_value = "Forged Normalized Set";
+  const normalizedTamperRecord = await read(normalizedTamper);
+  assert.throws(() => composeResolutionView(normalizedTamperRecord), (error) => (
+    error?.code === "durable_visual_evidence_invalid"
+  ), "ordinary v3 readback rejects raw/normalized relation evidence drift");
+
+  const emptyVisual = structuredClone(rows.evidence);
+  emptyVisual.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
+  )).raw_value = "";
+  emptyVisual.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
+  )).normalized_value = "";
+  const emptyVisualRecord = await read(emptyVisual);
+  assert.throws(() => composeResolutionView(emptyVisualRecord), (error) => (
+    error?.code === "durable_visual_evidence_invalid"
+  ), "ordinary v3 readback rejects an impossible empty visual relation row");
+
+  const crossSession = structuredClone(rows.evidence);
+  crossSession.find((row) => (
+    row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
+  )).source_ref = { images: "different-session" };
+  const crossSessionRecord = await read(crossSession);
+  assert.throws(() => composeResolutionView(crossSessionRecord), (error) => (
+    error?.code === "durable_visual_evidence_invalid"
+  ), "ordinary v3 readback rejects cross-session visual relation evidence");
+}
+
 // --- the view is a pure read -------------------------------------------------
 {
   const view = await handleResolutionViewRequest({ tenantId: "t1", assetId: "asset-1", dependencies: deps });
@@ -698,6 +798,10 @@ const legacyRecord = {
       raw_value: decision.canonical_value,
       normalized_value: bracketValue(field, decision.canonical_value),
       modality: "REGISTRY",
+      observation_confidence: 1,
+      normalization_version: stored.index_version,
+      normalization_outcome: "KEPT",
+      normalization_reason_code: `EXTERNAL_IDENTITY_${decision.action}`,
       source_ref: sourceRef(
         stored,
         field,
@@ -715,6 +819,10 @@ const legacyRecord = {
         raw_value: bracketValue(field, decision.observed_value),
         normalized_value: bracketValue(field, decision.observed_value),
         modality: "WHOLE_CARD_VISUAL",
+        observation_confidence: 0.8,
+        normalization_version: SEM_STANDARD_VERSION,
+        normalization_outcome: "KEPT",
+        normalization_reason_code: "DIRECT_OBSERVATION",
         source_ref: { images: "external-session" }
       }));
     return [...registry, ...visual];
@@ -848,7 +956,7 @@ const legacyRecord = {
 
   const evidenceRead = requested.find((url) => url.pathname.endsWith("/csm_evidence_observations"));
   assert.equal(evidenceRead.searchParams.get("select"),
-    "bracket,raw_value,normalized_value,modality,source_ref");
+    "bracket,raw_value,normalized_value,modality,source_ref,observation_confidence,normalization_version,normalization_outcome,normalization_reason_code");
   assert.equal(evidenceRead.searchParams.has("modality"), false,
     "the private packet read must not hide a drifted exact-support modality");
   assert.equal(evidenceRead.searchParams.get("recognition_session_id"), "eq.external-session");
@@ -1024,6 +1132,99 @@ const legacyRecord = {
   assert.equal(v2Durable.external_identity_support.field_decisions.year.action, "CORRECT_CONFLICT");
   assert.equal(v2Durable.external_identity_support.field_decisions.set.action, "CORRECT_CONFLICT");
   assert.equal(v2Durable.external_identity_support.composer_version, v2.output.composer_version);
+  assert.ok(Array.isArray(v2Durable.replay_rows.evidence),
+    "the private external evidence needed by relation replay stays in the server-side bundle");
+
+  const v3RelationOutput = {
+    contract_version: "csm-stage-shadow-v3",
+    structured_output: {
+      ...v2Durable.replay_rows.output.structured_output,
+      founder_beta_web_receipt: {
+        schema_version: "founder-beta-web-receipt-v1",
+        provider_request_count: 1,
+        isolated_model_call_count: 0,
+        provider_model: "gpt-5.6-luna",
+        reasoning_effort: "low",
+        web_search_used: false,
+        web_search_call_count: 0,
+        queries: [],
+        urls: [],
+        field_evidence: [],
+        semantic_state_sha256: "f".repeat(64)
+      },
+      set_card_name_relation_receipt: {
+        schema_version: "set-card-name-relations-v1",
+        set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "High Risers" },
+        card_name: null
+      }
+    }
+  };
+  const v3RelationRows = structuredClone(v2Durable.replay_rows);
+  Object.assign(v3RelationRows.output, v3RelationOutput);
+  v3RelationRows.output.structured_output.sem = {
+    year: "1996-97", manufacturer: "Topps", product: "Stadium Club",
+    set: "High Risers", subject: ["Michael Jordan"],
+    search_optimization: ["Chicago Bulls"], card_number: "HR14"
+  };
+  v3RelationRows.output.structured_output.publication_coverage =
+    composeFromCanonicalFields({
+      year: "1996-97", manufacturer: "Topps", product: "Stadium Club",
+      set: "High Risers", subjects: ["Michael Jordan"], team: "Chicago Bulls",
+      card_number: "HR14", grammar: "standard"
+    }, {
+      profile: (await import("../lib/listing/thin/marketplace-composer-rules.mjs"))
+        .MARKETPLACE_PROFILES.ebayVerifiedExternalIdentity,
+      features: {
+        durable_lot_terminal_shared_only: true,
+        publication_coverage: true,
+        verified_external_identity_title: true,
+        verified_external_identity_priority_v2: true
+      }
+    }).publication_coverage;
+  const { value: v3RelationDurable } = await readExternal({
+    descriptor: v2,
+    stored: v2Stored,
+    resolvedRows: [
+      ...resolvedFor(v2Stored),
+      {
+        bracket: "card_name", selected_kind: "EMPTY", canonical_value: null,
+        empty_reason: "ABSENT"
+      }
+    ],
+    outputOverrides: {
+      ...v3RelationOutput,
+      structured_output: v3RelationRows.output.structured_output
+    }
+  });
+  assert.doesNotThrow(() => composeResolutionView(v3RelationDurable),
+    "a real v3 external partial read keeps enough private evidence to validate Set authority");
+
+  const duplicateV3RegistryEvidence = structuredClone(v3RelationDurable);
+  duplicateV3RegistryEvidence.replay_rows.evidence.push(structuredClone(
+    duplicateV3RegistryEvidence.replay_rows.evidence.find((row) => (
+      row.modality === "REGISTRY"
+    ))
+  ));
+  assert.throws(() => composeResolutionView(duplicateV3RegistryEvidence), (error) => (
+    error?.code === "external_identity_field_evidence_cardinality_invalid"
+  ), "Resolution View rejects duplicate external Registry authority evidence");
+
+  const extraV3RegistryEvidence = structuredClone(v3RelationDurable);
+  const extraRegistryRow = structuredClone(
+    extraV3RegistryEvidence.replay_rows.evidence.find((row) => row.modality === "REGISTRY")
+  );
+  extraRegistryRow.bracket = "print_finish";
+  extraRegistryRow.source_ref.field = "parallel_exact";
+  extraV3RegistryEvidence.replay_rows.evidence.push(extraRegistryRow);
+  assert.throws(() => composeResolutionView(extraV3RegistryEvidence), (error) => (
+    error?.code === "external_identity_source_provenance_invalid"
+  ), "Resolution View rejects extra external Registry authority evidence");
+
+  const missingV3RelationEvidence = structuredClone(v3RelationDurable);
+  delete missingV3RelationEvidence.replay_rows.evidence;
+  assert.throws(() => composeResolutionView(missingV3RelationEvidence), (error) => (
+    error?.code === "external_identity_registry_evidence_missing"
+  ), "v3 external relation readback fails closed when private evidence is missing");
   const durableExternalV2View = await handleResolutionViewRequest({
     tenantId: "tenant-db", assetId: "external-asset-v2",
     dependencies: { readRecord: async () => v2Durable }

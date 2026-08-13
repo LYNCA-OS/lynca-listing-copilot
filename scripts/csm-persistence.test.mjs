@@ -108,6 +108,21 @@ const fields = parseCanonicalFields({
   // observation confidence.
   unreadable: ["card_name"], low_confidence: ["surface_color"]
 }).fields;
+
+assert.throws(() => buildCsmStageRows({
+  tenantId: "tenant-forged-relation",
+  recognitionSessionId: "session-forged-relation",
+  observedFields: { ...fields, set: "" },
+  fields: { ...fields, set: "FORGED SET" },
+  composed: composeFromCanonicalFields({ ...fields, set: "FORGED SET" }),
+  title: "FORGED SET",
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "FORGED SET" },
+    card_name: null
+  }
+}), /set_card_name_relation_receipt_invalid/,
+"durable construction rejects an observed-to-resolved Set change without resolver authority");
 const composed = composeFromCanonicalFields(fields, { features: {
   durable_lot_terminal_shared_only: true,
   publication_coverage: true

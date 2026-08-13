@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
 import {
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
   readDurableProjectionReceipt,
@@ -96,18 +97,24 @@ const rows = {
   resolution: { grammar: "NON_TCG" },
   resolved: [
     ["year", "2024"], ["manufacturer", "Topps"], ["product", "Chrome"],
-    ["subject", ["Card A", "Card B"]]
+    ["subject", ["Card A", "Card B"]], ["set", null], ["card_name", null]
   ].map(([bracket, canonical_value]) => ({
-    bracket, selected_kind: "VALUE", canonical_value, empty_reason: null,
+    bracket, selected_kind: canonical_value == null ? "EMPTY" : "VALUE",
+    canonical_value, empty_reason: canonical_value == null ? "ABSENT" : null,
     semantic_confidence: 0.9
   })),
   output: {
     contract_version: CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+    recognition_session_id: "standard-session",
     marketplace: "EBAY",
     composer_version: "thin-marketplace-composer-v2",
     marketplace_profile_version: "ebay-profile-v1",
     title: composed.title,
     structured_output: {
+      sem: {
+        year: fields.year, manufacturer: fields.manufacturer,
+        product: fields.product, subject: fields.subjects
+      },
       composition_grammar: "lot",
       lot_count: "2",
       components: [],
@@ -157,6 +164,21 @@ const standardComposed = composeFromCanonicalFields(standardFields, {
 });
 const standardRows = structuredClone(rows);
 standardRows.resolution.grammar = "NON_TCG";
+standardRows.evidence = [
+  ["set", standardFields.set],
+  ["card_name", standardFields.card_name]
+].map(([bracket, raw_value], index) => ({
+  id: `standard-visual-${index}`,
+  modality: "WHOLE_CARD_VISUAL",
+  bracket,
+  raw_value,
+  normalized_value: raw_value,
+  source_ref: { images: standardRows.output.recognition_session_id },
+  observation_confidence: 0.8,
+  normalization_version: SEM_STANDARD_VERSION,
+  normalization_outcome: "KEPT",
+  normalization_reason_code: "DIRECT_OBSERVATION"
+}));
 standardRows.resolved = [
   ["year", standardFields.year], ["manufacturer", standardFields.manufacturer],
   ["product", standardFields.product],
