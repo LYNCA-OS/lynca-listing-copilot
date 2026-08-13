@@ -127,6 +127,20 @@ import {
   ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
   ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256,
   ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_DIFF_SHA256,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ALTERNATE_PARENT_SHA,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_DESCRIPTOR_ID,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_CASE_ID,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_PHASE,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_RUN_ID,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILURE_CODE,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_MARKER,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTRACT_SHA256,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_DIFF_SHA256,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_DESCRIPTOR_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILED_RUN_ID,
   ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_FAILURE_CODE,
@@ -224,6 +238,7 @@ import {
   activationAFieldSourceLedgerRepairRuntimeContractProof,
   activationADepth2HistoryRepairRuntimeContractProof,
   activationACanonicalSemProjectionRepairRuntimeContractProof,
+  activationAWebReceiptOutcomeRepairRuntimeContractProof,
   activationAWebSourceBudgetRepairRuntimeContractProof,
   activationAGrammarSourceRepairRuntimeContractProof,
   activationAHistoricalRuntimeContractProof,
@@ -271,6 +286,7 @@ const activationAOfficialIdentitySearchGitSha = "e".repeat(40);
 const activationAFieldSourceLedgerRepairGitSha = "1".repeat(40);
 const activationADepth2HistoryRepairGitSha = "6".repeat(40);
 const activationACanonicalSemProjectionRepairGitSha = "7".repeat(40);
+const activationAWebReceiptOutcomeRepairGitSha = "9".repeat(40);
 const nextOrdinaryGitSha = "d".repeat(40);
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
@@ -769,6 +785,46 @@ assert.deepEqual(ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/csm-persistence.test.mjs"
 ]);
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-activation-a-web-receipt-outcome-repair-v1");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_MARKER,
+  "founder-beta-web-receipt-outcome-repair-v1");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA,
+  "f70a05cad65dc301051eb4b6ba8cebf1c0e3dff0");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA,
+  "148da5bf368d80f93eeeae7aca05c7cef488c056");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ALTERNATE_PARENT_SHA,
+  "879bacdf20334d6832a9f870bc77730e2a9e4304");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_RUN_ID, "31728481099");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILURE_CODE,
+  "founder_beta_web_receipt_invalid");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_CASE_ID,
+  "EXTERNAL_IDENTITY");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_PHASE,
+  "RECOGNITION_RESPONSE");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA,
+  "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_DIFF_SHA256,
+  "16ac061175d2158c2e686931dab244d5a16595f2be7822fe38c92eecb6fbdadd");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256,
+  "a94c7b88469c4a47ff0d7622d6c93297664d731b7e3adeb8c341f80710d5749e");
+assert.equal(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "d70f6f69ee62248998d8ee674dd6d0d0820a542843a82a82b145260ab7012f62");
+assert.deepEqual(ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS, [
+  "e2e/production-writer-journey.spec.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-provider-adapter.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-parity-readback.mjs",
+  "scripts/production-parity-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
 assert.equal(PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title,
   "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50");
 assert.equal(standardP0TitleIdentityExact(
@@ -802,8 +858,8 @@ const fieldSourceLedgerRuntimeContentManifest =
       path: entry,
       sha256: createHash("sha256").update(readFileSync(entry)).digest("hex")
     }));
-const canonicalSemProjectionRuntimeContentManifest =
-  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS
+const webReceiptOutcomeRuntimeContentManifest =
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS
     .filter((entry) => !entry.startsWith("scripts/compatibility-bridge-release"))
     .map((entry) => ({
       path: entry,
@@ -1287,8 +1343,7 @@ const activationACanonicalSemProjectionRepair = verifyCompatibilityBridgeSelecti
   headSha: activationACanonicalSemProjectionRepairGitSha,
   parentTreeSha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
   parentShas: [ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA],
-  changedPaths: [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS],
-  canonicalSemProjectionRuntimeContentManifest
+  changedPaths: [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS]
 });
 assert.equal(activationACanonicalSemProjectionRepair.schema_version,
   "production-release-selection-v21");
@@ -1323,8 +1378,7 @@ for (const changedPaths of [
     headSha: activationACanonicalSemProjectionRepairGitSha,
     parentTreeSha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
     parentShas: [ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA],
-    changedPaths,
-    canonicalSemProjectionRuntimeContentManifest
+    changedPaths
   }), (error) => [
     "activation_a_canonical_sem_projection_repair_changed_paths_invalid",
     "activation_a_canonical_sem_projection_repair_changed_paths_mismatch"
@@ -1336,10 +1390,74 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   headSha: activationACanonicalSemProjectionRepairGitSha,
   parentTreeSha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA,
   parentShas: [ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ALTERNATE_PARENT_SHA],
-  changedPaths: [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS],
-  canonicalSemProjectionRuntimeContentManifest
+  changedPaths: [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS]
 }), (error) => error.code
   === "activation_a_canonical_sem_projection_repair_parent_mismatch");
+const activationAWebReceiptOutcomeRepair = verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAWebReceiptOutcomeRepairGitSha,
+  headSha: activationAWebReceiptOutcomeRepairGitSha,
+  parentTreeSha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS],
+  webReceiptOutcomeRuntimeContentManifest
+});
+assert.equal(activationAWebReceiptOutcomeRepair.schema_version,
+  "production-release-selection-v22");
+assert.equal(activationAWebReceiptOutcomeRepair.parent_git_sha,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA);
+assert.equal(activationAWebReceiptOutcomeRepair.parent_tree_sha,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA);
+assert.equal(activationAWebReceiptOutcomeRepair.failed_run_id,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_RUN_ID);
+assert.equal(activationAWebReceiptOutcomeRepair.failure_code,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILURE_CODE);
+assert.equal(activationAWebReceiptOutcomeRepair.failed_case_id,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_CASE_ID);
+assert.equal(activationAWebReceiptOutcomeRepair.failed_phase,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_PHASE);
+assert.equal(activationAWebReceiptOutcomeRepair.required_rollback_git_sha,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA);
+assert.equal(activationAWebReceiptOutcomeRepair.contract_sha256,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTRACT_SHA256);
+for (const changedPaths of [
+  [],
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS.slice(1),
+  [...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: activationAWebReceiptOutcomeRepairGitSha,
+    headSha: activationAWebReceiptOutcomeRepairGitSha,
+    parentTreeSha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA,
+    parentShas: [ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA],
+    changedPaths,
+    webReceiptOutcomeRuntimeContentManifest
+  }), (error) => [
+    "activation_a_web_receipt_outcome_repair_changed_paths_invalid",
+    "activation_a_web_receipt_outcome_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAWebReceiptOutcomeRepairGitSha,
+  headSha: activationAWebReceiptOutcomeRepairGitSha,
+  parentTreeSha: "0".repeat(40),
+  parentShas: [ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS],
+  webReceiptOutcomeRuntimeContentManifest
+}), (error) => error.code === "activation_a_web_receipt_outcome_repair_parent_tree_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: activationAWebReceiptOutcomeRepairGitSha,
+  headSha: activationAWebReceiptOutcomeRepairGitSha,
+  parentTreeSha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA,
+  parentShas: [ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ALTERNATE_PARENT_SHA],
+  changedPaths: [...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS],
+  webReceiptOutcomeRuntimeContentManifest
+}), (error) => error.code === "activation_a_web_receipt_outcome_repair_parent_mismatch");
 assert.equal(activationADepth2HistoryRepair.schema_version,
   "production-release-selection-v20");
 assert.equal(activationADepth2HistoryRepair.parent_git_sha,
@@ -2355,61 +2473,66 @@ assert.deepEqual(activationADepth2HistoryRepairRuntimeContractProof(), {
   contract_sha256: ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256
 });
 
-const canonicalSemProjectionFixtureRoot = await mkdtemp(
-  path.join(tmpdir(), "lynca-canonical-sem-projection-repair-")
+// Historical selection-v21 and lineage-v22 are immutable in-memory receipts.
+// Only the current selector below may construct a real depth-two Git checkout.
+const webReceiptOutcomeFixtureRoot = await mkdtemp(
+  path.join(tmpdir(), "lynca-web-receipt-outcome-repair-")
 );
 try {
-  const seed = path.join(canonicalSemProjectionFixtureRoot, "seed");
-  git(canonicalSemProjectionFixtureRoot, [
+  const seed = path.join(webReceiptOutcomeFixtureRoot, "seed");
+  git(webReceiptOutcomeFixtureRoot, [
     "clone", "--quiet", "--depth=2", pathToFileURL(process.cwd()).href, seed
   ]);
   git(seed, [
-    "checkout", "--quiet", "--detach",
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
+    "checkout", "--quiet", "--detach", ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA
   ]);
-  for (const relativePath of ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS) {
+  assert.equal(git(seed, ["rev-parse", "HEAD"]),
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA);
+  assert.equal(git(seed, ["rev-parse", "HEAD^{tree}"]),
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA);
+  for (const relativePath of ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS) {
     await copyFile(path.resolve(relativePath), path.join(seed, relativePath));
   }
-  git(seed, ["add", "--", ...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS]);
+  git(seed, ["add", "--", ...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS]);
   git(seed, [
     "-c", "commit.gpgsign=false",
     "-c", "user.name=LYNCA fixture",
     "-c", "user.email=fixture@example.invalid",
-    "commit", "--quiet", "-m", "repair canonical sem projection completeness"
+    "commit", "--quiet", "-m", "repair Web receipt outcome contract"
   ]);
   const fixtureGitSha = git(seed, ["rev-parse", "HEAD"]);
-  assert.deepEqual(parentShas(seed), [
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
-  ]);
+  assert.deepEqual(parentShas(seed), [ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA]);
 
-  const checkout = path.join(canonicalSemProjectionFixtureRoot, "checkout");
-  git(canonicalSemProjectionFixtureRoot, [
+  const checkout = path.join(webReceiptOutcomeFixtureRoot, "checkout");
+  git(webReceiptOutcomeFixtureRoot, [
     "clone", "--quiet", "--depth=2", pathToFileURL(seed).href, checkout
   ]);
   assert.equal(git(checkout, ["rev-parse", "HEAD"]), fixtureGitSha);
-  assert.deepEqual(parentShas(checkout), [
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA
-  ], "a depth-two candidate checkout must retain exactly the selector parent");
+  assert.equal(git(checkout, ["rev-parse", "--is-shallow-repository"]), "true");
   assert.equal(git(checkout, ["rev-list", "--count", "HEAD"]), "2");
-  assert.equal(git(checkout, ["rev-parse",
-    `${ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA}^{tree}`]),
-  ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_TREE_SHA);
-  assert.deepEqual(
-    git(checkout, [
-      "diff", "--name-only", ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA,
-      "HEAD", "--"
-    ]).split("\n").filter(Boolean).sort(),
-    [...ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS].sort()
-  );
+  assert.deepEqual(parentShas(checkout), [
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA
+  ], "a depth-two checkout must retain exactly candidate plus f70 parent");
+  assert.equal(git(checkout, [
+    "rev-parse", `${ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA}^{tree}`
+  ]), ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA);
+  assert.throws(() => git(checkout, [
+    "cat-file", "-e", `${ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA}^{commit}`
+  ]), "the depth-two candidate must not require or retain grandparent 052");
+  assert.deepEqual(git(checkout, [
+    "diff", "--name-only", ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA,
+    "HEAD", "--"
+  ]).split("\n").filter(Boolean).sort(),
+  [...ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_CHANGED_PATHS].sort());
 
   await symlink(dependencyNodeModules, path.join(checkout, "node_modules"), "dir");
-  const selectionPath = path.join(canonicalSemProjectionFixtureRoot, "selection.json");
-  const rollbackPath = path.join(canonicalSemProjectionFixtureRoot, "rollback.json");
-  const lineagePath = path.join(canonicalSemProjectionFixtureRoot, "lineage.json");
+  const selectionPath = path.join(webReceiptOutcomeFixtureRoot, "selection.json");
+  const rollbackPath = path.join(webReceiptOutcomeFixtureRoot, "rollback.json");
+  const lineagePath = path.join(webReceiptOutcomeFixtureRoot, "lineage.json");
   const fixtureEnv = {
     ...process.env,
-    VERCEL_ORG_ID: "team_canonicalSemProjectionRepair",
-    VERCEL_PROJECT_ID: "prj_canonicalSemProjectionRepair"
+    VERCEL_ORG_ID: "team_webReceiptOutcomeRepair",
+    VERCEL_PROJECT_ID: "prj_webReceiptOutcomeRepair"
   };
   const fixtureScript = realpathSync(path.join(checkout,
     "scripts/compatibility-bridge-release.mjs"));
@@ -2420,21 +2543,33 @@ try {
     "--out", selectionPath
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureSelection = JSON.parse(await readFile(selectionPath, "utf8"));
-  assert.equal(fixtureSelection.schema_version, "production-release-selection-v21");
+  assert.equal(fixtureSelection.schema_version, "production-release-selection-v22");
+  assert.equal(fixtureSelection.repair_descriptor_id,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_DESCRIPTOR_ID);
   assert.equal(fixtureSelection.parent_git_sha,
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA);
-  assert.equal(fixtureSelection.failure_detail,
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL);
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA);
+  assert.equal(fixtureSelection.parent_tree_sha,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA);
+  assert.equal(fixtureSelection.failed_run_id,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_RUN_ID);
+  assert.equal(fixtureSelection.failure_code,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILURE_CODE);
+  assert.equal(fixtureSelection.failed_case_id,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_CASE_ID);
+  assert.equal(fixtureSelection.failed_phase,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_PHASE);
+  assert.equal(fixtureSelection.required_rollback_git_sha,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA);
   assert.equal(fixtureSelection.contract_sha256,
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256);
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTRACT_SHA256);
   await writeFile(rollbackPath, JSON.stringify({
     schema_version: "vercel-production-rollback-receipt-v1",
     canonical_origin: "https://listing.lyncafei.team",
     team_id: fixtureEnv.VERCEL_ORG_ID,
     project_id: fixtureEnv.VERCEL_PROJECT_ID,
-    deployment_id: "dpl_canonicalSemProjectionPreviousCanonical",
-    deployment_url: "https://lynca-canonical-sem-projection-previous.vercel.app",
-    git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA,
+    deployment_id: "dpl_webReceiptOutcomePreviousCanonical",
+    deployment_url: "https://lynca-web-receipt-outcome-previous.vercel.app",
+    git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA,
     ready_state: "READY",
     target: "production",
     captured_at: "2026-08-14T00:00:00.000Z"
@@ -2449,17 +2584,19 @@ try {
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureLineage = JSON.parse(await readFile(lineagePath, "utf8"));
   assert.equal(fixtureLineage.schema_version,
-    "production-release-rollback-lineage-receipt-v22");
+    "production-release-rollback-lineage-receipt-v23");
   assert.equal(fixtureLineage.release_git_sha, fixtureGitSha);
-  assert.equal(fixtureLineage.failure_detail,
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_FAILURE_DETAIL);
+  assert.equal(fixtureLineage.release_parent_git_sha,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA);
+  assert.equal(fixtureLineage.release_parent_tree_sha,
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA);
   assert.equal(fixtureLineage.captured_rollback_git_sha,
-    ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA);
+    ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA);
   assert.equal(fixtureLineage.lineage_verified, true);
   assert.equal((await stat(selectionPath)).mode & 0o777, 0o600);
   assert.equal((await stat(lineagePath)).mode & 0o777, 0o600);
 } finally {
-  await rm(canonicalSemProjectionFixtureRoot, { recursive: true, force: true });
+  await rm(webReceiptOutcomeFixtureRoot, { recursive: true, force: true });
 }
 
 for (const commitMessage of [
@@ -3016,10 +3153,7 @@ const activationAFieldSourceLedgerRepairProof =
   });
 const activationADepth2HistoryRepairProof = activationADepth2HistoryRepairRuntimeContractProof();
 const activationACanonicalSemProjectionRepairProof =
-  activationACanonicalSemProjectionRepairRuntimeContractProof({
-    candidateGitSha: activationACanonicalSemProjectionRepairGitSha,
-    runtimeContentManifest: canonicalSemProjectionRuntimeContentManifest
-  });
+  activationACanonicalSemProjectionRepairRuntimeContractProof();
 assert.equal(activationACanonicalSemProjectionRepairProof
   .base_depth2_history_contract_sha256,
 ACTIVATION_A_DEPTH2_HISTORY_REPAIR_RUNTIME_CONTRACT_SHA256);
@@ -3033,11 +3167,55 @@ assert.equal(activationACanonicalSemProjectionRepairProof.cross_bracket_derivati
   "forbidden");
 assert.equal(activationACanonicalSemProjectionRepairProof.contract_sha256,
   ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256);
-assert.throws(() => activationACanonicalSemProjectionRepairRuntimeContractProof({
-  candidateGitSha: activationACanonicalSemProjectionRepairGitSha,
+assert.equal(activationACanonicalSemProjectionRepairRuntimeContractProof({
+  candidateGitSha: "0".repeat(40),
   runtimeContentManifest: []
-}), (error) => error.code
-  === "activation_a_canonical_sem_projection_repair_runtime_content_invalid");
+}).contract_sha256, ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256,
+"historical selection-v21 proof must not read live runtime or injected candidate blobs");
+const activationAWebReceiptOutcomeRepairProof =
+  activationAWebReceiptOutcomeRepairRuntimeContractProof({
+    candidateGitSha: activationAWebReceiptOutcomeRepairGitSha,
+    runtimeContentManifest: webReceiptOutcomeRuntimeContentManifest
+  });
+assert.equal(activationAWebReceiptOutcomeRepairProof
+  .base_canonical_sem_projection_contract_sha256,
+ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(activationAWebReceiptOutcomeRepairProof.runtime_diff_sha256,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_DIFF_SHA256);
+assert.equal(activationAWebReceiptOutcomeRepairProof.runtime_content_manifest_sha256,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTENT_MANIFEST_SHA256);
+assert.equal(activationAWebReceiptOutcomeRepairProof.response_parser_version,
+  "canonical-output-v5-web-receipt-outcome");
+assert.deepEqual(activationAWebReceiptOutcomeRepairProof.receipt_reader_schema_versions,
+  ["founder-beta-web-receipt-v1", "founder-beta-web-receipt-v2"]);
+assert.deepEqual(activationAWebReceiptOutcomeRepairProof.receipt_outcomes,
+  ["NOT_USED", "USED_WITH_FIELD_EVIDENCE", "USED_WITHOUT_FIELD_EVIDENCE"]);
+assert.equal(activationAWebReceiptOutcomeRepairProof.receipt_v1_shape, "frozen-exact");
+assert.equal(activationAWebReceiptOutcomeRepairProof
+  .writer_journey_evidence_schema_version, "production-writer-journey-evidence-v7");
+assert.deepEqual(activationAWebReceiptOutcomeRepairProof.writer_journey_classifications, [
+  "STRICT_NO_SEARCH", "GOVERNED_APPLIED_SUPPORT",
+  "USED_WITHOUT_GOVERNED_APPLIED_SUPPORT"
+]);
+assert.equal(activationAWebReceiptOutcomeRepairProof
+  .writer_journey_classification_policy, "exactly-one-exhaustive");
+assert.deepEqual(activationAWebReceiptOutcomeRepairProof.semantic_case_ids, [
+  "EXTERNAL_IDENTITY", "LOT_SHARED_ONLY", "NON_TCG", "NON_TCG_WEB_IDENTITY", "TCG"
+]);
+assert.equal(activationAWebReceiptOutcomeRepairProof.semantic_case_count, 5);
+assert.equal(activationAWebReceiptOutcomeRepairProof.transport_only_case_id,
+  "LARGE_STAGED_TRANSPORT");
+assert.equal(activationAWebReceiptOutcomeRepairProof.transport_only_case_count, 1);
+assert.equal(activationAWebReceiptOutcomeRepairProof
+  .transport_only_web_classification, "excluded");
+assert.equal(activationAWebReceiptOutcomeRepairProof.governed_applied_support_case_count, 1);
+assert.equal(activationAWebReceiptOutcomeRepairProof.strict_no_search_case_count_minimum, 1);
+assert.equal(activationAWebReceiptOutcomeRepairProof.contract_sha256,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.throws(() => activationAWebReceiptOutcomeRepairRuntimeContractProof({
+  candidateGitSha: activationAWebReceiptOutcomeRepairGitSha,
+  runtimeContentManifest: []
+}), (error) => error.code === "activation_a_web_receipt_outcome_repair_runtime_content_invalid");
 assert.equal(activationADepth2HistoryRepairProof.checkout_depth, 2);
 assert.equal(activationADepth2HistoryRepairProof.historical_fixture_mode,
   "literal-self-contained");
@@ -3683,6 +3861,89 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
   selection: activationACanonicalSemProjectionRepair,
   rollbackReceipt: { git_sha: ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA }
 }), (error) => error.code === "ordinary_release_rollback_mismatch");
+const activationAWebReceiptOutcomeRepairLineage = verifyOrdinaryRollbackLineage({
+  selection: activationAWebReceiptOutcomeRepair,
+  rollbackReceipt: { git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA }
+});
+assert.deepEqual(activationAWebReceiptOutcomeRepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v23",
+  release_class: ORDINARY_RELEASE_CLASS,
+  repair_descriptor_id: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_DESCRIPTOR_ID,
+  lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+  transition_marker: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_MARKER,
+  release_git_sha: activationAWebReceiptOutcomeRepairGitSha,
+  release_parent_git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_RUN_ID,
+  failure_code: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILURE_CODE,
+  failed_case_id: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_CASE_ID,
+  failed_phase: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_PHASE,
+  required_rollback_git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256: activationAWebReceiptOutcomeRepair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...activationAWebReceiptOutcomeRepair, schema_version: "unknown" },
+  { ...activationAWebReceiptOutcomeRepair, release_class: "unknown" },
+  { ...activationAWebReceiptOutcomeRepair, repair_descriptor_id: "unknown" },
+  { ...activationAWebReceiptOutcomeRepair, lineage_marker: "unknown" },
+  { ...activationAWebReceiptOutcomeRepair, transition_marker: "unknown" },
+  { ...activationAWebReceiptOutcomeRepair,
+    parent_git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ALTERNATE_PARENT_SHA },
+  { ...activationAWebReceiptOutcomeRepair, parent_tree_sha: "0".repeat(40) },
+  { ...activationAWebReceiptOutcomeRepair, failed_run_id: "31728481098" },
+  { ...activationAWebReceiptOutcomeRepair, failure_code: "unknown" },
+  { ...activationAWebReceiptOutcomeRepair, failed_case_id: "UNKNOWN" },
+  { ...activationAWebReceiptOutcomeRepair, failed_phase: "UNKNOWN" },
+  { ...activationAWebReceiptOutcomeRepair,
+    required_rollback_git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA },
+  { ...activationAWebReceiptOutcomeRepair, artifact_manifest_sha256: "0".repeat(64) },
+  { ...activationAWebReceiptOutcomeRepair, git_sha: "not-a-git-sha" },
+  { ...activationAWebReceiptOutcomeRepair,
+    writer_journey_manifest: "writer-journey-cases-v3" },
+  { ...activationAWebReceiptOutcomeRepair, parity_required: false },
+  { ...activationAWebReceiptOutcomeRepair, contract_sha256: "0".repeat(64) },
+  { ...activationAWebReceiptOutcomeRepair, unexpected_key: true }
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: { git_sha: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_web_receipt_outcome_repair_selection_invalid");
+}
+for (const rollbackSha of [
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ALTERNATE_PARENT_SHA,
+  "c".repeat(40)
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: activationAWebReceiptOutcomeRepair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code === "ordinary_release_rollback_mismatch");
+}
+for (const parentGitSha of [
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA,
+  ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ALTERNATE_PARENT_SHA
+]) {
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: {
+      schema_version: "production-release-selection-v3",
+      release_class: ORDINARY_RELEASE_CLASS,
+      lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+      transition_marker: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_MARKER,
+      parent_git_sha: parentGitSha,
+      required_rollback_git_sha: parentGitSha,
+      git_sha: activationAWebReceiptOutcomeRepairGitSha,
+      writer_journey_manifest: "writer-journey-cases-v3",
+      parity_required: true,
+      contract_sha256: ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_RUNTIME_CONTRACT_SHA256
+    },
+    rollbackReceipt: { git_sha: parentGitSha }
+  }), (error) => error.code
+    === "ordinary_release_activation_a_web_receipt_outcome_repair_selection_invalid",
+  "the failed or same-tree alternate parent may not escape through generic v3 lineage");
+}
 assert.deepEqual(activationADepth2HistoryRepairLineage, {
   schema_version: "production-release-rollback-lineage-receipt-v21",
   release_class: ORDINARY_RELEASE_CLASS,
@@ -4590,6 +4851,8 @@ try {
   const actualActivationA = actualParent === ACTIVATION_A_PARENT_SHA;
   const actualActivationADepth2HistoryRepair =
     actualParent === ACTIVATION_A_DEPTH2_HISTORY_REPAIR_PARENT_SHA;
+  const actualActivationAWebReceiptOutcomeRepair =
+    actualParent === ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_SHA;
   const actualActivationACanonicalSemProjectionRepair =
     actualParent === ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_PARENT_SHA;
   const actualActivationAFieldSourceLedgerRepair =
@@ -4614,7 +4877,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualActivationACanonicalSemProjectionRepair
+  const actualTransitionMarker = actualActivationAWebReceiptOutcomeRepair
+    ? ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_MARKER
+    : actualActivationACanonicalSemProjectionRepair
     ? ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_MARKER
     : actualActivationADepth2HistoryRepair
     ? ACTIVATION_A_DEPTH2_HISTORY_REPAIR_MARKER
@@ -4696,7 +4961,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualActivationACanonicalSemProjectionRepair
+      actualActivationAWebReceiptOutcomeRepair
+        ? "production-release-selection-v22"
+        : actualActivationACanonicalSemProjectionRepair
         ? "production-release-selection-v21"
         : actualActivationADepth2HistoryRepair
         ? "production-release-selection-v20"
@@ -4735,7 +5002,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualActivationACanonicalSemProjectionRepair
+      actualActivationAWebReceiptOutcomeRepair
+        ? ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA
+        : actualActivationACanonicalSemProjectionRepair
         ? ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_ROLLBACK_SHA
         : actualActivationADepth2HistoryRepair
         ? ACTIVATION_A_DEPTH2_HISTORY_REPAIR_ROLLBACK_SHA
@@ -4769,7 +5038,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualActivationACanonicalSemProjectionRepair
+      actualActivationAWebReceiptOutcomeRepair
+        ? "production-release-rollback-lineage-receipt-v23"
+        : actualActivationACanonicalSemProjectionRepair
         ? "production-release-rollback-lineage-receipt-v22"
         : actualActivationADepth2HistoryRepair
         ? "production-release-rollback-lineage-receipt-v21"
@@ -4805,7 +5076,35 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualActivationACanonicalSemProjectionRepair) {
+    if (actualActivationAWebReceiptOutcomeRepair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.failed_run_id,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedSelection.failure_code,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILURE_CODE);
+      assert.equal(savedSelection.failed_case_id,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_CASE_ID);
+      assert.equal(savedSelection.failed_phase,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_PHASE);
+      assert.equal(savedSelection.parent_tree_sha,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA);
+      assert.equal(savedSelection.required_rollback_git_sha,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_ROLLBACK_SHA);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.failed_run_id,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_RUN_ID);
+      assert.equal(savedLineage.failure_code,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILURE_CODE);
+      assert.equal(savedLineage.failed_case_id,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_CASE_ID);
+      assert.equal(savedLineage.failed_phase,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_FAILED_PHASE);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        ACTIVATION_A_WEB_RECEIPT_OUTCOME_REPAIR_PARENT_TREE_SHA);
+    } else if (actualActivationACanonicalSemProjectionRepair) {
       assert.equal(savedSelection.repair_descriptor_id,
         ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_DESCRIPTOR_ID);
       assert.equal(savedSelection.failed_run_id,

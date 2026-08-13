@@ -15,6 +15,9 @@ import {
   PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA,
   PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA,
   buildProductionForwardReadbackExpectation,
+  classifyFounderWebSearch,
+  classifyFounderWebSearchSignals,
+  FOUNDER_WEB_SEARCH_CLASSIFICATION,
   governedIdentityAppliedSupportUrl,
   governedAppliedWebSupportProof,
   productionForwardReadbackAssetId,
@@ -40,7 +43,7 @@ const versions = {
   marketplace_profile: "ebay-profile-v1"
 };
 const evidence = {
-  schema_version: "production-writer-journey-evidence-v6",
+  schema_version: "production-writer-journey-evidence-v7",
   evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
   accuracy_claim: null,
   release_class: "compatibility-bridge",
@@ -59,12 +62,29 @@ const evidence = {
     trace_reliable: true,
     recomposed_matches_stored: true,
     title_length: title.length,
+    founder_web_search: {
+      classification: "STRICT_NO_SEARCH",
+      web_search_used: false,
+      web_search_call_count: 0,
+      query_recorded: false,
+      query_visible_anchor_match: true,
+      source_url_count: 0,
+      governed_support_url_count: 0,
+      governed_support_fields: [],
+      governed_applied_support: false,
+      strict_no_search: true,
+      used_without_governed_applied_support: false,
+      unresolved_authority_fields: []
+    },
     owner_execution_readback: {
       version: "csm-owner-execution-receipt-v1",
       sha256: ownerSha256,
       durable_read_after_write: true
     },
     versions
+  }, {
+    case_id: "LARGE_STAGED_TRANSPORT",
+    transport_only: true
   }]
 };
 const resolutionView = {
@@ -273,6 +293,7 @@ const ordinaryComposed = composeLyncaStandardName(ordinaryFields, {
 const ordinaryTitle = ordinaryComposed.title;
 ordinaryEvidence.cases[0].title_length = ordinaryTitle.length;
 ordinaryEvidence.cases[0].founder_web_search = {
+  classification: "GOVERNED_APPLIED_SUPPORT",
   web_search_used: true,
   web_search_call_count: 1,
   query_recorded: true,
@@ -282,11 +303,15 @@ ordinaryEvidence.cases[0].founder_web_search = {
   governed_support_fields: ["set"],
   governed_applied_support: true,
   strict_no_search: false,
+  used_without_governed_applied_support: false,
   unresolved_authority_fields: []
 };
 ordinaryEvidence.final_seal = {
   qualified_governed_web_support_case_count: 1,
   strict_no_search_case_count: 1,
+  used_without_governed_applied_support_case_count: 0,
+  semantic_web_case_count: 2,
+  transport_only_web_excluded_case_count: 1,
   selected_forward_readback_case_id: "NON_TCG_WEB_IDENTITY"
 };
 ordinaryEvidence.cases.push({
@@ -296,6 +321,7 @@ ordinaryEvidence.cases.push({
   recognition_session_id: `csmsess_${"9".repeat(40)}`,
   original_set_sha256: null,
   founder_web_search: {
+    classification: "STRICT_NO_SEARCH",
     web_search_used: false,
     web_search_call_count: 0,
     query_recorded: false,
@@ -305,9 +331,20 @@ ordinaryEvidence.cases.push({
     governed_support_fields: [],
     governed_applied_support: false,
     strict_no_search: true,
+    used_without_governed_applied_support: false,
     unresolved_authority_fields: []
   }
 });
+for (const caseId of ["NON_TCG", "EXTERNAL_IDENTITY", "LOT_SHARED_ONLY"]) {
+  ordinaryEvidence.cases.push({
+    ...clone(ordinaryEvidence.cases.find((entry) => entry.case_id === "TCG")),
+    case_id: caseId,
+    asset_id: `asset-forward-readback-${caseId.toLowerCase()}`,
+    recognition_session_id: `csmsess_${caseId.charCodeAt(0).toString(16).repeat(40).slice(0, 40)}`
+  });
+}
+ordinaryEvidence.final_seal.strict_no_search_case_count = 4;
+ordinaryEvidence.final_seal.semantic_web_case_count = 5;
 const ordinaryView = clone(buildCsmResolutionView({
   fields: ordinaryFields,
   composed: ordinaryComposed,
@@ -368,6 +405,49 @@ assert.equal(strictNoSearchReceipt({
   urls: [],
   field_evidence: []
 }), true);
+assert.equal(classifyFounderWebSearch(
+  ordinaryView.founder_beta_web_receipt, ordinaryView, {
+    originalSetSha256: ordinaryEvidence.cases[0].original_set_sha256
+  }
+)?.classification, FOUNDER_WEB_SEARCH_CLASSIFICATION.GOVERNED_APPLIED_SUPPORT);
+const strictNoSearchV1 = {
+  ...clone(ordinaryView.founder_beta_web_receipt),
+  web_search_used: false,
+  web_search_call_count: 0,
+  queries: [],
+  urls: [],
+  field_evidence: []
+};
+assert.equal(classifyFounderWebSearch(strictNoSearchV1, ordinaryView)?.classification,
+  FOUNDER_WEB_SEARCH_CLASSIFICATION.STRICT_NO_SEARCH);
+const usedWithoutFieldEvidenceV2 = {
+  ...clone(strictNoSearchV1),
+  schema_version: "founder-beta-web-receipt-v2",
+  outcome: "USED_WITHOUT_FIELD_EVIDENCE",
+  web_search_used: true,
+  web_search_call_count: 1
+};
+assert.deepEqual(classifyFounderWebSearch(usedWithoutFieldEvidenceV2, ordinaryView), {
+  classification:
+    FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT,
+  governed_applied_support: false,
+  strict_no_search: false,
+  used_without_governed_applied_support: true
+});
+const queryOnlyV1 = {
+  ...clone(usedWithoutFieldEvidenceV2),
+  schema_version: "founder-beta-web-receipt-v1",
+  queries: ["provider-owned query without applied support"]
+};
+delete queryOnlyV1.outcome;
+assert.equal(classifyFounderWebSearch(queryOnlyV1, ordinaryView)?.classification,
+  FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT,
+"historical valid query-only receipts must enter the exhaustive third WJ class");
+assert.equal(classifyFounderWebSearchSignals({
+  webSearchUsed: false,
+  governedAppliedSupport: true,
+  strictNoSearch: true
+}), null, "contradictory Web claims may not enter any class");
 const ordinaryExpectation = buildProductionForwardReadbackExpectation({
   evidence: ordinaryEvidence,
   resolutionView: ordinaryView,
@@ -390,6 +470,81 @@ assert.equal(ordinaryReceipt.provider_calls, 0);
 assert.equal(ordinaryReceipt.founder_beta_web_receipt_exact_match, true);
 assert.equal(ordinaryReceipt.web_search_used, true);
 assert.equal(ordinaryReceipt.web_search_call_count, 1);
+const transportProofTamper = clone(ordinaryEvidence);
+transportProofTamper.cases.find((entry) => entry.transport_only).founder_web_search =
+  clone(ordinaryEvidence.cases.find((entry) => entry.case_id === "TCG").founder_web_search);
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: transportProofTamper,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"the transport-only row may not fabricate a Web classification");
+const duplicateTransportCase = clone(ordinaryEvidence);
+duplicateTransportCase.cases.push({
+  case_id: "LARGE_STAGED_TRANSPORT",
+  transport_only: true
+});
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: duplicateTransportCase,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"the Web cohort must exclude exactly one known transport-only case");
+const semanticTransportSpoof = clone(ordinaryEvidence);
+const spoofedTcgCase = semanticTransportSpoof.cases.find(
+  (entry) => entry.case_id === "TCG"
+);
+spoofedTcgCase.transport_only = true;
+delete spoofedTcgCase.founder_web_search;
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: semanticTransportSpoof,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"a semantic case may not spoof the transport-only exclusion");
+const unmarkedLargeTransport = clone(ordinaryEvidence);
+delete unmarkedLargeTransport.cases.find(
+  (entry) => entry.case_id === "LARGE_STAGED_TRANSPORT"
+).transport_only;
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: unmarkedLargeTransport,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"the known large transport case must be explicitly excluded from semantic Web classification");
+const missingSemanticCase = clone(ordinaryEvidence);
+missingSemanticCase.cases = missingSemanticCase.cases.filter(
+  (entry) => entry.case_id !== "LOT_SHARED_ONLY"
+);
+missingSemanticCase.final_seal.semantic_web_case_count = 4;
+missingSemanticCase.final_seal.strict_no_search_case_count = 3;
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: missingSemanticCase,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"ordinary readback must retain the complete five-case semantic Web cohort");
+const replacedSemanticCase = clone(ordinaryEvidence);
+const lotCaseIndex = replacedSemanticCase.cases.findIndex(
+  (entry) => entry.case_id === "LOT_SHARED_ONLY"
+);
+replacedSemanticCase.cases[lotCaseIndex] = {
+  ...clone(replacedSemanticCase.cases.find((entry) => entry.case_id === "TCG")),
+  asset_id: "asset-forward-readback-duplicate-tcg",
+  recognition_session_id: `csmsess_${"7".repeat(40)}`
+};
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: replacedSemanticCase,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"five rows may not hide a missing semantic case behind a duplicate case id");
 const boundedOrdinaryView = clone(ordinaryView);
 boundedOrdinaryView.founder_beta_web_receipt.web_search_call_count = 2;
 const boundedOrdinaryExpectation = buildProductionForwardReadbackExpectation({
@@ -410,6 +565,9 @@ assert.equal(boundedOrdinaryReceipt.web_search_used, true);
 assert.equal(boundedOrdinaryReceipt.web_search_call_count, 2,
   "forward readback must preserve the actual bounded call count");
 const dynamicOrdinaryEvidence = clone(ordinaryEvidence);
+dynamicOrdinaryEvidence.cases.find(
+  (entry) => entry.case_id === "EXTERNAL_IDENTITY"
+).case_id = "NON_TCG_WEB_IDENTITY";
 dynamicOrdinaryEvidence.cases[0].case_id = "EXTERNAL_IDENTITY";
 dynamicOrdinaryEvidence.final_seal.selected_forward_readback_case_id = "EXTERNAL_IDENTITY";
 const dynamicOrdinaryView = clone(ordinaryView);
@@ -453,7 +611,14 @@ for (const mutate of [
   (value) => { value.final_seal.qualified_governed_web_support_case_count = 2; },
   (value) => { value.final_seal.strict_no_search_case_count = 0; },
   (value) => { value.final_seal.selected_forward_readback_case_id = "TCG"; },
-  (value) => { value.cases[1].founder_web_search.strict_no_search = false; }
+  (value) => {
+    value.cases.find((entry) => entry.case_id === "TCG")
+      .founder_web_search.strict_no_search = false;
+  },
+  (value) => {
+    value.cases.find((entry) => entry.case_id === "TCG")
+      .founder_web_search.used_without_governed_applied_support = true;
+  }
 ]) {
   const changed = clone(ordinaryEvidence);
   mutate(changed);
@@ -464,6 +629,70 @@ for (const mutate of [
     gitSha: candidateGitSha
   }), /production_forward_readback_standard_case_invalid/);
 }
+const governedRecastAsThird = clone(ordinaryEvidence);
+Object.assign(governedRecastAsThird.cases[0].founder_web_search, {
+  classification: "USED_WITHOUT_GOVERNED_APPLIED_SUPPORT",
+  governed_applied_support: false,
+  strict_no_search: false,
+  used_without_governed_applied_support: true
+});
+Object.assign(governedRecastAsThird.final_seal, {
+  qualified_governed_web_support_case_count: 0,
+  used_without_governed_applied_support_case_count: 1
+});
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: governedRecastAsThird,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"a coherent third-class rewrite may not erase the exactly-one governed case gate");
+
+const strictRecastAsThird = clone(ordinaryEvidence);
+Object.assign(strictRecastAsThird.cases.find(
+  (entry) => entry.case_id === "TCG"
+).founder_web_search, {
+  classification: "USED_WITHOUT_GOVERNED_APPLIED_SUPPORT",
+  web_search_used: true,
+  web_search_call_count: 1,
+  governed_applied_support: false,
+  strict_no_search: false,
+  used_without_governed_applied_support: true
+});
+Object.assign(strictRecastAsThird.final_seal, {
+  strict_no_search_case_count: 0,
+  used_without_governed_applied_support_case_count: 1
+});
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: strictRecastAsThird,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"a coherent third-class rewrite may not erase the at-least-one strict no-search gate");
+
+const extraGovernedCase = clone(ordinaryEvidence);
+Object.assign(extraGovernedCase.cases.find(
+  (entry) => entry.case_id === "TCG"
+).founder_web_search, {
+  classification: "GOVERNED_APPLIED_SUPPORT",
+  web_search_used: true,
+  web_search_call_count: 1,
+  governed_applied_support: true,
+  strict_no_search: false,
+  used_without_governed_applied_support: false
+});
+Object.assign(extraGovernedCase.final_seal, {
+  qualified_governed_web_support_case_count: 2,
+  strict_no_search_case_count: 0
+});
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: extraGovernedCase,
+  resolutionView: ordinaryView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_standard_case_invalid/,
+"a second coherently forged non-selected governed class must violate the exactly-one gate");
 for (const queries of [
   ["2020-21 Panini Contenders Anthony Edwards #105 checklist"],
   ["#105 / Contenders — additional seller words"],

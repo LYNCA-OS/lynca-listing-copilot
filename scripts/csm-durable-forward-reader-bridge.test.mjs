@@ -291,7 +291,100 @@ usedWithoutTrace.queries = [];
 usedWithoutTrace.field_evidence = [];
 assert.throws(() => validateFounderBetaWebReceipt(usedWithoutTrace),
   /founder_beta_web_receipt_invalid/,
-  "an action or receipt URL alone is not durable evidence without a query or field row");
+  "the historical v1 validator must keep rejecting a used trace without a query or field row");
+
+const withoutFieldEvidenceV2 = {
+  schema_version: "founder-beta-web-receipt-v2",
+  outcome: "USED_WITHOUT_FIELD_EVIDENCE",
+  provider_request_count: 1,
+  isolated_model_call_count: 0,
+  provider_model: "gpt-5.6-luna",
+  reasoning_effort: "low",
+  web_search_used: true,
+  web_search_call_count: 1,
+  queries: [],
+  urls: [],
+  field_evidence: [],
+  semantic_state_sha256: "c".repeat(64)
+};
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(withoutFieldEvidenceV2),
+  "durable replay must accept the exact v2 receipt without field evidence");
+const queryRecordedWithoutFieldEvidenceV2 = structuredClone(withoutFieldEvidenceV2);
+queryRecordedWithoutFieldEvidenceV2.queries = ["provider-owned trace wording"];
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(queryRecordedWithoutFieldEvidenceV2),
+  "real provider queries remain durable even when no field records Web evidence");
+
+const noSearchV2 = structuredClone(withoutFieldEvidenceV2);
+Object.assign(noSearchV2, {
+  outcome: "NOT_USED", web_search_used: false, web_search_call_count: 0
+});
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(noSearchV2));
+
+const fieldEvidenceV2 = {
+  ...structuredClone(openOnly),
+  schema_version: "founder-beta-web-receipt-v2",
+  outcome: "USED_WITH_FIELD_EVIDENCE"
+};
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(fieldEvidenceV2));
+
+const crossRowSharedUrlV2 = structuredClone(fieldEvidenceV2);
+crossRowSharedUrlV2.field_evidence = ["product", "set"].map((field) => ({
+  field,
+  support_urls: [crossRowSharedUrlV2.urls[0]],
+  conflict_urls: [],
+  unresolved_urls: []
+}));
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(crossRowSharedUrlV2),
+  "v2 receipt URLs are the unique union even when two rows share one evidence URL");
+
+const extraSafeUrlV2 = structuredClone(fieldEvidenceV2);
+extraSafeUrlV2.urls.push("https://www.topps.com/unreferenced");
+extraSafeUrlV2.urls.sort();
+assert.throws(() => validateFounderBetaWebReceipt(extraSafeUrlV2),
+  /founder_beta_web_receipt_invalid/,
+  "v2 may not persist an extra safe URL that no field-evidence row uses");
+
+const missingEvidenceUrlV2 = structuredClone(fieldEvidenceV2);
+missingEvidenceUrlV2.urls = [];
+assert.throws(() => validateFounderBetaWebReceipt(missingEvidenceUrlV2),
+  /founder_beta_web_receipt_invalid/,
+  "v2 may not omit a URL used by a field-evidence row");
+
+const unknownFieldV2 = structuredClone(fieldEvidenceV2);
+unknownFieldV2.field_evidence[0].field = "not_a_canonical_field";
+assert.throws(() => validateFounderBetaWebReceipt(unknownFieldV2),
+  /founder_beta_web_receipt_invalid/,
+  "v2 durable evidence rows must remain inside the canonical source-field vocabulary");
+const historicalUnknownFieldV1 = structuredClone(openOnly);
+historicalUnknownFieldV1.field_evidence[0].field = "not_a_canonical_field";
+assert.doesNotThrow(() => validateFounderBetaWebReceipt(historicalUnknownFieldV1),
+  "the historical v1 validator must retain its original unknown-field behavior");
+
+for (const mutate of [
+  (receipt) => { delete receipt.outcome; },
+  (receipt) => { receipt.outcome = "UNKNOWN"; },
+  (receipt) => { receipt.urls = ["https://www.topps.com/checklist"]; },
+  (receipt) => { receipt.field_evidence = [{
+    field: "set", support_urls: [], conflict_urls: [], unresolved_urls: []
+  }]; },
+  (receipt) => { receipt.outcome = "NOT_USED"; },
+  (receipt) => { receipt.web_search_call_count = 3; }
+]) {
+  const invalidV2 = structuredClone(withoutFieldEvidenceV2);
+  mutate(invalidV2);
+  assert.throws(() => validateFounderBetaWebReceipt(invalidV2),
+    /founder_beta_web_receipt_invalid/,
+    "v2 outcome and bounded trace fields must remain exact and mutually consistent");
+}
+
+const durableWithoutFieldEvidenceRows = structuredClone(standardRows);
+durableWithoutFieldEvidenceRows.output.structured_output.founder_beta_web_receipt =
+  withoutFieldEvidenceV2;
+assert.deepEqual(
+  readDurableProjectionReceipt(durableWithoutFieldEvidenceRows).founder_beta_web_receipt,
+  withoutFieldEvidenceV2,
+  "the durable bridge must forward an exact v2 receipt without rewriting it"
+);
 
 const withheldReferenceReceipt = structuredClone(webReceipt);
 withheldReferenceReceipt.field_evidence = [{
