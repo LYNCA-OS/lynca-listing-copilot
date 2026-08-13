@@ -63,6 +63,17 @@ export function resolvedFieldsToSemSuggestion(fields = {}) {
     parsed.relic ? "Relic" : null,
     parsed.team || null
   ].filter(Boolean);
+  // `special_stamp` is a list-valued SEM bracket. An explicit printed stamp is
+  // the authority; `first_bowman` is only its legacy fallback, never an extra
+  // value beside a direct observation. Normalize before stable exact dedupe so
+  // scalar and array aliases produce the same shape without merging case.
+  const explicitSpecialStamp = [...new Set(
+    (Array.isArray(parsed.special_stamp) ? parsed.special_stamp : [parsed.special_stamp])
+      .map(cleanText).filter(Boolean)
+  )];
+  const specialStamp = explicitSpecialStamp.length
+    ? explicitSpecialStamp
+    : [parsed.first_bowman ? "1st Bowman" : null].filter(Boolean);
   return compactObject({
     year: parsed.year,
     ip_sport: parsed.ip || parsed.sport || parsed.category,
@@ -77,8 +88,9 @@ export function resolvedFieldsToSemSuggestion(fields = {}) {
     numerical_rarity: parsed.print_run_number || parsed.serial_number,
     release_variant: parsed.release_variant || parsed.variation,
     print_finish: printFinishSuggestion(parsed),
-    special_stamp: [parsed.first_bowman ? "1st Bowman" : null].filter(Boolean),
+    special_stamp: specialStamp,
     grading_info: gradingInfoSuggestion(parsed),
+    description: parsed.description,
     search_optimization: searchOptimization
   });
 }

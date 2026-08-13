@@ -11,6 +11,11 @@ import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { composeLyncaStandardName } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
+import {
+  resolvedFieldsToSemSuggestion,
+  titleDerivedSemSuggestion
+} from "../lib/listing/csm/title-derived-sem.mjs";
+import { toResolvedFields } from "../lib/listing/thin/csm-emit.mjs";
 import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
 
 // The schema is the migration, not a copy of it in this file. Parsing the real
@@ -49,6 +54,47 @@ function columnsOf(table) {
     assert.ok(semCanonicalEditableFields.includes(bracket), `${bracket} must be a CSM canonical field`);
   }
   for (const field of CSM_BRACKETS) assert.ok(allowed.has(field), `${field} must be allowed by the schema`);
+}
+
+// The provider schema and the CSM resolver use different field names. Exercise
+// the complete two-hop mapping with one value in every canonical bracket so a
+// publishable field cannot silently disappear between `toResolvedFields` and
+// the rows below. Search Optimization remains derived from components/team by
+// contract; every other value is the direct or documented alias for its lane.
+{
+  const sem = resolvedFieldsToSemSuggestion(toResolvedFields({
+    year: "2024", ip: "Pokemon", language: "EN", manufacturer: "Topps",
+    product: "Chrome", set: "Gallery", subjects: ["Subject"], card_name: "Card",
+    card_number: "CN1", descriptive_rarity: "SSP", serial: "1/1",
+    release_variant: "Variation", parallel_exact: "Gold", special_stamp: "Promo",
+    grading_info: { company: "PSA", card_grade: "10", grade_type: "CARD_ONLY" },
+    description: "Case Hit", components: ["RC"], team: "Team"
+  }));
+  assert.deepEqual(Object.keys(sem), semCanonicalEditableFields,
+    "every canonical CSM field must survive the provider-to-resolver mapping");
+  assert.deepEqual(sem.special_stamp, ["Promo"], "Special Stamp keeps its list-valued SEM shape");
+  assert.equal(sem.description, "Case Hit");
+
+  assert.deepEqual(resolvedFieldsToSemSuggestion({
+    special_stamp: "Promo"
+  }).special_stamp, ["Promo"], "a scalar direct stamp keeps the list-valued SEM shape");
+  assert.deepEqual(resolvedFieldsToSemSuggestion({
+    special_stamp: [" Staff ", "Promo", "Staff", "promo"]
+  }).special_stamp, ["Staff", "Promo", "promo"],
+  "an array direct stamp is normalized and exact-deduped in stable order");
+  assert.deepEqual(resolvedFieldsToSemSuggestion({
+    special_stamp: "Staff", first_bowman: true
+  }).special_stamp, ["Staff"],
+  "an explicit stamp outranks a conflicting legacy First Bowman alias");
+  assert.deepEqual(resolvedFieldsToSemSuggestion({
+    special_stamp: ["", "  "], first_bowman: true
+  }).special_stamp, ["1st Bowman"],
+  "First Bowman is used only when the direct stamp is empty");
+  assert.deepEqual(
+    titleDerivedSemSuggestion("2024 Bowman Chrome Paul Skenes 1st Bowman").special_stamp,
+    ["1st Bowman"],
+    "historical title parsing keeps its direct First Bowman fallback"
+  );
 }
 
 const fields = parseCanonicalFields({
@@ -335,6 +381,83 @@ assert.equal(tcgRows.resolution.grammar, "TCG");
   const languageResolved = tcgRows.resolved.find((row) => row.bracket === "language");
   assert.equal(languageCandidate.canonical_value, "JP");
   assert.equal(languageResolved.canonical_value, "JP");
+}
+
+// A Composer-published Description or ordinary (non-Bowman) Special Stamp
+// must be present in resolved rows before replay. This is the exact failure
+// class that otherwise passes provider execution but is rejected at the
+// fail-closed publication-coverage replay boundary.
+{
+  const tcgFields = parseCanonicalFields({
+    year: "2022", ip: "Pokemon", language: "EN", set: "Base",
+    subjects: ["Pikachu"], special_stamp: "Promo", description: "Case Hit",
+    grammar: "tcg"
+  }).fields;
+  const tcgComposed = composeFromCanonicalFields(tcgFields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
+  const tcgRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "tcg-description-stamp-replay",
+    fields: tcgFields, composed: tcgComposed, title: tcgComposed.title,
+    ...noSearchReceipts(tcgFields)
+  });
+  const resolved = Object.fromEntries(tcgRows.resolved.map((row) => [row.bracket, row]));
+  assert.deepEqual(resolved.special_stamp.canonical_value, ["Promo"]);
+  assert.equal(resolved.description.canonical_value, "Case Hit");
+
+  for (const [bracket, sourceField, canonicalValue] of [
+    ["special_stamp", "special_stamp", "Promo"],
+    ["description", "description", "Case Hit"]
+  ]) {
+    assert.ok(tcgComposed.publication_coverage.atoms.some((atom) => (
+      atom.bracket === bracket && atom.source_field === sourceField
+        && atom.canonical_value === canonicalValue && atom.disposition === "PUBLISHED"
+    )), `${bracket} must have a published coverage atom`);
+  }
+
+  const replayed = replayFromRows(tcgRows);
+  assert.equal(replayed.fields.special_stamp, "Promo");
+  assert.equal(replayed.fields.description, "Case Hit");
+  assert.equal(replayed.title, tcgComposed.title);
+  assert.deepEqual(replayed.composed.publication_coverage, tcgComposed.publication_coverage,
+    "recomputed coverage must equal the stored Composer receipt");
+}
+
+// Canonical persistence must not expand one bracket into another. First Bowman
+// can be the value of Descriptive Rarity on the current provider contract; it
+// must not also synthesize Special Stamp. The resolver still accepts a direct
+// historical `first_bowman` alias, tested above, without making new rows do it.
+{
+  const rarityOnlyFields = parseCanonicalFields({
+    year: "2022", set: "Base", subjects: ["Pikachu"],
+    descriptive_rarity: "1st Bowman", special_stamp: "", grammar: "tcg"
+  }).fields;
+  const rarityOnlySem = resolvedFieldsToSemSuggestion(toResolvedFields(rarityOnlyFields));
+  assert.equal(rarityOnlySem.descriptive_rarity, "1st Bowman");
+  assert.ok(!Object.hasOwn(rarityOnlySem, "special_stamp"),
+    "Descriptive Rarity must not expand into Special Stamp");
+
+  const rarityOnlyComposed = composeFromCanonicalFields(rarityOnlyFields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
+  const rarityOnlyRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "tcg-rarity-without-stamp",
+    fields: rarityOnlyFields, composed: rarityOnlyComposed, title: rarityOnlyComposed.title,
+    ...noSearchReceipts(rarityOnlyFields)
+  });
+  const stampRow = rarityOnlyRows.resolved.find((row) => row.bracket === "special_stamp");
+  assert.equal(stampRow.selected_kind, "EMPTY");
+  assert.equal(stampRow.empty_reason, "ABSENT");
+  assert.ok(!rarityOnlyComposed.publication_coverage.atoms
+    .some((atom) => atom.bracket === "special_stamp"));
+
+  const replayed = replayFromRows(rarityOnlyRows);
+  assert.equal(replayed.fields.descriptive_rarity, "1st Bowman");
+  assert.equal(replayed.fields.special_stamp, "");
+  assert.equal(replayed.title, rarityOnlyComposed.title);
+  assert.deepEqual(replayed.composed.publication_coverage, rarityOnlyComposed.publication_coverage);
 }
 
 // A flagged field is lower confidence, not a different modality: the model saw
