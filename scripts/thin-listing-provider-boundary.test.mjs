@@ -390,6 +390,14 @@ const withoutFieldSource = (payload, ...fields) => ({
   field_sources: payload.field_sources.filter((row) => !fields.includes(row.field))
 });
 
+const withFieldSourceRows = (payload, field, sourceRows) => ({
+  ...payload,
+  field_sources: [
+    ...payload.field_sources.filter((row) => row.field !== field),
+    ...sourceRows.map((source_ids) => ({ field, source_ids }))
+  ]
+});
+
 // Grammar classifies the resolved structure; it is not a source fact. Missing
 // grammar evidence must not block either Standard or the downstream SEM repair.
 for (const [fields, expectedGrammar] of [[{
@@ -461,6 +469,23 @@ function webGrammarBody(url, sourceIds) {
 }
 
 {
+  const url = "https://attacker-controlled-example.org/duplicate-grammar";
+  const body = webGrammarBody(url, ["original_image_1"]);
+  const payload = JSON.parse(body.output[1].content[0].text);
+  payload.field_sources.push({ field: "grammar", source_ids: [url] });
+  body.output[1].content[0].text = JSON.stringify(payload);
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(body), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_web_authority_forbidden:grammar",
+  "splitting image and Web claims across grammar rows must not bypass the Web-authority gate");
+}
+
+{
   const payload = withoutFieldSource(audited({
     subjects: ["Still Source Bound"], grammar: "standard"
   }), "grammar", "subjects");
@@ -509,6 +534,154 @@ for (const { field, value, expected } of [
   assert.ok(result.fields.unreadable.includes(field));
   assert.ok(!result.fields.low_confidence.includes(field),
     "withheld source omissions are unreadable, not simultaneously low confidence");
+}
+
+// Empty and partitioned rows carry no authority of their own. Empty unions use
+// the omission path; duplicate rows are an ordered set union whose every source
+// must still pass the normal authority checks.
+{
+  const payload = withFieldSourceRows(audited({
+    manufacturer: "Topps", product: "Unsupported Product",
+    subjects: ["Grounded Subject"], grammar: "standard"
+  }), "product", [[]]);
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.equal(result.fields.product, "");
+  assert.ok(result.fields.unreadable.includes("product"));
+  assert.ok(!result.title.includes("Unsupported Product"));
+}
+
+{
+  const payload = withFieldSourceRows(audited({
+    subjects: ["Still Unsupported"], grammar: "standard"
+  }), "subjects", [["", "   "]]);
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "canonical_naming_mandatory_subject_identity_missing",
+  "a normalized-empty source group must behave like an omitted mandatory-subject row");
+}
+
+{
+  const payload = audited({ subjects: ["Grounded Subject"], grammar: "standard" });
+  payload.field_sources.push({ field: "product", source_ids: [] });
+  const result = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.equal(result.fields.product, "");
+  assert.ok(!result.fields.unreadable.includes("product"),
+    "an empty placeholder for an empty field is just an omitted ledger row");
+}
+
+{
+  const payload = audited({ subjects: ["Partitioned Images"], grammar: "standard" });
+  payload.field_sources.push({ field: "subjects", source_ids: ["original_image_2"] });
+  const result = await runCanonicalListingPath({
+    imageUrls: [
+      "https://example.invalid/front.jpg", "https://example.invalid/back.jpg"
+    ],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.deepEqual(result.fields.subjects, ["Partitioned Images"]);
+}
+
+for (const [field, value] of [
+  ["card_number", "105"],
+  ["parallel_exact", "Unsafe Gold"]
+]) {
+  const unsafeUrl = "https://user:secret@www.paniniamerica.net/checklists/unsafe";
+  for (const sourceRows of [
+    [["original_image_1"], [unsafeUrl]],
+    [[unsafeUrl], ["original_image_1"]]
+  ]) {
+    const payload = withFieldSourceRows(audited({
+      subjects: ["Grounded Subject"], grammar: "standard", [field]: value
+    }), field, sourceRows);
+    await assert.rejects(runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+        status: 200, headers: { "content-type": "application/json" }
+      })
+    }), (error) => error.name === "CanonicalProviderError"
+      && error.provider_error_code === "founder_beta_web_url_unsafe",
+    `${field} duplicate-row order must not hide an unsafe source behind image authority`);
+  }
+}
+
+{
+  const unreturnedUrl = "https://www.paniniamerica.net/checklists/unreturned-physical";
+  for (const sourceRows of [
+    [["original_image_1"], [unreturnedUrl]],
+    [[unreturnedUrl], ["original_image_1"]]
+  ]) {
+    const payload = withFieldSourceRows(audited({
+      card_number: "105", subjects: ["Grounded Subject"], grammar: "standard"
+    }), "card_number", sourceRows);
+    await assert.rejects(runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+        status: 200, headers: { "content-type": "application/json" }
+      })
+    }), (error) => error.name === "CanonicalProviderError"
+      && error.provider_error_code === "founder_beta_field_source_not_returned",
+    "duplicate-row order must retain the unreturned-reference hard gate");
+  }
+}
+
+{
+  const returnedUrl = "https://www.paniniamerica.net/checklists/web-only-physical";
+  const body = webIdentityBody(returnedUrl, {
+    card_number: "105", subjects: ["Grounded Subject"], grammar: "standard"
+  }, { card_number: [returnedUrl] });
+  const payload = JSON.parse(body.output[1].content[0].text);
+  payload.field_sources.push({ field: "card_number", source_ids: [returnedUrl] });
+  body.output[1].content[0].text = JSON.stringify(payload);
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(body), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_current_copy_source_required:card_number",
+  "duplicate Web rows must not replace current-copy authority");
+}
+
+for (const invalidRow of [
+  { field: "product", source_ids: "original_image_1" },
+  { field: "not_a_canonical_field", source_ids: [] }
+]) {
+  const payload = audited({
+    product: "Grounded Product", subjects: ["Grounded Subject"], grammar: "standard"
+  });
+  payload.field_sources.push(invalidRow);
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_field_sources_invalid",
+  "malformed ledger rows must remain a hard provider-contract failure");
 }
 
 {
