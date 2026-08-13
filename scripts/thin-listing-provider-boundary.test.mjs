@@ -2,6 +2,8 @@
 
 import assert from "node:assert/strict";
 
+import { CANONICAL_FIELD_SOURCE_FIELDS } from "../lib/listing/thin/canonical-fields.mjs";
+import { validateFounderBetaWebReceipt } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
 
 function audited(fields) {
@@ -1052,6 +1054,138 @@ function webFieldReferenceBody({
 const unreturnedReference = "https://www.pokemon.com/checklists/not-returned";
 const returnedOfficialReference = "https://www.paniniamerica.net/checklists/returned";
 const returnedUnknownReference = "https://www.ebay.com/itm/returned-reference";
+
+const sourceFieldSweepValues = Object.freeze({
+  year: "2024",
+  language: "English",
+  manufacturer: "Topps",
+  product: "Chrome",
+  set: "Update",
+  subjects: ["Sweep Subject"],
+  team: "Dodgers",
+  card_name: "Future Stars",
+  release_variant: "Rookie Debut",
+  surface_color: "Gold",
+  parallel_family: "Refractor",
+  parallel_exact: "Gold Refractor",
+  descriptive_rarity: "SSP",
+  card_number: "105",
+  serial: "12/99",
+  attributes: ["RC"],
+  grading_info: {
+    company: "PSA", card_grade: "10", auto_grade: "", grade_type: "CARD_ONLY"
+  },
+  grammar: "standard",
+  lot_count: "2",
+  special_stamp: "Promo",
+  description: "Case Hit"
+});
+const sweepIdentityFields = new Set([
+  "year", "manufacturer", "product", "set", "subjects", "card_name"
+]);
+const sweepFields = (field) => ({
+  subjects: field === "subjects" ? sourceFieldSweepValues.subjects : ["Sweep Subject"],
+  grammar: field === "lot_count" ? "lot" : "standard",
+  [field]: sourceFieldSweepValues[field]
+});
+const sweepValue = (result, field) => field === "grammar"
+  ? result.grammar : result.fields[field];
+
+// Bounded producer -> v2-reader self-consistency oracle across the complete
+// source-field vocabulary. Web may support identity, but it is trace-only for
+// current-copy fields; grammar keeps its stronger no-Web structural boundary.
+for (const field of CANONICAL_FIELD_SOURCE_FIELDS) {
+  const fields = sweepFields(field);
+  const imageOnly = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(completedBody(audited(fields))), {
+      status: 200, headers: { "content-type": "application/json" }
+    })
+  });
+  assert.equal(imageOnly.founder_beta_web_receipt.outcome, "NOT_USED");
+  assert.doesNotThrow(() => validateFounderBetaWebReceipt(
+    imageOnly.founder_beta_web_receipt
+  ));
+
+  for (const [url, governed] of [
+    [returnedOfficialReference, true], [returnedUnknownReference, false]
+  ]) {
+    const execution = runCanonicalListingPath({
+      imageUrls: ["https://example.invalid/card.jpg"],
+      model: "gpt-5.6-luna",
+      callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+        field, fields, sourceIds: ["original_image_1", url], returnedUrls: [url]
+      })), { status: 200, headers: { "content-type": "application/json" } })
+    });
+    if (field === "grammar") {
+      await assert.rejects(execution, (error) => error.name === "CanonicalProviderError"
+        && error.provider_error_code === "founder_beta_web_authority_forbidden:grammar");
+      continue;
+    }
+    const result = await execution;
+    assert.deepEqual(sweepValue(result, field), sweepValue(imageOnly, field),
+      `${field} canonical value must remain the image-only value`);
+    assert.deepEqual(result.founder_beta_web_receipt.field_evidence.find(
+      (row) => row.field === field
+    ), sweepIdentityFields.has(field) ? {
+      field,
+      support_urls: governed ? [url] : [],
+      conflict_urls: [],
+      unresolved_urls: governed ? [] : [url]
+    } : {
+      field, support_urls: [], conflict_urls: [], unresolved_urls: [url]
+    });
+    assert.doesNotThrow(() => validateFounderBetaWebReceipt(
+      result.founder_beta_web_receipt
+    ), `${field} producer receipt must remain readable by the same v2 validator`);
+  }
+}
+
+const currentCopySweepFields = CANONICAL_FIELD_SOURCE_FIELDS.filter(
+  (field) => !sweepIdentityFields.has(field)
+);
+for (const field of currentCopySweepFields) {
+  const fields = sweepFields(field);
+  const expectedAuthorityCode = field === "grammar"
+    ? "founder_beta_web_authority_forbidden:grammar"
+    : `founder_beta_current_copy_source_required:${field}`;
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+      field, fields, sourceIds: [returnedOfficialReference],
+      returnedUrls: [returnedOfficialReference]
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === expectedAuthorityCode,
+  `${field} must reject Web-only current-copy authority`);
+
+  const unsafeReference = "http://www.paniniamerica.net/checklists/unsafe-current-copy";
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+      field, fields, sourceIds: ["original_image_1", unsafeReference],
+      returnedUrls: [unsafeReference]
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === "founder_beta_web_url_unsafe",
+  `${field} must reject an unsafe Web trace before authority admission`);
+
+  const expectedUnreturnedCode = field === "grammar"
+    ? "founder_beta_web_authority_forbidden:grammar"
+    : "founder_beta_field_source_not_returned";
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
+      field, fields, sourceIds: ["original_image_1", unreturnedReference]
+    })), { status: 200, headers: { "content-type": "application/json" } })
+  }), (error) => error.name === "CanonicalProviderError"
+    && error.provider_error_code === expectedUnreturnedCode,
+  `${field} must reject an unreturned current-copy reference`);
+}
 
 for (const [sourceId, returnedUrls] of [
   [unreturnedReference, [returnedOfficialReference]]
