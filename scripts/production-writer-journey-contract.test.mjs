@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY
+} from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+
+import {
   PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT,
   PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX,
   productionPublicCompositionProjectionForOwner
@@ -347,6 +351,9 @@ assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.schema_version,
   "production-public-composition-projection-contract-v1");
 assert.match(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.contract_sha256,
   /^[0-9a-f]{64}$/);
+assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.contract_sha256,
+  "13608a232d0110e8654e77aa1d77104ea65db56c9fa0d949e9198188f9adf13c",
+"v3 authority reuse must not change the public executable projection contract");
 assert.equal(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length, 7);
 assert.equal(new Set(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.map((entry) => (
   `${entry.composer_version}\0${entry.marketplace_profile_version}`
@@ -360,6 +367,22 @@ for (const entry of PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX) {
     ? ["composer_version", "contract_version", "marketplace_profile_version"]
     : ["composer_version", "contract_version"]);
 }
+const externalV2Output = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+  .registry_thin_external_identity_high_risers_v2.output;
+const externalV3Output = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+  .registry_thin_external_identity_high_risers_v3.output;
+assert.deepEqual(externalV3Output, externalV2Output);
+assert.strictEqual(
+  productionPublicCompositionProjectionForOwner({
+    composer: externalV2Output.composer_version,
+    marketplace_profile: externalV2Output.marketplace_profile_version
+  }),
+  productionPublicCompositionProjectionForOwner({
+    composer: externalV3Output.composer_version,
+    marketplace_profile: externalV3Output.marketplace_profile_version
+  }),
+"v2/v3 receipts intentionally share one unique byte-identical public projection"
+);
 assert.equal(productionPublicCompositionProjectionForOwner({
   composer: "unknown-composer", marketplace_profile: "unknown-profile"
 }), null);

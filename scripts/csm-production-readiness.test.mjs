@@ -6,6 +6,8 @@ import { checkCsmThinProductionReadiness } from "./check-csm-thin-production-rea
 import {
   CSM_PRODUCT_PROJECTION_READINESS_RPC,
   CSM_PRODUCT_PROJECTION_VERSION,
+  THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT,
+  THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
   THIN_REGISTRY_RELEASE_CONTRACT
@@ -66,6 +68,10 @@ const fetchImpl = async (url, init = {}) => {
       {
         ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
         registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
+      },
+      {
+        ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
+        registry_payload: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
       }
     ]);
   }
@@ -119,6 +125,33 @@ function fetchWithExternalRegistryPayload(registryPayload) {
         },
         {
           ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: registryPayload
+        },
+        {
+          ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
+        }
+      ]);
+    }
+    return fetchImpl(url, init);
+  };
+}
+
+function fetchWithForwardRegistryPayload(registryPayload) {
+  return async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/csm_registry_releases")) {
+      return response([
+        {
+          ...THIN_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
+        },
+        {
+          ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
+        },
+        {
+          ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
           registry_payload: registryPayload
         }
       ]);
@@ -187,6 +220,19 @@ await assert.rejects(
   (error) => error.code === "csm_persistence_not_ready"
     && error.detail === "registry_release_contract_mismatch",
   "database readiness must reject extra external identity Registry payload keys"
+);
+
+await assert.rejects(
+  checkCsmThinProductionReadiness({
+    env: ENV,
+    fetchImpl: fetchWithForwardRegistryPayload({
+      ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT,
+      resolution_contract_sha256: "0".repeat(64)
+    })
+  }),
+  (error) => error.code === "csm_persistence_not_ready"
+    && error.detail === "registry_release_contract_mismatch",
+  "database readiness must fail closed when the v3 forward-reader row drifts"
 );
 
 const databaseOnlyScopes = [];

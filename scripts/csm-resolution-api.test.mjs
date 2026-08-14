@@ -669,11 +669,14 @@ const legacyRecord = {
   const releases = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases;
   const v1 = releases.registry_thin_external_identity_high_risers_v1;
   const v2 = releases.registry_thin_external_identity_high_risers_v2;
+  const v3 = releases.registry_thin_external_identity_high_risers_v3;
   const registryVersions = {
     registry_thin_external_identity_high_risers_v1:
       "thin-path-external-identity-high-risers-v1",
     registry_thin_external_identity_high_risers_v2:
-      "thin-path-external-identity-high-risers-v2"
+      "thin-path-external-identity-high-risers-v2",
+    registry_thin_external_identity_high_risers_v3:
+      "thin-path-external-identity-high-risers-v3"
   };
   const tcdbFact = "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d";
   const psaFact = "83fd1914ef27e6c1191a64b830a83423eb7d185cdbbb3e22c6a9f1b7df86f392";
@@ -1134,6 +1137,65 @@ const legacyRecord = {
   assert.equal(v2Durable.external_identity_support.composer_version, v2.output.composer_version);
   assert.ok(Array.isArray(v2Durable.replay_rows.evidence),
     "the private external evidence needed by relation replay stays in the server-side bundle");
+  const missingPrivateReceipt = structuredClone(v2Durable);
+  delete missingPrivateReceipt.replay_rows.output.structured_output.external_identity_support;
+  delete missingPrivateReceipt.external_identity_support;
+  assert.throws(() => composeResolutionView(missingPrivateReceipt), (error) => (
+    error?.statusCode === 409
+      && error?.message === "csm_resolution_external_identity_receipt_invalid"
+  ), "an external output without its private receipt must fail readback closed");
+
+  const v3Decisions = {
+    ...baseDecisions,
+    year: {
+      action: "CORRECT_CONFLICT", observed_value: "1992", canonical_value: "1996-97",
+      source_ids: ["tcdb.set.2551", "psa.set-registry.25618", "beckett.item.3117708"]
+    },
+    product: {
+      action: "CORRECT_CONFLICT", observed_value: "Stadium Club Basketball",
+      canonical_value: "Stadium Club",
+      source_ids: ["tcdb.set.2551", "psa.set-registry.25618", "beckett.item.3117708"]
+    },
+    set: {
+      action: "CORRECT_CONFLICT", observed_value: "High Flyers", canonical_value: "High Risers",
+      source_ids: ["tcdb.set.2551", "psa.set-registry.25618", "beckett.item.3117708"]
+    }
+  };
+  const v3Stored = storedReceipt(v3, { fieldDecisions: v3Decisions });
+  const { value: v3Durable } = await readExternal({ descriptor: v3, stored: v3Stored });
+  assert.equal(v3Durable.external_identity_support.registry_release.id,
+    v3.receipt.registry_release_id);
+  assert.equal(v3Durable.external_identity_support.registry_release.registry_version,
+    "thin-path-external-identity-high-risers-v3");
+  assert.deepEqual(Object.fromEntries(["product", "year", "set"].map((field) => [
+    field, v3Durable.external_identity_support.field_decisions[field].action
+  ])), {
+    product: "CORRECT_CONFLICT", year: "CORRECT_CONFLICT", set: "CORRECT_CONFLICT"
+  });
+  assert.deepEqual(v3.output, v2.output,
+    "the forward release intentionally reuses the byte-identical output implementation");
+  const durableExternalV3View = await handleResolutionViewRequest({
+    tenantId: "tenant-db", assetId: "external-asset-v3",
+    dependencies: { readRecord: async () => v3Durable }
+  });
+  assert.equal(durableExternalV3View.external_identity_support.registry_release.id,
+    v3.receipt.registry_release_id,
+  "same-output releases must be selected by their persisted receipt, not first tuple match");
+
+  for (const [recordWithRows, substitutedSupport] of [
+    [v2Durable, v3Durable.external_identity_support],
+    [v3Durable, v2Durable.external_identity_support]
+  ]) {
+    assert.throws(
+      () => composeResolutionView({
+        ...recordWithRows,
+        external_identity_support: substitutedSupport
+      }),
+      (error) => error?.statusCode === 409
+        && error?.message === "csm_resolution_external_identity_receipt_invalid",
+      "a same-output receipt from another release cannot authorize stored rows"
+    );
+  }
 
   const v3RelationOutput = {
     contract_version: "csm-stage-shadow-v3",
@@ -1305,6 +1367,10 @@ const legacyRecord = {
     resolutionOverrides: { registry_release_id: unknownStored.registry_release_id }
   });
   assert.equal(unknown.external_identity_support, undefined);
+  assert.throws(() => composeResolutionView(unknown), (error) => (
+    error?.statusCode === 409
+      && error?.message === "csm_resolution_external_identity_receipt_invalid"
+  ), "an external output with an unknown private receipt must fail readback closed");
   assert.ok(!unknownRequested.some((url) => (
     url.pathname.endsWith("/csm_registry_releases")
       || url.pathname.endsWith("/csm_evidence_observations")
@@ -1315,6 +1381,10 @@ const legacyRecord = {
     descriptor: v2, stored: tamperedReceipt
   });
   assert.equal(tampered.external_identity_support, undefined);
+  assert.throws(() => composeResolutionView(tampered), (error) => (
+    error?.statusCode === 409
+      && error?.message === "csm_resolution_external_identity_receipt_invalid"
+  ), "an external output with a tampered private receipt must fail readback closed");
   assert.ok(!tamperedRequested.some((url) => url.pathname.endsWith("/csm_registry_releases")),
     "a receipt that differs from its append-only descriptor must fail before Registry readback");
 

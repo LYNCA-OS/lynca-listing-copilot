@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import {
   computeVerifiedOriginalSetSha256,
@@ -8,14 +9,17 @@ import {
   EXTERNAL_IDENTITY_CONFLICT_POLICY_VERSION,
   EXTERNAL_IDENTITY_MARKETPLACE_PROFILE_VERSION,
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3,
   EXTERNAL_IDENTITY_RESOLVER_VERSION,
   EXTERNAL_IDENTITY_SUPPORT_PACK,
   externalIdentityReplayReleaseForReceipt,
   HIGH_RISERS_EXTERNAL_IDENTITY_INDEX,
   resolveExternalIdentitySupport,
-  validateExternalIdentityFieldDecisions
+  validateExternalIdentityFieldDecisions,
+  validatePostObservationResolutionContract
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 const HR14_ORIGINAL_SHA256 = Object.freeze([
@@ -69,9 +73,8 @@ for (const componentHash of HR14_ORIGINAL_SHA256) {
 assert.doesNotMatch(originalSetMappingText, /title|michael|jordan|chicago|bulls/,
   "runtime identity mapping must be digest -> record_id only");
 
-// Published replay descriptors are literal append-only history. This exact v1
-// assertion prevents a future active-pack replacement from editing or deleting
-// the old tuple while adding its own sibling release.
+// Published replay descriptors are literal append-only history. These exact
+// assertions prevent a forward reader from rewriting either active old tuple.
 const expectedReplayV1 = {
   receipt: {
     schema_version: "csm-external-identity-support-receipt.v1",
@@ -95,10 +98,38 @@ const expectedReplayV1 = {
   },
   match_modes: ["EXACT_FOUR_ANCHOR", "VERIFIED_ORIGINAL_SET"]
 };
+const expectedReplayV2 = {
+  receipt: {
+    schema_version: "csm-external-identity-support-receipt.v2",
+    pack_id: "lynca.csm.external-identity",
+    pack_version: "2026-08-10",
+    pack_sha256: "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+    index_id: "basketball.1996-97-topps-stadium-club-high-risers",
+    index_version: "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+    index_sha256: "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+    registry_release_id: "registry_thin_external_identity_high_risers_v2",
+    resolution_contract_sha256: "407f69668256c799b0beeae8bd9dbdbe3073f86b6f6367c8216417973d6b691f"
+  },
+  resolution: {
+    registry_release_id: "registry_thin_external_identity_high_risers_v2",
+    resolver_version: "thin-path-exact-external-identity-v3",
+    conflict_policy_version: "verified-original-set-four-anchor-release-correction-v3"
+  },
+  output: {
+    composer_version: "thin-marketplace-composer-v4-verified-external-identity",
+    marketplace_profile_version: "ebay-verified-external-identity-v2"
+  },
+  match_modes: ["EXACT_FOUR_ANCHOR", "VERIFIED_ORIGINAL_SET"]
+};
 assert.deepEqual(
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
     .registry_thin_external_identity_high_risers_v1,
   expectedReplayV1
+);
+assert.deepEqual(
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+    .registry_thin_external_identity_high_risers_v2,
+  expectedReplayV2
 );
 assert.equal(Object.isFrozen(EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY), true);
 assert.equal(Object.isFrozen(
@@ -107,9 +138,41 @@ assert.equal(Object.isFrozen(
 ), true);
 assert.equal(Object.isFrozen(
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+    .registry_thin_external_identity_high_risers_v3
+), true);
+assert.equal(Object.isFrozen(
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
     .registry_thin_external_identity_high_risers_v2
 ), true);
 assert.equal(externalIdentityReplayReleaseForReceipt({ registry_release_id: "unknown" }), null);
+const jsonSha256 = (value) => createHash("sha256")
+  .update(JSON.stringify(value)).digest("hex");
+assert.equal(jsonSha256(expectedReplayV2),
+  "4c962092f4ed1ad7421c77d3264ac6eb1e6083560c595050aaf2e0043f07bcc6",
+"the active v2 replay descriptor remains byte-neutral across the bridge");
+assert.equal(jsonSha256(EXTERNAL_IDENTITY_RELEASE_CONTRACT),
+  "17210e2fa8d8a8fa2d63cb65e6ed990a0df5df9bfdffa7a9b43a64a3b655922e",
+"the health/runtime release contract remains active v2");
+assert.equal(EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
+  "407f69668256c799b0beeae8bd9dbdbe3073f86b6f6367c8216417973d6b691f");
+assert.equal(validatePostObservationResolutionContract(
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3,
+  { expectedSha256: "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e" }
+), EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3);
+const forwardReplayV3 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+  .registry_thin_external_identity_high_risers_v3;
+assert.equal(forwardReplayV3.receipt.resolution_contract_sha256,
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.contract_sha256);
+assert.deepEqual(forwardReplayV3.resolution, {
+  registry_release_id: forwardReplayV3.receipt.registry_release_id,
+  resolver_version: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.resolver_version,
+  conflict_policy_version: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.conflict_policy_version
+});
+assert.deepEqual(forwardReplayV3.output, {
+  composer_version: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.composer_version,
+  marketplace_profile_version:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.marketplace_profile_version
+}, "the validated v3 resolution contract and literal replay descriptor are one tuple");
 
 // Active parity is a release-time gate only. Replay itself reads the literal
 // snapshot above and therefore remains valid after active constants move on.
@@ -231,6 +294,24 @@ function assertAbstains(fields, reason, options) {
   return result;
 }
 
+const neutralBridgeParityMismatch = assertAbstains({
+  ...observedHr14,
+  year: "1992",
+  product: "Stadium Club Basketball",
+  set: "High Flyers",
+  team: "Chicago Bulls",
+  card_number: "HR14"
+}, "CONFLICTING_OBSERVATION", {
+  externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 }
+});
+assert.equal(neutralBridgeParityMismatch.receipt.schema_version,
+  "csm-external-identity-support-receipt.v2");
+assert.equal(neutralBridgeParityMismatch.receipt.registry_release_id,
+  expectedReplayV2.receipt.registry_release_id);
+assert.deepEqual(neutralBridgeParityMismatch.receipt.conflict_fields,
+  ["product", "year", "set"],
+"the bridge adds read authority only; the known failing tuple remains active-v2 ABSTAINED");
+
 assertAbstains({ ...observedHr14, product: "Finest" }, "NO_EXACT_MATCH");
 assertAbstains({ ...observedHr14, product: "Stadium-Club" }, "NO_EXACT_MATCH");
 assertAbstains({ ...observedHr14, card_number: "" }, "MISSING_REQUIRED_ANCHOR");
@@ -290,6 +371,19 @@ assert.equal(correctedLiveCandidate.receipt.verified_optional_observations.set.m
 assert.deepEqual(liveCandidateObservation, liveCandidateSnapshot,
   "release correction must not relabel the immutable Luna observation");
 assert.equal(validateExternalIdentityFieldDecisions(correctedLiveCandidate.receipt), true);
+const forwardV3DecisionReceipt = structuredClone(correctedLiveCandidate.receipt);
+Object.assign(forwardV3DecisionReceipt, forwardReplayV3.receipt);
+forwardV3DecisionReceipt.corrected_fields = ["product", "set", "year"];
+forwardV3DecisionReceipt.field_decisions.product = {
+  ...forwardV3DecisionReceipt.field_decisions.product,
+  action: "CORRECT_CONFLICT",
+  observed_value: "Stadium Club Basketball"
+};
+assert.equal(validateExternalIdentityFieldDecisions(forwardV3DecisionReceipt), true,
+  "the neutral bridge validates the future three-anchor catalog-correction receipt");
+assert.equal(EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
+  expectedReplayV2.receipt.registry_release_id,
+  "the neutral bridge must continue writing v2");
 const invalidV1Correction = {
   ...structuredClone(correctedLiveCandidate.receipt),
   ...EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases

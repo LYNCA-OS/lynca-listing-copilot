@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import {
   prepareCanonicalListingPath
@@ -213,6 +214,9 @@ for (const bracket of ["year", "manufacturer", "product", "set", "subject", "car
   assert.equal(resolved.alternate_candidate_ids.length, 1, bracket);
 }
 assert.deepEqual(verifyReplay(prepared.csm_rows, prepared.title).problems, []);
+assert.equal(createHash("sha256").update(JSON.stringify(prepared.csm_rows)).digest("hex"),
+  "fb5b1f3c1f0cdccfeb7c43b6b392929f3ab34c6fc570f82caf7a38c2a91c8e86",
+"the bridge must leave active v2 durable writer rows byte-identical");
 
 {
   const forgedObservedCardName = clone(prepared.csm_rows);
@@ -393,6 +397,42 @@ for (const row of historicalV1Rows.evidence.filter((entry) => entry.modality ===
 reseal(historicalV1Rows);
 assert.deepEqual(verifyReplay(historicalV1Rows, historicalV1Rows.output.title).problems, [],
   "a literal v1 evidence tuple remains executable after v2 becomes active");
+
+const forwardV3Rows = clone(prepared.csm_rows);
+const forwardV3 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+  .registry_thin_external_identity_high_risers_v3;
+const forwardV3Metadata = forwardV3Rows.output.structured_output.external_identity_support;
+Object.assign(forwardV3Metadata, forwardV3.receipt);
+forwardV3Metadata.field_decisions.product = {
+  ...forwardV3Metadata.field_decisions.product,
+  action: "CORRECT_CONFLICT",
+  observed_value: "Stadium Club Basketball"
+};
+Object.assign(forwardV3Rows.resolution, forwardV3.resolution);
+Object.assign(forwardV3Rows.output, forwardV3.output);
+const forwardProductVisual = forwardV3Rows.evidence.find((row) => (
+  row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "product"
+));
+forwardProductVisual.raw_value = "Stadium Club Basketball";
+forwardProductVisual.normalized_value = "Stadium Club Basketball";
+for (const row of forwardV3Rows.evidence.filter((entry) => entry.modality === "REGISTRY")) {
+  for (const field of [
+    "pack_id", "pack_version", "pack_sha256", "index_id", "index_version", "index_sha256",
+    "record_id", "registry_release_id", "resolution_contract_sha256", "match_mode"
+  ]) {
+    row.source_ref[field] = forwardV3Metadata[field];
+  }
+  row.source_ref.decision = forwardV3Metadata.field_decisions[row.source_ref.field].action;
+  row.normalization_reason_code = `EXTERNAL_IDENTITY_${row.source_ref.decision}`;
+}
+reseal(forwardV3Rows);
+assert.deepEqual(verifyReplay(forwardV3Rows, forwardV3Rows.output.title).problems, [],
+  "the neutral bridge can replay a synthetic future v3 product/year/set decision tuple");
+assert.equal(forwardV3Rows.output.title, prepared.title);
+assert.deepEqual(forwardV3.output,
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+    .registry_thin_external_identity_high_risers_v2.output,
+"v3 replay reuses the exact published v2 output implementation");
 
 // Replay dispatches from the stored release receipt and validates that release
 // as a closed tuple. Re-sealing these counterexamples proves the release checks
