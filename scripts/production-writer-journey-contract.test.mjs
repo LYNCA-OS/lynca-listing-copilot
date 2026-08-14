@@ -69,9 +69,17 @@ assert.match(spec, /activation_cases/);
 assert.match(spec, /WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION/);
+assert.match(spec, /COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION/);
+assert.match(spec, /COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE/);
 assert.match(spec, /manifest\.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID/);
 assert.match(spec, /manifest\.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS/);
 assert.match(spec, /manifest\.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER/);
+assert.match(spec,
+  /manifest\.bridge_descriptor_id[\s\S]*?EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID[\s\S]*?manifest\.bridge_marker[\s\S]*?EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER/,
+  "the v3 manifest must preserve the exact repair selection provenance");
+assert.match(spec,
+  /compatibilityBridgeWriterProjectionMode\(manifest, \{ expectedGitSha \}\)[\s\S]*?COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE/,
+  "the v3 manifest mode must be sealed by the shared selector validator");
 assert.match(spec, /manifest\.git_sha !== expectedGitSha/,
   "the reduced manifest must be bound to the exact bridge commit");
 assert.match(spec,
@@ -88,6 +96,8 @@ assert.match(spec, /parity\.files\.some\(\(file, index\) =>/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
 assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
 assert.match(spec, /production-writer-journey-evidence-v7/);
+assert.match(spec, /compatibility_bridge_marker: sourceManifest\.bridgeMarker/);
+assert.match(spec, /writer_projection_mode: writerProjectionMode/);
 assert.match(spec, /buildWriterEditableTitleLatencyReceipt/);
 assert.match(spec, /summarizeWriterEditableTitleLatency/);
 assert.match(spec,
@@ -145,8 +155,11 @@ assert.match(forwardReadback,
   /webIdentityQueryHasVisibleAnchors\(webReceipt\.queries\)/,
   "candidate and post-promotion readback must share the visible-query anchor gate");
 assert.match(spec,
-  /semanticCases = evidence\.cases\.filter[\s\S]*?webReceiptClassifications = semanticCases\.map[\s\S]*?classifyFounderWebSearch[\s\S]*?USED_WITHOUT_GOVERNED_APPLIED_SUPPORT[\s\S]*?webReceiptClaimsMatchViews[\s\S]*?qualifiedGovernedWebCases\.length \+ strictNoSearchCases\.length[\s\S]*?usedWithoutGovernedAppliedSupportCases\.length === semanticCases\.length[\s\S]*?strictNoSearchCases\.length >= 1/,
-  "the six-case cohort must use one shared exhaustive three-way Web classifier");
+  /semanticCases = evidence\.cases\.filter[\s\S]*?webReceiptClassifications = semanticCases\.map[\s\S]*?classifyFounderWebSearch[\s\S]*?webReceiptClaimsMatchViews/,
+  "all semantic cases must use one shared Web classifier before either closed seal");
+assert.match(spec,
+  /partitionCaseIds[\s\S]*?qualifiedGovernedWebCases[\s\S]*?strictNoSearchCases[\s\S]*?usedWithoutGovernedAppliedSupportCases[\s\S]*?new Set\(partitionCaseIds\)\.size === semanticCaseIds\.length/,
+  "the bridge seal must prove an exhaustive, non-duplicated semantic partition");
 const activationProjectionCallSite = spec.match(
   /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView\);[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
 )?.[0] || "";
@@ -189,11 +202,28 @@ assert.match(spec, /CANONICAL_NAMING_RELEASE_CONTRACT/);
 assert.match(spec, /canonicalNamingVersionActive/);
 assert.match(spec, /compatibilityBridgeStandardVersionActive/);
 assert.match(spec,
-  /sourceCase\.case_id === "NON_TCG"[\s\S]*?parityRequired[\s\S]*?verifiedOriginalObservationVersionActive\([\s\S]*?versions[\s\S]*?observationLegacyVersionActive\(versions\)/,
-  "the Standard Writer case must prove the release-class-specific active writer tuple");
-assert.match(spec, /standardCaseEvidence\?\.canonical_naming_active === true/);
-assert.match(spec, /standardCaseEvidence\?\.compatibility_bridge_standard_active === true/);
-assert.match(spec, /standardCaseEvidence\?\.verified_original_observation_active === false/);
+  /function standardNonTcgWriterProjectionActive[\s\S]*?verifiedOriginalObservationSupport != null[\s\S]*?COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE[\s\S]*?observationLegacyVersionActive\(versions\)/,
+  "the Standard Writer case must require one exact mode-specific owner and overlay receipt");
+assert.match(spec,
+  /function largeStandardWriterProjectionActive[\s\S]*?observationCanonicalV3VersionActive\(versions\)[\s\S]*?verifiedOriginalObservationSupport == null[\s\S]*?externalIdentitySupport == null[\s\S]*?COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE/,
+  "the large Standard case must bind canonical v3 without overlays in current bridge mode");
+assert.doesNotMatch(spec, /writerProjectionMode === "legacy-or-canonical"/,
+  "no permissive dual-owner mode may enter the live verifier");
+assert.match(spec,
+  /function standardNonTcgWriterProjectionEvidenceActive[\s\S]*?evidence\?\.canonical_naming_active === true[\s\S]*?evidence\?\.verified_original_observation_active === true[\s\S]*?evidence\?\.canonical_naming_active === false[\s\S]*?evidence\?\.compatibility_bridge_standard_active === true[\s\S]*?evidence\?\.verified_original_observation_active === false/,
+  "the final seal must reject mixed current and legacy Standard evidence");
+assert.match(spec,
+  /function ordinaryActivationSeal[\s\S]*?codex_parity_exact_match[\s\S]*?NON_TCG_WEB_IDENTITY|function ordinaryActivationSeal[\s\S]*?SET_MEMBERSHIP_PREDICATE[\s\S]*?lot_shared_only/,
+  "ordinary must retain the complete external, governed Web, and Lot activation seal");
+assert.match(spec,
+  /function compatibilityBridgeSeal[\s\S]*?LARGE_STAGED_TRANSPORT[\s\S]*?NON_TCG\\0TCG[\s\S]*?parityCaseEvidence == null[\s\S]*?webCaseEvidence == null[\s\S]*?lotCaseEvidence == null/,
+  "compatibility bridge must close over exactly Standard, TCG, and large transport");
+assert.match(spec,
+  /qualifiedGovernedWebCases\?\.length === 0[\s\S]*?strictNoSearchCases\?\.length >= 1[\s\S]*?usedWithoutGovernedAppliedSupportCases\?\.length[\s\S]*?semanticCases\.length/,
+  "bridge Web evidence must remain an exact no-governed partition while preserving TCG abstention");
+assert.match(spec,
+  /historicalUnconditionalActivationSeal === false[\s\S]*?compatibilityBridgeSeal\(bridgeSealInput\)/,
+  "offline evidence must prove why the old unconditional seal failed and the closed bridge seal passes");
 assert.match(spec, /canonical_naming_active_case_count/,
   "the immutable candidate must prove that at least one real Writer case used active CNL");
 assert.match(spec, /productionStandardP0ResolutionProof/);
@@ -440,7 +470,8 @@ assert.match(recognitionVersionVerifier,
   "registered hidden-profile tuples must require omission in the public view too");
 assert.match(spec, /observationLegacyVersionActive\(tcgCaseEvidence\?\.versions\)/,
   "the final seal must pin the TCG legacy tuple");
-assert.match(spec, /observationCanonicalV3VersionActive\(largeCaseEvidence\?\.versions\)/,
+assert.match(spec,
+  /largeStandardWriterProjectionActive\(\{[\s\S]*?versions: largeCaseEvidence\?\.versions/,
   "the final seal must pin the active Large Standard tuple");
 assert.match(spec, /registeredExternalIdentityVersionActive\(parityCaseEvidence\?\.versions\)/,
   "the final seal must pin the registered external tuple");
@@ -460,7 +491,7 @@ for (const token of [
     new RegExp(token.replaceAll(".", "\\.")));
 }
 assert.match(spec,
-  /verifiedOriginalObservationVersionActive\(standardCaseEvidence\?\.versions\)/,
+  /standardNonTcgWriterProjectionEvidenceActive\(\{[\s\S]*?evidence: standardCaseEvidence/,
   "the final seal must reject a Standard resolver that only self-consistently drifted");
 const executionReceiptVerifier = spec.match(
   /function liveExecutionReceiptProof[\s\S]+?(?=\nfunction assertNoPrivateFixtureKeys)/
