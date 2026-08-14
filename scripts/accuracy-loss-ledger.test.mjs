@@ -71,7 +71,6 @@ const raw = `  ${JSON.stringify({
 // The adapter audits provenance and relation fields before it hands the
 // canonical payload to admission. The accuracy ledger binds that canonical
 // payload; the audit envelope is bound separately by the durable receipts.
-const canonicalRaw = JSON.stringify(providerFields);
 const baseline = finishCanonicalTitle(raw);
 let calls = 0;
 const prepared = await prepareCanonicalListingPath({
@@ -84,12 +83,7 @@ const prepared = await prepareCanonicalListingPath({
     calls += 1;
     return new Response(JSON.stringify({
       id: "resp_ledger_1",
-      model: "gpt-5.6-luna",
-      status: "completed",
-      output: [{
-        type: "message",
-        content: [{ type: "output_text", text: raw, annotations: [] }]
-      }],
+      output_text: raw,
       reasoning: { effort: "low" },
       usage: { input_tokens: 77, output_tokens: 23 }
     }), {
@@ -129,7 +123,8 @@ const baselineRows = buildCsmStageRows({
   },
   founderBetaWebReceipt: prepared.founder_beta_web_receipt,
   setCardNameRelationReceipt: prepared.set_card_name_relation_receipt,
-  title: baseline.title
+  title: baseline.title,
+  contractVersion: prepared.csm_rows.output.contract_version
 });
 assert.deepEqual(prepared.csm_rows, baselineRows,
   "observability must not perturb any persisted CSM row or packet hash");
@@ -140,10 +135,10 @@ assert.equal(ledger.version, ACCURACY_LOSS_LEDGER_VERSION);
 assert.equal(ACCURACY_LOSS_LEDGER_VERSION, ACCURACY_LOSS_LEDGER_V1);
 assert.deepEqual(ACCURACY_LOSS_LEDGER_SUPPORTED_VERSIONS, [ACCURACY_LOSS_LEDGER_V1],
   "published ledger validators stay registered for durable checkpoint recovery");
-assert.equal(ledger.stages.raw_provider_output.sha256, sha256(canonicalRaw));
-assert.equal(ledger.stages.raw_provider_output.byte_length, Buffer.byteLength(canonicalRaw, "utf8"));
+assert.equal(ledger.stages.raw_provider_output.sha256, sha256(raw));
+assert.equal(ledger.stages.raw_provider_output.byte_length, Buffer.byteLength(raw, "utf8"));
 assert.equal(ledger.stages.parsed_fields.source_sha256, ledger.stages.raw_provider_output.sha256);
-assert.equal(ledger.stages.parsed_fields.sha256, accuracyLedgerSha256(JSON.parse(canonicalRaw)));
+assert.equal(ledger.stages.parsed_fields.sha256, accuracyLedgerSha256(JSON.parse(raw)));
 assert.equal(ledger.stages.admitted_canonical_fields.source_sha256, ledger.stages.parsed_fields.sha256);
 assert.equal(ledger.stages.admitted_canonical_fields.sha256, accuracySemValueSha256(
   resolvedFieldsToSemSuggestion(toResolvedFields(baseline.fields))
@@ -176,7 +171,7 @@ assert.equal(ledger.stages.composed_bracket_ledger.source_sha256,
 const activeProjection = `${baseline.composer_version}/${baseline.marketplace_profile_version}`;
 assert.ok([
   "thin-marketplace-composer-v2/ebay-profile-v1",
-  "thin-marketplace-composer-v3/lynca-standard-name-v0.3"
+  "thin-marketplace-composer-v3/lynca-standard-name-v0.2"
 ].includes(activeProjection), "the accuracy ledger must use one of the two atomic release states");
 if (activeProjection === "thin-marketplace-composer-v2/ebay-profile-v1") {
   assert.ok(ledger.stages.composed_bracket_ledger.reason_codes

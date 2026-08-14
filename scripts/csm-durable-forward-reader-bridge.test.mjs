@@ -2,15 +2,25 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import {
+  composeLyncaStandardNameForProfile,
+  LYNCA_STANDARD_PROFILE_VERSION_V3
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
 import {
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
   readDurableProjectionReceipt,
   validateFounderBetaWebReceipt
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
-import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
+import { buildCsmStageRows } from "../lib/listing/thin/csm-persistence.mjs";
+import { replayFromRows, verifyReplay } from "../lib/listing/thin/csm-replay.mjs";
+import {
+  resolveVerifiedOriginalObservation,
+  VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
 
 // Fresh v2 keeps the exact 17ef behavior. Future upper-bound enforcement and
 // grading-info reconstruction are gated by a stored v3 contract only.
@@ -89,12 +99,29 @@ const fields = {
   card_number: "", serial: "", components: [], attributes: [], team: "",
   search_optimization: [], grading_info: null, grade: "", unreadable: [], low_confidence: []
 };
+const visualEvidenceRows = (sessionId, entries, prefix) => entries.map(
+  ([bracket, raw_value], index) => ({
+    id: `${prefix}-${index}`,
+    modality: "WHOLE_CARD_VISUAL",
+    bracket,
+    raw_value,
+    normalized_value: raw_value,
+    source_ref: { images: sessionId },
+    observation_confidence: 0.8,
+    normalization_version: SEM_STANDARD_VERSION,
+    normalization_outcome: "KEPT",
+    normalization_reason_code: "DIRECT_OBSERVATION"
+  })
+);
 const composed = composeFromCanonicalFields(fields, { features: {
   durable_lot_terminal_shared_only: true,
   publication_coverage: true
 } });
 const rows = {
-  resolution: { grammar: "NON_TCG" },
+  resolution: {
+    contract_version: CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+    grammar: "NON_TCG"
+  },
   resolved: [
     ["year", "2024"], ["manufacturer", "Topps"], ["product", "Chrome"],
     ["subject", ["Card A", "Card B"]], ["set", null], ["card_name", null]
@@ -149,6 +176,10 @@ const rows = {
     }
   }
 };
+rows.evidence = visualEvidenceRows(rows.output.recognition_session_id, [
+  ["year", fields.year], ["manufacturer", fields.manufacturer],
+  ["product", fields.product], ["subject", fields.subjects]
+], "lot-visual");
 
 const replayed = replayFromRows(rows);
 assert.equal(replayed.title, rows.output.title);
@@ -164,21 +195,11 @@ const standardComposed = composeFromCanonicalFields(standardFields, {
 });
 const standardRows = structuredClone(rows);
 standardRows.resolution.grammar = "NON_TCG";
-standardRows.evidence = [
-  ["set", standardFields.set],
-  ["card_name", standardFields.card_name]
-].map(([bracket, raw_value], index) => ({
-  id: `standard-visual-${index}`,
-  modality: "WHOLE_CARD_VISUAL",
-  bracket,
-  raw_value,
-  normalized_value: raw_value,
-  source_ref: { images: standardRows.output.recognition_session_id },
-  observation_confidence: 0.8,
-  normalization_version: SEM_STANDARD_VERSION,
-  normalization_outcome: "KEPT",
-  normalization_reason_code: "DIRECT_OBSERVATION"
-}));
+standardRows.evidence = visualEvidenceRows(standardRows.output.recognition_session_id, [
+  ["year", standardFields.year], ["manufacturer", standardFields.manufacturer],
+  ["product", standardFields.product], ["set", standardFields.set],
+  ["card_name", standardFields.card_name], ["subject", standardFields.subjects]
+], "standard-visual");
 standardRows.resolved = [
   ["year", standardFields.year], ["manufacturer", standardFields.manufacturer],
   ["product", standardFields.product],
@@ -197,8 +218,12 @@ standardRows.output.structured_output = {
     structuredClone(rows.output.structured_output.founder_beta_web_receipt)
 };
 standardRows.output.structured_output.sem = {
+  year: standardFields.year,
+  manufacturer: standardFields.manufacturer,
+  product: standardFields.product,
   set: standardFields.set,
-  card_name: standardFields.card_name
+  card_name: standardFields.card_name,
+  subject: standardFields.subjects
 };
 standardRows.output.structured_output.set_card_name_relation_receipt = {
   schema_version: "set-card-name-relations-v1",
@@ -466,6 +491,9 @@ const withheldReferenceRows = structuredClone(standardRows);
 withheldReferenceRows.output.structured_output.founder_beta_web_receipt =
   withheldReferenceReceipt;
 withheldReferenceRows.output.structured_output.sem.product = "";
+withheldReferenceRows.evidence = withheldReferenceRows.evidence.filter(
+  (row) => row.bracket !== "product"
+);
 Object.assign(withheldReferenceRows.resolved.find((row) => row.bracket === "product"), {
   selected_kind: "EMPTY", canonical_value: null, empty_reason: "ABSENT"
 });
@@ -477,21 +505,21 @@ assert.deepEqual(
 const withheldReferenceTamper = structuredClone(withheldReferenceRows);
 withheldReferenceTamper.output.structured_output.sem.product = "Chrome";
 assert.throws(() => readDurableProjectionReceipt(withheldReferenceTamper),
-  /founder_beta_withheld_identity_state_invalid/,
+  /founder_beta_observed_identity_cardinality_invalid/,
   "an empty marker must be paired with an empty post-withhold canonical field");
 const withheldResolvedTamper = structuredClone(withheldReferenceRows);
 Object.assign(withheldResolvedTamper.resolved.find((row) => row.bracket === "product"), {
   selected_kind: "VALUE", canonical_value: "Chrome", empty_reason: null
 });
 assert.throws(() => readDurableProjectionReceipt(withheldResolvedTamper),
-  /founder_beta_withheld_identity_state_invalid/,
+  /post_observation_resolved_identity_invalid/,
   "an empty marker must also bind the canonical resolved row, not only SEM");
 const withheldResolvedMissing = structuredClone(withheldReferenceRows);
 withheldResolvedMissing.resolved = withheldResolvedMissing.resolved.filter(
   (row) => row.bracket !== "product"
 );
 assert.throws(() => readDurableProjectionReceipt(withheldResolvedMissing),
-  /founder_beta_withheld_identity_state_invalid/,
+  /post_observation_resolved_identity_cardinality_invalid/,
   "an empty marker cannot be paired with a missing canonical resolved row");
 const withheldResolvedDuplicate = structuredClone(withheldReferenceRows);
 withheldResolvedDuplicate.resolved.push({
@@ -501,7 +529,7 @@ withheldResolvedDuplicate.resolved.push({
   selected_kind: "VALUE", canonical_value: "Chrome", empty_reason: null
 });
 assert.throws(() => readDurableProjectionReceipt(withheldResolvedDuplicate),
-  /founder_beta_withheld_identity_state_invalid/,
+  /post_observation_resolved_identity_cardinality_invalid/,
   "a duplicate VALUE row cannot hide behind an earlier EMPTY marker row");
 for (const invalidReceipt of [
   {
@@ -537,6 +565,7 @@ for (const [mutate, expected] of [
 
 const legacy = structuredClone(rows);
 legacy.output.contract_version = "csm-stage-shadow-v2";
+legacy.resolution.contract_version = "csm-stage-shadow-v2";
 assert.throws(() => readDurableProjectionReceipt(legacy), /outside_contract/);
 delete legacy.output.structured_output.publication_coverage;
 delete legacy.output.structured_output.lot_terminal;
@@ -547,10 +576,12 @@ assert.equal(replayFromRows(legacy).title, rows.output.title);
 
 const unknown = structuredClone(legacy);
 unknown.output.contract_version = "csm-stage-shadow-v4";
+unknown.resolution.contract_version = "csm-stage-shadow-v4";
 assert.throws(() => readDurableProjectionReceipt(unknown), /version_unsupported/);
 
 const v03Downgrade = structuredClone(standardRows);
 v03Downgrade.output.contract_version = "csm-stage-shadow-v2";
+v03Downgrade.resolution.contract_version = "csm-stage-shadow-v2";
 delete v03Downgrade.output.structured_output.publication_coverage;
 delete v03Downgrade.output.structured_output.founder_beta_web_receipt;
 assert.throws(() => replayFromRows(v03Downgrade), /v03_stage_contract_mismatch/);
@@ -558,5 +589,98 @@ assert.throws(() => replayFromRows(v03Downgrade), /v03_stage_contract_mismatch/)
 const coverageTamper = structuredClone(rows);
 coverageTamper.output.structured_output.publication_coverage.atoms[0].canonical_value += " extra";
 assert.throws(() => replayFromRows(coverageTamper), /publication_coverage_replay_mismatch/);
+
+// A future v3 row may persist the provider's empty Web identity marker and
+// then resolve that field through exactly one independently sealed authority.
+// Reconstruct the observed state from visual evidence before checking the Web
+// receipt; validating against final SEM would reject this legal transition.
+const subsetA = JSON.parse(readFileSync(
+  new URL("../fixtures/csm/subset-a-low-canonical-v1.json", import.meta.url),
+  "utf8"
+));
+const subsetAEntry = subsetA.cases.find(({ id }) => id === "a");
+const futureObserved = {
+  year: "2025", language: "", manufacturer: "Topps", product: "", set: "",
+  subjects: ["Cooper Flagg"], team: "Mavericks", card_name: "",
+  release_variant: "", surface_color: "Gold", parallel_family: "Refractor",
+  parallel_exact: "Gold Refractor", print_finish: "Gold Refractor",
+  descriptive_rarity: "", card_number: "251", serial: "30/50",
+  attributes: ["RC"], components: ["RC"], grading_info: null, grade: "",
+  grammar: "standard", lot_count: "", ip: "", special_stamp: "",
+  description: "", search_optimization: [], unreadable: [], low_confidence: []
+};
+const futureVerified = resolveVerifiedOriginalObservation(futureObserved, {
+  originalImageSha256: subsetAEntry.images.map(({ sha256: value }) => value)
+}, { releaseId: VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID });
+assert.equal(futureVerified.receipt.field_decisions.product.action, "FILL");
+const futureComposed = composeLyncaStandardNameForProfile(futureVerified.fields, {
+  marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V3,
+  publicationCoverage: true
+});
+const futureRows = buildCsmStageRows({
+  tenantId: "future-reader-tenant",
+  recognitionSessionId: "future-reader-session",
+  fields: futureVerified.fields,
+  observedFields: futureObserved,
+  externalIdentitySupport: { status: "ABSTAINED" },
+  verifiedOriginalObservationSupport: futureVerified.receipt,
+  composed: futureComposed,
+  title: futureComposed.title,
+  founderBetaWebReceipt: {
+    schema_version: "founder-beta-web-receipt-v2",
+    outcome: "USED_WITH_FIELD_EVIDENCE",
+    provider_request_count: 1,
+    isolated_model_call_count: 0,
+    provider_model: "gpt-5.6-luna",
+    reasoning_effort: "low",
+    web_search_used: true,
+    web_search_call_count: 1,
+    queries: ["Topps Chrome Basketball"],
+    urls: [],
+    field_evidence: [{
+      field: "product", support_urls: [], conflict_urls: [], unresolved_urls: []
+    }],
+    semantic_state_sha256: "a".repeat(64)
+  },
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: null,
+    card_name: null
+  },
+  createdAt: "2026-08-14T00:00:00.000Z"
+});
+assert.equal(
+  readDurableProjectionReceipt(futureRows).founder_beta_web_receipt.outcome,
+  "USED_WITH_FIELD_EVIDENCE"
+);
+assert.equal(verifyReplay(futureRows, futureComposed.title).ok, true);
+
+const sparseFutureEvidence = structuredClone(futureRows);
+sparseFutureEvidence.evidence = sparseFutureEvidence.evidence.filter(
+  ({ bracket }) => bracket !== "year"
+);
+assert.throws(
+  () => readDurableProjectionReceipt(sparseFutureEvidence),
+  /founder_beta_observed_identity_cardinality_invalid/,
+  "a final identity value cannot substitute for missing observed visual evidence"
+);
+const abstainedAuthority = structuredClone(futureRows);
+abstainedAuthority.output.structured_output.verified_original_observation_support = {
+  status: "ABSTAINED"
+};
+assert.throws(
+  () => readDurableProjectionReceipt(abstainedAuthority),
+  /verified_original_receipt_invalid/,
+  "non-null metadata is not an APPLIED authority transition"
+);
+const overlappingAuthority = structuredClone(futureRows);
+overlappingAuthority.output.structured_output.external_identity_support = {
+  status: "APPLIED"
+};
+assert.throws(
+  () => readDurableProjectionReceipt(overlappingAuthority),
+  /post_observation_resolution_overlap/,
+  "exactly one post-observation authority may resolve the identity state"
+);
 
 process.stdout.write("CSM durable forward-reader bridge: ok\n");

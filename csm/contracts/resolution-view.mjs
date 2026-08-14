@@ -36,6 +36,10 @@ import {
 } from "../../lib/listing/thin/publication-coverage.mjs";
 
 export const CSM_RESOLUTION_VIEW_VERSION = "csm-resolution-view-v1";
+export const CSM_RESOLUTION_VIEW_PROJECTOR = Object.freeze({
+  CURRENT: "CURRENT_STANDARD_V03",
+  CAPTURED_E1AE_STANDARD_V02: "E1AE_STANDARD_V02"
+});
 
 /** What a bracket's emptiness means. They are not the same fact. */
 export const BRACKET_STATE = Object.freeze({
@@ -135,9 +139,15 @@ export function buildCsmResolutionView({
   fieldForBracket = DEFAULT_FIELD_FOR_BRACKET,
   assetId = null,
   recognitionSessionId = null,
-  legacyPublicProjection = false
+  legacyPublicProjection = false,
+  resolutionViewProjector = CSM_RESOLUTION_VIEW_PROJECTOR.CURRENT
 } = {}) {
-  const publicationCoverage = composed.publication_coverage ?? null;
+  if (!Object.values(CSM_RESOLUTION_VIEW_PROJECTOR).includes(resolutionViewProjector)) {
+    throw new TypeError("resolution_view_projector_unsupported");
+  }
+  const capturedE1ae = resolutionViewProjector
+    === CSM_RESOLUTION_VIEW_PROJECTOR.CAPTURED_E1AE_STANDARD_V02;
+  const publicationCoverage = capturedE1ae ? null : composed.publication_coverage ?? null;
   if (publicationCoverage != null) validatePublicationCoverage(publicationCoverage);
   const coverageEnabled = publicationCoverage != null;
   // Receipt presence is the feature boundary for this pure view only. Durable
@@ -161,7 +171,9 @@ export function buildCsmResolutionView({
   // The forward-reader bridge must leave the already-published v2 Glass Box
   // byte semantics alone. CNL profiles use the executable projection order;
   // legacy v2 keeps the historical contract order and extra-field placement.
-  const order = legacyProjection
+  const order = capturedE1ae
+    ? [...new Set([...composedOrder, ...contractOrder])]
+    : legacyProjection
     ? (extras.length
         ? composedOrder.filter((bracket) => (
           contractOrder.includes(bracket) || extras.includes(bracket)
@@ -199,7 +211,10 @@ export function buildCsmResolutionView({
     const legacyExtraFields = bracket === "search_optimization" ? ["components"] : [];
     const canonicalFields = legacyProjection
       ? [field, ...legacyExtraFields]
-      : (SOURCE_FIELDS_FOR_BRACKET[bracket]
+      : ((capturedE1ae
+          ? (bracket === "search_optimization"
+            ? ["components", "search_optimization", "team"] : null)
+          : SOURCE_FIELDS_FOR_BRACKET[bracket])
         || [field, ...(EXTRA_FIELDS_FOR_BRACKET[bracket] || [])]);
     const rawParts = canonicalFields.flatMap((sourceField) => asArray(fields[sourceField]));
     const raw = legacyProjection
@@ -244,7 +259,20 @@ export function buildCsmResolutionView({
         || coverageStates.has(PUBLICATION_DISPOSITION.DROPPED_FOR_BUDGET)
         || coverageStates.has(PUBLICATION_DISPOSITION.SUPPRESSED_BY_PROFILE)
         || coverageStates.has(PUBLICATION_DISPOSITION.WITHHELD_BY_CONTRACT);
-      if (!legacyProjection && coverageEnabled && ownRendered && lost) {
+      if (capturedE1ae) {
+        if (suppressed.has(bracket)) {
+          disposition = COMPOSER_DISPOSITION.SUPPRESSED_BY_PROFILE;
+        } else if (dropped.has(bracket)) {
+          disposition = COMPOSER_DISPOSITION.DROPPED_FOR_BUDGET;
+        } else if (restored.has(bracket)) {
+          disposition = COMPOSER_DISPOSITION.RESTORED;
+        } else if (rendered.has(bracket)) {
+          const text = rendered.get(bracket);
+          disposition = (normalized.has(bracket) || text !== value)
+            ? COMPOSER_DISPOSITION.NORMALIZED
+            : COMPOSER_DISPOSITION.INCLUDED;
+        }
+      } else if (!legacyProjection && coverageEnabled && ownRendered && lost) {
         disposition = COMPOSER_DISPOSITION.NORMALIZED;
       } else if (!legacyProjection && coverageEnabled && covered && lost) {
         disposition = COMPOSER_DISPOSITION.DEDUPED_COVERED;
@@ -301,7 +329,7 @@ export function buildCsmResolutionView({
       } : {}),
       state,
       value: state === BRACKET_STATE.VALUE ? value : "",
-      rendered_text: !legacyProjection && coverageEnabled
+      rendered_text: !capturedE1ae && !legacyProjection && coverageEnabled
         && !(coverageByBracket.get(bracket) || []).some((atom) => (
           atom.disposition === PUBLICATION_DISPOSITION.PUBLISHED
         )) ? null : rendered.get(bracket) ?? null,
@@ -331,7 +359,7 @@ export function buildCsmResolutionView({
       // changing punctuation is normalization, not a source subset loss.
       // Search Optimization is the current multi-lane projection: e.g. RC may
       // survive the eBay profile while Team is suppressed.
-      partially_published: legacyProjection
+      partially_published: legacyProjection || capturedE1ae
         ? !empty && Boolean(rendered.get(bracket)) && rendered.get(bracket) !== value
         : (() => {
           const states = new Set((coverageByBracket.get(bracket) || [])
@@ -344,7 +372,7 @@ export function buildCsmResolutionView({
             || states.has(PUBLICATION_DISPOSITION.WITHHELD_BY_CONTRACT);
           return covered && lost;
         })(),
-      ...(!legacyProjection ? {
+      ...(!legacyProjection && !capturedE1ae ? {
         publication_coverage: Object.freeze((coverageByBracket.get(bracket) || [])
           .map((atom) => Object.freeze({ ...atom })))
       } : {})

@@ -10,8 +10,22 @@ import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeLyncaStandardName } from
   "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
+} from "./compatibility-bridge-release.mjs";
+import {
+  PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT,
+  productionStandardP0ResolutionProof
+} from "./production-standard-p0-verifier.mjs";
 
 import {
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA,
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE,
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA,
   PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA,
   PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA,
   buildProductionForwardReadbackExpectation,
@@ -47,6 +61,7 @@ const evidence = {
   evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
   accuracy_claim: null,
   release_class: "compatibility-bridge",
+  writer_projection_mode: "legacy-standard-v2-no-overlay-v1",
   passed: true,
   deployment_origin: candidateOrigin,
   deployment_identity: `${candidateOrigin}#${candidateGitSha}`,
@@ -269,6 +284,289 @@ for (const changedRollback of [
     deploymentUrl: candidateOrigin,
     gitSha: candidateGitSha,
     rollbackReceipt: changedRollback
+  }), /production_forward_readback_/);
+}
+
+const capturedTitle = PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title;
+const capturedOwnerReceipt = (sha256) => ({
+  version: "csm-owner-execution-receipt-v1",
+  sha256,
+  durable_read_after_write: true
+});
+const capturedVersions = {
+  resolution_view_schema: "csm-resolution-view-v1",
+  csm_contract: "csm-stage-shadow-v2",
+  resolver: "thin-path-verified-original-closed-projection-v1",
+  composer: "thin-marketplace-composer-v3",
+  marketplace_profile: "lynca-standard-name-v0.2"
+};
+const capturedResolutionView = {
+  schema_version: capturedVersions.resolution_view_schema,
+  asset_id: assetId,
+  recognition_session_id: sessionId,
+  grammar: {
+    value: "NON_TCG",
+    raw: "standard",
+    contract_version: capturedVersions.resolution_view_schema,
+    resolver_version: capturedVersions.resolver
+  },
+  composer: {
+    title: capturedTitle,
+    stored_title: capturedTitle,
+    character_budget: 80,
+    length: capturedTitle.length,
+    truncated: false,
+    composer_version: capturedVersions.composer,
+    marketplace_profile_version: capturedVersions.marketplace_profile,
+    recomposed_matches_stored: true,
+    trace_reliable: true
+  },
+  brackets: [{
+    bracket: "card_number",
+    canonical_field: "card_number",
+    value: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_card_number,
+    selected_candidate: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_card_number,
+    rendered_text: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.rendered_card_number
+  }, {
+    bracket: "numerical_rarity",
+    canonical_field: "serial",
+    value: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial,
+    selected_candidate: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial,
+    rendered_text: PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_serial
+  }],
+  summary: { included: 2, omitted: 0 },
+  owner_execution_receipt: {
+    version: "csm-owner-execution-receipt-v1",
+    sha256: ownerSha256
+  }
+};
+const capturedLegacyRelease =
+  VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY.releases[
+    VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT.release_id
+  ].receipt;
+capturedResolutionView.verified_original_observation_support = {
+  ...capturedLegacyRelease,
+  schema_version: "csm-verified-original-closed-projection-public-receipt.v1",
+  status: "APPLIED",
+  match_basis: "EXACT_VERIFIED_ORIGINAL_SET",
+  projection_mode: "CLOSED_WORLD_EXACT",
+  closed_world_field_count:
+    VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT.closed_world_field_count
+};
+const capturedP0Evidence = {
+  ...productionStandardP0ResolutionProof(capturedResolutionView),
+  recognition_title_exact: true,
+  ui_title_exact: true
+};
+const capturedCaseBase = {
+  expected_grammar: "NON_TCG",
+  resolution_http_method: "GET",
+  resolution_request_count: 1,
+  trace_reliable: true,
+  recomposed_matches_stored: true,
+  title_length: capturedTitle.length
+};
+const capturedEvidence = {
+  schema_version: "production-writer-journey-evidence-v7",
+  evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
+  accuracy_claim: null,
+  release_class: "compatibility-bridge",
+  compatibility_bridge_marker:
+    EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
+  writer_projection_mode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE,
+  passed: true,
+  deployment_origin: candidateOrigin,
+  deployment_identity: `${candidateOrigin}#${candidateGitSha}`,
+  deployment_git_commit_sha: candidateGitSha,
+  deployment_environment: "production",
+  cases: [{
+    ...capturedCaseBase,
+    case_id: "NON_TCG",
+    asset_id: assetId,
+    recognition_session_id: sessionId,
+    owner_execution_readback: capturedOwnerReceipt(ownerSha256),
+    versions: capturedVersions,
+    captured_e1ae_standard_active: true,
+    canonical_naming_active: false,
+    compatibility_bridge_standard_active: false,
+    verified_original_observation_active: true,
+    standard_p0_identity: capturedP0Evidence
+  }, {
+    ...capturedCaseBase,
+    case_id: "TCG",
+    expected_grammar: "TCG",
+    asset_id: "asset-forward-readback-captured-tcg",
+    recognition_session_id: `csmsess_${"a".repeat(40)}`,
+    owner_execution_readback: capturedOwnerReceipt("e".repeat(64)),
+    versions: {
+      ...capturedVersions,
+      resolver: "thin-path-observation-only-v1",
+      composer: "thin-marketplace-composer-v2",
+      marketplace_profile: "ebay-profile-v1"
+    },
+    captured_e1ae_standard_active: false,
+    canonical_naming_active: false,
+    compatibility_bridge_standard_active: true,
+    verified_original_observation_active: false
+  }, {
+    ...capturedCaseBase,
+    case_id: "LARGE_STAGED_TRANSPORT",
+    transport_only: true,
+    asset_id: "asset-forward-readback-captured-large",
+    recognition_session_id: `csmsess_${"b".repeat(40)}`,
+    owner_execution_readback: capturedOwnerReceipt("f".repeat(64)),
+    versions: {
+      ...capturedVersions,
+      resolver: "thin-path-observation-only-v1"
+    },
+    captured_e1ae_standard_active: true,
+    canonical_naming_active: false,
+    overlap_observed: true,
+    relay_durable_before_recognition_response: true
+  }],
+  final_seal: {
+    provider_case_count: 3,
+    durable_owner_execution_readback_count: 3,
+    captured_e1ae_standard_active_case_count: 2,
+    canonical_naming_active_case_count: 0,
+    compatibility_bridge_standard_case_count: 1,
+    verified_original_observation_active_case_count: 1,
+    standard_p0_exact_case_count: 1,
+    qualified_governed_web_support_case_count: 0,
+    strict_no_search_case_count: 0,
+    used_without_governed_applied_support_case_count: 0,
+    semantic_web_case_count: 0,
+    transport_only_web_excluded_case_count: 1,
+    selected_forward_readback_case_id: null,
+    durable_projection_receipts_absent: true,
+    durable_projection_receipt_omission_case_count: 3
+  }
+};
+const capturedExpectation = buildProductionForwardReadbackExpectation({
+  evidence: capturedEvidence,
+  resolutionView: capturedResolutionView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.equal(capturedExpectation.schema_version,
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA);
+assert.equal(capturedExpectation.writer_projection_mode,
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE);
+assert.equal(capturedExpectation.case_id, "NON_TCG");
+const capturedReceipt = verifyProductionForwardReadback({
+  evidence: capturedEvidence,
+  expectation: capturedExpectation,
+  resolutionView: capturedResolutionView,
+  responseUrl,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha,
+  rollbackReceipt
+});
+assert.equal(capturedReceipt.schema_version,
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA);
+assert.equal(capturedReceipt.writer_projection_mode,
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE);
+assert.equal(capturedReceipt.durable_projection_receipts_absent, true);
+assert.equal(capturedReceipt.verified_original_observation_support_exact_match, true);
+assert.equal(capturedReceipt.founder_beta_web_receipt_exact_match, true);
+assert.equal(capturedReceipt.web_search_used, false);
+assert.equal(capturedReceipt.web_search_call_count, 0);
+
+const assertCapturedEvidenceRejected = (mutate) => {
+  const changed = clone(capturedEvidence);
+  mutate(changed);
+  assert.throws(() => buildProductionForwardReadbackExpectation({
+    evidence: changed,
+    resolutionView: capturedResolutionView,
+    deploymentUrl: candidateOrigin,
+    gitSha: candidateGitSha
+  }), /production_forward_readback_/);
+};
+for (const mutate of [
+  (value) => { delete value.writer_projection_mode; },
+  (value) => { value.writer_projection_mode = "unknown-writer-mode"; },
+  (value) => {
+    value.writer_projection_mode =
+      "canonical-standard-v3-v03-verified-overlay-v2-active-v1";
+  },
+  (value) => { delete value.compatibility_bridge_marker; },
+  (value) => { value.compatibility_bridge_marker = "wrong-marker"; },
+  (value) => { value.cases[0].expected_grammar = "TCG"; },
+  (value) => { value.cases[0].versions.csm_contract = "csm-stage-shadow-v3"; },
+  (value) => { value.cases[0].versions.marketplace_profile = "lynca-standard-name-v0.3"; },
+  (value) => { value.cases[0].verified_original_observation_active = false; },
+  (value) => { value.cases[1].versions.csm_contract = "csm-stage-shadow-v3"; },
+  (value) => { value.cases[1].versions.composer = "thin-marketplace-composer-v3"; },
+  (value) => { value.cases[1].captured_e1ae_standard_active = true; },
+  (value) => { value.cases[2].expected_grammar = "TCG"; },
+  (value) => { value.cases[2].versions.resolver = "resolver-drift"; },
+  (value) => { value.cases[2].overlap_observed = false; },
+  (value) => { value.cases[2].owner_execution_readback.extra = true; },
+  (value) => { value.cases = value.cases.slice(0, 2); },
+  (value) => { value.cases[1].case_id = "NON_TCG"; },
+  (value) => { value.cases.push(clone(value.cases[2])); },
+  (value) => { value.final_seal.selected_forward_readback_case_id = "NON_TCG"; },
+  (value) => { delete value.final_seal.selected_forward_readback_case_id; },
+  (value) => { value.final_seal.semantic_web_case_count = 1; },
+  (value) => { value.final_seal.durable_projection_receipts_absent = false; },
+  (value) => { value.cases[0].founder_web_search = null; }
+]) assertCapturedEvidenceRejected(mutate);
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: { ...clone(evidence),
+    writer_projection_mode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE },
+  resolutionView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_/,
+"legacy compatibility evidence may not be relabeled as the captured writer");
+assert.throws(() => productionForwardReadbackAssetId({
+  evidence: capturedEvidence,
+  expectation: { ...capturedExpectation,
+    schema_version: PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA },
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_expectation_invalid/);
+assert.throws(() => productionForwardReadbackAssetId({
+  evidence: capturedEvidence,
+  expectation: { ...capturedExpectation, writer_projection_mode: "wrong-mode" },
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_expectation_invalid/);
+const capturedExpectationWithoutMode = clone(capturedExpectation);
+delete capturedExpectationWithoutMode.writer_projection_mode;
+assert.throws(() => productionForwardReadbackAssetId({
+  evidence: capturedEvidence,
+  expectation: capturedExpectationWithoutMode,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_expectation_invalid/);
+for (const mutate of [
+  (value) => { delete value.verified_original_observation_support; },
+  (value) => { value.verified_original_observation_support.status = "ABSTAINED"; },
+  (value) => {
+    value.verified_original_observation_support.release_id =
+      "verified_original_closed_projection_subset_a_v2";
+  },
+  (value) => { value.founder_beta_web_receipt = null; },
+  (value) => { value.set_card_name_relation_receipt = null; },
+  (value) => { value.publication_coverage = null; },
+  (value) => { value.lot_terminal = null; },
+  (value) => { value.brackets[0].publication_coverage = null; },
+  (value) => { value.external_identity_support = null; },
+  (value) => { value.grammar.value = "TCG"; },
+  (value) => { value.grammar.raw = "tcg"; },
+  (value) => { value.composer.marketplace_profile_version = "lynca-standard-name-v0.3"; },
+  (value) => { value.brackets[1].selected_candidate = "49/50"; }
+]) {
+  const changed = clone(capturedResolutionView);
+  mutate(changed);
+  assert.throws(() => verifyPromotedProductionForwardReadback({
+    evidence: capturedEvidence,
+    expectation: capturedExpectation,
+    resolutionView: changed,
+    responseUrl,
+    deploymentUrl: candidateOrigin,
+    gitSha: candidateGitSha
   }), /production_forward_readback_/);
 }
 

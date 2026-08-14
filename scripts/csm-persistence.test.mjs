@@ -121,7 +121,7 @@ assert.throws(() => buildCsmStageRows({
     set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "FORGED SET" },
     card_name: null
   }
-}), /set_card_name_relation_receipt_invalid/,
+}), /post_observation_resolution_receipt_missing/,
 "durable construction rejects an observed-to-resolved Set change without resolver authority");
 const composed = composeFromCanonicalFields(fields, { features: {
   durable_lot_terminal_shared_only: true,

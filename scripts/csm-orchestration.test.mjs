@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import {
   persistPreparedCanonicalListingPath,
   prepareCanonicalListingPath,
+  resolveCanonicalObservation,
   runPersistedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
 import {
   buildCsmModelExecutionContract,
+  compileCsmModelExecution,
   CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   CSM_LUNA_MODEL_PROFILE,
   CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
@@ -22,10 +25,12 @@ import {
 import { writeCsmStageRows } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   buildCsmStageRows,
+  CSM_STAGE_LEGACY_CONTRACT_VERSION,
   computeCsmPacketHashes,
   THIN_COMPOSER_VERSION_V1
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
+import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
 import { patchSupabaseRow } from "../lib/supabase-rest.mjs";
 import {
   composeLyncaStandardNameForProfile,
@@ -33,8 +38,15 @@ import {
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { buildAccuracyLossLedger } from
   "../lib/listing/thin/accuracy-loss-ledger.mjs";
-import { CANONICAL_FIELDS_PROMPT_VERSION } from
+import {
+  CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT_VERSION as CANONICAL_FIELDS_PROMPT_VERSION
+} from
   "../lib/listing/thin/canonical-fields.mjs";
+import { buildCsmPersistenceCheckpoint } from "../api/csm-listing-title.js";
+import {
+  CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 const enabledEnv = {
   SUPABASE_URL: "https://example.supabase.co",
@@ -200,10 +212,10 @@ const common = {
       assert.equal(patch.csm_owner_versions.account_scope, "lynca-primary");
       assert.equal(patch.csm_owner_versions.provider_adapter_version, "openai-responses-v1");
       assert.equal(patch.csm_owner_versions.request_builder_version,
-        "canonical-fields-web-request-v2");
+        "canonical-fields-request-v1");
       assert.equal(
         patch.csm_owner_versions.response_parser_version,
-        "canonical-output-v5-web-receipt-outcome"
+        "canonical-output-v2-strict-observed-or-null"
       );
       assert.match(patch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
       assert.equal(
@@ -306,10 +318,11 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   );
 }
 
-// Activation A binds the durable Web receipt to the served model/effort trace.
-// A response without the effort echo cannot truthfully attest Luna/low.
+// The captured e1ae writer did not persist a Web receipt. Missing response
+// effort attestation remains explicit in the owner trace without inventing a
+// durable Web contract that this writer never emitted.
 {
-  await assert.rejects(() => prepareCanonicalListingPath({
+  const unattested = await prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort",
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
@@ -319,7 +332,12 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
       output_text: JSON.stringify(auditedProviderFields(common)),
       usage: { input_tokens: 100, output_tokens: 30 }
     }), { status: 200, headers: { "content-type": "application/json" } })
-  }), /founder_beta_provider_execution_mismatch/);
+  });
+  assert.equal(unattested.served_effort_attested, false);
+  assert.equal(Object.hasOwn(
+    unattested.csm_rows.output.structured_output,
+    "founder_beta_web_receipt"
+  ), false);
 }
 
 // Persistence failure is isolated to this attempt, but the production
@@ -558,7 +576,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   });
   const historicalV3 = composeLyncaStandardNameForProfile(prepared.fields, {
     marketplaceProfileVersion: LYNCA_STANDARD_PROFILE_VERSION_V1,
-    publicationCoverage: true
+    publicationCoverage: false
   });
   Object.assign(prepared, {
     title: historicalV3.title,
@@ -585,8 +603,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     externalIdentitySupport: prepared.external_identity_support,
     composed: historicalV3,
     title: historicalV3.title,
-    founderBetaWebReceipt: prepared.founder_beta_web_receipt,
-    setCardNameRelationReceipt: prepared.set_card_name_relation_receipt
+    founderBetaWebReceipt: null,
+    setCardNameRelationReceipt: null,
+    contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
   });
   prepared.accuracy_loss_ledger = buildAccuracyLossLedger({
     rawProviderOutput: JSON.stringify(prepared.observed_fields || prepared.fields),
@@ -640,12 +659,6 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
 // the checkpoint's exact shape and self-hash instead of rebuilding it with the
 // current defaults.
 {
-  const prepared = await prepareCanonicalListingPath({
-    tenantId: "tenant-1", recognitionSessionId: "session-historical-profile",
-    imageUrls: ["https://example.test/front.jpg"],
-    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
-    callProvider: providerFor(common)
-  });
   const historicalProfile = {
     ...CSM_LUNA_MODEL_PROFILE,
     id: "openai-gpt-5.6-luna-csm-historical-v0",
@@ -656,41 +669,20 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     id: "openai-responses-historical-v0",
     response_parser_version: "canonical-output-historical-v0"
   };
-  const historicalContract = buildCsmModelExecutionContract({
+  assert.throws(() => buildCsmModelExecutionContract({
     profile: historicalProfile,
     providerAdapterVersion: historicalAdapterContract.id,
     responseParserVersion: historicalAdapterContract.response_parser_version,
     providerAdapterContract: historicalAdapterContract,
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     imageUrls: ["https://execution-contract.invalid/image-1"]
-  });
-  const historicalPrepared = structuredClone(prepared);
-  historicalPrepared.model_profile_id = historicalContract.model_profile_id;
-  historicalPrepared.provider_adapter_version = historicalContract.provider_adapter_version;
-  historicalPrepared.response_parser_version = historicalContract.response_parser_version;
-  historicalPrepared.execution_contract = historicalContract;
-  historicalPrepared.execution_contract_sha256 = sha256ExecutionContractValue(historicalContract);
-
-  let owner = null;
-  await persistPreparedCanonicalListingPath({
-    tenantId: "tenant-1", recognitionSessionId: "session-historical-profile",
-    prepared: historicalPrepared,
-    writeRows: async (_rows, options) => {
-      owner = options.sessionPatch.csm_owner_versions;
-      return { ok: true, atomic: true, session: { saved: true }, written: {} };
-    }
-  });
-  assert.equal(owner.model_profile_id, historicalProfile.id);
-  assert.equal(owner.account_scope, historicalProfile.account_scope);
-  assert.equal(owner.provider_adapter_version, historicalAdapterContract.id);
-  assert.equal(owner.response_parser_version, historicalAdapterContract.response_parser_version);
-  assert.equal(owner.execution_contract_sha256, historicalPrepared.execution_contract_sha256);
-  assert.deepEqual(owner.execution_contract, historicalContract);
+  }), /provider_adapter_contract_mismatch/,
+  "an unregistered historical adapter cannot bypass the closed writer tuple");
 }
 
-// A checkpoint produced under Composer v1 may be persisted after v2 deploys,
-// but its owner receipt must remain v1. Recovery is provider-incapable and
-// must never relabel historical executable behavior as the current version.
+// Mutating a current prepared result into an invented Composer/prompt tuple is
+// not a historical checkpoint. Persistence must reject it before storage;
+// genuine published v1 checkpoints are covered by the finite replay matrix.
 {
   const prepared = await prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-v1-resume",
@@ -725,25 +717,216 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
     computeCsmPacketHashes(prepared.csm_rows).csm_resolution_packet_sha256;
   prepared.csm_rows.session_hashes = computeCsmPacketHashes(prepared.csm_rows);
 
-  let sessionPatch = null;
-  await persistPreparedCanonicalListingPath({
+  let writeCalls = 0;
+  await assert.rejects(() => persistPreparedCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-v1-resume", prepared,
-    writeRows: async (_rows, options) => {
-      sessionPatch = options.sessionPatch;
+    writeRows: async () => {
+      writeCalls += 1;
       return { ok: true, atomic: true, replayed: false, session: { saved: true }, written: {} };
     }
-  });
-  assert.equal(sessionPatch.csm_owner_versions.composer, THIN_COMPOSER_VERSION_V1);
-  assert.equal(sessionPatch.csm_contract_version, prepared.csm_rows.output.contract_version);
-  assert.equal(sessionPatch.csm_owner_versions.model, "gpt-5.6-luna-legacy");
-  assert.equal(sessionPatch.csm_owner_versions.effort, "none");
-  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort, null,
-    "legacy checkpoints without an explicit attestation bit must be downgraded");
-  assert.equal(sessionPatch.csm_owner_versions.reasoning_effort_attested, false);
-  assert.equal(sessionPatch.csm_owner_versions.image_detail, "original");
-  assert.equal(sessionPatch.csm_owner_versions.prompt_version, "legacy-prompt-v1");
-  assert.equal(sessionPatch.csm_owner_versions.execution_contract, null);
-  assert.equal(sessionPatch.csm_owner_versions.account_scope, null);
+  }), (error) => error?.code === "csm_prepared_result_invalid"
+    && error?.detail === "writer_contract_binding_invalid");
+  assert.equal(writeCalls, 0);
+}
+
+// A paid future checkpoint is a reader/recovery input, not a request to run
+// today's active writer again. Persisting it must preserve the exact stored
+// writer's provenance formula and owner receipt shape for every future grammar
+// family, including the verified-original overlay.
+{
+  const writer = CSM_WRITER_PROJECTION_CONTRACTS.future_v3;
+  const futureProjection = {
+    ...structuredClone(CSM_PROJECTION_ACTIVATION),
+    active_writer: structuredClone(writer)
+  };
+  const futureBase = {
+    year: "2023", manufacturer: "Topps", product: "Chrome", set: "",
+    subjects: ["Shohei Ohtani"], team: "Dodgers", card_name: "",
+    release_variant: "", surface_color: "", parallel_family: "", parallel_exact: "",
+    descriptive_rarity: "", card_number: "1", serial: "", attributes: [],
+    grading_info: { company: "", card_grade: "", auto_grade: "", grade_type: "" },
+    grammar: "standard", lot_count: "", language: "", unreadable: [],
+    low_confidence: [], special_stamp: "", description: ""
+  };
+  const overlayImages = [
+    "161f0d97df619f8d34b2453551567a0473d3e477c3e0ec9295029fbce8c59e44",
+    "cef46b5d761d2d20f5cd21d611cab8d8037721bcdb4ae8c1a0d4441439a6fdc3"
+  ];
+  const cases = [
+    {
+      id: "standard", fields: futureBase,
+      pipeline: "e62b6fb9f00770bb9ecdfcd6c69b24dc661999f39bad43141007d3183be1ed1c"
+    },
+    {
+      id: "tcg",
+      fields: {
+        ...futureBase, manufacturer: "Pokemon", product: "Pokemon",
+        set: "Scarlet & Violet", subjects: ["Pikachu"], team: "",
+        grammar: "tcg", language: "EN", card_number: "025/165"
+      },
+      pipeline: "d35b5a2b66deba5ea4073344e2f0d4561692a17fc1a76111c952db5cc2ed438e"
+    },
+    {
+      id: "lot",
+      fields: {
+        ...futureBase, subjects: ["Shohei Ohtani", "Mike Trout"], team: "",
+        card_number: "", grammar: "lot", lot_count: "2", attributes: ["RC"]
+      },
+      pipeline: "d35b5a2b66deba5ea4073344e2f0d4561692a17fc1a76111c952db5cc2ed438e"
+    },
+    {
+      id: "overlay-v2",
+      fields: {
+        ...futureBase, year: "2025", subjects: ["Cooper Flagg"], team: "Mavericks",
+        surface_color: "Gold", parallel_family: "Refractor",
+        parallel_exact: "Gold Refractor", card_number: "251", serial: "30/50",
+        attributes: ["RC"]
+      },
+      originalImageSha256: overlayImages,
+      pipeline: "8885f2cdac0e63bb61856d1e8a0647d48cadc3b7f02cefa406fe872203baa37d"
+    }
+  ];
+
+  async function futureCheckpoint(fixture) {
+    const recognitionSessionId = `session-future-resume-${fixture.id}`;
+    const imageUrls = fixture.originalImageSha256
+      ? ["https://example.test/front.jpg", "https://example.test/back.jpg"]
+      : ["https://example.test/front.jpg"];
+    const compiled = compileCsmModelExecution({
+      imageUrls,
+      transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+      writerContract: writer
+    });
+    const execution = compiled.execution_contract;
+    const result = await runCanonicalListingPath({
+      compiledRequest: compiled.provider_request,
+      provider: execution.provider,
+      model: execution.model,
+      effort: execution.requested_effort,
+      imageDetail: execution.image_detail,
+      maxOutputTokens: execution.max_output_tokens,
+      providerClientRequestId: `client-future-${fixture.id}`,
+      writerContract: writer,
+      resolveObservation: (observation) => resolveCanonicalObservation(observation, {
+        writerContract: writer,
+        externalIdentityContext: fixture.originalImageSha256
+          ? { originalImageSha256: fixture.originalImageSha256 } : null
+      }),
+      callProvider: providerFor(fixture.fields)
+    });
+    const rows = buildCsmStageRows({
+      tenantId: "tenant-1",
+      recognitionSessionId,
+      fields: result.fields,
+      observedFields: result.observed_fields || result.fields,
+      externalIdentitySupport: result.external_identity_support,
+      verifiedOriginalObservationSupport: result.verified_original_observation_support,
+      composed: {
+        grammar: result.grammar,
+        brackets: result.brackets,
+        bracket_text: result.bracket_text,
+        dropped: result.dropped_brackets,
+        suppressed: result.suppressed_brackets,
+        restored: result.restored_brackets,
+        truncated: result.truncated,
+        input_empty_fields: result.input_empty_fields,
+        normalization_reasons: result.normalization_reasons,
+        character_budget: result.character_budget,
+        length: result.length,
+        composer_version: result.composer_version,
+        marketplace_profile_version: result.marketplace_profile_version,
+        canonical_naming_trace: result.canonical_naming_trace,
+        canonical_naming_publishable: result.canonical_naming_publishable,
+        publication_coverage: result.publication_coverage,
+        lot_quantity_unresolved: result.lot_quantity_unresolved,
+        lot_single_card: result.lot_single_card,
+        lot_unshared_attributes: result.lot_unshared_attributes,
+        lot_publishable: result.lot_publishable,
+        lot_publication_failure_code: result.lot_publication_failure_code
+      },
+      founderBetaWebReceipt: result.founder_beta_web_receipt,
+      setCardNameRelationReceipt: result.set_card_name_relation_receipt,
+      title: result.title,
+      registryReleaseId: "registry_thin_sem_v25",
+      createdAt: "2026-08-14T00:00:00.000Z",
+      contractVersion: writer.durable_projection_contract_version
+    });
+    const prepared = {
+      ...result,
+      latency_ms: 7,
+      provider_attempt_number: 1,
+      provider_retry_count: 0,
+      prompt_version: execution.semantic_prompt_version,
+      max_output_tokens: execution.max_output_tokens,
+      model_profile_id: execution.model_profile_id,
+      provider_adapter_version: execution.provider_adapter_version,
+      request_builder_version: execution.request_builder_version,
+      response_parser_version: execution.response_parser_version,
+      optimization_pack_id: execution.optimization_pack_id,
+      optimization_pack_sha256: execution.optimization_pack_sha256,
+      execution_contract_sha256: compiled.execution_contract_sha256,
+      execution_contract: execution,
+      csm_rows: rows
+    };
+    const payloadHash = createHash("sha256").update(fixture.id).digest("hex");
+    return buildCsmPersistenceCheckpoint({
+      prepared,
+      tenantId: "tenant-1",
+      operationKey: `operation-future-${fixture.id}`,
+      payloadHash,
+      recognitionSessionId,
+      executionContractSha256: prepared.execution_contract_sha256,
+      resolutionContractSha256: prepared.resolution_contract_sha256,
+      originalSetSha256:
+        prepared.verified_original_observation_support?.original_set_sha256 || null,
+      projectionActivation: futureProjection
+    });
+  }
+
+  for (const fixture of cases) {
+    const prepared = await futureCheckpoint(fixture);
+    let patch = null;
+    const persisted = await persistPreparedCanonicalListingPath({
+      tenantId: "tenant-1",
+      recognitionSessionId: `session-future-resume-${fixture.id}`,
+      prepared,
+      writeRows: async (_rows, options) => {
+        patch = options.sessionPatch;
+        return { ok: true, atomic: true, replayed: false, session: { saved: true }, written: {} };
+      }
+    });
+    const owner = patch.csm_owner_versions;
+    const expectedPipeline = createHash("sha256").update(JSON.stringify({
+      contract: prepared.csm_rows.output.contract_version,
+      model: prepared.requested_model,
+      effort: prepared.requested_effort,
+      imageDetail: prepared.image_detail,
+      resolver: prepared.csm_rows.resolution.resolver_version,
+      composer: prepared.csm_rows.output.composer_version,
+      marketplaceProfile: prepared.csm_rows.output.marketplace_profile_version,
+      requestBuilder: prepared.request_builder_version,
+      responseParser: prepared.response_parser_version
+    })).digest("hex");
+    assert.equal(patch.recognition_pipeline_fingerprint, expectedPipeline);
+    assert.equal(patch.recognition_pipeline_fingerprint, fixture.pipeline);
+    assert.equal(owner.composer, prepared.csm_rows.output.composer_version);
+    assert.equal(owner.marketplace_profile,
+      prepared.csm_rows.output.marketplace_profile_version);
+    assert.equal(owner.resolver, prepared.csm_rows.resolution.resolver_version);
+    assert.equal(owner.accuracy_loss_ledger_version,
+      prepared.accuracy_loss_ledger.version);
+    assert.equal(owner.accuracy_loss_ledger_sha256,
+      prepared.accuracy_loss_ledger.ledger_sha256);
+    assert.equal(Object.hasOwn(owner, "provider_transport_retry_receipt"), true);
+    assert.equal(owner.provider_transport_retry_receipt, null);
+    assert.equal(computeCsmOwnerExecutionReceiptSha256(owner),
+      owner.owner_execution_receipt_sha256);
+    assert.deepEqual(projectCsmOwnerExecutionReceipt(owner), {
+      version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
+      sha256: owner.owner_execution_receipt_sha256
+    });
+    assert.deepEqual(persisted.csm_owner_versions, owner);
+  }
 }
 
 await assert.rejects(

@@ -16,10 +16,46 @@ import {
 } from "../lib/listing/thin/canonical-fields.mjs";
 import { validateSetCardNameRelationReceipt } from
   "../lib/listing/thin/set-card-name-contract.mjs";
+import {
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2
+} from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import {
+  EBAY_PROFILE_VERSION,
+  THIN_COMPOSER_VERSION_V2,
+  THIN_RESOLVER_VERSION
+} from
+  "../lib/listing/thin/csm-persistence.mjs";
+import {
+  validateVerifiedOriginalObservationPublicReceipt,
+  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+} from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
+  productionStandardP0EvidenceProofValid,
+  productionStandardP0ResolutionProof,
+  productionStandardP0ResolutionProofValid
+} from "./production-standard-p0-verifier.mjs";
+import {
+  COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE,
+  COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+  COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
+} from "./compatibility-bridge-release.mjs";
 export const PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA =
   "production-forward-readback-expectation-v1";
 export const PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA =
   "production-forward-readback-receipt-v1";
+export const PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA =
+  "production-forward-readback-expectation-v2";
+export const PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA =
+  "production-forward-readback-receipt-v2";
+export const PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE =
+  COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE;
+const PRODUCTION_FORWARD_READBACK_COMPATIBILITY_WRITER_MODES = new Set([
+  COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE,
+  COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE
+]);
 
 const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v7";
 const STANDARD_CASE_ID = "NON_TCG";
@@ -285,6 +321,60 @@ function safeVersion(value, code) {
   return version;
 }
 
+function sanitizedCandidateReadbackCase(evidence, entry, {
+  writerProjectionMode = null
+} = {}) {
+  const owner = entry?.owner_execution_readback;
+  const versions = entry?.versions;
+  const assetId = safeId(entry?.asset_id,
+    "production_forward_readback_asset_id_invalid");
+  const recognitionSessionId = String(entry?.recognition_session_id || "").trim();
+  if (!["NON_TCG", "TCG", "LOT"].includes(entry?.expected_grammar)
+      || !SESSION_ID.test(recognitionSessionId)
+      || entry.resolution_http_method !== "GET"
+      || entry.resolution_request_count !== 1
+      || entry.trace_reliable !== true
+      || entry.recomposed_matches_stored !== true
+      || !Number.isInteger(entry.title_length)
+      || entry.title_length < 1 || entry.title_length > 80
+      || !exactKeys(owner, ["version", "sha256", "durable_read_after_write"])
+      || owner.durable_read_after_write !== true
+      || !SHA256.test(String(owner.sha256 || ""))
+      || !exactKeys(versions, [
+        "resolution_view_schema", "csm_contract", "resolver", "composer",
+        "marketplace_profile"
+      ])) {
+    throw failure("production_forward_readback_standard_case_invalid");
+  }
+  return Object.freeze({
+    release_class: evidence.release_class,
+    ...(writerProjectionMode ? { writer_projection_mode: writerProjectionMode } : {}),
+    case_id: entry.case_id,
+    expected_grammar: entry.expected_grammar,
+    original_set_sha256: entry.original_set_sha256 || null,
+    asset_id: assetId,
+    recognition_session_id: recognitionSessionId,
+    title_length: entry.title_length,
+    owner_execution_receipt: {
+      version: safeVersion(owner.version,
+        "production_forward_readback_owner_version_invalid"),
+      sha256: owner.sha256
+    },
+    versions: {
+      resolution_view_schema: safeVersion(versions.resolution_view_schema,
+        "production_forward_readback_view_version_invalid"),
+      csm_contract: safeVersion(versions.csm_contract,
+        "production_forward_readback_csm_version_invalid"),
+      resolver: safeVersion(versions.resolver,
+        "production_forward_readback_resolver_version_invalid"),
+      composer: safeVersion(versions.composer,
+        "production_forward_readback_composer_version_invalid"),
+      marketplace_profile: safeVersion(versions.marketplace_profile,
+        "production_forward_readback_profile_version_invalid")
+    }
+  });
+}
+
 function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
   if (!exactObject(evidence)
       || evidence.schema_version !== WRITER_JOURNEY_EVIDENCE_SCHEMA
@@ -299,6 +389,12 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
     throw failure("production_forward_readback_evidence_invalid");
   }
   const cases = Array.isArray(evidence.cases) ? evidence.cases : [];
+  if (evidence.release_class === "compatibility-bridge"
+      && !PRODUCTION_FORWARD_READBACK_COMPATIBILITY_WRITER_MODES.has(
+        evidence.writer_projection_mode
+      )) {
+    throw failure("production_forward_readback_writer_projection_mode_invalid");
+  }
   const transportOnlyCases = cases.filter((entry) => entry?.transport_only === true);
   if (transportOnlyCases.length !== 1
       || transportOnlyCases[0]?.case_id !== "LARGE_STAGED_TRANSPORT"
@@ -308,6 +404,92 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
     throw failure("production_forward_readback_standard_case_invalid");
   }
   const semanticCases = cases.filter((entry) => entry?.transport_only !== true);
+  const capturedProductionWriter = evidence.release_class === "compatibility-bridge"
+    && evidence.writer_projection_mode
+      === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE;
+  if (!capturedProductionWriter && evidence.writer_projection_mode
+      === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE) {
+    throw failure("production_forward_readback_captured_writer_evidence_invalid");
+  }
+  if (capturedProductionWriter) {
+    const entry = semanticCases.find((candidate) => candidate?.case_id === STANDARD_CASE_ID);
+    const tcgEntry = semanticCases.find((candidate) => candidate?.case_id === "TCG");
+    const largeEntry = transportOnlyCases[0];
+    const finalSeal = evidence.final_seal;
+    if (evidence.compatibility_bridge_marker
+          !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
+        || cases.map((candidate) => candidate?.case_id).sort().join("\0")
+          !== "LARGE_STAGED_TRANSPORT\0NON_TCG\0TCG"
+        || semanticCases.map((candidate) => candidate?.case_id).sort().join("\0")
+          !== "NON_TCG\0TCG"
+        || cases.some((candidate) => Object.prototype.hasOwnProperty.call(
+          candidate || {}, "founder_web_search"
+        ))
+        || entry?.expected_grammar !== "NON_TCG"
+        || entry?.captured_e1ae_standard_active !== true
+        || entry?.canonical_naming_active !== false
+        || entry?.compatibility_bridge_standard_active !== false
+        || entry?.verified_original_observation_active !== true
+        || !productionStandardP0EvidenceProofValid(entry?.standard_p0_identity)
+        || entry?.versions?.resolution_view_schema !== "csm-resolution-view-v1"
+        || entry?.versions?.csm_contract !== "csm-stage-shadow-v2"
+        || entry?.versions?.resolver !== VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+        || entry?.versions?.composer
+          !== CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+        || entry?.versions?.marketplace_profile
+          !== CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+        || tcgEntry?.expected_grammar !== "TCG"
+        || tcgEntry?.versions?.resolution_view_schema !== "csm-resolution-view-v1"
+        || tcgEntry?.versions?.csm_contract !== "csm-stage-shadow-v2"
+        || tcgEntry?.versions?.resolver !== THIN_RESOLVER_VERSION
+        || tcgEntry?.versions?.composer !== THIN_COMPOSER_VERSION_V2
+        || tcgEntry?.versions?.marketplace_profile !== EBAY_PROFILE_VERSION
+        || tcgEntry?.captured_e1ae_standard_active !== false
+        || tcgEntry?.canonical_naming_active !== false
+        || tcgEntry?.compatibility_bridge_standard_active !== true
+        || tcgEntry?.verified_original_observation_active !== false
+        || largeEntry?.expected_grammar !== "NON_TCG"
+        || largeEntry?.transport_only !== true
+        || largeEntry?.versions?.resolution_view_schema !== "csm-resolution-view-v1"
+        || largeEntry?.versions?.csm_contract !== "csm-stage-shadow-v2"
+        || largeEntry?.versions?.resolver !== THIN_RESOLVER_VERSION
+        || largeEntry?.versions?.composer
+          !== CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+        || largeEntry?.versions?.marketplace_profile
+          !== CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+        || largeEntry?.captured_e1ae_standard_active !== true
+        || largeEntry?.canonical_naming_active !== false
+        || largeEntry?.overlap_observed !== true
+        || largeEntry?.relay_durable_before_recognition_response !== true
+        || ![entry, tcgEntry, largeEntry].every((candidate) => (
+          exactKeys(candidate?.owner_execution_readback, [
+            "version", "sha256", "durable_read_after_write"
+          ])
+          && candidate.owner_execution_readback.version === "csm-owner-execution-receipt-v1"
+          && SHA256.test(String(candidate?.owner_execution_readback?.sha256 || ""))
+          && candidate?.owner_execution_readback?.durable_read_after_write === true
+        ))
+        || finalSeal?.provider_case_count !== 3
+        || finalSeal?.durable_owner_execution_readback_count !== 3
+        || finalSeal?.captured_e1ae_standard_active_case_count !== 2
+        || finalSeal?.canonical_naming_active_case_count !== 0
+        || finalSeal?.compatibility_bridge_standard_case_count !== 1
+        || finalSeal?.verified_original_observation_active_case_count !== 1
+        || finalSeal?.standard_p0_exact_case_count !== 1
+        || finalSeal?.qualified_governed_web_support_case_count !== 0
+        || finalSeal?.strict_no_search_case_count !== 0
+        || finalSeal?.used_without_governed_applied_support_case_count !== 0
+        || finalSeal?.semantic_web_case_count !== 0
+        || finalSeal?.transport_only_web_excluded_case_count !== 1
+        || finalSeal?.selected_forward_readback_case_id !== null
+        || finalSeal?.durable_projection_receipts_absent !== true
+        || finalSeal?.durable_projection_receipt_omission_case_count !== 3) {
+      throw failure("production_forward_readback_captured_writer_evidence_invalid");
+    }
+    return sanitizedCandidateReadbackCase(evidence, entry, {
+      writerProjectionMode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE
+    });
+  }
   const webClassifications = semanticCases.map((entry) => {
     const proof = entry?.founder_web_search;
     const classification = exactKeys(proof, [
@@ -371,55 +553,32 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
       ))) {
     throw failure("production_forward_readback_standard_case_invalid");
   }
-  const entry = matches[0];
-  const owner = entry.owner_execution_readback;
-  const versions = entry.versions;
-  const assetId = safeId(entry.asset_id,
-    "production_forward_readback_asset_id_invalid");
-  const recognitionSessionId = String(entry.recognition_session_id || "").trim();
-  if (!["NON_TCG", "TCG", "LOT"].includes(entry.expected_grammar)
-      || !SESSION_ID.test(recognitionSessionId)
-      || entry.resolution_http_method !== "GET"
-      || entry.resolution_request_count !== 1
-      || entry.trace_reliable !== true
-      || entry.recomposed_matches_stored !== true
-      || !Number.isInteger(entry.title_length)
-      || entry.title_length < 1 || entry.title_length > 80
-      || !exactKeys(owner, ["version", "sha256", "durable_read_after_write"])
-      || owner.durable_read_after_write !== true
-      || !SHA256.test(String(owner.sha256 || ""))
-      || !exactKeys(versions, [
-        "resolution_view_schema", "csm_contract", "resolver", "composer",
-        "marketplace_profile"
-      ])) {
-    throw failure("production_forward_readback_standard_case_invalid");
-  }
-  return Object.freeze({
-    release_class: evidence.release_class,
-    case_id: entry.case_id,
-    expected_grammar: entry.expected_grammar,
-    original_set_sha256: entry.original_set_sha256 || null,
-    asset_id: assetId,
-    recognition_session_id: recognitionSessionId,
-    title_length: entry.title_length,
-    owner_execution_receipt: {
-      version: safeVersion(owner.version,
-        "production_forward_readback_owner_version_invalid"),
-      sha256: owner.sha256
-    },
-    versions: {
-      resolution_view_schema: safeVersion(versions.resolution_view_schema,
-        "production_forward_readback_view_version_invalid"),
-      csm_contract: safeVersion(versions.csm_contract,
-        "production_forward_readback_csm_version_invalid"),
-      resolver: safeVersion(versions.resolver,
-        "production_forward_readback_resolver_version_invalid"),
-      composer: safeVersion(versions.composer,
-        "production_forward_readback_composer_version_invalid"),
-      marketplace_profile: safeVersion(versions.marketplace_profile,
-        "production_forward_readback_profile_version_invalid")
-    }
-  });
+  return sanitizedCandidateReadbackCase(evidence, matches[0]);
+}
+
+function capturedProductionProjectionReceiptsAbsent(resolutionView) {
+  return [
+    "founder_beta_web_receipt", "set_card_name_relation_receipt",
+    "publication_coverage", "lot_terminal"
+  ].every((key) => !Object.prototype.hasOwnProperty.call(resolutionView || {}, key))
+    && (resolutionView?.brackets || []).every((bracket) => (
+      !Object.prototype.hasOwnProperty.call(bracket || {}, "publication_coverage")
+    ));
+}
+
+function capturedProductionVerifiedSupportExact(resolutionView) {
+  const support = resolutionView?.verified_original_observation_support;
+  let valid = false;
+  try { valid = validateVerifiedOriginalObservationPublicReceipt(support); } catch { return false; }
+  return valid
+    && support.release_id === VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT.release_id
+    && support.pack_sha256 === VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT.pack_sha256
+    && support.resolver_version === VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+    && support.resolution_contract_sha256
+      === VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT.resolution_contract_sha256
+    && !Object.prototype.hasOwnProperty.call(
+      resolutionView || {}, "external_identity_support"
+    );
 }
 
 function validateResolutionView(resolutionView, entry) {
@@ -453,6 +612,8 @@ function validateResolutionView(resolutionView, entry) {
   }
   const expectedRawGrammar = entry.expected_grammar === "NON_TCG"
     ? "standard" : entry.expected_grammar.toLowerCase();
+  const capturedProductionWriter = entry.writer_projection_mode
+    === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE;
   if (!exactObject(resolutionView)
       || resolutionView.asset_id !== entry.asset_id
       || resolutionView.recognition_session_id !== entry.recognition_session_id
@@ -473,6 +634,18 @@ function validateResolutionView(resolutionView, entry) {
       || !exactKeys(resolutionView.owner_execution_receipt, ["version", "sha256"])
       || stableJson(resolutionView.owner_execution_receipt)
         !== stableJson(entry.owner_execution_receipt)
+      || (capturedProductionWriter && (
+        entry.versions.csm_contract !== "csm-stage-shadow-v2"
+        || entry.versions.resolver !== VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+        || entry.versions.composer !== CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+        || entry.versions.marketplace_profile
+          !== CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+        || !capturedProductionProjectionReceiptsAbsent(resolutionView)
+        || !capturedProductionVerifiedSupportExact(resolutionView)
+        || !productionStandardP0ResolutionProofValid(
+          productionStandardP0ResolutionProof(resolutionView)
+        )
+      ))
       || (entry.release_class === "ordinary" && (
         entry.versions.csm_contract !== "csm-stage-shadow-v3"
         || webReceipt.web_search_used !== true
@@ -494,12 +667,20 @@ function validateResolutionView(resolutionView, entry) {
 
 function validateExpectation(expectation, { evidence, deploymentUrl, gitSha }) {
   const entry = candidateReadbackCase(evidence, { deploymentUrl, gitSha });
-  if (!exactKeys(expectation, [
+  const capturedProductionWriter = entry.writer_projection_mode
+    === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE;
+  const expectationKeys = [
     "schema_version", "candidate_deployment_origin", "candidate_git_sha",
     "release_class", "case_id", "asset_id", "recognition_session_id",
-    "resolution_view"
-  ])
-      || expectation.schema_version !== PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA
+    "resolution_view",
+    ...(capturedProductionWriter ? ["writer_projection_mode"] : [])
+  ];
+  if (!exactKeys(expectation, expectationKeys)
+      || expectation.schema_version !== (capturedProductionWriter
+        ? PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA
+        : PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA)
+      || (capturedProductionWriter && expectation.writer_projection_mode
+        !== PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE)
       || expectation.candidate_deployment_origin !== deploymentUrl
       || expectation.candidate_git_sha !== gitSha
       || expectation.release_class !== entry.release_class
@@ -524,14 +705,21 @@ export function buildProductionForwardReadbackExpectation({
     deploymentUrl: candidateOrigin,
     gitSha: sha
   });
+  const capturedProductionWriter = entry.writer_projection_mode
+    === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE;
   return Object.freeze({
-    schema_version: PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA,
+    schema_version: capturedProductionWriter
+      ? PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA
+      : PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA,
     candidate_deployment_origin: candidateOrigin,
     candidate_git_sha: sha,
     release_class: entry.release_class,
     case_id: entry.case_id,
     asset_id: entry.asset_id,
     recognition_session_id: entry.recognition_session_id,
+    ...(capturedProductionWriter ? {
+      writer_projection_mode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE
+    } : {}),
     resolution_view: validateResolutionView(resolutionView, entry)
   });
 }
@@ -593,14 +781,21 @@ function verifyExactProductionForwardReadback({
   if (stableJson(readback) !== stableJson(validated.resolution_view)) {
     throw failure("production_forward_readback_projection_mismatch");
   }
+  const capturedProductionWriter = validated.entry.writer_projection_mode
+    === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE;
   const receipt = Object.freeze({
-    schema_version: PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA,
+    schema_version: capturedProductionWriter
+      ? PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA
+      : PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA,
     canonical_origin: CANONICAL_PRODUCTION_ORIGIN,
     canonical_read_scope: readScope,
     canonical_read_deployment_git_sha: readDeploymentGitSha,
     candidate_deployment_origin: candidateOrigin,
     candidate_git_sha: sha,
     release_class: validated.entry.release_class,
+    ...(capturedProductionWriter ? {
+      writer_projection_mode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE
+    } : {}),
     read_route: "/api/csm-resolution-view",
     http_method: "GET",
     redirects_followed: 0,
@@ -612,10 +807,15 @@ function verifyExactProductionForwardReadback({
     owner_execution_receipt_exact_match: true,
     trace_exact_match: true,
     support_receipts_exact_match: true,
-    founder_beta_web_receipt_exact_match: validated.entry.release_class === "ordinary",
+    founder_beta_web_receipt_exact_match:
+      validated.entry.release_class === "ordinary" || capturedProductionWriter,
     web_search_used: validated.entry.release_class === "ordinary",
     web_search_call_count: validated.entry.release_class === "ordinary"
       ? readback.founder_beta_web_receipt.web_search_call_count : 0,
+    ...(capturedProductionWriter ? {
+      durable_projection_receipts_absent: true,
+      verified_original_observation_support_exact_match: true
+    } : {}),
     full_resolution_view_exact_match: true,
     composer_version: validated.entry.versions.composer,
     marketplace_profile_version: validated.entry.versions.marketplace_profile,

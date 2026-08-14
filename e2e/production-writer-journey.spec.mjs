@@ -62,6 +62,8 @@ import {
   validateVerifiedOriginalObservationPublicReceipt,
   VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
   VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY,
   VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
@@ -91,11 +93,19 @@ import {
   COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE,
   COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION,
   COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+  COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION,
+  COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
   compatibilityBridgeWriterProjectionMode,
   ORDINARY_RELEASE_CLASS
 } from "../scripts/compatibility-bridge-release.mjs";
+import {
+  CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
   buildProductionForwardReadbackExpectation,
   classifyFounderWebSearch,
@@ -304,14 +314,39 @@ function healthExternalIdentityContractMatches(runtime) {
   return stableJson(runtime?.external_identity) === stableJson(EXTERNAL_IDENTITY_RELEASE_CONTRACT);
 }
 
-function healthCanonicalNamingContractMatches(runtime) {
-  return stableJson(runtime?.canonical_naming_target)
-    === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT);
+function capturedProductionWriterMode(writerProjectionMode) {
+  return writerProjectionMode === COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE;
 }
 
-function healthVerifiedOriginalObservationContractMatches(runtime) {
+function expectedCanonicalNamingContract(writerProjectionMode) {
+  return capturedProductionWriterMode(writerProjectionMode)
+    ? CANONICAL_NAMING_RELEASE_CONTRACT_V2
+    : CANONICAL_NAMING_RELEASE_CONTRACT;
+}
+
+function expectedVerifiedOriginalObservationHealthReceipt(writerProjectionMode) {
+  return capturedProductionWriterMode(writerProjectionMode)
+    ? VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT
+    : VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT;
+}
+
+function healthCanonicalNamingContractMatches(runtime, writerProjectionMode) {
+  return stableJson(runtime?.canonical_naming_target)
+    === stableJson(expectedCanonicalNamingContract(writerProjectionMode));
+}
+
+function healthVerifiedOriginalObservationContractMatches(runtime, writerProjectionMode) {
   return stableJson(runtime?.verified_original_observation)
-    === stableJson(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT);
+    === stableJson(expectedVerifiedOriginalObservationHealthReceipt(writerProjectionMode));
+}
+
+function healthProjectionActivationMatches(runtime, writerProjectionMode) {
+  if (!capturedProductionWriterMode(writerProjectionMode)) return true;
+  return stableJson(runtime?.projection_activation) === stableJson(CSM_PROJECTION_ACTIVATION)
+    && stableJson(runtime?.active_writer)
+      === stableJson(CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible)
+    && stableJson(runtime?.forward_readers)
+      === stableJson(CSM_PROJECTION_ACTIVATION.forward_readers);
 }
 
 function writerJourneyHealthReceipt({
@@ -319,7 +354,8 @@ function writerJourneyHealthReceipt({
   health = null,
   expectedSha = "",
   expectedOrigin = "",
-  responseUrl = ""
+  responseUrl = "",
+  writerProjectionMode = ORDINARY_WRITER_PROJECTION_MODE
 } = {}) {
   const expectedHealthUrl = `${expectedOrigin}/api/health`;
   let observedOrigin = "UNEXPECTED";
@@ -339,16 +375,22 @@ function writerJourneyHealthReceipt({
     deployment_identity: `${observedOrigin}#${expectedSha}`,
     deployment_git_commit_sha: health?.deployment?.git_commit_sha,
     deployment_environment: health?.deployment?.environment,
-    canonical_naming_contract_valid: healthCanonicalNamingContractMatches(health?.runtime),
+    canonical_naming_contract_valid:
+      healthCanonicalNamingContractMatches(health?.runtime, writerProjectionMode),
     canonical_naming_release_contract: health?.runtime?.canonical_naming_target,
     verified_original_observation_release_receipt:
       health?.runtime?.verified_original_observation,
     runtime_contract_valid: health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
       && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+      && health?.runtime?.request_builder_version
+        === expectedProviderAdapterContract.request_builder_version
       && healthRecognitionTransportContractMatches(health?.runtime)
       && healthExternalIdentityContractMatches(health?.runtime)
-      && healthCanonicalNamingContractMatches(health?.runtime)
-      && healthVerifiedOriginalObservationContractMatches(health?.runtime)
+      && healthCanonicalNamingContractMatches(health?.runtime, writerProjectionMode)
+      && healthVerifiedOriginalObservationContractMatches(
+        health?.runtime, writerProjectionMode
+      )
+      && healthProjectionActivationMatches(health?.runtime, writerProjectionMode)
       && health?.runtime?.max_output_tokens === CSM_ACTIVE_MODEL_PROFILE.max_output_tokens
       && health?.runtime?.retired_capabilities_disabled === true
   };
@@ -364,9 +406,9 @@ function writerJourneyHealthReceipt({
     && receipt.deployment_git_commit_sha === expectedSha
     && receipt.deployment_environment === "production"
     && stableJson(receipt.canonical_naming_release_contract)
-      === stableJson(CANONICAL_NAMING_RELEASE_CONTRACT)
+      === stableJson(expectedCanonicalNamingContract(writerProjectionMode))
     && stableJson(receipt.verified_original_observation_release_receipt)
-      === stableJson(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT)
+      === stableJson(expectedVerifiedOriginalObservationHealthReceipt(writerProjectionMode))
     && receipt.runtime_contract_valid,
   verifierErrorCodes.RUNTIME_CONTRACT_MISMATCH);
   return Object.freeze(receipt);
@@ -490,7 +532,11 @@ const providerAuthorityReceiptEvidenceKeys = Object.freeze([
   "operation_status"
 ]);
 
-function providerAuthorityReceiptProof(payload, owner, code) {
+function providerAttemptsForWriter(writerProjectionMode) {
+  return capturedProductionWriterMode(writerProjectionMode) ? [1, 2, 3] : [1, 2];
+}
+
+function providerAuthorityReceiptProof(payload, owner, code, writerProjectionMode) {
   const attempt = Number(payload?.provider_attempt_number);
   let receipt;
   try {
@@ -505,7 +551,7 @@ function providerAuthorityReceiptProof(payload, owner, code) {
     && hasExactKeys(receipt, providerAuthorityReceiptEvidenceKeys)
     && receipt.schema_version === "csm-provider-authority-receipt-v1"
     && /^[0-9a-f]{64}$/.test(receipt.operation_key_sha256)
-    && [1, 2].includes(attempt)
+    && providerAttemptsForWriter(writerProjectionMode).includes(attempt)
     && receipt.attempt === attempt
     && receipt.attempt_class === (attempt === 1 ? "fresh" : "retry")
     && receipt.estimated_tokens === expectedEstimatedTokensPerAttempt
@@ -519,7 +565,24 @@ function providerAuthorityReceiptProof(payload, owner, code) {
   return receipt;
 }
 
-function providerTransportRetryReceiptProof(payload, owner, authorityReceipt, code) {
+function providerTransportRetryReceiptProof(
+  payload,
+  owner,
+  authorityReceipt,
+  code,
+  writerProjectionMode
+) {
+  if (capturedProductionWriterMode(writerProjectionMode)) {
+    requireInvariant(providerAttemptsForWriter(writerProjectionMode).includes(
+      payload?.provider_attempt_number
+    )
+      && payload?.provider_retry_count === payload.provider_attempt_number - 1
+      && !Object.prototype.hasOwnProperty.call(payload, "provider_transport_retry_receipt")
+      && !Object.prototype.hasOwnProperty.call(owner, "provider_transport_retry_receipt")
+      && authorityReceipt.attempt === payload.provider_attempt_number,
+    code);
+    return null;
+  }
   const firstAttempt = payload?.provider_attempt_number === 1
     && payload?.provider_retry_count === 0;
   const retryAttempt = payload?.provider_attempt_number === 2
@@ -624,8 +687,33 @@ function activationProjectionProofForCase(sourceCase, resolutionView, title) {
   return activationProjectionProof(sourceCase, resolutionView, title);
 }
 
-function founderWebSearchProof(sourceCase, resolutionView) {
+function capturedProductionProjectionReceiptsOmitted(resolutionView) {
+  return exactObject(resolutionView)
+    && [
+      "founder_beta_web_receipt",
+      "set_card_name_relation_receipt",
+      "publication_coverage",
+      "lot_terminal"
+    ].every((key) => !Object.prototype.hasOwnProperty.call(resolutionView, key))
+    && (resolutionView.brackets || []).every((bracket) => (
+      !Object.prototype.hasOwnProperty.call(bracket || {}, "publication_coverage")
+    ));
+}
+
+function publicProjectionSupportOmitted(resolutionView, keys) {
+  return keys.every((key) => !Object.prototype.hasOwnProperty.call(
+    resolutionView || {}, key
+  ));
+}
+
+function founderWebSearchProof(sourceCase, resolutionView, {
+  writerProjectionMode = ORDINARY_WRITER_PROJECTION_MODE
+} = {}) {
   const code = verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH;
+  if (capturedProductionWriterMode(writerProjectionMode)) {
+    requireInvariant(capturedProductionProjectionReceiptsOmitted(resolutionView), code);
+    return null;
+  }
   let receipt;
   try {
     receipt = validateFounderBetaWebReceipt(
@@ -911,7 +999,11 @@ function publicRecognitionPayloadBoundary(payload, owner, code) {
   code);
 }
 
-function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile } = {}) {
+function liveExecutionReceiptProof(payload, {
+  imageCount = 2,
+  transportProfile,
+  writerProjectionMode = ORDINARY_WRITER_PROJECTION_MODE
+} = {}) {
   const code = verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH;
   const owner = payload?.csm_owner_versions;
   const laneVersion = String(transportProfile?.lane_version || "");
@@ -946,9 +1038,11 @@ function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile }
     && computedOwnerExecutionReceiptSha256 === ownerExecutionReceiptSha256,
   code);
   publicRecognitionPayloadBoundary(payload, owner, code);
-  const providerAuthorityReceipt = providerAuthorityReceiptProof(payload, owner, code);
+  const providerAuthorityReceipt = providerAuthorityReceiptProof(
+    payload, owner, code, writerProjectionMode
+  );
   const providerTransportRetryReceipt = providerTransportRetryReceiptProof(
-    payload, owner, providerAuthorityReceipt, code
+    payload, owner, providerAuthorityReceipt, code, writerProjectionMode
   );
 
   const expectedVersionFields = {
@@ -1024,7 +1118,9 @@ function liveExecutionReceiptProof(payload, { imageCount = 2, transportProfile }
     && Number.isSafeInteger(payload.input_tokens + payload.output_tokens)
     && payload.total_tokens >= payload.input_tokens + payload.output_tokens,
   code);
-  requireInvariant([1, 2].includes(payload?.provider_attempt_number)
+  requireInvariant(providerAttemptsForWriter(writerProjectionMode).includes(
+    payload?.provider_attempt_number
+  )
     && owner?.provider_attempt_number === payload.provider_attempt_number
     && payload?.provider_retry_count === payload.provider_attempt_number - 1
     && owner?.provider_retry_count === payload.provider_retry_count,
@@ -1580,14 +1676,16 @@ async function validateLargeRelayResponse(response, fixture, timeline) {
 
 function validateLargeRecognitionResponse(payload, fixture, ingestRequests, relayReceipts, {
   recognitionResponseSequence = null,
-  uploadPipelineReceipt = null
+  uploadPipelineReceipt = null,
+  writerProjectionMode = ORDINARY_WRITER_PROJECTION_MODE
 } = {}) {
   const stages = payload?.latency_stages_ms || {};
   const firstRequest = ingestRequests[0];
   const relayAssetIds = new Set(relayReceipts.map((entry) => entry.asset_id));
   const executionReceipt = liveExecutionReceiptProof(payload, {
     imageCount: 2,
-    transportProfile: CSM_STAGED_TRANSPORT_PROFILE
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
+    writerProjectionMode
   });
   const relayByRole = new Map(relayReceipts.map((entry) => [entry.role, entry]));
   const relayMatchesManifest = originalRoles.every((role, index) => {
@@ -1610,8 +1708,10 @@ function validateLargeRecognitionResponse(payload, fixture, ingestRequests, rela
     || payload?.recognition_input !== "readability_derived_inline"
     || payload?.originals_verified !== true
     || payload?.trace_status !== "PERSISTED"
-    || payload?.provider_attempt_number !== 1
-    || payload?.provider_retry_count !== 0
+    || !providerAttemptsForWriter(writerProjectionMode).includes(
+      payload?.provider_attempt_number
+    )
+    || payload?.provider_retry_count !== payload.provider_attempt_number - 1
     || payload?.model !== CSM_ACTIVE_MODEL_PROFILE.model
     || payload?.requested_effort !== CSM_ACTIVE_MODEL_PROFILE.reasoning_effort
     || payload?.image_detail !== "high"
@@ -1786,6 +1886,17 @@ function validateSourceCasesManifest(manifest, {
       === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER
     && compatibilityBridgeWriterProjectionMode(manifest, { expectedGitSha })
       === COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE;
+  const compatibilityBridgeV4 = releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && hasExactKeys(manifest, [
+      "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker", "git_sha",
+      "writer_projection_mode", "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION
+    && manifest.bridge_descriptor_id
+      === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID
+    && manifest.bridge_marker === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
+    && compatibilityBridgeWriterProjectionMode(manifest, { expectedGitSha })
+      === COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE;
   if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(releaseClass)
     || manifest?.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
     || manifest?.accuracy_claim !== null
@@ -1804,7 +1915,8 @@ function validateSourceCasesManifest(manifest, {
     ))
     || (releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS && (
       manifest.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
-      || (!compatibilityBridgeV1 && !compatibilityBridgeV2 && !compatibilityBridgeV3)
+      || (!compatibilityBridgeV1 && !compatibilityBridgeV2
+        && !compatibilityBridgeV3 && !compatibilityBridgeV4)
       || !/^[0-9a-f]{40}$/.test(String(expectedGitSha || ""))
       || manifest.git_sha !== expectedGitSha
     ))) {
@@ -2097,6 +2209,13 @@ function canonicalNamingVersionActive(versions) {
       === CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version;
 }
 
+function capturedProductionStandardVersionActive(versions) {
+  return versions?.csm_contract === "csm-stage-shadow-v2"
+    && versions?.composer === CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version
+    && versions?.marketplace_profile
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version;
+}
+
 function compatibilityBridgeStandardVersionActive(versions) {
   return versions?.composer === THIN_COMPOSER_VERSION_V2
     && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
@@ -2105,6 +2224,11 @@ function compatibilityBridgeStandardVersionActive(versions) {
 function observationLegacyVersionActive(versions) {
   return versions?.resolver === THIN_RESOLVER_VERSION
     && compatibilityBridgeStandardVersionActive(versions);
+}
+
+function capturedProductionTcgVersionActive(versions) {
+  return versions?.csm_contract === "csm-stage-shadow-v2"
+    && observationLegacyVersionActive(versions);
 }
 
 function observationCanonicalV3VersionActive(versions) {
@@ -2125,6 +2249,22 @@ function verifiedOriginalObservationVersionActive(versions, support = null) {
       === VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256;
 }
 
+function capturedProductionVerifiedOriginalObservationVersionActive(
+  versions,
+  support = null
+) {
+  const receipt = VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT;
+  const tupleActive = versions?.resolver === VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+    && capturedProductionStandardVersionActive(versions);
+  if (support == null) return tupleActive;
+  return tupleActive
+    && validateVerifiedOriginalObservationPublicReceipt(support)
+    && support?.release_id === receipt.release_id
+    && support?.pack_sha256 === receipt.pack_sha256
+    && support?.resolver_version === versions.resolver
+    && support?.resolution_contract_sha256 === receipt.resolution_contract_sha256;
+}
+
 function currentStandardWriterProjectionMode(writerProjectionMode) {
   return writerProjectionMode === ORDINARY_WRITER_PROJECTION_MODE
     || writerProjectionMode === COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE;
@@ -2141,6 +2281,12 @@ function standardNonTcgWriterProjectionActive({
       versions, verifiedOriginalObservationSupport
       );
   }
+  if (capturedProductionWriterMode(writerProjectionMode)) {
+    return verifiedOriginalObservationSupport != null
+      && capturedProductionVerifiedOriginalObservationVersionActive(
+        versions, verifiedOriginalObservationSupport
+      );
+  }
   if (writerProjectionMode === COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE) {
     return observationLegacyVersionActive(versions)
       && verifiedOriginalObservationSupport == null;
@@ -2151,11 +2297,20 @@ function standardNonTcgWriterProjectionActive({
 function largeStandardWriterProjectionActive({
   writerProjectionMode,
   versions,
+  grammar,
   verifiedOriginalObservationSupport,
   externalIdentitySupport
 } = {}) {
   if (currentStandardWriterProjectionMode(writerProjectionMode)) {
     return observationCanonicalV3VersionActive(versions)
+      && verifiedOriginalObservationSupport == null
+      && externalIdentitySupport == null;
+  }
+  if (capturedProductionWriterMode(writerProjectionMode)) {
+    return grammar?.value === "NON_TCG"
+      && grammar?.raw === "standard"
+      && versions?.resolver === THIN_RESOLVER_VERSION
+      && capturedProductionStandardVersionActive(versions)
       && verifiedOriginalObservationSupport == null
       && externalIdentitySupport == null;
   }
@@ -2175,6 +2330,13 @@ function standardNonTcgWriterProjectionEvidenceActive({
       && evidence?.verified_original_observation_active === true
       && productionStandardP0EvidenceProofValid(evidence?.standard_p0_identity)
       && verifiedOriginalObservationVersionActive(evidence?.versions);
+  }
+  if (capturedProductionWriterMode(writerProjectionMode)) {
+    return evidence?.canonical_naming_active === false
+      && evidence?.compatibility_bridge_standard_active === false
+      && evidence?.verified_original_observation_active === true
+      && productionStandardP0EvidenceProofValid(evidence?.standard_p0_identity)
+      && capturedProductionVerifiedOriginalObservationVersionActive(evidence?.versions);
   }
   if (writerProjectionMode === COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE) {
     return evidence?.canonical_naming_active === false
@@ -2267,6 +2429,67 @@ function compatibilityBridgeSeal({
     ...(strictNoSearchCases || []),
     ...(usedWithoutGovernedAppliedSupportCases || [])
   ].map((entry) => entry?.case_id).sort();
+  if (capturedProductionWriterMode(writerProjectionMode)) {
+    return Array.isArray(evidenceCases)
+      && evidenceCases.map((entry) => entry?.case_id).sort().join("\0")
+        === expectedCaseIds.join("\0")
+      && evidenceCases.every((entry) => (
+        entry?.versions?.csm_contract === "csm-stage-shadow-v2"
+        && !Object.prototype.hasOwnProperty.call(entry || {}, "founder_web_search")
+      ))
+      && Array.isArray(semanticCases)
+      && semanticCaseIds.join("\0") === "NON_TCG\0TCG"
+      && semanticCases.every((entry) => entry?.transport_only !== true)
+      && Array.isArray(transportOnlyCases)
+      && transportOnlyCases.length === 1
+      && transportOnlyCases[0]?.case_id === "LARGE_STAGED_TRANSPORT"
+      && Array.isArray(webReceiptClassifications)
+      && webReceiptClassifications.length === 0
+      && webReceiptClaimsMatchViews === true
+      && qualifiedGovernedWebCases?.length === 0
+      && strictNoSearchCases?.length === 0
+      && usedWithoutGovernedAppliedSupportCases?.length === 0
+      && governedWebCaseEvidence == null
+      && parityCaseEvidence == null
+      && webCaseEvidence == null
+      && lotCaseEvidence == null
+      && standardNonTcgWriterProjectionEvidenceActive({
+        writerProjectionMode,
+        evidence: standardCaseEvidence
+      })
+      && capturedProductionTcgVersionActive(tcgCaseEvidence?.versions)
+      && tcgCaseEvidence?.captured_e1ae_standard_active === false
+      && tcgCaseEvidence?.canonical_naming_active === false
+      && tcgCaseEvidence?.compatibility_bridge_standard_active === true
+      && tcgCaseEvidence?.verified_original_observation_active === false
+      && largeCaseEvidence?.overlap_observed === true
+      && largeCaseEvidence?.captured_e1ae_standard_active === true
+      && largeCaseEvidence?.canonical_naming_active === false
+      && largeStandardWriterProjectionActive({
+        writerProjectionMode,
+        versions: largeCaseEvidence?.versions,
+        grammar: {
+          value: largeCaseEvidence?.expected_grammar,
+          raw: "standard"
+        },
+        verifiedOriginalObservationSupport: null,
+        externalIdentitySupport: null
+      })
+      && largeCaseEvidence?.relay_durable_before_recognition_response === true
+      && evidenceCases.filter((entry) => (
+        entry?.captured_e1ae_standard_active === true
+      )).length === 2
+      && evidenceCases.filter((entry) => entry?.canonical_naming_active === true).length === 0
+      && evidenceCases.filter((entry) => (
+        entry?.compatibility_bridge_standard_active === true
+      )).length === 1
+      && evidenceCases.filter((entry) => (
+        entry?.verified_original_observation_active === true
+      )).length === 1
+      && evidenceCases.filter((entry) => (
+        productionStandardP0EvidenceProofValid(entry?.standard_p0_identity)
+      )).length === 1;
+  }
   return Array.isArray(evidenceCases)
     && evidenceCases.map((entry) => entry?.case_id).sort().join("\0")
       === expectedCaseIds.join("\0")
@@ -2491,7 +2714,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       health,
       expectedSha,
       expectedOrigin: productionOrigin,
-      responseUrl: healthResponse.url
+      responseUrl: healthResponse.url,
+      writerProjectionMode
     });
     evidence.deployment_origin = initialHealthReceipt.deployment_origin;
     evidence.deployment_identity = initialHealthReceipt.deployment_identity;
@@ -2926,7 +3150,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       addIds(recognitionPayload, ids);
       expect(recognitionResponse.ok(), "direct CSM recognition must succeed").toBeTruthy();
       expect(recognitionPayload?.trace_status, "recognition trace must be durable").toBe("PERSISTED");
-      expect([1, 2], "live verifier allows only first attempt or sealed 502 transport retry")
+      expect(providerAttemptsForWriter(writerProjectionMode),
+        "live verifier allows only attempts admitted by the selected writer")
         .toContain(recognitionPayload?.provider_attempt_number);
       expect(recognitionPayload?.provider_retry_count,
         "live verifier binds retry count to the physical attempt").toBe(
@@ -2939,7 +3164,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
         imageCount: sourceCase.image_count,
         transportProfile: sourceCase.case_id !== "TCG"
           ? CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE
-          : CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+          : CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+        writerProjectionMode
       });
       failurePhase = "ROUTE_COVERAGE";
       const routeCoverage = normalRouteCoverageReceipt({
@@ -2993,7 +3219,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
       expect(resolutionView?.grammar?.value).toBe(sourceCase.expected_grammar);
       const versions = recognitionVersionReceipt(recognitionPayload, resolutionView);
       if (sourceCase.case_id === "TCG") {
-        requireInvariant(observationLegacyVersionActive(versions),
+        requireInvariant((!capturedProductionWriterMode(writerProjectionMode)
+          && observationLegacyVersionActive(versions))
+          || (capturedProductionWriterMode(writerProjectionMode)
+            && capturedProductionTcgVersionActive(versions)
+            && publicProjectionSupportOmitted(resolutionView, [
+              "verified_original_observation_support", "external_identity_support"
+            ])),
           verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
       }
       if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
@@ -3008,6 +3240,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
       }
       if (sourceCase.case_id === "NON_TCG") {
         requireInvariant(resolutionView?.grammar?.raw === "standard"
+          && (!capturedProductionWriterMode(writerProjectionMode)
+            || publicProjectionSupportOmitted(
+              resolutionView, ["external_identity_support"]
+            ))
           && standardNonTcgWriterProjectionActive({
             writerProjectionMode,
             versions,
@@ -3016,7 +3252,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
           }),
         verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
         standardResolutionView = structuredClone(resolutionView);
-        if (currentStandardWriterProjectionMode(writerProjectionMode)) {
+        if (currentStandardWriterProjectionMode(writerProjectionMode)
+            || capturedProductionWriterMode(writerProjectionMode)) {
           const sourceIdentityExact = sourceCase.source_kind === "PRODUCTION_ASSET"
             && sourceCase.source_asset_id
               === PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.source_asset_id;
@@ -3037,7 +3274,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
       const ownerExecutionReadback = durableOwnerExecutionReadbackProof(
         executionReceipt, resolutionView
       );
-      founderWebSearchReceipt = founderWebSearchProof(sourceCase, resolutionView);
+      founderWebSearchReceipt = founderWebSearchProof(sourceCase, resolutionView, {
+        writerProjectionMode
+      });
       activationProjectionReceipt = activationProjectionProofForCase(
         sourceCase, resolutionView, titleBeforePanel
       );
@@ -3165,6 +3404,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
         canonical_naming_active: canonicalNamingVersionActive(versions),
         compatibility_bridge_standard_active:
           observationLegacyVersionActive(versions),
+        ...(capturedProductionWriterMode(writerProjectionMode) ? {
+          captured_e1ae_standard_active:
+            capturedProductionStandardVersionActive(versions)
+        } : {}),
         verified_original_observation_active:
           resolutionView?.verified_original_observation_support?.status === "APPLIED",
         ...(standardP0Identity ? { standard_p0_identity: standardP0Identity } : {}),
@@ -3175,7 +3418,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
         ...(activationProjectionReceipt ? {
           activation_projection: activationProjectionReceipt
         } : {}),
-        founder_web_search: founderWebSearchReceipt,
+        ...(founderWebSearchReceipt ? {
+          founder_web_search: founderWebSearchReceipt
+        } : {}),
         ...(lotSharedOnlyReceipt ? {
           lot_shared_only: lotSharedOnlyReceipt
         } : {}),
@@ -3258,7 +3503,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
         recognitionResponseSequence: largeTransport.recognition_response_events.find((entry) => (
           entry.request === largeRecognitionResponse.request()
         ))?.response_sequence,
-        uploadPipelineReceipt: largeTransport.upload_pipeline_requests[0]?.response_receipt
+        uploadPipelineReceipt: largeTransport.upload_pipeline_requests[0]?.response_receipt,
+        writerProjectionMode
       }
     );
     const largeRecognitionPost = recognitionPosts.find((entry) => (
@@ -3296,9 +3542,15 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && largeResolutionView?.recognition_session_id === largeRecognitionPayload.recognition_session_id,
     verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
     const largeVersions = recognitionVersionReceipt(largeRecognitionPayload, largeResolutionView);
-    requireInvariant(largeStandardWriterProjectionActive({
+    requireInvariant((!capturedProductionWriterMode(writerProjectionMode)
+      || (capturedProductionProjectionReceiptsOmitted(largeResolutionView)
+        && publicProjectionSupportOmitted(largeResolutionView, [
+          "verified_original_observation_support", "external_identity_support"
+        ])))
+      && largeStandardWriterProjectionActive({
       writerProjectionMode,
       versions: largeVersions,
+      grammar: largeResolutionView?.grammar,
       verifiedOriginalObservationSupport:
         largeResolutionView?.verified_original_observation_support,
       externalIdentitySupport: largeResolutionView?.external_identity_support
@@ -3370,6 +3622,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
 
     evidence.cases.push({
       case_id: "LARGE_STAGED_TRANSPORT",
+      expected_grammar: "NON_TCG",
       transport_only: true,
       accuracy_claim: null,
       fixture_id: largeFixture.receipt.fixture_id,
@@ -3386,6 +3639,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
       recomposed_matches_stored: largeResolutionView.composer.recomposed_matches_stored,
       versions: largeVersions,
       canonical_naming_active: canonicalNamingVersionActive(largeVersions),
+      ...(capturedProductionWriterMode(writerProjectionMode) ? {
+        captured_e1ae_standard_active:
+          capturedProductionStandardVersionActive(largeVersions)
+      } : {}),
       owner_execution_readback: largeOwnerExecutionReadback,
       ...titleEvidenceReceipt({
         titleBeforePanel: largeTitleBeforePanel,
@@ -3425,7 +3682,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       health: finalHealth,
       expectedSha,
       expectedOrigin: productionOrigin,
-      responseUrl: finalHealthResponse.url
+      responseUrl: finalHealthResponse.url,
+      writerProjectionMode
     });
     requireInvariant(finalHealthReceipt.deployment_identity === evidence.deployment_identity
       && finalHealthReceipt.deployment_origin === evidence.deployment_origin,
@@ -3493,9 +3751,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && new Set(providerResponseReceiptHashes).size === evidence.cases.length
       && providerAuthorityOperationHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
       && new Set(providerAuthorityOperationHashes).size === evidence.cases.length
-      && evidence.cases.every((entry) => [1, 2].includes(entry.provider_attempt_number)
+      && evidence.cases.every((entry) => providerAttemptsForWriter(
+        writerProjectionMode
+      ).includes(entry.provider_attempt_number)
         && entry.provider_retry_count === entry.provider_attempt_number - 1
-        && (entry.provider_attempt_number === 1
+        && (capturedProductionWriterMode(writerProjectionMode)
+          ? entry.execution_receipt?.provider_transport_retry_receipt === null
+          : entry.provider_attempt_number === 1
           ? entry.execution_receipt?.provider_transport_retry_receipt === null
           : entry.execution_receipt?.provider_transport_retry_receipt
             ?.schema_version === "luna-definitive-502-transport-retry-receipt-v1")
@@ -3532,17 +3794,18 @@ test("production writer journey verifies Glass Box and staged large-image transp
     );
     const transportOnlyCases = evidence.cases.filter((entry) => entry.transport_only === true);
     const semanticCases = evidence.cases.filter((entry) => entry.transport_only !== true);
-    const webReceiptClassifications = semanticCases.map((entry) => {
-      const view = resolutionViewsByCaseId.get(entry.case_id);
-      return Object.freeze({
-        entry,
-        proof: classifyFounderWebSearch(
-          view?.founder_beta_web_receipt, view, {
-            originalSetSha256: entry.original_set_sha256
-          }
-        )
+    const webReceiptClassifications = capturedProductionWriterMode(writerProjectionMode)
+      ? [] : semanticCases.map((entry) => {
+        const view = resolutionViewsByCaseId.get(entry.case_id);
+        return Object.freeze({
+          entry,
+          proof: classifyFounderWebSearch(
+            view?.founder_beta_web_receipt, view, {
+              originalSetSha256: entry.original_set_sha256
+            }
+          )
+        });
       });
-    });
     const qualifiedGovernedWebCases = webReceiptClassifications.filter(
       ({ proof }) => proof?.classification
         === FOUNDER_WEB_SEARCH_CLASSIFICATION.GOVERNED_APPLIED_SUPPORT
@@ -3556,8 +3819,14 @@ test("production writer journey verifies Glass Box and staged large-image transp
         === FOUNDER_WEB_SEARCH_CLASSIFICATION.USED_WITHOUT_GOVERNED_APPLIED_SUPPORT
     ).map((classification) => classification.entry);
     const governedWebCaseEvidence = qualifiedGovernedWebCases[0];
-    const webReceiptClaimsMatchViews = webReceiptClassifications.every(
-      ({ entry, proof }) => (
+    const webReceiptClaimsMatchViews = capturedProductionWriterMode(writerProjectionMode)
+      ? semanticCases.every((entry) => !Object.prototype.hasOwnProperty.call(
+        entry || {}, "founder_web_search"
+      )
+        && capturedProductionProjectionReceiptsOmitted(
+          resolutionViewsByCaseId.get(entry.case_id)
+        ))
+      : webReceiptClassifications.every(({ entry, proof }) => (
         proof != null
         && entry?.founder_web_search?.classification === proof.classification
         && entry?.founder_web_search?.governed_applied_support
@@ -3565,8 +3834,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
         && entry?.founder_web_search?.strict_no_search === proof.strict_no_search
         && entry?.founder_web_search?.used_without_governed_applied_support
           === proof.used_without_governed_applied_support
-      )
-    );
+      ));
     const lotCaseEvidence = evidence.cases.find(
       (entry) => entry.case_id === "LOT_SHARED_ONLY"
     );
@@ -3665,6 +3933,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
       canonical_naming_active_case_count: evidence.cases.filter(
         (entry) => entry.canonical_naming_active === true
       ).length,
+      captured_e1ae_standard_active_case_count: evidence.cases.filter(
+        (entry) => entry.captured_e1ae_standard_active === true
+      ).length,
       standard_p0_exact_case_count: evidence.cases.filter(
         (entry) => productionStandardP0EvidenceProofValid(entry.standard_p0_identity)
       ).length,
@@ -3678,9 +3949,15 @@ test("production writer journey verifies Glass Box and staged large-image transp
       strict_no_search_case_count: strictNoSearchCases.length,
       used_without_governed_applied_support_case_count:
         usedWithoutGovernedAppliedSupportCases.length,
-      semantic_web_case_count: semanticCases.length,
+      semantic_web_case_count: capturedProductionWriterMode(writerProjectionMode)
+        ? 0 : semanticCases.length,
       transport_only_web_excluded_case_count: transportOnlyCases.length,
-      selected_forward_readback_case_id: governedWebCaseEvidence?.case_id,
+      selected_forward_readback_case_id: capturedProductionWriterMode(writerProjectionMode)
+        ? null : governedWebCaseEvidence?.case_id,
+      durable_projection_receipts_absent:
+        capturedProductionWriterMode(writerProjectionMode),
+      durable_projection_receipt_omission_case_count:
+        capturedProductionWriterMode(writerProjectionMode) ? evidence.cases.length : 0,
       warmup_real_response_observed: true,
       staged_overlap_observed: true,
       staged_relays_durable_before_recognition_response: true,
@@ -3817,6 +4094,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     runtime: {
       model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
       provider_adapter_version: expectedProviderAdapterVersion,
+      request_builder_version: expectedProviderAdapterContract.request_builder_version,
       recognition_transport_profiles: Object.fromEntries(
         CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [profile.lane_version, {
           ...profile,
@@ -3839,6 +4117,52 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     expectedOrigin: productionOrigin,
     responseUrl: `${productionOrigin}/api/health`
   }).ready === true, verifierErrorCodes.GENERIC);
+  const capturedProductionHealth = structuredClone(offlineHealth);
+  capturedProductionHealth.runtime.canonical_naming_target =
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2;
+  capturedProductionHealth.runtime.verified_original_observation =
+    VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT;
+  capturedProductionHealth.runtime.projection_activation = CSM_PROJECTION_ACTIVATION;
+  capturedProductionHealth.runtime.active_writer =
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+  capturedProductionHealth.runtime.forward_readers = CSM_PROJECTION_ACTIVATION.forward_readers;
+  capturedProductionHealth.runtime.request_builder_version =
+    expectedProviderAdapterContract.request_builder_version;
+  requireInvariant(writerJourneyHealthReceipt({
+    httpOk: true,
+    health: capturedProductionHealth,
+    expectedSha: offlineSha,
+    expectedOrigin: productionOrigin,
+    responseUrl: `${productionOrigin}/api/health`,
+    writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+  }).runtime_contract_valid === true, verifierErrorCodes.GENERIC);
+  for (const mutate of [
+    (health) => { health.runtime.canonical_naming_target = CANONICAL_NAMING_RELEASE_CONTRACT_V3; },
+    (health) => {
+      health.runtime.verified_original_observation =
+        VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT;
+    },
+    (health) => { health.runtime.active_writer = CSM_WRITER_PROJECTION_CONTRACTS.future_v3; },
+    (health) => { health.runtime.forward_readers = {}; },
+    (health) => { health.runtime.request_builder_version = "canonical-fields-web-request-v2"; }
+  ]) {
+    const drifted = structuredClone(capturedProductionHealth);
+    mutate(drifted);
+    let rejected = false;
+    try {
+      writerJourneyHealthReceipt({
+        httpOk: true,
+        health: drifted,
+        expectedSha: offlineSha,
+        expectedOrigin: productionOrigin,
+        responseUrl: `${productionOrigin}/api/health`,
+        writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+      });
+    } catch {
+      rejected = true;
+    }
+    requireInvariant(rejected, verifierErrorCodes.GENERIC);
+  }
   let deploymentOriginDriftRejected = false;
   try {
     writerJourneyHealthReceipt({
@@ -4145,6 +4469,22 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
     expectedGitSha: bridgeGitSha
   }).length === 2, verifierErrorCodes.GENERIC);
+  const bridgeV4Manifest = {
+    schema_version: COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION,
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
+    bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
+    git_sha: bridgeGitSha,
+    writer_projection_mode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+    evidence_scope: manifest.evidence_scope,
+    accuracy_claim: null,
+    cases: manifest.cases
+  };
+  requireInvariant(validateSourceCasesManifest(bridgeV4Manifest, {
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    expectedGitSha: bridgeGitSha
+  }).length === 2, verifierErrorCodes.GENERIC);
   for (const [candidate, options] of [
     [bridgeManifest, { releaseClass: ORDINARY_RELEASE_CLASS }],
     [manifest, {
@@ -4176,6 +4516,27 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       expectedGitSha: bridgeGitSha
     }],
     [{ ...bridgeV3Manifest, bridge_marker: COMPATIBILITY_BRIDGE_V2_MARKER }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeV4Manifest,
+      writer_projection_mode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeV4Manifest,
+      bridge_descriptor_id:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeV4Manifest,
+      bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeV3Manifest,
+      writer_projection_mode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE }, {
       releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
       expectedGitSha: bridgeGitSha
     }],
@@ -4514,6 +4875,36 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     ...canonicalVersions,
     resolver: THIN_RESOLVER_VERSION
   });
+  const capturedStandardVersions = Object.freeze({
+    ...canonicalVersions,
+    csm_contract: "csm-stage-shadow-v2",
+    resolver: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION,
+    composer: CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version,
+    marketplace_profile:
+      CANONICAL_NAMING_RELEASE_CONTRACT_V2.marketplace_profile_version
+  });
+  const capturedLargeVersions = Object.freeze({
+    ...capturedStandardVersions,
+    resolver: THIN_RESOLVER_VERSION
+  });
+  const capturedTcgVersions = Object.freeze({
+    ...legacyStandardVersions,
+    csm_contract: "csm-stage-shadow-v2"
+  });
+  const capturedLegacyRelease =
+    VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY.releases[
+      VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT.release_id
+    ].receipt;
+  const capturedVerifiedOriginalSupport = Object.freeze({
+    ...verifiedOriginalSupport,
+    release_id: capturedLegacyRelease.release_id,
+    pack_id: capturedLegacyRelease.pack_id,
+    pack_version: capturedLegacyRelease.pack_version,
+    pack_sha256: capturedLegacyRelease.pack_sha256,
+    resolver_version: capturedLegacyRelease.resolver_version,
+    conflict_policy_version: capturedLegacyRelease.conflict_policy_version,
+    resolution_contract_sha256: capturedLegacyRelease.resolution_contract_sha256
+  });
   requireInvariant([
     standardNonTcgWriterProjectionActive({
       writerProjectionMode: ORDINARY_WRITER_PROJECTION_MODE,
@@ -4544,6 +4935,61 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     }),
     observationLegacyVersionActive(legacyStandardVersions)
   ].every(Boolean), verifierErrorCodes.GENERIC);
+  requireInvariant([
+    capturedProductionVerifiedOriginalObservationVersionActive(
+      capturedStandardVersions, capturedVerifiedOriginalSupport
+    ),
+    standardNonTcgWriterProjectionActive({
+      writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+      versions: capturedStandardVersions,
+      verifiedOriginalObservationSupport: capturedVerifiedOriginalSupport
+    }),
+    largeStandardWriterProjectionActive({
+      writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+      versions: capturedLargeVersions,
+      grammar: { value: "NON_TCG", raw: "standard" },
+      verifiedOriginalObservationSupport: null,
+      externalIdentitySupport: null
+    }),
+    capturedProductionTcgVersionActive(capturedTcgVersions)
+  ].every(Boolean), verifierErrorCodes.GENERIC);
+  for (const [mode, versions, support] of [
+    [COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+      { ...capturedStandardVersions, csm_contract: "csm-stage-shadow-v3" },
+      capturedVerifiedOriginalSupport],
+    [COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+      { ...capturedStandardVersions,
+        marketplace_profile: CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version },
+      capturedVerifiedOriginalSupport],
+    [COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+      capturedStandardVersions, verifiedOriginalSupport],
+    [COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+      capturedStandardVersions, null],
+    [COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+      capturedStandardVersions, capturedVerifiedOriginalSupport]
+  ]) {
+    requireInvariant(!standardNonTcgWriterProjectionActive({
+      writerProjectionMode: mode,
+      versions,
+      verifiedOriginalObservationSupport: support
+    }), verifierErrorCodes.GENERIC);
+  }
+  requireInvariant(!largeStandardWriterProjectionActive({
+    writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+    versions: { ...capturedLargeVersions, csm_contract: "csm-stage-shadow-v3" },
+    grammar: { value: "NON_TCG", raw: "standard" },
+    verifiedOriginalObservationSupport: null,
+    externalIdentitySupport: null
+  }) && !largeStandardWriterProjectionActive({
+    writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+    versions: capturedLargeVersions,
+    grammar: { value: "TCG", raw: "tcg" },
+    verifiedOriginalObservationSupport: null,
+    externalIdentitySupport: null
+  }) && !capturedProductionTcgVersionActive({
+    ...capturedTcgVersions,
+    csm_contract: "csm-stage-shadow-v3"
+  }), verifierErrorCodes.GENERIC);
   requireInvariant([
     standardNonTcgWriterProjectionActive({
       writerProjectionMode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
@@ -4665,6 +5111,94 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     requireInvariant(!compatibilityBridgeSeal({ ...bridgeSealInput, ...mutation }),
       verifierErrorCodes.GENERIC);
   }
+  const capturedStandardEvidence = Object.freeze({
+    case_id: "NON_TCG",
+    versions: capturedStandardVersions,
+    canonical_naming_active: false,
+    compatibility_bridge_standard_active: false,
+    captured_e1ae_standard_active: true,
+    verified_original_observation_active: true,
+    standard_p0_identity: exactStandardP0Evidence
+  });
+  const capturedTcgEvidence = Object.freeze({
+    case_id: "TCG",
+    versions: capturedTcgVersions,
+    canonical_naming_active: false,
+    compatibility_bridge_standard_active: true,
+    captured_e1ae_standard_active: false,
+    verified_original_observation_active: false
+  });
+  const capturedLargeEvidence = Object.freeze({
+    case_id: "LARGE_STAGED_TRANSPORT",
+    expected_grammar: "NON_TCG",
+    transport_only: true,
+    versions: capturedLargeVersions,
+    canonical_naming_active: false,
+    captured_e1ae_standard_active: true,
+    overlap_observed: true,
+    relay_durable_before_recognition_response: true
+  });
+  const capturedSemanticCases = Object.freeze([
+    capturedStandardEvidence, capturedTcgEvidence
+  ]);
+  const capturedSealInput = Object.freeze({
+    writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+    evidenceCases: Object.freeze([
+      capturedStandardEvidence, capturedTcgEvidence, capturedLargeEvidence
+    ]),
+    standardCaseEvidence: capturedStandardEvidence,
+    tcgCaseEvidence: capturedTcgEvidence,
+    largeCaseEvidence: capturedLargeEvidence,
+    parityCaseEvidence: null,
+    webCaseEvidence: null,
+    lotCaseEvidence: null,
+    semanticCases: capturedSemanticCases,
+    transportOnlyCases: Object.freeze([capturedLargeEvidence]),
+    webReceiptClassifications: Object.freeze([]),
+    webReceiptClaimsMatchViews: true,
+    qualifiedGovernedWebCases: Object.freeze([]),
+    strictNoSearchCases: Object.freeze([]),
+    usedWithoutGovernedAppliedSupportCases: Object.freeze([]),
+    governedWebCaseEvidence: null
+  });
+  requireInvariant(compatibilityBridgeSeal(capturedSealInput), verifierErrorCodes.GENERIC);
+  for (const mutation of [{
+    writerProjectionMode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE
+  }, {
+    evidenceCases: capturedSealInput.evidenceCases.map((entry) => entry.case_id === "NON_TCG"
+      ? { ...entry, versions: { ...entry.versions, csm_contract: "csm-stage-shadow-v3" } }
+      : entry)
+  }, {
+    webReceiptClassifications: [{ entry: capturedStandardEvidence, proof: {} }]
+  }, {
+    strictNoSearchCases: [capturedStandardEvidence]
+  }, {
+    governedWebCaseEvidence: capturedStandardEvidence
+  }, {
+    largeCaseEvidence: { ...capturedLargeEvidence, expected_grammar: "TCG" }
+  }, {
+    evidenceCases: capturedSealInput.evidenceCases.map((entry) => entry.case_id === "TCG"
+      ? { ...entry, captured_e1ae_standard_active: true }
+      : entry)
+  }]) {
+    requireInvariant(!compatibilityBridgeSeal({ ...capturedSealInput, ...mutation }),
+      verifierErrorCodes.GENERIC);
+  }
+  const receiptFreeView = { brackets: [{ bracket: "subject" }] };
+  requireInvariant(capturedProductionProjectionReceiptsOmitted(receiptFreeView),
+    verifierErrorCodes.GENERIC);
+  for (const key of [
+    "founder_beta_web_receipt", "set_card_name_relation_receipt",
+    "publication_coverage", "lot_terminal"
+  ]) {
+    requireInvariant(!capturedProductionProjectionReceiptsOmitted({
+      ...receiptFreeView,
+      [key]: null
+    }), verifierErrorCodes.GENERIC);
+  }
+  requireInvariant(!capturedProductionProjectionReceiptsOmitted({
+    brackets: [{ bracket: "subject", publication_coverage: null }]
+  }), verifierErrorCodes.GENERIC);
   for (const [driftedRecognition, driftedView] of [
     [recognition, {
       ...view,
@@ -5170,6 +5704,71 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     imageCount: 2,
     transportProfile: CSM_STAGED_TRANSPORT_PROFILE
   });
+  const capturedExecutionPayload = (attempt = 1) => {
+    const payload = structuredClone(recognitionPayload);
+    const {
+      owner_execution_receipt_version: _receiptVersion,
+      owner_execution_receipt_sha256: _receiptSha256,
+      ...owner
+    } = payload.csm_owner_versions;
+    delete owner.provider_transport_retry_receipt;
+    owner.provider_attempt_number = attempt;
+    owner.provider_retry_count = attempt - 1;
+    payload.csm_owner_versions = sealCsmOwnerExecutionReceipt(owner);
+    payload.provider_attempt_number = attempt;
+    payload.provider_retry_count = attempt - 1;
+    payload.provider_authority_receipt.attempt = attempt;
+    payload.provider_authority_receipt.attempt_class = attempt === 1 ? "fresh" : "retry";
+    return payload;
+  };
+  for (const attempt of [1, 2, 3]) {
+    const capturedProof = liveExecutionReceiptProof(
+      capturedExecutionPayload(attempt),
+      {
+        imageCount: 2,
+        transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
+        writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+      }
+    );
+    requireInvariant(capturedProof.provider_attempt_number === attempt
+      && capturedProof.provider_transport_retry_receipt === null,
+    verifierErrorCodes.GENERIC);
+  }
+  for (const mutate of [
+    (payload) => {
+      payload.provider_attempt_number = 4;
+      payload.provider_retry_count = 3;
+      payload.provider_authority_receipt.attempt = 4;
+      payload.provider_authority_receipt.attempt_class = "retry";
+    },
+    (payload) => { payload.provider_retry_count = 1; },
+    (payload) => { payload.provider_transport_retry_receipt = null; },
+    (payload) => {
+      const {
+        owner_execution_receipt_version: _receiptVersion,
+        owner_execution_receipt_sha256: _receiptSha256,
+        ...owner
+      } = payload.csm_owner_versions;
+      payload.csm_owner_versions = sealCsmOwnerExecutionReceipt({
+        ...owner,
+        provider_transport_retry_receipt: null
+      });
+    }
+  ]) {
+    const drifted = capturedExecutionPayload(3);
+    mutate(drifted);
+    let rejected = false;
+    try {
+      liveExecutionReceiptProof(drifted, {
+        imageCount: 2,
+        transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
+        writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+      });
+    } catch {
+      rejected = true;
+    }
+    requireInvariant(rejected, verifierErrorCodes.GENERIC);
+  }
   const canonicalPublicPayload = structuredClone(recognitionPayload);
   canonicalPublicPayload.csm_owner_versions.composer =
     CANONICAL_NAMING_RELEASE_CONTRACT_V2.composer_version;

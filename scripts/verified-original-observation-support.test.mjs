@@ -352,6 +352,8 @@ for (const entry of fixture.cases) {
   const baselineRows = buildCsmStageRows({
     ...packetArgs,
     recognitionSessionId: `session-packet-${entry.id}-1`,
+    observedFields: applied.fields,
+    externalIdentitySupport: null,
     composed: composeHistoricalStandard(applied.fields),
     title: composeHistoricalStandard(applied.fields).title,
     contractVersion: "csm-stage-shadow-v2",
@@ -602,15 +604,16 @@ function resealRows(rows) {
     title: composed.title,
     ...noSearchReceipts(applied.fields)
   });
+  const futureNonmatchComposed = composeVerifiedOriginal(observed);
   const activeV2NonmatchRows = buildCsmStageRows({
     tenantId: "tenant-verified-original",
     recognitionSessionId: "session-active-v2-nonmatch",
-    fields: applied.fields,
+    fields: observed,
     observedFields: observed,
     externalIdentitySupport: { status: "ABSTAINED" },
-    composed,
-    title: composed.title,
-    ...noSearchReceipts(applied.fields)
+    composed: futureNonmatchComposed,
+    title: futureNonmatchComposed.title,
+    ...noSearchReceipts(observed)
   });
   assert.equal(activeV2NonmatchRows.output.marketplace_profile_version,
     LYNCA_STANDARD_PROFILE_VERSION_V3,
@@ -636,7 +639,7 @@ function resealRows(rows) {
   delete missingAuthority.output.structured_output.verified_original_observation_support;
   resealRows(missingAuthority);
   assert.throws(() => replayFromRows(missingAuthority), (error) => (
-    error?.code === "verified_original_receipt_missing_or_unexpected"
+    error?.code === "founder_beta_observed_identity_evidence_invalid"
   ), "a resealed verified-original resolver signal cannot be relabelled as ordinary v3");
   const supportEvidence = rows.evidence.filter((row) => (
     row.source_ref?.support_type === "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
@@ -843,8 +846,8 @@ function resealRows(rows) {
     tenantId: "tenant-verified-original",
     recognitionSessionId: "session-verified-original-baseline",
     fields: applied.fields,
-    observedFields: observed,
-    externalIdentitySupport: { status: "ABSTAINED" },
+    observedFields: applied.fields,
+    externalIdentitySupport: null,
     composed: composeHistoricalStandard(applied.fields),
     title: composeHistoricalStandard(applied.fields).title,
     contractVersion: "csm-stage-shadow-v2"

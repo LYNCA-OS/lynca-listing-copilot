@@ -17,10 +17,10 @@ import {
   validateDefinitive502TransportRetryReceipt
 } from "../lib/listing/thin/luna-direct-dispatcher.mjs";
 import {
-  buildCanonicalFieldsRequest,
-  CANONICAL_FIELDS_PROMPT,
-  CANONICAL_FIELDS_PROMPT_VERSION,
-  CANONICAL_FIELDS_SCHEMA
+  CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT,
+  CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT_VERSION,
+  CAPTURED_E1AE_CANONICAL_FIELDS_SCHEMA,
+  buildCanonicalFieldsRequest
 } from "../lib/listing/thin/canonical-fields.mjs";
 import {
   buildCsmModelExecutionContract,
@@ -145,17 +145,20 @@ function definitive502Failure(payload, overrides = {}) {
     imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
     model: "gpt-5.6-luna",
     effort: "low",
-    imageDetail: "high"
+    imageDetail: "high",
+    schema: CAPTURED_E1AE_CANONICAL_FIELDS_SCHEMA,
+    prompt: CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT,
+    webSearchToolsEnabled: false
   });
-  assert.deepEqual(request.tools, [{ type: "web_search" }]);
-  assert.equal(request.tool_choice, "auto");
-  assert.equal(request.max_tool_calls, 2);
-  assert.deepEqual(request.include, ["web_search_call.action.sources"]);
+  assert.equal(request.tools, undefined);
+  assert.equal(request.tool_choice, undefined);
+  assert.equal(request.max_tool_calls, undefined);
+  assert.equal(request.include, undefined);
   const requestBytes = JSON.stringify(request);
-  assert.equal(requestBytes.length, 13_375);
+  assert.equal(requestBytes.length, 11_185);
   assert.equal(
     createHash("sha256").update(requestBytes).digest("hex"),
-    "c024fe60ebac7e955fb8bbc0db19184bae08dfa8f648f60b890b858f4afb6ca6"
+    "79ff68337c102f8263036747b52834e6f72beee7ff3c7634a8e37d66c3510b45"
   );
 
   const baseOptions = {
@@ -163,9 +166,9 @@ function definitive502Failure(payload, overrides = {}) {
     requestedEffort: "low",
     imageDetail: "high",
     maxOutputTokens: 8192,
-    semanticPromptVersion: CANONICAL_FIELDS_PROMPT_VERSION,
-    renderedPrompt: CANONICAL_FIELDS_PROMPT,
-    schema: CANONICAL_FIELDS_SCHEMA,
+    semanticPromptVersion: CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT_VERSION,
+    renderedPrompt: CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT,
+    schema: CAPTURED_E1AE_CANONICAL_FIELDS_SCHEMA,
     promptStyleVersion: "canonical-direct-v1",
     providerAdapterVersion: "openai-responses-v1",
     responseParserVersion: CSM_CANONICAL_RESPONSE_PARSER_VERSION,
@@ -178,7 +181,7 @@ function definitive502Failure(payload, overrides = {}) {
   assert.match(baseDigest, /^[0-9a-f]{64}$/);
   assert.throws(
     () => buildCsmModelExecutionContract({ ...baseOptions, provider: "future-provider" }),
-    /unsupported_csm_provider:future-provider/,
+    /unsupported_csm_provider_adapter:future-provider:canonical-fields-request-v1/,
     "an unregistered provider must fail before health or a paid execution can claim readiness"
   );
   assert.throws(
@@ -190,39 +193,42 @@ function definitive502Failure(payload, overrides = {}) {
     { requestedEffort: "none" },
     { imageDetail: "original" },
     { maxOutputTokens: 8191 },
-    { schema: { ...CANONICAL_FIELDS_SCHEMA, description: "changed" } },
-    { transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE },
-    {
-      providerAdapterVersion: "openai-responses-v2",
-      providerAdapterContract: {
-        ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
-        id: "openai-responses-v2"
-      }
-    },
-    {
-      responseParserVersion: "canonical-output-v3",
-      providerAdapterContract: {
-        ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
-        response_parser_version: "canonical-output-v3"
-      }
-    },
-    {
-      providerAdapterContract: {
-        ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
-        served_effort_receipt: {
-          ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT.served_effort_receipt,
-          required: false,
-          missing_policy: "requested_effort_fallback",
-          attested_when_present: false
-        }
+    { schema: { ...CAPTURED_E1AE_CANONICAL_FIELDS_SCHEMA, description: "changed" } },
+    { transportProfile: CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE }
+  ]) {
+    assert.notEqual(buildCsmModelExecutionContractSha256({ ...baseOptions, ...change }), baseDigest);
+  }
+  assert.throws(() => buildCsmModelExecutionContractSha256({
+    ...baseOptions,
+    responseParserVersion: "canonical-output-v3",
+    providerAdapterContract: {
+      ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+      response_parser_version: "canonical-output-v3"
+    }
+  }), /provider_adapter_contract_mismatch/);
+  for (const change of [{
+    providerAdapterVersion: "openai-responses-v2",
+    providerAdapterContract: {
+      ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+      id: "openai-responses-v2"
+    }
+  }, {
+    ...baseOptions,
+    providerAdapterContract: {
+      ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+      served_effort_receipt: {
+        ...CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT.served_effort_receipt,
+        required: false,
+        missing_policy: "requested_effort_fallback",
+        attested_when_present: false
       }
     }
-  ]) {
+  }]) {
     assert.notEqual(buildCsmModelExecutionContractSha256({ ...baseOptions, ...change }), baseDigest);
   }
   for (const change of [
     { semanticPromptVersion: "csm-canonical-fields-v2" },
-    { renderedPrompt: `${CANONICAL_FIELDS_PROMPT} ` },
+    { renderedPrompt: `${CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT} ` },
     { promptStyleVersion: "luna-canonical-direct-v2" },
     { capabilities: { ...CSM_LUNA_MODEL_PROFILE.capabilities, sampling_parameters: "future" } }
   ]) {
@@ -243,7 +249,7 @@ function definitive502Failure(payload, overrides = {}) {
   const receipt = buildCsmModelExecutionContract(baseOptions);
   assert.equal(
     receipt.rendered_prompt_sha256,
-    createHash("sha256").update(CANONICAL_FIELDS_PROMPT).digest("hex")
+    createHash("sha256").update(CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT).digest("hex")
   );
   assert.equal(
     CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT.served_effort_receipt.missing_policy,

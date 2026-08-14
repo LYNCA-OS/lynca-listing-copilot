@@ -20,7 +20,10 @@ import {
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import {
-  buildCsmResolutionReview, buildReviewMeasurementSnapshot, REVIEW_VERDICT
+  buildCapturedE1aeResolutionReview,
+  buildCsmResolutionReview,
+  buildReviewMeasurementSnapshot,
+  REVIEW_VERDICT
 } from "../csm/contracts/resolution-review.mjs";
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
 
@@ -134,7 +137,21 @@ const PRODUCT_PROJECTION_READY = {
     appendCsmResolutionReview({
       tenantId: "tenant-overwrite", review, env: ENV, fetchImpl
     }),
-    /integrity_revision_hash_mismatch/
+    /csm_review_tenant_mismatch/
+  );
+  const capturedReview = buildCapturedE1aeResolutionReview({
+    provenance,
+    verdict: REVIEW_VERDICT.APPROVED,
+    originalFields: { subjects: ["A"] },
+    originalTitle: "A",
+    reviewedAt: "2026-08-12T00:00:00.000Z"
+  });
+  await assert.rejects(
+    appendCsmResolutionReview({
+      tenantId: "tenant-overwrite", review: capturedReview, env: ENV, fetchImpl
+    }),
+    /csm_review_tenant_mismatch/,
+    "captured v1 revisions do not hash tenant, so the append seam must bind it"
   );
   assert.equal(writes, 1, "tampered reviews must fail before PostgREST");
 }

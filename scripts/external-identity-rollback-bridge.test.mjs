@@ -209,7 +209,7 @@ async function activeV2Prepared(
   const composed = composeCanonicalFieldsForStoredOutput(fields, {
     marketplace: "EBAY",
     ...v2.output,
-    contract_version: "csm-stage-shadow-v3"
+    contract_version: "csm-stage-shadow-v2"
   });
   assert.equal(composed.title, expectedTitle);
   const csmRows = buildCsmStageRows({
@@ -219,11 +219,12 @@ async function activeV2Prepared(
     observedFields: observed,
     externalIdentitySupport: support,
     composed,
-    founderBetaWebReceipt: base.founder_beta_web_receipt,
-    setCardNameRelationReceipt: base.set_card_name_relation_receipt,
+    founderBetaWebReceipt: null,
+    setCardNameRelationReceipt: null,
     title: composed.title,
     registryReleaseId: v2.receipt.registry_release_id,
-    createdAt: CREATED_AT
+    createdAt: CREATED_AT,
+    contractVersion: "csm-stage-shadow-v2"
   });
   const result = {
     ...base,

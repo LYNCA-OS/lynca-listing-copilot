@@ -36,11 +36,15 @@ import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT_V3
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
-  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
+import {
+  CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 function reorderedPack(pack) {
   return {
@@ -98,7 +102,20 @@ assert.equal(Object.hasOwn(CSM_LUNA_OPTIMIZATION_PACK, "transport_profile_id"), 
 assert.equal(Object.hasOwn(CSM_LUNA_OPTIMIZATION_PACK, "request_extensions"), false);
 assert.equal(CSM_LUNA_MODEL_PROFILE.prompt_style_version, CSM_NEUTRAL_PROMPT_STYLE_VERSION,
   "Luna-specific behavior belongs in the removable pack until distinct prompt bytes pass a gate");
-assert.deepEqual(resolveCsmPromptAsset(CSM_NEUTRAL_PROMPT_STYLE_VERSION), {
+const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+assert.deepEqual(resolveCsmPromptAsset(CSM_NEUTRAL_PROMPT_STYLE_VERSION, {
+  semanticPromptVersion: activeWriter.canonical_fields.semantic_prompt_version
+}), {
+  semantic_prompt_version: activeWriter.canonical_fields.semantic_prompt_version,
+  rendered_prompt: compileCsmModelExecution({
+    imageUrls: ["https://execution-contract.invalid/image-1"],
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+  }).provider_request.rendered_prompt
+});
+assert.deepEqual(resolveCsmPromptAsset(CSM_NEUTRAL_PROMPT_STYLE_VERSION, {
+  semanticPromptVersion:
+    CSM_WRITER_PROJECTION_CONTRACTS.future_v3.canonical_fields.semantic_prompt_version
+}), {
   semantic_prompt_version: CANONICAL_FIELDS_PROMPT_VERSION,
   rendered_prompt: CANONICAL_FIELDS_PROMPT
 });
@@ -125,20 +142,39 @@ const directRequest = buildCanonicalFieldsRequest({
   model: "gpt-5.6-luna",
   effort: "low",
   imageDetail: "high",
-  maxOutputTokens: 8_192
+  maxOutputTokens: 8_192,
+  schema: compiled.provider_request.schema,
+  prompt: compiled.provider_request.rendered_prompt,
+  webSearchToolsEnabled: false
 });
 assert.deepEqual(compiled.provider_request.wire_request, directRequest);
 const wireBytes = JSON.stringify(compiled.provider_request.wire_request);
-assert.equal(wireBytes.length, 13_375);
+assert.equal(wireBytes.length, 11_185);
 assert.equal(
   createHash("sha256").update(wireBytes).digest("hex"),
-  "c024fe60ebac7e955fb8bbc0db19184bae08dfa8f648f60b890b858f4afb6ca6",
-  "the Luna Web-capable request must remain an exact frozen wire contract"
+  "79ff68337c102f8263036747b52834e6f72beee7ff3c7634a8e37d66c3510b45",
+  "the rollback-compatible Luna request must remain an exact frozen wire contract"
 );
-assert.deepEqual(compiled.provider_request.wire_request.tools, [{ type: "web_search" }]);
-assert.equal(compiled.provider_request.wire_request.tool_choice, "auto");
-assert.equal(compiled.provider_request.wire_request.max_tool_calls, 2);
-assert.deepEqual(compiled.provider_request.wire_request.include,
+for (const key of ["tools", "tool_choice", "max_tool_calls", "include"]) {
+  assert.equal(Object.hasOwn(compiled.provider_request.wire_request, key), false,
+    `the rollback writer must omit ${key}`);
+}
+const futureCompiled = compileCsmModelExecution({
+  imageUrls,
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3
+});
+const futureWireBytes = JSON.stringify(futureCompiled.provider_request.wire_request);
+assert.equal(futureWireBytes.length, 13_375);
+assert.equal(
+  createHash("sha256").update(futureWireBytes).digest("hex"),
+  "c024fe60ebac7e955fb8bbc0db19184bae08dfa8f648f60b890b858f4afb6ca6",
+  "the dormant Web-capable request must remain a distinct frozen contract"
+);
+assert.deepEqual(futureCompiled.provider_request.wire_request.tools, [{ type: "web_search" }]);
+assert.equal(futureCompiled.provider_request.wire_request.tool_choice, "auto");
+assert.equal(futureCompiled.provider_request.wire_request.max_tool_calls, 2);
+assert.deepEqual(futureCompiled.provider_request.wire_request.include,
   ["web_search_call.action.sources"]);
 for (const unsupported of ["temperature", "top_p", "seed"]) {
   assert.equal(Object.hasOwn(compiled.provider_request.wire_request, unsupported), false);
@@ -239,7 +275,7 @@ assert.throws(() => compileCsmModelExecution({
 assert.throws(() => compileCsmModelExecution({
   imageUrls,
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
-  renderedPrompt: `${CANONICAL_FIELDS_PROMPT} `
+  renderedPrompt: `${compiled.provider_request.rendered_prompt} `
 }), /prompt_asset_override_mismatch/);
 assert.throws(() => compileCsmModelExecution({
   imageUrls,
@@ -380,12 +416,12 @@ assert.deepEqual(
 );
 assert.deepEqual(
   healthBody.runtime.canonical_naming_target,
-  CANONICAL_NAMING_RELEASE_CONTRACT_V3,
-  "health must expose the exact target Canonical Naming release contract"
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  "health must expose the exact active Canonical Naming release contract"
 );
 assert.deepEqual(
   healthBody.runtime.verified_original_observation,
-  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
   "health must expose only the exact redacted verified-original release receipt"
 );
 for (const receipt of [

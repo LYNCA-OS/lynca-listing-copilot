@@ -6,8 +6,16 @@ import { CANONICAL_FIELD_SOURCE_FIELDS } from "../lib/listing/thin/canonical-fie
 import { validateFounderBetaWebReceipt } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
 import {
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
   projectSetCardNameRelationReceipt
 } from "../lib/listing/thin/set-card-name-reconciliation.mjs";
+
+const runFutureCanonicalListingPath = (options) => runCanonicalListingPath({
+  ...options,
+  writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3
+});
 
 function audited(fields) {
   const sourceFields = [
@@ -68,7 +76,7 @@ assert.throws(() => projectSetCardNameRelationReceipt(
 "an arbitrary value replacement is not a sanitizer projection");
 
 {
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(successBody({
@@ -89,7 +97,7 @@ assert.throws(() => projectSetCardNameRelationReceipt(
 }
 
 {
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(successBody({
@@ -112,7 +120,7 @@ for (const mutateFields of [
     return changed;
   }
 ]) {
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(successBody({
@@ -129,18 +137,18 @@ for (const mutateFields of [
 
 {
   let providerCalls = 0;
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     provider: "future-provider",
     model: "future-model",
     callProvider: async () => { providerCalls += 1; }
-  }), /unsupported_csm_provider:future-provider/);
+  }), /unsupported_csm_provider_adapter:future-provider:canonical-fields-web-request-v2/);
   assert.equal(providerCalls, 0,
     "an unregistered provider must fail before the paid transport boundary");
 }
 
 {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     maxOutputTokens: 7_777,
@@ -190,7 +198,7 @@ for (const body of [
   },
   { id: "resp-failed", status: "failed" }
 ]) {
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify({
@@ -206,7 +214,7 @@ for (const body of [
 }
 
 {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     effort: "low",
@@ -222,7 +230,7 @@ for (const body of [
 }
 
 {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     callProvider: async () => new Response(JSON.stringify({
       ...successBody({ subjects: ["Test Subject"], grammar: "standard" }),
@@ -242,7 +250,7 @@ for (const body of [
 }
 
 await assert.rejects(
-  runCanonicalListingPath({
+  runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     providerClientRequestId: "lynca-client-rate-limit",
@@ -284,7 +292,7 @@ await assert.rejects(
 );
 
 await assert.rejects(
-  runCanonicalListingPath({
+  runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response("upstream failed", { status: 503 })
@@ -296,7 +304,7 @@ await assert.rejects(
 );
 
 await assert.rejects(
-  runCanonicalListingPath({
+  runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response("provider internal error", { status: 500 })
@@ -309,7 +317,7 @@ await assert.rejects(
 );
 
 await assert.rejects(
-  runCanonicalListingPath({
+  runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     providerClientRequestId: "lynca-client-definitive-502",
@@ -335,7 +343,7 @@ await assert.rejects(
 );
 
 await assert.rejects(
-  runCanonicalListingPath({
+  runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     providerClientRequestId: "lynca-client-partial-502",
@@ -357,7 +365,7 @@ await assert.rejects(
 );
 
 await assert.rejects(
-  runCanonicalListingPath({
+  runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     providerClientRequestId: "lynca-client-invalid-json",
@@ -382,7 +390,7 @@ for (const body of [
   { id: "resp-empty-title", output_text: JSON.stringify({ grammar: "standard" }) }
 ]) {
   await assert.rejects(
-    runCanonicalListingPath({
+    runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(body), {
@@ -407,7 +415,7 @@ for (const [lotCount, failureCode] of [
   ["1/2", "LOT_QUANTITY_UNRESOLVED"],
   ["1", "LOT_SINGLE_CARD"]
 ]) {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/lot.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify({
@@ -426,7 +434,7 @@ for (const [lotCount, failureCode] of [
 }
 
 {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/lot.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify({
@@ -499,7 +507,7 @@ for (const [fields, expectedGrammar] of [[{
   manufacturer: "Pokémon", product: "Mega Brave", subjects: ["Charizard"],
   grammar: "standard"
 }, "tcg"]]) {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(
@@ -514,7 +522,7 @@ for (const [fields, expectedGrammar] of [[{
 }
 
 {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(audited({
@@ -549,7 +557,7 @@ function webGrammarBody(url, sourceIds) {
 {
   const url = "https://attacker-controlled-example.org/grammar";
   for (const sourceIds of [[url], ["original_image_1", url]]) {
-    await assert.rejects(runCanonicalListingPath({
+    await assert.rejects(runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(
@@ -567,7 +575,7 @@ function webGrammarBody(url, sourceIds) {
   const payload = JSON.parse(body.output[1].content[0].text);
   payload.field_sources.push({ field: "grammar", source_ids: [url] });
   body.output[1].content[0].text = JSON.stringify(payload);
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(body), {
@@ -582,7 +590,7 @@ function webGrammarBody(url, sourceIds) {
   const payload = withoutFieldSource(audited({
     subjects: ["Still Source Bound"], grammar: "standard"
   }), "grammar", "subjects");
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -616,7 +624,7 @@ for (const { field, value, expected } of [
     manufacturer: "Topps", subjects: ["Grounded Subject"], grammar: "standard",
     [field]: value, low_confidence: [field]
   }), field);
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -637,7 +645,7 @@ for (const { field, value, expected } of [
     manufacturer: "Topps", product: "Unsupported Product",
     subjects: ["Grounded Subject"], grammar: "standard"
   }), "product", [[]]);
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -653,7 +661,7 @@ for (const { field, value, expected } of [
   const payload = withFieldSourceRows(audited({
     subjects: ["Still Unsupported"], grammar: "standard"
   }), "subjects", [["", "   "]]);
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -667,7 +675,7 @@ for (const { field, value, expected } of [
 {
   const payload = audited({ subjects: ["Grounded Subject"], grammar: "standard" });
   payload.field_sources.push({ field: "product", source_ids: [] });
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -682,7 +690,7 @@ for (const { field, value, expected } of [
 {
   const payload = audited({ subjects: ["Partitioned Images"], grammar: "standard" });
   payload.field_sources.push({ field: "subjects", source_ids: ["original_image_2"] });
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: [
       "https://example.invalid/front.jpg", "https://example.invalid/back.jpg"
     ],
@@ -706,7 +714,7 @@ for (const [field, value] of [
     const payload = withFieldSourceRows(audited({
       subjects: ["Grounded Subject"], grammar: "standard", [field]: value
     }), field, sourceRows);
-    await assert.rejects(runCanonicalListingPath({
+    await assert.rejects(runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -727,7 +735,7 @@ for (const [field, value] of [
     const payload = withFieldSourceRows(audited({
       card_number: "105", subjects: ["Grounded Subject"], grammar: "standard"
     }), "card_number", sourceRows);
-    await assert.rejects(runCanonicalListingPath({
+    await assert.rejects(runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -747,7 +755,7 @@ for (const [field, value] of [
   const payload = JSON.parse(body.output[1].content[0].text);
   payload.field_sources.push({ field: "card_number", source_ids: [returnedUrl] });
   body.output[1].content[0].text = JSON.stringify(payload);
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(body), {
@@ -766,7 +774,7 @@ for (const invalidRow of [
     product: "Grounded Product", subjects: ["Grounded Subject"], grammar: "standard"
   });
   payload.field_sources.push(invalidRow);
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -781,7 +789,7 @@ for (const invalidRow of [
   const payload = withoutFieldSource(audited({
     subjects: ["Card A", "Card B"], grammar: "lot", lot_count: "2"
   }), "lot_count");
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/lot.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -800,7 +808,7 @@ for (const url of [
   "https://www.ebay.com/itm/123456789",
   "https://evil.paniniamerica.net.attacker.com/fabricated"
 ]) {
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webIdentityBody(url)), {
@@ -813,7 +821,7 @@ for (const url of [
 
 {
   const officialUrl = "https://www.paniniamerica.net/checklists/contenders";
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webIdentityBody(officialUrl)), {
@@ -835,7 +843,7 @@ for (const url of [
       url: "https://www.paniniamerica.net/checklists/opened-page?step=2#identity"
     }
   });
-  const bounded = await runCanonicalListingPath({
+  const bounded = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(boundedBody), {
@@ -856,7 +864,7 @@ for (const url of [
       url: "http://www.paniniamerica.net/checklists/contenders",
       ...(actionType === "find_in_page" ? { pattern: "subject" } : {})
     };
-    await assert.rejects(runCanonicalListingPath({
+    await assert.rejects(runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(unsafeSecondActionBody), {
@@ -875,7 +883,7 @@ for (const url of [
       ...(actionType === "find_in_page" ? { pattern: "subject" } : {})
     };
     actionOnlyBody.output[1].content[0].annotations = [];
-    const actionOnly = await runCanonicalListingPath({
+    const actionOnly = await runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(actionOnlyBody), {
@@ -888,7 +896,7 @@ for (const url of [
 
   const querylessSearchBody = webIdentityBody(officialUrl);
   delete querylessSearchBody.output[0].action.query;
-  const querylessSearch = await runCanonicalListingPath({
+  const querylessSearch = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(querylessSearchBody), {
@@ -914,7 +922,7 @@ for (const url of [
       content: [{ type: "output_text", text: JSON.stringify(emptyTracePayload) }]
     }]
   };
-  const emptyTrace = await runCanonicalListingPath({
+  const emptyTrace = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(emptyTraceBody), {
@@ -943,7 +951,7 @@ for (const url of [
   unsafeUnusedActionBody.output[0].action = {
     type: "open_page", url: "http://www.paniniamerica.net/checklists/unsafe"
   };
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(unsafeUnusedActionBody), {
@@ -962,7 +970,7 @@ for (const url of [
   ]) {
     const invalidBody = webIdentityBody(officialUrl);
     mutate(invalidBody);
-    await assert.rejects(runCanonicalListingPath({
+    await assert.rejects(runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(invalidBody), {
@@ -975,7 +983,7 @@ for (const url of [
   const threeCallsBody = webIdentityBody(officialUrl);
   threeCallsBody.output.unshift(structuredClone(threeCallsBody.output[0]));
   threeCallsBody.output.unshift(structuredClone(threeCallsBody.output[0]));
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(threeCallsBody), {
@@ -999,7 +1007,7 @@ for (const [field, value] of identityCases) {
   const fields = {
     subjects: ["Grounded Subject"], grammar: "standard", [field]: value
   };
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webIdentityBody(
@@ -1026,7 +1034,7 @@ for (const [field, scalar] of [...identityCases, ["subjects", "Official Subject"
     grammar: "standard",
     ...(field === "subjects" ? {} : { [field]: value })
   };
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webIdentityBody(
@@ -1045,7 +1053,7 @@ for (const sourceIds of [
   ["original_image_1", ungovernedUrl],
   [officialUrl, ungovernedUrl]
 ]) {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webIdentityBody(
@@ -1073,7 +1081,7 @@ for (const sourceIds of [
   const sourceIdsByField = Object.fromEntries(
     ["product", "set", "card_name"].map((field) => [field, [ungovernedUrl]])
   );
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webIdentityBody(
@@ -1104,7 +1112,7 @@ for (const [field, value] of [
     grammar: field === "lot_count" ? "lot" : "standard",
     [field]: value
   };
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webIdentityBody(
@@ -1187,7 +1195,7 @@ const sweepValue = (result, field) => field === "grammar"
 // current-copy fields; grammar keeps its stronger no-Web structural boundary.
 for (const field of CANONICAL_FIELD_SOURCE_FIELDS) {
   const fields = sweepFields(field);
-  const imageOnly = await runCanonicalListingPath({
+  const imageOnly = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(audited(fields))), {
@@ -1202,7 +1210,7 @@ for (const field of CANONICAL_FIELD_SOURCE_FIELDS) {
   for (const [url, governed] of [
     [returnedOfficialReference, true], [returnedUnknownReference, false]
   ]) {
-    const execution = runCanonicalListingPath({
+    const execution = runFutureCanonicalListingPath({
       imageUrls: ["https://example.invalid/card.jpg"],
       model: "gpt-5.6-luna",
       callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1241,7 +1249,7 @@ for (const field of currentCopySweepFields) {
   const expectedAuthorityCode = field === "grammar"
     ? "founder_beta_web_authority_forbidden:grammar"
     : `founder_beta_current_copy_source_required:${field}`;
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1253,7 +1261,7 @@ for (const field of currentCopySweepFields) {
   `${field} must reject Web-only current-copy authority`);
 
   const unsafeReference = "http://www.paniniamerica.net/checklists/unsafe-current-copy";
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1267,7 +1275,7 @@ for (const field of currentCopySweepFields) {
   const expectedUnreturnedCode = field === "grammar"
     ? "founder_beta_web_authority_forbidden:grammar"
     : "founder_beta_field_source_not_returned";
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1281,7 +1289,7 @@ for (const field of currentCopySweepFields) {
 for (const [sourceId, returnedUrls] of [
   [unreturnedReference, [returnedOfficialReference]]
 ]) {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1301,7 +1309,7 @@ for (const [sourceId, returnedUrls] of [
     "an unreturned reference must never be fabricated into the durable URL receipt");
 }
 
-const noFieldEvidenceWithUnreturned = await runCanonicalListingPath({
+const noFieldEvidenceWithUnreturned = await runFutureCanonicalListingPath({
   imageUrls: ["https://example.invalid/card.jpg"],
   model: "gpt-5.6-luna",
   callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1321,7 +1329,7 @@ assert.ok(!JSON.stringify(noFieldEvidenceWithUnreturned.founder_beta_web_receipt
 "the frozen image-admitted boundary must not fabricate an unreturned source into receipt evidence");
 
 {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1343,7 +1351,7 @@ assert.ok(!JSON.stringify(noFieldEvidenceWithUnreturned.founder_beta_web_receipt
 }
 
 {
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1371,7 +1379,7 @@ assert.ok(!JSON.stringify(noFieldEvidenceWithUnreturned.founder_beta_web_receipt
   payload.field_sources = payload.field_sources.map((row) => (
     row.field === "product" ? { ...row, source_ids: [unreturnedReference] } : row
   ));
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(completedBody(payload)), {
@@ -1390,7 +1398,7 @@ for (const [field, fields, expectedCode] of [
     subjects: ["Grounded Subject"], grammar: "standard"
   }, "founder_beta_web_authority_forbidden:grammar"]
 ]) {
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1403,7 +1411,7 @@ for (const [field, fields, expectedCode] of [
   `${field} must preserve its hard authority boundary for an unreturned reference`);
 }
 
-await assert.rejects(runCanonicalListingPath({
+await assert.rejects(runFutureCanonicalListingPath({
   imageUrls: ["https://example.invalid/card.jpg"],
   model: "gpt-5.6-luna",
   callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1416,7 +1424,7 @@ await assert.rejects(runCanonicalListingPath({
   && error.provider_error_code === "founder_beta_web_url_unsafe",
 "URL-shaped unreturned references must still cross the HTTPS safety boundary");
 
-await assert.rejects(runCanonicalListingPath({
+await assert.rejects(runFutureCanonicalListingPath({
   imageUrls: ["https://example.invalid/card.jpg"],
   model: "gpt-5.6-luna",
   callProvider: async () => new Response(JSON.stringify(webFieldReferenceBody({
@@ -1463,7 +1471,7 @@ for (const count of [21, 40]) {
   const urls = Array.from({ length: count }, (_, index) => (
     `https://www.paniniamerica.net/checklists/source-${String(index).padStart(2, "0")}`
   )).reverse();
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(urls, {
@@ -1481,7 +1489,7 @@ for (const count of [21, 40]) {
     `https://www.paniniamerica.net/checklists/unreferenced-${String(index).padStart(2, "0")}`
   ));
   const unreturned = "https://www.pokemon.com/checklists/not-in-trace";
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(
@@ -1500,7 +1508,7 @@ for (const count of [20, 21]) {
   const urls = Array.from({ length: count + 5 }, (_, index) => (
     `https://www.paniniamerica.net/checklists/evidence-${String(index).padStart(2, "0")}`
   ));
-  const execution = runCanonicalListingPath({
+  const execution = runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(urls, {
@@ -1528,7 +1536,7 @@ for (const unsafeUrl of [
   "not-a-url",
   `https://www.paniniamerica.net/${"x".repeat(2_100)}`
 ]) {
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(
@@ -1547,7 +1555,7 @@ for (const unsafeUrl of [
   const payload = audited({
     product: "Image Product", subjects: ["Image Subject"], grammar: "standard"
   });
-  await assert.rejects(runCanonicalListingPath({
+  await assert.rejects(runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify({
@@ -1567,7 +1575,7 @@ for (const unsafeUrl of [
     "https://www.paniniamerica.net/checklists/same-path?utm_source=search",
     "https://www.paniniamerica.net/checklists/same-path#result"
   ];
-  const result = await runCanonicalListingPath({
+  const result = await runFutureCanonicalListingPath({
     imageUrls: ["https://example.invalid/card.jpg"],
     model: "gpt-5.6-luna",
     callProvider: async () => new Response(JSON.stringify(repeatedWebSourcesBody(

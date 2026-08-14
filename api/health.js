@@ -19,14 +19,30 @@ import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
   CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   CSM_PROJECTION_ACTIVATION
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
-  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+  verifiedOriginalObservationHealthReceiptForRelease
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
+
+const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+const activeCanonicalNamingTarget = [
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
+].find((contract) => (
+  contract.composer_version === activeWriter.standard.composer_version
+    && contract.marketplace_profile_version
+      === activeWriter.standard.marketplace_profile_version
+));
+if (!activeCanonicalNamingTarget) {
+  throw new Error("active_canonical_naming_target_unknown");
+}
 
 const activeExecution = compileCsmModelExecution({
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
@@ -49,7 +65,9 @@ const activeExecutionContractSha256ByTransportLaneAndImageCount = Object.freeze(
     ])))
   ]))
 );
-const activeProviderAdapter = resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider);
+const activeProviderAdapter = resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider, {
+  requestBuilderVersion: activeWriter.canonical_fields.request_builder_version
+});
 
 export default function handler(req, res) {
   if (req.method !== "GET") {
@@ -104,8 +122,11 @@ export default function handler(req, res) {
       provider_timeout_ms: CSM_ACTIVE_MODEL_PROFILE.provider_timeout_ms,
       recognition_transport_profiles: activeRecognitionTransportProfiles,
       external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT_V3,
-      verified_original_observation: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+      canonical_naming_target: activeCanonicalNamingTarget,
+      verified_original_observation:
+        verifiedOriginalObservationHealthReceiptForRelease(
+          activeWriter.verified_original_observation_overlay
+        ),
       projection_activation: CSM_PROJECTION_ACTIVATION,
       active_writer: CSM_PROJECTION_ACTIVATION.active_writer,
       forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,

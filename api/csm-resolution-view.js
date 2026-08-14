@@ -15,15 +15,25 @@ import { instrumentProductionRequest, bindProductionRequestContext } from "../li
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeActiveCanonicalFields } from "../lib/listing/thin/thin-listing-path.mjs";
 import {
+  CSM_REPLAY_FIELD_SHAPE,
+  isCapturedE1aeComposerV1LotTuple,
+  isCapturedE1aeReplayTuple,
+  isCapturedE1aeStandardTuple,
   composeCanonicalFieldsForStoredOutput,
   replayFromRows,
   validateCanonicalNamingReplayTrace,
-  validateVerifiedOriginalObservationReplayPacket
+  validateVerifiedOriginalObservationReplayPacket,
+  verifyReplay
 } from "../lib/listing/thin/csm-replay.mjs";
-import { buildCsmResolutionView, CSM_RESOLUTION_VIEW_VERSION } from "../lib/listing/csm/resolution-view.mjs";
 import {
-  buildCsmResolutionReview, buildReviewMeasurementSnapshot,
-  CSM_RESOLUTION_REVIEW_VERSION
+  buildCsmResolutionView,
+  CSM_RESOLUTION_VIEW_PROJECTOR,
+  CSM_RESOLUTION_VIEW_VERSION
+} from "../lib/listing/csm/resolution-view.mjs";
+import {
+  buildCapturedE1aeResolutionReview,
+  buildCsmResolutionReview,
+  buildReviewMeasurementSnapshot
 } from "../lib/listing/csm/resolution-review.mjs";
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
@@ -45,10 +55,13 @@ import {
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import { publicTenantAuthError, requireTenantAccess, TENANT_PERMISSIONS } from "../lib/tenant/index.mjs";
 import { readJsonPayload, sendJson } from "../lib/listing/v4/session/http-handler-utils.mjs";
+import { activeWriterProjectionContract } from
+  "../lib/listing/thin/csm-projection-activation.mjs";
 
 const EXTERNAL_IDENTITY_FIELDS = Object.freeze([
   "year", "manufacturer", "product", "set", "subjects", "team", "card_number"
 ]);
+
 const EXTERNAL_IDENTITY_ACTIONS = new Set([
   "FILL", "CORROBORATE", "NORMALIZE_ALIAS", "CORRECT_CONFLICT"
 ]);
@@ -283,13 +296,37 @@ export function composeResolutionView(record) {
   let composerVersion;
   let marketplaceProfileVersion;
   let legacyPublicProjection = false;
+  let resolutionViewProjector = CSM_RESOLUTION_VIEW_PROJECTOR.CURRENT;
+  let capturedE1aeStoredTuple = false;
   let composeCorrectedTitle;
   if (record.replay_rows) {
+    const integrity = verifyReplay(record.replay_rows, record.output_title);
+    if (!integrity.ok) {
+      throw Object.assign(new Error("csm_resolution_replay_integrity_invalid"), {
+        statusCode: 409
+      });
+    }
     const storedOutput = record.replay_rows.output;
     const externalRelease = externalIdentityReleaseForOutput(storedOutput);
-    const replayed = replayFromRows(record.replay_rows);
+    capturedE1aeStoredTuple = isCapturedE1aeReplayTuple(
+      storedOutput, record.replay_rows.resolution
+    );
+    const replayed = replayFromRows(record.replay_rows, {
+      fieldShape: capturedE1aeStoredTuple
+        ? CSM_REPLAY_FIELD_SHAPE.CAPTURED_E1AE
+        : CSM_REPLAY_FIELD_SHAPE.CURRENT_COMPLETE
+    });
     fields = replayed.fields;
     composed = replayed.composed;
+    if (isCapturedE1aeStandardTuple(storedOutput, record.replay_rows.resolution)
+        && fields.grammar === "standard") {
+      resolutionViewProjector =
+        CSM_RESOLUTION_VIEW_PROJECTOR.CAPTURED_E1AE_STANDARD_V02;
+    } else if (isCapturedE1aeStandardTuple(storedOutput, record.replay_rows.resolution)) {
+      throw Object.assign(new Error("csm_resolution_stored_grammar_mismatch"), {
+        statusCode: 409
+      });
+    }
     legacyPublicProjection = externalRelease != null;
     if (externalRelease) {
       const support = publicExternalIdentitySupport(record.external_identity_support);
@@ -344,8 +381,15 @@ export function composeResolutionView(record) {
     // replay bundle. They can only be interpreted as the current contract;
     // claiming an older version without its executable row identity would be
     // an unauditable guess.
-    fields = parseCanonicalFields(record.canonical_payload).fields;
-    composed = composeActiveCanonicalFields(fields);
+    const writer = activeWriterProjectionContract();
+    fields = parseCanonicalFields(record.canonical_payload, {
+      semantics: writer.canonical_fields.parser_semantics,
+      finishAdmissionSemantics: writer.canonical_fields.finish_admission_semantics
+    }).fields;
+    composed = composeActiveCanonicalFields(fields, { writerContract: writer });
+    if (fields.grammar === "standard") {
+      resolutionViewProjector = writer.resolution_view_projector;
+    }
     if ((record.composer_version && record.composer_version !== composed.composer_version)
         || (record.marketplace_profile_version
           && record.marketplace_profile_version !== composed.marketplace_profile_version)) {
@@ -357,7 +401,9 @@ export function composeResolutionView(record) {
       THIN_COMPOSER_VERSION_V1,
       THIN_COMPOSER_VERSION_V2
     ].includes(composerVersion) && marketplaceProfileVersion === EBAY_PROFILE_VERSION;
-    composeCorrectedTitle = (correctedFields) => composeActiveCanonicalFields(correctedFields).title;
+    composeCorrectedTitle = (correctedFields) => composeActiveCanonicalFields(
+      correctedFields, { writerContract: writer }
+    ).title;
   }
   return {
     view: buildCsmResolutionView({
@@ -366,7 +412,8 @@ export function composeResolutionView(record) {
       assetId: record.asset_id,
       recognitionSessionId: record.recognition_session_id,
       resolverVersion: record.resolver_version || THIN_RESOLVER_VERSION,
-      legacyPublicProjection
+      legacyPublicProjection,
+      resolutionViewProjector
     }),
     fields,
     composed,
@@ -438,6 +485,11 @@ export async function handleResolutionReviewRequest({
 
   const record = await readRecord({ tenantId, assetId, env, fetchImpl });
   if (!record) throw Object.assign(new Error("csm_resolution_not_found"), { statusCode: 404 });
+  const capturedE1aeStoredTuple = Boolean(record.replay_rows)
+    && isCapturedE1aeReplayTuple(
+      record.replay_rows.output,
+      record.replay_rows.resolution
+    );
   const {
     view,
     fields,
@@ -447,16 +499,15 @@ export async function handleResolutionReviewRequest({
     compose_corrected_title: composeCorrectedTitle
   } = composeResolutionView(record);
   const originalTitle = String(record.output_title || composed.title).trim();
-  if (originalTitle !== composed.title) {
+  const authenticatedCapturedV1LotReaderDrift = Boolean(record.replay_rows)
+    && isCapturedE1aeComposerV1LotTuple(
+      record.replay_rows.output,
+      record.replay_rows.resolution
+    );
+  if (originalTitle !== composed.title && !authenticatedCapturedV1LotReaderDrift) {
     throw Object.assign(new Error("csm_review_composer_replay_mismatch"), { statusCode: 409 });
   }
-  const measurementSnapshot = buildReviewMeasurementSnapshot({
-    view,
-    composerVersion,
-    marketplaceProfileVersion
-  });
-
-  const review = buildCsmResolutionReview({
+  const reviewInput = {
     provenance: {
       asset_id: assetId,
       recognition_session_id: record.recognition_session_id,
@@ -476,12 +527,21 @@ export async function handleResolutionReviewRequest({
     // payload is ignored: parsing a reviewer's string back into fields is the
     // one thing this contract exists to prevent.
     recomposeTitle: composeCorrectedTitle,
-    // Built from the server-replayed view. Any similarly named client payload
-    // field is ignored and therefore cannot choose its own denominator.
-    measurementSnapshot,
     reviewedAt: new Date().toISOString(),
     note: String(payload.note || "")
-  });
+  };
+  const review = capturedE1aeStoredTuple
+    ? buildCapturedE1aeResolutionReview(reviewInput)
+    : buildCsmResolutionReview({
+        ...reviewInput,
+        // Built from the server-replayed view. Any similarly named client
+        // payload field is ignored and cannot choose its own denominator.
+        measurementSnapshot: buildReviewMeasurementSnapshot({
+          view,
+          composerVersion,
+          marketplaceProfileVersion
+        })
+      });
 
   await appendReview({ tenantId, review, env, fetchImpl });
   return review;
@@ -533,7 +593,7 @@ export default async function handler(request, response) {
         payload
       });
       return sendJson(response, 201, {
-        schema_version: CSM_RESOLUTION_REVIEW_VERSION,
+        schema_version: review.schema_version,
         revision_sha256: review.revision_sha256,
         corrected_title: review.corrected_title,
         verdict: review.verdict

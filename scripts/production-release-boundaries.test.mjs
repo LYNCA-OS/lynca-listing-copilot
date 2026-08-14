@@ -191,6 +191,7 @@ const dependencyBootstrapStep = workflow.slice(dependencyBootstrap, releaseClass
 const releaseClassStep = workflow.slice(releaseClassBinding, schemaPreflight);
 const releaseArtifactStep = workflow.slice(releaseArtifactGate, schemaPreflight);
 const compatibilityBridgeProofStep = workflow.slice(compatibilityBridgeProof, candidateSource);
+const prepromotionHealthStep = workflow.slice(prepromotionHealth, compatibilityBridgeProof);
 const rollbackCaptureStep = workflow.slice(rollbackCapture, rollbackLineage);
 const rollbackLineageStep = workflow.slice(rollbackLineage, vercelDeploy);
 const ownershipGuardStep = workflow.slice(ownershipGuard, vercelPromote);
@@ -595,11 +596,16 @@ assert.match(postPromotionHealthStep,
   /h\.deployment\?\.git_commit_sha === process\.env\.GITHUB_SHA/);
 assert.match(workflow, /h\.runtime\?\.model_profile_id === CSM_ACTIVE_MODEL_PROFILE\.id/);
 assert.equal(
-  [...workflow.matchAll(/resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider\s*\)\.contract\.id/g)].length,
+  [...workflow.matchAll(
+    /resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider,\s*\{\s*requestBuilderVersion:\s*activeWriter\.canonical_fields\.request_builder_version\s*\}\s*\)\.contract\.id/g
+  )].length,
   1,
-  "the immutable candidate gate must resolve the adapter owned by the active profile"
+  "the immutable candidate gate must resolve the adapter selected by the atomic writer"
 );
 assert.match(workflow, /h\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
+assert.match(prepromotionHealthStep,
+  /h\.runtime\?\.request_builder_version\s*[\s\S]*?=== activeWriter\.canonical_fields\.request_builder_version/,
+  "candidate health must directly bind the public request builder to the atomic writer");
 assert.match(workflow,
   /import \{\s*EXTERNAL_IDENTITY_RELEASE_CONTRACT\s*\} from '\.\/lib\/listing\/knowledge\/csm-external-identity-support\.mjs'/,
   "the immutable candidate gate must import the checked-out external identity release contract");
@@ -700,17 +706,44 @@ assert.doesNotMatch(workflow, /--data\s+"\$\(node/,
   "production smoke must not expose the password in curl's process arguments");
 assert.match(health, /LYNCA_RELEASE_GIT_SHA\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_SHA/);
 assert.match(health, /LYNCA_RELEASE_GIT_REF\s*\|\|\s*process\.env\.VERCEL_GIT_COMMIT_REF/);
-assert.match(health, /canonical_naming_target:\s*CANONICAL_NAMING_RELEASE_CONTRACT_V3/,
-  "health must publish the exact target Canonical Naming release contract");
+assert.match(health, /canonical_naming_target:\s*activeCanonicalNamingTarget/,
+  "health must publish the exact Canonical Naming contract selected by the atomic writer");
 assert.match(health,
-  /verified_original_observation:\s*VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT/,
-  "health must publish the exact redacted verified-original receipt");
-assert.match(workflow,
-  /h\.runtime\?\.canonical_naming_target[\s\S]*?CANONICAL_NAMING_RELEASE_CONTRACT_V3/,
-  "the immutable candidate must match the exact target Canonical Naming contract before spend");
-assert.match(workflow,
-  /h\.runtime\?\.verified_original_observation[\s\S]*?VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT/,
-  "the immutable candidate must match the exact redacted verified-original receipt before spend");
+  /verified_original_observation:\s*[\s\S]*?verifiedOriginalObservationHealthReceiptForRelease\([\s\S]*?activeWriter\.verified_original_observation_overlay/,
+  "health must publish the exact redacted receipt selected by the atomic writer");
+assert.match(prepromotionHealthStep,
+  /const activeWriter = CSM_PROJECTION_ACTIVATION\.active_writer/,
+  "candidate health must derive every writer-owned target from the atomic active writer");
+assert.match(prepromotionHealthStep,
+  /\[\s*CANONICAL_NAMING_RELEASE_CONTRACT_V1,\s*CANONICAL_NAMING_RELEASE_CONTRACT_V2,\s*CANONICAL_NAMING_RELEASE_CONTRACT_V3\s*\]\.find\(\(contract\) => \([\s\S]*?contract\.composer_version === activeWriter\.standard\.composer_version[\s\S]*?contract\.marketplace_profile_version[\s\S]*?=== activeWriter\.standard\.marketplace_profile_version/,
+  "candidate health must select one exact Canonical Naming contract from the finite registry");
+assert.match(prepromotionHealthStep,
+  /if \(!expectedCanonicalNamingTarget\) process\.exit\(1\)/,
+  "an unknown active Canonical Naming tuple must fail before spend");
+assert.match(prepromotionHealthStep,
+  /verifiedOriginalObservationHealthReceiptForRelease\(\s*activeWriter\.verified_original_observation_overlay\s*\)/,
+  "candidate health must select the verified receipt from the active append-only release");
+assert.match(prepromotionHealthStep,
+  /h\.runtime\?\.canonical_naming_target[\s\S]*?JSON\.stringify\(expectedCanonicalNamingTarget\)/,
+  "the immutable candidate must match its active Canonical Naming contract before spend");
+assert.match(prepromotionHealthStep,
+  /h\.runtime\?\.verified_original_observation[\s\S]*?JSON\.stringify\(expectedVerifiedOriginalObservation\)/,
+  "the immutable candidate must match its active verified-original receipt before spend");
+assert.match(prepromotionHealthStep,
+  /h\.runtime\?\.projection_activation[\s\S]*?JSON\.stringify\(CSM_PROJECTION_ACTIVATION\)/,
+  "candidate health must bind the complete atomic activation");
+assert.match(prepromotionHealthStep,
+  /h\.runtime\?\.active_writer[\s\S]*?JSON\.stringify\(CSM_PROJECTION_ACTIVATION\.active_writer\)/,
+  "candidate health must bind the selected writer tuple separately");
+assert.match(prepromotionHealthStep,
+  /h\.runtime\?\.forward_readers[\s\S]*?JSON\.stringify\(CSM_PROJECTION_ACTIVATION\.forward_readers\)/,
+  "candidate health must retain the complete forward-reader superset");
+assert.doesNotMatch(prepromotionHealthStep,
+  /JSON\.stringify\(h\.runtime\?\.canonical_naming_target\)\s*===\s*JSON\.stringify\(CANONICAL_NAMING_RELEASE_CONTRACT_V3\)/,
+  "candidate health may not hard-pin the future v0.3 target");
+assert.doesNotMatch(prepromotionHealthStep,
+  /JSON\.stringify\(h\.runtime\?\.verified_original_observation\)\s*===\s*JSON\.stringify\(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT\)/,
+  "candidate health may not hard-pin the future verified overlay");
 assert.equal(
   packageJson.scripts["vercel-build"],
   "node lib/listing/thin/csm-deployment-environment.mjs",
