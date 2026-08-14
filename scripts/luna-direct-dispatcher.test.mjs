@@ -33,6 +33,9 @@ import {
   CSM_ORIGINAL_INLINE_TRANSPORT_PROFILE,
   sha256ExecutionContractValue
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
+import {
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 const TEST_EXECUTION_SHA256 = "d".repeat(64);
 const FUTURE_EXECUTION_SHA256 = "e".repeat(64);
@@ -175,7 +178,8 @@ function definitive502Failure(payload, overrides = {}) {
     capabilities: CSM_LUNA_MODEL_PROFILE.capabilities,
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     imageUrls: ["https://execution-contract.invalid/image-1"],
-    providerAdapterContract: CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT
+    providerAdapterContract: CSM_OPENAI_RESPONSES_ADAPTER_CONTRACT,
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
   };
   const baseDigest = buildCsmModelExecutionContractSha256(baseOptions);
   assert.match(baseDigest, /^[0-9a-f]{64}$/);
