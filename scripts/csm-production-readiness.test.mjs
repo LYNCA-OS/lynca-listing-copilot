@@ -18,8 +18,13 @@ import {
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import {
-  EXTERNAL_IDENTITY_RELEASE_CONTRACT
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  externalIdentityReleaseContractForRegistryRelease
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
+  CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 const ENV = {
   CSM_PERSISTENCE_ENABLED: "true",
@@ -161,14 +166,24 @@ function fetchWithForwardRegistryPayload(registryPayload) {
 }
 
 const ready = await checkCsmThinProductionReadiness({ env: ENV, fetchImpl });
+const activeExternalIdentityRelease = externalIdentityReleaseContractForRegistryRelease(
+  CSM_PROJECTION_ACTIVATION.active_writer.external_identity.registry_release_id
+);
 assert.equal(ready.ok, true);
 assert.equal(ready.active_path, "CSM_THIN_DIRECT");
 assert.equal(ready.model, "gpt-5.6-luna");
 // `low` since 2026-08-03 (founder). Asserted against the runtime contract so
 // the readiness probe and the endpoint can never disagree about the tier.
 assert.equal(ready.reasoning_effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
-assert.deepEqual(ready.external_identity, EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+assert.deepEqual(ready.external_identity, activeExternalIdentityRelease,
   "database readiness must attest the same external identity release advertised by health");
+assert.deepEqual(
+  externalIdentityReleaseContractForRegistryRelease(
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible.external_identity.registry_release_id
+  ),
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  "the b159 rollback writer keeps its frozen external-v2 readiness oracle"
+);
 assert.deepEqual(calls.map(({ pathname }) => pathname), [
   "/rest/v1/csm_registry_releases",
   "/rest/v1/rpc/persist_csm_stage_packet_v1",

@@ -21,10 +21,16 @@ import {
   csmProviderPacerReadinessMatches
 } from "../lib/listing/thin/csm-provider-admission-authority.mjs";
 import {
-  EXTERNAL_IDENTITY_RELEASE_CONTRACT
+  externalIdentityReleaseContractForRegistryRelease
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
+  CSM_PROJECTION_ACTIVATION
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 const LOOKUP_HASH = "0".repeat(64);
+const activeExternalIdentityRelease = externalIdentityReleaseContractForRegistryRelease(
+  CSM_PROJECTION_ACTIVATION.active_writer.external_identity.registry_release_id
+);
 
 function serviceKey(env) {
   return String(env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SECRET_KEY || "").trim();
@@ -150,7 +156,7 @@ export async function checkCsmThinProductionReadiness({
     durable_provider_authority_ready: true,
     durable_provider_operation_key_recovery_ready: true,
     durable_provider_pacer_ready: true,
-    external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+    external_identity: activeExternalIdentityRelease,
     retired_capabilities_disabled: true
   });
 }

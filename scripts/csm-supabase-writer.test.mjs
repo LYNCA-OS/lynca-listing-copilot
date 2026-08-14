@@ -16,6 +16,7 @@ import {
   THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+  THIN_REGISTRY_PAYLOAD_CONTRACT,
   THIN_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
@@ -67,7 +68,7 @@ const ENV = {
 };
 const REGISTRY_RELEASE = {
   ...THIN_REGISTRY_RELEASE_CONTRACT,
-  registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
+  registry_payload: THIN_REGISTRY_PAYLOAD_CONTRACT
 };
 const EXTERNAL_REGISTRY_RELEASE = {
   ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
@@ -344,6 +345,21 @@ function fakeStore({ failOnceOn = "" } = {}) {
   });
   assert.equal(mismatched.ready, false);
   assert.equal(mismatched.reason, "registry_release_contract_mismatch");
+  for (const registryPayload of [
+    { ...THIN_REGISTRY_PAYLOAD_CONTRACT, external_catalog: true },
+    { ...THIN_REGISTRY_PAYLOAD_CONTRACT, unexpected: true },
+    { mode: THIN_REGISTRY_PAYLOAD_CONTRACT.mode }
+  ]) {
+    const payloadMismatch = await checkCsmPersistenceReadiness({
+      env: ENV,
+      fetchImpl: async () => jsonResponse([{
+        ...REGISTRY_RELEASE,
+        registry_payload: registryPayload
+      }, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE])
+    });
+    assert.equal(payloadMismatch.ready, false);
+    assert.equal(payloadMismatch.reason, "registry_release_contract_mismatch");
+  }
   let registryAttempts = 0;
   const recovered = await checkCsmPersistenceReadiness({
     env: ENV,

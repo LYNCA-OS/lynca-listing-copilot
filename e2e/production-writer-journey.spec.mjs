@@ -27,6 +27,7 @@ import {
   sealCsmOwnerExecutionReceipt
 } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
 import {
+  THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
@@ -38,7 +39,10 @@ import {
 } from "../lib/listing/feedback/feedback-capture.mjs";
 import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-  EXTERNAL_IDENTITY_SUPPORT_PACK
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
+  EXTERNAL_IDENTITY_SUPPORT_PACK,
+  externalIdentityReleaseContractForRegistryRelease,
+  validateExternalIdentityPublicReceipt
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT,
@@ -64,7 +68,8 @@ import {
   VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
   VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
   VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY,
-  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION,
+  verifiedOriginalObservationHealthReceiptForReleases
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
   WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS,
@@ -99,12 +104,16 @@ import {
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE,
   compatibilityBridgeWriterProjectionMode,
   ORDINARY_RELEASE_CLASS
 } from "../scripts/compatibility-bridge-release.mjs";
 import {
   CSM_PROJECTION_ACTIVATION,
-  CSM_WRITER_PROJECTION_CONTRACTS
+  CSM_WRITER_PROJECTION_CONTRACTS,
+  validateCsmWriterProjectionContract
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
   buildProductionForwardReadbackExpectation,
@@ -147,8 +156,30 @@ const expectedExecutionContractSha256ByTransportLaneAndImageCount = Object.freez
     ])))
   ]))
 );
+const offlineWriterContractSelectorId = String(
+  process.env.WRITER_JOURNEY_OFFLINE_WRITER_CONTRACT_ID || ""
+).trim();
+function offlineWriterProjectionContractForId(contractId) {
+  const normalized = String(contractId || "").trim();
+  if (!normalized) {
+    return validateCsmWriterProjectionContract(CSM_PROJECTION_ACTIVATION.active_writer);
+  }
+  const selected = [
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible,
+    CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+  ].find((writer) => writer.contract_id === normalized);
+  if (!selected) {
+    throw new Error("WRITER_JOURNEY_OFFLINE_WRITER_CONTRACT_ID invalid");
+  }
+  return validateCsmWriterProjectionContract(selected);
+}
+const offlineSelectedWriterProjectionContract =
+  offlineWriterProjectionContractForId(offlineWriterContractSelectorId);
 const expectedProviderAdapterContract = resolveCsmProviderAdapter(
-  CSM_ACTIVE_MODEL_PROFILE.provider
+  CSM_ACTIVE_MODEL_PROFILE.provider, {
+    requestBuilderVersion:
+      offlineSelectedWriterProjectionContract.canonical_fields.request_builder_version
+  }
 ).contract;
 const expectedProviderAdapterVersion = expectedProviderAdapterContract.id;
 const expectedMaxOutputTokens = 8192;
@@ -310,24 +341,123 @@ function healthRecognitionTransportContractMatches(runtime) {
   });
 }
 
-function healthExternalIdentityContractMatches(runtime) {
-  return stableJson(runtime?.external_identity) === stableJson(EXTERNAL_IDENTITY_RELEASE_CONTRACT);
+function capturedProductionWriterMode(writerProjectionMode) {
+  return [
+    COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  ].includes(writerProjectionMode);
 }
 
-function capturedProductionWriterMode(writerProjectionMode) {
-  return writerProjectionMode === COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE;
+function expectedWriterProjectionContract(writerProjectionMode, writerContract = null) {
+  if (writerContract != null) {
+    try {
+      return validateCsmWriterProjectionContract(writerContract);
+    } catch {
+      return null;
+    }
+  }
+  if (writerProjectionMode === ORDINARY_WRITER_PROJECTION_MODE) {
+    return offlineSelectedWriterProjectionContract;
+  }
+  if (capturedProductionWriterMode(writerProjectionMode)) {
+    return CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+  }
+  if (writerProjectionMode === COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE) {
+    return CSM_WRITER_PROJECTION_CONTRACTS.future_v3;
+  }
+  return null;
+}
+
+function expectedExternalIdentityRelease(writerProjectionMode, writerContract = null) {
+  const writer = expectedWriterProjectionContract(writerProjectionMode, writerContract);
+  if (!writer) return null;
+  try {
+    return externalIdentityReleaseContractForRegistryRelease(
+      writer.external_identity.registry_release_id
+    );
+  } catch {
+    return null;
+  }
+}
+
+function expectedProviderAdapterContractForWriter(writer) {
+  if (!writer) return null;
+  try {
+    return resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider, {
+      requestBuilderVersion: writer.canonical_fields.request_builder_version
+    }).contract;
+  } catch {
+    return null;
+  }
+}
+
+function offlineWriterSelectorReceipt(writer) {
+  const selected = validateCsmWriterProjectionContract(writer);
+  const externalIdentityRelease = expectedExternalIdentityRelease(
+    ORDINARY_WRITER_PROJECTION_MODE,
+    selected
+  );
+  const pairHealth = expectedVerifiedOriginalObservationHealthReceipt(
+    ORDINARY_WRITER_PROJECTION_MODE,
+    selected
+  );
+  requireInvariant(externalIdentityRelease?.registry_release?.id
+    === selected.external_identity.registry_release_id
+    && externalIdentityRelease?.resolution_contract?.sha256
+      === selected.external_identity.resolution_contract_sha256
+    && pairHealth?.release_id === selected.verified_original_observation_overlay
+    && /^[0-9a-f]{64}$/.test(String(pairHealth?.post_observation_contract_sha256 || "")),
+  verifierErrorCodes.GENERIC);
+  return Object.freeze({
+    selector_source: offlineWriterContractSelectorId
+      ? "EXPLICIT_OFFLINE_CONTRACT_ID"
+      : "ACTIVATION_ACTIVE_WRITER",
+    contract_id: selected.contract_id,
+    durable_projection_contract_version: selected.durable_projection_contract_version,
+    external_identity_registry_release_id:
+      externalIdentityRelease.registry_release.id,
+    external_identity_resolution_contract_id:
+      externalIdentityRelease.resolution_contract.id,
+    external_identity_resolution_contract_sha256:
+      externalIdentityRelease.resolution_contract.sha256,
+    verified_original_observation_release_id: pairHealth.release_id,
+    paired_post_observation_contract_sha256:
+      pairHealth.post_observation_contract_sha256
+  });
+}
+
+function healthExternalIdentityContractMatches(runtime, writerProjectionMode) {
+  const release = expectedExternalIdentityRelease(writerProjectionMode);
+  return release != null
+    && stableJson(runtime?.external_identity) === stableJson(release);
 }
 
 function expectedCanonicalNamingContract(writerProjectionMode) {
-  return capturedProductionWriterMode(writerProjectionMode)
-    ? CANONICAL_NAMING_RELEASE_CONTRACT_V2
-    : CANONICAL_NAMING_RELEASE_CONTRACT;
+  const writer = expectedWriterProjectionContract(writerProjectionMode);
+  return [
+    CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+    CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+    CANONICAL_NAMING_RELEASE_CONTRACT_V3
+  ].find((contract) => writer
+    && contract.composer_version === writer.standard.composer_version
+    && contract.marketplace_profile_version === writer.standard.marketplace_profile_version) || null;
 }
 
-function expectedVerifiedOriginalObservationHealthReceipt(writerProjectionMode) {
-  return capturedProductionWriterMode(writerProjectionMode)
-    ? VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT
-    : VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT;
+function expectedVerifiedOriginalObservationHealthReceipt(
+  writerProjectionMode,
+  writerContract = null
+) {
+  const writer = expectedWriterProjectionContract(writerProjectionMode, writerContract);
+  if (!writer) return null;
+  try {
+    return verifiedOriginalObservationHealthReceiptForReleases({
+      verifiedOriginalObservationReleaseId:
+        writer.verified_original_observation_overlay,
+      externalIdentityRegistryReleaseId: writer.external_identity.registry_release_id
+    });
+  } catch {
+    return null;
+  }
 }
 
 function healthCanonicalNamingContractMatches(runtime, writerProjectionMode) {
@@ -341,10 +471,11 @@ function healthVerifiedOriginalObservationContractMatches(runtime, writerProject
 }
 
 function healthProjectionActivationMatches(runtime, writerProjectionMode) {
-  if (!capturedProductionWriterMode(writerProjectionMode)) return true;
+  const writer = expectedWriterProjectionContract(writerProjectionMode);
+  if (!writer) return false;
   return stableJson(runtime?.projection_activation) === stableJson(CSM_PROJECTION_ACTIVATION)
     && stableJson(runtime?.active_writer)
-      === stableJson(CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible)
+      === stableJson(writer)
     && stableJson(runtime?.forward_readers)
       === stableJson(CSM_PROJECTION_ACTIVATION.forward_readers);
 }
@@ -365,6 +496,9 @@ function writerJourneyHealthReceipt({
   } catch {
     // Keep the sanitized sentinel.
   }
+  const writer = expectedWriterProjectionContract(writerProjectionMode);
+  const providerAdapter = expectedProviderAdapterContractForWriter(writer);
+  const externalIdentityRelease = expectedExternalIdentityRelease(writerProjectionMode);
   const receipt = {
     http_ok: httpOk === true,
     ready: health?.ready === true,
@@ -378,14 +512,16 @@ function writerJourneyHealthReceipt({
     canonical_naming_contract_valid:
       healthCanonicalNamingContractMatches(health?.runtime, writerProjectionMode),
     canonical_naming_release_contract: health?.runtime?.canonical_naming_target,
+    external_identity_release_contract: health?.runtime?.external_identity,
     verified_original_observation_release_receipt:
       health?.runtime?.verified_original_observation,
     runtime_contract_valid: health?.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
-      && health?.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+      && providerAdapter != null
+      && health?.runtime?.provider_adapter_version === providerAdapter.id
       && health?.runtime?.request_builder_version
-        === expectedProviderAdapterContract.request_builder_version
+        === providerAdapter.request_builder_version
       && healthRecognitionTransportContractMatches(health?.runtime)
-      && healthExternalIdentityContractMatches(health?.runtime)
+      && healthExternalIdentityContractMatches(health?.runtime, writerProjectionMode)
       && healthCanonicalNamingContractMatches(health?.runtime, writerProjectionMode)
       && healthVerifiedOriginalObservationContractMatches(
         health?.runtime, writerProjectionMode
@@ -407,6 +543,8 @@ function writerJourneyHealthReceipt({
     && receipt.deployment_environment === "production"
     && stableJson(receipt.canonical_naming_release_contract)
       === stableJson(expectedCanonicalNamingContract(writerProjectionMode))
+    && stableJson(receipt.external_identity_release_contract)
+      === stableJson(externalIdentityRelease)
     && stableJson(receipt.verified_original_observation_release_receipt)
       === stableJson(expectedVerifiedOriginalObservationHealthReceipt(writerProjectionMode))
     && receipt.runtime_contract_valid,
@@ -802,10 +940,13 @@ function lotSharedOnlyProjectionProof(sourceCase, resolutionView, title) {
   });
 }
 
-function externalIdentityParityProof(resolutionView) {
+function externalIdentityParityProof(resolutionView, {
+  writerProjectionMode = ORDINARY_WRITER_PROJECTION_MODE,
+  writerContract = null
+} = {}) {
   const code = verifierErrorCodes.EXTERNAL_IDENTITY_SUPPORT_MISMATCH;
   const support = resolutionView?.external_identity_support;
-  const release = EXTERNAL_IDENTITY_RELEASE_CONTRACT;
+  const release = expectedExternalIdentityRelease(writerProjectionMode, writerContract);
   const expectedSources = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => ({
     provider: source.source_id.startsWith("tcdb.")
       ? "TCDB"
@@ -819,16 +960,12 @@ function externalIdentityParityProof(resolutionView) {
   const expectedFields = [
     "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
   ];
-  requireInvariant(support?.schema_version === "csm-external-identity-public-receipt.v1"
-    && support?.status === "APPLIED"
+  requireInvariant(release != null
+    && validateExternalIdentityPublicReceipt(support)
     && support?.match_basis === "VERIFIED_ORIGINAL_SET"
     && !Object.prototype.hasOwnProperty.call(support, "original_set_sha256")
     && support?.registry_release?.id === release.registry_release.id
-    && support?.registry_release?.registry_version
-      === THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.registry_version
     && support?.registry_release?.content_sha256 === release.registry_release.content_sha256
-    && support?.registry_release?.sem_standard_version
-      === THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.sem_standard_version
     && support?.resolver_version === release.resolution_contract.resolver_version
     && support?.conflict_policy_version === release.resolution_contract.conflict_policy_version
     && support?.composer_version === release.resolution_contract.composer_version
@@ -847,9 +984,8 @@ function externalIdentityParityProof(resolutionView) {
     && [...(support?.supported_fields || [])].sort().join("\0") === expectedFields.join("\0")
     && Object.keys(support?.field_decisions || {}).sort().join("\0")
       === expectedFields.join("\0")
-    && Object.entries(support.field_decisions).every(([field, decision]) => (
+    && Object.values(support.field_decisions).every((decision) => (
       ["FILL", "CORROBORATE", "NORMALIZE_ALIAS", "CORRECT_CONFLICT"].includes(decision?.action)
-      && (decision?.action !== "CORRECT_CONFLICT" || ["year", "set"].includes(field))
       && Array.isArray(decision?.source_ids)
       && decision.source_ids.length > 0
     ))
@@ -1011,7 +1147,13 @@ function liveExecutionReceiptProof(payload, {
     expectedExecutionContractByTransportLaneAndImageCount[laneVersion]?.[String(imageCount)];
   const expectedExecutionContractSha256 =
     expectedExecutionContractSha256ByTransportLaneAndImageCount[laneVersion]?.[String(imageCount)];
+  const writer = expectedWriterProjectionContract(writerProjectionMode)
+    || (writerProjectionMode === COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE
+      ? CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible : null);
+  const providerAdapter = expectedProviderAdapterContractForWriter(writer);
   requireInvariant(exactObject(owner)
+    && writer != null
+    && providerAdapter != null
     && CSM_RECOGNITION_TRANSPORT_PROFILES.includes(transportProfile)
     && exactObject(expectedExecutionContract)
     && /^[0-9a-f]{64}$/.test(String(expectedExecutionContractSha256 || ""))
@@ -1049,9 +1191,9 @@ function liveExecutionReceiptProof(payload, {
     model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
     optimization_pack_id: CSM_ACTIVE_MODEL_PROFILE.optimization_pack_id,
     optimization_pack_sha256: CSM_ACTIVE_MODEL_PROFILE.optimization_pack_sha256,
-    provider_adapter_version: expectedProviderAdapterVersion,
-    request_builder_version: expectedProviderAdapterContract.request_builder_version,
-    response_parser_version: expectedProviderAdapterContract.response_parser_version,
+    provider_adapter_version: providerAdapter.id,
+    request_builder_version: providerAdapter.request_builder_version,
+    response_parser_version: providerAdapter.response_parser_version,
     transport_profile_id: transportProfile.id,
     transport_profile_sha256: sha256CsmRecognitionTransportReceipt(transportProfile),
     execution_contract_sha256: expectedExecutionContractSha256,
@@ -1897,6 +2039,18 @@ function validateSourceCasesManifest(manifest, {
     && manifest.bridge_marker === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
     && compatibilityBridgeWriterProjectionMode(manifest, { expectedGitSha })
       === COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE;
+  const compatibilityBridgeV4CheckpointReader =
+    releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && hasExactKeys(manifest, [
+      "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker", "git_sha",
+      "writer_projection_mode", "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION
+    && manifest.bridge_descriptor_id
+      === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID
+    && manifest.bridge_marker === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER
+    && compatibilityBridgeWriterProjectionMode(manifest, { expectedGitSha })
+      === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE;
   if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(releaseClass)
     || manifest?.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
     || manifest?.accuracy_claim !== null
@@ -1916,7 +2070,8 @@ function validateSourceCasesManifest(manifest, {
     || (releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS && (
       manifest.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
       || (!compatibilityBridgeV1 && !compatibilityBridgeV2
-        && !compatibilityBridgeV3 && !compatibilityBridgeV4)
+        && !compatibilityBridgeV3 && !compatibilityBridgeV4
+        && !compatibilityBridgeV4CheckpointReader)
       || !/^[0-9a-f]{40}$/.test(String(expectedGitSha || ""))
       || manifest.git_sha !== expectedGitSha
     ))) {
@@ -2058,6 +2213,7 @@ async function localSourceCases(filePath, options) {
   const compatibility = options?.releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS;
   return Object.freeze({
     cases: Object.freeze(cases),
+    bridgeDescriptorId: compatibility ? manifest.bridge_descriptor_id || null : null,
     bridgeMarker: compatibility ? manifest.bridge_marker : null,
     writerProjectionMode: compatibility
       ? compatibilityBridgeWriterProjectionMode(manifest, {
@@ -2119,7 +2275,10 @@ async function cookieHeaderFromStorageState(filePath, target) {
   return cookieHeaderForUrl(state, target);
 }
 
-function recognitionVersionReceipt(recognition, view) {
+function recognitionVersionReceipt(recognition, view, {
+  writerProjectionMode = null,
+  writerContract = null
+} = {}) {
   const rows = recognition?.csm_rows || {};
   const rowContract = String(rows.output?.contract_version || "").trim();
   const resolutionContract = String(rows.resolution?.contract_version || "").trim();
@@ -2135,6 +2294,8 @@ function recognitionVersionReceipt(recognition, view) {
   const marketplaceProfile = String(
     owner.marketplace_profile || rowMarketplaceProfile
   ).trim();
+  const writer = writerProjectionMode == null && writerContract == null
+    ? null : expectedWriterProjectionContract(writerProjectionMode, writerContract);
   if (recognition?.csm_owner_versions != null) {
     requireInvariant(Boolean(owner.resolver) && Boolean(owner.composer)
       && Boolean(owner.marketplace_profile),
@@ -2142,6 +2303,9 @@ function recognitionVersionReceipt(recognition, view) {
   }
   requireInvariant(Boolean(contract) && contract === rowContract && contract === resolutionContract,
     verifierErrorCodes.VERSION_CONTRACT_MISMATCH);
+  requireInvariant(writerProjectionMode == null && writerContract == null
+    || (writer != null && contract === writer.durable_projection_contract_version),
+  verifierErrorCodes.VERSION_CONTRACT_MISMATCH);
   if (recognition?.csm_contract_version) {
     requireInvariant(recognition.csm_contract_version === contract,
       verifierErrorCodes.VERSION_CONTRACT_MISMATCH);
@@ -2236,33 +2400,45 @@ function observationCanonicalV3VersionActive(versions) {
     && canonicalNamingVersionActive(versions);
 }
 
-function verifiedOriginalObservationVersionActive(versions, support = null) {
-  const tupleActive = versions?.resolver === VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
-    && canonicalNamingVersionActive(versions);
+function standardWriterVersionActive(versions, writer) {
+  return writer != null
+    && versions?.csm_contract === writer.durable_projection_contract_version
+    && versions?.composer === writer.standard.composer_version
+    && versions?.marketplace_profile === writer.standard.marketplace_profile_version;
+}
+
+function verifiedOriginalObservationVersionActive(versions, support = null, {
+  writerProjectionMode = ORDINARY_WRITER_PROJECTION_MODE,
+  writerContract = null
+} = {}) {
+  const writer = expectedWriterProjectionContract(writerProjectionMode, writerContract);
+  const release = writer
+    ? VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY.releases[
+      writer.verified_original_observation_overlay
+    ]?.receipt : null;
+  const health = expectedVerifiedOriginalObservationHealthReceipt(
+    writerProjectionMode, writer
+  );
+  const tupleActive = release != null
+    && health != null
+    && standardWriterVersionActive(versions, writer)
+    && versions?.resolver === release.resolver_version;
   if (support == null) return tupleActive;
   return tupleActive
     && validateVerifiedOriginalObservationPublicReceipt(support)
-    && support?.release_id === VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id
-    && support?.pack_sha256 === VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256
+    && support?.release_id === health.release_id
+    && support?.pack_sha256 === health.pack_sha256
     && support?.resolver_version === versions.resolver
-    && support?.resolution_contract_sha256
-      === VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256;
+    && support?.resolution_contract_sha256 === health.resolution_contract_sha256;
 }
 
 function capturedProductionVerifiedOriginalObservationVersionActive(
   versions,
   support = null
 ) {
-  const receipt = VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT;
-  const tupleActive = versions?.resolver === VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
-    && capturedProductionStandardVersionActive(versions);
-  if (support == null) return tupleActive;
-  return tupleActive
-    && validateVerifiedOriginalObservationPublicReceipt(support)
-    && support?.release_id === receipt.release_id
-    && support?.pack_sha256 === receipt.pack_sha256
-    && support?.resolver_version === versions.resolver
-    && support?.resolution_contract_sha256 === receipt.resolution_contract_sha256;
+  return verifiedOriginalObservationVersionActive(versions, support, {
+    writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+  });
 }
 
 function currentStandardWriterProjectionMode(writerProjectionMode) {
@@ -2272,13 +2448,17 @@ function currentStandardWriterProjectionMode(writerProjectionMode) {
 
 function standardNonTcgWriterProjectionActive({
   writerProjectionMode,
+  writerContract = null,
   versions,
   verifiedOriginalObservationSupport
 } = {}) {
   if (currentStandardWriterProjectionMode(writerProjectionMode)) {
     return verifiedOriginalObservationSupport != null
       && verifiedOriginalObservationVersionActive(
-      versions, verifiedOriginalObservationSupport
+        versions, verifiedOriginalObservationSupport, {
+          writerProjectionMode,
+          writerContract
+        }
       );
   }
   if (capturedProductionWriterMode(writerProjectionMode)) {
@@ -2296,13 +2476,16 @@ function standardNonTcgWriterProjectionActive({
 
 function largeStandardWriterProjectionActive({
   writerProjectionMode,
+  writerContract = null,
   versions,
   grammar,
   verifiedOriginalObservationSupport,
   externalIdentitySupport
 } = {}) {
   if (currentStandardWriterProjectionMode(writerProjectionMode)) {
-    return observationCanonicalV3VersionActive(versions)
+    const writer = expectedWriterProjectionContract(writerProjectionMode, writerContract);
+    return standardWriterVersionActive(versions, writer)
+      && versions?.resolver === THIN_RESOLVER_VERSION
       && verifiedOriginalObservationSupport == null
       && externalIdentitySupport == null;
   }
@@ -2322,6 +2505,7 @@ function largeStandardWriterProjectionActive({
 
 function standardNonTcgWriterProjectionEvidenceActive({
   writerProjectionMode,
+  writerContract = null,
   evidence
 } = {}) {
   if (currentStandardWriterProjectionMode(writerProjectionMode)) {
@@ -2329,7 +2513,10 @@ function standardNonTcgWriterProjectionEvidenceActive({
       && evidence?.compatibility_bridge_standard_active === false
       && evidence?.verified_original_observation_active === true
       && productionStandardP0EvidenceProofValid(evidence?.standard_p0_identity)
-      && verifiedOriginalObservationVersionActive(evidence?.versions);
+      && verifiedOriginalObservationVersionActive(evidence?.versions, null, {
+        writerProjectionMode,
+        writerContract
+      });
   }
   if (capturedProductionWriterMode(writerProjectionMode)) {
     return evidence?.canonical_naming_active === false
@@ -2350,6 +2537,7 @@ function standardNonTcgWriterProjectionEvidenceActive({
 
 function ordinaryActivationSeal({
   writerProjectionMode,
+  writerContract = null,
   standardCaseEvidence,
   tcgCaseEvidence,
   largeCaseEvidence,
@@ -2363,22 +2551,40 @@ function ordinaryActivationSeal({
   usedWithoutGovernedAppliedSupportCases,
   governedWebCaseEvidence
 } = {}) {
+  const writer = expectedWriterProjectionContract(writerProjectionMode, writerContract);
+  const ordinaryCases = [
+    standardCaseEvidence,
+    tcgCaseEvidence,
+    largeCaseEvidence,
+    parityCaseEvidence,
+    webCaseEvidence,
+    lotCaseEvidence
+  ];
   return writerProjectionMode === ORDINARY_WRITER_PROJECTION_MODE
+    && writer != null
+    && ordinaryCases.every((entry) => entry?.versions?.csm_contract
+      === writer.durable_projection_contract_version)
     && standardNonTcgWriterProjectionEvidenceActive({
       writerProjectionMode,
+      writerContract: writer,
       evidence: standardCaseEvidence
     })
     && observationLegacyVersionActive(tcgCaseEvidence?.versions)
     && largeCaseEvidence?.overlap_observed === true
     && largeStandardWriterProjectionActive({
       writerProjectionMode,
+      writerContract: writer,
       versions: largeCaseEvidence?.versions,
       verifiedOriginalObservationSupport: null,
       externalIdentitySupport: null
     })
     && largeCaseEvidence?.relay_durable_before_recognition_response === true
     && parityCaseEvidence?.codex_parity_exact_match === true
-    && registeredExternalIdentityVersionActive(parityCaseEvidence?.versions)
+    && registeredExternalIdentityVersionActive(parityCaseEvidence?.versions, {
+      writerProjectionMode,
+      writerContract: writer,
+      externalIdentitySupport: parityCaseEvidence?.external_identity_support
+    })
     && parityCaseEvidence?.external_identity_support?.applied === true
     && parityCaseEvidence?.external_identity_support?.match_basis
       === "VERIFIED_ORIGINAL_SET"
@@ -2418,6 +2624,7 @@ function compatibilityBridgeSeal({
   governedWebCaseEvidence
 } = {}) {
   const expectedCaseIds = ["LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"];
+  const writer = expectedWriterProjectionContract(writerProjectionMode);
   const semanticCaseIds = Array.isArray(semanticCases)
     ? semanticCases.map((entry) => entry?.case_id).sort()
     : [];
@@ -2491,6 +2698,9 @@ function compatibilityBridgeSeal({
       )).length === 1;
   }
   return Array.isArray(evidenceCases)
+    && (writerProjectionMode === COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE
+      || (writer != null && evidenceCases.every((entry) => entry?.versions?.csm_contract
+        === writer.durable_projection_contract_version)))
     && evidenceCases.map((entry) => entry?.case_id).sort().join("\0")
       === expectedCaseIds.join("\0")
     && Array.isArray(semanticCases)
@@ -2516,12 +2726,14 @@ function compatibilityBridgeSeal({
     && lotCaseEvidence == null
     && standardNonTcgWriterProjectionEvidenceActive({
       writerProjectionMode,
+      writerContract: writer,
       evidence: standardCaseEvidence
     })
     && observationLegacyVersionActive(tcgCaseEvidence?.versions)
     && largeCaseEvidence?.overlap_observed === true
     && largeStandardWriterProjectionActive({
       writerProjectionMode,
+      writerContract: writer,
       versions: largeCaseEvidence?.versions,
       verifiedOriginalObservationSupport: null,
       externalIdentitySupport: null
@@ -2529,11 +2741,30 @@ function compatibilityBridgeSeal({
     && largeCaseEvidence?.relay_durable_before_recognition_response === true;
 }
 
-function registeredExternalIdentityVersionActive(versions) {
-  const contract = EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract;
-  return versions?.resolver === contract.resolver_version
+function registeredExternalIdentityVersionActive(versions, {
+  writerProjectionMode = ORDINARY_WRITER_PROJECTION_MODE,
+  externalIdentitySupport = null,
+  writerContract = null
+} = {}) {
+  const writer = expectedWriterProjectionContract(writerProjectionMode, writerContract);
+  const release = expectedExternalIdentityRelease(writerProjectionMode, writer);
+  const contract = release?.resolution_contract;
+  return writer != null
+    && contract != null
+    && versions?.csm_contract === writer.durable_projection_contract_version
+    && versions?.resolver === contract.resolver_version
     && versions?.composer === contract.composer_version
-    && versions?.marketplace_profile === contract.marketplace_profile_version;
+    && versions?.marketplace_profile === contract.marketplace_profile_version
+    && (externalIdentitySupport == null || (
+      externalIdentitySupport.registry_release_id === release.registry_release.id
+      && externalIdentitySupport.registry_release_sha256
+        === release.registry_release.content_sha256
+      && externalIdentitySupport.pack_id === release.support_pack.id
+      && externalIdentitySupport.pack_sha256 === release.support_pack.sha256
+      && externalIdentitySupport.index_id === release.index.id
+      && externalIdentitySupport.index_sha256 === release.index.sha256
+      && externalIdentitySupport.resolution_contract_sha256 === contract.sha256
+    ));
 }
 
 function feedbackReceipt({
@@ -2609,6 +2840,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     passed: false,
     launch_ready_mutated: false,
     release_class: releaseClass,
+    compatibility_bridge_descriptor_id: sourceManifest.bridgeDescriptorId,
     compatibility_bridge_marker: sourceManifest.bridgeMarker,
     writer_projection_mode: writerProjectionMode,
     base_url: baseUrl,
@@ -3217,7 +3449,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
       expect(resolutionView?.asset_id).toBe(recognitionPayload.asset_id);
       expect(resolutionView?.recognition_session_id).toBe(recognitionPayload.recognition_session_id);
       expect(resolutionView?.grammar?.value).toBe(sourceCase.expected_grammar);
-      const versions = recognitionVersionReceipt(recognitionPayload, resolutionView);
+      const versions = recognitionVersionReceipt(recognitionPayload, resolutionView, {
+        writerProjectionMode
+      });
       if (sourceCase.case_id === "TCG") {
         requireInvariant((!capturedProductionWriterMode(writerProjectionMode)
           && observationLegacyVersionActive(versions))
@@ -3287,7 +3521,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
       }
       if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
         failurePhase = "EXTERNAL_IDENTITY_SUPPORT";
-        requireInvariant(registeredExternalIdentityVersionActive(versions),
+        requireInvariant(registeredExternalIdentityVersionActive(versions, {
+          writerProjectionMode
+        }),
           verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
         requireInvariant(codexParityTitleMatches({
           recognitionTitle: recognitionPayload?.title,
@@ -3295,7 +3531,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
           storedTitle: resolutionView?.composer?.stored_title
         }),
           verifierErrorCodes.CODEX_PARITY_MISMATCH);
-        externalIdentityReceipt = externalIdentityParityProof(resolutionView);
+        externalIdentityReceipt = externalIdentityParityProof(resolutionView, {
+          writerProjectionMode
+        });
       }
       requireInvariant(titleSha256(resolutionView?.composer?.stored_title) === generatedTitleSha256,
         verifierErrorCodes.TITLE_STORED_UI_MISMATCH);
@@ -3541,7 +3779,11 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && largeResolutionView?.asset_id === largeRecognitionPayload.asset_id
       && largeResolutionView?.recognition_session_id === largeRecognitionPayload.recognition_session_id,
     verifierErrorCodes.LARGE_RESPONSE_CONTRACT_MISMATCH);
-    const largeVersions = recognitionVersionReceipt(largeRecognitionPayload, largeResolutionView);
+    const largeVersions = recognitionVersionReceipt(
+      largeRecognitionPayload,
+      largeResolutionView,
+      { writerProjectionMode }
+    );
     requireInvariant((!capturedProductionWriterMode(writerProjectionMode)
       || (capturedProductionProjectionReceiptsOmitted(largeResolutionView)
         && publicProjectionSupportOmitted(largeResolutionView, [
@@ -4058,7 +4300,7 @@ test("offline TCG authority abstention bypasses designated relation proof @offli
   )).toThrow(verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH);
 });
 
-test("offline verifier boundaries redact titles and reject identity drift @offline", async () => {
+test("offline verifier boundaries redact titles and reject identity drift @offline", async ({}, testInfo) => {
   const warmupProof = warmupResponseReceipt([{
     request_sequence: 1,
     response_sequence: 2,
@@ -4082,6 +4324,59 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   }
 
   const offlineSha = "a".repeat(40);
+  const offlineWriter = expectedWriterProjectionContract(ORDINARY_WRITER_PROJECTION_MODE);
+  const offlineSelectorReceipt = offlineWriterSelectorReceipt(offlineWriter);
+  const expectedSelectedWriterId = offlineWriterContractSelectorId
+    || offlineSelectedWriterProjectionContract.contract_id;
+  requireInvariant(offlineSelectorReceipt.contract_id === expectedSelectedWriterId
+    && offlineSelectorReceipt.durable_projection_contract_version
+      === offlineWriter.durable_projection_contract_version
+    && offlineSelectorReceipt.external_identity_registry_release_id
+      === offlineWriter.external_identity.registry_release_id
+    && offlineSelectorReceipt.external_identity_resolution_contract_sha256
+      === offlineWriter.external_identity.resolution_contract_sha256,
+  verifierErrorCodes.GENERIC);
+  const futureExternalV3Writer = offlineWriterProjectionContractForId(
+    CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3.contract_id
+  );
+  const futureExternalV3SelectorReceipt = offlineWriterSelectorReceipt(
+    futureExternalV3Writer
+  );
+  requireInvariant(futureExternalV3SelectorReceipt.contract_id
+    === CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3.contract_id
+    && futureExternalV3SelectorReceipt.durable_projection_contract_version
+      === CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+        .durable_projection_contract_version
+    && futureExternalV3SelectorReceipt.external_identity_registry_release_id
+      === EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.registry_release.id
+    && futureExternalV3SelectorReceipt.external_identity_resolution_contract_id
+      === EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.resolution_contract.id
+    && futureExternalV3SelectorReceipt.external_identity_resolution_contract_sha256
+      === EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.resolution_contract.sha256
+    && futureExternalV3SelectorReceipt.verified_original_observation_release_id
+      === futureExternalV3Writer.verified_original_observation_overlay
+    && /^[0-9a-f]{64}$/.test(
+      futureExternalV3SelectorReceipt.paired_post_observation_contract_sha256
+    ),
+  verifierErrorCodes.GENERIC);
+  for (const invalidSelectorId of [
+    CSM_WRITER_PROJECTION_CONTRACTS.future_v3.contract_id,
+    "unknown-writer-contract"
+  ]) {
+    let invalidSelectorRejected = false;
+    try { offlineWriterProjectionContractForId(invalidSelectorId); } catch {
+      invalidSelectorRejected = true;
+    }
+    requireInvariant(invalidSelectorRejected, verifierErrorCodes.GENERIC);
+  }
+  await testInfo.attach("offline-writer-selector-receipt", {
+    body: Buffer.from(`${JSON.stringify(offlineSelectorReceipt)}\n`, "utf8"),
+    contentType: "application/json"
+  });
+  process.stdout.write(
+    `[offline-writer-selector] ${JSON.stringify(offlineSelectorReceipt)}\n`
+  );
+  const offlineProviderAdapter = expectedProviderAdapterContractForWriter(offlineWriter);
   const offlineHealth = {
     ready: true,
     active_path: "CSM_THIN_DIRECT",
@@ -4093,8 +4388,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     },
     runtime: {
       model_profile_id: CSM_ACTIVE_MODEL_PROFILE.id,
-      provider_adapter_version: expectedProviderAdapterVersion,
-      request_builder_version: expectedProviderAdapterContract.request_builder_version,
+      provider_adapter_version: offlineProviderAdapter.id,
+      request_builder_version: offlineProviderAdapter.request_builder_version,
       recognition_transport_profiles: Object.fromEntries(
         CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [profile.lane_version, {
           ...profile,
@@ -4103,9 +4398,13 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       ),
       execution_contract_sha256_by_transport_lane_and_image_count:
         expectedExecutionContractSha256ByTransportLaneAndImageCount,
-      external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-      canonical_naming_target: CANONICAL_NAMING_RELEASE_CONTRACT,
-      verified_original_observation: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+      external_identity: expectedExternalIdentityRelease(ORDINARY_WRITER_PROJECTION_MODE),
+      canonical_naming_target: expectedCanonicalNamingContract(ORDINARY_WRITER_PROJECTION_MODE),
+      verified_original_observation:
+        expectedVerifiedOriginalObservationHealthReceipt(ORDINARY_WRITER_PROJECTION_MODE),
+      projection_activation: CSM_PROJECTION_ACTIVATION,
+      active_writer: offlineWriter,
+      forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
       max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
       retired_capabilities_disabled: true
     }
@@ -4118,16 +4417,26 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     responseUrl: `${productionOrigin}/api/health`
   }).ready === true, verifierErrorCodes.GENERIC);
   const capturedProductionHealth = structuredClone(offlineHealth);
+  const capturedWriter = expectedWriterProjectionContract(
+    COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+  );
+  const capturedProviderAdapter = expectedProviderAdapterContractForWriter(capturedWriter);
+  capturedProductionHealth.runtime.external_identity = expectedExternalIdentityRelease(
+    COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+  );
   capturedProductionHealth.runtime.canonical_naming_target =
-    CANONICAL_NAMING_RELEASE_CONTRACT_V2;
+    expectedCanonicalNamingContract(COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE);
   capturedProductionHealth.runtime.verified_original_observation =
-    VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT;
+    expectedVerifiedOriginalObservationHealthReceipt(
+      COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
+    );
   capturedProductionHealth.runtime.projection_activation = CSM_PROJECTION_ACTIVATION;
   capturedProductionHealth.runtime.active_writer =
-    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+    capturedWriter;
   capturedProductionHealth.runtime.forward_readers = CSM_PROJECTION_ACTIVATION.forward_readers;
   capturedProductionHealth.runtime.request_builder_version =
-    expectedProviderAdapterContract.request_builder_version;
+    capturedProviderAdapter.request_builder_version;
+  capturedProductionHealth.runtime.provider_adapter_version = capturedProviderAdapter.id;
   requireInvariant(writerJourneyHealthReceipt({
     httpOk: true,
     health: capturedProductionHealth,
@@ -4136,8 +4445,18 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     responseUrl: `${productionOrigin}/api/health`,
     writerProjectionMode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE
   }).runtime_contract_valid === true, verifierErrorCodes.GENERIC);
+  requireInvariant(writerJourneyHealthReceipt({
+    httpOk: true,
+    health: capturedProductionHealth,
+    expectedSha: offlineSha,
+    expectedOrigin: productionOrigin,
+    responseUrl: `${productionOrigin}/api/health`,
+    writerProjectionMode:
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  }).runtime_contract_valid === true, verifierErrorCodes.GENERIC);
   for (const mutate of [
     (health) => { health.runtime.canonical_naming_target = CANONICAL_NAMING_RELEASE_CONTRACT_V3; },
+    (health) => { health.runtime.external_identity = EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3; },
     (health) => {
       health.runtime.verified_original_observation =
         VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT;
@@ -4485,6 +4804,17 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
     expectedGitSha: bridgeGitSha
   }).length === 2, verifierErrorCodes.GENERIC);
+  const checkpointReaderBridgeManifest = {
+    ...bridgeV4Manifest,
+    bridge_descriptor_id: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
+    bridge_marker: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
+    writer_projection_mode:
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  };
+  requireInvariant(validateSourceCasesManifest(checkpointReaderBridgeManifest, {
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    expectedGitSha: bridgeGitSha
+  }).length === 2, verifierErrorCodes.GENERIC);
   for (const [candidate, options] of [
     [bridgeManifest, { releaseClass: ORDINARY_RELEASE_CLASS }],
     [manifest, {
@@ -4532,6 +4862,28 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     }],
     [{ ...bridgeV4Manifest,
       bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...checkpointReaderBridgeManifest,
+      bridge_descriptor_id:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...checkpointReaderBridgeManifest,
+      bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...checkpointReaderBridgeManifest,
+      writer_projection_mode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...bridgeV4Manifest,
+      bridge_descriptor_id: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
+      bridge_marker: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER }, {
       releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
       expectedGitSha: bridgeGitSha
     }],
@@ -4654,29 +5006,38 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
   ];
   const allSourceIds = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => source.source_id);
-  const publicExternalSupport = {
+  const externalSourceIdsByField = {
+    year: allSourceIds,
+    manufacturer: ["beckett.item.3117708"],
+    product: allSourceIds,
+    set: allSourceIds,
+    subjects: allSourceIds,
+    team: ["tcdb.set.2551", "beckett.item.3117708"],
+    card_number: allSourceIds
+  };
+  const publicExternalSupportForRelease = (release, registry, {
+    productCorrection = false
+  } = {}) => ({
     schema_version: "csm-external-identity-public-receipt.v1",
     status: "APPLIED",
     match_basis: "VERIFIED_ORIGINAL_SET",
-    registry_release: { ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT },
-    resolver_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.resolver_version,
-    conflict_policy_version:
-      EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.conflict_policy_version,
-    composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
-    marketplace_profile_version:
-      EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version,
-    resolution_contract_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.sha256,
+    registry_release: { ...registry },
+    resolver_version: release.resolution_contract.resolver_version,
+    conflict_policy_version: release.resolution_contract.conflict_policy_version,
+    composer_version: release.resolution_contract.composer_version,
+    marketplace_profile_version: release.resolution_contract.marketplace_profile_version,
+    resolution_contract_sha256: release.resolution_contract.sha256,
     pack: {
-      id: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.id,
-      version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.version,
-      sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.sha256
+      id: release.support_pack.id,
+      version: release.support_pack.version,
+      sha256: release.support_pack.sha256
     },
-    index: { ...EXTERNAL_IDENTITY_RELEASE_CONTRACT.index },
+    index: { ...release.index },
     record_id: "tcdb-2551-hr14",
     supported_fields: externalFields,
     field_decisions: Object.fromEntries(externalFields.map((field) => [field, {
-      action: field === "card_number" ? "FILL" : "CORROBORATE",
-      source_ids: allSourceIds
+      action: productCorrection && field === "product" ? "CORRECT_CONFLICT" : "CORROBORATE",
+      source_ids: externalSourceIdsByField[field]
     }])),
     sources: EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => ({
       provider: source.source_id.startsWith("tcdb.")
@@ -4686,12 +5047,118 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       url: source.url,
       retrieved_at: source.retrieved_at,
       fact_sha256: source.fact_sha256,
-      fields: ["card_number"]
+      fields: Object.entries(externalSourceIdsByField)
+        .filter(([, ids]) => ids.includes(source.source_id))
+        .map(([field]) => field)
     }))
-  };
-  requireInvariant(externalIdentityParityProof({
+  });
+  const publicExternalSupport = publicExternalSupportForRelease(
+    EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+    THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
+  );
+  const publicExternalSupportV3 = publicExternalSupportForRelease(
+    EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
+    THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
+    { productCorrection: true }
+  );
+  const externalV2Evidence = externalIdentityParityProof({
     external_identity_support: publicExternalSupport
-  }).source_count === 3, verifierErrorCodes.GENERIC);
+  }, {
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3
+  });
+  const externalV3Evidence = externalIdentityParityProof({
+    external_identity_support: publicExternalSupportV3
+  }, {
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+  });
+  const externalV2Versions = {
+    csm_contract:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3.durable_projection_contract_version,
+    resolver: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.resolver_version,
+    composer: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+    marketplace_profile:
+      EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
+  };
+  const externalV3Versions = {
+    csm_contract:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+        .durable_projection_contract_version,
+    resolver: EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.resolution_contract.resolver_version,
+    composer: EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.resolution_contract.composer_version,
+    marketplace_profile:
+      EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.resolution_contract.marketplace_profile_version
+  };
+  requireInvariant(externalV2Evidence.source_count === 3
+    && externalV3Evidence.registry_release_id
+      === EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.registry_release.id
+    && registeredExternalIdentityVersionActive(externalV2Versions, {
+      writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
+      externalIdentitySupport: externalV2Evidence
+    })
+    && registeredExternalIdentityVersionActive(externalV3Versions, {
+      writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3,
+      externalIdentitySupport: externalV3Evidence
+    })
+    && !registeredExternalIdentityVersionActive(externalV2Versions, {
+      writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3,
+      externalIdentitySupport: externalV2Evidence
+    })
+    && !registeredExternalIdentityVersionActive(externalV3Versions, {
+      writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
+      externalIdentitySupport: externalV3Evidence
+    }), verifierErrorCodes.GENERIC);
+  for (const [writerContract, versions, support] of [
+    [CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
+      { ...externalV2Versions,
+        csm_contract: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+          .durable_projection_contract_version }, externalV2Evidence],
+    [CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3,
+      { ...externalV3Versions,
+        csm_contract: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+          .durable_projection_contract_version }, externalV3Evidence],
+    [CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
+      { ...externalV2Versions, csm_contract: "csm-stage-unknown" }, externalV2Evidence]
+  ]) {
+    requireInvariant(!registeredExternalIdentityVersionActive(versions, {
+      writerContract,
+      externalIdentitySupport: support
+    }), verifierErrorCodes.GENERIC);
+  }
+  const activeExternalEvidence = offlineSelectedWriterProjectionContract.external_identity
+    .registry_release_id === EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.registry_release.id
+    ? externalV3Evidence : externalV2Evidence;
+  const activeExternalVersions = {
+    ...(activeExternalEvidence === externalV3Evidence
+      ? externalV3Versions : externalV2Versions),
+    csm_contract:
+      offlineSelectedWriterProjectionContract.durable_projection_contract_version
+  };
+  requireInvariant(registeredExternalIdentityVersionActive(activeExternalVersions, {
+    externalIdentitySupport: activeExternalEvidence
+  }), verifierErrorCodes.GENERIC);
+  const activeWrongKnownStage = [
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible.durable_projection_contract_version,
+    CSM_WRITER_PROJECTION_CONTRACTS.future_v3.durable_projection_contract_version
+  ].find((stage) => stage
+    !== offlineSelectedWriterProjectionContract.durable_projection_contract_version);
+  for (const csmContract of [activeWrongKnownStage, "csm-stage-unknown"]) {
+    requireInvariant(!registeredExternalIdentityVersionActive({
+      ...activeExternalVersions,
+      csm_contract: csmContract
+    }, { externalIdentitySupport: activeExternalEvidence }), verifierErrorCodes.GENERIC);
+  }
+  for (const [support, writerContract] of [
+    [publicExternalSupport, CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3],
+    [publicExternalSupportV3, CSM_WRITER_PROJECTION_CONTRACTS.future_v3]
+  ]) {
+    let crossSpliceRejected = false;
+    try {
+      externalIdentityParityProof({ external_identity_support: support }, { writerContract });
+    } catch {
+      crossSpliceRejected = true;
+    }
+    requireInvariant(crossSpliceRejected, verifierErrorCodes.GENERIC);
+  }
   for (const mutate of [
     (value) => { value.record_id = "tcdb-2551-hr13"; },
     (value) => { value.match_basis = "EXACT_FOUR_ANCHOR"; },
@@ -4704,7 +5171,9 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     mutate(value);
     let externalDriftRejected = false;
     try {
-      externalIdentityParityProof({ external_identity_support: value });
+      externalIdentityParityProof({ external_identity_support: value }, {
+        writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3
+      });
     } catch {
       externalDriftRejected = true;
     }
@@ -4783,6 +5252,37 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && versions.composer
       === EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
   verifierErrorCodes.GENERIC);
+  const recognitionAtStage = (csmContract) => ({
+    ...structuredClone(recognition),
+    csm_contract_version: csmContract,
+    csm_rows: {
+      resolution: { ...recognition.csm_rows.resolution, contract_version: csmContract },
+      output: { ...recognition.csm_rows.output, contract_version: csmContract }
+    }
+  });
+  for (const [writerContract, csmContract] of [
+    [CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
+      CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+        .durable_projection_contract_version],
+    [offlineSelectedWriterProjectionContract,
+      [CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+        .durable_projection_contract_version,
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3
+        .durable_projection_contract_version].find((stage) => stage
+        !== offlineSelectedWriterProjectionContract.durable_projection_contract_version)],
+    [offlineSelectedWriterProjectionContract, "csm-stage-unknown"]
+  ]) {
+    let writerStageSpliceRejected = false;
+    try {
+      recognitionVersionReceipt(recognitionAtStage(csmContract), view, {
+        writerProjectionMode: ORDINARY_WRITER_PROJECTION_MODE,
+        writerContract
+      });
+    } catch {
+      writerStageSpliceRejected = true;
+    }
+    requireInvariant(writerStageSpliceRejected, verifierErrorCodes.GENERIC);
+  }
   requireInvariant(PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.length === 7
     && PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.every((entry) => (
       productionPublicCompositionProjectionForOwner({
@@ -4816,6 +5316,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     verifierErrorCodes.GENERIC);
   const verifiedOriginalVersions = {
     ...canonicalVersions,
+    csm_contract:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3.durable_projection_contract_version,
     resolver: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
   };
   const verifiedOriginalSupport = {
@@ -4835,9 +5337,17 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
       VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.closed_world_field_count
   };
   requireInvariant(verifiedOriginalObservationVersionActive(
-    verifiedOriginalVersions, verifiedOriginalSupport
+    verifiedOriginalVersions, verifiedOriginalSupport, {
+      writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3
+    }
   ), verifierErrorCodes.GENERIC);
   for (const [driftedVersions, driftedSupport] of [
+    [{ ...verifiedOriginalVersions,
+      csm_contract:
+        CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+          .durable_projection_contract_version }, verifiedOriginalSupport],
+    [{ ...verifiedOriginalVersions, csm_contract: "csm-stage-unknown" },
+      verifiedOriginalSupport],
     [{ ...verifiedOriginalVersions, resolver: "resolver-drift" }, verifiedOriginalSupport],
     [verifiedOriginalVersions, { ...verifiedOriginalSupport, resolver_version: "resolver-drift" }],
     [verifiedOriginalVersions, { ...verifiedOriginalSupport, release_id: "release-drift" }],
@@ -4851,7 +5361,9 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     [verifiedOriginalVersions, { ...verifiedOriginalSupport, projection_mode: "OPEN_WORLD" }]
   ]) {
     requireInvariant(!verifiedOriginalObservationVersionActive(
-      driftedVersions, driftedSupport
+      driftedVersions, driftedSupport, {
+        writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3
+      }
     ), verifierErrorCodes.GENERIC);
   }
   const bridgeRecognition = structuredClone(recognition);
@@ -4869,10 +5381,14 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     && !canonicalNamingVersionActive(bridgeVersions), verifierErrorCodes.GENERIC);
   const legacyStandardVersions = Object.freeze({
     ...bridgeVersions,
+    csm_contract:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3.durable_projection_contract_version,
     resolver: THIN_RESOLVER_VERSION
   });
   const canonicalStandardVersions = Object.freeze({
     ...canonicalVersions,
+    csm_contract:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3.durable_projection_contract_version,
     resolver: THIN_RESOLVER_VERSION
   });
   const capturedStandardVersions = Object.freeze({
@@ -4908,6 +5424,7 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   requireInvariant([
     standardNonTcgWriterProjectionActive({
       writerProjectionMode: ORDINARY_WRITER_PROJECTION_MODE,
+      writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
       versions: verifiedOriginalVersions,
       verifiedOriginalObservationSupport: verifiedOriginalSupport
     }),
@@ -5052,6 +5569,74 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   const bridgeSemanticCases = Object.freeze([
     bridgeStandardEvidence, bridgeTcgEvidence
   ]);
+  const ordinaryParityEvidence = Object.freeze({
+    case_id: "EXTERNAL_IDENTITY",
+    versions: externalV2Versions,
+    codex_parity_exact_match: true,
+    external_identity_support: externalV2Evidence
+  });
+  const ordinaryWebEvidence = Object.freeze({
+    case_id: "NON_TCG_WEB_IDENTITY",
+    versions: canonicalStandardVersions,
+    activation_projection: {
+      set_predicate: SET_MEMBERSHIP_PREDICATE,
+      card_name_predicate: CARD_NAME_PREDICATE,
+      card_name_before_subject: true
+    }
+  });
+  const ordinaryLotEvidence = Object.freeze({
+    case_id: "LOT_SHARED_ONLY",
+    versions: legacyStandardVersions,
+    lot_shared_only: {
+      marker_exact: true,
+      publishable: true,
+      individual_serials_withheld: true
+    }
+  });
+  const ordinarySemanticCases = Object.freeze([
+    bridgeStandardEvidence, ordinaryWebEvidence
+  ]);
+  const ordinarySealInput = Object.freeze({
+    writerProjectionMode: ORDINARY_WRITER_PROJECTION_MODE,
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
+    standardCaseEvidence: bridgeStandardEvidence,
+    tcgCaseEvidence: bridgeTcgEvidence,
+    largeCaseEvidence: bridgeLargeEvidence,
+    parityCaseEvidence: ordinaryParityEvidence,
+    webCaseEvidence: ordinaryWebEvidence,
+    lotCaseEvidence: ordinaryLotEvidence,
+    semanticCases: ordinarySemanticCases,
+    webReceiptClaimsMatchViews: true,
+    qualifiedGovernedWebCases: Object.freeze([ordinaryWebEvidence]),
+    strictNoSearchCases: Object.freeze([bridgeStandardEvidence]),
+    usedWithoutGovernedAppliedSupportCases: Object.freeze([]),
+    governedWebCaseEvidence: ordinaryWebEvidence
+  });
+  requireInvariant(ordinaryActivationSeal(ordinarySealInput), verifierErrorCodes.GENERIC);
+  for (const mutation of [{
+    standardCaseEvidence: {
+      ...bridgeStandardEvidence,
+      versions: { ...bridgeStandardEvidence.versions, csm_contract: "csm-stage-v-test" }
+    }
+  }, {
+    parityCaseEvidence: {
+      ...ordinaryParityEvidence,
+      versions: {
+        ...ordinaryParityEvidence.versions,
+        csm_contract:
+          CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+            .durable_projection_contract_version
+      }
+    }
+  }, {
+    lotCaseEvidence: {
+      ...ordinaryLotEvidence,
+      versions: { ...ordinaryLotEvidence.versions, csm_contract: "csm-stage-unknown" }
+    }
+  }]) {
+    requireInvariant(!ordinaryActivationSeal({ ...ordinarySealInput, ...mutation }),
+      verifierErrorCodes.GENERIC);
+  }
   const bridgeStrictClassifications = Object.freeze(bridgeSemanticCases.map((entry) => (
     Object.freeze({ entry, proof: Object.freeze({
       classification: entry.case_id === "NON_TCG"
@@ -5162,6 +5747,11 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     governedWebCaseEvidence: null
   });
   requireInvariant(compatibilityBridgeSeal(capturedSealInput), verifierErrorCodes.GENERIC);
+  requireInvariant(compatibilityBridgeSeal({
+    ...capturedSealInput,
+    writerProjectionMode:
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  }), verifierErrorCodes.GENERIC);
   for (const mutation of [{
     writerProjectionMode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE
   }, {
@@ -5366,6 +5956,8 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     codex_parity_exact_match: true,
     external_identity_support: externalIdentityParityProof({
       external_identity_support: publicExternalSupport
+    }, {
+      writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3
     }),
     ...titleEvidenceReceipt({
       titleBeforePanel: CODEX_PARITY_EXPECTED_TITLE,
@@ -5706,12 +6298,18 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
   });
   const capturedExecutionPayload = (attempt = 1) => {
     const payload = structuredClone(recognitionPayload);
+    payload.provider_adapter_version = capturedProviderAdapter.id;
+    payload.request_builder_version = capturedProviderAdapter.request_builder_version;
+    payload.response_parser_version = capturedProviderAdapter.response_parser_version;
     const {
       owner_execution_receipt_version: _receiptVersion,
       owner_execution_receipt_sha256: _receiptSha256,
       ...owner
     } = payload.csm_owner_versions;
     delete owner.provider_transport_retry_receipt;
+    owner.provider_adapter_version = capturedProviderAdapter.id;
+    owner.request_builder_version = capturedProviderAdapter.request_builder_version;
+    owner.response_parser_version = capturedProviderAdapter.response_parser_version;
     owner.provider_attempt_number = attempt;
     owner.provider_retry_count = attempt - 1;
     payload.csm_owner_versions = sealCsmOwnerExecutionReceipt(owner);

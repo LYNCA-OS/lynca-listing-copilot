@@ -13,7 +13,7 @@ import {
 
 const [
   login, index, app, spec, feedbackApi, workflow, releaseWorkflow, packageText,
-  directApiTest, forwardReadback
+  directApiTest, forwardReadback, parityReadback
 ] = await Promise.all([
   readFile(new URL("../app/login.html", import.meta.url), "utf8"),
   readFile(new URL("../app/index.html", import.meta.url), "utf8"),
@@ -24,7 +24,8 @@ const [
   readFile(new URL("../.github/workflows/deploy-production.yml", import.meta.url), "utf8"),
   readFile(new URL("../package.json", import.meta.url), "utf8"),
   readFile(new URL("./csm-direct-api.test.mjs", import.meta.url), "utf8"),
-  readFile(new URL("./production-forward-readback.mjs", import.meta.url), "utf8")
+  readFile(new URL("./production-forward-readback.mjs", import.meta.url), "utf8"),
+  readFile(new URL("./production-parity-readback.mjs", import.meta.url), "utf8")
 ]);
 const packageJson = JSON.parse(packageText);
 
@@ -53,6 +54,9 @@ assert.match(spec,
   /providerAttemptsForWriter\(writerProjectionMode\)[\s\S]*?\.toContain\(recognitionPayload\?\.provider_attempt_number\)/);
 assert.match(spec,
   /provider_retry_count[\s\S]*?recognitionPayload\.provider_attempt_number - 1/);
+assert.match(spec,
+  /function liveExecutionReceiptProof[\s\S]*?expectedWriterProjectionContract\(writerProjectionMode\)[\s\S]*?expectedProviderAdapterContractForWriter\(writer\)[\s\S]*?provider_adapter_version: providerAdapter\.id/,
+  "live execution receipts must select the adapter from the writer contract");
 assert.match(spec, /test\.setTimeout\(25 \* 60 \* 1000\)/,
   "six sequential live cases must fit inside the bounded journey budget");
 assert.match(spec, /composer\?\.trace_reliable[\s\S]*?\.toBe\(true\)/);
@@ -77,6 +81,7 @@ assert.match(spec, /COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE/);
+assert.match(spec, /EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE/);
 assert.match(spec, /manifest\.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID/);
 assert.match(spec, /manifest\.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS/);
 assert.match(spec, /manifest\.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER/);
@@ -89,6 +94,9 @@ assert.match(spec,
 assert.match(spec,
   /EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID[\s\S]*?EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER/,
   "the v4 manifest must preserve the exact selector descriptor and marker");
+assert.match(spec,
+  /compatibilityBridgeV4CheckpointReader[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE/,
+  "the checkpoint-reader sibling must preserve its exact v4 descriptor, marker, and mode");
 assert.match(spec, /manifest\.git_sha !== expectedGitSha/,
   "the reduced manifest must be bound to the exact bridge commit");
 assert.match(spec,
@@ -105,6 +113,9 @@ assert.match(spec, /parity\.files\.some\(\(file, index\) =>/);
 assert.match(spec, /WRITER_JOURNEY_CASES_MANIFEST/);
 assert.match(spec, /WRITER_JOURNEY_LARGE_FIXTURE_RECEIPT/);
 assert.match(spec, /production-writer-journey-evidence-v7/);
+assert.match(spec,
+  /compatibility_bridge_descriptor_id: sourceManifest\.bridgeDescriptorId/,
+  "Writer Journey evidence must retain the selected bridge descriptor");
 assert.match(spec, /compatibility_bridge_marker: sourceManifest\.bridgeMarker/);
 assert.match(spec, /writer_projection_mode: writerProjectionMode/);
 assert.match(spec, /buildWriterEditableTitleLatencyReceipt/);
@@ -199,6 +210,12 @@ assert.match(forwardReadback,
   /PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA[\s\S]*?production-forward-readback-expectation-v2[\s\S]*?PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA[\s\S]*?production-forward-readback-receipt-v2/,
   "captured writer readback must use append-only v2 schemas");
 assert.match(forwardReadback,
+  /PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_PROVENANCE[\s\S]*?EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID/,
+  "forward readback must admit only the two closed captured-writer provenance tuples");
+assert.match(forwardReadback,
+  /writerProjectionMode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE/,
+  "the new sibling must normalize to the historical captured V4 public bytes");
+assert.match(forwardReadback,
   /provider_calls: 0[\s\S]*?founder_beta_web_receipt_exact_match:[\s\S]*?web_search_used:/,
   "promoted authenticated GET must prove the stored Web receipt with zero provider calls");
 assert.match(spec, /CODEX_PARITY_EXPECTED_TITLE/);
@@ -217,11 +234,17 @@ assert.match(spec, /CANONICAL_NAMING_RELEASE_CONTRACT/);
 assert.match(spec, /canonicalNamingVersionActive/);
 assert.match(spec, /compatibilityBridgeStandardVersionActive/);
 assert.match(spec,
-  /function standardNonTcgWriterProjectionActive[\s\S]*?verifiedOriginalObservationSupport != null[\s\S]*?COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE[\s\S]*?observationLegacyVersionActive\(versions\)/,
+  /function standardNonTcgWriterProjectionActive[\s\S]*?verifiedOriginalObservationVersionActive\([\s\S]*?writerContract[\s\S]*?COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE[\s\S]*?observationLegacyVersionActive\(versions\)/,
   "the Standard Writer case must require one exact mode-specific owner and overlay receipt");
 assert.match(spec,
-  /function largeStandardWriterProjectionActive[\s\S]*?observationCanonicalV3VersionActive\(versions\)[\s\S]*?verifiedOriginalObservationSupport == null[\s\S]*?externalIdentitySupport == null[\s\S]*?COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE/,
-  "the large Standard case must bind canonical v3 without overlays in current bridge mode");
+  /function largeStandardWriterProjectionActive[\s\S]*?standardWriterVersionActive\(versions, writer\)[\s\S]*?versions\?\.resolver === THIN_RESOLVER_VERSION[\s\S]*?verifiedOriginalObservationSupport == null[\s\S]*?externalIdentitySupport == null/,
+  "the large Standard case must bind the selected writer and omit overlays");
+assert.match(spec,
+  /function standardWriterVersionActive[\s\S]*?versions\?\.csm_contract === writer\.durable_projection_contract_version[\s\S]*?writer\.standard\.composer_version[\s\S]*?writer\.standard\.marketplace_profile_version/,
+  "Standard projection proofs must bind the complete writer-owned durable tuple");
+assert.match(spec,
+  /function verifiedOriginalObservationVersionActive[\s\S]*?writer\.verified_original_observation_overlay[\s\S]*?expectedVerifiedOriginalObservationHealthReceipt[\s\S]*?standardWriterVersionActive\(versions, writer\)/,
+  "verified overlay evidence must select its release and durable tuple from one writer");
 assert.doesNotMatch(spec, /writerProjectionMode === "legacy-or-canonical"/,
   "no permissive dual-owner mode may enter the live verifier");
 assert.match(spec,
@@ -230,6 +253,21 @@ assert.match(spec,
 assert.match(spec,
   /function ordinaryActivationSeal[\s\S]*?codex_parity_exact_match[\s\S]*?NON_TCG_WEB_IDENTITY|function ordinaryActivationSeal[\s\S]*?SET_MEMBERSHIP_PREDICATE[\s\S]*?lot_shared_only/,
   "ordinary must retain the complete external, governed Web, and Lot activation seal");
+assert.match(spec,
+  /function ordinaryActivationSeal[\s\S]*?ordinaryCases\.every\(\(entry\) => entry\?\.versions\?\.csm_contract[\s\S]*?writer\.durable_projection_contract_version/,
+  "ordinary must bind all six persisted cases to the selected durable stage");
+assert.match(spec,
+  /function registeredExternalIdentityVersionActive[\s\S]*?versions\?\.csm_contract === writer\.durable_projection_contract_version/,
+  "external identity evidence must bind release and durable writer stage together");
+assert.match(spec,
+  /function recognitionVersionReceipt[\s\S]*?contract === writer\.durable_projection_contract_version/,
+  "live recognition tuples must reject a writer-stage splice before sealing evidence");
+assert.match(parityReadback,
+  /function parityEvidence[\s\S]*?versions\.csm_contract !== writer\.durable_projection_contract_version/,
+  "parity readback must bind external evidence to the exact writer stage");
+assert.match(parityReadback,
+  /function standardEvidence[\s\S]*?versions\.csm_contract !== projection\.writer\.durable_projection_contract_version/,
+  "Standard readback must bind evidence to the exact writer stage");
 assert.match(spec,
   /function compatibilityBridgeSeal[\s\S]*?LARGE_STAGED_TRANSPORT[\s\S]*?NON_TCG\\0TCG[\s\S]*?parityCaseEvidence == null[\s\S]*?webCaseEvidence == null[\s\S]*?lotCaseEvidence == null/,
   "compatibility bridge must close over exactly Standard, TCG, and large transport");
@@ -374,10 +412,13 @@ for (const field of [
 }
 assert.match(externalIdentityVerifier, /support\?\.record_id === "tcdb-2551-hr14"/);
 assert.match(externalIdentityVerifier, /support\?\.match_basis === "VERIFIED_ORIGINAL_SET"/);
+assert.match(externalIdentityVerifier, /validateExternalIdentityPublicReceipt\(support\)/,
+  "the public receipt must be validated by its release-scoped v1-v3 policy registry");
 assert.match(externalIdentityVerifier,
   /\["FILL", "CORROBORATE", "NORMALIZE_ALIAS"\][\s\S]*field_decisions\?\.card_number\?\.action/);
-assert.match(externalIdentityVerifier,
-  /decision\?\.action !== "CORRECT_CONFLICT" \|\| \["year", "set"\]\.includes\(field\)/);
+assert.doesNotMatch(externalIdentityVerifier,
+  /\["year", "set"\]\.includes\(field\)/,
+  "the verifier must not overwrite the v3 policy that also permits product correction");
 assert.match(externalIdentityVerifier,
   /!Object\.prototype\.hasOwnProperty\.call\(support, "original_set_sha256"\)/);
 assert.match(externalIdentityVerifier, /actualSources\.length === expectedSources\.length/);
@@ -488,23 +529,23 @@ assert.match(spec, /observationLegacyVersionActive\(tcgCaseEvidence\?\.versions\
 assert.match(spec,
   /largeStandardWriterProjectionActive\(\{[\s\S]*?versions: largeCaseEvidence\?\.versions/,
   "the final seal must pin the active Large Standard tuple");
-assert.match(spec, /registeredExternalIdentityVersionActive\(parityCaseEvidence\?\.versions\)/,
+assert.match(spec,
+  /registeredExternalIdentityVersionActive\(parityCaseEvidence\?\.versions, \{[\s\S]*?writerProjectionMode,[\s\S]*?externalIdentitySupport:/,
   "the final seal must pin the registered external tuple");
 const verifiedOriginalVersionVerifier = spec.match(
   /function verifiedOriginalObservationVersionActive[\s\S]+?(?=\nfunction registeredExternalIdentityVersionActive)/
 )?.[0] || "";
 assert.ok(verifiedOriginalVersionVerifier,
   "the active Standard tuple must bind the verified-original release receipt");
-for (const token of [
-  "validateVerifiedOriginalObservationPublicReceipt",
-  "VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION",
-  "VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id",
-  "VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256",
-  "VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256"
-]) {
-  assert.match(verifiedOriginalVersionVerifier,
-    new RegExp(token.replaceAll(".", "\\.")));
-}
+assert.match(verifiedOriginalVersionVerifier,
+  /validateVerifiedOriginalObservationPublicReceipt/);
+assert.match(verifiedOriginalVersionVerifier,
+  /writer\.verified_original_observation_overlay/);
+assert.match(verifiedOriginalVersionVerifier,
+  /versions\?\.resolver === release\.resolver_version/);
+assert.match(verifiedOriginalVersionVerifier,
+  /support\?\.release_id === health\.release_id[\s\S]*?support\?\.pack_sha256 === health\.pack_sha256[\s\S]*?support\?\.resolution_contract_sha256 === health\.resolution_contract_sha256/,
+  "the public overlay receipt must bind the writer-selected pair health");
 assert.match(spec,
   /standardNonTcgWriterProjectionEvidenceActive\(\{[\s\S]*?evidence: standardCaseEvidence/,
   "the final seal must reject a Standard resolver that only self-consistently drifted");
@@ -732,7 +773,8 @@ assert.match(healthVerifier, /receipt\.model === CSM_ACTIVE_MODEL_PROFILE\.model
 assert.match(healthVerifier,
   /receipt\.reasoning_effort === CSM_ACTIVE_MODEL_PROFILE\.reasoning_effort/);
 assert.match(healthVerifier, /healthRecognitionTransportContractMatches\(health\?\.runtime\)/);
-assert.match(healthVerifier, /healthExternalIdentityContractMatches\(health\?\.runtime\)/);
+assert.match(healthVerifier,
+  /healthExternalIdentityContractMatches\(health\?\.runtime, writerProjectionMode\)/);
 assert.match(spec, /function healthCanonicalNamingContractMatches/);
 assert.match(healthVerifier,
   /healthCanonicalNamingContractMatches\(health\?\.runtime, writerProjectionMode\)/);
@@ -740,7 +782,11 @@ assert.match(healthVerifier, /canonical_naming_contract_valid/);
 assert.match(healthVerifier,
   /canonical_naming_release_contract:\s*health\?\.runtime\?\.canonical_naming_target/);
 assert.match(healthVerifier,
+  /external_identity_release_contract:\s*health\?\.runtime\?\.external_identity/);
+assert.match(healthVerifier,
   /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(expectedCanonicalNamingContract\(writerProjectionMode\)\)/);
+assert.match(healthVerifier,
+  /stableJson\(receipt\.external_identity_release_contract\)[\s\S]*?stableJson\(externalIdentityRelease\)/);
 assert.match(healthVerifier,
   /verified_original_observation_release_receipt:[\s\S]*?verified_original_observation/);
 assert.match(healthVerifier,
@@ -749,7 +795,13 @@ assert.match(healthVerifier,
   /healthProjectionActivationMatches\(health\?\.runtime, writerProjectionMode\)/,
   "captured health must bind the exact active writer and forward-reader superset");
 assert.match(spec,
-  /function healthProjectionActivationMatches[\s\S]*?CSM_WRITER_PROJECTION_CONTRACTS\.rollback_compatible[\s\S]*?CSM_PROJECTION_ACTIVATION\.forward_readers/);
+  /function healthProjectionActivationMatches[\s\S]*?expectedWriterProjectionContract\(writerProjectionMode\)[\s\S]*?CSM_PROJECTION_ACTIVATION\.forward_readers/);
+assert.doesNotMatch(spec,
+  /if \(!capturedProductionWriterMode\(writerProjectionMode\)\) return true/,
+  "ordinary health must bind the full activation instead of bypassing it");
+assert.match(spec,
+  /verifiedOriginalObservationHealthReceiptForReleases\(\{[\s\S]*?verifiedOriginalObservationReleaseId:[\s\S]*?writer\.verified_original_observation_overlay,[\s\S]*?externalIdentityRegistryReleaseId: writer\.external_identity\.registry_release_id/,
+  "verified health must be selected by the writer-owned overlay and external release pair");
 assert.match(healthVerifier, /retired_capabilities_disabled === true/);
 assert.match(spec, /const initialHealthReceipt = writerJourneyHealthReceipt/);
 assert.match(spec, /const finalHealthReceipt = writerJourneyHealthReceipt/);
@@ -776,11 +828,29 @@ assert.equal([...spec.matchAll(/redirect: "error"/g)].length, 2,
 assert.match(spec, /responseUrl: healthResponse\.url/);
 assert.match(spec, /responseUrl: finalHealthResponse\.url/);
 assert.match(spec,
-  /const expectedProviderAdapterContract = resolveCsmProviderAdapter\(\s*CSM_ACTIVE_MODEL_PROFILE\.provider\s*\)\.contract/,
-  "the journey must verify the adapter resolved by the active model profile");
+  /const expectedProviderAdapterContract = resolveCsmProviderAdapter\([\s\S]*?requestBuilderVersion:[\s\S]*?offlineSelectedWriterProjectionContract\.canonical_fields\.request_builder_version[\s\S]*?\)\.contract/,
+  "the journey must verify the adapter selected by the active writer");
 assert.match(spec, /const expectedProviderAdapterVersion = expectedProviderAdapterContract\.id/);
+assert.match(spec,
+  /function offlineWriterProjectionContractForId[\s\S]*?CSM_WRITER_PROJECTION_CONTRACTS\.rollback_compatible,[\s\S]*?CSM_WRITER_PROJECTION_CONTRACTS\.future_external_identity_v3[\s\S]*?WRITER_JOURNEY_OFFLINE_WRITER_CONTRACT_ID invalid/,
+  "the offline worker selector must be a closed rollback/future-external-v3 mapping");
+assert.match(spec,
+  /for \(const invalidSelectorId of \[[\s\S]*?CSM_WRITER_PROJECTION_CONTRACTS\.future_v3\.contract_id,[\s\S]*?"unknown-writer-contract"[\s\S]*?invalidSelectorRejected/,
+  "the selector proof must reject the unpaired future-v2 writer and unknown IDs");
+assert.match(spec,
+  /function offlineWriterSelectorReceipt[\s\S]*?contract_id: selected\.contract_id[\s\S]*?durable_projection_contract_version:[\s\S]*?external_identity_registry_release_id:[\s\S]*?external_identity_resolution_contract_sha256:[\s\S]*?paired_post_observation_contract_sha256:/,
+  "the worker-consumed selector must emit its durable, external, and pair provenance");
+assert.match(spec,
+  /futureExternalV3SelectorReceipt\.contract_id[\s\S]*?future_external_identity_v3\.contract_id[\s\S]*?futureExternalV3SelectorReceipt\.durable_projection_contract_version[\s\S]*?futureExternalV3SelectorReceipt\.external_identity_registry_release_id[\s\S]*?EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3\.registry_release\.id[\s\S]*?paired_post_observation_contract_sha256/,
+  "the future selector assertion must bind the exact v3 writer, stage, registry, and pair SHA");
+assert.match(spec,
+  /testInfo\.attach\("offline-writer-selector-receipt"[\s\S]*?\[offline-writer-selector\]/,
+  "the selected worker tuple must remain observable in Playwright evidence");
+assert.match(spec,
+  /const capturedExecutionPayload[\s\S]*?payload\.provider_adapter_version = capturedProviderAdapter\.id[\s\S]*?payload\.request_builder_version = capturedProviderAdapter\.request_builder_version[\s\S]*?payload\.response_parser_version = capturedProviderAdapter\.response_parser_version[\s\S]*?owner\.provider_adapter_version = capturedProviderAdapter\.id[\s\S]*?owner\.request_builder_version = capturedProviderAdapter\.request_builder_version[\s\S]*?owner\.response_parser_version = capturedProviderAdapter\.response_parser_version[\s\S]*?sealCsmOwnerExecutionReceipt\(owner\)/,
+  "captured execution fixtures must be rebuilt and resealed with the captured adapter tuple");
 assert.match(healthVerifier,
-  /health\?\.runtime\?\.provider_adapter_version === expectedProviderAdapterVersion/);
+  /health\?\.runtime\?\.provider_adapter_version === providerAdapter\.id/);
 assert.doesNotMatch(spec, /CSM_OPENAI_RESPONSES_ADAPTER_VERSION/,
   "the journey must remain portable across registered provider adapters");
 assert.match(spec, /journeyContext\.route\("\*\*\/api\/csm-listing-title\*\*"/);

@@ -39,7 +39,11 @@ import {
   COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE,
   COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
   COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
-  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
 } from "./compatibility-bridge-release.mjs";
 export const PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA =
   "production-forward-readback-expectation-v1";
@@ -51,10 +55,27 @@ export const PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA =
   "production-forward-readback-receipt-v2";
 export const PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE =
   COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE;
+const PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_PROVENANCE = Object.freeze([{
+  descriptorId: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
+  marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
+  writerProjectionMode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE,
+  historicalDescriptorOptional: true
+}, {
+  descriptorId: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
+  marker: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
+  writerProjectionMode:
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+  historicalDescriptorOptional: false
+}]);
+const PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EVIDENCE_MODES = new Set(
+  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_PROVENANCE.map(
+    (entry) => entry.writerProjectionMode
+  )
+);
 const PRODUCTION_FORWARD_READBACK_COMPATIBILITY_WRITER_MODES = new Set([
   COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE,
   COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
-  PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE
+  ...PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EVIDENCE_MODES
 ]);
 
 const WRITER_JOURNEY_EVIDENCE_SCHEMA = "production-writer-journey-evidence-v7";
@@ -404,20 +425,28 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
     throw failure("production_forward_readback_standard_case_invalid");
   }
   const semanticCases = cases.filter((entry) => entry?.transport_only !== true);
+  const capturedProductionWriterMode =
+    PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EVIDENCE_MODES.has(
+      evidence.writer_projection_mode
+    );
   const capturedProductionWriter = evidence.release_class === "compatibility-bridge"
-    && evidence.writer_projection_mode
-      === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE;
-  if (!capturedProductionWriter && evidence.writer_projection_mode
-      === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE) {
+    && capturedProductionWriterMode;
+  if (!capturedProductionWriter && capturedProductionWriterMode) {
     throw failure("production_forward_readback_captured_writer_evidence_invalid");
   }
   if (capturedProductionWriter) {
+    const bridgeProvenance = PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_PROVENANCE.find(
+      (candidate) => candidate.writerProjectionMode === evidence.writer_projection_mode
+    );
     const entry = semanticCases.find((candidate) => candidate?.case_id === STANDARD_CASE_ID);
     const tcgEntry = semanticCases.find((candidate) => candidate?.case_id === "TCG");
     const largeEntry = transportOnlyCases[0];
     const finalSeal = evidence.final_seal;
-    if (evidence.compatibility_bridge_marker
-          !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
+    if (!bridgeProvenance
+        || evidence.compatibility_bridge_marker !== bridgeProvenance.marker
+        || (evidence.compatibility_bridge_descriptor_id !== bridgeProvenance.descriptorId
+          && !(bridgeProvenance.historicalDescriptorOptional
+            && evidence.compatibility_bridge_descriptor_id == null))
         || cases.map((candidate) => candidate?.case_id).sort().join("\0")
           !== "LARGE_STAGED_TRANSPORT\0NON_TCG\0TCG"
         || semanticCases.map((candidate) => candidate?.case_id).sort().join("\0")

@@ -1,0 +1,2381 @@
+{
+  "schema_version": "csm-external-v3-source-checkpoint-fixture.v1",
+  "provenance": {
+    "producer_base_sha": "1679d52a894b2a428dab07de462d6650e8ceecbd",
+    "producer_tracked_diff_sha256": "38290ee8fa6355ecbb5207eda875dfc8ea81985e9c7ea7f7f15cc8478cf7a92a",
+    "producer_tracked_path_count": 16,
+    "external_identity_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+    "checkpoint_sha256": "729c26da9a067a768581b5ef262d026711008a899203f1b4e3d4227dddcdee8b"
+  },
+  "owner": {
+    "tenant_id": "tenant-external-v3-forward-reader",
+    "asset_id": "asset-external-v3-forward-reader",
+    "intent_id": "intent-external-v3-forward-reader"
+  },
+  "original_image_sha256": [
+    "8641baae2722318061dc7d9431e8764e4fe72d809bf1d668294c823c1105811a",
+    "7551abbd6a90f94771396eb46f726f20c49b0745d23db4f82a8db5c82296ca01"
+  ],
+  "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+  "operation_key": "luna-direct:v2:083d5eefd367e7d8dc01efb00ae86f94050d54b3e6cd7dd880aa272cf1e78596",
+  "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "checkpoint": {
+    "title": "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls",
+    "fields": {
+      "year": "1996-97",
+      "manufacturer": "Topps",
+      "product": "Stadium Club",
+      "set": "High Risers",
+      "subjects": [
+        "Michael Jordan"
+      ],
+      "team": "Chicago Bulls",
+      "card_name": "",
+      "release_variant": "",
+      "surface_color": "",
+      "parallel_family": "",
+      "parallel_exact": "",
+      "print_finish": "",
+      "descriptive_rarity": "",
+      "card_number": "HR14",
+      "serial": "",
+      "attributes": [],
+      "grade": "",
+      "grading_info": null,
+      "grammar": "standard",
+      "special_stamp": "",
+      "description": "",
+      "lot_count": "",
+      "unreadable": [],
+      "low_confidence": [],
+      "ip": "",
+      "language": "",
+      "components": [],
+      "observed_surface_color": "",
+      "observed_parallel_family": "",
+      "withheld_finish_terms": []
+    },
+    "field_defects": [],
+    "sanitised": false,
+    "truncated": false,
+    "grammar": "standard",
+    "brackets": [
+      "year",
+      "manufacturer",
+      "product",
+      "set",
+      "card_number",
+      "subject",
+      "search_optimization"
+    ],
+    "bracket_text": [
+      {
+        "bracket": "year",
+        "text": "1996-97"
+      },
+      {
+        "bracket": "manufacturer",
+        "text": "Topps"
+      },
+      {
+        "bracket": "product",
+        "text": "Stadium Club"
+      },
+      {
+        "bracket": "set",
+        "text": "High Risers"
+      },
+      {
+        "bracket": "card_number",
+        "text": "#HR14"
+      },
+      {
+        "bracket": "subject",
+        "text": "Michael Jordan"
+      },
+      {
+        "bracket": "search_optimization",
+        "text": "Chicago Bulls"
+      }
+    ],
+    "dropped_brackets": [],
+    "suppressed_brackets": [],
+    "restored_brackets": [],
+    "empty_fields": [
+      "card_name",
+      "release_variant",
+      "print_finish",
+      "numerical_rarity",
+      "descriptive_rarity",
+      "grading_info"
+    ],
+    "input_empty_fields": [
+      "card_name",
+      "release_variant",
+      "print_finish",
+      "numerical_rarity",
+      "descriptive_rarity",
+      "grading_info"
+    ],
+    "character_budget": 80,
+    "unreadable_fields": [],
+    "low_confidence_fields": [],
+    "inferred_parent": null,
+    "normalization_reasons": [
+      "marketplace:verified_external_identity_projection"
+    ],
+    "canonical_naming_trace": null,
+    "canonical_naming_publishable": true,
+    "canonical_naming_failure_code": null,
+    "lot_quantity_unresolved": false,
+    "lot_single_card": false,
+    "lot_unshared_attributes": [],
+    "publication_coverage": {
+      "schema_version": "csm-publication-coverage-v1",
+      "atoms": [
+        {
+          "bracket": "year",
+          "source_field": "year",
+          "source_index": 0,
+          "canonical_value": "1996-97",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "manufacturer",
+          "source_field": "manufacturer",
+          "source_index": 0,
+          "canonical_value": "Topps",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "product",
+          "source_field": "product",
+          "source_index": 0,
+          "canonical_value": "Stadium Club",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "set",
+          "source_field": "set",
+          "source_index": 0,
+          "canonical_value": "High Risers",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "subject",
+          "source_field": "subjects",
+          "source_index": 0,
+          "canonical_value": "Michael Jordan",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "card_number",
+          "source_field": "card_number",
+          "source_index": 0,
+          "canonical_value": "HR14",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "search_optimization",
+          "source_field": "team",
+          "source_index": 0,
+          "canonical_value": "Chicago Bulls",
+          "disposition": "PUBLISHED"
+        }
+      ]
+    },
+    "lot_publishable": true,
+    "lot_publication_failure_code": null,
+    "composer_version": "thin-marketplace-composer-v2",
+    "marketplace_profile_version": "ebay-profile-v1",
+    "length": 73,
+    "raw_length": 399,
+    "observed_fields": {
+      "year": "1994-95",
+      "manufacturer": "Topps",
+      "product": "Stadium Club Basketball",
+      "set": "Hardwood Heroes",
+      "subjects": [
+        "Michael Jordan"
+      ],
+      "team": "Bulls",
+      "card_name": "",
+      "release_variant": "",
+      "surface_color": "",
+      "parallel_family": "",
+      "parallel_exact": "",
+      "print_finish": "",
+      "descriptive_rarity": "",
+      "card_number": "HR 14",
+      "serial": "",
+      "attributes": [],
+      "grade": "",
+      "grading_info": null,
+      "grammar": "standard",
+      "special_stamp": "",
+      "description": "",
+      "lot_count": "",
+      "unreadable": [],
+      "low_confidence": [],
+      "ip": "",
+      "language": "",
+      "components": [],
+      "observed_surface_color": "",
+      "observed_parallel_family": "",
+      "withheld_finish_terms": []
+    },
+    "external_identity_support": {
+      "schema_version": "csm-external-identity-support-receipt.v3",
+      "status": "APPLIED",
+      "reason": null,
+      "pack_id": "lynca.csm.external-identity",
+      "pack_version": "2026-08-10",
+      "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+      "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+      "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+      "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+      "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+      "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+      "record_id": "tcdb-2551-hr14",
+      "match_mode": "VERIFIED_ORIGINAL_SET",
+      "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+      "matched_anchors": {
+        "manufacturer": "topps",
+        "product": "stadium club basketball",
+        "subject": "michael jordan",
+        "card_number": "hr14"
+      },
+      "verified_optional_observations": {
+        "year": {
+          "observed": "1994-95",
+          "normalized": "1994-95",
+          "canonical_value": "1996-97",
+          "match": "CORRECTED_CONFLICT"
+        },
+        "product": {
+          "observed": "Stadium Club Basketball",
+          "normalized": "stadium club basketball",
+          "canonical_value": "Stadium Club",
+          "match": "CORRECTED_CONFLICT"
+        },
+        "set": {
+          "observed": "Hardwood Heroes",
+          "normalized": "hardwood heroes",
+          "canonical_value": "High Risers",
+          "match": "CORRECTED_CONFLICT"
+        },
+        "team": {
+          "observed": "Bulls",
+          "normalized": "bulls",
+          "canonical_value": "Chicago Bulls",
+          "match": "ALIAS",
+          "matched_alias": "Bulls"
+        }
+      },
+      "corrected_fields": [
+        "product",
+        "set",
+        "year"
+      ],
+      "field_decisions": {
+        "year": {
+          "action": "CORRECT_CONFLICT",
+          "observed_value": "1994-95",
+          "canonical_value": "1996-97",
+          "source_ids": [
+            "tcdb.set.2551",
+            "psa.set-registry.25618",
+            "beckett.item.3117708"
+          ]
+        },
+        "manufacturer": {
+          "action": "CORROBORATE",
+          "observed_value": "Topps",
+          "canonical_value": "Topps",
+          "source_ids": [
+            "beckett.item.3117708"
+          ]
+        },
+        "product": {
+          "action": "CORRECT_CONFLICT",
+          "observed_value": "Stadium Club Basketball",
+          "canonical_value": "Stadium Club",
+          "source_ids": [
+            "tcdb.set.2551",
+            "psa.set-registry.25618",
+            "beckett.item.3117708"
+          ]
+        },
+        "set": {
+          "action": "CORRECT_CONFLICT",
+          "observed_value": "Hardwood Heroes",
+          "canonical_value": "High Risers",
+          "source_ids": [
+            "tcdb.set.2551",
+            "psa.set-registry.25618",
+            "beckett.item.3117708"
+          ]
+        },
+        "subjects": {
+          "action": "CORROBORATE",
+          "observed_value": [
+            "Michael Jordan"
+          ],
+          "canonical_value": [
+            "Michael Jordan"
+          ],
+          "source_ids": [
+            "tcdb.set.2551",
+            "psa.set-registry.25618",
+            "beckett.item.3117708"
+          ]
+        },
+        "team": {
+          "action": "NORMALIZE_ALIAS",
+          "observed_value": "Bulls",
+          "canonical_value": "Chicago Bulls",
+          "source_ids": [
+            "tcdb.set.2551",
+            "beckett.item.3117708"
+          ]
+        },
+        "card_number": {
+          "action": "NORMALIZE_ALIAS",
+          "observed_value": "HR 14",
+          "canonical_value": "HR14",
+          "source_ids": [
+            "tcdb.set.2551",
+            "psa.set-registry.25618",
+            "beckett.item.3117708"
+          ]
+        }
+      },
+      "supported_fields": [
+        "year",
+        "manufacturer",
+        "product",
+        "set",
+        "subjects",
+        "team",
+        "card_number"
+      ],
+      "source_ids": [
+        "tcdb.set.2551",
+        "psa.set-registry.25618",
+        "beckett.item.3117708"
+      ],
+      "sources": [
+        {
+          "source_id": "tcdb.set.2551",
+          "url": "https://www.tcdb.com/Checklist.cfm/sid/2551/1996-97-Stadium-Club---High-Risers",
+          "retrieved_at": "2026-08-10",
+          "fact_sha256": "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d"
+        },
+        {
+          "source_id": "psa.set-registry.25618",
+          "url": "https://www.psacard.com/psasetregistry/basketball/company-sets/1996-97-stadium-club-high-risers-members-only/composition/25618",
+          "retrieved_at": "2026-08-10",
+          "fact_sha256": "83fd1914ef27e6c1191a64b830a83423eb7d185cdbbb3e22c6a9f1b7df86f392"
+        },
+        {
+          "source_id": "beckett.item.3117708",
+          "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+          "retrieved_at": "2026-08-10",
+          "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+        }
+      ],
+      "source_field_map": {
+        "year": [
+          "tcdb.set.2551",
+          "psa.set-registry.25618",
+          "beckett.item.3117708"
+        ],
+        "manufacturer": [
+          "beckett.item.3117708"
+        ],
+        "product": [
+          "tcdb.set.2551",
+          "psa.set-registry.25618",
+          "beckett.item.3117708"
+        ],
+        "set": [
+          "tcdb.set.2551",
+          "psa.set-registry.25618",
+          "beckett.item.3117708"
+        ],
+        "subjects": [
+          "tcdb.set.2551",
+          "psa.set-registry.25618",
+          "beckett.item.3117708"
+        ],
+        "team": [
+          "tcdb.set.2551",
+          "beckett.item.3117708"
+        ],
+        "card_number": [
+          "tcdb.set.2551",
+          "psa.set-registry.25618",
+          "beckett.item.3117708"
+        ]
+      }
+    },
+    "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+    "resolution_contract": {
+      "schema_version": "csm-post-observation-resolution-contract.v1",
+      "contract_id": "lynca.csm.post-observation.external-identity.v3",
+      "support_pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+      "resolver_version": "thin-path-exact-external-identity-v4",
+      "conflict_policy_version": "verified-original-set-three-anchor-catalog-correction-v4",
+      "composer_version": "thin-marketplace-composer-v4-verified-external-identity",
+      "marketplace_profile_version": "ebay-verified-external-identity-v2",
+      "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+      "matching": "exact_unique_four_anchor_or_verified_original_set_three_anchor",
+      "visible_conflict_policy": "verified_original_set_plus_manufacturer_subject_card_number_corrects_product_year_set_else_abstain",
+      "physical_copy_fields": "immutable",
+      "provider_calls_added": 0,
+      "contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e"
+    },
+    "accuracy_loss_ledger": {
+      "version": "same-call-accuracy-loss-ledger-v1",
+      "stages": {
+        "raw_provider_output": {
+          "sha256": "0b8437b543588682d6620b97641b8cee84a93e5de3429d77caf2d6f6882101d6",
+          "byte_length": 399,
+          "reason_codes": [
+            "PROVIDER_OUTPUT_TEXT_CAPTURED"
+          ]
+        },
+        "parsed_fields": {
+          "source_sha256": "0b8437b543588682d6620b97641b8cee84a93e5de3429d77caf2d6f6882101d6",
+          "sha256": "faa490afbb870088260f2abc89734254fc653d5969fdaace73c848911daa0f70",
+          "reason_codes": [
+            "PROVIDER_JSON_OBJECT_PARSED"
+          ]
+        },
+        "admitted_canonical_fields": {
+          "source_sha256": "faa490afbb870088260f2abc89734254fc653d5969fdaace73c848911daa0f70",
+          "sha256": "06e18383186c9e7d26666c984f66c09321bde5a1578c5a64f07179544356972d",
+          "source_map_version": "csm-sem-provider-source-map-v1",
+          "reason_codes": [
+            "CANONICAL_FIELD_NORMALIZED",
+            "NO_CANONICAL_LOSS_RECORDED"
+          ],
+          "fields": [
+            {
+              "field": "year",
+              "input_present": true,
+              "input_value_sha256": "62291ac81ec99edc7c2c547114a7dfaee3a65f383949ea3c5d59cf71d36690e8",
+              "admitted_present": true,
+              "admitted_value_sha256": "85361a939688427462cc39887282e3b421c01b9267739a8680b159adc3a4f0e8",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "ip_sport",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "language",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "manufacturer",
+              "input_present": true,
+              "input_value_sha256": "9a6a09df33c2144f05ddf028adccfd19cf21eaa1bdb1731c123848fa573f560a",
+              "admitted_present": true,
+              "admitted_value_sha256": "9a6a09df33c2144f05ddf028adccfd19cf21eaa1bdb1731c123848fa573f560a",
+              "status": "unchanged",
+              "reason_codes": [
+                "VALUE_UNCHANGED"
+              ]
+            },
+            {
+              "field": "product",
+              "input_present": true,
+              "input_value_sha256": "c6c6447ae887e5c2681361ac04b03018890293dfe6bbdbd56aaa9374f18b2332",
+              "admitted_present": true,
+              "admitted_value_sha256": "2b67579ff2ffd5f2f8fb62959a5030ecc415aea752f0abdededed05d6a6ccbf0",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "set",
+              "input_present": true,
+              "input_value_sha256": "622db701be5e4e30d61f3b7368e55d50d22c8657f034bdf3931743fdb1a202aa",
+              "admitted_present": true,
+              "admitted_value_sha256": "eb96337614a9436eafe818e929e36cc6436ad7852f4458842b1cc3bcd1716235",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "subject",
+              "input_present": true,
+              "input_value_sha256": "7c12c13098e23b90c2a9901e5f2b2591061ecdc387c7e3f7a70172d221ac6103",
+              "admitted_present": true,
+              "admitted_value_sha256": "7c12c13098e23b90c2a9901e5f2b2591061ecdc387c7e3f7a70172d221ac6103",
+              "status": "unchanged",
+              "reason_codes": [
+                "VALUE_UNCHANGED"
+              ]
+            },
+            {
+              "field": "card_name",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "card_number",
+              "input_present": true,
+              "input_value_sha256": "ebe55760b72d33a25cb3c522208e41b213043d5e48e074465981c3cc6a0ae254",
+              "admitted_present": true,
+              "admitted_value_sha256": "49d827a2512cadde047bf58fc56144fd8c96cf0950833018e165a8dd468674ed",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "descriptive_rarity",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "numerical_rarity",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "release_variant",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "print_finish",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "special_stamp",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "grading_info",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "description",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "search_optimization",
+              "input_present": true,
+              "input_value_sha256": "09350289642acf9b8e5f11aa6813ccf1413901245589ce94c13abbfd47dfb0fa",
+              "admitted_present": true,
+              "admitted_value_sha256": "97e1e2829d95abd5af56ebedc696ec4ad9c454dafd1a480ccb06f9604009acb7",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            }
+          ]
+        },
+        "composed_bracket_ledger": {
+          "source_sha256": "06e18383186c9e7d26666c984f66c09321bde5a1578c5a64f07179544356972d",
+          "sha256": "bc165c347b81134d79795c7d095edf29889bb21b236f15514f4ff078cd3b6294",
+          "included": [
+            "year",
+            "manufacturer",
+            "product",
+            "set",
+            "card_number",
+            "subject",
+            "search_optimization"
+          ],
+          "dropped_for_budget": [],
+          "profile_suppression_policy": [],
+          "suppressed_by_profile": [],
+          "restored": [],
+          "truncated": false,
+          "empty_at_input": [
+            "card_name",
+            "release_variant",
+            "print_finish",
+            "numerical_rarity",
+            "descriptive_rarity",
+            "grading_info"
+          ],
+          "normalization_reason_codes": [
+            "marketplace:verified_external_identity_projection"
+          ],
+          "character_budget": 80,
+          "rendered_length": 73,
+          "reason_codes": [
+            "MARKETPLACE_VERIFIED_EXTERNAL_IDENTITY_PROJECTION"
+          ]
+        },
+        "final_title": {
+          "source_sha256": "bc165c347b81134d79795c7d095edf29889bb21b236f15514f4ff078cd3b6294",
+          "sha256": "85f6c7447deebc4a5db601cf1c43a0891291bee4f4397f799d23a5dcc0211480",
+          "byte_length": 73,
+          "reason_codes": [
+            "FINAL_TITLE_COMPOSED"
+          ]
+        }
+      },
+      "ledger_sha256": "469e7ebe2e1d137265bab71e8b0c256141c371c9de706be3b33c105679da8a1f"
+    },
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "requested_model": "gpt-5.6-luna",
+    "served_model": "gpt-5.6-luna",
+    "served_model_attested": true,
+    "provider_response_status": "completed",
+    "provider_response_status_attested": true,
+    "provider_response_incomplete": false,
+    "served_effort": "low",
+    "served_effort_attested": true,
+    "served_effort_conflict": false,
+    "input_tokens": 100,
+    "cached_input_tokens": null,
+    "output_tokens": 30,
+    "reasoning_tokens": null,
+    "total_tokens": 130,
+    "set_card_name_relation_receipt": {
+      "schema_version": "set-card-name-relations-v1",
+      "set": {
+        "predicate": "CURRENT_CARD_MEMBER_OF_SET",
+        "value": "High Risers"
+      },
+      "card_name": null
+    },
+    "founder_beta_web_receipt": {
+      "schema_version": "founder-beta-web-receipt-v2",
+      "outcome": "NOT_USED",
+      "provider_request_count": 1,
+      "isolated_model_call_count": 0,
+      "provider_model": "gpt-5.6-luna",
+      "reasoning_effort": "low",
+      "web_search_used": false,
+      "web_search_call_count": 0,
+      "queries": [],
+      "urls": [],
+      "field_evidence": [],
+      "semantic_state_sha256": "0b8437b543588682d6620b97641b8cee84a93e5de3429d77caf2d6f6882101d6"
+    },
+    "image_detail": "high",
+    "requested_effort": "low",
+    "latency_ms": 12,
+    "provider_http_status": 200,
+    "provider_response_id": "resp_external_v3_source_fixture",
+    "provider_request_id": "req_external_v3_source_fixture",
+    "provider_client_request_id": null,
+    "prompt_version": "csm-canonical-fields-web-v2",
+    "max_output_tokens": 8192,
+    "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+    "provider_adapter_version": "openai-responses-v1",
+    "request_builder_version": "canonical-fields-web-request-v2",
+    "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+    "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+    "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+    "execution_contract_sha256": "36ac22d79d9e2a1dc0cb8a90ff9855da6188daec879abb1c8c6522dcec99ce19",
+    "execution_contract": {
+      "contract_version": "csm-model-execution-v2",
+      "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+      "account_scope": "lynca-primary",
+      "model_profile_sha256": "01dd8508adf1a12e976c4453460ad165cace3c82d7a489049793ca5a50f11730",
+      "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+      "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+      "transport_profile_id": "canonical-signed-url-v1",
+      "transport_profile_sha256": "4fc886d36f87ff6a227b54b2028ececfb25c35dbaeb55a240eed0b9c9ee7aaf3",
+      "provider": "openai",
+      "provider_adapter_version": "openai-responses-v1",
+      "provider_adapter_sha256": "b42393c1fb2cc312729dfe56fb0e64ef053d666a637b5e7ae942fee8d570ac98",
+      "request_builder_version": "canonical-fields-web-request-v2",
+      "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+      "model": "gpt-5.6-luna",
+      "requested_effort": "low",
+      "image_detail": "high",
+      "max_output_tokens": 8192,
+      "sampling_parameters": "omit",
+      "semantic_prompt_version": "csm-canonical-fields-web-v2",
+      "prompt_style_version": "canonical-direct-v1",
+      "rendered_prompt_sha256": "b34ca3b2d9ef6fd8b9727548985d21a6bc1cfe481e34c49ca32de5187f8ef29f",
+      "schema_sha256": "fc909f2b5e0bea66b3ca5cff8697b39ea16836585d815b62586b7675b43979e6",
+      "wire_template_sha256": "afbe9ff6559c401b5156cfe458a68ddf66f735e01ae2a7f9c16b596c40baf033",
+      "capabilities_sha256": "28ca386ffc135723ef7732cf7b60d6ba7e5d637777352e6dbadacdf00612ac61"
+    },
+    "csm_rows": {
+      "evidence": [
+        {
+          "id": "61e5c6f4e531697cb4e42c450cc5dc05",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "year",
+          "raw_value": "1994-95",
+          "normalized_value": "1994-95",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "a4709d2f5a4808abadd905b502da605c",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "year",
+          "raw_value": "1996-97",
+          "normalized_value": "1996-97",
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_EXTERNAL_IDENTITY",
+            "field": "year",
+            "decision": "CORRECT_CONFLICT",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "sources": [
+              {
+                "source_id": "tcdb.set.2551",
+                "url": "https://www.tcdb.com/Checklist.cfm/sid/2551/1996-97-Stadium-Club---High-Risers",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d"
+              },
+              {
+                "source_id": "psa.set-registry.25618",
+                "url": "https://www.psacard.com/psasetregistry/basketball/company-sets/1996-97-stadium-club-high-risers-members-only/composition/25618",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "83fd1914ef27e6c1191a64b830a83423eb7d185cdbbb3e22c6a9f1b7df86f392"
+              },
+              {
+                "source_id": "beckett.item.3117708",
+                "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+              }
+            ]
+          },
+          "observation_confidence": 1,
+          "normalization_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXTERNAL_IDENTITY_CORRECT_CONFLICT",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "d4bc00f8cf91d20cddd902df0489054d",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "manufacturer",
+          "raw_value": "Topps",
+          "normalized_value": "Topps",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "b7c8110974879d04d9929c5cddffd1c6",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "manufacturer",
+          "raw_value": "Topps",
+          "normalized_value": "Topps",
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_EXTERNAL_IDENTITY",
+            "field": "manufacturer",
+            "decision": "CORROBORATE",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "sources": [
+              {
+                "source_id": "beckett.item.3117708",
+                "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+              }
+            ]
+          },
+          "observation_confidence": 1,
+          "normalization_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXTERNAL_IDENTITY_CORROBORATE",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "64af34f2803db45d1701352e8d5022c8",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "product",
+          "raw_value": "Stadium Club Basketball",
+          "normalized_value": "Stadium Club Basketball",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "1e9b7a529365f6fac954926d0219dbac",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "product",
+          "raw_value": "Stadium Club",
+          "normalized_value": "Stadium Club",
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_EXTERNAL_IDENTITY",
+            "field": "product",
+            "decision": "CORRECT_CONFLICT",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "sources": [
+              {
+                "source_id": "tcdb.set.2551",
+                "url": "https://www.tcdb.com/Checklist.cfm/sid/2551/1996-97-Stadium-Club---High-Risers",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d"
+              },
+              {
+                "source_id": "psa.set-registry.25618",
+                "url": "https://www.psacard.com/psasetregistry/basketball/company-sets/1996-97-stadium-club-high-risers-members-only/composition/25618",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "83fd1914ef27e6c1191a64b830a83423eb7d185cdbbb3e22c6a9f1b7df86f392"
+              },
+              {
+                "source_id": "beckett.item.3117708",
+                "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+              }
+            ]
+          },
+          "observation_confidence": 1,
+          "normalization_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXTERNAL_IDENTITY_CORRECT_CONFLICT",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "55cd4c2914bd68c2b79c8684b85d8a2c",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "set",
+          "raw_value": "Hardwood Heroes",
+          "normalized_value": "Hardwood Heroes",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "21977e4f498e73f8403e2e79d939afaf",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "set",
+          "raw_value": "High Risers",
+          "normalized_value": "High Risers",
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_EXTERNAL_IDENTITY",
+            "field": "set",
+            "decision": "CORRECT_CONFLICT",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "sources": [
+              {
+                "source_id": "tcdb.set.2551",
+                "url": "https://www.tcdb.com/Checklist.cfm/sid/2551/1996-97-Stadium-Club---High-Risers",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d"
+              },
+              {
+                "source_id": "psa.set-registry.25618",
+                "url": "https://www.psacard.com/psasetregistry/basketball/company-sets/1996-97-stadium-club-high-risers-members-only/composition/25618",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "83fd1914ef27e6c1191a64b830a83423eb7d185cdbbb3e22c6a9f1b7df86f392"
+              },
+              {
+                "source_id": "beckett.item.3117708",
+                "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+              }
+            ]
+          },
+          "observation_confidence": 1,
+          "normalization_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXTERNAL_IDENTITY_CORRECT_CONFLICT",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "3a3ef8017c6232501b45efbc5400291b",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "subject",
+          "raw_value": [
+            "Michael Jordan"
+          ],
+          "normalized_value": [
+            "Michael Jordan"
+          ],
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "ba482fb5140344a8314735d3aed9abba",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "subject",
+          "raw_value": [
+            "Michael Jordan"
+          ],
+          "normalized_value": [
+            "Michael Jordan"
+          ],
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_EXTERNAL_IDENTITY",
+            "field": "subjects",
+            "decision": "CORROBORATE",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "sources": [
+              {
+                "source_id": "tcdb.set.2551",
+                "url": "https://www.tcdb.com/Checklist.cfm/sid/2551/1996-97-Stadium-Club---High-Risers",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d"
+              },
+              {
+                "source_id": "psa.set-registry.25618",
+                "url": "https://www.psacard.com/psasetregistry/basketball/company-sets/1996-97-stadium-club-high-risers-members-only/composition/25618",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "83fd1914ef27e6c1191a64b830a83423eb7d185cdbbb3e22c6a9f1b7df86f392"
+              },
+              {
+                "source_id": "beckett.item.3117708",
+                "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+              }
+            ]
+          },
+          "observation_confidence": 1,
+          "normalization_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXTERNAL_IDENTITY_CORROBORATE",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "dce21ed4bad26c64a8c23939c7fdfb4f",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_number",
+          "raw_value": "HR 14",
+          "normalized_value": "HR 14",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "3c72a5f794aa1050a2a964cd44b07742",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_number",
+          "raw_value": "HR14",
+          "normalized_value": "HR14",
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_EXTERNAL_IDENTITY",
+            "field": "card_number",
+            "decision": "NORMALIZE_ALIAS",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "sources": [
+              {
+                "source_id": "tcdb.set.2551",
+                "url": "https://www.tcdb.com/Checklist.cfm/sid/2551/1996-97-Stadium-Club---High-Risers",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d"
+              },
+              {
+                "source_id": "psa.set-registry.25618",
+                "url": "https://www.psacard.com/psasetregistry/basketball/company-sets/1996-97-stadium-club-high-risers-members-only/composition/25618",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "83fd1914ef27e6c1191a64b830a83423eb7d185cdbbb3e22c6a9f1b7df86f392"
+              },
+              {
+                "source_id": "beckett.item.3117708",
+                "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+              }
+            ]
+          },
+          "observation_confidence": 1,
+          "normalization_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXTERNAL_IDENTITY_NORMALIZE_ALIAS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "6d9902ae5d1ffd1d8c00ed0eb15beb62",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "search_optimization",
+          "raw_value": [
+            "Bulls"
+          ],
+          "normalized_value": [
+            "Bulls"
+          ],
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "cd35f5c05be3e88643adc57a61cf7bc6",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "search_optimization",
+          "raw_value": "Chicago Bulls",
+          "normalized_value": [
+            "Chicago Bulls"
+          ],
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_EXTERNAL_IDENTITY",
+            "field": "team",
+            "decision": "NORMALIZE_ALIAS",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "sources": [
+              {
+                "source_id": "tcdb.set.2551",
+                "url": "https://www.tcdb.com/Checklist.cfm/sid/2551/1996-97-Stadium-Club---High-Risers",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "57742a7673c905bd6db1d7e3322801fb78a8709b335aad9738b22adb855e4c1d"
+              },
+              {
+                "source_id": "beckett.item.3117708",
+                "url": "https://www.beckett.com/basketball/1996-97/stadium-club-high-risers/hr14-michael-jordan-3117708",
+                "retrieved_at": "2026-08-10",
+                "fact_sha256": "f13da45a28bc73b8abad4980493a9eee369435022342231b77a3bed8b1a3653c"
+              }
+            ]
+          },
+          "observation_confidence": 1,
+          "normalization_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXTERNAL_IDENTITY_NORMALIZE_ALIAS",
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "candidates": [
+        {
+          "id": "e31208aa5fa4b8bf7bbc8b351415e4ed",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "year",
+          "value_kind": "VALUE",
+          "canonical_value": "1994-95",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "7ed3d246ed2c2fe8fe1bbec9f8cd9a5a",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "year",
+          "value_kind": "VALUE",
+          "canonical_value": "1996-97",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_REGISTRY_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "ec01f4544a3f1b0f92a251ad674a4b3b",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "ip_sport",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "d777b49c0c01882ff0629b2796a32937",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "language",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "413b6a77f63b2440ee7bcca62ad4fac7",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "manufacturer",
+          "value_kind": "VALUE",
+          "canonical_value": "Topps",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "aab548a0810a6eadd227e54963949851",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "manufacturer",
+          "value_kind": "VALUE",
+          "canonical_value": "Topps",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_REGISTRY_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "55a23a0fde73d247fcadf8fa11c5cf08",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "product",
+          "value_kind": "VALUE",
+          "canonical_value": "Stadium Club Basketball",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "1491c083681a48f96dcba1c4d95873ee",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "product",
+          "value_kind": "VALUE",
+          "canonical_value": "Stadium Club",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_REGISTRY_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "c99d3a2eb4bd90102306faf36368d338",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "set",
+          "value_kind": "VALUE",
+          "canonical_value": "Hardwood Heroes",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "6fb307b1da81baacc723296069514b6c",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "set",
+          "value_kind": "VALUE",
+          "canonical_value": "High Risers",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_REGISTRY_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "2b2589564b36ff89380bb06c5a7322dc",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "subject",
+          "value_kind": "VALUE",
+          "canonical_value": [
+            "Michael Jordan"
+          ],
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "0044aef106731e1ebb7f6d7067a1d9db",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "subject",
+          "value_kind": "VALUE",
+          "canonical_value": [
+            "Michael Jordan"
+          ],
+          "empty_reason": null,
+          "source_trust": "REVIEWED_REGISTRY_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "d08fe7a0f1d792e9b3f7d4b1ee674e0b",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_name",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "cd7d9901138e58d5550c149a1ad945fb",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_number",
+          "value_kind": "VALUE",
+          "canonical_value": "HR 14",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "4353837b32d9532dc14189f660931154",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_number",
+          "value_kind": "VALUE",
+          "canonical_value": "HR14",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_REGISTRY_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "e782ce588de216835418729db7d55c33",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "descriptive_rarity",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "2320fdb31209d7313e6c3361d8715ca9",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "numerical_rarity",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "84068504ddbad19e66df3ec88a3a7212",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "release_variant",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "3565f9aafd001531fe76ed4efba91cb0",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "print_finish",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "eedee8f0b8c416bddf09fe71a5d397c4",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "special_stamp",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "69f5cd5c71e6641c9fa39599fb13112e",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "grading_info",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "6138ba839c74a08ed7f43d4b3e8913f2",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "description",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "ebcc92bae8d20345acf9886bd3b3a6b9",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "search_optimization",
+          "value_kind": "VALUE",
+          "canonical_value": [
+            "Bulls"
+          ],
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "11af4085d527b1d06f71af8fbb445918",
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "search_optimization",
+          "value_kind": "VALUE",
+          "canonical_value": [
+            "Chicago Bulls"
+          ],
+          "empty_reason": null,
+          "source_trust": "REVIEWED_REGISTRY_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "links": [
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "e31208aa5fa4b8bf7bbc8b351415e4ed",
+          "evidence_observation_id": "61e5c6f4e531697cb4e42c450cc5dc05",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "7ed3d246ed2c2fe8fe1bbec9f8cd9a5a",
+          "evidence_observation_id": "a4709d2f5a4808abadd905b502da605c",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "413b6a77f63b2440ee7bcca62ad4fac7",
+          "evidence_observation_id": "d4bc00f8cf91d20cddd902df0489054d",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "aab548a0810a6eadd227e54963949851",
+          "evidence_observation_id": "b7c8110974879d04d9929c5cddffd1c6",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "55a23a0fde73d247fcadf8fa11c5cf08",
+          "evidence_observation_id": "64af34f2803db45d1701352e8d5022c8",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "1491c083681a48f96dcba1c4d95873ee",
+          "evidence_observation_id": "1e9b7a529365f6fac954926d0219dbac",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "c99d3a2eb4bd90102306faf36368d338",
+          "evidence_observation_id": "55cd4c2914bd68c2b79c8684b85d8a2c",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "6fb307b1da81baacc723296069514b6c",
+          "evidence_observation_id": "21977e4f498e73f8403e2e79d939afaf",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "2b2589564b36ff89380bb06c5a7322dc",
+          "evidence_observation_id": "3a3ef8017c6232501b45efbc5400291b",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "0044aef106731e1ebb7f6d7067a1d9db",
+          "evidence_observation_id": "ba482fb5140344a8314735d3aed9abba",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "cd7d9901138e58d5550c149a1ad945fb",
+          "evidence_observation_id": "dce21ed4bad26c64a8c23939c7fdfb4f",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "4353837b32d9532dc14189f660931154",
+          "evidence_observation_id": "3c72a5f794aa1050a2a964cd44b07742",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "ebcc92bae8d20345acf9886bd3b3a6b9",
+          "evidence_observation_id": "6d9902ae5d1ffd1d8c00ed0eb15beb62",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "candidate_id": "11af4085d527b1d06f71af8fbb445918",
+          "evidence_observation_id": "cd35f5c05be3e88643adc57a61cf7bc6",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "resolution": {
+        "id": "ab9337c3184c35d9ee062b66f0634678",
+        "tenant_id": "tenant-external-v3-forward-reader",
+        "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+        "contract_version": "csm-stage-shadow-v3",
+        "revision": 1,
+        "grammar": "NON_TCG",
+        "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+        "resolver_version": "thin-path-exact-external-identity-v4",
+        "conflict_policy_version": "verified-original-set-three-anchor-catalog-correction-v4",
+        "recognition_packet_sha256": "5effab7c9f704f1d0b63571e51b4262444f2b556f4f4f22d865fbca9a3952266",
+        "resolution_status": "COMPLETE",
+        "created_at": "2026-08-14T00:00:00Z"
+      },
+      "resolved": [
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "year",
+          "selected_kind": "VALUE",
+          "canonical_value": "1996-97",
+          "empty_reason": null,
+          "selected_candidate_id": "7ed3d246ed2c2fe8fe1bbec9f8cd9a5a",
+          "alternate_candidate_ids": [
+            "e31208aa5fa4b8bf7bbc8b351415e4ed"
+          ],
+          "rationale_codes": [
+            "EXACT_EXTERNAL_IDENTITY_SUPPORT"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "ip_sport",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "language",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "manufacturer",
+          "selected_kind": "VALUE",
+          "canonical_value": "Topps",
+          "empty_reason": null,
+          "selected_candidate_id": "aab548a0810a6eadd227e54963949851",
+          "alternate_candidate_ids": [
+            "413b6a77f63b2440ee7bcca62ad4fac7"
+          ],
+          "rationale_codes": [
+            "EXACT_EXTERNAL_IDENTITY_SUPPORT"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "product",
+          "selected_kind": "VALUE",
+          "canonical_value": "Stadium Club",
+          "empty_reason": null,
+          "selected_candidate_id": "1491c083681a48f96dcba1c4d95873ee",
+          "alternate_candidate_ids": [
+            "55a23a0fde73d247fcadf8fa11c5cf08"
+          ],
+          "rationale_codes": [
+            "EXACT_EXTERNAL_IDENTITY_SUPPORT"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "set",
+          "selected_kind": "VALUE",
+          "canonical_value": "High Risers",
+          "empty_reason": null,
+          "selected_candidate_id": "6fb307b1da81baacc723296069514b6c",
+          "alternate_candidate_ids": [
+            "c99d3a2eb4bd90102306faf36368d338"
+          ],
+          "rationale_codes": [
+            "EXACT_EXTERNAL_IDENTITY_SUPPORT"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "subject",
+          "selected_kind": "VALUE",
+          "canonical_value": [
+            "Michael Jordan"
+          ],
+          "empty_reason": null,
+          "selected_candidate_id": "0044aef106731e1ebb7f6d7067a1d9db",
+          "alternate_candidate_ids": [
+            "2b2589564b36ff89380bb06c5a7322dc"
+          ],
+          "rationale_codes": [
+            "EXACT_EXTERNAL_IDENTITY_SUPPORT"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "card_name",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "card_number",
+          "selected_kind": "VALUE",
+          "canonical_value": "HR14",
+          "empty_reason": null,
+          "selected_candidate_id": "4353837b32d9532dc14189f660931154",
+          "alternate_candidate_ids": [
+            "cd7d9901138e58d5550c149a1ad945fb"
+          ],
+          "rationale_codes": [
+            "EXACT_EXTERNAL_IDENTITY_SUPPORT"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "descriptive_rarity",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "numerical_rarity",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "release_variant",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "print_finish",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "special_stamp",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "grading_info",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "description",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "ABSENT"
+          ],
+          "semantic_confidence": 0,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-forward-reader",
+          "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+          "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+          "bracket": "search_optimization",
+          "selected_kind": "VALUE",
+          "canonical_value": [
+            "Chicago Bulls"
+          ],
+          "empty_reason": null,
+          "selected_candidate_id": "11af4085d527b1d06f71af8fbb445918",
+          "alternate_candidate_ids": [
+            "ebcc92bae8d20345acf9886bd3b3a6b9"
+          ],
+          "rationale_codes": [
+            "EXACT_EXTERNAL_IDENTITY_SUPPORT"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "output": {
+        "id": "b5691c747f31292f8599aa832044b1cc",
+        "tenant_id": "tenant-external-v3-forward-reader",
+        "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+        "resolution_id": "ab9337c3184c35d9ee062b66f0634678",
+        "contract_version": "csm-stage-shadow-v3",
+        "marketplace": "EBAY",
+        "composer_version": "thin-marketplace-composer-v4-verified-external-identity",
+        "marketplace_profile_version": "ebay-verified-external-identity-v2",
+        "resolution_packet_sha256": "9c544a4ff1e2ee8296240c5d0410f02ac12a319b847fa72ebeee76e92ac7d218",
+        "title": "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls",
+        "structured_output": {
+          "sem": {
+            "year": "1996-97",
+            "manufacturer": "Topps",
+            "product": "Stadium Club",
+            "set": "High Risers",
+            "subject": [
+              "Michael Jordan"
+            ],
+            "card_number": "HR14",
+            "search_optimization": [
+              "Chicago Bulls"
+            ]
+          },
+          "composition_grammar": "standard",
+          "lot_count": "",
+          "publication_coverage": {
+            "schema_version": "csm-publication-coverage-v1",
+            "atoms": [
+              {
+                "bracket": "year",
+                "source_field": "year",
+                "source_index": 0,
+                "canonical_value": "1996-97",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "manufacturer",
+                "source_field": "manufacturer",
+                "source_index": 0,
+                "canonical_value": "Topps",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "product",
+                "source_field": "product",
+                "source_index": 0,
+                "canonical_value": "Stadium Club",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "set",
+                "source_field": "set",
+                "source_index": 0,
+                "canonical_value": "High Risers",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "subject",
+                "source_field": "subjects",
+                "source_index": 0,
+                "canonical_value": "Michael Jordan",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "card_number",
+                "source_field": "card_number",
+                "source_index": 0,
+                "canonical_value": "HR14",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "search_optimization",
+                "source_field": "team",
+                "source_index": 0,
+                "canonical_value": "Chicago Bulls",
+                "disposition": "PUBLISHED"
+              }
+            ]
+          },
+          "founder_beta_web_receipt": {
+            "schema_version": "founder-beta-web-receipt-v2",
+            "outcome": "NOT_USED",
+            "provider_request_count": 1,
+            "isolated_model_call_count": 0,
+            "provider_model": "gpt-5.6-luna",
+            "reasoning_effort": "low",
+            "web_search_used": false,
+            "web_search_call_count": 0,
+            "queries": [],
+            "urls": [],
+            "field_evidence": [],
+            "semantic_state_sha256": "0b8437b543588682d6620b97641b8cee84a93e5de3429d77caf2d6f6882101d6"
+          },
+          "set_card_name_relation_receipt": {
+            "schema_version": "set-card-name-relations-v1",
+            "set": {
+              "predicate": "CURRENT_CARD_MEMBER_OF_SET",
+              "value": "High Risers"
+            },
+            "card_name": null
+          },
+          "components": [],
+          "print_finish_layers": {
+            "parallel_exact": "",
+            "surface_color": "",
+            "parallel_family": ""
+          },
+          "external_identity_support": {
+            "schema_version": "csm-external-identity-support-receipt.v3",
+            "pack_id": "lynca.csm.external-identity",
+            "pack_version": "2026-08-10",
+            "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+            "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+            "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+            "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+            "record_id": "tcdb-2551-hr14",
+            "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+            "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+            "match_mode": "VERIFIED_ORIGINAL_SET",
+            "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+            "field_decisions": {
+              "year": {
+                "action": "CORRECT_CONFLICT",
+                "observed_value": "1994-95",
+                "canonical_value": "1996-97",
+                "source_ids": [
+                  "tcdb.set.2551",
+                  "psa.set-registry.25618",
+                  "beckett.item.3117708"
+                ]
+              },
+              "manufacturer": {
+                "action": "CORROBORATE",
+                "observed_value": "Topps",
+                "canonical_value": "Topps",
+                "source_ids": [
+                  "beckett.item.3117708"
+                ]
+              },
+              "product": {
+                "action": "CORRECT_CONFLICT",
+                "observed_value": "Stadium Club Basketball",
+                "canonical_value": "Stadium Club",
+                "source_ids": [
+                  "tcdb.set.2551",
+                  "psa.set-registry.25618",
+                  "beckett.item.3117708"
+                ]
+              },
+              "set": {
+                "action": "CORRECT_CONFLICT",
+                "observed_value": "Hardwood Heroes",
+                "canonical_value": "High Risers",
+                "source_ids": [
+                  "tcdb.set.2551",
+                  "psa.set-registry.25618",
+                  "beckett.item.3117708"
+                ]
+              },
+              "subjects": {
+                "action": "CORROBORATE",
+                "observed_value": [
+                  "Michael Jordan"
+                ],
+                "canonical_value": [
+                  "Michael Jordan"
+                ],
+                "source_ids": [
+                  "tcdb.set.2551",
+                  "psa.set-registry.25618",
+                  "beckett.item.3117708"
+                ]
+              },
+              "team": {
+                "action": "NORMALIZE_ALIAS",
+                "observed_value": "Bulls",
+                "canonical_value": "Chicago Bulls",
+                "source_ids": [
+                  "tcdb.set.2551",
+                  "beckett.item.3117708"
+                ]
+              },
+              "card_number": {
+                "action": "NORMALIZE_ALIAS",
+                "observed_value": "HR 14",
+                "canonical_value": "HR14",
+                "source_ids": [
+                  "tcdb.set.2551",
+                  "psa.set-registry.25618",
+                  "beckett.item.3117708"
+                ]
+              }
+            }
+          }
+        },
+        "included_brackets": [
+          "year",
+          "manufacturer",
+          "product",
+          "set",
+          "card_number",
+          "subject",
+          "search_optimization"
+        ],
+        "dropped_trace": {
+          "dropped_for_budget": [],
+          "suppressed_by_profile": [],
+          "restored": [],
+          "truncated": false,
+          "empty_at_input": [
+            "card_name",
+            "release_variant",
+            "print_finish",
+            "numerical_rarity",
+            "descriptive_rarity",
+            "grading_info"
+          ],
+          "normalization_reason_codes": [
+            "marketplace:verified_external_identity_projection"
+          ],
+          "character_budget": 80,
+          "rendered_length": 73
+        },
+        "created_at": "2026-08-14T00:00:00Z"
+      },
+      "session_hashes": {
+        "csm_recognition_packet_sha256": "5effab7c9f704f1d0b63571e51b4262444f2b556f4f4f22d865fbca9a3952266",
+        "csm_resolution_packet_sha256": "9c544a4ff1e2ee8296240c5d0410f02ac12a319b847fa72ebeee76e92ac7d218",
+        "csm_marketplace_packet_sha256": "c07273128fd4c037069d1ae9eec2530a6ef8d4c84e5e9d29624775a1597a7d1d"
+      }
+    },
+    "csm_persistence_checkpoint": {
+      "schema_version": "csm-persistence-checkpoint-ordinary-execution-v2",
+      "state": "PERSISTENCE_PENDING",
+      "tenant_id": "tenant-external-v3-forward-reader",
+      "operation_key": "luna-direct:v2:083d5eefd367e7d8dc01efb00ae86f94050d54b3e6cd7dd880aa272cf1e78596",
+      "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "recognition_session_id": "csmsess_15aebc71e7d4f100c90e37de44a4197c901ceb38",
+      "recognition_session_deferred": false,
+      "execution_contract_sha256": "36ac22d79d9e2a1dc0cb8a90ff9855da6188daec879abb1c8c6522dcec99ce19",
+      "external_identity_receipt": {
+        "schema_version": "csm-external-identity-checkpoint-receipt.v1",
+        "status": "APPLIED",
+        "request_original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+        "pack_id": "lynca.csm.external-identity",
+        "pack_version": "2026-08-10",
+        "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+        "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+        "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+        "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+        "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+        "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+        "match_mode": "VERIFIED_ORIGINAL_SET",
+        "original_set_sha256": "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159",
+        "record_id": "tcdb-2551-hr14"
+      },
+      "packet_hashes": {
+        "csm_recognition_packet_sha256": "5effab7c9f704f1d0b63571e51b4262444f2b556f4f4f22d865fbca9a3952266",
+        "csm_resolution_packet_sha256": "9c544a4ff1e2ee8296240c5d0410f02ac12a319b847fa72ebeee76e92ac7d218",
+        "csm_marketplace_packet_sha256": "c07273128fd4c037069d1ae9eec2530a6ef8d4c84e5e9d29624775a1597a7d1d"
+      },
+      "accuracy_loss_ledger_version": "same-call-accuracy-loss-ledger-v1",
+      "accuracy_loss_ledger_sha256": "469e7ebe2e1d137265bab71e8b0c256141c371c9de706be3b33c105679da8a1f"
+    }
+  },
+  "source_session_patch": {
+    "csm_contract_version": "csm-stage-shadow-v3",
+    "csm_registry_release_id": "registry_thin_external_identity_high_risers_v3",
+    "csm_grammar": "NON_TCG",
+    "csm_grammar_confidence": 0.8,
+    "recognition_pipeline_fingerprint": "c4cc6eea87e9ee676397ea977c6a91dbe3c5c894c07a95cc4cb8836e65e19fe8",
+    "csm_owner_versions": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "requested_model": "gpt-5.6-luna",
+      "served_model": "gpt-5.6-luna",
+      "served_model_attested": true,
+      "effort": "low",
+      "reasoning_effort": "low",
+      "reasoning_effort_attested": true,
+      "provider_response_status": "completed",
+      "provider_response_status_attested": true,
+      "provider_response_incomplete": false,
+      "served_effort_conflict": false,
+      "provider_http_status": 200,
+      "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+      "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+      "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+      "account_scope": "lynca-primary",
+      "provider_adapter_version": "openai-responses-v1",
+      "request_builder_version": "canonical-fields-web-request-v2",
+      "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+      "execution_contract_sha256": "36ac22d79d9e2a1dc0cb8a90ff9855da6188daec879abb1c8c6522dcec99ce19",
+      "execution_contract": {
+        "contract_version": "csm-model-execution-v2",
+        "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+        "account_scope": "lynca-primary",
+        "model_profile_sha256": "01dd8508adf1a12e976c4453460ad165cace3c82d7a489049793ca5a50f11730",
+        "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+        "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+        "transport_profile_id": "canonical-signed-url-v1",
+        "transport_profile_sha256": "4fc886d36f87ff6a227b54b2028ececfb25c35dbaeb55a240eed0b9c9ee7aaf3",
+        "provider": "openai",
+        "provider_adapter_version": "openai-responses-v1",
+        "provider_adapter_sha256": "b42393c1fb2cc312729dfe56fb0e64ef053d666a637b5e7ae942fee8d570ac98",
+        "request_builder_version": "canonical-fields-web-request-v2",
+        "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+        "model": "gpt-5.6-luna",
+        "requested_effort": "low",
+        "image_detail": "high",
+        "max_output_tokens": 8192,
+        "sampling_parameters": "omit",
+        "semantic_prompt_version": "csm-canonical-fields-web-v2",
+        "prompt_style_version": "canonical-direct-v1",
+        "rendered_prompt_sha256": "b34ca3b2d9ef6fd8b9727548985d21a6bc1cfe481e34c49ca32de5187f8ef29f",
+        "schema_sha256": "fc909f2b5e0bea66b3ca5cff8697b39ea16836585d815b62586b7675b43979e6",
+        "wire_template_sha256": "afbe9ff6559c401b5156cfe458a68ddf66f735e01ae2a7f9c16b596c40baf033",
+        "capabilities_sha256": "28ca386ffc135723ef7732cf7b60d6ba7e5d637777352e6dbadacdf00612ac61"
+      },
+      "image_detail": "high",
+      "prompt_version": "csm-canonical-fields-web-v2",
+      "max_output_tokens": 8192,
+      "provider_response_id": "resp_external_v3_source_fixture",
+      "provider_request_id": "req_external_v3_source_fixture",
+      "provider_client_request_id": null,
+      "provider_attempt_number": null,
+      "provider_retry_count": null,
+      "provider_transport_retry_receipt": null,
+      "latency_ms": 12,
+      "latency_stages_ms": {
+        "authority_dispatch_ms": 0
+      },
+      "input_tokens": 100,
+      "cached_input_tokens": null,
+      "output_tokens": 30,
+      "reasoning_tokens": null,
+      "total_tokens": 130,
+      "total_tokens_source": "provider",
+      "resolver": "thin-path-exact-external-identity-v4",
+      "composer": "thin-marketplace-composer-v4-verified-external-identity",
+      "marketplace_profile": "ebay-verified-external-identity-v2",
+      "accuracy_loss_ledger_version": "same-call-accuracy-loss-ledger-v1",
+      "accuracy_loss_ledger_sha256": "469e7ebe2e1d137265bab71e8b0c256141c371c9de706be3b33c105679da8a1f",
+      "owner_execution_receipt_version": "csm-owner-execution-receipt-v1",
+      "owner_execution_receipt_sha256": "aee099f770ed7c62aa147a93ccc3b081f1e346fc951c70517dc03d38a0c682ce"
+    },
+    "csm_recognition_stage_status": "COMPLETE",
+    "csm_resolution_stage_status": "COMPLETE",
+    "csm_composition_stage_status": "COMPLETE",
+    "csm_recognition_packet_sha256": "5effab7c9f704f1d0b63571e51b4262444f2b556f4f4f22d865fbca9a3952266",
+    "csm_resolution_packet_sha256": "9c544a4ff1e2ee8296240c5d0410f02ac12a319b847fa72ebeee76e92ac7d218",
+    "csm_marketplace_packet_sha256": "c07273128fd4c037069d1ae9eec2530a6ef8d4c84e5e9d29624775a1597a7d1d"
+  }
+}

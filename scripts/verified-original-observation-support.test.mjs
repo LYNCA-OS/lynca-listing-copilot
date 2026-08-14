@@ -5,7 +5,11 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { computeVerifiedOriginalSetSha256 } from
+import {
+  computeVerifiedOriginalSetSha256,
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3
+} from
   "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   composeLyncaStandardNameForProfile,
@@ -31,6 +35,9 @@ import {
 } from "../lib/listing/thin/csm-replay.mjs";
 import {
   COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT,
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3,
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1,
+  combinedPostObservationResolutionContractForReleases,
   findVerifiedOriginalObservationRecord,
   postObservationResolutionContractForVerifiedOriginals,
   publicVerifiedOriginalObservationReceipt,
@@ -38,9 +45,13 @@ import {
   validatePostObservationResolutionContractSelection,
   validateVerifiedOriginalObservationPublicReceipt,
   validateVerifiedOriginalObservationReceipt,
+  verifiedOriginalObservationHealthReceiptForRelease,
+  verifiedOriginalObservationHealthReceiptForReleases,
   verifiedOriginalObservationReleaseForReceipt,
   verifiedOriginalObservationReplayProjection,
+  VERIFIED_ORIGINAL_OBSERVATION_EXTERNAL_V3_HEALTH_RECEIPT,
   VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
   VERIFIED_ORIGINAL_OBSERVATION_PACK,
   VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY,
   VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT,
@@ -147,6 +158,25 @@ assert.equal(
   COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
   "3c5e9260011db7a017af7fbe0dc1faa631e0338aab68111870caa83e6a861efb"
 );
+assert.equal(COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256,
+  "f3a1b84f0990ad2e00e179f96985f8e7b96e19ce1b5fca55687f968e08e18e42");
+assert.equal(
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3.contract_sha256,
+  "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed"
+);
+assert.equal(combinedPostObservationResolutionContractForReleases({
+  verifiedOriginalObservationReleaseId:
+    "verified_original_closed_projection_subset_a_v2",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id
+}), COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3);
+assert.throws(() => combinedPostObservationResolutionContractForReleases({
+  verifiedOriginalObservationReleaseId:
+    "verified_original_closed_projection_subset_a_v1",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id
+}), /post_observation_resolution_pair_unknown/,
+"overlay-v1 and external-v3 is not a published execution pair");
 for (const digest of [
   VERIFIED_ORIGINAL_SET_INDEX.index_sha256,
   VERIFIED_ORIGINAL_OBSERVATION_PACK.pack_sha256,
@@ -178,6 +208,75 @@ assert.equal(
   VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.post_observation_contract_sha256,
   COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256
 );
+assert.equal(
+  verifiedOriginalObservationHealthReceiptForRelease(
+    "verified_original_closed_projection_subset_a_v1"
+  ),
+  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
+  "the legacy single-axis helper remains a v2 compatibility wrapper"
+);
+assert.equal(
+  verifiedOriginalObservationHealthReceiptForRelease(
+    "verified_original_closed_projection_subset_a_v2"
+  ),
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  "the current single-axis helper remains byte-identical for active v2"
+);
+assert.equal(verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId:
+    "verified_original_closed_projection_subset_a_v1",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.registry_release_id
+}), VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT);
+assert.equal(verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId:
+    "verified_original_closed_projection_subset_a_v2",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.registry_release_id
+}), VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT);
+assert.equal(verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId:
+    "verified_original_closed_projection_subset_a_v2",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id
+}), VERIFIED_ORIGINAL_OBSERVATION_EXTERNAL_V3_HEALTH_RECEIPT);
+assert.equal(
+  VERIFIED_ORIGINAL_OBSERVATION_EXTERNAL_V3_HEALTH_RECEIPT
+    .post_observation_contract_sha256,
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3.contract_sha256
+);
+assert.deepEqual(
+  {
+    ...VERIFIED_ORIGINAL_OBSERVATION_EXTERNAL_V3_HEALTH_RECEIPT,
+    post_observation_contract_sha256:
+      VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.post_observation_contract_sha256
+  },
+  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
+  "the external-v3 pair changes only the combined-contract attestation"
+);
+assert.equal(
+  createHash("sha256")
+    .update(JSON.stringify(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT))
+    .digest("hex"),
+  "0dff68528cbe72fe74de7a4d1aec8d74f63f821365b9c1ca190a5f836b36da84",
+  "active e1ae/v2 health bytes remain frozen"
+);
+assert.throws(() => verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId:
+    "verified_original_closed_projection_subset_a_v1",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id
+}), /post_observation_resolution_pair_unknown/);
+assert.throws(() => verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId: "unknown",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.registry_release_id
+}), /post_observation_resolution_pair_unknown/);
+assert.throws(() => verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId:
+    "verified_original_closed_projection_subset_a_v2",
+  externalIdentityRegistryReleaseId: "unknown"
+}), /post_observation_resolution_pair_unknown/);
 assert.doesNotMatch(
   JSON.stringify(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT),
   /record_id|original_set_sha256|observed_fields|field_decisions|source_url|https?:\/\//
@@ -945,6 +1044,27 @@ assert.equal(validatePostObservationResolutionContractSelection(activeSelection,
   activeReleaseId: "verified_original_closed_projection_subset_a_v2",
   originalImageSha256: first
 }), true, "pre-provider contract selection is exact-set and order independent");
+const forwardExternalV3Selection = postObservationResolutionContractForVerifiedOriginals({
+  activeReleaseId: "verified_original_closed_projection_subset_a_v2",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id,
+  originalImageSha256: first
+});
+assert.equal(forwardExternalV3Selection.resolution_contract_sha256,
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3.contract_sha256);
+assert.equal(postObservationResolutionContractForVerifiedOriginals({
+  activeReleaseId: "verified_original_closed_projection_subset_a_v2",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id,
+  originalImageSha256: ["1".repeat(64), "2".repeat(64)]
+}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.contract_sha256);
+assert.equal(postObservationResolutionContractForVerifiedOriginals({
+  activeReleaseId: "verified_original_closed_projection_subset_a_v2",
+  externalIdentityRegistryReleaseId:
+    EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.registry_release_id,
+  originalImageSha256: first
+}).resolution_contract_sha256,
+COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256);
 assert.equal(validatePostObservationResolutionContractSelection({
   ...activeSelection,
   matched_original_set_sha256: "0".repeat(64)

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import {
   CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION,
@@ -57,6 +59,19 @@ const USER_ID = "user-v2-rollback";
 const INTENT_ID = "intent-v2-rollback";
 const HISTORICAL_PAYLOAD_SHA256 = "b".repeat(64);
 const CREATED_AT = "2026-08-10T00:00:00Z";
+function frozenFixture(relativePath, expectedSha256) {
+  const raw = readFileSync(new URL(relativePath, import.meta.url));
+  assert.equal(createHash("sha256").update(raw).digest("hex"), expectedSha256);
+  return JSON.parse(raw);
+}
+const forwardV3Fixture = frozenFixture(
+  "../fixtures/csm/external-identity-v3-source-pending-checkpoint.json",
+  "a01f13b72bd6cc6c1aa1337bcf841a12555bd20cf8bd258635a00b244b620311"
+);
+const forwardV3CombinedFixture = frozenFixture(
+  "../fixtures/csm/external-identity-v3-source-combined-pending-checkpoint.json",
+  "3b63a59a288d770d5ae2f03c36e14e0ab15084ef7c708d7913d26bbbb583ecfc"
+);
 
 const v1 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
   .registry_thin_external_identity_high_risers_v1;
@@ -651,5 +666,254 @@ assert.equal(lookupByKeyCalls, 1);
 assert.equal(atomicWrites, 1);
 assert.equal(paidBoundaryCalls, 0);
 assert.ok(durableForRun);
+
+// Frozen process-isolated source-core checkpoint: the producer is the exact
+// 1679 + 16-path activation diff, not this bridge implementation. The bridge
+// must recover its already-paid stage-v3/external-v3 packet under the same
+// owner/session, without entering any provider-capable boundary.
+assert.equal(forwardV3Fixture.provenance.producer_base_sha,
+  "1679d52a894b2a428dab07de462d6650e8ceecbd");
+assert.equal(forwardV3Fixture.provenance.producer_tracked_diff_sha256,
+  "38290ee8fa6355ecbb5207eda875dfc8ea81985e9c7ea7f7f15cc8478cf7a92a");
+assert.equal(forwardV3Fixture.provenance.producer_tracked_path_count, 16);
+assert.equal(createHash("sha256")
+  .update(JSON.stringify(forwardV3Fixture.checkpoint)).digest("hex"),
+forwardV3Fixture.provenance.checkpoint_sha256);
+assert.equal(forwardV3Fixture.checkpoint.resolution_contract_sha256,
+  "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e");
+assert.equal(forwardV3Fixture.checkpoint.csm_rows.output.contract_version,
+  "csm-stage-shadow-v3");
+const forwardOwner = forwardV3Fixture.owner;
+const forwardCheckpoint = structuredClone(forwardV3Fixture.checkpoint);
+const forwardSessionId = deterministicCsmSessionId(forwardV3Fixture.operation_key);
+assert.equal(forwardCheckpoint.csm_rows.resolution.tenant_id, forwardOwner.tenant_id);
+assert.equal(forwardCheckpoint.csm_rows.resolution.recognition_session_id, forwardSessionId);
+assert.equal(validateCsmPersistenceCheckpoint(forwardCheckpoint, {
+  tenantId: forwardOwner.tenant_id,
+  operationKey: forwardV3Fixture.operation_key,
+  payloadHash: forwardV3Fixture.payload_sha256,
+  recognitionSessionId: forwardSessionId,
+  executionContractSha256: forwardCheckpoint.execution_contract_sha256,
+  resolutionContractSha256: forwardCheckpoint.resolution_contract_sha256,
+  originalSetSha256: forwardV3Fixture.original_set_sha256
+}).title, TARGET_TITLE);
+
+let forwardPaidBoundaryCalls = 0;
+let forwardLookupByKeyCalls = 0;
+let forwardAtomicWrites = 0;
+const forwardCanonicalImages = {
+  asset_id: forwardOwner.asset_id,
+  image_generation_id: forwardOwner.asset_id,
+  image_set_sha256: "7".repeat(64),
+  expected_original_count: 2,
+  image_references: forwardV3Fixture.original_image_sha256.map((sha, index) => ({
+    image_id: `forward-original-${index + 1}`,
+    image_role: index === 0 ? "front_original" : "back_original",
+    bucket: "cards",
+    object_path: `${forwardOwner.tenant_id}/${forwardOwner.asset_id}/${index + 1}.jpg`,
+    content_sha256: sha,
+    derived: false
+  })),
+  images: forwardV3Fixture.original_image_sha256.map((sha, index) => ({
+    image_id: `forward-original-${index + 1}`,
+    objectPath: `${forwardOwner.tenant_id}/${forwardOwner.asset_id}/${index + 1}.jpg`,
+    bucket: "cards",
+    size: 2_000 + index,
+    storageRole: index === 0 ? "image_1_original" : "image_2_original",
+    derived: false,
+    content_sha256: sha
+  }))
+};
+const forwardRecovered = await runDirectCsmAsset({
+  tenantId: forwardOwner.tenant_id,
+  userId: "user-external-v3-forward-reader",
+  assetId: forwardOwner.asset_id,
+  intentId: forwardOwner.intent_id,
+  resumeOnly: true,
+  callProvider: async () => { forwardPaidBoundaryCalls += 1; },
+  dependencies: {
+    now: () => 0,
+    checkReadiness: async () => ({ ready: true }),
+    readImages: async () => forwardCanonicalImages,
+    signImage: async () => { forwardPaidBoundaryCalls += 1; },
+    createSession: async () => { forwardPaidBoundaryCalls += 1; },
+    preparePath: async () => { forwardPaidBoundaryCalls += 1; },
+    providerAdmission: {
+      globallyEnforced: true,
+      lookupOperationResult: async () => {
+        throw Object.assign(new Error("operation_payload_conflict"), {
+          code: "operation_payload_conflict",
+          statusCode: 409,
+          retryable: false,
+          provider_attempt_started: false
+        });
+      },
+      lookupOperationResultByKey: async ({ tenantId, operationKey }) => {
+        forwardLookupByKeyCalls += 1;
+        assert.equal(tenantId, forwardOwner.tenant_id);
+        assert.equal(operationKey, forwardV3Fixture.operation_key);
+        return {
+          status: "found",
+          payloadHash: forwardV3Fixture.payload_sha256,
+          result: structuredClone(forwardV3Fixture.checkpoint),
+          latestAttempt: 1
+        };
+      },
+      enqueueAttempt: async () => { forwardPaidBoundaryCalls += 1; },
+      runAttempt: async () => { forwardPaidBoundaryCalls += 1; }
+    },
+    persistPath: (args) => persistPreparedCanonicalListingPath({
+      ...args,
+      writeRows: async (rows, { sessionPatch }) => {
+        forwardAtomicWrites += 1;
+        assert.deepEqual(rows, forwardV3Fixture.checkpoint.csm_rows);
+        assert.equal(rows.resolution.tenant_id, forwardOwner.tenant_id);
+        assert.equal(rows.resolution.recognition_session_id, forwardSessionId);
+        assert.equal(sessionPatch.csm_registry_release_id,
+          "registry_thin_external_identity_high_risers_v3");
+        assert.equal(sessionPatch.csm_owner_versions.resolver,
+          "thin-path-exact-external-identity-v4");
+        assert.equal(sessionPatch.csm_owner_versions.composer,
+          "thin-marketplace-composer-v4-verified-external-identity");
+        assert.deepEqual(sessionPatch, forwardV3Fixture.source_session_patch);
+        return {
+          ok: true,
+          atomic: true,
+          replayed: false,
+          skipped: null,
+          session: { saved: true }
+        };
+      }
+    })
+  }
+});
+assert.equal(forwardRecovered.execution_origin, "HISTORICAL_KEY_RECOVERY");
+assert.equal(forwardRecovered.title, TARGET_TITLE);
+assert.equal(forwardLookupByKeyCalls, 1);
+assert.equal(forwardAtomicWrites, 1);
+assert.equal(forwardPaidBoundaryCalls, 0);
+
+assert.equal(forwardV3CombinedFixture.provenance.producer_base_sha,
+  "1679d52a894b2a428dab07de462d6650e8ceecbd");
+assert.equal(forwardV3CombinedFixture.provenance.producer_tracked_diff_sha256,
+  "38290ee8fa6355ecbb5207eda875dfc8ea81985e9c7ea7f7f15cc8478cf7a92a");
+assert.equal(forwardV3CombinedFixture.provenance.combined_contract_sha256,
+  "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed");
+assert.equal(createHash("sha256")
+  .update(JSON.stringify(forwardV3CombinedFixture.checkpoint)).digest("hex"),
+forwardV3CombinedFixture.provenance.checkpoint_sha256);
+const combinedCheckpoint = structuredClone(forwardV3CombinedFixture.checkpoint);
+assert.equal(combinedCheckpoint.prompt_version, "csm-canonical-fields-web-v2");
+assert.equal(combinedCheckpoint.request_builder_version, "canonical-fields-web-request-v2");
+assert.equal(combinedCheckpoint.response_parser_version,
+  "canonical-output-v5-web-receipt-outcome");
+assert.equal(combinedCheckpoint.csm_persistence_checkpoint.schema_version,
+  "csm-persistence-checkpoint-ordinary-execution-v3");
+assert.equal(combinedCheckpoint.external_identity_support.status, "ABSTAINED");
+assert.equal(combinedCheckpoint.external_identity_support.registry_release_id,
+  "registry_thin_external_identity_high_risers_v3");
+assert.equal(combinedCheckpoint.verified_original_observation_support.status, "APPLIED");
+const combinedOwner = forwardV3CombinedFixture.owner;
+const combinedSessionId = deterministicCsmSessionId(
+  forwardV3CombinedFixture.operation_key
+);
+assert.equal(validateCsmPersistenceCheckpoint(combinedCheckpoint, {
+  tenantId: combinedOwner.tenant_id,
+  operationKey: forwardV3CombinedFixture.operation_key,
+  payloadHash: forwardV3CombinedFixture.payload_sha256,
+  recognitionSessionId: combinedSessionId,
+  executionContractSha256: combinedCheckpoint.execution_contract_sha256,
+  resolutionContractSha256: combinedCheckpoint.resolution_contract_sha256,
+  originalSetSha256: forwardV3CombinedFixture.original_set_sha256
+}).title, combinedCheckpoint.title);
+const combinedCanonicalImages = {
+  asset_id: combinedOwner.asset_id,
+  image_generation_id: combinedOwner.asset_id,
+  image_set_sha256: "8".repeat(64),
+  expected_original_count: 2,
+  image_references: forwardV3CombinedFixture.original_image_sha256.map((sha, index) => ({
+    image_id: `combined-original-${index + 1}`,
+    image_role: index === 0 ? "front_original" : "back_original",
+    bucket: "cards",
+    object_path: `${combinedOwner.tenant_id}/${combinedOwner.asset_id}/${index + 1}.jpg`,
+    content_sha256: sha,
+    derived: false
+  })),
+  images: forwardV3CombinedFixture.original_image_sha256.map((sha, index) => ({
+    image_id: `combined-original-${index + 1}`,
+    objectPath: `${combinedOwner.tenant_id}/${combinedOwner.asset_id}/${index + 1}.jpg`,
+    bucket: "cards",
+    size: 3_000 + index,
+    storageRole: index === 0 ? "image_1_original" : "image_2_original",
+    derived: false,
+    content_sha256: sha
+  }))
+};
+let combinedPaidBoundaryCalls = 0;
+let combinedLookupByKeyCalls = 0;
+let combinedAtomicWrites = 0;
+const combinedRecovered = await runDirectCsmAsset({
+  tenantId: combinedOwner.tenant_id,
+  userId: "user-external-v3-combined-forward-reader",
+  assetId: combinedOwner.asset_id,
+  intentId: combinedOwner.intent_id,
+  resumeOnly: true,
+  callProvider: async () => { combinedPaidBoundaryCalls += 1; },
+  dependencies: {
+    now: () => 0,
+    checkReadiness: async () => ({ ready: true }),
+    readImages: async () => combinedCanonicalImages,
+    signImage: async () => { combinedPaidBoundaryCalls += 1; },
+    createSession: async () => { combinedPaidBoundaryCalls += 1; },
+    preparePath: async () => { combinedPaidBoundaryCalls += 1; },
+    providerAdmission: {
+      globallyEnforced: true,
+      lookupOperationResult: async () => {
+        throw Object.assign(new Error("operation_payload_conflict"), {
+          code: "operation_payload_conflict",
+          statusCode: 409,
+          retryable: false,
+          provider_attempt_started: false
+        });
+      },
+      lookupOperationResultByKey: async ({ tenantId, operationKey }) => {
+        combinedLookupByKeyCalls += 1;
+        assert.equal(tenantId, combinedOwner.tenant_id);
+        assert.equal(operationKey, forwardV3CombinedFixture.operation_key);
+        return {
+          status: "found",
+          payloadHash: forwardV3CombinedFixture.payload_sha256,
+          result: structuredClone(forwardV3CombinedFixture.checkpoint),
+          latestAttempt: 1
+        };
+      },
+      enqueueAttempt: async () => { combinedPaidBoundaryCalls += 1; },
+      runAttempt: async () => { combinedPaidBoundaryCalls += 1; }
+    },
+    persistPath: (args) => persistPreparedCanonicalListingPath({
+      ...args,
+      writeRows: async (rows, { sessionPatch }) => {
+        combinedAtomicWrites += 1;
+        assert.deepEqual(rows, forwardV3CombinedFixture.checkpoint.csm_rows);
+        assert.equal(rows.resolution.tenant_id, combinedOwner.tenant_id);
+        assert.equal(rows.resolution.recognition_session_id, combinedSessionId);
+        assert.deepEqual(sessionPatch,
+          forwardV3CombinedFixture.source_session_patch);
+        return {
+          ok: true,
+          atomic: true,
+          replayed: false,
+          skipped: null,
+          session: { saved: true }
+        };
+      }
+    })
+  }
+});
+assert.equal(combinedRecovered.execution_origin, "HISTORICAL_KEY_RECOVERY");
+assert.equal(combinedRecovered.title, combinedCheckpoint.title);
+assert.equal(combinedLookupByKeyCalls, 1);
+assert.equal(combinedAtomicWrites, 1);
+assert.equal(combinedPaidBoundaryCalls, 0);
 
 console.log("external identity rollback bridge: ok");
