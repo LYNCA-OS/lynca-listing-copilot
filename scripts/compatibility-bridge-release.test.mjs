@@ -284,6 +284,18 @@ import {
   EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_TREE_SHA,
   EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ROLLBACK_SHA,
   EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_SHA,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_TREE_SHA,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_PHASE,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_RUN_ID,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILURE_CODE,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_MARKER,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_RUNTIME_CONTRACT_SHA256,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
   activationAIdentityAuthorityFailsoftRuntimeContractProof,
@@ -311,6 +323,7 @@ import {
   compatibilityBridgeV2RuntimeContractProof,
   compatibilityBridgeRuntimeContractProof,
   externalIdentityV3BridgeMarkerRepairRuntimeContractProof,
+  externalIdentityV3BridgeSourceV4RepairRuntimeContractProof,
   externalIdentityV3ForwardReaderBridgeRuntimeContractProof,
   sealedV3OverlayForwardReadContractProof,
   verifyReleaseRollbackLineage,
@@ -322,6 +335,8 @@ import {
   PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX
 } from "./production-public-composition-projection.mjs";
 import {
+  WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS,
+  WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
   WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS,
   WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT
 } from "./materialize-writer-journey-source.mjs";
@@ -377,7 +392,10 @@ const externalIdentityV3ForwardReaderBridgeGitSha = "7".repeat(40);
 const externalIdentityV3ForwardReaderBridgeTreeSha =
   EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_COMMITTED_TREE_SHA;
 const externalIdentityV3BridgeMarkerRepairGitSha = "8".repeat(40);
-const externalIdentityV3BridgeMarkerRepairTreeSha = "9".repeat(40);
+const externalIdentityV3BridgeMarkerRepairTreeSha =
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA;
+const externalIdentityV3BridgeSourceV4RepairGitSha = "6".repeat(40);
+const externalIdentityV3BridgeSourceV4RepairTreeSha = "5".repeat(40);
 const nextOrdinaryParentSha = activationA3GitSha;
 const releaseSource = await readFile(
   new URL("./compatibility-bridge-release.mjs", import.meta.url),
@@ -389,6 +407,9 @@ assert.match(releaseSource,
 assert.match(releaseSource,
   /selection\.bridge_descriptor_id\s*=== EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_DESCRIPTOR_ID\s*\? externalIdentityV3BridgeMarkerRepairRuntimeContractProof/,
   "the marker repair must dispatch its behavior-neutral live health proof");
+assert.match(releaseSource,
+  /selection\.bridge_descriptor_id\s*=== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID\s*\? externalIdentityV3BridgeSourceV4RepairRuntimeContractProof/,
+  "the source-v4 repair must dispatch its behavior-neutral live health proof");
 assert.equal(
   COMPATIBILITY_BRIDGE_PARENT_SHA,
   "ced1a23741e179618e4e7b5eca055cb10ecac8cb"
@@ -491,6 +512,32 @@ assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ROLLBACK_SHA,
 assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256,
   "079d69f992a46dd7d7d1d0b8bb96cf38d98c9d31b458b6467b4687df56178fff");
 assert.deepEqual(EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_CHANGED_PATHS, [
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
+]);
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-external-identity-v3-forward-reader-bridge-source-v4-repair-v1");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_MARKER,
+  "external-identity-v3-forward-reader-dormant-source-v4-repair-v1");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
+  "e84bf69a00aefaedf2a1c06486f6f6c55ca8e6ca");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+  "75474d7cf904902390a2f3830f5513052c57dae0");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_SHA,
+  "ecb8a88467b2c3cd1fdf55c16c439b8aac756493");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_TREE_SHA,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_RUN_ID,
+  "31768477678");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILURE_CODE,
+  "compatibility_bridge_source_manifest_invalid");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_PHASE,
+  "WRITER_JOURNEY_SOURCE");
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA,
+  EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_ROLLBACK_SHA);
+assert.equal(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_RUNTIME_CONTRACT_SHA256,
+  "dea7a8831058f0373dafb0ed8a612f39057fa8a812ce37389cf2e769ffbe8e64");
+assert.deepEqual(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS, [
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs"
 ]);
@@ -1246,6 +1293,12 @@ const externalIdentityV3BridgeMarkerRepairCommitMessage = [
   "",
   COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
   `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${externalIdentityV3BridgeMarkerRepairTreeSha}`
+].join("\n");
+const externalIdentityV3BridgeSourceV4RepairCommitMessage = [
+  "repair bridge source v4 manifest",
+  "",
+  COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
+  `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${externalIdentityV3BridgeSourceV4RepairTreeSha}`
 ].join("\n");
 const ordinary = verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
@@ -2646,6 +2699,20 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   headSha: externalIdentityV3BridgeMarkerRepairGitSha,
   parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ALTERNATE_PARENT_SHA]
 }), (error) => error.code === "external_identity_v3_bridge_marker_repair_parent_mismatch");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA]
+}), (error) => error.code
+  === "ordinary_release_external_identity_v3_bridge_source_v4_repair_required");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_SHA]
+}), (error) => error.code
+  === "external_identity_v3_bridge_source_v4_repair_parent_mismatch");
 const externalIdentityV3ForwardReaderBridge = verifyCompatibilityBridgeSelection({
   releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   gitSha: externalIdentityV3ForwardReaderBridgeGitSha,
@@ -2861,7 +2928,7 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   externalIdentityV3ForwardReaderRuntimeDiffIdentity
 }), (error) => error.code === "compatibility_bridge_v2_commit_marker_invalid",
 "a squash message without the two protected trailers must fail before release selection");
-assert.throws(() => verifyCompatibilityBridgeSelection({
+assert.equal(verifyCompatibilityBridgeSelection({
   releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   gitSha: externalIdentityV3BridgeMarkerRepairGitSha,
   headSha: externalIdentityV3BridgeMarkerRepairGitSha,
@@ -2870,6 +2937,125 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA],
   changedPaths: [...EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_CHANGED_PATHS],
   commitMessage: externalIdentityV3BridgeMarkerRepairCommitMessage,
+  externalIdentityV3ForwardReaderRuntimeContentManifest:
+    tamperedExternalIdentityV3RuntimeContent,
+  externalIdentityV3ForwardReaderRuntimeDiffIdentity
+}).contract_sha256, EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256,
+"historical v30 selection must ignore current or injected runtime blobs");
+
+const externalIdentityV3BridgeSourceV4Repair = verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headTreeSha: externalIdentityV3BridgeSourceV4RepairTreeSha,
+  parentTreeSha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+  parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA],
+  changedPaths: [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS],
+  commitMessage: externalIdentityV3BridgeSourceV4RepairCommitMessage,
+  externalIdentityV3ForwardReaderRuntimeContentManifest,
+  externalIdentityV3ForwardReaderRuntimeDiffIdentity
+});
+assert.equal(externalIdentityV3BridgeSourceV4Repair.schema_version,
+  "production-release-selection-v32");
+assert.equal(externalIdentityV3BridgeSourceV4Repair.bridge_descriptor_id,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.bridge_marker,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_MARKER);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.parent_git_sha,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.parent_tree_sha,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.failed_run_id,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_RUN_ID);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.failure_code,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILURE_CODE);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.failed_phase,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_PHASE);
+assert.equal(Object.hasOwn(externalIdentityV3BridgeSourceV4Repair, "failed_case_id"),
+  false);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.required_rollback_git_sha,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.parity_required, false);
+assert.equal(externalIdentityV3BridgeSourceV4Repair.contract_sha256,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.match(externalIdentityV3BridgeSourceV4Repair.artifact_manifest_sha256,
+  /^[0-9a-f]{64}$/);
+for (const changedPaths of [
+  [],
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS.slice(1),
+  [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS, "api/unrelated.js"],
+  [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS,
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS[0]]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+    headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+    headTreeSha: externalIdentityV3BridgeSourceV4RepairTreeSha,
+    parentTreeSha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+    parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA],
+    changedPaths,
+    commitMessage: externalIdentityV3BridgeSourceV4RepairCommitMessage,
+    externalIdentityV3ForwardReaderRuntimeContentManifest,
+    externalIdentityV3ForwardReaderRuntimeDiffIdentity
+  }), (error) => [
+    "external_identity_v3_bridge_source_v4_repair_changed_paths_invalid",
+    "external_identity_v3_bridge_source_v4_repair_changed_paths_mismatch"
+  ].includes(error.code));
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headTreeSha: externalIdentityV3BridgeSourceV4RepairTreeSha,
+  parentTreeSha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+  parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_SHA],
+  changedPaths: [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS],
+  commitMessage: externalIdentityV3BridgeSourceV4RepairCommitMessage,
+  externalIdentityV3ForwardReaderRuntimeContentManifest,
+  externalIdentityV3ForwardReaderRuntimeDiffIdentity
+}), (error) => error.code
+  === "external_identity_v3_bridge_source_v4_repair_parent_mismatch");
+for (const [parentTreeSha, headTreeSha, expectedCode] of [
+  ["0".repeat(40), externalIdentityV3BridgeSourceV4RepairTreeSha,
+    "external_identity_v3_bridge_source_v4_repair_parent_tree_mismatch"],
+  [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA, "0".repeat(40),
+    "external_identity_v3_bridge_source_v4_repair_tree_mismatch"]
+]) {
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+    headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+    headTreeSha,
+    parentTreeSha,
+    parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA],
+    changedPaths: [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS],
+    commitMessage: externalIdentityV3BridgeSourceV4RepairCommitMessage,
+    externalIdentityV3ForwardReaderRuntimeContentManifest,
+    externalIdentityV3ForwardReaderRuntimeDiffIdentity
+  }), (error) => error.code === expectedCode);
+}
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headTreeSha: externalIdentityV3BridgeSourceV4RepairTreeSha,
+  parentTreeSha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+  parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA],
+  changedPaths: [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS],
+  commitMessage: "repair bridge source v4 manifest",
+  externalIdentityV3ForwardReaderRuntimeContentManifest,
+  externalIdentityV3ForwardReaderRuntimeDiffIdentity
+}), (error) => error.code === "compatibility_bridge_v2_commit_marker_invalid");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  headTreeSha: externalIdentityV3BridgeSourceV4RepairTreeSha,
+  parentTreeSha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+  parentShas: [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA],
+  changedPaths: [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS],
+  commitMessage: externalIdentityV3BridgeSourceV4RepairCommitMessage,
   externalIdentityV3ForwardReaderRuntimeContentManifest:
     tamperedExternalIdentityV3RuntimeContent,
   externalIdentityV3ForwardReaderRuntimeDiffIdentity
@@ -3281,8 +3467,8 @@ assert.deepEqual(activationACurrentCopyWebTraceRepairRuntimeContractProof({
 });
 
 // The repair selector must execute from a real committed child in the exact
-// depth-two topology used by the protected workflow: child + b23 main. The 7a
-// grandparent and same-tree 7185 PR head are both intentionally absent.
+// depth-two topology used by the protected workflow: child + e84 main. The b23
+// grandparent and same-tree ecb PR head are both intentionally absent.
 const externalIdentityV3MarkerRepairFixtureRoot = await mkdtemp(
   path.join(tmpdir(), "lynca-external-identity-v3-marker-repair-")
 );
@@ -3293,19 +3479,19 @@ try {
   ]);
   git(seed, [
     "checkout", "--quiet", "--detach",
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA
   ]);
   assert.equal(git(seed, ["rev-parse", "HEAD"]),
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA);
   assert.equal(git(seed, ["rev-parse", "HEAD^{tree}"]),
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_TREE_SHA);
-  for (const relativePath of EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_CHANGED_PATHS) {
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
+  for (const relativePath of EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS) {
     await copyFile(path.resolve(relativePath), path.join(seed, relativePath));
   }
-  git(seed, ["add", "--", ...EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_CHANGED_PATHS]);
+  git(seed, ["add", "--", ...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS]);
   const committedTreeSha = git(seed, ["write-tree"]);
   const committedMessage = [
-    "repair external identity v3 bridge marker after squash",
+    "repair external identity v3 bridge source v4 manifest",
     "",
     COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
     COMPATIBILITY_BRIDGE_TREE_TRAILER + ": " + committedTreeSha
@@ -3318,13 +3504,13 @@ try {
   ]);
   const fixtureGitSha = git(seed, ["rev-parse", "HEAD"]);
   assert.deepEqual(parentShas(seed), [
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA
   ]);
   assert.deepEqual(git(seed, [
-    "diff", "--name-only", EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA,
+    "diff", "--name-only", EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
     fixtureGitSha, "--"
   ]).split("\n").filter(Boolean).sort(),
-  [...EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_CHANGED_PATHS].sort());
+  [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS].sort());
   const inheritedCoreManifest = EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_PATHS
     .map((relativePath) => ({
       path: relativePath,
@@ -3344,28 +3530,28 @@ try {
   assert.equal(git(checkout, ["rev-parse", "--is-shallow-repository"]), "true");
   assert.equal(git(checkout, ["rev-list", "--count", "HEAD"]), "2");
   assert.deepEqual(parentShas(checkout), [
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA
-  ], "depth two must contain exactly the repair child and b23 main");
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA
+  ], "depth two must contain exactly the repair child and e84 main");
   assert.equal(git(checkout, [
-    "rev-parse", EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA + "^{tree}"
-  ]), EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_TREE_SHA);
+    "rev-parse", EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA + "^{tree}"
+  ]), EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
   assert.doesNotThrow(() => git(checkout, [
     "cat-file", "-e",
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ALTERNATE_PARENT_TREE_SHA + "^{tree}"
-  ]), "the shared f729 tree remains through the b23 parent");
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_TREE_SHA + "^{tree}"
+  ]), "the shared 75474 tree remains through the e84 parent");
   assert.throws(() => git(checkout, [
     "cat-file", "-e",
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ALTERNATE_PARENT_SHA + "^{commit}"
-  ]), "the same-tree 7185 PR commit must not provide lineage");
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_SHA + "^{commit}"
+  ]), "the same-tree ecb PR commit must not provide lineage");
   assert.throws(() => git(checkout, [
     "cat-file", "-e",
-    EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_PARENT_SHA + "^{commit}"
-  ]), "the 7a grandparent must be absent at protected checkout depth two");
+    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA + "^{commit}"
+  ]), "the b23 grandparent must be absent at protected checkout depth two");
   assert.deepEqual(git(checkout, [
-    "diff", "--name-only", EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA,
+    "diff", "--name-only", EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
     "HEAD", "--"
   ]).split("\n").filter(Boolean).sort(),
-  [...EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_CHANGED_PATHS].sort());
+  [...EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_CHANGED_PATHS].sort());
   assert.equal(git(checkout, ["status", "--short"]), "");
 
   await symlink(dependencyNodeModules, path.join(checkout, "node_modules"), "dir");
@@ -3396,30 +3582,207 @@ try {
     "--out", selectionPath
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureSelection = JSON.parse(await readFile(selectionPath, "utf8"));
-  assert.equal(fixtureSelection.schema_version, "production-release-selection-v30");
+  assert.equal(fixtureSelection.schema_version, "production-release-selection-v32");
   assert.equal(fixtureSelection.bridge_descriptor_id,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_DESCRIPTOR_ID);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID);
   assert.equal(fixtureSelection.bridge_marker,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_MARKER);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_MARKER);
   assert.equal(fixtureSelection.git_tree_sha, committedTreeSha);
   assert.equal(fixtureSelection.parent_git_sha,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA);
   assert.equal(fixtureSelection.parent_tree_sha,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_TREE_SHA);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
   assert.equal(fixtureSelection.failed_run_id,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_FAILED_RUN_ID);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_RUN_ID);
   assert.equal(fixtureSelection.failure_code,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_FAILURE_CODE);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILURE_CODE);
   assert.equal(fixtureSelection.failed_phase,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_FAILED_PHASE);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_PHASE);
   assert.equal(Object.hasOwn(fixtureSelection, "failed_case_id"), false);
   assert.equal(fixtureSelection.required_rollback_git_sha,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ROLLBACK_SHA);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA);
   assert.equal(fixtureSelection.parity_required, false);
   assert.equal(fixtureSelection.contract_sha256,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_RUNTIME_CONTRACT_SHA256);
   assert.equal(fixtureSelection.artifact_manifest_sha256,
-    externalIdentityV3BridgeMarkerRepair.artifact_manifest_sha256);
+    externalIdentityV3BridgeSourceV4Repair.artifact_manifest_sha256);
+
+  const materializerPreloadPath = path.join(
+    externalIdentityV3MarkerRepairFixtureRoot, "materializer-preload.mjs"
+  );
+  const materializedRoot = path.join(
+    externalIdentityV3MarkerRepairFixtureRoot, "materialized-writer-journey"
+  );
+  const materializedManifestPath = path.join(
+    externalIdentityV3MarkerRepairFixtureRoot, "materialized-source-v4.json"
+  );
+  const reducedManifestPath = path.join(
+    externalIdentityV3MarkerRepairFixtureRoot, "reduced-bridge-v2.json"
+  );
+  const materializerPlan = {
+    standard: WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT,
+    parity: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT,
+    downloads: [
+      ...WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images.map((image) => ({
+        sha256: image.content_sha256,
+        bytes: image.bytes,
+        content_type: image.content_type
+      })),
+      ...Object.values(WRITER_JOURNEY_INTERNAL_SOURCE_CONTRACTS.find(
+        (entry) => entry.case_id === "TCG"
+      ).image_sha256).map((sha256) => ({
+        sha256, bytes: 512, content_type: "image/jpeg"
+      })),
+      ...WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image) => ({
+        sha256: image.content_sha256, bytes: 512, content_type: "image/jpeg"
+      })),
+      ...WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.flatMap((contract) => (
+        Object.values(contract.image_sha256).map((sha256) => ({
+          sha256, bytes: 512, content_type: "image/jpeg"
+        }))
+      ))
+    ]
+  };
+  await writeFile(materializerPreloadPath, `
+import crypto from "node:crypto";
+import { syncBuiltinESMExports } from "node:module";
+
+const plan = ${JSON.stringify(materializerPlan)};
+const originalCreateHash = crypto.createHash.bind(crypto);
+crypto.createHash = (algorithm, options) => {
+  const real = originalCreateHash(algorithm, options);
+  let forcedSha256 = null;
+  const wrapper = Object.create(real);
+  wrapper.update = (value, encoding) => {
+    const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value, encoding);
+    const match = bytes.toString("latin1").match(/HASH:([0-9a-f]{64})/);
+    if (algorithm === "sha256" && match) forcedSha256 = match[1];
+    real.update(value, encoding);
+    return wrapper;
+  };
+  wrapper.digest = (encoding) => {
+    if (!forcedSha256) return real.digest(encoding);
+    const bytes = Buffer.from(forcedSha256, "hex");
+    return encoding ? bytes.toString(encoding) : bytes;
+  };
+  return wrapper;
+};
+syncBuiltinESMExports();
+
+const productionRows = (contract) => contract.images.map((image, index) => ({
+  object_path: \`fixture/\${image.image_id}\`,
+  bucket: "listing-images",
+  asset_id: contract.source_asset_id,
+  image_id: image.image_id,
+  storage_role: image.storage_role,
+  content_type: image.content_type || "image/jpeg",
+  size: image.bytes || 512,
+  width: image.width || 100,
+  height: image.height || 100,
+  object_verified: true,
+  content_hash_verified: true,
+  content_sha256: image.content_sha256
+}));
+const downloads = plan.downloads.map((entry) => {
+  const bytes = Buffer.alloc(entry.bytes);
+  if (entry.content_type === "image/webp") {
+    bytes.write("RIFF", 0, "ascii");
+    bytes.write("WEBP", 8, "ascii");
+  } else {
+    bytes[0] = 0xff;
+    bytes[1] = 0xd8;
+    bytes[2] = 0xff;
+  }
+  bytes.write(\`HASH:\${entry.sha256}\`, 16, "ascii");
+  return bytes;
+});
+let verificationReads = 0;
+globalThis.fetch = async (input, init = {}) => {
+  const url = new URL(String(input));
+  const method = String(init.method || "GET").toUpperCase();
+  if (url.pathname === "/rest/v1/listing_image_verifications") {
+    verificationReads += 1;
+    const standard = url.searchParams.get("asset_id")
+      === \`eq.\${plan.standard.source_asset_id}\`;
+    return {
+      ok: true,
+      redirected: false,
+      json: async () => productionRows(standard ? plan.standard : plan.parity)
+    };
+  }
+  if (method === "POST" && url.pathname.startsWith("/storage/v1/object/sign/")) {
+    return {
+      ok: true,
+      redirected: false,
+      json: async () => ({ signedURL: \`\${url.href}?token=fixture\` })
+    };
+  }
+  if (method === "GET" && url.pathname.startsWith("/storage/v1/object/sign/")) {
+    const bytes = downloads.shift();
+    if (!bytes) throw new Error("unexpected_fixture_download");
+    return {
+      ok: true,
+      redirected: false,
+      headers: { get: (name) => name.toLowerCase() === "content-length"
+        ? String(bytes.length) : null },
+      arrayBuffer: async () => bytes
+    };
+  }
+  throw new Error(\`unexpected_fixture_fetch:\${method}:\${url.pathname}\`);
+};
+process.on("exit", () => {
+  if (verificationReads !== 2 || downloads.length !== 0) {
+    process.stderr.write("materializer_fixture_incomplete\\n");
+    process.exitCode = 1;
+  }
+});
+`, { mode: 0o600 });
+  const materializerScript = realpathSync(path.join(
+    checkout, "scripts/materialize-writer-journey-source.mjs"
+  ));
+  const materializedManifest = JSON.parse(execFileSync(process.execPath, [
+    "--import", pathToFileURL(materializerPreloadPath).href,
+    materializerScript,
+    "--out-dir", materializedRoot
+  ], {
+    cwd: checkout,
+    env: {
+      ...fixtureEnv,
+      SUPABASE_URL: "https://irpgnhkslrsiucybkufc.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "fixture-service-role-key"
+    },
+    encoding: "utf8"
+  }));
+  assert.equal(materializedManifest.schema_version, "writer-journey-cases-v4");
+  assert.deepEqual(Object.keys(materializedManifest).sort(), [
+    "accuracy_claim", "activation_cases", "cases", "evidence_scope", "parity_case",
+    "schema_version"
+  ]);
+  assert.deepEqual(materializedManifest.cases.map((entry) => entry.case_id),
+    ["NON_TCG", "TCG"]);
+  assert.equal(materializedManifest.parity_case.case_id, "EXTERNAL_IDENTITY");
+  assert.deepEqual(materializedManifest.activation_cases.map((entry) => entry.case_id),
+    ["NON_TCG_WEB_IDENTITY", "LOT_SHARED_ONLY"]);
+  await writeFile(materializedManifestPath,
+    `${JSON.stringify(materializedManifest)}\n`, { flag: "wx", mode: 0o600 });
+  execFileSync(process.execPath, [
+    fixtureScript, "build-manifest",
+    "--release-class", COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    "--git-sha", fixtureGitSha,
+    "--source-manifest", materializedManifestPath,
+    "--out", reducedManifestPath
+  ], { cwd: checkout, env: fixtureEnv });
+  const reducedFixtureManifest = JSON.parse(await readFile(reducedManifestPath, "utf8"));
+  assert.equal(reducedFixtureManifest.schema_version,
+    COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION);
+  assert.equal(reducedFixtureManifest.bridge_descriptor_id,
+    COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID);
+  assert.equal(reducedFixtureManifest.bridge_marker, COMPATIBILITY_BRIDGE_V2_MARKER);
+  assert.equal(reducedFixtureManifest.git_sha, fixtureGitSha);
+  assert.deepEqual(reducedFixtureManifest.cases.map((entry) => entry.case_id),
+    ["NON_TCG", "TCG"]);
+  assert.equal(Object.hasOwn(reducedFixtureManifest, "parity_case"), false);
+  assert.equal(Object.hasOwn(reducedFixtureManifest, "activation_cases"), false);
 
   await writeFile(rollbackPath, JSON.stringify({
     schema_version: "vercel-production-rollback-receipt-v1",
@@ -3428,7 +3791,7 @@ try {
     project_id: fixtureEnv.VERCEL_PROJECT_ID,
     deployment_id: "dpl_externalIdentityV3MarkerRepairPreviousCanonical",
     deployment_url: "https://lynca-external-identity-v3-marker-repair-previous.vercel.app",
-    git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ROLLBACK_SHA,
+    git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA,
     ready_state: "READY",
     target: "production",
     captured_at: "2026-08-14T03:30:00.000Z"
@@ -3443,15 +3806,15 @@ try {
   ], { cwd: checkout, env: fixtureEnv });
   const fixtureLineage = JSON.parse(await readFile(lineagePath, "utf8"));
   assert.equal(fixtureLineage.schema_version,
-    "production-release-rollback-lineage-receipt-v31");
+    "production-release-rollback-lineage-receipt-v33");
   assert.equal(fixtureLineage.release_git_sha, fixtureGitSha);
   assert.equal(fixtureLineage.release_tree_sha, committedTreeSha);
   assert.equal(fixtureLineage.release_parent_git_sha,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA);
   assert.equal(fixtureLineage.release_parent_tree_sha,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_TREE_SHA);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
   assert.equal(fixtureLineage.captured_rollback_git_sha,
-    EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_ROLLBACK_SHA);
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA);
   assert.equal(fixtureLineage.lineage_verified, true);
 
   const stagedDecoyPath = path.join(
@@ -3471,7 +3834,10 @@ try {
   assert.deepEqual(JSON.parse(await readFile(dirtySelectionPath, "utf8")),
     fixtureSelection,
   "selection must read committed candidate blobs and ignore index/worktree decoys");
-  for (const privatePath of [selectionPath, dirtySelectionPath, rollbackPath, lineagePath]) {
+  for (const privatePath of [
+    selectionPath, dirtySelectionPath, rollbackPath, lineagePath,
+    materializerPreloadPath, materializedManifestPath, reducedManifestPath
+  ]) {
     assert.equal((await stat(privatePath)).mode & 0o777, 0o600);
   }
 } finally {
@@ -4284,13 +4650,56 @@ assert.equal(externalIdentityV3BridgeMarkerRepairProof.forward_reader_registry_r
 assert.equal(externalIdentityV3BridgeMarkerRepairProof.forward_reader_writer_active, false);
 assert.equal(externalIdentityV3BridgeMarkerRepairProof.behavior_neutral, true);
 assert.equal(externalIdentityV3BridgeMarkerRepairProof.parity_required, false);
+assert.equal(externalIdentityV3BridgeMarkerRepairRuntimeContractProof({
+  candidateGitSha: "0".repeat(40),
+  runtimeContentManifest: [],
+  runtimeDiffIdentity: {}
+}).contract_sha256, EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256,
+"historical v30 proof must not require b23 or current candidate Git objects");
+const historicalV30Health = structuredClone(historicalV28Health);
+historicalV30Health.deployment.git_commit_sha = externalIdentityV3BridgeMarkerRepairGitSha;
+assert.equal(externalIdentityV3BridgeMarkerRepairRuntimeContractProof({
+  health: historicalV30Health,
+  gitSha: externalIdentityV3BridgeMarkerRepairGitSha
+}).health_bound, true);
+assert.throws(() => externalIdentityV3BridgeMarkerRepairRuntimeContractProof({
+  health: { ...historicalV30Health, ready: false },
+  gitSha: externalIdentityV3BridgeMarkerRepairGitSha
+}), (error) => error.code === "external_identity_v3_forward_reader_health_contract_invalid");
+
+const externalIdentityV3BridgeSourceV4RepairProof =
+  externalIdentityV3BridgeSourceV4RepairRuntimeContractProof({
+    candidateGitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+    runtimeContentManifest: externalIdentityV3ForwardReaderRuntimeContentManifest,
+    runtimeDiffIdentity: externalIdentityV3ForwardReaderRuntimeDiffIdentity
+  });
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof.contract_sha256,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof
+  .historical_v30_runtime_contract_sha256,
+EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256);
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof
+  .canonical_source_manifest_schema_version, "writer-journey-cases-v4");
+assert.deepEqual(externalIdentityV3BridgeSourceV4RepairProof
+  .canonical_source_manifest_required_sections,
+["cases", "parity_case", "activation_cases"]);
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof.reduced_writer_journey_manifest,
+  COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION);
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof
+  .active_writer_registry_release_id, "registry_thin_external_identity_high_risers_v2");
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof
+  .forward_reader_registry_release_id, "registry_thin_external_identity_high_risers_v3");
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof.forward_reader_writer_active,
+  false);
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof.behavior_neutral, true);
+assert.equal(externalIdentityV3BridgeSourceV4RepairProof.parity_required, false);
 for (let index = 0;
   index < externalIdentityV3ForwardReaderRuntimeContentManifest.length;
   index += 1) {
   const tampered = structuredClone(externalIdentityV3ForwardReaderRuntimeContentManifest);
   tampered[index].sha256 = "0".repeat(64);
-  assert.throws(() => externalIdentityV3BridgeMarkerRepairRuntimeContractProof({
-    candidateGitSha: externalIdentityV3BridgeMarkerRepairGitSha,
+  assert.throws(() => externalIdentityV3BridgeSourceV4RepairRuntimeContractProof({
+    candidateGitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
     runtimeContentManifest: tampered,
     runtimeDiffIdentity: externalIdentityV3ForwardReaderRuntimeDiffIdentity
   }), (error) => error.code === "external_identity_v3_forward_reader_runtime_content_invalid");
@@ -4301,12 +4710,26 @@ for (const runtimeDiffIdentity of [
   { ...externalIdentityV3ForwardReaderRuntimeDiffIdentity, patch_id: "0".repeat(40) },
   { ...externalIdentityV3ForwardReaderRuntimeDiffIdentity, unexpected_key: true }
 ]) {
-  assert.throws(() => externalIdentityV3BridgeMarkerRepairRuntimeContractProof({
-    candidateGitSha: externalIdentityV3BridgeMarkerRepairGitSha,
+  assert.throws(() => externalIdentityV3BridgeSourceV4RepairRuntimeContractProof({
+    candidateGitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
     runtimeContentManifest: externalIdentityV3ForwardReaderRuntimeContentManifest,
     runtimeDiffIdentity
   }), (error) => error.code === "external_identity_v3_forward_reader_runtime_diff_invalid");
 }
+const sourceV4Health = structuredClone(historicalV28Health);
+sourceV4Health.deployment.git_commit_sha = externalIdentityV3BridgeSourceV4RepairGitSha;
+assert.equal(externalIdentityV3BridgeSourceV4RepairRuntimeContractProof({
+  health: sourceV4Health,
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  runtimeContentManifest: externalIdentityV3ForwardReaderRuntimeContentManifest,
+  runtimeDiffIdentity: externalIdentityV3ForwardReaderRuntimeDiffIdentity
+}).health_bound, true);
+assert.throws(() => externalIdentityV3BridgeSourceV4RepairRuntimeContractProof({
+  health: { ...sourceV4Health, ready: false },
+  gitSha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  runtimeContentManifest: externalIdentityV3ForwardReaderRuntimeContentManifest,
+  runtimeDiffIdentity: externalIdentityV3ForwardReaderRuntimeDiffIdentity
+}), (error) => error.code === "external_identity_v3_forward_reader_health_contract_invalid");
 assert.equal(activationAWebReceiptOutcomeRepairProof.transport_only_case_id,
   "LARGE_STAGED_TRANSPORT");
 assert.equal(activationAWebReceiptOutcomeRepairProof.transport_only_case_count, 1);
@@ -6100,6 +6523,83 @@ assert.throws(() => verifyReleaseRollbackLineage({
 }), (error) => error.code
   === "ordinary_release_external_identity_v3_bridge_marker_repair_selection_invalid",
 "the failed bridge main may not escape through generic ordinary lineage");
+const externalIdentityV3BridgeSourceV4RepairLineage = verifyReleaseRollbackLineage({
+  selection: externalIdentityV3BridgeSourceV4Repair,
+  rollbackReceipt: {
+    git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA
+  }
+});
+assert.deepEqual(externalIdentityV3BridgeSourceV4RepairLineage, {
+  schema_version: "production-release-rollback-lineage-receipt-v33",
+  release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  bridge_descriptor_id: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID,
+  bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_MARKER,
+  release_git_sha: externalIdentityV3BridgeSourceV4RepairGitSha,
+  release_tree_sha: externalIdentityV3BridgeSourceV4RepairTreeSha,
+  release_parent_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
+  release_parent_tree_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA,
+  failed_run_id: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_RUN_ID,
+  failure_code: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILURE_CODE,
+  failed_phase: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_PHASE,
+  required_rollback_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA,
+  captured_rollback_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA,
+  artifact_manifest_sha256:
+    externalIdentityV3BridgeSourceV4Repair.artifact_manifest_sha256,
+  lineage_verified: true
+});
+for (const tampered of [
+  { ...externalIdentityV3BridgeSourceV4Repair, schema_version: "unknown" },
+  { ...externalIdentityV3BridgeSourceV4Repair, bridge_descriptor_id: "unknown" },
+  { ...externalIdentityV3BridgeSourceV4Repair, bridge_marker: "unknown" },
+  { ...externalIdentityV3BridgeSourceV4Repair,
+    parent_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_SHA },
+  { ...externalIdentityV3BridgeSourceV4Repair, parent_tree_sha: "0".repeat(40) },
+  { ...externalIdentityV3BridgeSourceV4Repair, failed_run_id: "31768477679" },
+  { ...externalIdentityV3BridgeSourceV4Repair, failure_code: "unknown" },
+  { ...externalIdentityV3BridgeSourceV4Repair, failed_phase: "UNKNOWN" },
+  { ...externalIdentityV3BridgeSourceV4Repair, failed_case_id: "EXTERNAL_IDENTITY" },
+  { ...externalIdentityV3BridgeSourceV4Repair,
+    required_rollback_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA },
+  { ...externalIdentityV3BridgeSourceV4Repair, artifact_manifest_sha256: "0".repeat(64) },
+  { ...externalIdentityV3BridgeSourceV4Repair, contract_sha256: "0".repeat(64) },
+  { ...externalIdentityV3BridgeSourceV4Repair, parity_required: true }
+]) {
+  assert.throws(() => verifyReleaseRollbackLineage({
+    selection: tampered,
+    rollbackReceipt: {
+      git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA
+    }
+  }), (error) => error.code
+    === "external_identity_v3_bridge_source_v4_repair_selection_invalid");
+}
+for (const rollbackSha of [
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ALTERNATE_PARENT_SHA,
+  "0".repeat(40)
+]) {
+  assert.throws(() => verifyReleaseRollbackLineage({
+    selection: externalIdentityV3BridgeSourceV4Repair,
+    rollbackReceipt: { git_sha: rollbackSha }
+  }), (error) => error.code
+    === "external_identity_v3_bridge_source_v4_repair_rollback_mismatch");
+}
+assert.throws(() => verifyReleaseRollbackLineage({
+  selection: {
+    schema_version: "production-release-selection-v3",
+    release_class: ORDINARY_RELEASE_CLASS,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: null,
+    parent_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
+    required_rollback_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
+    git_sha: externalIdentityV3BridgeSourceV4RepairGitSha,
+    writer_journey_manifest: "writer-journey-cases-v3",
+    parity_required: true,
+    contract_sha256: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_RUNTIME_CONTRACT_SHA256
+  },
+  rollbackReceipt: { git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA }
+}), (error) => error.code
+  === "ordinary_release_external_identity_v3_bridge_source_v4_repair_selection_invalid",
+"the failed source-v4 bridge main may not escape through generic ordinary lineage");
 const bridgeV2Lineage = verifyReleaseRollbackLineage({
   selection: bridgeV2,
   rollbackReceipt: { git_sha: COMPATIBILITY_BRIDGE_V2_ROLLBACK_SHA }
@@ -6254,6 +6754,7 @@ try {
     "the checked-out release must expose exactly one parent");
   const [actualParent] = actualParents;
   const actualReleaseClass = [
+    EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA,
     EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA,
     EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_PARENT_SHA,
     COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
@@ -6266,6 +6767,8 @@ try {
     actualParent === EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_PARENT_SHA;
   const actualExternalIdentityV3BridgeMarkerRepair =
     actualParent === EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_PARENT_SHA;
+  const actualExternalIdentityV3BridgeSourceV4Repair =
+    actualParent === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA;
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
@@ -6920,6 +7423,38 @@ try {
       assert.equal(savedLineage.release_parent_tree_sha,
         CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA);
     }
+  } else if (actualExternalIdentityV3BridgeSourceV4Repair) {
+    assert.equal(savedSelection.schema_version, "production-release-selection-v32");
+    assert.equal(savedSelection.bridge_descriptor_id,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID);
+    assert.equal(savedSelection.bridge_marker,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_MARKER);
+    assert.equal(savedSelection.parent_git_sha,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_SHA);
+    assert.equal(savedSelection.parent_tree_sha,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
+    assert.equal(savedSelection.failed_run_id,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_RUN_ID);
+    assert.equal(savedSelection.failure_code,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILURE_CODE);
+    assert.equal(savedSelection.failed_phase,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_PHASE);
+    assert.equal(Object.hasOwn(savedSelection, "failed_case_id"), false);
+    assert.equal(savedSelection.required_rollback_git_sha,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_ROLLBACK_SHA);
+    assert.equal(savedSelection.parity_required, false);
+    assert.equal(savedSelection.contract_sha256,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_RUNTIME_CONTRACT_SHA256);
+    assert.equal(savedLineage.schema_version,
+      "production-release-rollback-lineage-receipt-v33");
+    assert.equal(savedLineage.bridge_descriptor_id,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID);
+    assert.equal(savedLineage.release_parent_tree_sha,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_PARENT_TREE_SHA);
+    assert.equal(savedLineage.failure_code,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILURE_CODE);
+    assert.equal(savedLineage.failed_phase,
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_FAILED_PHASE);
   } else if (actualExternalIdentityV3BridgeMarkerRepair) {
     assert.equal(savedSelection.schema_version, "production-release-selection-v30");
     assert.equal(savedSelection.bridge_descriptor_id,
@@ -7067,7 +7602,46 @@ const sourceManifest = {
       }))
     };
   })()],
-  parity_case: { case_id: "EXTERNAL_IDENTITY" }
+  parity_case: {
+    case_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.case_id,
+    expected_grammar: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.expected_grammar,
+    source_kind: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_kind,
+    source_record_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_record_id,
+    source_asset_id: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.source_asset_id,
+    evaluation_cohort: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.evaluation_cohort,
+    hash_provenance: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.hash_provenance,
+    image_count: 2,
+    files: WRITER_JOURNEY_EXACT_PARITY_SOURCE_CONTRACT.images.map((image, index) => ({
+      path: `/tmp/EXTERNAL_IDENTITY-${index}.jpg`,
+      role: image.role,
+      bytes: 200 + index,
+      content_type: "image/jpeg",
+      content_sha256: image.content_sha256
+    }))
+  }
+};
+const sourceManifestV4 = {
+  ...sourceManifest,
+  schema_version: "writer-journey-cases-v4",
+  activation_cases: WRITER_JOURNEY_ACTIVATION_SOURCE_CONTRACTS.map((contract) => ({
+    case_id: contract.case_id,
+    expected_grammar: contract.expected_grammar,
+    ...(contract.expected_lot_count ? {
+      expected_lot_count: contract.expected_lot_count
+    } : {}),
+    original_set_sha256: contract.original_set_sha256,
+    source_feedback_id: contract.source_feedback_id,
+    evaluation_cohort: contract.evaluation_cohort,
+    hash_provenance: contract.hash_provenance,
+    image_count: 2,
+    files: ["front", "back"].map((side, index) => ({
+      path: `/tmp/${contract.case_id}-${index}.jpg`,
+      role: `${side}_original`,
+      bytes: 300 + index,
+      content_type: "image/jpeg",
+      content_sha256: contract.image_sha256[`${contract.source_feedback_id}_${side}`]
+    }))
+  }))
 };
 const reduced = buildCompatibilityBridgeManifest({
   selection: historicalBridgeSelection,
@@ -7152,6 +7726,75 @@ assert.deepEqual(reducedExternalIdentityV3BridgeMarkerRepair.cases.map(
 assert.equal(JSON.stringify(reducedExternalIdentityV3BridgeMarkerRepair).includes(
   EXTERNAL_IDENTITY_V3_BRIDGE_MARKER_REPAIR_DESCRIPTOR_ID
 ), false, "the private v30 marker must not expand the frozen e2e consumer contract");
+const reducedExternalIdentityV3BridgeSourceV4Repair = buildCompatibilityBridgeManifest({
+  selection: externalIdentityV3BridgeSourceV4Repair,
+  sourceManifest: sourceManifestV4
+});
+assert.equal(reducedExternalIdentityV3BridgeSourceV4Repair.schema_version,
+  COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION);
+assert.equal(reducedExternalIdentityV3BridgeSourceV4Repair.bridge_descriptor_id,
+  COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID);
+assert.equal(reducedExternalIdentityV3BridgeSourceV4Repair.bridge_marker,
+  COMPATIBILITY_BRIDGE_V2_MARKER);
+assert.equal(reducedExternalIdentityV3BridgeSourceV4Repair.git_sha,
+  externalIdentityV3BridgeSourceV4RepairGitSha);
+assert.deepEqual(reducedExternalIdentityV3BridgeSourceV4Repair.cases.map(
+  (entry) => entry.case_id
+), ["NON_TCG", "TCG"]);
+assert.equal(Object.hasOwn(reducedExternalIdentityV3BridgeSourceV4Repair,
+  "parity_case"), false);
+assert.equal(Object.hasOwn(reducedExternalIdentityV3BridgeSourceV4Repair,
+  "activation_cases"), false);
+assert.equal(JSON.stringify(reducedExternalIdentityV3BridgeSourceV4Repair).includes(
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_REPAIR_DESCRIPTOR_ID
+), false, "the private v32 marker must not expand the frozen e2e consumer contract");
+assert.throws(() => buildCompatibilityBridgeManifest({
+  selection: externalIdentityV3BridgeSourceV4Repair,
+  sourceManifest
+}), (error) => error.code === "compatibility_bridge_source_manifest_invalid",
+"selection v32 must consume the canonical materializer v4 schema");
+
+for (const mutate of [
+  (manifest) => { manifest.unexpected_key = true; },
+  (manifest) => { delete manifest.activation_cases; },
+  (manifest) => { manifest.schema_version = "writer-journey-cases-v5"; }
+]) {
+  const mutated = structuredClone(sourceManifestV4);
+  mutate(mutated);
+  assert.throws(() => buildCompatibilityBridgeManifest({
+    selection: externalIdentityV3BridgeSourceV4Repair,
+    sourceManifest: mutated
+  }), (error) => error.code === "compatibility_bridge_source_manifest_invalid");
+}
+for (const mutate of [
+  (manifest) => { manifest.parity_case.source_asset_id = "asset-drift"; },
+  (manifest) => { manifest.parity_case.files[0].content_sha256 = "0".repeat(64); },
+  (manifest) => { manifest.parity_case.files[0].unexpected_key = true; },
+  (manifest) => { manifest.parity_case.files.reverse(); }
+]) {
+  const mutated = structuredClone(sourceManifestV4);
+  mutate(mutated);
+  assert.throws(() => buildCompatibilityBridgeManifest({
+    selection: externalIdentityV3BridgeSourceV4Repair,
+    sourceManifest: mutated
+  }), (error) => error.code === "compatibility_bridge_source_parity_case_invalid");
+}
+for (const mutate of [
+  (manifest) => { manifest.activation_cases.reverse(); },
+  (manifest) => { manifest.activation_cases[0].original_set_sha256 = "0".repeat(64); },
+  (manifest) => { manifest.activation_cases[0].files[0].content_sha256 = "0".repeat(64); },
+  (manifest) => { manifest.activation_cases[1].expected_lot_count = "2"; },
+  (manifest) => { manifest.activation_cases[0].unexpected_key = true; },
+  (manifest) => { manifest.activation_cases[1].files[0].unexpected_key = true; }
+]) {
+  const mutated = structuredClone(sourceManifestV4);
+  mutate(mutated);
+  assert.throws(() => buildCompatibilityBridgeManifest({
+    selection: externalIdentityV3BridgeSourceV4Repair,
+    sourceManifest: mutated
+  }), (error) => error.code
+    === "compatibility_bridge_source_activation_cases_invalid");
+}
 for (const selection of [
   { ...externalIdentityV3ForwardReaderBridge,
     bridge_descriptor_id: COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID },
