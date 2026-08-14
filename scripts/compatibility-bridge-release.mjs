@@ -54,7 +54,10 @@ import {
 import {
   buildCsmStageRows,
   computeCsmPacketHashes,
-  LYNCA_STANDARD_PROFILE_VERSION
+  EBAY_PROFILE_VERSION,
+  LYNCA_STANDARD_PROFILE_VERSION,
+  THIN_COMPOSER_VERSION_V2,
+  THIN_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   CSM_PROJECTION_ACTIVATION,
@@ -116,6 +119,12 @@ export const COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER =
   "LYNCA-Release-Class: compatibility-bridge";
 export const COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-v2-cases-v1";
+export const COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION =
+  "writer-journey-compatibility-bridge-v3-cases-v1";
+export const COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE =
+  "legacy-standard-v2-no-overlay-v1";
+export const COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE =
+  "canonical-standard-v3-v03-verified-overlay-v2-active-v1";
 export const COMPATIBILITY_BRIDGE_V2_PARENT_SHA =
   "fe7308c3e464a39279eddeebfbac13a62657cb31";
 export const COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA =
@@ -235,6 +244,34 @@ export const EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_ROLLBACK_SHA =
   EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_ROLLBACK_SHA;
 export const EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256 =
   "49044b21b5ca1d68a3ffe5fb85b7dd350d47baf955fdab81818da0265f400160";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_SHA =
+  "adff3bee86fd038f42902a2005e06d201de1f2ed";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_TREE_SHA =
+  "e92a06d27b49263142294ff1dc36e16428110d5f";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-external-identity-v3-forward-reader-bridge-writer-journey-mode-repair-v1";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER =
+  "external-identity-v3-forward-reader-dormant-writer-journey-mode-repair-v1";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA =
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_SHA;
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA =
+  EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_TREE_SHA;
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA =
+  "e6ed88b22d461e5813f3d7ec33c9e6ffeb14502e";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_TREE_SHA =
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA;
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_RUN_ID =
+  "31772362747";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILURE_CODE =
+  "VERSION_COMPOSER_MISMATCH";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_CASE_ID =
+  "NON_TCG";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_PHASE =
+  "RESOLUTION_VIEW";
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA =
+  EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_ROLLBACK_SHA;
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "f71afea613d186814c45e33fb7699b8336e2ea993435200335ef583f3f2ec6ff";
 export const ACTIVE_V2_TRANSITION_PARENT_SHA =
   "3755a8f081baa57cf141685f4336999b45373562";
 export const ACTIVE_V2_TRANSITION_MARKER =
@@ -901,6 +938,13 @@ export const EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_CHANGED_PATHS =
     "scripts/compatibility-bridge-release.mjs",
     "scripts/compatibility-bridge-release.test.mjs"
   ]);
+export const EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_CHANGED_PATHS =
+  Object.freeze([
+    "e2e/production-writer-journey.spec.mjs",
+    "scripts/compatibility-bridge-release.mjs",
+    "scripts/compatibility-bridge-release.test.mjs",
+    "scripts/production-writer-journey-contract.test.mjs"
+  ]);
 export const LINEAR_ORDINARY_LINEAGE_MARKER =
   "linear-ordinary-parent-rollback-v1";
 export const COMPATIBILITY_BRIDGE_CHANGED_PATHS = Object.freeze([
@@ -1217,6 +1261,20 @@ function exactExternalIdentityV3BridgeSourceV4MarkerRepairChangedPaths(values) {
   if (stableJson(actual)
       !== stableJson(EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_CHANGED_PATHS)) {
     throw failure("external_identity_v3_bridge_source_v4_marker_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
+function exactExternalIdentityV3BridgeWriterJourneyModeRepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("external_identity_v3_bridge_writer_journey_mode_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  if (stableJson(actual)
+      !== stableJson(EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_CHANGED_PATHS)) {
+    throw failure("external_identity_v3_bridge_writer_journey_mode_repair_changed_paths_mismatch");
   }
   return actual;
 }
@@ -1635,6 +1693,43 @@ function externalIdentityV3BridgeSourceV4MarkerRepairArtifactManifestSha256(chan
     runtime_full_index_sha256: EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_FULL_INDEX_SHA256,
     runtime_patch_id: EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_PATCH_ID,
     changed_paths: exactExternalIdentityV3BridgeSourceV4MarkerRepairChangedPaths(changedPaths)
+  }));
+}
+
+function externalIdentityV3BridgeWriterJourneyModeRepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    bridge_descriptor_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID,
+    bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
+    parent_git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
+    parent_tree_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA,
+    alternate_parent_git_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA,
+    alternate_parent_tree_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_TREE_SHA,
+    failed_run_id: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_RUN_ID,
+    failure_code: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILURE_CODE,
+    failed_case_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_CASE_ID,
+    failed_phase: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA,
+    historical_v34_artifact_manifest_sha256:
+      externalIdentityV3BridgeSourceV4MarkerRepairArtifactManifestSha256(
+        EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_CHANGED_PATHS
+      ),
+    historical_v34_runtime_contract_sha256:
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256,
+    canonical_source_manifest_schema_version: "writer-journey-cases-v4",
+    reduced_writer_journey_manifest: COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION,
+    writer_projection_mode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
+    public_projection_contract_sha256:
+      PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.contract_sha256,
+    changed_paths: exactExternalIdentityV3BridgeWriterJourneyModeRepairChangedPaths(
+      changedPaths
+    )
   }));
 }
 
@@ -2067,6 +2162,10 @@ export function verifyCompatibilityBridgeSelection({
   const expectedSha = exactGitSha(gitSha);
   const actualHead = exactGitSha(headSha ?? gitText(["rev-parse", "HEAD"]));
   if (actualHead !== expectedSha) throw failure("compatibility_bridge_head_sha_mismatch");
+  if (expectedSha
+      === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA) {
+    throw failure("external_identity_v3_bridge_source_v4_marker_repair_candidate_mismatch");
+  }
   if (selected === ORDINARY_RELEASE_CLASS) {
     const parents = parentShas ?? gitParentShas(expectedSha);
     if (!Array.isArray(parents) || parents.length !== 1) {
@@ -2089,6 +2188,16 @@ export function verifyCompatibilityBridgeSelection({
     }
     if (parentGitSha === EXTERNAL_IDENTITY_V3_FORWARD_READER_BRIDGE_ALTERNATE_PARENT_SHA) {
       throw failure("external_identity_v3_forward_reader_bridge_parent_mismatch");
+    }
+    if (parentGitSha
+        === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA) {
+      throw failure(
+        "ordinary_release_external_identity_v3_bridge_writer_journey_mode_repair_required"
+      );
+    }
+    if (parentGitSha
+        === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA) {
+      throw failure("external_identity_v3_bridge_writer_journey_mode_repair_parent_mismatch");
     }
     if (parentGitSha === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_SHA) {
       throw failure(
@@ -2841,42 +2950,108 @@ export function verifyCompatibilityBridgeSelection({
       contract_sha256: contract.contract_sha256
     });
   }
-  const bridgeParents = parentShas ?? gitParentShas(expectedSha);
+  const bridgeParents = parentShas ?? (
+    expectedSha === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_SHA
+      ? [EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_SHA]
+      : gitParentShas(expectedSha)
+  );
   if (!Array.isArray(bridgeParents) || bridgeParents.length !== 1) {
     throw failure("compatibility_bridge_parent_invalid");
   }
   const bridgeParent = exactGitSha(bridgeParents[0]);
   if (bridgeParent
-      === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_ALTERNATE_PARENT_SHA) {
-    throw failure("external_identity_v3_bridge_source_v4_marker_repair_parent_mismatch");
+      === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA) {
+    throw failure("external_identity_v3_bridge_writer_journey_mode_repair_parent_mismatch");
   }
-  if (bridgeParent === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_SHA) {
+  if (bridgeParent === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA) {
     const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
     const messageTree = bridgeV2CommitTree(message);
     const actualTree = exactGitSha(
       headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
     );
     if (messageTree !== actualTree) {
-      throw failure("external_identity_v3_bridge_source_v4_marker_repair_tree_mismatch");
+      throw failure("external_identity_v3_bridge_writer_journey_mode_repair_tree_mismatch");
     }
     const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
-      "rev-parse", `${EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_SHA}^{tree}`
+      "rev-parse", `${EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA}^{tree}`
     ]));
+    if (actualParentTree
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA) {
+      throw failure(
+        "external_identity_v3_bridge_writer_journey_mode_repair_parent_tree_mismatch"
+      );
+    }
+    const artifactPaths = exactExternalIdentityV3BridgeWriterJourneyModeRepairChangedPaths(
+      changedPaths ?? gitChangedPaths(
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
+        expectedSha
+      )
+    );
+    const contract = externalIdentityV3BridgeWriterJourneyModeRepairRuntimeContractProof({
+      candidateGitSha: expectedSha,
+      runtimeContentManifest: externalIdentityV3ForwardReaderRuntimeContentManifest,
+      runtimeDiffIdentity: externalIdentityV3ForwardReaderRuntimeDiffIdentity
+    });
+    return Object.freeze({
+      schema_version: "production-release-selection-v36",
+      release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      bridge_descriptor_id:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID,
+      bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
+      commit_trailer_sha256: sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER),
+      git_tree_sha: actualTree,
+      parent_git_sha:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
+      parent_tree_sha:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA,
+      failed_run_id:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_RUN_ID,
+      failure_code:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILURE_CODE,
+      failed_case_id:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_CASE_ID,
+      failed_phase:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_PHASE,
+      required_rollback_git_sha:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA,
+      artifact_manifest_sha256:
+        externalIdentityV3BridgeWriterJourneyModeRepairArtifactManifestSha256(artifactPaths),
+      git_sha: expectedSha,
+      writer_journey_manifest: COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION,
+      writer_projection_mode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+      parity_required: false,
+      contract_sha256: contract.contract_sha256
+    });
+  }
+  if (bridgeParent
+      === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_ALTERNATE_PARENT_SHA) {
+    throw failure("external_identity_v3_bridge_source_v4_marker_repair_parent_mismatch");
+  }
+  if (bridgeParent === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_SHA) {
+    if (expectedSha !== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_SHA) {
+      throw failure("external_identity_v3_bridge_source_v4_marker_repair_candidate_mismatch");
+    }
+    const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
+    const messageTree = bridgeV2CommitTree(message);
+    const actualTree = exactGitSha(
+      headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
+    );
+    if (messageTree !== actualTree
+        || actualTree
+          !== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_TREE_SHA) {
+      throw failure("external_identity_v3_bridge_source_v4_marker_repair_tree_mismatch");
+    }
+    const actualParentTree = parentTreeSha == null
+      ? EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_TREE_SHA
+      : exactGitSha(parentTreeSha);
     if (actualParentTree
         !== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_TREE_SHA) {
       throw failure("external_identity_v3_bridge_source_v4_marker_repair_parent_tree_mismatch");
     }
     const artifactPaths = exactExternalIdentityV3BridgeSourceV4MarkerRepairChangedPaths(
-      changedPaths ?? gitChangedPaths(
-        EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_SHA,
-        expectedSha
-      )
+      changedPaths ?? EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_CHANGED_PATHS
     );
-    const contract = externalIdentityV3BridgeSourceV4MarkerRepairRuntimeContractProof({
-      candidateGitSha: expectedSha,
-      runtimeContentManifest: externalIdentityV3ForwardReaderRuntimeContentManifest,
-      runtimeDiffIdentity: externalIdentityV3ForwardReaderRuntimeDiffIdentity
-    });
+    const contract = externalIdentityV3BridgeSourceV4MarkerRepairRuntimeContractProof();
     return Object.freeze({
       schema_version: "production-release-selection-v34",
       release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
@@ -4488,125 +4663,34 @@ export function externalIdentityV3BridgeSourceV4RepairRuntimeContractProof({
 }
 
 export function externalIdentityV3BridgeSourceV4MarkerRepairRuntimeContractProof({
-  candidateGitSha = null,
-  runtimeContentManifest = null,
-  runtimeDiffIdentity = null,
+  candidateGitSha: _candidateGitSha = null,
+  runtimeContentManifest: _runtimeContentManifest = null,
+  runtimeDiffIdentity: _runtimeDiffIdentity = null,
   health = null,
   gitSha = null
 } = {}) {
-  const candidate = candidateGitSha ?? gitSha ?? gitText(["rev-parse", "HEAD"]);
-  const committedContent = runtimeContentManifest ?? committedRuntimeContentManifest(
-    candidate,
-    EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_PATHS,
-    "external_identity_v3_forward_reader_committed_content_invalid"
-  );
-  if (sha256(stableJson(committedContent))
-      !== EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_CONTENT_MANIFEST_SHA256) {
-    throw failure("external_identity_v3_forward_reader_runtime_content_invalid");
-  }
-  const committedDiff = runtimeDiffIdentity ?? Object.freeze({
-    full_index_sha256: EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_FULL_INDEX_SHA256,
-    patch_id: EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_PATCH_ID
+  const activeV2 = Object.freeze({
+    receipt: Object.freeze({
+      registry_release_id: "registry_thin_external_identity_high_risers_v2",
+      schema_version: "csm-external-identity-support-receipt.v2"
+    }),
+    resolution: Object.freeze({
+      resolver_version: "thin-path-exact-external-identity-v3",
+      conflict_policy_version: "verified-original-set-four-anchor-release-correction-v3"
+    })
   });
-  if (!exactKeys(committedDiff, ["full_index_sha256", "patch_id"])
-      || committedDiff.full_index_sha256
-        !== EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_FULL_INDEX_SHA256
-      || committedDiff.patch_id !== EXTERNAL_IDENTITY_V3_FORWARD_READER_RUNTIME_PATCH_ID) {
-    throw failure("external_identity_v3_forward_reader_runtime_diff_invalid");
-  }
-
-  const releases = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases;
-  const activeV2 = releases.registry_thin_external_identity_high_risers_v2;
-  const forwardV3 = releases.registry_thin_external_identity_high_risers_v3;
-  const exactFourAnchor = resolveExternalIdentitySupport({
-    year: "1996-97",
-    manufacturer: "Topps",
-    product: "Stadium Club",
-    set: "High Risers",
-    subjects: ["Michael Jordan"],
-    team: "Chicago Bulls",
-    card_number: "HR14"
+  const forwardV3 = Object.freeze({
+    receipt: Object.freeze({
+      registry_release_id: "registry_thin_external_identity_high_risers_v3",
+      schema_version: "csm-external-identity-support-receipt.v3",
+      resolution_contract_sha256:
+        "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e"
+    }),
+    resolution: Object.freeze({
+      resolver_version: "thin-path-exact-external-identity-v4",
+      conflict_policy_version: "verified-original-set-three-anchor-catalog-correction-v4"
+    })
   });
-  const activeParityMismatch = resolveExternalIdentitySupport({
-    year: "1992",
-    manufacturer: "Topps",
-    product: "Stadium Club Basketball",
-    set: "High Flyers",
-    subjects: ["Michael Jordan"],
-    team: "Chicago Bulls",
-    card_number: "HR14"
-  }, { externalIdentityContext: { originalImageSha256: originalSha256 } });
-  const activeV2Correction = resolveExternalIdentitySupport({
-    year: "1994-95",
-    manufacturer: "Topps",
-    product: "Stadium Club",
-    set: "Hardwood Heroes",
-    subjects: ["Michael Jordan"],
-    team: "Chicago Bulls",
-    card_number: "HR14"
-  }, { externalIdentityContext: { originalImageSha256: originalSha256 } });
-  const forwardV3Receipt = structuredClone(activeV2Correction.receipt);
-  Object.assign(forwardV3Receipt, forwardV3.receipt);
-  forwardV3Receipt.corrected_fields = ["product", "set", "year"];
-  forwardV3Receipt.field_decisions.product = {
-    ...forwardV3Receipt.field_decisions.product,
-    action: "CORRECT_CONFLICT",
-    observed_value: "Stadium Club Basketball"
-  };
-  const wrongCardReceipt = structuredClone(forwardV3Receipt);
-  wrongCardReceipt.field_decisions.card_number.observed_value = "HR13";
-  const wrongManufacturerReceipt = structuredClone(forwardV3Receipt);
-  wrongManufacturerReceipt.field_decisions.manufacturer.observed_value = "Fleer";
-  const wrongSubjectReceipt = structuredClone(forwardV3Receipt);
-  wrongSubjectReceipt.field_decisions.subjects.observed_value = ["Scottie Pippen"];
-  const exactMatchCorrectionReceipt = structuredClone(forwardV3Receipt);
-  exactMatchCorrectionReceipt.match_mode = "EXACT_FOUR_ANCHOR";
-  delete exactMatchCorrectionReceipt.original_set_sha256;
-  const missingOriginalSetReceipt = structuredClone(forwardV3Receipt);
-  delete missingOriginalSetReceipt.original_set_sha256;
-
-  const activeV2Unchanged = EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID
-      === activeV2.receipt.registry_release_id
-    && EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release.id
-      === activeV2.receipt.registry_release_id
-    && EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.sha256
-      === activeV2.receipt.resolution_contract_sha256
-    && EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.resolver_version
-      === activeV2.resolution.resolver_version
-    && EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.conflict_policy_version
-      === activeV2.resolution.conflict_policy_version
-    && THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.id
-      === activeV2.receipt.registry_release_id
-    && exactFourAnchor.status === "APPLIED"
-    && exactFourAnchor.receipt.match_mode === "EXACT_FOUR_ANCHOR"
-    && activeParityMismatch.status === "ABSTAINED"
-    && activeParityMismatch.receipt.reason === "CONFLICTING_OBSERVATION"
-    && stableJson(activeParityMismatch.receipt.conflict_fields)
-      === stableJson(["product", "year", "set"]);
-  const forwardV3Dormant = forwardV3.receipt.registry_release_id
-      !== EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID
-    && validatePostObservationResolutionContract(
-      EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3,
-      { expectedSha256: forwardV3.receipt.resolution_contract_sha256 }
-    ) === EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3
-    && forwardV3.resolution.resolver_version
-      === EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.resolver_version
-    && forwardV3.resolution.conflict_policy_version
-      === EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.conflict_policy_version
-    && stableJson(forwardV3.output) === stableJson(activeV2.output)
-    && THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT.id
-      === forwardV3.receipt.registry_release_id
-    && THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
-      .resolution_contract_sha256 === forwardV3.receipt.resolution_contract_sha256
-    && validateExternalIdentityFieldDecisions(forwardV3Receipt)
-    && !validateExternalIdentityFieldDecisions(wrongCardReceipt)
-    && !validateExternalIdentityFieldDecisions(wrongManufacturerReceipt)
-    && !validateExternalIdentityFieldDecisions(wrongSubjectReceipt)
-    && !validateExternalIdentityFieldDecisions(exactMatchCorrectionReceipt)
-    && !validateExternalIdentityFieldDecisions(missingOriginalSetReceipt);
-  if (!activeV2Unchanged || !forwardV3Dormant) {
-    throw failure("external_identity_v3_forward_reader_runtime_contract_invalid");
-  }
 
   let healthBound = false;
   let deploymentSha = null;
@@ -4700,6 +4784,136 @@ export function externalIdentityV3BridgeSourceV4MarkerRepairRuntimeContractProof
         !== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256) {
     throw failure(
       "external_identity_v3_bridge_source_v4_marker_repair_runtime_contract_hash_mismatch"
+    );
+  }
+  return Object.freeze({ ...body, contract_sha256: contractSha256 });
+}
+
+export function externalIdentityV3BridgeWriterJourneyModeRepairRuntimeContractProof({
+  candidateGitSha = null,
+  runtimeContentManifest = null,
+  runtimeDiffIdentity = null,
+  health = null,
+  gitSha = null
+} = {}) {
+  const historical = externalIdentityV3BridgeSourceV4MarkerRepairRuntimeContractProof({
+    candidateGitSha: candidateGitSha ?? gitSha,
+    runtimeContentManifest,
+    runtimeDiffIdentity
+  });
+  const activation = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
+  const publicStandardProjection = PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX.find(
+    (entry) => entry.composer_version
+        === CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version
+      && entry.marketplace_profile_version
+        === CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version
+  );
+  const runtimeReady = historical.contract_sha256
+      === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256
+    && activation.state === CSM_PROJECTION_STATE_ACTIVE
+    && activation.standard.composer_version
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version
+    && activation.standard.marketplace_profile_version
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version
+    && activation.verified_original_observation_overlay
+      === VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+    && publicStandardProjection?.marketplace_profile_public === true
+    && THIN_COMPOSER_VERSION_V2 === "thin-marketplace-composer-v2"
+    && EBAY_PROFILE_VERSION === "ebay-profile-v1"
+    && THIN_RESOLVER_VERSION === "thin-path-observation-only-v1";
+  if (!runtimeReady) {
+    throw failure("external_identity_v3_bridge_writer_journey_mode_runtime_contract_invalid");
+  }
+
+  let healthBound = false;
+  let deploymentSha = null;
+  if (health != null) {
+    deploymentSha = exactGitSha(gitSha);
+    healthBound = health?.ready === true
+      && health?.deployment?.git_commit_sha === deploymentSha
+      && health?.runtime?.model_profile_id === expectedModelProfileId
+      && stableJson(health?.runtime?.projection_activation)
+        === stableJson(CSM_PROJECTION_ACTIVATION)
+      && stableJson(health?.runtime?.active_writer)
+        === stableJson(CSM_PROJECTION_ACTIVATION.active_writer)
+      && stableJson(health?.runtime?.forward_readers)
+        === stableJson(CSM_PROJECTION_ACTIVATION.forward_readers)
+      && stableJson(health?.runtime?.external_identity)
+        === stableJson(EXTERNAL_IDENTITY_RELEASE_CONTRACT);
+    if (!healthBound) {
+      throw failure("external_identity_v3_bridge_writer_journey_mode_health_contract_invalid");
+    }
+  }
+
+  const body = {
+    schema_version:
+      "external-identity-v3-bridge-writer-journey-mode-repair-runtime-proof-v1",
+    bridge_descriptor_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID,
+    bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
+    required_parent_git_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
+    required_parent_tree_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA,
+    alternate_same_tree_parent_git_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA,
+    alternate_same_tree_parent_tree_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_TREE_SHA,
+    failed_run_id: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_RUN_ID,
+    failure_code: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILURE_CODE,
+    failed_case_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_CASE_ID,
+    failed_phase: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA,
+    historical_v34_artifact_manifest_sha256:
+      externalIdentityV3BridgeSourceV4MarkerRepairArtifactManifestSha256(
+        EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_CHANGED_PATHS
+      ),
+    historical_v34_runtime_contract_sha256:
+      EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256,
+    canonical_source_manifest_schema_version: "writer-journey-cases-v4",
+    reduced_writer_journey_manifest: COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION,
+    writer_projection_mode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+    standard_non_tcg_owner: Object.freeze({
+      resolver_version: VERIFIED_ORIGINAL_OBSERVATION_RESOLUTION_CONTRACT.resolver_version,
+      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version,
+      marketplace_profile_version:
+        CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version,
+      verified_original_observation_release_id:
+        VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+    }),
+    large_standard_owner: Object.freeze({
+      resolver_version: THIN_RESOLVER_VERSION,
+      composer_version: CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version,
+      marketplace_profile_version:
+        CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version,
+      verified_original_observation_release_id: null
+    }),
+    tcg_owner: Object.freeze({
+      resolver_version: THIN_RESOLVER_VERSION,
+      composer_version: THIN_COMPOSER_VERSION_V2,
+      marketplace_profile_version: EBAY_PROFILE_VERSION,
+      verified_original_observation_release_id: null
+    }),
+    projection_activation_sha256: CSM_PROJECTION_ACTIVATION.activation_sha256,
+    public_projection_contract_sha256:
+      PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_CONTRACT.contract_sha256,
+    external_identity_active_writer_registry_release_id:
+      EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release.id,
+    external_identity_forward_reader_writer_active: false,
+    parity_required: false,
+    provider_calls: 0,
+    behavior_neutral: true,
+    health_bound: healthBound,
+    deployment_git_sha: deploymentSha
+  };
+  const contractSha256 = sha256(stableJson(body));
+  if (health == null
+      && contractSha256
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure(
+      "external_identity_v3_bridge_writer_journey_mode_runtime_contract_hash_mismatch"
     );
   }
   return Object.freeze({ ...body, contract_sha256: contractSha256 });
@@ -4882,6 +5096,14 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if ([
+    EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
+    EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA
+  ].includes(selection?.parent_git_sha)) {
+    throw failure(
+      "ordinary_release_external_identity_v3_bridge_writer_journey_mode_repair_selection_invalid"
+    );
+  }
   if ([
     EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_PARENT_SHA,
     EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_ALTERNATE_PARENT_SHA
@@ -6270,8 +6492,10 @@ function verifyExternalIdentityV3BridgeSourceV4MarkerRepairRollbackLineage({
       || selection.parity_required !== false
       || selection.contract_sha256
         !== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_RUNTIME_CONTRACT_SHA256
-      || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))
-      || !/^[0-9a-f]{40}$/.test(String(selection.git_tree_sha || ""))) {
+      || selection.git_sha
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_SHA
+      || selection.git_tree_sha
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_COMMITTED_TREE_SHA) {
     throw failure("external_identity_v3_bridge_source_v4_marker_repair_selection_invalid");
   }
   const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
@@ -6298,6 +6522,86 @@ function verifyExternalIdentityV3BridgeSourceV4MarkerRepairRollbackLineage({
       EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_ROLLBACK_SHA,
     captured_rollback_git_sha: capturedRollbackSha,
     artifact_manifest_sha256: selection.artifact_manifest_sha256,
+    lineage_verified: true
+  });
+}
+
+function verifyExternalIdentityV3BridgeWriterJourneyModeRepairRollbackLineage({
+  selection,
+  rollbackReceipt
+} = {}) {
+  if (!exactKeys(selection, [
+    "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
+    "commit_trailer_sha256", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
+    "failed_run_id", "failure_code", "failed_case_id", "failed_phase",
+    "required_rollback_git_sha", "artifact_manifest_sha256", "git_sha",
+    "writer_journey_manifest", "writer_projection_mode", "parity_required",
+    "contract_sha256"
+  ])
+      || selection.schema_version !== "production-release-selection-v36"
+      || selection.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
+      || selection.bridge_descriptor_id
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID
+      || selection.bridge_marker
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER
+      || selection.commit_trailer_sha256 !== sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER)
+      || selection.parent_git_sha
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA
+      || selection.parent_tree_sha
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA
+      || selection.failed_run_id
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_RUN_ID
+      || selection.failure_code
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILURE_CODE
+      || selection.failed_case_id
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_CASE_ID
+      || selection.failed_phase
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_PHASE
+      || selection.required_rollback_git_sha
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA
+      || selection.artifact_manifest_sha256
+        !== externalIdentityV3BridgeWriterJourneyModeRepairArtifactManifestSha256(
+          EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_CHANGED_PATHS
+        )
+      || selection.writer_journey_manifest !== COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION
+      || selection.writer_projection_mode !== COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE
+      || selection.parity_required !== false
+      || selection.contract_sha256
+        !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_RUNTIME_CONTRACT_SHA256
+      || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))
+      || !/^[0-9a-f]{40}$/.test(String(selection.git_tree_sha || ""))) {
+    throw failure("external_identity_v3_bridge_writer_journey_mode_repair_selection_invalid");
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha
+      !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA) {
+    throw failure("external_identity_v3_bridge_writer_journey_mode_repair_rollback_mismatch");
+  }
+  return Object.freeze({
+    schema_version: "production-release-rollback-lineage-receipt-v37",
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID,
+    bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
+    release_git_sha: exactGitSha(selection.git_sha),
+    release_tree_sha: exactGitSha(selection.git_tree_sha),
+    release_parent_git_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
+    release_parent_tree_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_TREE_SHA,
+    failed_run_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_RUN_ID,
+    failure_code:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILURE_CODE,
+    failed_case_id:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_CASE_ID,
+    failed_phase:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha:
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA,
+    captured_rollback_git_sha: capturedRollbackSha,
+    artifact_manifest_sha256: selection.artifact_manifest_sha256,
+    writer_projection_mode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
     lineage_verified: true
   });
 }
@@ -6492,6 +6796,18 @@ function verifyExternalIdentityV3ForwardReaderBridgeRollbackLineage({
 export function verifyReleaseRollbackLineage({ selection, rollbackReceipt } = {}) {
   if (selection?.release_class === ORDINARY_RELEASE_CLASS) {
     return verifyOrdinaryRollbackLineage({ selection, rollbackReceipt });
+  }
+  if (selection?.schema_version === "production-release-selection-v36"
+      || selection?.bridge_descriptor_id
+        === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID
+      || [
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA
+      ].includes(selection?.parent_git_sha)) {
+    return verifyExternalIdentityV3BridgeWriterJourneyModeRepairRollbackLineage({
+      selection,
+      rollbackReceipt
+    });
   }
   if (selection?.schema_version === "production-release-selection-v34"
       || selection?.bridge_descriptor_id
@@ -7228,6 +7544,48 @@ function validateOrdinaryCases(manifest) {
   throw failure("compatibility_bridge_source_manifest_invalid");
 }
 
+export function compatibilityBridgeWriterProjectionMode(manifest, {
+  expectedGitSha = null
+} = {}) {
+  const common = manifest?.release_class === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && /^[0-9a-f]{40}$/.test(String(manifest?.git_sha || ""))
+    && (expectedGitSha == null || manifest.git_sha === exactGitSha(expectedGitSha))
+    && manifest.evidence_scope === "LIVE_CONTRACT_RECEIPT_ONLY"
+    && manifest.accuracy_claim === null
+    && Array.isArray(manifest.cases);
+  const historicalV1 = common
+    && exactKeys(manifest, [
+      "schema_version", "release_class", "bridge_marker", "git_sha",
+      "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_MANIFEST_VERSION
+    && manifest.bridge_marker === COMPATIBILITY_BRIDGE_MARKER;
+  const historicalV2 = common
+    && exactKeys(manifest, [
+      "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
+      "git_sha", "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
+    && manifest.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID
+    && manifest.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER;
+  const currentV3 = common
+    && exactKeys(manifest, [
+      "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
+      "git_sha", "writer_projection_mode", "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION
+    && manifest.bridge_descriptor_id
+      === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID
+    && manifest.bridge_marker
+      === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER
+    && manifest.writer_projection_mode === COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE;
+  if (historicalV1 || historicalV2) {
+    return COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE;
+  }
+  if (currentV3) return COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE;
+  throw failure("compatibility_bridge_writer_projection_mode_invalid");
+}
+
 export function buildCompatibilityBridgeManifest({ selection, sourceManifest } = {}) {
   const historicalV1 = selection?.release_class === COMPATIBILITY_BRIDGE_RELEASE_CLASS
     && selection?.bridge_marker === COMPATIBILITY_BRIDGE_MARKER
@@ -7279,19 +7637,56 @@ export function buildCompatibilityBridgeManifest({ selection, sourceManifest } =
       === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_MARKER
     && selection?.writer_journey_manifest === COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION
     && selection?.parity_required === false;
+  const externalIdentityV3BridgeWriterJourneyModeRepair =
+    selection?.release_class === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && selection?.bridge_descriptor_id
+      === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID
+    && selection?.bridge_marker
+      === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER
+    && selection?.writer_journey_manifest === COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION
+    && selection?.writer_projection_mode === COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE
+    && selection?.parity_required === false;
+  if (externalIdentityV3BridgeWriterJourneyModeRepair) {
+    verifyExternalIdentityV3BridgeWriterJourneyModeRepairRollbackLineage({
+      selection,
+      rollbackReceipt: {
+        git_sha: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ROLLBACK_SHA
+      }
+    });
+  }
   if (!historicalV1 && !bridgeV2 && !bridgeV2Repair && !bridgeV2WriterReceiptRepair
       && !externalIdentityV3ForwardReader && !externalIdentityV3BridgeMarkerRepair
       && !externalIdentityV3BridgeSourceV4Repair
-      && !externalIdentityV3BridgeSourceV4MarkerRepair) {
+      && !externalIdentityV3BridgeSourceV4MarkerRepair
+      && !externalIdentityV3BridgeWriterJourneyModeRepair) {
     throw failure("compatibility_bridge_selection_required");
   }
   const source = validateOrdinaryCases(sourceManifest);
   if ((externalIdentityV3BridgeSourceV4Repair
-        || externalIdentityV3BridgeSourceV4MarkerRepair)
+        || externalIdentityV3BridgeSourceV4MarkerRepair
+        || externalIdentityV3BridgeWriterJourneyModeRepair)
       && source.schemaVersion !== "writer-journey-cases-v4") {
     throw failure("compatibility_bridge_source_manifest_invalid");
   }
   const { cases } = source;
+  if (externalIdentityV3BridgeWriterJourneyModeRepair) {
+    const manifest = Object.freeze({
+      schema_version: COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION,
+      release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      bridge_descriptor_id:
+        EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID,
+      bridge_marker: EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
+      git_sha: exactGitSha(selection.git_sha),
+      writer_projection_mode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
+      evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
+      accuracy_claim: null,
+      cases
+    });
+    compatibilityBridgeWriterProjectionMode(manifest, {
+      expectedGitSha: selection.git_sha
+    });
+    return manifest;
+  }
   if (externalIdentityV3ForwardReader || externalIdentityV3BridgeMarkerRepair
       || externalIdentityV3BridgeSourceV4Repair
       || externalIdentityV3BridgeSourceV4MarkerRepair) {
@@ -7428,6 +7823,12 @@ async function main(argv) {
   }
   const health = await readJson(values.get("--health"), "compatibility_bridge_health");
   const proof = selection.bridge_descriptor_id
+    === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID
+    ? externalIdentityV3BridgeWriterJourneyModeRepairRuntimeContractProof({
+      health,
+      gitSha: selection.git_sha
+    })
+    : selection.bridge_descriptor_id
     === EXTERNAL_IDENTITY_V3_BRIDGE_SOURCE_V4_MARKER_REPAIR_DESCRIPTOR_ID
     ? externalIdentityV3BridgeSourceV4MarkerRepairRuntimeContractProof({
       health,
