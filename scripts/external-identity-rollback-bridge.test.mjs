@@ -2,11 +2,16 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import {
+  copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
+  writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION,
-  buildCsmPersistenceCheckpoint,
   deterministicCsmSessionId,
   runDirectCsmAsset,
   validateCsmPersistenceCheckpoint
@@ -36,12 +41,46 @@ import {
   verifyReplay
 } from "../lib/listing/thin/csm-replay.mjs";
 import {
-  persistPreparedCanonicalListingPath,
-  prepareCanonicalListingPath
+  persistPreparedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
 import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
+
+const ACTIVE_EXTERNAL_V3_WRITER_ID =
+  "stage-v3-web-v2-external-identity-v3-writer-v1";
+const currentRoot = process.cwd();
+const rollbackRoot = mkdtempSync(join(tmpdir(), "lynca-external-rollback-writer-"));
+process.once("exit", () => rmSync(rollbackRoot, { recursive: true, force: true }));
+cpSync(join(currentRoot, "lib"), join(rollbackRoot, "lib"), { recursive: true });
+cpSync(join(currentRoot, "api"), join(rollbackRoot, "api"), { recursive: true });
+cpSync(join(currentRoot, "csm"), join(rollbackRoot, "csm"), { recursive: true });
+copyFileSync(join(currentRoot, "package.json"), join(rollbackRoot, "package.json"));
+const activationPath = join(rollbackRoot, "lib/listing/thin/csm-projection-activation.mjs");
+const activeDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
+  + `  "${ACTIVE_EXTERNAL_V3_WRITER_ID}";`;
+const rollbackDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
+  + "  CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID;";
+const activationSource = readFileSync(activationPath, "utf8");
+assert.ok(activationSource.includes(activeDeclaration)
+  || activationSource.includes(rollbackDeclaration),
+  "rollback sandbox must recognize the one active-writer declaration");
+if (activationSource.includes(activeDeclaration)) {
+  writeFileSync(activationPath,
+    activationSource.replace(activeDeclaration, rollbackDeclaration));
+}
+symlinkSync(join(currentRoot, "node_modules"), join(rollbackRoot, "node_modules"));
+const rollbackOrchestration = await import(
+  `${pathToFileURL(join(rollbackRoot, "lib/listing/thin/csm-orchestration.mjs")).href}`
+    + "?external-rollback-writer=explicit"
+);
+const rollbackApi = await import(
+  `${pathToFileURL(join(rollbackRoot, "api/csm-listing-title.js")).href}`
+    + "?external-rollback-writer=explicit"
+);
+const prepareRollbackCanonicalListingPath =
+  rollbackOrchestration.prepareCanonicalListingPath;
+const buildRollbackCsmPersistenceCheckpoint = rollbackApi.buildCsmPersistenceCheckpoint;
 
 const ORIGINAL_SHA256 = Object.freeze([
   "8641baae2722318061dc7d9431e8764e4fe72d809bf1d668294c823c1105811a",
@@ -196,7 +235,7 @@ function v2Support(observed, fields, { actions = actionsByField } = {}) {
 }
 
 async function baseProviderResult(recognitionSessionId, providerFields = observedFields) {
-  return prepareCanonicalListingPath({
+  return prepareRollbackCanonicalListingPath({
     tenantId: TENANT_ID,
     recognitionSessionId,
     imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
@@ -426,12 +465,12 @@ assert.equal(
   v2.output.marketplace_profile_version
 );
 
-// Fresh checkpoints must now bind v2. A self-consistent historical v1 receipt
-// remains replay-readable but cannot silently downgrade a new checkpoint.
-const freshCheckpoint = buildCsmPersistenceCheckpoint({
+// The explicit rollback writer binds fresh rollback checkpoints to v2. A
+// self-consistent historical v1 receipt cannot silently downgrade that writer.
+const freshCheckpoint = buildRollbackCsmPersistenceCheckpoint({
   prepared: validatorPrepared,
   tenantId: TENANT_ID,
-  operationKey: "operation-fresh-v2-active",
+  operationKey: "operation-fresh-v2-rollback",
   payloadHash: "a".repeat(64),
   recognitionSessionId: "session-validator-v2",
   executionContractSha256: validatorPrepared.execution_contract_sha256,
@@ -450,7 +489,7 @@ assert.equal(
   externalIdentityReplayReleaseForReceipt(inactiveV1Support)?.receipt.registry_release_id,
   v1.receipt.registry_release_id
 );
-assert.throws(() => buildCsmPersistenceCheckpoint({
+assert.throws(() => buildRollbackCsmPersistenceCheckpoint({
   prepared: { ...validatorPrepared, external_identity_support: inactiveV1Support },
   tenantId: TENANT_ID,
   operationKey: "operation-fresh-v1-forbidden",
@@ -594,7 +633,7 @@ assert.ok(verifyReplay(extraTeamToken, componentOnlyPrepared.title).problems.som
   problem.kind === "external_identity_observed_evidence_mismatch" && problem.field === "team"
 )));
 
-// The production direct route recovers an active-v2 checkpoint by the stable
+// The production direct route recovers a rollback-v2 checkpoint by the stable
 // operation key and performs zero sign/session/prepare/provider calls. Its
 // persistence seam is the real replay-verified storage function above.
 let paidBoundaryCalls = 0;

@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  activeWriterProjectionContract
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 const card = (overrides = {}) => ({
   year: "", ip: "", language: "", manufacturer: "", product: "", set: "",
@@ -96,21 +99,25 @@ const positive = card({
 // remain available only through stored-version replay.
 {
   const payload = JSON.stringify(positive);
+  const writer = activeWriterProjectionContract();
   const baseline = finishCanonicalTitle(payload, {
-    exactParallelColorCompaction: false
+    exactParallelColorCompaction: false,
+    writerContract: writer
   });
   const candidate = finishCanonicalTitle(payload, {
-    exactParallelColorCompaction: true
+    exactParallelColorCompaction: true,
+    writerContract: writer
   });
   const active = finishCanonicalTitle(payload);
   assert.equal(JSON.stringify(candidate.fields), JSON.stringify(baseline.fields));
   assert.equal(JSON.stringify(active.fields), JSON.stringify(candidate.fields));
   assert.equal(candidate.title, baseline.title);
   assert.equal(active.title, candidate.title);
-  assert.equal(candidate.composer_version, "thin-marketplace-composer-v3");
-  assert.equal(baseline.composer_version, "thin-marketplace-composer-v3");
-  assert.equal(active.composer_version, "thin-marketplace-composer-v3");
-  assert.equal(active.marketplace_profile_version, "lynca-standard-name-v0.2");
+  assert.equal(candidate.composer_version, writer.standard.composer_version);
+  assert.equal(baseline.composer_version, writer.standard.composer_version);
+  assert.equal(active.composer_version, writer.standard.composer_version);
+  assert.equal(active.marketplace_profile_version,
+    writer.standard.marketplace_profile_version);
   assert.equal(active.canonical_naming_publishable, true);
   assert.ok(active.canonical_naming_trace);
 }

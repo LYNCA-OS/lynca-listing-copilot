@@ -38,15 +38,14 @@ import {
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { buildAccuracyLossLedger } from
   "../lib/listing/thin/accuracy-loss-ledger.mjs";
-import {
-  CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT_VERSION as CANONICAL_FIELDS_PROMPT_VERSION
-} from
-  "../lib/listing/thin/canonical-fields.mjs";
 import { buildCsmPersistenceCheckpoint } from "../api/csm-listing-title.js";
 import {
   CSM_PROJECTION_ACTIVATION,
   CSM_WRITER_PROJECTION_CONTRACTS
 } from "../lib/listing/thin/csm-projection-activation.mjs";
+
+const ACTIVE_WRITER = CSM_PROJECTION_ACTIVATION.active_writer;
+const ACTIVE_PROMPT_VERSION = ACTIVE_WRITER.canonical_fields.semantic_prompt_version;
 
 const enabledEnv = {
   SUPABASE_URL: "https://example.supabase.co",
@@ -171,7 +170,7 @@ const common = {
     tenantId: "tenant-1", recognitionSessionId: "session-tcg",
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
-    promptVersion: CANONICAL_FIELDS_PROMPT_VERSION,
+    promptVersion: ACTIVE_PROMPT_VERSION,
     providerClientRequestId: "lynca-client-trace",
     callProvider: providerFor(common), env: enabledEnv, fetchImpl: writes.fetchImpl,
     createdAt: "2026-08-01T00:00:00Z",
@@ -182,7 +181,7 @@ const common = {
       assert.equal(match.tenant_id, "tenant-1");
       assert.equal(patch.csm_grammar, "TCG");
       assert.equal(patch.csm_recognition_stage_status, "COMPLETE");
-      assert.equal(patch.csm_owner_versions.prompt_version, CANONICAL_FIELDS_PROMPT_VERSION);
+      assert.equal(patch.csm_owner_versions.prompt_version, ACTIVE_PROMPT_VERSION);
       assert.equal(patch.csm_owner_versions.provider_response_id, "resp_csm_trace");
       assert.equal(patch.csm_owner_versions.provider_request_id, "req_csm_trace");
       assert.equal(patch.csm_owner_versions.provider_client_request_id, "lynca-client-trace");
@@ -212,10 +211,10 @@ const common = {
       assert.equal(patch.csm_owner_versions.account_scope, "lynca-primary");
       assert.equal(patch.csm_owner_versions.provider_adapter_version, "openai-responses-v1");
       assert.equal(patch.csm_owner_versions.request_builder_version,
-        "canonical-fields-request-v1");
+        ACTIVE_WRITER.canonical_fields.request_builder_version);
       assert.equal(
         patch.csm_owner_versions.response_parser_version,
-        "canonical-output-v2-strict-observed-or-null"
+        ACTIVE_WRITER.canonical_fields.response_parser_version
       );
       assert.match(patch.csm_owner_versions.execution_contract_sha256, /^[0-9a-f]{64}$/);
       assert.equal(
@@ -318,11 +317,11 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   );
 }
 
-// The captured e1ae writer did not persist a Web receipt. Missing response
-// effort attestation remains explicit in the owner trace without inventing a
-// durable Web contract that this writer never emitted.
+// The active Web-v2 writer binds the provider's served effort into its durable
+// execution receipt. A response that omits that echo must fail before any Web
+// receipt or owner trace can be invented.
 {
-  const unattested = await prepareCanonicalListingPath({
+  await assert.rejects(prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort",
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
@@ -332,12 +331,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
       output_text: JSON.stringify(auditedProviderFields(common)),
       usage: { input_tokens: 100, output_tokens: 30 }
     }), { status: 200, headers: { "content-type": "application/json" } })
-  });
-  assert.equal(unattested.served_effort_attested, false);
-  assert.equal(Object.hasOwn(
-    unattested.csm_rows.output.structured_output,
-    "founder_beta_web_receipt"
-  ), false);
+  }), /founder_beta_provider_execution_mismatch/);
 }
 
 // Persistence failure is isolated to this attempt, but the production

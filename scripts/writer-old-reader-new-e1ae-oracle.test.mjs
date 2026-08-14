@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  mkdtempSync, rmSync, symlinkSync
+  copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
+  writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,9 +12,12 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const E1AE_PRODUCTION_SHA = "e1ae9a980e5825e6e81d5c6ce5a78d290e6d478c";
+const ACTIVE_EXTERNAL_V3_WRITER_ID =
+  "stage-v3-web-v2-external-identity-v3-writer-v1";
 const FIXED_NOW = 1_786_665_600_000;
 const verifyGitObject = process.argv.includes("--verify-git-object");
 const currentRoot = process.cwd();
+const rollbackRoot = mkdtempSync(join(tmpdir(), "lynca-rollback-writer-oracle-"));
 const oracleRoot = verifyGitObject
   ? mkdtempSync(join(tmpdir(), "lynca-e1ae-writer-oracle-"))
   : null;
@@ -49,6 +53,24 @@ const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const load = (root, path, identity) => import(
   `${pathToFileURL(join(root, path)).href}?e1ae-oracle=${identity}`
 );
+const materializeRollbackRuntime = (root) => {
+  cpSync(join(currentRoot, "lib"), join(root, "lib"), { recursive: true });
+  cpSync(join(currentRoot, "api"), join(root, "api"), { recursive: true });
+  cpSync(join(currentRoot, "csm"), join(root, "csm"), { recursive: true });
+  copyFileSync(join(currentRoot, "package.json"), join(root, "package.json"));
+  const activationPath = join(root, "lib/listing/thin/csm-projection-activation.mjs");
+  const activeDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
+    + `  "${ACTIVE_EXTERNAL_V3_WRITER_ID}";`;
+  const rollbackDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
+    + "  CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID;";
+  const source = readFileSync(activationPath, "utf8");
+  assert.ok(source.includes(activeDeclaration) || source.includes(rollbackDeclaration),
+    "rollback sandbox must recognize the one active-writer declaration");
+  if (source.includes(activeDeclaration)) {
+    writeFileSync(activationPath, source.replace(activeDeclaration, rollbackDeclaration));
+  }
+  symlinkSync(join(currentRoot, "node_modules"), join(root, "node_modules"));
+};
 const CAPTURED_E1AE_MANIFEST = Object.freeze({
   e1ae_production_sha: E1AE_PRODUCTION_SHA,
   writer_cases: {
@@ -84,6 +106,7 @@ const CAPTURED_E1AE_MANIFEST = Object.freeze({
 });
 
 try {
+  materializeRollbackRuntime(rollbackRoot);
   if (verifyGitObject) {
     run("git", ["cat-file", "-e", `${E1AE_PRODUCTION_SHA}^{commit}`]);
     const archive = run("git", ["archive", "--format=tar", E1AE_PRODUCTION_SHA]);
@@ -92,18 +115,26 @@ try {
   }
 
   const roots = verifyGitObject
-    ? { e1ae: oracleRoot, bridge: currentRoot }
-    : { bridge: currentRoot };
+    ? { e1ae: oracleRoot, bridge: rollbackRoot }
+    : { bridge: rollbackRoot };
   const modules = {};
   for (const [name, root] of Object.entries(roots)) {
+    const readerRoot = name === "bridge" ? currentRoot : root;
     modules[name] = {
-      orchestration: await load(root, "lib/listing/thin/csm-orchestration.mjs", name),
+      writerOrchestration: await load(
+        root, "lib/listing/thin/csm-orchestration.mjs", `${name}-writer`
+      ),
+      orchestration: await load(
+        readerRoot, "lib/listing/thin/csm-orchestration.mjs", `${name}-reader`
+      ),
       execution: await load(root, "lib/listing/thin/csm-model-execution-contract.mjs", name),
       adapter: await load(root, "lib/listing/thin/csm-provider-adapter.mjs", name),
-      api: await load(root, "api/csm-listing-title.js", name),
-      view: await load(root, "api/csm-resolution-view.js", name),
+      writerApi: await load(root, "api/csm-listing-title.js", `${name}-writer`),
+      api: await load(readerRoot, "api/csm-listing-title.js", `${name}-reader`),
+      view: await load(readerRoot, "api/csm-resolution-view.js", `${name}-reader`),
       verified: await load(
-        root, "lib/listing/thin/verified-original-observation-support.mjs", name
+        readerRoot, "lib/listing/thin/verified-original-observation-support.mjs",
+        `${name}-reader`
       )
     };
   }
@@ -199,7 +230,7 @@ try {
     for (const [runtime, mod] of Object.entries(modules)) {
       let providerRequest;
       const signed = Array.isArray(originalImageSha256);
-      pair[runtime] = await mod.orchestration.prepareCanonicalListingPath({
+      pair[runtime] = await mod.writerOrchestration.prepareCanonicalListingPath({
         tenantId: "oracle-tenant",
         recognitionSessionId: `oracle-session-${name}`,
         imageUrls: signed
@@ -258,7 +289,7 @@ try {
   for (const [runtime, mod] of Object.entries(modules)) {
     const prepared = firstBowman[runtime];
     delete prepared.__provider_request;
-    checkpointPair[runtime] = mod.api.buildCsmPersistenceCheckpoint({
+    checkpointPair[runtime] = mod.writerApi.buildCsmPersistenceCheckpoint({
       prepared,
       tenantId: "oracle-tenant",
       operationKey: "oracle-operation",
@@ -373,5 +404,6 @@ try {
   console.log(`writer-old/reader-new exact e1ae oracle: ok ${sha256(stableJson(manifest))}`);
 } finally {
   globalThis.Date = nativeDate;
+  rmSync(rollbackRoot, { recursive: true, force: true });
   if (oracleRoot) rmSync(oracleRoot, { recursive: true, force: true });
 }

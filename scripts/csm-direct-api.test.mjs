@@ -55,7 +55,6 @@ import {
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import {
-  CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT_VERSION as CANONICAL_FIELDS_PROMPT_VERSION,
   parseCanonicalFields
 } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeCanonicalFieldsForStoredOutput } from "../lib/listing/thin/csm-replay.mjs";
@@ -68,7 +67,6 @@ import {
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3,
-  EXTERNAL_IDENTITY_SUPPORT_PACK,
   resolveExternalIdentitySupport,
   resolveExternalIdentitySupportForRelease
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
@@ -228,25 +226,34 @@ function auditedProviderFields(fields) {
     "d81a24258f96b6a083dff3bd3053babe1f69dec8e9e1c8ed4f3d60f630258bbd",
     "the complete dormant v2 public result must remain byte-identical to de55"
   );
-  const active = finishCanonicalFields(fields);
-  const historicalActive = { ...active };
+  const capturedActive = finishCanonicalFields(fields, {
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+  });
+  const historicalActive = { ...capturedActive };
   delete historicalActive.publication_coverage;
   const activeRows = buildCsmStageRows({
     tenantId: "tenant-byte-probe",
     recognitionSessionId: "session-byte-probe-plain",
-    fields: active.fields,
+    fields: capturedActive.fields,
     composed: historicalActive,
-    title: active.title,
+    title: capturedActive.title,
     contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
   });
   assert.equal(
     createHash("sha256").update(JSON.stringify(publicPersistedResult({
-      ...active,
+      ...capturedActive,
       csm_rows: activeRows
     }))).digest("hex"),
     "096e2bc743311f788f6eec817c110694eb6f4c817ab57844c236ca2241edbc32",
-    "the complete captured active CNL v0.2 public result must remain byte-identical"
+    "the complete captured rollback CNL v0.2 result must remain byte-identical"
   );
+  const active = finishCanonicalFields(fields);
+  assert.equal(active.composer_version,
+    CSM_PROJECTION_ACTIVATION.active_writer.standard.composer_version);
+  assert.equal(active.marketplace_profile_version,
+    CSM_PROJECTION_ACTIVATION.active_writer.standard.marketplace_profile_version);
+  assert.equal(Object.hasOwn(active, "publication_coverage"),
+    CSM_PROJECTION_ACTIVATION.active_writer.composition_features.publication_coverage);
 }
 const CURRENT_DIRECT_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
   model: CSM_THIN_RUNTIME_CONTRACT.model,
@@ -363,12 +370,15 @@ assert.equal(CSM_DIRECT_LOCAL_FALLBACK_CONCURRENCY, 6);
 assert.equal(CSM_DIRECT_CLAIM_POLL_MS, 1_000);
 assert.equal(CSM_DIRECT_CLAIM_TIMEOUT_MS, 145_000);
 assert.equal(CSM_DIRECT_PROVIDER_TIMEOUT_MS, 120_000);
-assert.equal(CSM_DIRECT_MAX_ATTEMPTS, 3);
-assert.equal(CSM_THIN_RUNTIME_CONTRACT.maximumAttempts, 3);
+assert.equal(CSM_DIRECT_MAX_ATTEMPTS,
+  CSM_PROJECTION_ACTIVATION.active_writer.provider_dispatch.maximum_attempts);
+assert.equal(CSM_THIN_RUNTIME_CONTRACT.maximumAttempts,
+  CSM_PROJECTION_ACTIVATION.active_writer.provider_dispatch.maximum_attempts);
 assert.equal(CSM_THIN_RUNTIME_CONTRACT.retryPolicy,
-  "CAPTURED_E1AE_GENERIC_TRANSIENT_V1");
+  CSM_PROJECTION_ACTIVATION.active_writer.provider_dispatch.retry_policy);
 assert.equal(CSM_DIRECT_ESTIMATED_TOKENS, 6_500);
-assert.equal(CSM_DIRECT_PROMPT_VERSION, CANONICAL_FIELDS_PROMPT_VERSION);
+assert.equal(CSM_DIRECT_PROMPT_VERSION,
+  CSM_PROJECTION_ACTIVATION.active_writer.canonical_fields.semantic_prompt_version);
 assert.equal(CSM_PERSISTENCE_READINESS_CACHE_TTL_MS, 30_000);
 assert.equal(deterministicCsmSessionId("operation-a"), deterministicCsmSessionId("operation-a"));
 assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessionId("operation-b"));
@@ -742,7 +752,8 @@ const ordinaryTask = (intentId, overrides = {}) => ({
   image_fingerprints: [`sha256:${IMAGE_HASH}`],
   recognition_fingerprints: [`sha256:${IMAGE_HASH}`],
   execution_contract_sha256: CURRENT_DIRECT_EXECUTION_SHA256,
-  resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
+  resolution_contract_sha256:
+    CSM_PROJECTION_ACTIVATION.active_writer.external_identity.resolution_contract_sha256,
   ...overrides
 });
 const canonicalImages = () => ({
@@ -762,6 +773,10 @@ const canonicalImages = () => ({
 });
 
 const activeVerifiedProjection = structuredClone(CSM_PROJECTION_ACTIVATION);
+const rollbackVerifiedProjection = {
+  ...structuredClone(CSM_PROJECTION_ACTIVATION),
+  active_writer: structuredClone(CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible)
+};
 const futureVerifiedProjection = {
   ...structuredClone(CSM_PROJECTION_ACTIVATION),
   active_writer: structuredClone(CSM_WRITER_PROJECTION_CONTRACTS.future_v3)
@@ -777,8 +792,9 @@ const subsetAOriginalSha256 = WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images
 
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256
-}).resolution_contract_sha256, COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256,
-"the captured active writer must select the exact legacy verified overlay");
+}).resolution_contract_sha256,
+COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3.contract_sha256,
+"the active writer must select its exact external-v3 verified overlay pair");
 const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256,
   projectionActivation: activeVerifiedProjection
@@ -786,12 +802,17 @@ const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
 assert.equal(activeVerifiedSelection.mode,
   "EXTERNAL_AND_VERIFIED_ORIGINAL_CLOSED_PROJECTION");
 assert.equal(activeVerifiedSelection.resolution_contract_sha256,
-  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256);
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3.contract_sha256);
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: ["1".repeat(64), "2".repeat(64)],
   projectionActivation: activeVerifiedProjection
-}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
+}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.contract_sha256,
 "an active overlay must still use the external-only contract for an unmatched set");
+assert.equal(selectCsmPostObservationResolutionContract({
+  originalImageSha256: subsetAOriginalSha256,
+  projectionActivation: rollbackVerifiedProjection
+}).resolution_contract_sha256, COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256,
+"the explicit rollback writer must retain the exact legacy verified overlay");
 for (const mixed of [
   {
     ...activeVerifiedProjection,
@@ -805,7 +826,7 @@ for (const mixed of [
     active_writer: {
       ...futureVerifiedProjection.active_writer,
       verified_original_observation_overlay:
-        activeVerifiedProjection.active_writer.verified_original_observation_overlay
+        rollbackVerifiedProjection.active_writer.verified_original_observation_overlay
     }
   }
 ]) {
@@ -993,7 +1014,7 @@ function resealVerifiedOriginalPrepared(prepared) {
   }), (error) => error.detail === "verified_original_observation_receipt_mismatch");
   assert.throws(() => buildCsmPersistenceCheckpoint({
     ...args,
-    projectionActivation: activeVerifiedProjection
+    projectionActivation: rollbackVerifiedProjection
   }), (error) => error.detail === "verified_original_observation_release_not_active");
   assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
     tenantId: args.tenantId,
@@ -1241,16 +1262,19 @@ function resealVerifiedOriginalPrepared(prepared) {
     dependencies
   });
   assert.equal(providerCalls, 1);
-  for (const omitted of ["tools", "tool_choice", "max_tool_calls", "include"]) {
-    assert.equal(Object.hasOwn(JSON.parse(providerWire), omitted), false,
-      `the captured provider wire omits ${omitted}`);
-  }
+  const parsedProviderWire = JSON.parse(providerWire);
+  assert.equal(Object.hasOwn(parsedProviderWire, "tools"),
+    CSM_PROJECTION_ACTIVATION.active_writer.web_search_tools_enabled);
+  assert.deepEqual(parsedProviderWire.tools, [{ type: "web_search" }]);
+  assert.equal(parsedProviderWire.tool_choice, "auto");
+  assert.equal(parsedProviderWire.max_tool_calls, 2);
+  assert.deepEqual(parsedProviderWire.include, ["web_search_call.action.sources"]);
   for (const hidden of [...originalSha256, originalSetSha256]) {
     assert.doesNotMatch(providerWire, new RegExp(hidden));
   }
   assert.equal(
     result.title,
-    "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls"
+    "1996-97 Topps Stadium Club High Risers Michael Jordan Chicago Bulls"
   );
   assert.equal(result.external_identity_support, undefined);
   assert.equal(Object.hasOwn(result.fields, "search_optimization"), false,
@@ -1260,7 +1284,7 @@ function resealVerifiedOriginalPrepared(prepared) {
     "contract_version", "recognition_session_id", "resolver_version"
   ]);
   assert.deepEqual(Object.keys(result.csm_rows.output).sort(), [
-    "composer_version", "contract_version"
+    "composer_version", "contract_version", "marketplace_profile_version"
   ]);
   for (const hidden of [...originalSha256, originalSetSha256]) {
     assert.doesNotMatch(JSON.stringify(result), new RegExp(hidden),
@@ -1268,9 +1292,13 @@ function resealVerifiedOriginalPrepared(prepared) {
   }
   assert.doesNotMatch(JSON.stringify(result), /original_set_sha256|source_ref/);
   assert.equal(
-    persistenceInput.csm_persistence_checkpoint.external_identity_receipt.original_set_sha256,
-    originalSetSha256
+    persistenceInput.csm_persistence_checkpoint.external_identity_receipt.status,
+    "ABSTAINED"
   );
+  assert.equal(Object.hasOwn(
+    persistenceInput.csm_persistence_checkpoint.external_identity_receipt,
+    "original_set_sha256"
+  ), false);
   assert.equal(
     persistenceInput.csm_persistence_checkpoint.external_identity_receipt.request_original_set_sha256,
     originalSetSha256
@@ -1286,8 +1314,8 @@ function resealVerifiedOriginalPrepared(prepared) {
     originalSetSha256
   }).title, result.title);
   const identityReceiptTampered = structuredClone(persistenceInput);
-  identityReceiptTampered.csm_persistence_checkpoint.external_identity_receipt.original_set_sha256 =
-    "f".repeat(64);
+  identityReceiptTampered.csm_persistence_checkpoint.external_identity_receipt
+    .request_original_set_sha256 = "f".repeat(64);
   assert.throws(() => validateCsmPersistenceCheckpoint(identityReceiptTampered, {
     tenantId: "tenant-1",
     operationKey: checkpointMarker.operation_key,
@@ -1651,8 +1679,39 @@ function passthroughAuthority({
   };
 }
 
-function preparedResult(recognitionSessionId, title = "Test title") {
-  const writer = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+function preparedResult(recognitionSessionId, title = "Test title", {
+  writer = CSM_PROJECTION_ACTIVATION.active_writer
+} = {}) {
+  const externalResolutionContract = writer.external_identity.registry_release_id
+      === EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id
+    ? EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3
+    : EXTERNAL_IDENTITY_RESOLUTION_CONTRACT;
+  const externalRelease = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases[
+    writer.external_identity.registry_release_id
+  ];
+  const publicationCoverage = {
+    schema_version: "csm-publication-coverage-v1",
+    atoms: []
+  };
+  const founderBetaWebReceipt = {
+    schema_version: "founder-beta-web-receipt-v2",
+    outcome: "NOT_USED",
+    provider_request_count: 1,
+    isolated_model_call_count: 0,
+    provider_model: "gpt-5.6-luna",
+    reasoning_effort: "low",
+    web_search_used: false,
+    web_search_call_count: 0,
+    queries: [],
+    urls: [],
+    field_evidence: [],
+    semantic_state_sha256: "4".repeat(64)
+  };
+  const setCardNameRelationReceipt = {
+    schema_version: "set-card-name-relations-v1",
+    set: null,
+    card_name: null
+  };
   const rawProviderOutput = "{}";
   const ledgerResult = {
     title,
@@ -1667,7 +1726,15 @@ function preparedResult(recognitionSessionId, title = "Test title") {
     input_empty_fields: [],
     normalization_reasons: [],
     character_budget: 80,
-    length: title.length
+    length: title.length,
+    ...(writer.composition_features.publication_coverage ? {
+      publication_coverage: publicationCoverage,
+      lot_quantity_unresolved: false,
+      lot_single_card: true,
+      lot_unshared_attributes: [],
+      lot_publishable: true,
+      lot_publication_failure_code: null
+    } : {})
   };
   const accuracyLossLedger = buildAccuracyLossLedger({
     rawProviderOutput,
@@ -1680,22 +1747,16 @@ function preparedResult(recognitionSessionId, title = "Test title") {
     request_builder_version: writer.canonical_fields.request_builder_version,
     response_parser_version: writer.canonical_fields.response_parser_version,
     external_identity_support: {
-      schema_version: EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases[
-        EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID
-      ].receipt.schema_version,
+      ...externalRelease.receipt,
       status: "ABSTAINED",
-      reason: "NO_EXACT_MATCH",
-      pack_id: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_id,
-      pack_version: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_version,
-      pack_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.pack_sha256,
-      index_id: EXTERNAL_IDENTITY_SUPPORT_PACK.index_id,
-      index_version: EXTERNAL_IDENTITY_SUPPORT_PACK.index_version,
-      index_sha256: EXTERNAL_IDENTITY_SUPPORT_PACK.index_sha256,
-      registry_release_id: EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
-      resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
+      reason: "NO_EXACT_MATCH"
     },
-    resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
-    resolution_contract: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
+    resolution_contract_sha256: externalResolutionContract.contract_sha256,
+    resolution_contract: externalResolutionContract,
+    ...(writer.durable_founder_beta_web_receipt ? {
+      founder_beta_web_receipt: founderBetaWebReceipt,
+      set_card_name_relation_receipt: setCardNameRelationReceipt
+    } : {}),
     accuracy_loss_ledger: accuracyLossLedger,
     input_tokens: 4_000,
     output_tokens: 120,
@@ -1717,7 +1778,14 @@ function preparedResult(recognitionSessionId, title = "Test title") {
         marketplace: "EBAY",
         composer_version: writer.standard.composer_version,
         marketplace_profile_version: writer.standard.marketplace_profile_version,
-        structured_output: { composition_grammar: "standard" }
+        structured_output: {
+          composition_grammar: "standard",
+          ...(writer.durable_founder_beta_web_receipt ? {
+            publication_coverage: publicationCoverage,
+            founder_beta_web_receipt: founderBetaWebReceipt,
+            set_card_name_relation_receipt: setCardNameRelationReceipt
+          } : {})
+        }
       },
       session_hashes: {
         csm_recognition_packet_sha256: "1".repeat(64),
@@ -1755,8 +1823,8 @@ function capturedPreparedResult(recognitionSessionId) {
     description: ""
   });
   const observedFields = parseCanonicalFields(JSON.parse(rawProviderOutput)).fields;
-  const composed = finishCanonicalFields(observedFields);
   const writer = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+  const composed = finishCanonicalFields(observedFields, { writerContract: writer });
   const csmRows = buildCsmStageRows({
     tenantId: "tenant-1",
     recognitionSessionId,
@@ -1793,7 +1861,8 @@ function capturedPreparedResult(recognitionSessionId) {
     tenantId: "tenant-1",
     operationKey: "captured-resolution-tuple",
     payloadHash: "7".repeat(64),
-    recognitionSessionId
+    recognitionSessionId,
+    projectionActivation: rollbackVerifiedProjection
   };
   const checkpoint = buildCsmPersistenceCheckpoint(args);
   assert.equal(validateCsmPersistenceCheckpoint(checkpoint, {
@@ -2035,7 +2104,8 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     original_manifest_sha256: originalManifestSha256,
     recognition_fingerprints: [`sha256:${derivedHash}`],
     execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
-    resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
+    resolution_contract_sha256:
+      CSM_PROJECTION_ACTIVATION.active_writer.external_identity.resolution_contract_sha256
   };
   const result = await runDirectCsmAsset({
     tenantId: "tenant-1",
@@ -2148,7 +2218,8 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     original_manifest_sha256: originalManifestSha256,
     recognition_fingerprints: [`sha256:${IMAGE_HASH}`],
     execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
-    resolution_contract_sha256: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
+    resolution_contract_sha256:
+      CSM_PROJECTION_ACTIVATION.active_writer.external_identity.resolution_contract_sha256
   };
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
@@ -2320,7 +2391,9 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
   });
   const historicalStagedContract = structuredClone(buildCsmModelExecutionContract({
     profile: historicalStagedProfile,
-    semanticPromptVersion: CSM_DIRECT_PROMPT_VERSION,
+    semanticPromptVersion: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+      .canonical_fields.semantic_prompt_version,
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible,
     transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
     imageUrls: csmExecutionContractImageUrls(1)
   }));
@@ -2342,13 +2415,17 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     reasoning_effort: historicalStagedContract.requested_effort,
     prompt_version: historicalStagedContract.semantic_prompt_version,
     lane_version: "readability-derived-inline-v1",
-    execution_contract_sha256: historicalStagedExecutionSha256
+    execution_contract_sha256: historicalStagedExecutionSha256,
+    resolution_contract_sha256: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+      .external_identity.resolution_contract_sha256
   };
   assert.equal(buildLunaDirectOperationKey(historicalStagedTask), operationKey);
   const historicalStagedPayloadHash = buildLunaDirectPayloadHash(historicalStagedTask);
   assert.notEqual(historicalStagedPayloadHash, payloadHash);
   const historicalStagedPrepared = {
-    ...preparedResult(sessionId, "Historical staged title"),
+    ...preparedResult(sessionId, "Historical staged title", {
+      writer: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+    }),
     provider: historicalStagedContract.provider,
     requested_model: historicalStagedContract.model,
     model: historicalStagedContract.model,
@@ -2373,7 +2450,8 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     recognitionSessionId: sessionId,
     recognitionInput,
     executionContractSha256: historicalStagedExecutionSha256,
-    operationScope: "derived_checkpoint"
+    operationScope: "derived_checkpoint",
+    projectionActivation: rollbackVerifiedProjection
   });
   let profileConflictBoundaryCalls = 0;
   const profileConflictEvents = [];
@@ -3552,10 +3630,10 @@ await assert.rejects(
   futureExecutionContract.provider_adapter_version = "future-openai-adapter-v9";
   futureExecutionContract.provider_adapter_sha256 = "9".repeat(64);
   futureExecutionContract.request_builder_version =
-    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+    CSM_PROJECTION_ACTIVATION.active_writer
       .canonical_fields.request_builder_version;
   futureExecutionContract.response_parser_version =
-    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+    CSM_PROJECTION_ACTIVATION.active_writer
       .canonical_fields.response_parser_version;
   const futureExecutionSha256 = sha256ExecutionContractValue(futureExecutionContract);
   const historicalTask = {

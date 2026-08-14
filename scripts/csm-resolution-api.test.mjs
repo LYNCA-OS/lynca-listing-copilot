@@ -40,6 +40,9 @@ import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_SUPPORT_PACK
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
+import {
+  activeWriterProjectionContract
+} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 const OWNER_RECEIPT_SHA256 = "b".repeat(64);
 const sha256Json = (value) => createHash("sha256")
@@ -237,14 +240,15 @@ for (const [name, lotCount, expected] of [
   assert.equal(view.lot_terminal.lot_single_card, name === "single");
 }
 {
+  const activeStandard = activeWriterProjectionContract().standard;
   const currentStandard = composeResolutionView({
     canonical_payload: payload,
-    composer_version: THIN_COMPOSER_VERSION,
-    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V2
+    composer_version: activeStandard.composer_version,
+    marketplace_profile_version: activeStandard.marketplace_profile_version
   });
-  assert.equal(currentStandard.composer_version, THIN_COMPOSER_VERSION);
+  assert.equal(currentStandard.composer_version, activeStandard.composer_version);
   assert.equal(currentStandard.marketplace_profile_version,
-    LYNCA_STANDARD_PROFILE_VERSION_V2);
+    activeStandard.marketplace_profile_version);
   const activeRecord = {
     asset_id: "asset-standard-active",
     recognition_session_id: "session-standard-active",
@@ -252,8 +256,8 @@ for (const [name, lotCount, expected] of [
     output_id: "output-standard-active",
     canonical_payload: payload,
     output_title: currentStandard.composed.title,
-    composer_version: THIN_COMPOSER_VERSION,
-    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V2,
+    composer_version: activeStandard.composer_version,
+    marketplace_profile_version: activeStandard.marketplace_profile_version,
     resolver_version: "thin-path-observation-only-v1",
     owner_execution_receipt: {
       version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
@@ -265,9 +269,9 @@ for (const [name, lotCount, expected] of [
     assetId: activeRecord.asset_id,
     dependencies: { readRecord: async () => activeRecord }
   });
-  assert.equal(activeView.composer.composer_version, THIN_COMPOSER_VERSION);
+  assert.equal(activeView.composer.composer_version, activeStandard.composer_version);
   assert.equal(activeView.composer.marketplace_profile_version,
-    LYNCA_STANDARD_PROFILE_VERSION_V2);
+    activeStandard.marketplace_profile_version);
 
   assert.throws(() => composeResolutionView({
     canonical_payload: payload,
@@ -276,14 +280,16 @@ for (const [name, lotCount, expected] of [
   }), (error) => error?.statusCode === 409
     && error?.message === "csm_resolution_replay_rows_required");
 }
+const activeStandard = activeWriterProjectionContract().standard;
 for (const marketplaceProfileVersion of [
   LYNCA_STANDARD_PROFILE_VERSION_V1,
+  LYNCA_STANDARD_PROFILE_VERSION_V2,
   LYNCA_STANDARD_PROFILE_VERSION_V3
-]) {
+].filter((version) => version !== activeStandard.marketplace_profile_version)) {
   assert.throws(
     () => composeResolutionView({
       canonical_payload: payload,
-      composer_version: THIN_COMPOSER_VERSION,
+      composer_version: activeStandard.composer_version,
       marketplace_profile_version: marketplaceProfileVersion
     }),
     (error) => error?.statusCode === 409
@@ -627,9 +633,9 @@ const legacyRecord = {
   assert.equal(view.composer.recomposed_matches_stored, true);
   assert.equal(view.composer.trace_reliable, true);
   assert.ok(view.composer.composer_version, "the version the trace was produced under travels with it");
-  assert.equal(view.composer.composer_version, THIN_COMPOSER_VERSION);
+  assert.equal(view.composer.composer_version, activeStandard.composer_version);
   assert.equal(view.composer.marketplace_profile_version,
-    LYNCA_STANDARD_PROFILE_VERSION_V2);
+    activeStandard.marketplace_profile_version);
   assert.equal(view.brackets.find((entry) => entry.bracket === "search_optimization").value,
     "RC, Dodgers", "the captured writer uses the registered CNL search projection");
   assert.deepEqual(

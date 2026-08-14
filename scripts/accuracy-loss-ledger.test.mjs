@@ -2,6 +2,13 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import {
+  copyFileSync, cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync,
+  writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   ACCURACY_LOSS_LEDGER_SUPPORTED_VERSIONS,
@@ -15,8 +22,7 @@ import {
   validateAccuracyLossLedger
 } from "../lib/listing/thin/accuracy-loss-ledger.mjs";
 import {
-  persistPreparedCanonicalListingPath,
-  prepareCanonicalListingPath
+  persistPreparedCanonicalListingPath
 } from "../lib/listing/thin/csm-orchestration.mjs";
 import {
   CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
@@ -28,16 +34,51 @@ import {
   THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
-  activeStandardWriterProjection
+  activeStandardWriterProjection,
+  CSM_WRITER_PROJECTION_CONTRACTS
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
 import { resolvedFieldsToSemSuggestion } from "../lib/listing/csm/title-derived-sem.mjs";
 import { toResolvedFields } from "../lib/listing/thin/csm-emit.mjs";
 import {
-  buildCsmPersistenceCheckpoint,
   publicPersistedResult,
   validateCsmPersistenceCheckpoint
 } from "../api/csm-listing-title.js";
+
+const ACTIVE_EXTERNAL_V3_WRITER_ID =
+  "stage-v3-web-v2-external-identity-v3-writer-v1";
+const currentRoot = process.cwd();
+const rollbackRoot = mkdtempSync(join(tmpdir(), "lynca-accuracy-ledger-writer-"));
+process.once("exit", () => rmSync(rollbackRoot, { recursive: true, force: true }));
+cpSync(join(currentRoot, "lib"), join(rollbackRoot, "lib"), { recursive: true });
+cpSync(join(currentRoot, "api"), join(rollbackRoot, "api"), { recursive: true });
+cpSync(join(currentRoot, "csm"), join(rollbackRoot, "csm"), { recursive: true });
+copyFileSync(join(currentRoot, "package.json"), join(rollbackRoot, "package.json"));
+const activationPath = join(rollbackRoot, "lib/listing/thin/csm-projection-activation.mjs");
+const activeDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
+  + `  "${ACTIVE_EXTERNAL_V3_WRITER_ID}";`;
+const rollbackDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
+  + "  CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID;";
+const activationSource = readFileSync(activationPath, "utf8");
+assert.ok(activationSource.includes(activeDeclaration)
+  || activationSource.includes(rollbackDeclaration),
+  "rollback sandbox must recognize the one active-writer declaration");
+if (activationSource.includes(activeDeclaration)) {
+  writeFileSync(activationPath,
+    activationSource.replace(activeDeclaration, rollbackDeclaration));
+}
+symlinkSync(join(currentRoot, "node_modules"), join(rollbackRoot, "node_modules"));
+const rollbackOrchestration = await import(
+  `${pathToFileURL(join(rollbackRoot, "lib/listing/thin/csm-orchestration.mjs")).href}`
+    + "?accuracy-ledger-writer=explicit"
+);
+const rollbackApi = await import(
+  `${pathToFileURL(join(rollbackRoot, "api/csm-listing-title.js")).href}`
+    + "?accuracy-ledger-writer=explicit"
+);
+const prepareRollbackCanonicalListingPath =
+  rollbackOrchestration.prepareCanonicalListingPath;
+const buildRollbackCsmPersistenceCheckpoint = rollbackApi.buildCsmPersistenceCheckpoint;
 
 const providerFields = {
   year: "2025", manufacturer: "Topps", product: "Chrome", set: "Cosmic",
@@ -71,9 +112,10 @@ const raw = `  ${JSON.stringify({
 // The adapter audits provenance and relation fields before it hands the
 // canonical payload to admission. The accuracy ledger binds that canonical
 // payload; the audit envelope is bound separately by the durable receipts.
-const baseline = finishCanonicalTitle(raw);
+const rollbackWriter = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+const baseline = finishCanonicalTitle(raw, { writerContract: rollbackWriter });
 let calls = 0;
-const prepared = await prepareCanonicalListingPath({
+const prepared = await prepareRollbackCanonicalListingPath({
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
   imageUrls: ["https://example.test/card.jpg"],
@@ -200,7 +242,7 @@ assert.equal(prepared.csm_rows.output.structured_output.accuracy_loss_ledger, un
 assert.doesNotMatch(JSON.stringify(prepared.csm_rows), /DO_NOT_PERSIST_RAW_PROVIDER_CONTENT/,
   "raw provider content must be represented by its hash, never copied into persistence");
 
-const checkpoint = buildCsmPersistenceCheckpoint({
+const checkpoint = buildRollbackCsmPersistenceCheckpoint({
   prepared,
   tenantId: "tenant-ledger",
   recognitionSessionId: "session-ledger",
