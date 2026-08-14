@@ -46,15 +46,15 @@ import { publicTenantAuthError } from "../lib/tenant/errors.mjs";
 import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
 import {
   computeVerifiedOriginalSetSha256,
+  EXTERNAL_IDENTITY_CAPTURED_ROLLBACK_RELEASE_IDS,
   externalIdentityReplayReleaseForReceipt,
-  EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
-  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
   validateExternalIdentityDecisionObservation,
   validateExternalIdentityFieldDecisions,
   validateExternalIdentitySourceProvenance,
   validatePostObservationResolutionContract
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
+  CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID,
   CSM_PROJECTION_ACTIVATION,
   validateCsmProjectionActivation,
   writerProjectionContractForPreparedResult
@@ -66,7 +66,7 @@ import {
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { verifyReplay } from "../lib/listing/thin/csm-replay.mjs";
 import {
-  combinedPostObservationResolutionContractForVerifiedOriginalRelease,
+  combinedPostObservationResolutionContractForReleases,
   postObservationResolutionContractForVerifiedOriginals,
   validatePostObservationResolutionContractSelection,
   validateVerifiedOriginalObservationReceipt,
@@ -173,6 +173,8 @@ export function selectCsmPostObservationResolutionContract({
   }
   const context = {
     activeReleaseId: projection.verified_original_observation_overlay,
+    externalIdentityRegistryReleaseId:
+      projection.external_identity.registry_release_id,
     originalImageSha256
   };
   const selection = postObservationResolutionContractForVerifiedOriginals(context);
@@ -271,7 +273,8 @@ function normalizedCheckpointRecognitionInput(value) {
 function normalizedExternalIdentityCheckpointReceipt(result, {
   requestOriginalSetSha256 = null,
   resolutionContractSha256,
-  requireActiveRelease = false
+  requireActiveRelease = false,
+  writerContract = null
 } = {}) {
   const requestDigest = optionalSha256(requestOriginalSetSha256, "request_original_set_sha256");
   const resolutionDigest = optionalSha256(
@@ -287,9 +290,25 @@ function normalizedExternalIdentityCheckpointReceipt(result, {
   if (!release) {
     throw persistenceCheckpointError("external_identity_registry_release_unsupported");
   }
-  if (requireActiveRelease
-      && release.receipt.registry_release_id !== EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID) {
-    throw persistenceCheckpointError("external_identity_registry_release_not_active");
+  const capturedReplayRelease = requireActiveRelease === false
+    && writerContract?.contract_id === CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID
+    && EXTERNAL_IDENTITY_CAPTURED_ROLLBACK_RELEASE_IDS.includes(
+      release.receipt.registry_release_id
+    );
+  const enforceWriterRelease = writerContract != null && !capturedReplayRelease;
+  if (enforceWriterRelease) {
+    const expected = writerContract?.external_identity;
+    if (!expected
+        || release.receipt.registry_release_id !== expected.registry_release_id
+        || release.receipt.resolution_contract_sha256
+          !== expected.resolution_contract_sha256
+        || release.resolution.resolver_version !== expected.resolver_version
+        || release.resolution.conflict_policy_version !== expected.conflict_policy_version
+        || release.output.composer_version !== expected.composer_version
+        || release.output.marketplace_profile_version
+          !== expected.marketplace_profile_version) {
+      throw persistenceCheckpointError("external_identity_registry_release_not_active");
+    }
   }
   if (release.receipt.resolution_contract_sha256 !== resolutionDigest) {
     throw persistenceCheckpointError("external_identity_resolution_contract_sha256_mismatch");
@@ -383,6 +402,7 @@ function normalizedExternalIdentityCheckpointReceipt(result, {
 function normalizedVerifiedOriginalCheckpointReceipt(result, {
   requestOriginalSetSha256 = null,
   resolutionContractSha256,
+  externalIdentityRegistryReleaseId,
   requireActiveRelease = false,
   projectionActivation = CSM_PROJECTION_ACTIVATION
 } = {}) {
@@ -400,10 +420,10 @@ function normalizedVerifiedOriginalCheckpointReceipt(result, {
   const support = result?.verified_original_observation_support;
   let combinedContract;
   try {
-    combinedContract =
-      combinedPostObservationResolutionContractForVerifiedOriginalRelease(
-        support?.release_id
-      );
+    combinedContract = combinedPostObservationResolutionContractForReleases({
+      verifiedOriginalObservationReleaseId: support?.release_id,
+      externalIdentityRegistryReleaseId
+    });
   } catch {
     throw persistenceCheckpointError("verified_original_observation_release_unknown");
   }
@@ -463,7 +483,8 @@ function normalizedPostObservationCheckpointReceipts(result, {
   requestOriginalSetSha256 = null,
   resolutionContractSha256,
   requireActiveRelease = false,
-  projectionActivation = CSM_PROJECTION_ACTIVATION
+  projectionActivation = CSM_PROJECTION_ACTIVATION,
+  writerContract = null
 } = {}) {
   const resolutionDigest = optionalSha256(
     resolutionContractSha256,
@@ -473,13 +494,20 @@ function normalizedPostObservationCheckpointReceipts(result, {
     throw persistenceCheckpointError("post_observation_resolution_contract_missing");
   }
   const verified = result?.verified_original_observation_support ?? null;
+  const externalRelease = externalIdentityReplayReleaseForReceipt(
+    result?.external_identity_support
+  );
+  if (!externalRelease) {
+    throw persistenceCheckpointError("external_identity_registry_release_unsupported");
+  }
   let combinedContract = null;
   if (verified?.status === "APPLIED") {
     try {
-      combinedContract =
-        combinedPostObservationResolutionContractForVerifiedOriginalRelease(
-          verified.release_id
-        );
+      combinedContract = combinedPostObservationResolutionContractForReleases({
+        verifiedOriginalObservationReleaseId: verified.release_id,
+        externalIdentityRegistryReleaseId:
+          externalRelease.receipt.registry_release_id
+      });
     } catch {
       throw persistenceCheckpointError("verified_original_observation_release_unknown");
     }
@@ -501,9 +529,10 @@ function normalizedPostObservationCheckpointReceipts(result, {
   const externalIdentityReceipt = normalizedExternalIdentityCheckpointReceipt(result, {
     requestOriginalSetSha256,
     resolutionContractSha256: combined
-      ? EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
+      ? externalRelease.receipt.resolution_contract_sha256
       : resolutionDigest,
-    requireActiveRelease
+    requireActiveRelease,
+    writerContract
   });
   if (combined && externalIdentityReceipt.status !== "ABSTAINED") {
     throw persistenceCheckpointError("combined_external_identity_must_abstain");
@@ -512,6 +541,8 @@ function normalizedPostObservationCheckpointReceipts(result, {
     ? normalizedVerifiedOriginalCheckpointReceipt(result, {
         requestOriginalSetSha256,
         resolutionContractSha256: resolutionDigest,
+        externalIdentityRegistryReleaseId:
+          externalRelease.receipt.registry_release_id,
         requireActiveRelease,
         projectionActivation
       })
@@ -578,28 +609,39 @@ export function buildCsmPersistenceCheckpoint({
       throw persistenceCheckpointError("prepared_resolution_contract_invalid");
     }
   }
+  let selected;
+  try {
+    selected = validateCsmProjectionActivation(projectionActivation);
+  } catch {
+    throw persistenceCheckpointError("projection_activation_invalid");
+  }
   const checkpointReceipts = resolutionContract
     ? normalizedPostObservationCheckpointReceipts(prepared, {
         requestOriginalSetSha256: originalSetSha256,
         resolutionContractSha256: resolutionContract,
         requireActiveRelease: true,
-        projectionActivation
+        projectionActivation,
+        writerContract: selected
       })
     : null;
   const externalIdentityReceipt = checkpointReceipts?.externalIdentityReceipt || null;
   const verifiedOriginalObservationReceipt =
     checkpointReceipts?.verifiedOriginalObservationReceipt || null;
+  let writer;
+  try {
+    writer = writerProjectionContractForPreparedResult(prepared);
+  } catch {
+    throw persistenceCheckpointError("writer_contract_binding_invalid");
+  }
+  if (writer.contract_id !== selected.contract_id) {
+    throw persistenceCheckpointError("writer_contract_activation_mismatch");
+  }
   const hashes = prepared?.csm_rows?.session_hashes;
   if (!exactPacketHashes(hashes)) {
     throw persistenceCheckpointError("packet_hashes_invalid");
   }
   let accuracyLossLedger;
   try {
-    const writer = writerProjectionContractForPreparedResult(prepared);
-    const selected = validateCsmProjectionActivation(projectionActivation);
-    if (writer.contract_id !== selected.contract_id) {
-      throw persistenceCheckpointError("writer_contract_activation_mismatch");
-    }
     accuracyLossLedger = validateAccuracyLossLedger(prepared?.accuracy_loss_ledger, {
       result: prepared,
       semantics: writer.accuracy_loss_ledger_semantics
@@ -735,10 +777,23 @@ export function validateCsmPersistenceCheckpoint(result, {
   const identityReceiptCheckpoint = verifiedOriginalCheckpoint
     || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
     || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION;
+  let storedWriter = null;
   if (identityReceiptCheckpoint && resolutionContract) {
-    const expectedReceipts = normalizedPostObservationCheckpointReceipts(result, {
+    normalizedPostObservationCheckpointReceipts(result, {
       requestOriginalSetSha256: originalSetSha256,
       resolutionContractSha256: resolutionContract
+    });
+    try {
+      storedWriter = writerProjectionContractForPreparedResult(result, {
+        historicalReplay: true
+      });
+    } catch {
+      throw persistenceCheckpointError("writer_contract_binding_invalid");
+    }
+    const expectedReceipts = normalizedPostObservationCheckpointReceipts(result, {
+      requestOriginalSetSha256: originalSetSha256,
+      resolutionContractSha256: resolutionContract,
+      writerContract: storedWriter
     });
     if (JSON.stringify(checkpoint.external_identity_receipt)
         !== JSON.stringify(expectedReceipts.externalIdentityReceipt)) {
@@ -789,7 +844,7 @@ export function validateCsmPersistenceCheckpoint(result, {
   if (currentCheckpoint) {
     let ledger;
     try {
-      const writer = writerProjectionContractForPreparedResult(result, {
+      const writer = storedWriter || writerProjectionContractForPreparedResult(result, {
         historicalReplay: true
       });
       ledger = validateAccuracyLossLedger(result?.accuracy_loss_ledger, {

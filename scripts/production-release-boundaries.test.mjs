@@ -430,8 +430,15 @@ assert.match(parityReadback, /provider_calls: 0/,
 assert.match(parityReadback, /production-parity-persisted-readback-receipt-v2/);
 assert.match(parityReadback, /production-standard-canonical-naming-readback-receipt-v2/);
 assert.match(parityReadback, /function standardEvidence/);
-assert.match(parityReadback, /CANONICAL_NAMING_RELEASE_CONTRACT\.composer_version/);
-assert.match(parityReadback, /CANONICAL_NAMING_RELEASE_CONTRACT\.marketplace_profile_version/);
+assert.match(parityReadback, /function standardProjectionForWriter\(writer\)/);
+assert.match(parityReadback,
+  /\[\s*CANONICAL_NAMING_RELEASE_CONTRACT_V1,\s*CANONICAL_NAMING_RELEASE_CONTRACT_V2,\s*CANONICAL_NAMING_RELEASE_CONTRACT_V3\s*\]\.find\(\(contract\) => \([\s\S]*?contract\.composer_version === writer\.standard\.composer_version[\s\S]*?contract\.marketplace_profile_version === writer\.standard\.marketplace_profile_version/,
+  "the persisted Standard verifier must select the finite Canonical Naming tuple owned by its writer");
+assert.match(parityReadback,
+  /verifyProductionStandardReadback\(\{[\s\S]*?writerContract = CSM_PROJECTION_ACTIVATION\.active_writer[\s\S]*?standardProjectionForWriter\(readbackWriterContract\(writerContract\)\)/,
+  "the persisted Standard verifier must bind its readback to one validated writer contract");
+assert.doesNotMatch(parityReadback, /\bCANONICAL_NAMING_RELEASE_CONTRACT\b/,
+  "the persisted Standard verifier may not fall back to a mutable global Canonical Naming alias");
 assert.match(parityReadback, /export function productionStandardAssetId/);
 assert.match(parityReadback, /export function verifyProductionStandardReadback/);
 assert.match(parityReadback, /productionStandardP0ResolutionProofValid/);
@@ -607,10 +614,13 @@ assert.match(prepromotionHealthStep,
   /h\.runtime\?\.request_builder_version\s*[\s\S]*?=== activeWriter\.canonical_fields\.request_builder_version/,
   "candidate health must directly bind the public request builder to the atomic writer");
 assert.match(workflow,
-  /import \{\s*EXTERNAL_IDENTITY_RELEASE_CONTRACT\s*\} from '\.\/lib\/listing\/knowledge\/csm-external-identity-support\.mjs'/,
-  "the immutable candidate gate must import the checked-out external identity release contract");
+  /import \{\s*externalIdentityReleaseContractForRegistryRelease\s*\} from '\.\/lib\/listing\/knowledge\/csm-external-identity-support\.mjs'/,
+  "the immutable candidate gate must import the checked-out external identity registry selector");
+assert.match(prepromotionHealthStep,
+  /const expectedExternalIdentity = externalIdentityReleaseContractForRegistryRelease\(\s*activeWriter\.external_identity\.registry_release_id\s*\)/,
+  "candidate health must select external identity from the atomic writer");
 assert.match(workflow,
-  /JSON\.stringify\(h\.runtime\?\.external_identity\)[\s\S]*JSON\.stringify\(EXTERNAL_IDENTITY_RELEASE_CONTRACT\)/,
+  /JSON\.stringify\(h\.runtime\?\.external_identity\)[\s\S]*JSON\.stringify\(expectedExternalIdentity\)/,
   "the immutable candidate gate must reject stale pack, index, resolver or Registry release receipts");
 assert.doesNotMatch(workflow, /CSM_OPENAI_RESPONSES_ADAPTER_VERSION/,
   "release verification must not pin the active profile to one provider adapter");
@@ -709,8 +719,8 @@ assert.match(health, /LYNCA_RELEASE_GIT_REF\s*\|\|\s*process\.env\.VERCEL_GIT_CO
 assert.match(health, /canonical_naming_target:\s*activeCanonicalNamingTarget/,
   "health must publish the exact Canonical Naming contract selected by the atomic writer");
 assert.match(health,
-  /verified_original_observation:\s*[\s\S]*?verifiedOriginalObservationHealthReceiptForRelease\([\s\S]*?activeWriter\.verified_original_observation_overlay/,
-  "health must publish the exact redacted receipt selected by the atomic writer");
+  /verified_original_observation:\s*[\s\S]*?verifiedOriginalObservationHealthReceiptForReleases\(\{[\s\S]*?verifiedOriginalObservationReleaseId:\s*[\s\S]*?activeWriter\.verified_original_observation_overlay,[\s\S]*?externalIdentityRegistryReleaseId:\s*[\s\S]*?activeWriter\.external_identity\.registry_release_id[\s\S]*?\}\)/,
+  "health must publish the exact pair-scoped redacted receipt selected by the atomic writer");
 assert.match(prepromotionHealthStep,
   /const activeWriter = CSM_PROJECTION_ACTIVATION\.active_writer/,
   "candidate health must derive every writer-owned target from the atomic active writer");
@@ -721,8 +731,8 @@ assert.match(prepromotionHealthStep,
   /if \(!expectedCanonicalNamingTarget\) process\.exit\(1\)/,
   "an unknown active Canonical Naming tuple must fail before spend");
 assert.match(prepromotionHealthStep,
-  /verifiedOriginalObservationHealthReceiptForRelease\(\s*activeWriter\.verified_original_observation_overlay\s*\)/,
-  "candidate health must select the verified receipt from the active append-only release");
+  /verifiedOriginalObservationHealthReceiptForReleases\(\{\s*verifiedOriginalObservationReleaseId:\s*activeWriter\.verified_original_observation_overlay,\s*externalIdentityRegistryReleaseId:\s*activeWriter\.external_identity\.registry_release_id\s*\}\)/,
+  "candidate health must select the verified receipt from both active writer axes");
 assert.match(prepromotionHealthStep,
   /h\.runtime\?\.canonical_naming_target[\s\S]*?JSON\.stringify\(expectedCanonicalNamingTarget\)/,
   "the immutable candidate must match its active Canonical Naming contract before spend");

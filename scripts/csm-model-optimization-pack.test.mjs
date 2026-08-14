@@ -33,12 +33,16 @@ import {
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import {
-  EXTERNAL_IDENTITY_RELEASE_CONTRACT
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  externalIdentityReleaseContractForRegistryRelease
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
+  verifiedOriginalObservationHealthReceiptForReleases,
   VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
@@ -103,6 +107,48 @@ assert.equal(Object.hasOwn(CSM_LUNA_OPTIMIZATION_PACK, "request_extensions"), fa
 assert.equal(CSM_LUNA_MODEL_PROFILE.prompt_style_version, CSM_NEUTRAL_PROMPT_STYLE_VERSION,
   "Luna-specific behavior belongs in the removable pack until distinct prompt bytes pass a gate");
 const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+const rollbackWriter = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+const canonicalNamingTargetForWriter = (writer) => [
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
+].find((contract) => (
+  contract.composer_version === writer.standard.composer_version
+    && contract.marketplace_profile_version === writer.standard.marketplace_profile_version
+));
+const activeExternalIdentityRelease = externalIdentityReleaseContractForRegistryRelease(
+  activeWriter.external_identity.registry_release_id
+);
+const activeCanonicalNamingTarget = canonicalNamingTargetForWriter(activeWriter);
+const activeVerifiedOriginalObservation =
+  verifiedOriginalObservationHealthReceiptForReleases({
+    verifiedOriginalObservationReleaseId:
+      activeWriter.verified_original_observation_overlay,
+    externalIdentityRegistryReleaseId:
+      activeWriter.external_identity.registry_release_id
+  });
+const activeProviderAdapter = resolveCsmProviderAdapter(CSM_LUNA_MODEL_PROFILE.provider, {
+  requestBuilderVersion: activeWriter.canonical_fields.request_builder_version
+});
+assert.ok(activeCanonicalNamingTarget,
+  "the active writer must select one closed Canonical Naming release");
+assert.deepEqual(
+  externalIdentityReleaseContractForRegistryRelease(
+    rollbackWriter.external_identity.registry_release_id
+  ),
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  "the b159 rollback writer keeps its frozen external-v2 health oracle"
+);
+assert.equal(canonicalNamingTargetForWriter(rollbackWriter),
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  "the b159 rollback writer keeps its frozen Canonical Naming v0.2 oracle");
+assert.equal(verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId:
+    rollbackWriter.verified_original_observation_overlay,
+  externalIdentityRegistryReleaseId:
+    rollbackWriter.external_identity.registry_release_id
+}), VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
+  "the b159 rollback writer keeps its frozen verified-original v1/v2 pair oracle");
 assert.deepEqual(resolveCsmPromptAsset(CSM_NEUTRAL_PROMPT_STYLE_VERSION, {
   semanticPromptVersion: activeWriter.canonical_fields.semantic_prompt_version
 }), {
@@ -135,8 +181,19 @@ const imageUrls = [
 ];
 const compiled = compileCsmModelExecution({
   imageUrls,
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  writerContract: rollbackWriter
+});
+const activeCompiled = compileCsmModelExecution({
+  imageUrls,
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
 });
+for (const key of [
+  "request_builder_version", "response_parser_version", "semantic_prompt_version"
+]) {
+  assert.equal(activeCompiled.execution_contract[key], activeWriter.canonical_fields[key],
+    `the default paid execution must follow active_writer.${key}`);
+}
 const directRequest = buildCanonicalFieldsRequest({
   imageUrls,
   model: "gpt-5.6-luna",
@@ -193,8 +250,11 @@ assert.throws(() => openAiAdapter.compileRequest({
 }), /openai_sampling_parameters_must_be_omitted/);
 assert.equal(
   compiled.execution_contract.request_builder_version,
-  CSM_CANONICAL_REQUEST_BUILDER_VERSION
+  rollbackWriter.canonical_fields.request_builder_version
 );
+assert.equal(rollbackWriter.canonical_fields.request_builder_version,
+  CSM_CANONICAL_REQUEST_BUILDER_VERSION,
+  "the b159 rollback request-builder oracle remains frozen");
 assert.equal(compiled.execution_contract.optimization_pack_id, CSM_LUNA_OPTIMIZATION_PACK.id);
 assert.equal(
   compiled.execution_contract.optimization_pack_sha256,
@@ -214,7 +274,8 @@ assert.equal(
 );
 const sameTemplateDifferentUrls = compileCsmModelExecution({
   imageUrls: ["https://different.test/one", "https://different.test/two"],
-  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+  transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  writerContract: rollbackWriter
 });
 assert.equal(
   sameTemplateDifferentUrls.execution_contract.wire_template_sha256,
@@ -224,7 +285,8 @@ assert.equal(
 assert.notEqual(
   compileCsmModelExecution({
     imageUrls: [imageUrls[0]],
-    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    writerContract: rollbackWriter
   })
     .execution_contract.wire_template_sha256,
   compiled.execution_contract.wire_template_sha256,
@@ -275,6 +337,7 @@ assert.throws(() => compileCsmModelExecution({
 assert.throws(() => compileCsmModelExecution({
   imageUrls,
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  writerContract: rollbackWriter,
   renderedPrompt: `${compiled.provider_request.rendered_prompt} `
 }), /prompt_asset_override_mismatch/);
 assert.throws(() => compileCsmModelExecution({
@@ -290,6 +353,7 @@ for (const change of [
 ]) {
   assert.notEqual(buildCsmModelExecutionContractSha256({
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    writerContract: rollbackWriter,
     ...change,
     imageUrls
   }), baseDigest);
@@ -400,8 +464,11 @@ assert.deepEqual(healthBody.runtime.optimization_pack, {
 });
 assert.equal(
   healthBody.runtime.request_builder_version,
-  CSM_CANONICAL_REQUEST_BUILDER_VERSION
+  activeWriter.canonical_fields.request_builder_version
 );
+assert.equal(healthBody.runtime.provider_adapter_version,
+  activeProviderAdapter.contract.id,
+  "health must expose the adapter selected by the active writer request builder");
 assert.deepEqual(
   healthBody.runtime.recognition_transport_profiles,
   Object.fromEntries(CSM_RECOGNITION_TRANSPORT_PROFILES.map((profile) => [
@@ -411,19 +478,21 @@ assert.deepEqual(
 );
 assert.deepEqual(
   healthBody.runtime.external_identity,
-  EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  activeExternalIdentityRelease,
   "health must expose the exact active pack, index, resolution and Registry release receipts"
 );
 assert.deepEqual(
   healthBody.runtime.canonical_naming_target,
-  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  activeCanonicalNamingTarget,
   "health must expose the exact active Canonical Naming release contract"
 );
 assert.deepEqual(
   healthBody.runtime.verified_original_observation,
-  VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT,
-  "health must expose only the exact redacted verified-original release receipt"
+  activeVerifiedOriginalObservation,
+  "health must expose the exact pair-scoped verified-original release receipt"
 );
+assert.deepEqual(healthBody.runtime.active_writer, activeWriter,
+  "health must expose the complete selected writer tuple");
 for (const receipt of [
   healthBody.runtime.external_identity.support_pack.sha256,
   healthBody.runtime.external_identity.index.sha256,

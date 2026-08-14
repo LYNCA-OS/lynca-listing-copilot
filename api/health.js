@@ -16,7 +16,7 @@ import {
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import {
-  EXTERNAL_IDENTITY_RELEASE_CONTRACT
+  externalIdentityReleaseContractForRegistryRelease
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT_V1,
@@ -27,10 +27,13 @@ import {
   CSM_PROJECTION_ACTIVATION
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
-  verifiedOriginalObservationHealthReceiptForRelease
+  verifiedOriginalObservationHealthReceiptForReleases
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 
 const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+const activeExternalIdentityRelease = externalIdentityReleaseContractForRegistryRelease(
+  activeWriter.external_identity.registry_release_id
+);
 const activeCanonicalNamingTarget = [
   CANONICAL_NAMING_RELEASE_CONTRACT_V1,
   CANONICAL_NAMING_RELEASE_CONTRACT_V2,
@@ -121,12 +124,15 @@ export default function handler(req, res) {
       max_output_tokens: CSM_ACTIVE_MODEL_PROFILE.max_output_tokens,
       provider_timeout_ms: CSM_ACTIVE_MODEL_PROFILE.provider_timeout_ms,
       recognition_transport_profiles: activeRecognitionTransportProfiles,
-      external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+      external_identity: activeExternalIdentityRelease,
       canonical_naming_target: activeCanonicalNamingTarget,
       verified_original_observation:
-        verifiedOriginalObservationHealthReceiptForRelease(
-          activeWriter.verified_original_observation_overlay
-        ),
+        verifiedOriginalObservationHealthReceiptForReleases({
+          verifiedOriginalObservationReleaseId:
+            activeWriter.verified_original_observation_overlay,
+          externalIdentityRegistryReleaseId:
+            activeWriter.external_identity.registry_release_id
+        }),
       projection_activation: CSM_PROJECTION_ACTIVATION,
       active_writer: CSM_PROJECTION_ACTIVATION.active_writer,
       forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,

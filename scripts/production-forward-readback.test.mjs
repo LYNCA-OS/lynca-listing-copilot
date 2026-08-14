@@ -15,7 +15,11 @@ import {
   VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
-  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
+  EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
 } from "./compatibility-bridge-release.mjs";
 import {
   PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT,
@@ -371,6 +375,8 @@ const capturedEvidence = {
   evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
   accuracy_claim: null,
   release_class: "compatibility-bridge",
+  compatibility_bridge_descriptor_id:
+    EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
   compatibility_bridge_marker:
     EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
   writer_projection_mode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE,
@@ -453,6 +459,32 @@ assert.equal(capturedExpectation.schema_version,
 assert.equal(capturedExpectation.writer_projection_mode,
   PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE);
 assert.equal(capturedExpectation.case_id, "NON_TCG");
+const historicalCapturedEvidence = clone(capturedEvidence);
+delete historicalCapturedEvidence.compatibility_bridge_descriptor_id;
+assert.deepEqual(buildProductionForwardReadbackExpectation({
+  evidence: historicalCapturedEvidence,
+  resolutionView: capturedResolutionView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), capturedExpectation,
+  "the released V4 evidence without a descriptor must remain readable");
+const checkpointReaderEvidence = {
+  ...clone(capturedEvidence),
+  compatibility_bridge_descriptor_id:
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
+  compatibility_bridge_marker: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
+  writer_projection_mode:
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+};
+const checkpointReaderExpectation = buildProductionForwardReadbackExpectation({
+  evidence: checkpointReaderEvidence,
+  resolutionView: capturedResolutionView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.deepEqual(checkpointReaderExpectation, capturedExpectation,
+  "the checkpoint-reader sibling must preserve the captured V4 expectation bytes");
+assert.equal(JSON.stringify(checkpointReaderExpectation), JSON.stringify(capturedExpectation));
 const capturedReceipt = verifyProductionForwardReadback({
   evidence: capturedEvidence,
   expectation: capturedExpectation,
@@ -460,7 +492,8 @@ const capturedReceipt = verifyProductionForwardReadback({
   responseUrl,
   deploymentUrl: candidateOrigin,
   gitSha: candidateGitSha,
-  rollbackReceipt
+  rollbackReceipt,
+  now: () => new Date("2026-08-14T12:05:00.000Z")
 });
 assert.equal(capturedReceipt.schema_version,
   PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA);
@@ -471,9 +504,22 @@ assert.equal(capturedReceipt.verified_original_observation_support_exact_match, 
 assert.equal(capturedReceipt.founder_beta_web_receipt_exact_match, true);
 assert.equal(capturedReceipt.web_search_used, false);
 assert.equal(capturedReceipt.web_search_call_count, 0);
+const checkpointReaderReceipt = verifyProductionForwardReadback({
+  evidence: checkpointReaderEvidence,
+  expectation: checkpointReaderExpectation,
+  resolutionView: capturedResolutionView,
+  responseUrl,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha,
+  rollbackReceipt,
+  now: () => new Date("2026-08-14T12:05:00.000Z")
+});
+assert.deepEqual(checkpointReaderReceipt, capturedReceipt,
+  "the checkpoint-reader sibling must preserve the captured V4 receipt bytes");
+assert.equal(JSON.stringify(checkpointReaderReceipt), JSON.stringify(capturedReceipt));
 
-const assertCapturedEvidenceRejected = (mutate) => {
-  const changed = clone(capturedEvidence);
+const assertCapturedEvidenceRejected = (mutate, source = capturedEvidence) => {
+  const changed = clone(source);
   mutate(changed);
   assert.throws(() => buildProductionForwardReadbackExpectation({
     evidence: changed,
@@ -510,6 +556,32 @@ for (const mutate of [
   (value) => { value.final_seal.semantic_web_case_count = 1; },
   (value) => { value.final_seal.durable_projection_receipts_absent = false; },
   (value) => { value.cases[0].founder_web_search = null; }
+]) assertCapturedEvidenceRejected(mutate);
+for (const mutate of [
+  (value) => { delete value.compatibility_bridge_descriptor_id; },
+  (value) => {
+    value.compatibility_bridge_descriptor_id =
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID;
+  },
+  (value) => {
+    value.compatibility_bridge_marker =
+      EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER;
+  },
+  (value) => { value.writer_projection_mode = PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE; },
+  (value) => { value.compatibility_bridge_descriptor_id = "unknown-descriptor"; }
+]) assertCapturedEvidenceRejected(mutate, checkpointReaderEvidence);
+for (const mutate of [
+  (value) => {
+    value.compatibility_bridge_descriptor_id =
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID;
+  },
+  (value) => {
+    value.compatibility_bridge_marker = EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER;
+  },
+  (value) => {
+    value.writer_projection_mode =
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE;
+  }
 ]) assertCapturedEvidenceRejected(mutate);
 assert.throws(() => buildProductionForwardReadbackExpectation({
   evidence: { ...clone(evidence),

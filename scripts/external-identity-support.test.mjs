@@ -10,15 +10,19 @@ import {
   EXTERNAL_IDENTITY_MARKETPLACE_PROFILE_VERSION,
   EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
   EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3,
   EXTERNAL_IDENTITY_RESOLVER_VERSION,
   EXTERNAL_IDENTITY_SUPPORT_PACK,
   externalIdentityReplayReleaseForReceipt,
+  externalIdentityReleaseContractForRegistryRelease,
   HIGH_RISERS_EXTERNAL_IDENTITY_INDEX,
   resolveExternalIdentitySupport,
+  resolveExternalIdentitySupportForRelease,
   validateExternalIdentityFieldDecisions,
+  validateExternalIdentityPublicFieldDecisions,
   validatePostObservationResolutionContract
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
@@ -28,6 +32,13 @@ const HR14_ORIGINAL_SHA256 = Object.freeze([
 ]);
 const HR14_ORIGINAL_SET_SHA256 =
   "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159";
+
+assert.equal(externalIdentityReleaseContractForRegistryRelease(
+  EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID
+), EXTERNAL_IDENTITY_RELEASE_CONTRACT);
+assert.equal(externalIdentityReleaseContractForRegistryRelease(
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id
+), EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3);
 
 const observedHr14 = {
   year: "",
@@ -381,6 +392,54 @@ forwardV3DecisionReceipt.field_decisions.product = {
 };
 assert.equal(validateExternalIdentityFieldDecisions(forwardV3DecisionReceipt), true,
   "the neutral bridge validates the future three-anchor catalog-correction receipt");
+const forwardV3Observation = {
+  ...liveCandidateObservation,
+  product: "Stadium Club Basketball"
+};
+const resolvedForwardV3 = resolveExternalIdentitySupportForRelease(
+  forwardV3Observation,
+  {
+    registryReleaseId: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id,
+    externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 }
+  }
+);
+assert.equal(resolvedForwardV3.status, "APPLIED");
+assert.equal(resolvedForwardV3.receipt.schema_version,
+  "csm-external-identity-support-receipt.v3");
+assert.deepEqual(resolvedForwardV3.receipt.corrected_fields, ["product", "set", "year"]);
+assert.equal(validateExternalIdentityFieldDecisions(resolvedForwardV3.receipt), true);
+assert.equal(resolveExternalIdentitySupport(forwardV3Observation, {
+  externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 }
+}).status, "ABSTAINED", "the default producer remains byte-pinned to active v2");
+for (const field of ["manufacturer", "subjects", "card_number"]) {
+  const missing = {
+    ...forwardV3Observation,
+    [field]: field === "subjects" ? [] : ""
+  };
+  const result = resolveExternalIdentitySupportForRelease(missing, {
+    registryReleaseId: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id,
+    externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 }
+  });
+  assert.equal(result.status, "ABSTAINED");
+  assert.equal(result.reason, "MISSING_REQUIRED_ANCHOR");
+}
+const forwardV3NoCorrection = resolveExternalIdentitySupportForRelease(observedHr14, {
+  registryReleaseId: EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id,
+  externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 }
+});
+assert.equal(forwardV3NoCorrection.status, "APPLIED");
+const forgedForwardV3Fill = structuredClone(forwardV3NoCorrection.receipt);
+forgedForwardV3Fill.field_decisions.manufacturer.action = "FILL";
+forgedForwardV3Fill.field_decisions.manufacturer.observed_value = "";
+assert.equal(validateExternalIdentityFieldDecisions(forgedForwardV3Fill), false,
+  "v3 hard anchors remain mandatory even when no catalog correction exists");
+assert.equal(validateExternalIdentityPublicFieldDecisions({
+  registry_release_id: forgedForwardV3Fill.registry_release_id,
+  record_id: forgedForwardV3Fill.record_id,
+  match_mode: forgedForwardV3Fill.match_mode,
+  supported_fields: forgedForwardV3Fill.supported_fields,
+  field_decisions: forgedForwardV3Fill.field_decisions
+}), false, "the public v3 receipt cannot relabel a hard anchor as FILL");
 assert.equal(EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID,
   expectedReplayV2.receipt.registry_release_id,
   "the neutral bridge must continue writing v2");

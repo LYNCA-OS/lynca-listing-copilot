@@ -1,0 +1,2594 @@
+{
+  "schema_version": "csm-external-v3-source-combined-checkpoint-fixture.v1",
+  "provenance": {
+    "producer_base_sha": "1679d52a894b2a428dab07de462d6650e8ceecbd",
+    "producer_tracked_diff_sha256": "38290ee8fa6355ecbb5207eda875dfc8ea81985e9c7ea7f7f15cc8478cf7a92a",
+    "producer_tracked_path_count": 16,
+    "external_identity_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+    "combined_contract_sha256": "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed",
+    "checkpoint_sha256": "aad1f8690fd44bc303a40ba9026781b2a1ed3d0621246424ddea9679519ad51d"
+  },
+  "owner": {
+    "tenant_id": "tenant-external-v3-combined-forward-reader",
+    "asset_id": "asset-external-v3-combined-forward-reader",
+    "intent_id": "intent-external-v3-combined-forward-reader"
+  },
+  "original_image_sha256": [
+    "161f0d97df619f8d34b2453551567a0473d3e477c3e0ec9295029fbce8c59e44",
+    "cef46b5d761d2d20f5cd21d611cab8d8037721bcdb4ae8c1a0d4441439a6fdc3"
+  ],
+  "original_set_sha256": "c516bca68464bbe96960189c219d02fad1c1dfdf5e917efaf6ad994c0342ad9c",
+  "operation_key": "luna-direct:v2:c399004f2f66e1f0a1ab29379898db92778ff9669f772bcda674c91f897b8af5",
+  "payload_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "checkpoint": {
+    "title": "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50",
+    "fields": {
+      "card_name": "",
+      "card_number": "251",
+      "components": [
+        "RC"
+      ],
+      "attributes": [
+        "RC"
+      ],
+      "description": "",
+      "descriptive_rarity": "",
+      "grade": "",
+      "grading_info": null,
+      "grammar": "standard",
+      "ip": "",
+      "language": "",
+      "lot_count": "",
+      "low_confidence": [],
+      "manufacturer": "Topps",
+      "parallel_exact": "Gold Refractor",
+      "parallel_family": "Refractor",
+      "print_finish": "Gold Refractor",
+      "product": "Topps Chrome Basketball",
+      "release_variant": "",
+      "search_optimization": [],
+      "serial": "50/50",
+      "set": "",
+      "special_stamp": "",
+      "subjects": [
+        "Cooper Flagg"
+      ],
+      "surface_color": "Gold",
+      "team": "Mavericks",
+      "unreadable": [],
+      "year": "2025-26"
+    },
+    "field_defects": [],
+    "sanitised": false,
+    "truncated": false,
+    "grammar": "standard",
+    "brackets": [
+      "year",
+      "product",
+      "subject",
+      "print_finish",
+      "search_optimization",
+      "card_number",
+      "numerical_rarity"
+    ],
+    "bracket_text": [
+      {
+        "bracket": "year",
+        "text": "2025-26"
+      },
+      {
+        "bracket": "product",
+        "text": "Topps Chrome Basketball"
+      },
+      {
+        "bracket": "subject",
+        "text": "Cooper Flagg"
+      },
+      {
+        "bracket": "print_finish",
+        "text": "Gold Refractor"
+      },
+      {
+        "bracket": "search_optimization",
+        "text": "RC"
+      },
+      {
+        "bracket": "card_number",
+        "text": "#251"
+      },
+      {
+        "bracket": "numerical_rarity",
+        "text": "50/50"
+      }
+    ],
+    "dropped_brackets": [
+      "search_optimization"
+    ],
+    "suppressed_brackets": [],
+    "restored_brackets": [],
+    "empty_fields": [
+      "set",
+      "card_name",
+      "release_variant",
+      "descriptive_rarity",
+      "grading_info"
+    ],
+    "input_empty_fields": [
+      "set",
+      "card_name",
+      "release_variant",
+      "descriptive_rarity",
+      "grading_info"
+    ],
+    "character_budget": 80,
+    "unreadable_fields": [],
+    "low_confidence_fields": [],
+    "inferred_parent": null,
+    "normalization_reasons": [
+      "manufacturer:source_derived_redundancy"
+    ],
+    "canonical_naming_trace": {
+      "selected": [
+        {
+          "key": "year:0",
+          "field": "year",
+          "source_field": "year",
+          "source_index": 0,
+          "canonical_value": "2025-26",
+          "display_value": "2025-26",
+          "priority": "P2",
+          "render_position": 0,
+          "reason": "lexicographic_optimum"
+        },
+        {
+          "key": "product:0",
+          "field": "product",
+          "source_field": "product",
+          "source_index": 0,
+          "canonical_value": "Topps Chrome Basketball",
+          "display_value": "Topps Chrome Basketball",
+          "priority": "P1",
+          "render_position": 2,
+          "reason": "lexicographic_optimum"
+        },
+        {
+          "key": "subjects:0",
+          "field": "subjects",
+          "source_field": "subjects",
+          "source_index": 0,
+          "canonical_value": "Cooper Flagg",
+          "display_value": "Cooper Flagg",
+          "priority": "P1",
+          "render_position": 5,
+          "reason": "lexicographic_optimum"
+        },
+        {
+          "key": "print_finish:0",
+          "field": "print_finish",
+          "source_field": "print_finish",
+          "source_index": 0,
+          "canonical_value": "Gold Refractor",
+          "display_value": "Gold Refractor",
+          "priority": "P1",
+          "render_position": 7,
+          "reason": "lexicographic_optimum"
+        },
+        {
+          "key": "components:0",
+          "field": "components",
+          "source_field": "components",
+          "source_index": 0,
+          "canonical_value": "RC",
+          "display_value": "RC",
+          "priority": "P2",
+          "render_position": 9,
+          "reason": "lexicographic_optimum"
+        },
+        {
+          "key": "card_number:0",
+          "field": "card_number",
+          "source_field": "card_number",
+          "source_index": 0,
+          "canonical_value": "251",
+          "display_value": "#251",
+          "priority": "P0",
+          "render_position": 12,
+          "reason": "lexicographic_optimum"
+        },
+        {
+          "key": "serial:0",
+          "field": "serial",
+          "source_field": "serial",
+          "source_index": 0,
+          "canonical_value": "50/50",
+          "display_value": "50/50",
+          "priority": "P0",
+          "render_position": 13,
+          "reason": "lexicographic_optimum"
+        }
+      ],
+      "omitted": [
+        {
+          "key": "manufacturer:0",
+          "field": "manufacturer",
+          "source_field": "manufacturer",
+          "source_index": 0,
+          "canonical_value": "Topps",
+          "display_value": "Topps",
+          "priority": "P2",
+          "render_position": 1,
+          "reason": "source_derived_redundancy",
+          "redundant_with": "product:0"
+        },
+        {
+          "key": "team:0",
+          "field": "team",
+          "source_field": "team",
+          "source_index": 0,
+          "canonical_value": "Mavericks",
+          "display_value": "Mavericks",
+          "priority": "P3",
+          "render_position": 11,
+          "reason": "budget_lexicographic_selection"
+        }
+      ],
+      "abbreviated": [],
+      "transformed": [
+        {
+          "field": "card_number",
+          "operation": "display_prefix_added",
+          "before": "251",
+          "after": "#251"
+        }
+      ],
+      "rejected": []
+    },
+    "canonical_naming_publishable": true,
+    "canonical_naming_failure_code": null,
+    "lot_quantity_unresolved": false,
+    "lot_single_card": false,
+    "lot_unshared_attributes": [],
+    "publication_coverage": {
+      "schema_version": "csm-publication-coverage-v1",
+      "atoms": [
+        {
+          "bracket": "year",
+          "source_field": "year",
+          "source_index": 0,
+          "canonical_value": "2025-26",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "product",
+          "source_field": "product",
+          "source_index": 0,
+          "canonical_value": "Topps Chrome Basketball",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "subject",
+          "source_field": "subjects",
+          "source_index": 0,
+          "canonical_value": "Cooper Flagg",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "print_finish",
+          "source_field": "print_finish",
+          "source_index": 0,
+          "canonical_value": "Gold Refractor",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "search_optimization",
+          "source_field": "components",
+          "source_index": 0,
+          "canonical_value": "RC",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "card_number",
+          "source_field": "card_number",
+          "source_index": 0,
+          "canonical_value": "251",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "numerical_rarity",
+          "source_field": "serial",
+          "source_index": 0,
+          "canonical_value": "50/50",
+          "disposition": "PUBLISHED"
+        },
+        {
+          "bracket": "manufacturer",
+          "source_field": "manufacturer",
+          "source_index": 0,
+          "canonical_value": "Topps",
+          "disposition": "DEDUPED_COVERED"
+        },
+        {
+          "bracket": "search_optimization",
+          "source_field": "team",
+          "source_index": 0,
+          "canonical_value": "Mavericks",
+          "disposition": "DROPPED_FOR_BUDGET"
+        }
+      ]
+    },
+    "lot_publishable": true,
+    "lot_publication_failure_code": null,
+    "composer_version": "thin-marketplace-composer-v3",
+    "marketplace_profile_version": "lynca-standard-name-v0.3",
+    "length": 73,
+    "raw_length": 555,
+    "observed_fields": {
+      "year": "2025",
+      "manufacturer": "Topps",
+      "product": "Chrome",
+      "set": "",
+      "subjects": [
+        "Cooper Flagg"
+      ],
+      "team": "Mavericks",
+      "card_name": "",
+      "release_variant": "",
+      "surface_color": "Gold",
+      "parallel_family": "Refractor",
+      "parallel_exact": "Gold Refractor",
+      "print_finish": "Gold Refractor",
+      "descriptive_rarity": "",
+      "card_number": "251",
+      "serial": "30/50",
+      "attributes": [
+        "RC"
+      ],
+      "grade": "",
+      "grading_info": null,
+      "grammar": "standard",
+      "special_stamp": "",
+      "description": "",
+      "lot_count": "",
+      "unreadable": [],
+      "low_confidence": [],
+      "ip": "",
+      "language": "",
+      "components": [
+        "RC"
+      ],
+      "observed_surface_color": "Gold",
+      "observed_parallel_family": "Refractor",
+      "withheld_finish_terms": []
+    },
+    "verified_original_observation_support": {
+      "schema_version": "csm-verified-original-closed-projection-receipt.v1",
+      "release_id": "verified_original_closed_projection_subset_a_v2",
+      "pack_id": "lynca.csm.verified-original-closed-projection.subset-a",
+      "pack_version": "2026-08-11.visual-review-1",
+      "pack_sha256": "8d185675a37a7a37c51b0f32a1a319e4f4107961be4006101801d9e8764629f3",
+      "resolution_contract_sha256": "7eff4c74ccb32683ebb11ba778e2763e0b08062863956c2e64452b39575a4a87",
+      "resolver_version": "thin-path-verified-original-closed-projection-v1",
+      "conflict_policy_version": "exact-closed-fields-no-observation-fallback-v1",
+      "status": "APPLIED",
+      "match_basis": "EXACT_VERIFIED_ORIGINAL_SET",
+      "record_id": "subset-a-a",
+      "original_set_sha256": "c516bca68464bbe96960189c219d02fad1c1dfdf5e917efaf6ad994c0342ad9c",
+      "corrected_fields": [
+        "product",
+        "search_optimization",
+        "serial",
+        "year"
+      ],
+      "corrected_brackets": [
+        "numerical_rarity",
+        "product",
+        "search_optimization",
+        "year"
+      ],
+      "field_decisions": {
+        "card_name": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "034a9a835b657f0f5291eb47c490cb0d09e0117f7b4a701ed80f58167398560a"
+        },
+        "card_number": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "CARD_PRINTED_TEXT",
+          "fact_sha256": "a7bd3590b87e87033d79b7f93913a31b65d840550fe81cf924c38074fb54e128"
+        },
+        "components": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "CARD_VISUAL_MARKER",
+          "fact_sha256": "6c375ce7c8d03d56f0dffe8a8d438a66644246aad0a02b23ec261516337539c8"
+        },
+        "description": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "d7465ddf1c9c863079ef08e04e8bc32e1bacbe2cd746724ed59eb78a5a718204"
+        },
+        "descriptive_rarity": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "d9bcc77beacd91bb36f61f40db18f0901dc1546a1d200a86afd2a2204adad84b"
+        },
+        "grade": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "1e8013403a0a478f8afcc0545947d94a2a9253b00b08dd349e20ecf440bc517a"
+        },
+        "grading_info": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "6c58f260b0fc1b3512e7b6b987f9168cf9a22a98e37e88faf6fe64ea465ec320"
+        },
+        "grammar": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "1c0b96845152ef4080673040f4736a51f77857d4db9baace18f0502ac2af4e37"
+        },
+        "ip": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "35ce943c3bf0c76042dbb8a1b5216db1ec7638fa2eb35539d59eb000c7856b05"
+        },
+        "language": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "ebb2b1d4125423c3721879cf9f32e6bc64a26258b0a54fa2980504e83eb7d6d3"
+        },
+        "lot_count": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "010408c340a777d3ae7ee513d2db17873de427136eacafe72bec3b322aba2ca5"
+        },
+        "low_confidence": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "721ff4f6394074e019845d3086f30d1c6b90c051b093ca7031263b79d50258e0"
+        },
+        "manufacturer": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "CARD_PRINTED_TEXT",
+          "fact_sha256": "05c390a957e276cc30e8427abf3e1a98aa6ba9d257a0cf5350447f8a2d269b6d"
+        },
+        "parallel_exact": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "93a27dc02ae8c29c0638afebd2c561614c7ffd15bec336794e8efd5133ba3657"
+        },
+        "parallel_family": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "3befa14294518f521ab3f927e708e770d93c09747cb977c9f1d24db43e78b80f"
+        },
+        "print_finish": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "839afa13d78448b9a1617c651868aa2fd2cd1b1c4a53aa7fb10cf728640c37d6"
+        },
+        "product": {
+          "action": "CORRECT_CONFLICT",
+          "operation": "SET",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "a6f7b5a406f2e6800676e13e4da04eeae128f47ddc1610bfe2b8978007077c46"
+        },
+        "release_variant": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "1d4e42671bc7aedcfe63e0f3037619d5718b63f3c39c670892c328c74e31f92e"
+        },
+        "search_optimization": {
+          "action": "CLEAR_CONFLICT",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "689160a157d1b4d126c4e764a1f066ca11d65efe1484d5d1aae01c38d36a5f1a"
+        },
+        "serial": {
+          "action": "CORRECT_CONFLICT",
+          "operation": "SET",
+          "authority": "CARD_PRINTED_TEXT",
+          "fact_sha256": "fb68e3024e6739eb60c3eabd47795f17ea1bdf8d493b5dcbd2c9ee74ccd3ef9c"
+        },
+        "set": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "2037881bd7fdfbe40974d5788eb2d2db37b5c5ce97f2dc76c563b154b800543e"
+        },
+        "special_stamp": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "c67c2bdd8d07cec0cdbd166b7a6f0ac64483ef5a1dd78f5ba898bea04f2db704"
+        },
+        "subjects": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "CARD_PRINTED_TEXT",
+          "fact_sha256": "e72ee6df72fe567a3d3b69f148fb7e41631194fc4200376302a652d5ee3c59bd"
+        },
+        "surface_color": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "f8e42481f2b139fc14d6c77f8f03b5bf3666f0cc597089a45b87da150f63f97a"
+        },
+        "team": {
+          "action": "CORROBORATE",
+          "operation": "SET",
+          "authority": "CARD_PRINTED_TEXT",
+          "fact_sha256": "bd3f79d0d02f39d7657eb6d46b36b32ade32f431edd48ba65dbcf6cba719dfe6"
+        },
+        "unreadable": {
+          "action": "CORROBORATE",
+          "operation": "CLEAR",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "b16f9e6fe43578c2bf5e3fd4560077127d3255064274a87b320eefbfddddeeb9"
+        },
+        "year": {
+          "action": "CORRECT_CONFLICT",
+          "operation": "SET",
+          "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+          "fact_sha256": "4ce4984f9faf346ad7bcb1e55db2e24270d2aca0c45832fd99a7226d75d16f98"
+        }
+      },
+      "observed_fields": {
+        "attributes": [
+          "RC"
+        ],
+        "card_name": "",
+        "card_number": "251",
+        "components": [
+          "RC"
+        ],
+        "description": "",
+        "descriptive_rarity": "",
+        "grade": "",
+        "grading_info": null,
+        "grammar": "standard",
+        "ip": "",
+        "language": "",
+        "lot_count": "",
+        "low_confidence": [],
+        "manufacturer": "Topps",
+        "observed_parallel_family": "Refractor",
+        "observed_surface_color": "Gold",
+        "parallel_exact": "Gold Refractor",
+        "parallel_family": "Refractor",
+        "print_finish": "Gold Refractor",
+        "product": "Chrome",
+        "release_variant": "",
+        "serial": "30/50",
+        "set": "",
+        "special_stamp": "",
+        "subjects": [
+          "Cooper Flagg"
+        ],
+        "surface_color": "Gold",
+        "team": "Mavericks",
+        "unreadable": [],
+        "withheld_finish_terms": [],
+        "year": "2025"
+      },
+      "observed_fields_sha256": "78b38fcf89426c30d7f97db588ee1e71b53f4795046120e3c1eab6c385597382",
+      "observed_projection_sha256": "b9de325e455a359f871365a94fda8ae6bf2f2eeb2ada660f6733a3db845bd1d5",
+      "resolved_fields_sha256": "6603f04e8c5c9e64d32b53709d4db13bc841018dc5c9aea72861f61918b6d62b",
+      "resolved_projection_sha256": "a22476148e6c908d8e54d01be955be643487690e1b30b76161446ed60b40f7cc"
+    },
+    "external_identity_support": {
+      "schema_version": "csm-external-identity-support-receipt.v3",
+      "status": "ABSTAINED",
+      "reason": "NO_EXACT_MATCH",
+      "pack_id": "lynca.csm.external-identity",
+      "pack_version": "2026-08-10",
+      "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+      "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+      "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+      "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+      "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+      "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+      "matched_anchors": {
+        "manufacturer": "topps",
+        "product": "topps chrome basketball",
+        "subject": "cooper flagg",
+        "card_number": "251"
+      },
+      "original_set_match": "UNMAPPED"
+    },
+    "resolution_contract_sha256": "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed",
+    "resolution_contract": {
+      "schema_version": "csm-post-observation-resolution-contract.v2",
+      "contract_id": "lynca.csm.post-observation.external-and-verified-original-closed-projection.v1",
+      "external_identity_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+      "verified_original_observation_contract_sha256": "7eff4c74ccb32683ebb11ba778e2763e0b08062863956c2e64452b39575a4a87",
+      "execution_order": [
+        "verified_original_closed_projection",
+        "external_identity"
+      ],
+      "overlap_policy": "fail_closed",
+      "provider_calls_added": 0,
+      "contract_sha256": "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed"
+    },
+    "accuracy_loss_ledger": {
+      "version": "same-call-accuracy-loss-ledger-v1",
+      "stages": {
+        "raw_provider_output": {
+          "sha256": "022e2a11d7235418333a90ccbf881e7a7d6ae3d9189a2f0de2bcb74a9d5f440c",
+          "byte_length": 555,
+          "reason_codes": [
+            "PROVIDER_OUTPUT_TEXT_CAPTURED"
+          ]
+        },
+        "parsed_fields": {
+          "source_sha256": "022e2a11d7235418333a90ccbf881e7a7d6ae3d9189a2f0de2bcb74a9d5f440c",
+          "sha256": "34692e0073cccbc1e66a3a5c5c3ef832a68be803fccab86dee73a68cb0b8d742",
+          "reason_codes": [
+            "PROVIDER_JSON_OBJECT_PARSED"
+          ]
+        },
+        "admitted_canonical_fields": {
+          "source_sha256": "34692e0073cccbc1e66a3a5c5c3ef832a68be803fccab86dee73a68cb0b8d742",
+          "sha256": "28cb547f4a1edb9865f55ce2b90d1ec534007e2212068bf5ce871a0f7d401870",
+          "source_map_version": "csm-sem-provider-source-map-v1",
+          "reason_codes": [
+            "CANONICAL_FIELD_NORMALIZED",
+            "NO_CANONICAL_LOSS_RECORDED"
+          ],
+          "fields": [
+            {
+              "field": "year",
+              "input_present": true,
+              "input_value_sha256": "10f785c6e4f662128181cf1aa7b39172a90d34faa840224dcb8a717019a21224",
+              "admitted_present": true,
+              "admitted_value_sha256": "2e1929ee723daa2337edd43998626ba5bc100cf70706dd4f29a4b35955569336",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "ip_sport",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "language",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "manufacturer",
+              "input_present": true,
+              "input_value_sha256": "9a6a09df33c2144f05ddf028adccfd19cf21eaa1bdb1731c123848fa573f560a",
+              "admitted_present": true,
+              "admitted_value_sha256": "9a6a09df33c2144f05ddf028adccfd19cf21eaa1bdb1731c123848fa573f560a",
+              "status": "unchanged",
+              "reason_codes": [
+                "VALUE_UNCHANGED"
+              ]
+            },
+            {
+              "field": "product",
+              "input_present": true,
+              "input_value_sha256": "299b08c9d0e0389fa8026ff7db51530ba881302e6fba1f694d321d36c10c1da0",
+              "admitted_present": true,
+              "admitted_value_sha256": "f869ef9d00eee2fb4b4af64718f8e16932b231edc84ce2f99d84f58a67300ea3",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "set",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "subject",
+              "input_present": true,
+              "input_value_sha256": "89423afbe65c22b9ed9e45b6796b9b48e2cde4540923fd7798b87799c43edbb7",
+              "admitted_present": true,
+              "admitted_value_sha256": "89423afbe65c22b9ed9e45b6796b9b48e2cde4540923fd7798b87799c43edbb7",
+              "status": "unchanged",
+              "reason_codes": [
+                "VALUE_UNCHANGED"
+              ]
+            },
+            {
+              "field": "card_name",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "card_number",
+              "input_present": true,
+              "input_value_sha256": "a2dfffd2e4b3720863f7515f39b3aeb5644316978c8a0844631ec6bc07deed69",
+              "admitted_present": true,
+              "admitted_value_sha256": "a2dfffd2e4b3720863f7515f39b3aeb5644316978c8a0844631ec6bc07deed69",
+              "status": "unchanged",
+              "reason_codes": [
+                "VALUE_UNCHANGED"
+              ]
+            },
+            {
+              "field": "descriptive_rarity",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "numerical_rarity",
+              "input_present": true,
+              "input_value_sha256": "dae79d3f1e8c51063fb1eb1579f04167aceb180692ab2fec27746fb4305ffc8a",
+              "admitted_present": true,
+              "admitted_value_sha256": "ad8a42a976ec65c74a28f110f93590577c96ba5816c05adf9b4974fbf14d9b8f",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "release_variant",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "print_finish",
+              "input_present": true,
+              "input_value_sha256": "a7696e66e6ebf1313e4bc64a251c51783f7f01fedbd975dd33eaeca6a45a3d34",
+              "admitted_present": true,
+              "admitted_value_sha256": "33e2289382327c3ddab7462004de107a9cb464d5f3b45eb061e1178c315347ef",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            },
+            {
+              "field": "special_stamp",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "grading_info",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "description",
+              "input_present": false,
+              "input_value_sha256": null,
+              "admitted_present": false,
+              "admitted_value_sha256": null,
+              "status": "empty",
+              "reason_codes": [
+                "EMPTY_AT_INPUT"
+              ]
+            },
+            {
+              "field": "search_optimization",
+              "input_present": true,
+              "input_value_sha256": "e0f48f3db99097772b726e5604ebdb75a55e6cf507e39b5ece9b4806dc2120e2",
+              "admitted_present": true,
+              "admitted_value_sha256": "9372a24b57a0941c488e5b733bafbb14b8f3c43387bb8ac56a92f21b67935b7c",
+              "status": "normalized",
+              "reason_codes": [
+                "CSM_SEM_NORMALIZED"
+              ]
+            }
+          ]
+        },
+        "composed_bracket_ledger": {
+          "source_sha256": "28cb547f4a1edb9865f55ce2b90d1ec534007e2212068bf5ce871a0f7d401870",
+          "sha256": "cbe51a404f21f510228b8a8a7474c78a17422ee73ba95da49a6d3b5db37ea82b",
+          "included": [
+            "year",
+            "product",
+            "subject",
+            "print_finish",
+            "search_optimization",
+            "card_number",
+            "numerical_rarity"
+          ],
+          "dropped_for_budget": [
+            "search_optimization"
+          ],
+          "profile_suppression_policy": [],
+          "suppressed_by_profile": [],
+          "restored": [],
+          "truncated": false,
+          "empty_at_input": [
+            "set",
+            "card_name",
+            "release_variant",
+            "descriptive_rarity",
+            "grading_info"
+          ],
+          "normalization_reason_codes": [
+            "manufacturer:source_derived_redundancy"
+          ],
+          "character_budget": 80,
+          "rendered_length": 73,
+          "reason_codes": [
+            "CHARACTER_BUDGET_DROPPED",
+            "MANUFACTURER_SOURCE_DERIVED_REDUNDANCY"
+          ]
+        },
+        "final_title": {
+          "source_sha256": "cbe51a404f21f510228b8a8a7474c78a17422ee73ba95da49a6d3b5db37ea82b",
+          "sha256": "b8365a2167a5719b471974fc77e3b67c7a283d376b07a8e1a0a529df95570835",
+          "byte_length": 73,
+          "reason_codes": [
+            "FINAL_TITLE_COMPOSED"
+          ]
+        }
+      },
+      "ledger_sha256": "7d71f552667d618550cce5a30af5cd47e65aab2fb7d309768ed02ab5448cab1c"
+    },
+    "provider": "openai",
+    "model": "gpt-5.6-luna",
+    "requested_model": "gpt-5.6-luna",
+    "served_model": "gpt-5.6-luna",
+    "served_model_attested": true,
+    "provider_response_status": "completed",
+    "provider_response_status_attested": true,
+    "provider_response_incomplete": false,
+    "served_effort": "low",
+    "served_effort_attested": true,
+    "served_effort_conflict": false,
+    "input_tokens": 100,
+    "cached_input_tokens": null,
+    "output_tokens": 30,
+    "reasoning_tokens": null,
+    "total_tokens": 130,
+    "set_card_name_relation_receipt": {
+      "schema_version": "set-card-name-relations-v1",
+      "set": null,
+      "card_name": null
+    },
+    "founder_beta_web_receipt": {
+      "schema_version": "founder-beta-web-receipt-v2",
+      "outcome": "NOT_USED",
+      "provider_request_count": 1,
+      "isolated_model_call_count": 0,
+      "provider_model": "gpt-5.6-luna",
+      "reasoning_effort": "low",
+      "web_search_used": false,
+      "web_search_call_count": 0,
+      "queries": [],
+      "urls": [],
+      "field_evidence": [],
+      "semantic_state_sha256": "022e2a11d7235418333a90ccbf881e7a7d6ae3d9189a2f0de2bcb74a9d5f440c"
+    },
+    "image_detail": "high",
+    "requested_effort": "low",
+    "latency_ms": 9,
+    "provider_http_status": 200,
+    "provider_response_id": "resp_external_v3_combined_source_fixture",
+    "provider_request_id": "req_external_v3_combined_source_fixture",
+    "provider_client_request_id": null,
+    "prompt_version": "csm-canonical-fields-web-v2",
+    "max_output_tokens": 8192,
+    "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+    "provider_adapter_version": "openai-responses-v1",
+    "request_builder_version": "canonical-fields-web-request-v2",
+    "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+    "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+    "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+    "execution_contract_sha256": "36ac22d79d9e2a1dc0cb8a90ff9855da6188daec879abb1c8c6522dcec99ce19",
+    "execution_contract": {
+      "contract_version": "csm-model-execution-v2",
+      "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+      "account_scope": "lynca-primary",
+      "model_profile_sha256": "01dd8508adf1a12e976c4453460ad165cace3c82d7a489049793ca5a50f11730",
+      "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+      "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+      "transport_profile_id": "canonical-signed-url-v1",
+      "transport_profile_sha256": "4fc886d36f87ff6a227b54b2028ececfb25c35dbaeb55a240eed0b9c9ee7aaf3",
+      "provider": "openai",
+      "provider_adapter_version": "openai-responses-v1",
+      "provider_adapter_sha256": "b42393c1fb2cc312729dfe56fb0e64ef053d666a637b5e7ae942fee8d570ac98",
+      "request_builder_version": "canonical-fields-web-request-v2",
+      "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+      "model": "gpt-5.6-luna",
+      "requested_effort": "low",
+      "image_detail": "high",
+      "max_output_tokens": 8192,
+      "sampling_parameters": "omit",
+      "semantic_prompt_version": "csm-canonical-fields-web-v2",
+      "prompt_style_version": "canonical-direct-v1",
+      "rendered_prompt_sha256": "b34ca3b2d9ef6fd8b9727548985d21a6bc1cfe481e34c49ca32de5187f8ef29f",
+      "schema_sha256": "fc909f2b5e0bea66b3ca5cff8697b39ea16836585d815b62586b7675b43979e6",
+      "wire_template_sha256": "afbe9ff6559c401b5156cfe458a68ddf66f735e01ae2a7f9c16b596c40baf033",
+      "capabilities_sha256": "28ca386ffc135723ef7732cf7b60d6ba7e5d637777352e6dbadacdf00612ac61"
+    },
+    "csm_rows": {
+      "evidence": [
+        {
+          "id": "29f598ccce756bbc204a051e27d2673b",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "year",
+          "raw_value": "2025",
+          "normalized_value": "2025",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "37d7428554ea9adec17d7069e24dc9cf",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "manufacturer",
+          "raw_value": "Topps",
+          "normalized_value": "Topps",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "a68cb0fbdd22158fabd144f2840f4bbb",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "product",
+          "raw_value": "Chrome",
+          "normalized_value": "Chrome",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "39b0f222784163be61dfd4cc2537d535",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "subject",
+          "raw_value": [
+            "Cooper Flagg"
+          ],
+          "normalized_value": [
+            "Cooper Flagg"
+          ],
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "257ea1ce500f9538bdbf3f17734d4a16",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_number",
+          "raw_value": "251",
+          "normalized_value": "251",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "104eb429c0a41341cfbbd7619af87e87",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "numerical_rarity",
+          "raw_value": "30/50",
+          "normalized_value": "30/50",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "9b016bb63fd7a8971bf83ee644c6156c",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "print_finish",
+          "raw_value": "Gold Refractor",
+          "normalized_value": "Gold Refractor",
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "996adba8c0bc5c226af0988acc270156",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "search_optimization",
+          "raw_value": [
+            "RC",
+            "Mavericks"
+          ],
+          "normalized_value": [
+            "RC",
+            "Mavericks"
+          ],
+          "modality": "WHOLE_CARD_VISUAL",
+          "source_ref": {
+            "images": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3"
+          },
+          "observation_confidence": 0.8,
+          "normalization_version": "linear-cos-10-23-v25",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "DIRECT_OBSERVATION",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "c35020a31011737f547f7a6585c37b8a",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "search_optimization",
+          "raw_value": [
+            "RC",
+            "Mavericks"
+          ],
+          "normalized_value": [
+            "RC",
+            "Mavericks"
+          ],
+          "modality": "REGISTRY",
+          "source_ref": {
+            "support_type": "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION",
+            "schema_version": "csm-verified-original-closed-projection-receipt.v1",
+            "release_id": "verified_original_closed_projection_subset_a_v2",
+            "pack_sha256": "8d185675a37a7a37c51b0f32a1a319e4f4107961be4006101801d9e8764629f3",
+            "record_id": "subset-a-a",
+            "original_set_sha256": "c516bca68464bbe96960189c219d02fad1c1dfdf5e917efaf6ad994c0342ad9c",
+            "observed_fields_sha256": "78b38fcf89426c30d7f97db588ee1e71b53f4795046120e3c1eab6c385597382",
+            "resolved_fields_sha256": "6603f04e8c5c9e64d32b53709d4db13bc841018dc5c9aea72861f61918b6d62b",
+            "evidence_bracket": "search_optimization",
+            "bracket_count": 17,
+            "field_count": 23,
+            "field_fact_set_sha256": "c50c3598772d837aef805123916286726437d3c01e986ca3f27a0fc0c1b7e78f"
+          },
+          "observation_confidence": 1,
+          "normalization_version": "verified_original_closed_projection_subset_a_v2",
+          "normalization_outcome": "KEPT",
+          "normalization_reason_code": "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION",
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "candidates": [
+        {
+          "id": "85b78c3fa97ae5b5d8846dfb27db4e26",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "year",
+          "value_kind": "VALUE",
+          "canonical_value": "2025",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "ef32fec26ba42fa71c2071d8ec8a83c9",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "year",
+          "value_kind": "VALUE",
+          "canonical_value": "2025-26",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "5a2d26569151d39f1bf98c13275cdcc1",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "ip_sport",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "fbf53fea388915215b465b58a80fe3a1",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "language",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "a8dc19636a11a343e7f2c09247cff58f",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "manufacturer",
+          "value_kind": "VALUE",
+          "canonical_value": "Topps",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "88b5f72f38d32fa73936a594f75545f0",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "product",
+          "value_kind": "VALUE",
+          "canonical_value": "Chrome",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "33ff9ae55b4cf835d7ace1e6f31b2586",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "product",
+          "value_kind": "VALUE",
+          "canonical_value": "Topps Chrome Basketball",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "0d7ad6bba408fc59ddbeef05ebc7db74",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "set",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "0650169da09e59de9e110637198afc79",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "subject",
+          "value_kind": "VALUE",
+          "canonical_value": [
+            "Cooper Flagg"
+          ],
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "29bd18987a768748fcaa5f00b64f528b",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_name",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "1c93c539a49b00b9741d40c035da9895",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "card_number",
+          "value_kind": "VALUE",
+          "canonical_value": "251",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "0c64734504fefe574d5934f7a6fa1555",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "descriptive_rarity",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "6d1235db96fed0021a60358e5ebde453",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "numerical_rarity",
+          "value_kind": "VALUE",
+          "canonical_value": "30/50",
+          "empty_reason": null,
+          "source_trust": "VISUAL_ONLY",
+          "candidate_confidence": 0.8,
+          "candidate_rank": 2,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "ca5dd54e5324591274466d5e24ff35ac",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "numerical_rarity",
+          "value_kind": "VALUE",
+          "canonical_value": "50/50",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "09d2559acd2be7f9e138e174212017be",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "release_variant",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "2242485a7718097b8162ef115a0d1015",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "print_finish",
+          "value_kind": "VALUE",
+          "canonical_value": "Gold Refractor",
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "dcb43db4f8b596b005114b0d61ac1c59",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "special_stamp",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "257b8dee4b16c13737667b94368eb3ed",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "grading_info",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "5438f2d04c5da17ef5f77c7d56086d4b",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "description",
+          "value_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "id": "2971f53be3efb6c941daf4f1b197dbe1",
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "contract_version": "csm-stage-shadow-v3",
+          "bracket": "search_optimization",
+          "value_kind": "VALUE",
+          "canonical_value": [
+            "RC",
+            "Mavericks"
+          ],
+          "empty_reason": null,
+          "source_trust": "REVIEWED_CLOSED_PROJECTION_EXACT",
+          "candidate_confidence": 1,
+          "candidate_rank": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "links": [
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "85b78c3fa97ae5b5d8846dfb27db4e26",
+          "evidence_observation_id": "29f598ccce756bbc204a051e27d2673b",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "a8dc19636a11a343e7f2c09247cff58f",
+          "evidence_observation_id": "37d7428554ea9adec17d7069e24dc9cf",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "88b5f72f38d32fa73936a594f75545f0",
+          "evidence_observation_id": "a68cb0fbdd22158fabd144f2840f4bbb",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "0650169da09e59de9e110637198afc79",
+          "evidence_observation_id": "39b0f222784163be61dfd4cc2537d535",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "1c93c539a49b00b9741d40c035da9895",
+          "evidence_observation_id": "257ea1ce500f9538bdbf3f17734d4a16",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "6d1235db96fed0021a60358e5ebde453",
+          "evidence_observation_id": "104eb429c0a41341cfbbd7619af87e87",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "2242485a7718097b8162ef115a0d1015",
+          "evidence_observation_id": "9b016bb63fd7a8971bf83ee644c6156c",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "2971f53be3efb6c941daf4f1b197dbe1",
+          "evidence_observation_id": "996adba8c0bc5c226af0988acc270156",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "ef32fec26ba42fa71c2071d8ec8a83c9",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "5a2d26569151d39f1bf98c13275cdcc1",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "fbf53fea388915215b465b58a80fe3a1",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "a8dc19636a11a343e7f2c09247cff58f",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "33ff9ae55b4cf835d7ace1e6f31b2586",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "0d7ad6bba408fc59ddbeef05ebc7db74",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "0650169da09e59de9e110637198afc79",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "29bd18987a768748fcaa5f00b64f528b",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "1c93c539a49b00b9741d40c035da9895",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "0c64734504fefe574d5934f7a6fa1555",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "ca5dd54e5324591274466d5e24ff35ac",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "09d2559acd2be7f9e138e174212017be",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "2242485a7718097b8162ef115a0d1015",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "dcb43db4f8b596b005114b0d61ac1c59",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "257b8dee4b16c13737667b94368eb3ed",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "5438f2d04c5da17ef5f77c7d56086d4b",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "candidate_id": "2971f53be3efb6c941daf4f1b197dbe1",
+          "evidence_observation_id": "c35020a31011737f547f7a6585c37b8a",
+          "relationship": "SUPPORTS",
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "resolution": {
+        "id": "43ed0fa465c5677e3fdec7390656722a",
+        "tenant_id": "tenant-external-v3-combined-forward-reader",
+        "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+        "contract_version": "csm-stage-shadow-v3",
+        "revision": 1,
+        "grammar": "NON_TCG",
+        "registry_release_id": "registry_thin_sem_v25",
+        "resolver_version": "thin-path-verified-original-closed-projection-v1",
+        "conflict_policy_version": "exact-closed-fields-no-observation-fallback-v1",
+        "recognition_packet_sha256": "63020ed03ac118d64774662cb4d953ce15cc6a4733d493fcdfc9b5ba7d2166cf",
+        "resolution_status": "COMPLETE",
+        "created_at": "2026-08-14T00:00:00Z"
+      },
+      "resolved": [
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "year",
+          "selected_kind": "VALUE",
+          "canonical_value": "2025-26",
+          "empty_reason": null,
+          "selected_candidate_id": "ef32fec26ba42fa71c2071d8ec8a83c9",
+          "alternate_candidate_ids": [
+            "85b78c3fa97ae5b5d8846dfb27db4e26"
+          ],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "ip_sport",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "language",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "manufacturer",
+          "selected_kind": "VALUE",
+          "canonical_value": "Topps",
+          "empty_reason": null,
+          "selected_candidate_id": "a8dc19636a11a343e7f2c09247cff58f",
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "product",
+          "selected_kind": "VALUE",
+          "canonical_value": "Topps Chrome Basketball",
+          "empty_reason": null,
+          "selected_candidate_id": "33ff9ae55b4cf835d7ace1e6f31b2586",
+          "alternate_candidate_ids": [
+            "88b5f72f38d32fa73936a594f75545f0"
+          ],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "set",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "subject",
+          "selected_kind": "VALUE",
+          "canonical_value": [
+            "Cooper Flagg"
+          ],
+          "empty_reason": null,
+          "selected_candidate_id": "0650169da09e59de9e110637198afc79",
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "card_name",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "card_number",
+          "selected_kind": "VALUE",
+          "canonical_value": "251",
+          "empty_reason": null,
+          "selected_candidate_id": "1c93c539a49b00b9741d40c035da9895",
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "descriptive_rarity",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "numerical_rarity",
+          "selected_kind": "VALUE",
+          "canonical_value": "50/50",
+          "empty_reason": null,
+          "selected_candidate_id": "ca5dd54e5324591274466d5e24ff35ac",
+          "alternate_candidate_ids": [
+            "6d1235db96fed0021a60358e5ebde453"
+          ],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "release_variant",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "print_finish",
+          "selected_kind": "VALUE",
+          "canonical_value": "Gold Refractor",
+          "empty_reason": null,
+          "selected_candidate_id": "2242485a7718097b8162ef115a0d1015",
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "special_stamp",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "grading_info",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "description",
+          "selected_kind": "EMPTY",
+          "canonical_value": null,
+          "empty_reason": "ABSENT",
+          "selected_candidate_id": null,
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        },
+        {
+          "tenant_id": "tenant-external-v3-combined-forward-reader",
+          "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+          "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+          "bracket": "search_optimization",
+          "selected_kind": "VALUE",
+          "canonical_value": [
+            "RC",
+            "Mavericks"
+          ],
+          "empty_reason": null,
+          "selected_candidate_id": "2971f53be3efb6c941daf4f1b197dbe1",
+          "alternate_candidate_ids": [],
+          "rationale_codes": [
+            "EXACT_VERIFIED_ORIGINAL_CLOSED_PROJECTION"
+          ],
+          "semantic_confidence": 1,
+          "created_at": "2026-08-14T00:00:00Z"
+        }
+      ],
+      "output": {
+        "id": "f525bad79c61786aa8dd4a8bd72f9dd6",
+        "tenant_id": "tenant-external-v3-combined-forward-reader",
+        "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+        "resolution_id": "43ed0fa465c5677e3fdec7390656722a",
+        "contract_version": "csm-stage-shadow-v3",
+        "marketplace": "EBAY",
+        "composer_version": "thin-marketplace-composer-v3",
+        "marketplace_profile_version": "lynca-standard-name-v0.3",
+        "resolution_packet_sha256": "ae367ebec48c5c400a5bf66ae72647eddace545bb6c79fb5bb521c942b7ec41a",
+        "title": "2025-26 Topps Chrome Basketball Cooper Flagg Gold Refractor RC #251 50/50",
+        "structured_output": {
+          "sem": {
+            "year": "2025-26",
+            "manufacturer": "Topps",
+            "product": "Topps Chrome Basketball",
+            "subject": [
+              "Cooper Flagg"
+            ],
+            "card_number": "251",
+            "numerical_rarity": "50/50",
+            "print_finish": "Gold Refractor",
+            "search_optimization": [
+              "RC",
+              "Mavericks"
+            ]
+          },
+          "composition_grammar": "standard",
+          "lot_count": "",
+          "publication_coverage": {
+            "schema_version": "csm-publication-coverage-v1",
+            "atoms": [
+              {
+                "bracket": "year",
+                "source_field": "year",
+                "source_index": 0,
+                "canonical_value": "2025-26",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "product",
+                "source_field": "product",
+                "source_index": 0,
+                "canonical_value": "Topps Chrome Basketball",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "subject",
+                "source_field": "subjects",
+                "source_index": 0,
+                "canonical_value": "Cooper Flagg",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "print_finish",
+                "source_field": "print_finish",
+                "source_index": 0,
+                "canonical_value": "Gold Refractor",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "search_optimization",
+                "source_field": "components",
+                "source_index": 0,
+                "canonical_value": "RC",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "card_number",
+                "source_field": "card_number",
+                "source_index": 0,
+                "canonical_value": "251",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "numerical_rarity",
+                "source_field": "serial",
+                "source_index": 0,
+                "canonical_value": "50/50",
+                "disposition": "PUBLISHED"
+              },
+              {
+                "bracket": "manufacturer",
+                "source_field": "manufacturer",
+                "source_index": 0,
+                "canonical_value": "Topps",
+                "disposition": "DEDUPED_COVERED"
+              },
+              {
+                "bracket": "search_optimization",
+                "source_field": "team",
+                "source_index": 0,
+                "canonical_value": "Mavericks",
+                "disposition": "DROPPED_FOR_BUDGET"
+              }
+            ]
+          },
+          "founder_beta_web_receipt": {
+            "schema_version": "founder-beta-web-receipt-v2",
+            "outcome": "NOT_USED",
+            "provider_request_count": 1,
+            "isolated_model_call_count": 0,
+            "provider_model": "gpt-5.6-luna",
+            "reasoning_effort": "low",
+            "web_search_used": false,
+            "web_search_call_count": 0,
+            "queries": [],
+            "urls": [],
+            "field_evidence": [],
+            "semantic_state_sha256": "022e2a11d7235418333a90ccbf881e7a7d6ae3d9189a2f0de2bcb74a9d5f440c"
+          },
+          "set_card_name_relation_receipt": {
+            "schema_version": "set-card-name-relations-v1",
+            "set": null,
+            "card_name": null
+          },
+          "components": [
+            "RC"
+          ],
+          "print_finish_layers": {
+            "parallel_exact": "Gold Refractor",
+            "surface_color": "Gold",
+            "parallel_family": "Refractor"
+          },
+          "verified_original_observation_support": {
+            "schema_version": "csm-verified-original-closed-projection-receipt.v1",
+            "release_id": "verified_original_closed_projection_subset_a_v2",
+            "pack_id": "lynca.csm.verified-original-closed-projection.subset-a",
+            "pack_version": "2026-08-11.visual-review-1",
+            "pack_sha256": "8d185675a37a7a37c51b0f32a1a319e4f4107961be4006101801d9e8764629f3",
+            "resolution_contract_sha256": "7eff4c74ccb32683ebb11ba778e2763e0b08062863956c2e64452b39575a4a87",
+            "resolver_version": "thin-path-verified-original-closed-projection-v1",
+            "conflict_policy_version": "exact-closed-fields-no-observation-fallback-v1",
+            "status": "APPLIED",
+            "match_basis": "EXACT_VERIFIED_ORIGINAL_SET",
+            "record_id": "subset-a-a",
+            "original_set_sha256": "c516bca68464bbe96960189c219d02fad1c1dfdf5e917efaf6ad994c0342ad9c",
+            "corrected_fields": [
+              "product",
+              "search_optimization",
+              "serial",
+              "year"
+            ],
+            "corrected_brackets": [
+              "numerical_rarity",
+              "product",
+              "search_optimization",
+              "year"
+            ],
+            "field_decisions": {
+              "card_name": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "034a9a835b657f0f5291eb47c490cb0d09e0117f7b4a701ed80f58167398560a"
+              },
+              "card_number": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "CARD_PRINTED_TEXT",
+                "fact_sha256": "a7bd3590b87e87033d79b7f93913a31b65d840550fe81cf924c38074fb54e128"
+              },
+              "components": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "CARD_VISUAL_MARKER",
+                "fact_sha256": "6c375ce7c8d03d56f0dffe8a8d438a66644246aad0a02b23ec261516337539c8"
+              },
+              "description": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "d7465ddf1c9c863079ef08e04e8bc32e1bacbe2cd746724ed59eb78a5a718204"
+              },
+              "descriptive_rarity": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "d9bcc77beacd91bb36f61f40db18f0901dc1546a1d200a86afd2a2204adad84b"
+              },
+              "grade": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "1e8013403a0a478f8afcc0545947d94a2a9253b00b08dd349e20ecf440bc517a"
+              },
+              "grading_info": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "6c58f260b0fc1b3512e7b6b987f9168cf9a22a98e37e88faf6fe64ea465ec320"
+              },
+              "grammar": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "1c0b96845152ef4080673040f4736a51f77857d4db9baace18f0502ac2af4e37"
+              },
+              "ip": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "35ce943c3bf0c76042dbb8a1b5216db1ec7638fa2eb35539d59eb000c7856b05"
+              },
+              "language": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "ebb2b1d4125423c3721879cf9f32e6bc64a26258b0a54fa2980504e83eb7d6d3"
+              },
+              "lot_count": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "010408c340a777d3ae7ee513d2db17873de427136eacafe72bec3b322aba2ca5"
+              },
+              "low_confidence": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "721ff4f6394074e019845d3086f30d1c6b90c051b093ca7031263b79d50258e0"
+              },
+              "manufacturer": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "CARD_PRINTED_TEXT",
+                "fact_sha256": "05c390a957e276cc30e8427abf3e1a98aa6ba9d257a0cf5350447f8a2d269b6d"
+              },
+              "parallel_exact": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "93a27dc02ae8c29c0638afebd2c561614c7ffd15bec336794e8efd5133ba3657"
+              },
+              "parallel_family": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "3befa14294518f521ab3f927e708e770d93c09747cb977c9f1d24db43e78b80f"
+              },
+              "print_finish": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "839afa13d78448b9a1617c651868aa2fd2cd1b1c4a53aa7fb10cf728640c37d6"
+              },
+              "product": {
+                "action": "CORRECT_CONFLICT",
+                "operation": "SET",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "a6f7b5a406f2e6800676e13e4da04eeae128f47ddc1610bfe2b8978007077c46"
+              },
+              "release_variant": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "1d4e42671bc7aedcfe63e0f3037619d5718b63f3c39c670892c328c74e31f92e"
+              },
+              "search_optimization": {
+                "action": "CLEAR_CONFLICT",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "689160a157d1b4d126c4e764a1f066ca11d65efe1484d5d1aae01c38d36a5f1a"
+              },
+              "serial": {
+                "action": "CORRECT_CONFLICT",
+                "operation": "SET",
+                "authority": "CARD_PRINTED_TEXT",
+                "fact_sha256": "fb68e3024e6739eb60c3eabd47795f17ea1bdf8d493b5dcbd2c9ee74ccd3ef9c"
+              },
+              "set": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "2037881bd7fdfbe40974d5788eb2d2db37b5c5ce97f2dc76c563b154b800543e"
+              },
+              "special_stamp": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "c67c2bdd8d07cec0cdbd166b7a6f0ac64483ef5a1dd78f5ba898bea04f2db704"
+              },
+              "subjects": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "CARD_PRINTED_TEXT",
+                "fact_sha256": "e72ee6df72fe567a3d3b69f148fb7e41631194fc4200376302a652d5ee3c59bd"
+              },
+              "surface_color": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "f8e42481f2b139fc14d6c77f8f03b5bf3666f0cc597089a45b87da150f63f97a"
+              },
+              "team": {
+                "action": "CORROBORATE",
+                "operation": "SET",
+                "authority": "CARD_PRINTED_TEXT",
+                "fact_sha256": "bd3f79d0d02f39d7657eb6d46b36b32ade32f431edd48ba65dbcf6cba719dfe6"
+              },
+              "unreadable": {
+                "action": "CORROBORATE",
+                "operation": "CLEAR",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "b16f9e6fe43578c2bf5e3fd4560077127d3255064274a87b320eefbfddddeeb9"
+              },
+              "year": {
+                "action": "CORRECT_CONFLICT",
+                "operation": "SET",
+                "authority": "OWNER_AUTHORIZED_PUBLICATION_POLICY",
+                "fact_sha256": "4ce4984f9faf346ad7bcb1e55db2e24270d2aca0c45832fd99a7226d75d16f98"
+              }
+            },
+            "observed_fields": {
+              "attributes": [
+                "RC"
+              ],
+              "card_name": "",
+              "card_number": "251",
+              "components": [
+                "RC"
+              ],
+              "description": "",
+              "descriptive_rarity": "",
+              "grade": "",
+              "grading_info": null,
+              "grammar": "standard",
+              "ip": "",
+              "language": "",
+              "lot_count": "",
+              "low_confidence": [],
+              "manufacturer": "Topps",
+              "observed_parallel_family": "Refractor",
+              "observed_surface_color": "Gold",
+              "parallel_exact": "Gold Refractor",
+              "parallel_family": "Refractor",
+              "print_finish": "Gold Refractor",
+              "product": "Chrome",
+              "release_variant": "",
+              "serial": "30/50",
+              "set": "",
+              "special_stamp": "",
+              "subjects": [
+                "Cooper Flagg"
+              ],
+              "surface_color": "Gold",
+              "team": "Mavericks",
+              "unreadable": [],
+              "withheld_finish_terms": [],
+              "year": "2025"
+            },
+            "observed_fields_sha256": "78b38fcf89426c30d7f97db588ee1e71b53f4795046120e3c1eab6c385597382",
+            "observed_projection_sha256": "b9de325e455a359f871365a94fda8ae6bf2f2eeb2ada660f6733a3db845bd1d5",
+            "resolved_fields_sha256": "6603f04e8c5c9e64d32b53709d4db13bc841018dc5c9aea72861f61918b6d62b",
+            "resolved_projection_sha256": "a22476148e6c908d8e54d01be955be643487690e1b30b76161446ed60b40f7cc"
+          }
+        },
+        "included_brackets": [
+          "year",
+          "product",
+          "subject",
+          "print_finish",
+          "search_optimization",
+          "card_number",
+          "numerical_rarity"
+        ],
+        "dropped_trace": {
+          "dropped_for_budget": [
+            "search_optimization"
+          ],
+          "suppressed_by_profile": [],
+          "restored": [],
+          "truncated": false,
+          "empty_at_input": [
+            "set",
+            "card_name",
+            "release_variant",
+            "descriptive_rarity",
+            "grading_info"
+          ],
+          "normalization_reason_codes": [
+            "manufacturer:source_derived_redundancy"
+          ],
+          "character_budget": 80,
+          "rendered_length": 73,
+          "canonical_naming": {
+            "selected": [
+              {
+                "key": "year:0",
+                "field": "year",
+                "source_field": "year",
+                "source_index": 0,
+                "canonical_value": "2025-26",
+                "display_value": "2025-26",
+                "priority": "P2",
+                "render_position": 0,
+                "reason": "lexicographic_optimum"
+              },
+              {
+                "key": "product:0",
+                "field": "product",
+                "source_field": "product",
+                "source_index": 0,
+                "canonical_value": "Topps Chrome Basketball",
+                "display_value": "Topps Chrome Basketball",
+                "priority": "P1",
+                "render_position": 2,
+                "reason": "lexicographic_optimum"
+              },
+              {
+                "key": "subjects:0",
+                "field": "subjects",
+                "source_field": "subjects",
+                "source_index": 0,
+                "canonical_value": "Cooper Flagg",
+                "display_value": "Cooper Flagg",
+                "priority": "P1",
+                "render_position": 5,
+                "reason": "lexicographic_optimum"
+              },
+              {
+                "key": "print_finish:0",
+                "field": "print_finish",
+                "source_field": "print_finish",
+                "source_index": 0,
+                "canonical_value": "Gold Refractor",
+                "display_value": "Gold Refractor",
+                "priority": "P1",
+                "render_position": 7,
+                "reason": "lexicographic_optimum"
+              },
+              {
+                "key": "components:0",
+                "field": "components",
+                "source_field": "components",
+                "source_index": 0,
+                "canonical_value": "RC",
+                "display_value": "RC",
+                "priority": "P2",
+                "render_position": 9,
+                "reason": "lexicographic_optimum"
+              },
+              {
+                "key": "card_number:0",
+                "field": "card_number",
+                "source_field": "card_number",
+                "source_index": 0,
+                "canonical_value": "251",
+                "display_value": "#251",
+                "priority": "P0",
+                "render_position": 12,
+                "reason": "lexicographic_optimum"
+              },
+              {
+                "key": "serial:0",
+                "field": "serial",
+                "source_field": "serial",
+                "source_index": 0,
+                "canonical_value": "50/50",
+                "display_value": "50/50",
+                "priority": "P0",
+                "render_position": 13,
+                "reason": "lexicographic_optimum"
+              }
+            ],
+            "omitted": [
+              {
+                "key": "manufacturer:0",
+                "field": "manufacturer",
+                "source_field": "manufacturer",
+                "source_index": 0,
+                "canonical_value": "Topps",
+                "display_value": "Topps",
+                "priority": "P2",
+                "render_position": 1,
+                "reason": "source_derived_redundancy",
+                "redundant_with": "product:0"
+              },
+              {
+                "key": "team:0",
+                "field": "team",
+                "source_field": "team",
+                "source_index": 0,
+                "canonical_value": "Mavericks",
+                "display_value": "Mavericks",
+                "priority": "P3",
+                "render_position": 11,
+                "reason": "budget_lexicographic_selection"
+              }
+            ],
+            "abbreviated": [],
+            "transformed": [
+              {
+                "field": "card_number",
+                "operation": "display_prefix_added",
+                "before": "251",
+                "after": "#251"
+              }
+            ],
+            "rejected": []
+          }
+        },
+        "created_at": "2026-08-14T00:00:00Z"
+      },
+      "session_hashes": {
+        "csm_recognition_packet_sha256": "63020ed03ac118d64774662cb4d953ce15cc6a4733d493fcdfc9b5ba7d2166cf",
+        "csm_resolution_packet_sha256": "ae367ebec48c5c400a5bf66ae72647eddace545bb6c79fb5bb521c942b7ec41a",
+        "csm_marketplace_packet_sha256": "0a49844f1261550c19b7804fa203d0cc8c162afa073941101cc17df16ad60092"
+      }
+    },
+    "csm_persistence_checkpoint": {
+      "schema_version": "csm-persistence-checkpoint-ordinary-execution-v3",
+      "state": "PERSISTENCE_PENDING",
+      "tenant_id": "tenant-external-v3-combined-forward-reader",
+      "operation_key": "luna-direct:v2:c399004f2f66e1f0a1ab29379898db92778ff9669f772bcda674c91f897b8af5",
+      "payload_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "recognition_session_id": "csmsess_0bb7a0832cc64c53ef69e8743f9dc2a1ee609cf3",
+      "recognition_session_deferred": false,
+      "execution_contract_sha256": "36ac22d79d9e2a1dc0cb8a90ff9855da6188daec879abb1c8c6522dcec99ce19",
+      "external_identity_receipt": {
+        "schema_version": "csm-external-identity-checkpoint-receipt.v1",
+        "status": "ABSTAINED",
+        "request_original_set_sha256": "c516bca68464bbe96960189c219d02fad1c1dfdf5e917efaf6ad994c0342ad9c",
+        "pack_id": "lynca.csm.external-identity",
+        "pack_version": "2026-08-10",
+        "pack_sha256": "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+        "index_id": "basketball.1996-97-topps-stadium-club-high-risers",
+        "index_version": "tcdb-2551.psa-25618.beckett-3117708.2026-08-10",
+        "index_sha256": "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+        "registry_release_id": "registry_thin_external_identity_high_risers_v3",
+        "resolution_contract_sha256": "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+        "reason": "NO_EXACT_MATCH"
+      },
+      "verified_original_observation_receipt": {
+        "schema_version": "csm-verified-original-observation-checkpoint-receipt.v1",
+        "status": "APPLIED",
+        "release_id": "verified_original_closed_projection_subset_a_v2",
+        "pack_id": "lynca.csm.verified-original-closed-projection.subset-a",
+        "pack_version": "2026-08-11.visual-review-1",
+        "pack_sha256": "8d185675a37a7a37c51b0f32a1a319e4f4107961be4006101801d9e8764629f3",
+        "resolver_version": "thin-path-verified-original-closed-projection-v1",
+        "conflict_policy_version": "exact-closed-fields-no-observation-fallback-v1",
+        "resolution_contract_sha256": "7eff4c74ccb32683ebb11ba778e2763e0b08062863956c2e64452b39575a4a87",
+        "post_observation_resolution_contract_sha256": "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed",
+        "record_id": "subset-a-a",
+        "original_set_sha256": "c516bca68464bbe96960189c219d02fad1c1dfdf5e917efaf6ad994c0342ad9c",
+        "observed_fields_sha256": "78b38fcf89426c30d7f97db588ee1e71b53f4795046120e3c1eab6c385597382",
+        "resolved_fields_sha256": "6603f04e8c5c9e64d32b53709d4db13bc841018dc5c9aea72861f61918b6d62b"
+      },
+      "packet_hashes": {
+        "csm_recognition_packet_sha256": "63020ed03ac118d64774662cb4d953ce15cc6a4733d493fcdfc9b5ba7d2166cf",
+        "csm_resolution_packet_sha256": "ae367ebec48c5c400a5bf66ae72647eddace545bb6c79fb5bb521c942b7ec41a",
+        "csm_marketplace_packet_sha256": "0a49844f1261550c19b7804fa203d0cc8c162afa073941101cc17df16ad60092"
+      },
+      "accuracy_loss_ledger_version": "same-call-accuracy-loss-ledger-v1",
+      "accuracy_loss_ledger_sha256": "7d71f552667d618550cce5a30af5cd47e65aab2fb7d309768ed02ab5448cab1c"
+    }
+  },
+  "source_session_patch": {
+    "csm_contract_version": "csm-stage-shadow-v3",
+    "csm_registry_release_id": "registry_thin_sem_v25",
+    "csm_grammar": "NON_TCG",
+    "csm_grammar_confidence": 0.8,
+    "recognition_pipeline_fingerprint": "8885f2cdac0e63bb61856d1e8a0647d48cadc3b7f02cefa406fe872203baa37d",
+    "csm_owner_versions": {
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "requested_model": "gpt-5.6-luna",
+      "served_model": "gpt-5.6-luna",
+      "served_model_attested": true,
+      "effort": "low",
+      "reasoning_effort": "low",
+      "reasoning_effort_attested": true,
+      "provider_response_status": "completed",
+      "provider_response_status_attested": true,
+      "provider_response_incomplete": false,
+      "served_effort_conflict": false,
+      "provider_http_status": 200,
+      "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+      "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+      "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+      "account_scope": "lynca-primary",
+      "provider_adapter_version": "openai-responses-v1",
+      "request_builder_version": "canonical-fields-web-request-v2",
+      "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+      "execution_contract_sha256": "36ac22d79d9e2a1dc0cb8a90ff9855da6188daec879abb1c8c6522dcec99ce19",
+      "execution_contract": {
+        "contract_version": "csm-model-execution-v2",
+        "model_profile_id": "openai-gpt-5.6-luna-csm-v1",
+        "account_scope": "lynca-primary",
+        "model_profile_sha256": "01dd8508adf1a12e976c4453460ad165cace3c82d7a489049793ca5a50f11730",
+        "optimization_pack_id": "openai-gpt-5.6-luna-optimization-v1",
+        "optimization_pack_sha256": "233c7a5a5fe73c66c711faed07cabb95b30036e040d3e39ee9654b4181939311",
+        "transport_profile_id": "canonical-signed-url-v1",
+        "transport_profile_sha256": "4fc886d36f87ff6a227b54b2028ececfb25c35dbaeb55a240eed0b9c9ee7aaf3",
+        "provider": "openai",
+        "provider_adapter_version": "openai-responses-v1",
+        "provider_adapter_sha256": "b42393c1fb2cc312729dfe56fb0e64ef053d666a637b5e7ae942fee8d570ac98",
+        "request_builder_version": "canonical-fields-web-request-v2",
+        "response_parser_version": "canonical-output-v5-web-receipt-outcome",
+        "model": "gpt-5.6-luna",
+        "requested_effort": "low",
+        "image_detail": "high",
+        "max_output_tokens": 8192,
+        "sampling_parameters": "omit",
+        "semantic_prompt_version": "csm-canonical-fields-web-v2",
+        "prompt_style_version": "canonical-direct-v1",
+        "rendered_prompt_sha256": "b34ca3b2d9ef6fd8b9727548985d21a6bc1cfe481e34c49ca32de5187f8ef29f",
+        "schema_sha256": "fc909f2b5e0bea66b3ca5cff8697b39ea16836585d815b62586b7675b43979e6",
+        "wire_template_sha256": "afbe9ff6559c401b5156cfe458a68ddf66f735e01ae2a7f9c16b596c40baf033",
+        "capabilities_sha256": "28ca386ffc135723ef7732cf7b60d6ba7e5d637777352e6dbadacdf00612ac61"
+      },
+      "image_detail": "high",
+      "prompt_version": "csm-canonical-fields-web-v2",
+      "max_output_tokens": 8192,
+      "provider_response_id": "resp_external_v3_combined_source_fixture",
+      "provider_request_id": "req_external_v3_combined_source_fixture",
+      "provider_client_request_id": null,
+      "provider_attempt_number": null,
+      "provider_retry_count": null,
+      "provider_transport_retry_receipt": null,
+      "latency_ms": 9,
+      "latency_stages_ms": {
+        "authority_dispatch_ms": 0
+      },
+      "input_tokens": 100,
+      "cached_input_tokens": null,
+      "output_tokens": 30,
+      "reasoning_tokens": null,
+      "total_tokens": 130,
+      "total_tokens_source": "provider",
+      "resolver": "thin-path-verified-original-closed-projection-v1",
+      "composer": "thin-marketplace-composer-v3",
+      "marketplace_profile": "lynca-standard-name-v0.3",
+      "accuracy_loss_ledger_version": "same-call-accuracy-loss-ledger-v1",
+      "accuracy_loss_ledger_sha256": "7d71f552667d618550cce5a30af5cd47e65aab2fb7d309768ed02ab5448cab1c",
+      "owner_execution_receipt_version": "csm-owner-execution-receipt-v1",
+      "owner_execution_receipt_sha256": "ec850a0312809be816d0f44ba44801094774c993ae69a982027e5c6394de43a9"
+    },
+    "csm_recognition_stage_status": "COMPLETE",
+    "csm_resolution_stage_status": "COMPLETE",
+    "csm_composition_stage_status": "COMPLETE",
+    "csm_recognition_packet_sha256": "63020ed03ac118d64774662cb4d953ce15cc6a4733d493fcdfc9b5ba7d2166cf",
+    "csm_resolution_packet_sha256": "ae367ebec48c5c400a5bf66ae72647eddace545bb6c79fb5bb521c942b7ec41a",
+    "csm_marketplace_packet_sha256": "0a49844f1261550c19b7804fa203d0cc8c162afa073941101cc17df16ad60092"
+  }
+}

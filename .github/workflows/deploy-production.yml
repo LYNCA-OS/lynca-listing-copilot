@@ -227,7 +227,7 @@ jobs:
             sha256CsmRecognitionTransportReceipt
           } from './lib/listing/thin/csm-model-execution-contract.mjs';
           import {
-            EXTERNAL_IDENTITY_RELEASE_CONTRACT
+            externalIdentityReleaseContractForRegistryRelease
           } from './lib/listing/knowledge/csm-external-identity-support.mjs';
           import {
             CANONICAL_NAMING_RELEASE_CONTRACT_V1,
@@ -235,7 +235,7 @@ jobs:
             CANONICAL_NAMING_RELEASE_CONTRACT_V3
           } from './lib/listing/thin/canonical-naming-adapter.mjs';
           import {
-            verifiedOriginalObservationHealthReceiptForRelease
+            verifiedOriginalObservationHealthReceiptForReleases
           } from './lib/listing/thin/verified-original-observation-support.mjs';
           import {
             CSM_PROJECTION_ACTIVATION
@@ -244,6 +244,9 @@ jobs:
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
           const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+          const expectedExternalIdentity = externalIdentityReleaseContractForRegistryRelease(
+            activeWriter.external_identity.registry_release_id
+          );
           const expectedCanonicalNamingTarget = [
             CANONICAL_NAMING_RELEASE_CONTRACT_V1,
             CANONICAL_NAMING_RELEASE_CONTRACT_V2,
@@ -255,9 +258,12 @@ jobs:
           ));
           if (!expectedCanonicalNamingTarget) process.exit(1);
           const expectedVerifiedOriginalObservation =
-            verifiedOriginalObservationHealthReceiptForRelease(
-              activeWriter.verified_original_observation_overlay
-            );
+            verifiedOriginalObservationHealthReceiptForReleases({
+              verifiedOriginalObservationReleaseId:
+                activeWriter.verified_original_observation_overlay,
+              externalIdentityRegistryReleaseId:
+                activeWriter.external_identity.registry_release_id
+            });
           const expectedProviderAdapterVersion = resolveCsmProviderAdapter(
             CSM_ACTIVE_MODEL_PROFILE.provider, {
               requestBuilderVersion: activeWriter.canonical_fields.request_builder_version
@@ -294,7 +300,7 @@ jobs:
               === activeWriter.canonical_fields.request_builder_version
             && recognitionTransportContractsReady
             && JSON.stringify(h.runtime?.external_identity)
-              === JSON.stringify(EXTERNAL_IDENTITY_RELEASE_CONTRACT)
+              === JSON.stringify(expectedExternalIdentity)
             && JSON.stringify(h.runtime?.canonical_naming_target)
               === JSON.stringify(expectedCanonicalNamingTarget)
             && JSON.stringify(h.runtime?.verified_original_observation)

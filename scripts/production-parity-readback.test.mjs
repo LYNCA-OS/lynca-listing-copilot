@@ -9,18 +9,28 @@ import path from "node:path";
 
 import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT,
-  EXTERNAL_IDENTITY_SUPPORT_PACK
+  EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
+  EXTERNAL_IDENTITY_SUPPORT_PACK,
+  externalIdentityReleaseContractForRegistryRelease,
+  validateExternalIdentityPublicReceipt
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
+  THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
-  CANONICAL_NAMING_RELEASE_CONTRACT
+  CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
-  VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT,
-  VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION
+  VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY,
+  verifiedOriginalObservationHealthReceiptForReleases
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
   PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT
@@ -48,24 +58,63 @@ const standardAssetId = "1c78877d-d1ed-4877-8f18-8a720eab6457";
 const standardRecognitionSessionId = `csmsess_${"d".repeat(40)}`;
 const standardOwnerSha256 = "e".repeat(64);
 const standardTitle = PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT.expected_title;
+const activeWriterContract = CSM_PROJECTION_ACTIVATION.active_writer;
+const activeExternalIdentityRelease = externalIdentityReleaseContractForRegistryRelease(
+  activeWriterContract.external_identity.registry_release_id
+);
+const activeExternalIdentityRegistry = activeExternalIdentityRelease.registry_release.id
+  === THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT.id
+  ? THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT
+  : THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT;
+const canonicalNamingForWriter = (writer) => [
+  CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+  CANONICAL_NAMING_RELEASE_CONTRACT_V3
+].find((contract) => contract.composer_version === writer.standard.composer_version
+  && contract.marketplace_profile_version === writer.standard.marketplace_profile_version);
+const verifiedOriginalForWriter = (writer) => ({
+  health: verifiedOriginalObservationHealthReceiptForReleases({
+    verifiedOriginalObservationReleaseId: writer.verified_original_observation_overlay,
+    externalIdentityRegistryReleaseId: writer.external_identity.registry_release_id
+  }),
+  receipt: VERIFIED_ORIGINAL_OBSERVATION_REPLAY_COMPATIBILITY_REGISTRY.releases[
+    writer.verified_original_observation_overlay
+  ].receipt
+});
+const activeCanonicalNaming = canonicalNamingForWriter(activeWriterContract);
+const activeVerifiedOriginal = verifiedOriginalForWriter(activeWriterContract);
+const knownWrongStageForWriter = (writer) => [
+  CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible.durable_projection_contract_version,
+  CSM_WRITER_PROJECTION_CONTRACTS.future_v3.durable_projection_contract_version
+].find((stage) => stage !== writer.durable_projection_contract_version);
 const versions = {
   resolution_view_schema: "csm-resolution-view-v1",
-  csm_contract: "csm-stage-shadow-v2",
-  resolver: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.resolver_version,
-  composer: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+  csm_contract: activeWriterContract.durable_projection_contract_version,
+  resolver: activeExternalIdentityRelease.resolution_contract.resolver_version,
+  composer: activeExternalIdentityRelease.resolution_contract.composer_version,
   marketplace_profile:
-    EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version
+    activeExternalIdentityRelease.resolution_contract.marketplace_profile_version
 };
 const standardVersions = {
   ...versions,
-  resolver: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION,
-  composer: CANONICAL_NAMING_RELEASE_CONTRACT.composer_version,
-  marketplace_profile: CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version
+  resolver: activeVerifiedOriginal.receipt.resolver_version,
+  composer: activeCanonicalNaming.composer_version,
+  marketplace_profile: activeCanonicalNaming.marketplace_profile_version
 };
 const expectedFields = [
   "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
 ];
 const sourceIds = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map(({ source_id: id }) => id).sort();
+const decisionSourceIds = Object.freeze({
+  year: sourceIds,
+  manufacturer: ["beckett.item.3117708"],
+  product: sourceIds,
+  set: sourceIds,
+  subjects: sourceIds,
+  team: ["tcdb.set.2551", "beckett.item.3117708"],
+  card_number: sourceIds
+});
+const clone = (value) => structuredClone(value);
 const stableJson = (value) => Array.isArray(value)
   ? `[${value.map(stableJson).join(",")}]`
   : value && typeof value === "object"
@@ -110,13 +159,13 @@ const evidenceExternal = {
   applied: true,
   match_basis: "VERIFIED_ORIGINAL_SET",
   record_id: "tcdb-2551-hr14",
-  registry_release_id: EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release.id,
-  registry_release_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release.content_sha256,
-  pack_id: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.id,
-  pack_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack.sha256,
-  index_id: EXTERNAL_IDENTITY_RELEASE_CONTRACT.index.id,
-  index_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.index.sha256,
-  resolution_contract_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.sha256,
+  registry_release_id: activeExternalIdentityRelease.registry_release.id,
+  registry_release_sha256: activeExternalIdentityRelease.registry_release.content_sha256,
+  pack_id: activeExternalIdentityRelease.support_pack.id,
+  pack_sha256: activeExternalIdentityRelease.support_pack.sha256,
+  index_id: activeExternalIdentityRelease.index.id,
+  index_sha256: activeExternalIdentityRelease.index.sha256,
+  resolution_contract_sha256: activeExternalIdentityRelease.resolution_contract.sha256,
   supported_fields: expectedFields,
   source_count: sourceIds.length,
   source_ids: sourceIds
@@ -209,7 +258,9 @@ const publicSources = EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => ({
   url: source.url,
   retrieved_at: source.retrieved_at,
   fact_sha256: source.fact_sha256,
-  fields: ["year"]
+  fields: Object.entries(decisionSourceIds)
+    .filter(([, ids]) => ids.includes(source.source_id))
+    .map(([field]) => field)
 }));
 const resolutionView = {
   schema_version: versions.resolution_view_schema,
@@ -230,25 +281,25 @@ const resolutionView = {
     schema_version: "csm-external-identity-public-receipt.v1",
     status: "APPLIED",
     registry_release: {
-      id: EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release.id,
-      registry_version: THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.registry_version,
-      content_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.registry_release.content_sha256,
-      sem_standard_version: THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.sem_standard_version
+      id: activeExternalIdentityRelease.registry_release.id,
+      registry_version: activeExternalIdentityRegistry.registry_version,
+      content_sha256: activeExternalIdentityRelease.registry_release.content_sha256,
+      sem_standard_version: activeExternalIdentityRegistry.sem_standard_version
     },
     match_basis: "VERIFIED_ORIGINAL_SET",
-    resolver_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.resolver_version,
+    resolver_version: activeExternalIdentityRelease.resolution_contract.resolver_version,
     conflict_policy_version:
-      EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.conflict_policy_version,
-    composer_version: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.composer_version,
+      activeExternalIdentityRelease.resolution_contract.conflict_policy_version,
+    composer_version: activeExternalIdentityRelease.resolution_contract.composer_version,
     marketplace_profile_version:
-      EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.marketplace_profile_version,
-    resolution_contract_sha256: EXTERNAL_IDENTITY_RELEASE_CONTRACT.resolution_contract.sha256,
-    pack: EXTERNAL_IDENTITY_RELEASE_CONTRACT.support_pack,
-    index: EXTERNAL_IDENTITY_RELEASE_CONTRACT.index,
+      activeExternalIdentityRelease.resolution_contract.marketplace_profile_version,
+    resolution_contract_sha256: activeExternalIdentityRelease.resolution_contract.sha256,
+    pack: activeExternalIdentityRelease.support_pack,
+    index: activeExternalIdentityRelease.index,
     record_id: "tcdb-2551-hr14",
     supported_fields: expectedFields,
     field_decisions: Object.fromEntries(expectedFields.map((field) => [field, {
-      action: "CORROBORATE", source_ids: [sourceIds[0]]
+      action: "CORROBORATE", source_ids: decisionSourceIds[field]
     }])),
     sources: publicSources
   }
@@ -257,17 +308,17 @@ const verifiedOriginalSupport = {
   schema_version: "csm-verified-original-closed-projection-public-receipt.v1",
   status: "APPLIED",
   match_basis: "EXACT_VERIFIED_ORIGINAL_SET",
-  release_id: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.release_id,
+  release_id: activeVerifiedOriginal.health.release_id,
   pack_id: "lynca.csm.verified-original-closed-projection.subset-a",
-  pack_version: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_version,
-  pack_sha256: VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.pack_sha256,
-  resolver_version: VERIFIED_ORIGINAL_OBSERVATION_RESOLVER_VERSION,
+  pack_version: activeVerifiedOriginal.health.pack_version,
+  pack_sha256: activeVerifiedOriginal.health.pack_sha256,
+  resolver_version: activeVerifiedOriginal.receipt.resolver_version,
   conflict_policy_version: VERIFIED_ORIGINAL_OBSERVATION_CONFLICT_POLICY_VERSION,
   resolution_contract_sha256:
-    VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.resolution_contract_sha256,
+    activeVerifiedOriginal.health.resolution_contract_sha256,
   projection_mode: "CLOSED_WORLD_EXACT",
   closed_world_field_count:
-    VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT.closed_world_field_count
+    activeVerifiedOriginal.health.closed_world_field_count
 };
 const standardResolutionView = {
   schema_version: standardVersions.resolution_view_schema,
@@ -282,7 +333,7 @@ const standardResolutionView = {
   composer: {
     title: standardTitle,
     stored_title: standardTitle,
-    character_budget: CANONICAL_NAMING_RELEASE_CONTRACT.character_budget,
+    character_budget: activeCanonicalNaming.character_budget,
     length: standardTitle.length,
     truncated: false,
     composer_version: standardVersions.composer,
@@ -306,6 +357,91 @@ const standardResolutionView = {
   verified_original_observation_support: verifiedOriginalSupport,
   owner_execution_receipt: { version: ownerVersion, sha256: standardOwnerSha256 }
 };
+
+function externalIdentityVariant({ writerContract, release, registry }) {
+  const variantEvidence = clone(evidence);
+  const variantView = clone(resolutionView);
+  const variantVersions = {
+    ...variantEvidence.cases[0].versions,
+    csm_contract: writerContract.durable_projection_contract_version,
+    resolver: release.resolution_contract.resolver_version,
+    composer: release.resolution_contract.composer_version,
+    marketplace_profile: release.resolution_contract.marketplace_profile_version
+  };
+  variantEvidence.cases[0].versions = variantVersions;
+  Object.assign(variantEvidence.cases[0].external_identity_support, {
+    registry_release_id: release.registry_release.id,
+    registry_release_sha256: release.registry_release.content_sha256,
+    pack_id: release.support_pack.id,
+    pack_sha256: release.support_pack.sha256,
+    index_id: release.index.id,
+    index_sha256: release.index.sha256,
+    resolution_contract_sha256: release.resolution_contract.sha256
+  });
+  variantView.grammar.resolver_version = variantVersions.resolver;
+  variantView.composer.composer_version = variantVersions.composer;
+  Object.assign(variantView.external_identity_support, {
+    registry_release: {
+      id: release.registry_release.id,
+      registry_version: registry.registry_version,
+      content_sha256: release.registry_release.content_sha256,
+      sem_standard_version: registry.sem_standard_version
+    },
+    resolver_version: release.resolution_contract.resolver_version,
+    conflict_policy_version: release.resolution_contract.conflict_policy_version,
+    composer_version: release.resolution_contract.composer_version,
+    marketplace_profile_version: release.resolution_contract.marketplace_profile_version,
+    resolution_contract_sha256: release.resolution_contract.sha256,
+    pack: release.support_pack,
+    index: release.index
+  });
+  if (release.registry_release.id === EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.registry_release.id) {
+    variantView.external_identity_support.field_decisions.product.action = "CORRECT_CONFLICT";
+  }
+  assert.equal(validateExternalIdentityPublicReceipt(
+    variantView.external_identity_support
+  ), true);
+  return Object.freeze({
+    evidence: variantEvidence,
+    resolutionView: variantView,
+    writerContract
+  });
+}
+
+function standardVariant(writerContract) {
+  const variantEvidence = clone(evidence);
+  const variantView = clone(standardResolutionView);
+  const canonical = canonicalNamingForWriter(writerContract);
+  const verified = verifiedOriginalForWriter(writerContract);
+  const variantVersions = {
+    ...variantEvidence.cases[1].versions,
+    csm_contract: writerContract.durable_projection_contract_version,
+    resolver: verified.receipt.resolver_version,
+    composer: canonical.composer_version,
+    marketplace_profile: canonical.marketplace_profile_version
+  };
+  variantEvidence.cases[1].versions = variantVersions;
+  variantView.grammar.resolver_version = variantVersions.resolver;
+  Object.assign(variantView.composer, {
+    character_budget: canonical.character_budget,
+    composer_version: canonical.composer_version,
+    marketplace_profile_version: canonical.marketplace_profile_version
+  });
+  Object.assign(variantView.verified_original_observation_support, {
+    release_id: verified.health.release_id,
+    pack_version: verified.health.pack_version,
+    pack_sha256: verified.health.pack_sha256,
+    resolver_version: verified.receipt.resolver_version,
+    conflict_policy_version: verified.receipt.conflict_policy_version,
+    resolution_contract_sha256: verified.health.resolution_contract_sha256,
+    closed_world_field_count: verified.health.closed_world_field_count
+  });
+  return Object.freeze({
+    evidence: variantEvidence,
+    resolutionView: variantView,
+    writerContract
+  });
+}
 
 assert.equal(productionParityAssetId({ evidence, deploymentUrl, gitSha }), assetId);
 const receipt = verifyProductionParityReadback({
@@ -333,6 +469,105 @@ assert.equal(Object.hasOwn(receipt, "stored_title"), false);
 assert.equal(Object.hasOwn(receipt, "title_sha256"), false);
 assert.equal(Object.hasOwn(receipt, "sources"), false);
 
+const externalV2 = externalIdentityVariant({
+  writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_v3,
+  release: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+  registry: THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
+});
+const externalV3 = externalIdentityVariant({
+  writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3,
+  release: EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
+  registry: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT
+});
+for (const variant of [externalV2, externalV3]) {
+  const expectedRelease = externalIdentityReleaseContractForRegistryRelease(
+    variant.writerContract.external_identity.registry_release_id
+  );
+  assert.equal(productionParityAssetId({
+    evidence: variant.evidence,
+    deploymentUrl,
+    gitSha,
+    writerContract: variant.writerContract
+  }), assetId);
+  const variantReceipt = verifyProductionParityReadback({
+    evidence: variant.evidence,
+    resolutionView: variant.resolutionView,
+    deploymentUrl,
+    gitSha,
+    writerContract: variant.writerContract
+  });
+  assert.equal(variantReceipt.registry_release_id, expectedRelease.registry_release.id);
+  assert.equal(variantReceipt.resolution_contract_sha256,
+    expectedRelease.resolution_contract.sha256);
+  assert.equal(variantReceipt.provider_calls, 0);
+}
+for (const [variant, invalidStage] of [
+  [externalV2, knownWrongStageForWriter(externalV2.writerContract)],
+  [externalV3, knownWrongStageForWriter(externalV3.writerContract)]
+]) {
+  const changed = clone(variant.evidence);
+  changed.cases[0].versions.csm_contract = invalidStage;
+  assert.throws(() => productionParityAssetId({
+    evidence: changed,
+    deploymentUrl,
+    gitSha,
+    writerContract: variant.writerContract
+  }), /production_parity_readback_case_invalid/);
+  assert.throws(() => verifyProductionParityReadback({
+    evidence: changed,
+    resolutionView: variant.resolutionView,
+    deploymentUrl,
+    gitSha,
+    writerContract: variant.writerContract
+  }), /production_parity_readback_case_invalid/);
+}
+for (const invalidStage of [
+  knownWrongStageForWriter(activeWriterContract),
+  "csm-stage-unknown"
+]) {
+  const changed = clone(evidence);
+  changed.cases[0].versions.csm_contract = invalidStage;
+  assert.throws(() => productionParityAssetId({
+    evidence: changed, deploymentUrl, gitSha
+  }), /production_parity_readback_case_invalid/);
+  assert.throws(() => verifyProductionParityReadback({
+    evidence: changed, resolutionView, deploymentUrl, gitSha
+  }), /production_parity_readback_case_invalid/);
+}
+for (const [writerContract, variantEvidence, variantView] of [
+  [externalV3.writerContract, externalV2.evidence, externalV2.resolutionView],
+  [externalV2.writerContract, externalV3.evidence, externalV3.resolutionView],
+  [externalV3.writerContract, externalV3.evidence, externalV2.resolutionView],
+  [externalV2.writerContract, externalV2.evidence, externalV3.resolutionView]
+]) {
+  assert.throws(() => verifyProductionParityReadback({
+    evidence: variantEvidence,
+    resolutionView: variantView,
+    deploymentUrl,
+    gitSha,
+    writerContract
+  }), /production_parity_readback_/);
+}
+{
+  const unknownEvidence = clone(externalV3.evidence);
+  unknownEvidence.cases[0].external_identity_support.registry_release_id = "unknown-release";
+  assert.throws(() => productionParityAssetId({
+    evidence: unknownEvidence,
+    deploymentUrl,
+    gitSha,
+    writerContract: externalV3.writerContract
+  }), /production_parity_readback_case_invalid/);
+  const unknownReadback = clone(externalV3.resolutionView);
+  unknownReadback.external_identity_support.registry_release.id = "unknown-release";
+  assert.throws(() => verifyProductionParityReadback({
+    evidence: externalV3.evidence,
+    resolutionView: unknownReadback,
+    deploymentUrl,
+    gitSha,
+    writerContract: externalV3.writerContract
+  }), /production_parity_readback_external_identity_mismatch/);
+}
+
 assert.equal(productionStandardAssetId({ evidence, deploymentUrl, gitSha }), standardAssetId);
 const standardReceipt = verifyProductionStandardReadback({
   evidence,
@@ -353,11 +588,11 @@ assert.equal(standardReceipt.card_number_exact_match, true);
 assert.equal(standardReceipt.serial_exact_match, true);
 assert.equal(standardReceipt.selected_brackets_exact, true);
 assert.equal(standardReceipt.composer_version,
-  CANONICAL_NAMING_RELEASE_CONTRACT.composer_version);
+  activeCanonicalNaming.composer_version);
 assert.equal(standardReceipt.marketplace_profile_version,
-  CANONICAL_NAMING_RELEASE_CONTRACT.marketplace_profile_version);
+  activeCanonicalNaming.marketplace_profile_version);
 assert.equal(standardReceipt.character_budget,
-  CANONICAL_NAMING_RELEASE_CONTRACT.character_budget);
+  activeCanonicalNaming.character_budget);
 assert.equal(standardReceipt.owner_execution_receipt_sha256, standardOwnerSha256);
 assert.equal(standardReceipt.verified_at, "2026-08-11T12:01:00.000Z");
 assert.equal(JSON.stringify(standardReceipt).includes(standardTitle), false);
@@ -369,6 +604,58 @@ assert.equal(JSON.stringify(standardReceipt).includes(
 ), false);
 assert.equal(Object.hasOwn(standardReceipt, "stored_title"), false);
 assert.equal(Object.hasOwn(standardReceipt, "title"), false);
+
+const futureStandard = standardVariant(
+  CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+);
+assert.equal(productionStandardAssetId({
+  evidence: futureStandard.evidence,
+  deploymentUrl,
+  gitSha,
+  writerContract: futureStandard.writerContract
+}), standardAssetId);
+assert.equal(verifyProductionStandardReadback({
+  evidence: futureStandard.evidence,
+  resolutionView: futureStandard.resolutionView,
+  deploymentUrl,
+  gitSha,
+  writerContract: futureStandard.writerContract
+}).csm_contract_version,
+futureStandard.writerContract.durable_projection_contract_version);
+{
+  const changed = clone(futureStandard.evidence);
+  changed.cases[1].versions.csm_contract =
+    knownWrongStageForWriter(futureStandard.writerContract);
+  assert.throws(() => productionStandardAssetId({
+    evidence: changed,
+    deploymentUrl,
+    gitSha,
+    writerContract: futureStandard.writerContract
+  }), /production_standard_readback_case_invalid/);
+  assert.throws(() => verifyProductionStandardReadback({
+    evidence: changed,
+    resolutionView: futureStandard.resolutionView,
+    deploymentUrl,
+    gitSha,
+    writerContract: futureStandard.writerContract
+  }), /production_standard_readback_case_invalid/);
+}
+for (const invalidStage of [
+  knownWrongStageForWriter(activeWriterContract),
+  "csm-stage-unknown"
+]) {
+  const changed = clone(evidence);
+  changed.cases[1].versions.csm_contract = invalidStage;
+  assert.throws(() => productionStandardAssetId({
+    evidence: changed, deploymentUrl, gitSha
+  }), /production_standard_readback_case_invalid/);
+  assert.throws(() => verifyProductionStandardReadback({
+    evidence: changed,
+    resolutionView: standardResolutionView,
+    deploymentUrl,
+    gitSha
+  }), /production_standard_readback_case_invalid/);
+}
 
 const repairedEvidence = structuredClone(evidence);
 const repairedCase = repairedEvidence.cases[1];
@@ -390,7 +677,6 @@ assert.equal(verifyProductionStandardReadback({
 }).provider_calls, 0,
 "post-promotion readback must accept the exact sealed single-502 retry tuple");
 
-const clone = (value) => structuredClone(value);
 for (const mutate of [
   (value) => { value.passed = false; },
   (value) => { value.release_class = "compatibility-bridge"; },
