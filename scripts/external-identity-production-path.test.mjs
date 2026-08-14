@@ -13,6 +13,8 @@ import {
 import {
   buildCsmStageRows,
   computeCsmPacketHashes,
+  CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+  CSM_STAGE_LEGACY_CONTRACT_VERSION,
   EBAY_EXTERNAL_IDENTITY_PROFILE_VERSION,
   THIN_EXTERNAL_IDENTITY_COMPOSER_VERSION,
   THIN_EXTERNAL_IDENTITY_RESOLVER_VERSION
@@ -59,28 +61,11 @@ function reseal(rows) {
 function completedProvider(fields, inspect = () => {}) {
   return async (request) => {
     inspect(request);
-    const sourceFields = [
-      "year", "language", "manufacturer", "product", "set", "subjects", "team",
-      "card_name", "release_variant", "surface_color", "parallel_family",
-      "parallel_exact", "descriptive_rarity", "card_number", "serial", "attributes",
-      "grading_info", "grammar", "lot_count", "special_stamp", "description"
-    ];
-    const audited = {
-      ...fields,
-      field_sources: sourceFields.filter((field) => {
-        const value = fields[field];
-        return Array.isArray(value) ? value.length > 0 : Boolean(String(value ?? "").trim());
-      }).map((field) => ({ field, source_ids: ["original_image_1"] })),
-      set_card_name_relations: {
-        set: fields.set ? "CURRENT_CARD_MEMBER_OF_SET" : "",
-        card_name: fields.card_name ? "CURRENT_CARD_NAMED_BY_DESIGN" : ""
-      }
-    };
     return new Response(JSON.stringify({
       id: "resp_external_identity_fixture",
       model: request.model,
       status: "completed",
-      output_text: JSON.stringify(audited),
+      output_text: JSON.stringify(fields),
       reasoning: request.reasoning,
       usage: { input_tokens: 100, output_tokens: 30, total_tokens: 130 }
     }), {
@@ -136,10 +121,10 @@ const prepared = await prepareCanonicalListingPath({
     assert.equal(request.model, "gpt-5.6-luna");
     assert.equal(request.reasoning.effort, "low");
     assert.equal(request.max_output_tokens, 8192);
-    assert.deepEqual(request.tools, [{ type: "web_search" }]);
-    assert.equal(request.tool_choice, "auto");
-    assert.equal(request.max_tool_calls, 2,
-      "one provider request may use two bounded Web actions; registry resolution remains post-observation");
+    for (const key of ["tools", "tool_choice", "max_tool_calls", "include"]) {
+      assert.equal(Object.hasOwn(request, key), false,
+        `the rollback-compatible bridge must omit ${key}`);
+    }
     const providerWire = JSON.stringify(request);
     for (const secretIdentity of [...HR14_ORIGINAL_SHA256, HR14_ORIGINAL_SET_SHA256]) {
       assert.doesNotMatch(providerWire, new RegExp(secretIdentity),
@@ -164,11 +149,8 @@ assert.equal(prepared.fields.year, "1996-97");
 assert.equal(prepared.fields.set, "High Risers");
 assert.equal(prepared.fields.team, "Chicago Bulls");
 assert.equal(prepared.fields.card_number, "HR14");
-assert.deepEqual(prepared.set_card_name_relation_receipt.set, {
-  predicate: "CURRENT_CARD_MEMBER_OF_SET",
-  value: "High Risers"
-}, "the final Set relation is re-issued only after the external resolver receipt validates");
-assert.equal(prepared.set_card_name_relation_receipt.card_name, null);
+assert.equal(Object.hasOwn(prepared, "set_card_name_relation_receipt"), false,
+  "the rollback-compatible writer must omit the future relation receipt");
 for (const physicalField of [
   "surface_color", "parallel_family", "parallel_exact", "print_finish", "serial", "grade"
 ]) {
@@ -215,29 +197,8 @@ for (const bracket of ["year", "manufacturer", "product", "set", "subject", "car
 }
 assert.deepEqual(verifyReplay(prepared.csm_rows, prepared.title).problems, []);
 assert.equal(createHash("sha256").update(JSON.stringify(prepared.csm_rows)).digest("hex"),
-  "fb5b1f3c1f0cdccfeb7c43b6b392929f3ab34c6fc570f82caf7a38c2a91c8e86",
-"the bridge must leave active v2 durable writer rows byte-identical");
-
-{
-  const forgedObservedCardName = clone(prepared.csm_rows);
-  const visualTemplate = forgedObservedCardName.evidence.find((row) => (
-    row.modality === "WHOLE_CARD_VISUAL"
-  ));
-  forgedObservedCardName.evidence.push({
-    ...clone(visualTemplate),
-    id: `${visualTemplate.id}-forged-card-name`,
-    bracket: "card_name",
-    raw_value: "FORGED OBSERVED CARD NAME",
-    normalized_value: "FORGED OBSERVED CARD NAME"
-  });
-  reseal(forgedObservedCardName);
-  const checked = verifyReplay(forgedObservedCardName, prepared.title);
-  assert.equal(checked.ok, false,
-    "a resealed visual Card Name transition cannot hide behind external Set authority");
-  assert.ok(checked.problems.some((problem) => (
-    problem.kind === "set_card_name_relation_transition_invalid"
-  )));
-}
+  "b31da7564d4f8e4529aa6b3afed3f784ef90ec3bdbf954ce80de011f3567b1e3",
+"the bridge must leave captured-e1ae external-v2 rows byte-identical");
 
 // Producer and validator must agree that identity-equivalent spacing is a
 // presentation alias, not a canonical presentation. Exercise the full path so
@@ -277,10 +238,7 @@ for (const [index, setAlias] of ["high risers", "HIGH RISERS"].entries()) {
   assert.equal(setAliasPrepared.fields.set, "High Risers");
   assert.equal(setAliasPrepared.external_identity_support.field_decisions.set.action,
     "CORROBORATE");
-  assert.deepEqual(setAliasPrepared.set_card_name_relation_receipt.set, {
-    predicate: "CURRENT_CARD_MEMBER_OF_SET",
-    value: "High Risers"
-  });
+  assert.equal(Object.hasOwn(setAliasPrepared, "set_card_name_relation_receipt"), false);
   assert.deepEqual(verifyReplay(
     setAliasPrepared.csm_rows, setAliasPrepared.title
   ).problems, []);
@@ -296,9 +254,7 @@ const setFillPrepared = await prepareCanonicalListingPath({
   callProvider: completedProvider({ ...liveCandidateObservation, set: "" })
 });
 assert.equal(setFillPrepared.external_identity_support.field_decisions.set.action, "FILL");
-assert.deepEqual(setFillPrepared.set_card_name_relation_receipt.set, {
-  predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "High Risers"
-});
+assert.equal(Object.hasOwn(setFillPrepared, "set_card_name_relation_receipt"), false);
 assert.deepEqual(verifyReplay(setFillPrepared.csm_rows, setFillPrepared.title).problems, []);
 
 assert.throws(() => validateSetCardNameRelationTransition({
@@ -398,36 +354,60 @@ reseal(historicalV1Rows);
 assert.deepEqual(verifyReplay(historicalV1Rows, historicalV1Rows.output.title).problems, [],
   "a literal v1 evidence tuple remains executable after v2 becomes active");
 
-const forwardV3Rows = clone(prepared.csm_rows);
 const forwardV3 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
   .registry_thin_external_identity_high_risers_v3;
-const forwardV3Metadata = forwardV3Rows.output.structured_output.external_identity_support;
+const forwardV3Metadata = clone(prepared.external_identity_support);
 Object.assign(forwardV3Metadata, forwardV3.receipt);
 forwardV3Metadata.field_decisions.product = {
   ...forwardV3Metadata.field_decisions.product,
   action: "CORRECT_CONFLICT",
   observed_value: "Stadium Club Basketball"
 };
-Object.assign(forwardV3Rows.resolution, forwardV3.resolution);
-Object.assign(forwardV3Rows.output, forwardV3.output);
-const forwardProductVisual = forwardV3Rows.evidence.find((row) => (
-  row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "product"
-));
-forwardProductVisual.raw_value = "Stadium Club Basketball";
-forwardProductVisual.normalized_value = "Stadium Club Basketball";
-for (const row of forwardV3Rows.evidence.filter((entry) => entry.modality === "REGISTRY")) {
-  for (const field of [
-    "pack_id", "pack_version", "pack_sha256", "index_id", "index_version", "index_sha256",
-    "record_id", "registry_release_id", "resolution_contract_sha256", "match_mode"
-  ]) {
-    row.source_ref[field] = forwardV3Metadata[field];
-  }
-  row.source_ref.decision = forwardV3Metadata.field_decisions[row.source_ref.field].action;
-  row.normalization_reason_code = `EXTERNAL_IDENTITY_${row.source_ref.decision}`;
-}
-reseal(forwardV3Rows);
+forwardV3Metadata.corrected_fields = Object.entries(forwardV3Metadata.field_decisions)
+  .filter(([, decision]) => decision.action === "CORRECT_CONFLICT")
+  .map(([field]) => field);
+const forwardV3Observed = {
+  ...prepared.observed_fields,
+  product: "Stadium Club Basketball"
+};
+const forwardV3Composed = composeCanonicalFieldsForStoredOutput(prepared.fields, {
+  marketplace: "EBAY",
+  ...forwardV3.output,
+  contract_version: CSM_DURABLE_PROJECTION_CONTRACT_VERSION
+});
+const forwardV3Rows = buildCsmStageRows({
+  tenantId: "tenant-external",
+  recognitionSessionId: "session-hr14-forward-v3",
+  contractVersion: CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+  fields: prepared.fields,
+  observedFields: forwardV3Observed,
+  externalIdentitySupport: forwardV3Metadata,
+  composed: forwardV3Composed,
+  title: forwardV3Composed.title,
+  registryReleaseId: forwardV3.receipt.registry_release_id,
+  founderBetaWebReceipt: {
+    schema_version: "founder-beta-web-receipt-v2",
+    outcome: "NOT_USED",
+    provider_request_count: 1,
+    isolated_model_call_count: 0,
+    provider_model: "gpt-5.6-luna",
+    reasoning_effort: "low",
+    web_search_used: false,
+    web_search_call_count: 0,
+    queries: [],
+    urls: [],
+    field_evidence: [],
+    semantic_state_sha256: "a".repeat(64)
+  },
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: prepared.fields.set },
+    card_name: null
+  },
+  createdAt
+});
 assert.deepEqual(verifyReplay(forwardV3Rows, forwardV3Rows.output.title).problems, [],
-  "the neutral bridge can replay a synthetic future v3 product/year/set decision tuple");
+  "the neutral bridge can replay a real stage-v3 product/year/set decision tuple");
 assert.equal(forwardV3Rows.output.title, prepared.title);
 assert.deepEqual(forwardV3.output,
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
@@ -669,7 +649,7 @@ for (const mutate of [
 }
 
 // No exact registry support changes neither canonical facts nor deterministic
-// CSM packet bytes. The mandatory v3 Web/relation receipts are held identical;
+// CSM packet bytes. The rollback writer omits future Web/relation receipts;
 // only the top-level ABSTAINED registry diagnostic is additional.
 const noMatchFields = {
   ...observedHr14,
@@ -691,6 +671,7 @@ const baseline = finishCanonicalTitle(JSON.stringify(noMatchFields));
 const baselineRows = buildCsmStageRows({
   tenantId: "tenant-external",
   recognitionSessionId: "session-no-match",
+  contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION,
   fields: baseline.fields,
   composed: {
     grammar: baseline.grammar,
@@ -707,11 +688,8 @@ const baselineRows = buildCsmStageRows({
     composer_version: baseline.composer_version,
     marketplace_profile_version: baseline.marketplace_profile_version,
     canonical_naming_trace: baseline.canonical_naming_trace,
-    canonical_naming_publishable: baseline.canonical_naming_publishable,
-    publication_coverage: baseline.publication_coverage
+    canonical_naming_publishable: baseline.canonical_naming_publishable
   },
-  founderBetaWebReceipt: noMatch.founder_beta_web_receipt,
-  setCardNameRelationReceipt: noMatch.set_card_name_relation_receipt,
   title: baseline.title,
   createdAt
 });

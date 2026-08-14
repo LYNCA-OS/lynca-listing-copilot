@@ -56,23 +56,21 @@ import {
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
   CSM_PROJECTION_ACTIVATION,
-  validateCsmProjectionActivation
+  validateCsmProjectionActivation,
+  writerProjectionContractForPreparedResult
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
   CANONICAL_NAMING_RELEASE_CONTRACT_V1,
   CANONICAL_NAMING_RELEASE_CONTRACT_V2,
   CANONICAL_NAMING_RELEASE_CONTRACT_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
+import { verifyReplay } from "../lib/listing/thin/csm-replay.mjs";
 import {
-  verifyReplay
-} from "../lib/listing/thin/csm-replay.mjs";
-import {
-  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT,
+  combinedPostObservationResolutionContractForVerifiedOriginalRelease,
   postObservationResolutionContractForVerifiedOriginals,
   validatePostObservationResolutionContractSelection,
   validateVerifiedOriginalObservationReceipt,
-  verifiedOriginalObservationComposerContractForReceipt,
-  VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+  verifiedOriginalObservationComposerContractForReceipt
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
   LOT_PUBLICATION_FAILURE,
@@ -81,7 +79,12 @@ import {
 
 const MODEL = CSM_THIN_RUNTIME_CONTRACT.model;
 const EFFORT = CSM_THIN_RUNTIME_CONTRACT.reasoningEffort;
-const activeProviderAdapter = resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider);
+const ACTIVE_WRITER_CONTRACT = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
+const activeProviderAdapter = resolveCsmProviderAdapter(CSM_ACTIVE_MODEL_PROFILE.provider, {
+  requestBuilderVersion:
+    ACTIVE_WRITER_CONTRACT.canonical_fields.request_builder_version
+});
+
 export const CSM_DIRECT_PROMPT_VERSION = CSM_THIN_RUNTIME_CONTRACT.promptVersion;
 export const CSM_DIRECT_ESTIMATED_TOKENS = CSM_THIN_RUNTIME_CONTRACT.estimatedTokensPerAttempt;
 // The Supabase authority owns the absolute 120-slot / 440k-token ceilings and
@@ -394,10 +397,19 @@ function normalizedVerifiedOriginalCheckpointReceipt(result, {
   if (!requestDigest) {
     throw persistenceCheckpointError("verified_original_request_original_set_sha256_missing");
   }
-  if (resolutionDigest !== COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256) {
+  const support = result?.verified_original_observation_support;
+  let combinedContract;
+  try {
+    combinedContract =
+      combinedPostObservationResolutionContractForVerifiedOriginalRelease(
+        support?.release_id
+      );
+  } catch {
+    throw persistenceCheckpointError("verified_original_observation_release_unknown");
+  }
+  if (resolutionDigest !== combinedContract.contract_sha256) {
     throw persistenceCheckpointError("verified_original_post_observation_resolution_contract_mismatch");
   }
-  const support = result?.verified_original_observation_support;
   if (!validateVerifiedOriginalObservationReceipt(support, {
     observedFields: result?.observed_fields,
     resolvedFields: result?.fields
@@ -409,8 +421,7 @@ function normalizedVerifiedOriginalCheckpointReceipt(result, {
   }
   if (requireActiveRelease) {
     const active = validateCsmProjectionActivation(projectionActivation);
-    if (active.verified_original_observation_overlay !== support.release_id
-        || support.release_id !== VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID) {
+    if (active.verified_original_observation_overlay !== support.release_id) {
       throw persistenceCheckpointError("verified_original_observation_release_not_active");
     }
   }
@@ -462,9 +473,19 @@ function normalizedPostObservationCheckpointReceipts(result, {
     throw persistenceCheckpointError("post_observation_resolution_contract_missing");
   }
   const verified = result?.verified_original_observation_support ?? null;
-  const combined = resolutionDigest
-    === COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256;
-  if (combined !== (verified?.status === "APPLIED")) {
+  let combinedContract = null;
+  if (verified?.status === "APPLIED") {
+    try {
+      combinedContract =
+        combinedPostObservationResolutionContractForVerifiedOriginalRelease(
+          verified.release_id
+        );
+    } catch {
+      throw persistenceCheckpointError("verified_original_observation_release_unknown");
+    }
+  }
+  const combined = combinedContract?.contract_sha256 === resolutionDigest;
+  if (combined !== Boolean(combinedContract)) {
     throw persistenceCheckpointError("post_observation_resolution_mode_mismatch");
   }
   if (!combined && verified !== null) {
@@ -574,7 +595,15 @@ export function buildCsmPersistenceCheckpoint({
   }
   let accuracyLossLedger;
   try {
-    accuracyLossLedger = validateAccuracyLossLedger(prepared?.accuracy_loss_ledger, { result: prepared });
+    const writer = writerProjectionContractForPreparedResult(prepared);
+    const selected = validateCsmProjectionActivation(projectionActivation);
+    if (writer.contract_id !== selected.contract_id) {
+      throw persistenceCheckpointError("writer_contract_activation_mismatch");
+    }
+    accuracyLossLedger = validateAccuracyLossLedger(prepared?.accuracy_loss_ledger, {
+      result: prepared,
+      semantics: writer.accuracy_loss_ledger_semantics
+    });
   } catch {
     throw persistenceCheckpointError("accuracy_loss_ledger_invalid");
   }
@@ -760,7 +789,13 @@ export function validateCsmPersistenceCheckpoint(result, {
   if (currentCheckpoint) {
     let ledger;
     try {
-      ledger = validateAccuracyLossLedger(result?.accuracy_loss_ledger, { result });
+      const writer = writerProjectionContractForPreparedResult(result, {
+        historicalReplay: true
+      });
+      ledger = validateAccuracyLossLedger(result?.accuracy_loss_ledger, {
+        result,
+        semantics: writer.accuracy_loss_ledger_semantics
+      });
     } catch {
       throw persistenceCheckpointError("accuracy_loss_ledger_invalid");
     }
@@ -1504,10 +1539,11 @@ export async function runDirectCsmAsset({
           }
         )
       : null;
-    if ((transportRetryReceipt && (Number(dispatched.attempt) !== 2
+    if (ACTIVE_WRITER_CONTRACT.provider_dispatch.durable_transport_retry_receipt
+        && ((transportRetryReceipt && (Number(dispatched.attempt) !== 2
           || dispatched.manual_retry === true))
         || (!transportRetryReceipt && Number(dispatched.attempt) === 2
-          && dispatched.manual_retry !== true)) {
+          && dispatched.manual_retry !== true))) {
       throw persistenceCheckpointError("provider_transport_retry_receipt_binding_invalid");
     }
     let imageUrls;
@@ -1642,7 +1678,8 @@ export async function runDirectCsmAsset({
     csmDirectConcurrency: CSM_DIRECT_LOCAL_FALLBACK_CONCURRENCY,
     // The staged lane buys latency with scheduling, never with extra paid
     // attempts. Its receipt can recover only an already-settled checkpoint.
-    maxAttempts: operationScope === "derived_checkpoint" ? 1 : CSM_DIRECT_MAX_ATTEMPTS
+    maxAttempts: operationScope === "derived_checkpoint" ? 1 : CSM_DIRECT_MAX_ATTEMPTS,
+    retryPolicy: CSM_THIN_RUNTIME_CONTRACT.retryPolicy
   });
   const sessionId = deterministicCsmSessionId(operationKey);
   const dispatchStartedAt = now();

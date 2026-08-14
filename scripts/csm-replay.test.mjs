@@ -25,6 +25,7 @@ import {
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   composeCanonicalFieldsForStoredOutput,
+  isCapturedE1aeReplayTuple,
   replayFromRows,
   verifyReplay
 } from "../lib/listing/thin/csm-replay.mjs";
@@ -180,6 +181,93 @@ assert.deepEqual(lot.rows.output.structured_output.lot_terminal, {
   assert.ok(checked.ok, JSON.stringify(checked.problems));
   assert.equal(checked.replayed.title, expected);
   assert.equal(checked.replayed.composed.lot_terminal_durable, undefined);
+
+  const composerV1Rows = clone(historicalRows);
+  composerV1Rows.output.composer_version = THIN_COMPOSER_VERSION_V1;
+  const composerV1 = composeCanonicalFieldsForStoredOutput(fields, composerV1Rows.output);
+  const composerV1WriterTitle = composerV1.title.replace(/^Lot\*2 /, "Lotx2 ");
+  composerV1Rows.output.title = composerV1WriterTitle;
+  composerV1Rows.output.included_brackets = composerV1.brackets;
+  composerV1Rows.output.dropped_trace = {
+    dropped_for_budget: composerV1.dropped,
+    suppressed_by_profile: composerV1.suppressed,
+    restored: composerV1.restored,
+    truncated: composerV1.truncated,
+    empty_at_input: composerV1.input_empty_fields,
+    normalization_reason_codes: composerV1.normalization_reasons,
+    character_budget: composerV1.character_budget,
+    rendered_length: composerV1.length
+  };
+  reseal(composerV1Rows);
+  assert.match(composerV1Rows.output.title, /^Lotx2 /);
+  assert.equal(composerV1.bracket_text[0].text, "Lot*2");
+  const verifiedComposerV1 = verifyReplay(composerV1Rows, composerV1WriterTitle);
+  assert.ok(verifiedComposerV1.ok, JSON.stringify(verifiedComposerV1.problems));
+  assert.match(verifiedComposerV1.replayed.title, /^Lot\*2 /,
+    "the public replay remains byte-compatible with the e1ae reader");
+  assert.equal(verifyReplay(composerV1Rows, composerV1.title).ok, false,
+    "the reader spelling cannot be resealed as the historical writer title");
+  for (const [count, writerPrefix, readerPrefix] of [
+    ["1", "Lotx1 ", ""],
+    ["", "", ""]
+  ]) {
+    const boundaryFields = { ...fields, lot_count: count };
+    const reader = composeCanonicalFieldsForStoredOutput(
+      boundaryFields, composerV1Rows.output
+    );
+    const writer = composeFromCanonicalFields(boundaryFields, {
+      features: {
+        captured_composer_v1_lot_marker: true,
+        exact_parallel_color_compaction: false,
+        durable_lot_terminal_shared_only: false,
+        publication_coverage: false
+      }
+    });
+    const writerTitle = writer.title;
+    // The current stage builder requires the newer in-memory routing state,
+    // but stage-v2 omits it from the durable packet just as the old writer did.
+    const writerForStage = {
+      ...writer,
+      lot_publishable: false,
+      lot_publication_failure_code: count === "1"
+        ? "LOT_SINGLE_CARD"
+        : "LOT_QUANTITY_UNRESOLVED"
+    };
+    const rows = buildCsmStageRows({
+      tenantId: "tenant-replay",
+      recognitionSessionId: `session-composer-v1-lot-${count || "missing"}`,
+      fields: boundaryFields,
+      composed: writerForStage,
+      title: writerTitle,
+      contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION
+    });
+    rows.output.composer_version = THIN_COMPOSER_VERSION_V1;
+    reseal(rows);
+    assert.equal(writerTitle.startsWith(writerPrefix), true);
+    const checkedBoundary = verifyReplay(rows, writerTitle);
+    assert.ok(checkedBoundary.ok, JSON.stringify(checkedBoundary.problems));
+    assert.equal(checkedBoundary.replayed.title.startsWith(readerPrefix), true);
+    assert.doesNotMatch(checkedBoundary.replayed.title, /^Lot/,
+      "the e1ae public reader omitted single-card and missing lot markers");
+    if (!count) assert.equal(checkedBoundary.replayed.composed.lot_quantity_unresolved, true);
+  }
+
+  for (const [label, mutate] of [
+    ["revision", (resolution) => { resolution.revision = 2; }],
+    ["status", (resolution) => { resolution.resolution_status = "FUTURE_COMPLETE"; }],
+    ["registry", (resolution) => { resolution.registry_release_id = "future-registry"; }],
+    ["resolver", (resolution) => { resolution.resolver_version = "future-resolver"; }],
+    ["conflict", (resolution) => { resolution.conflict_policy_version = "future-conflict"; }]
+  ]) {
+    const forged = clone(historicalRows);
+    mutate(forged.resolution);
+    reseal(forged);
+    assert.equal(isCapturedE1aeReplayTuple(forged.output, forged.resolution), false,
+      `captured replay must bind its ${label}`);
+    const rejected = verifyReplay(forged, expected);
+    assert.equal(rejected.ok, false);
+    assert.ok(rejected.problems.some(({ kind }) => kind === "unsupported_stage_v2_replay_tuple"));
+  }
 }
 
 // A newly persisted non-publishable Lot cannot be downgraded into legacy mode
@@ -297,6 +385,10 @@ for (const mutate of [
   assert.doesNotMatch(legacyComposed.title, /\bBlue\b/);
   const legacy = clone(v2.rows);
   legacy.output.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  legacy.resolution.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  for (const row of [...legacy.evidence, ...legacy.candidates]) {
+    row.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  }
   legacy.output.composer_version = THIN_COMPOSER_VERSION_V1;
   legacy.output.title = legacyComposed.title;
   legacy.output.included_brackets = legacyComposed.brackets;
@@ -369,7 +461,7 @@ for (const visualValue of ["  High   Risers  ", "   "]) {
   }
   reseal(driftedVisual);
   assert.throws(() => replayFromRows(driftedVisual),
-    /set_card_name_relation_transition_invalid/,
+    /founder_beta_observed_identity_cardinality_invalid/,
     "durable relation observations must already be exact canonical strings");
 }
 
@@ -381,14 +473,14 @@ for (const visualValue of ["  High   Risers  ", "   "]) {
       : ["Forged Set"];
   reseal(arraySet);
   assert.throws(() => replayFromRows(arraySet),
-    /set_card_name_resolved_projection_invalid:set/,
+    /post_observation_resolved_identity_invalid/,
     "a relation-bearing resolved value cannot be an array that replay joins into a string");
 
   const invalidSem = clone(standard.rows);
   invalidSem.output.structured_output.sem = [];
   reseal(invalidSem);
   assert.throws(() => replayFromRows(invalidSem),
-    /set_card_name_resolved_projection_invalid:sem/,
+    /founder_beta_observed_identity_cardinality_invalid/,
     "even an empty relation projection requires a plain SEM object");
 
   for (const field of ["set", "card_name"]) {
@@ -400,7 +492,7 @@ for (const visualValue of ["  High   Risers  ", "   "]) {
         : [...cardinalityDrift.resolved, clone(row)];
       reseal(cardinalityDrift);
       assert.throws(() => replayFromRows(cardinalityDrift),
-        new RegExp(`set_card_name_resolved_cardinality_invalid:${field}`),
+        /post_observation_resolved_identity_cardinality_invalid/,
         `durable ${field} resolved rows must be exactly one`);
     }
   }
@@ -495,7 +587,7 @@ for (const visualValue of ["  High   Risers  ", "   "]) {
     mutate(residualAuthority.evidence.find((row) => row.modality === "WHOLE_CARD_VISUAL"));
     reseal(residualAuthority);
     assert.throws(() => replayFromRows(residualAuthority),
-      /durable_visual_evidence_invalid/,
+      /founder_beta_observed_identity_evidence_invalid/,
       "a resolver-only marker cannot survive inside ordinary visual evidence");
     assert.equal(verifyReplay(residualAuthority, canonicalNaming.composed.title).ok, false);
   }
@@ -679,6 +771,10 @@ for (const [fixture, expectedGrammar] of [
 ]) {
   const legacy = clone(fixture.rows);
   legacy.output.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  legacy.resolution.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  for (const row of [...legacy.evidence, ...legacy.candidates]) {
+    row.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  }
   delete legacy.output.structured_output.composition_grammar;
   delete legacy.output.structured_output.publication_coverage;
   delete legacy.output.structured_output.lot_terminal;
@@ -692,6 +788,10 @@ for (const [fixture, expectedGrammar] of [
 {
   const ambiguous = clone(standard.rows);
   ambiguous.output.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  ambiguous.resolution.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  for (const row of [...ambiguous.evidence, ...ambiguous.candidates]) {
+    row.contract_version = CSM_STAGE_LEGACY_CONTRACT_VERSION;
+  }
   delete ambiguous.output.structured_output.composition_grammar;
   delete ambiguous.output.structured_output.publication_coverage;
   delete ambiguous.output.structured_output.founder_beta_web_receipt;
@@ -700,7 +800,7 @@ for (const [fixture, expectedGrammar] of [
   reseal(ambiguous);
   const checked = verifyReplay(ambiguous, standard.composed.title);
   assert.equal(checked.ok, false);
-  assert.ok(checked.problems.some((problem) => problem.kind === "composition_grammar_missing_or_ambiguous"));
+  assert.ok(checked.problems.some((problem) => problem.kind === "unsupported_stage_v2_replay_tuple"));
 }
 
 // Version references are executable contracts, not labels. Even a correctly

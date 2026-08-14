@@ -6,22 +6,30 @@ import {
   composeResolutionView, handleResolutionViewRequest, handleResolutionReviewRequest,
   publicDurableProjectionReceipts, publicExternalIdentitySupport
 } from "../api/csm-resolution-view.js";
-import { REVIEW_VERDICT, CORRECTION_REASON } from "../lib/listing/csm/resolution-review.mjs";
+import {
+  CAPTURED_E1AE_RESOLUTION_REVIEW_VERSION,
+  REVIEW_VERDICT,
+  CORRECTION_REASON
+} from "../lib/listing/csm/resolution-review.mjs";
 import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
 import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import {
   composeLyncaStandardName,
   LYNCA_STANDARD_PROFILE_VERSION_V1,
+  LYNCA_STANDARD_PROFILE_VERSION_V2,
   LYNCA_STANDARD_PROFILE_VERSION_V3
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   buildCsmStageRows,
+  computeCsmPacketHashes,
   EBAY_PROFILE_VERSION,
   THIN_COMPOSER_VERSION,
   THIN_COMPOSER_VERSION_V1,
   THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
+import { composeCanonicalFieldsForStoredOutput } from
+  "../lib/listing/thin/csm-replay.mjs";
 import { readCsmResolutionRecord } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   CSM_OWNER_EXECUTION_RECEIPT_KEYS,
@@ -29,7 +37,8 @@ import {
   sealCsmOwnerExecutionReceipt
 } from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
 import {
-  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY
+  EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
+  EXTERNAL_IDENTITY_SUPPORT_PACK
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 
 const OWNER_RECEIPT_SHA256 = "b".repeat(64);
@@ -114,6 +123,31 @@ const record = {
   }
 };
 const deps = { readRecord: async () => record, appendReview: async ({ review }) => review };
+const futureReviewFields = parseCanonicalFields(JSON.parse(payload)).fields;
+const futureReviewComposed = composeLyncaStandardName(futureReviewFields, {
+  publicationCoverage: true
+});
+const futureReviewRows = buildCsmStageRows({
+  tenantId: "t1",
+  recognitionSessionId: "sess-future-review",
+  fields: futureReviewFields,
+  composed: futureReviewComposed,
+  title: futureReviewComposed.title,
+  ...noSearchDurableReceipts(futureReviewFields)
+});
+const futureReviewRecord = {
+  asset_id: "asset-future-review",
+  recognition_session_id: "sess-future-review",
+  resolution_id: futureReviewRows.resolution.id,
+  output_id: futureReviewRows.output.id,
+  output_title: futureReviewComposed.title,
+  resolver_version: futureReviewRows.resolution.resolver_version,
+  replay_rows: futureReviewRows
+};
+const futureReviewDeps = {
+  readRecord: async () => futureReviewRecord,
+  appendReview: async ({ review }) => review
+};
 
 // Flat records have no historical replay bundle, so their stored pair must
 // equal the active router pair for their grammar. Activation A moves only
@@ -206,11 +240,11 @@ for (const [name, lotCount, expected] of [
   const currentStandard = composeResolutionView({
     canonical_payload: payload,
     composer_version: THIN_COMPOSER_VERSION,
-    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V3
+    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V2
   });
   assert.equal(currentStandard.composer_version, THIN_COMPOSER_VERSION);
   assert.equal(currentStandard.marketplace_profile_version,
-    LYNCA_STANDARD_PROFILE_VERSION_V3);
+    LYNCA_STANDARD_PROFILE_VERSION_V2);
   const activeRecord = {
     asset_id: "asset-standard-active",
     recognition_session_id: "session-standard-active",
@@ -219,7 +253,7 @@ for (const [name, lotCount, expected] of [
     canonical_payload: payload,
     output_title: currentStandard.composed.title,
     composer_version: THIN_COMPOSER_VERSION,
-    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V3,
+    marketplace_profile_version: LYNCA_STANDARD_PROFILE_VERSION_V2,
     resolver_version: "thin-path-observation-only-v1",
     owner_execution_receipt: {
       version: CSM_OWNER_EXECUTION_RECEIPT_VERSION,
@@ -233,7 +267,7 @@ for (const [name, lotCount, expected] of [
   });
   assert.equal(activeView.composer.composer_version, THIN_COMPOSER_VERSION);
   assert.equal(activeView.composer.marketplace_profile_version,
-    LYNCA_STANDARD_PROFILE_VERSION_V3);
+    LYNCA_STANDARD_PROFILE_VERSION_V2);
 
   assert.throws(() => composeResolutionView({
     canonical_payload: payload,
@@ -242,7 +276,10 @@ for (const [name, lotCount, expected] of [
   }), (error) => error?.statusCode === 409
     && error?.message === "csm_resolution_replay_rows_required");
 }
-for (const marketplaceProfileVersion of [LYNCA_STANDARD_PROFILE_VERSION_V1]) {
+for (const marketplaceProfileVersion of [
+  LYNCA_STANDARD_PROFILE_VERSION_V1,
+  LYNCA_STANDARD_PROFILE_VERSION_V3
+]) {
   assert.throws(
     () => composeResolutionView({
       canonical_payload: payload,
@@ -275,12 +312,127 @@ const legacyRows = buildCsmStageRows({
 });
 legacyRows.output.composer_version = THIN_COMPOSER_VERSION_V1;
 legacyRows.output.title = legacyComposed.title;
+legacyRows.resolution.recognition_packet_sha256 = computeCsmPacketHashes(legacyRows)
+  .csm_recognition_packet_sha256;
+legacyRows.output.resolution_packet_sha256 = computeCsmPacketHashes(legacyRows)
+  .csm_resolution_packet_sha256;
+legacyRows.session_hashes = computeCsmPacketHashes(legacyRows);
 const legacyRecord = {
   asset_id: "legacy-asset", recognition_session_id: "legacy-session",
   resolution_id: legacyRows.resolution.id, output_id: legacyRows.output.id,
   output_title: legacyComposed.title, composer_version: THIN_COMPOSER_VERSION_V1,
   resolver_version: "thin-path-observation-only-v1", replay_rows: legacyRows
 };
+
+// The first published eBay Lot writer used `LotxN`; the e1ae reader already
+// replayed those immutable rows as `Lot*N` (and omitted a one-card marker).
+// Freeze both sides of that intentional split through GET and review so an
+// integrity hardening cannot silently rewrite the public historical contract.
+{
+  const expected = Object.freeze({
+    "": Object.freeze({
+      output_id: "b275ced06c169a90ab3eac1e11ff3830",
+      get: "9de819f82c7a669ba1a4c0a3eb040b5a43d6e7d204ebce3b35cd45bf1baeb316",
+      approved: "048ad1f8e51f2291e65fcea322da7756c2fb09d2ffc94419776fe39614b4a5eb",
+      corrected: "b654e6aff3368097bd8b3076794842f2c07448ddaf10a6d0dff4f9d41d056495"
+    }),
+    "1": Object.freeze({
+      output_id: "e40311a180863ecebc22e01a8d5ba5cc",
+      get: "5dcdc2aa17c458190e01d5d7a2289c694789953f298358191c9884d1d4d337ae",
+      approved: "8dfb3d292428c50f62a587d7817139b5026647864dd4fa230146503b5bc5341f",
+      corrected: "e0196712ffd57747586a33851edaec816c0d7666f9d7bf81b62d52bc9f64c672"
+    }),
+    "2": Object.freeze({
+      output_id: "ce383240ebb1edb5e00af55ffa836938",
+      get: "3360b6a48a9873766226d58a6c2861b054bc1e42a1dfd417c235bcef788bd582",
+      approved: "c018ebc5172497a801172178499857921a30740fa3dcc1a5d16d4db306ea023a",
+      corrected: "f290d991696a16b1c2c168e52c5a18a201a6c6e3b7974336220e9cbed56dce09"
+    }),
+    "4": Object.freeze({
+      output_id: "95c74124413da89b62791a6481bcebd7",
+      get: "a83c31c27cf7b0b5fa8b9e209ab32d91196abeda2ff1aee70d25bc2ccd3a40a2",
+      approved: "5b3db6c14c154c7b462679274602f3a70d8ef37a11557a1cd635d85949271b3f",
+      corrected: "e9d115f5b7a5ae45fe20f5817eecf9f2d817959c789986dea9761e170714f350"
+    })
+  });
+  const nativeDate = globalThis.Date;
+  globalThis.Date = class FixedReviewDate extends nativeDate {
+    constructor(...args) {
+      super(...(args.length ? args : ["2026-08-14T00:00:00.000Z"]));
+    }
+    static now() { return new nativeDate("2026-08-14T00:00:00.000Z").getTime(); }
+  };
+  try {
+    for (const count of ["", "1", "2", "4"]) {
+      const id = `v1_lot_${count || "missing"}`;
+      const fields = parseCanonicalFields({
+        year: "2023", manufacturer: "Topps", product: "Chrome", set: "",
+        subjects: ["Shohei Ohtani", "Mike Trout"], team: "", card_name: "",
+        release_variant: "", surface_color: "", parallel_family: "", parallel_exact: "",
+        descriptive_rarity: "", card_number: "", serial: "", attributes: ["RC"],
+        grading_info: { company: "", card_grade: "", auto_grade: "", grade_type: "" },
+        grammar: "lot", lot_count: count, language: "", unreadable: [], low_confidence: [],
+        special_stamp: "", description: ""
+      }).fields;
+      const writerComposed = composeFromCanonicalFields(fields, { features: {
+        captured_composer_v1_lot_marker: true,
+        exact_parallel_color_compaction: false,
+        durable_lot_terminal_shared_only: false,
+        publication_coverage: false
+      } });
+      const stagedComposed = ["", "1"].includes(count) ? {
+        ...writerComposed,
+        lot_publishable: false,
+        lot_publication_failure_code: count === "1"
+          ? "LOT_SINGLE_CARD"
+          : "LOT_QUANTITY_UNRESOLVED"
+      } : writerComposed;
+      const rows = buildCsmStageRows({
+        tenantId: `tenant-${id}`, recognitionSessionId: `session-${id}`,
+        fields, composed: stagedComposed, title: writerComposed.title,
+        createdAt: "2026-08-14T00:00:00.000Z", contractVersion: "csm-stage-shadow-v2"
+      });
+      // `buildCsmStageRows` remains an active-writer boundary and correctly
+      // refuses to mint this retired composer. These two values are frozen
+      // from the authentic archived writer fixture; the endpoint hashes below
+      // independently bind the complete e1ae reader response.
+      rows.output.composer_version = THIN_COMPOSER_VERSION_V1;
+      rows.output.id = expected[count].output_id;
+      rows.resolution.recognition_packet_sha256 = computeCsmPacketHashes(rows)
+        .csm_recognition_packet_sha256;
+      rows.output.resolution_packet_sha256 = computeCsmPacketHashes(rows)
+        .csm_resolution_packet_sha256;
+      rows.session_hashes = computeCsmPacketHashes(rows);
+      const stored = {
+        asset_id: `asset-${id}`, recognition_session_id: `session-${id}`,
+        resolution_id: rows.resolution.id, output_id: rows.output.id,
+        output_title: writerComposed.title, resolver_version: rows.resolution.resolver_version,
+        replay_rows: rows
+      };
+      const readRecord = async () => structuredClone(stored);
+      const get = await handleResolutionViewRequest({
+        tenantId: `tenant-${id}`, assetId: stored.asset_id, dependencies: { readRecord }
+      });
+      const review = async (verdict, corrections = []) => handleResolutionReviewRequest({
+        tenantId: `tenant-${id}`, reviewerId: "reviewer-v1-lot",
+        payload: { asset_id: stored.asset_id, verdict, corrections },
+        dependencies: { readRecord, appendReview: async ({ review: value }) => value }
+      });
+      const approved = await review(REVIEW_VERDICT.APPROVED);
+      const corrected = await review(REVIEW_VERDICT.CORRECTED, [{
+        bracket: "year", canonical_field: "year", reason: CORRECTION_REASON.WRONG_VALUE,
+        original_value: "2023", corrected_value: "2022"
+      }]);
+      assert.equal(sha256Json(get), expected[count].get, `${id} exact e1ae GET bytes`);
+      assert.equal(sha256Json(approved), expected[count].approved,
+        `${id} exact e1ae APPROVED bytes`);
+      assert.equal(sha256Json(corrected), expected[count].corrected,
+        `${id} exact e1ae CORRECTED bytes`);
+    }
+  } finally {
+    globalThis.Date = nativeDate;
+  }
+}
 
 // The complete Standard v3 path keeps independent search terms distinct while
 // carrying them through persistence, replay, and the Resolution View bracket.
@@ -395,7 +547,8 @@ const legacyRecord = {
       if (url.pathname.endsWith("/v4_recognition_sessions")) {
         return new Response(JSON.stringify([{
           id: "session-ordinary-v3", asset_id: "asset-ordinary-v3",
-          created_at: "2026-08-14T00:00:00Z", csm_owner_versions: null
+          created_at: "2026-08-14T00:00:00Z", csm_owner_versions: null,
+          ...rows.session_hashes
         }]), { status: 200 });
       }
       if (url.pathname.endsWith("/csm_marketplace_outputs")) {
@@ -410,17 +563,24 @@ const legacyRecord = {
       if (url.pathname.endsWith("/csm_evidence_observations")) {
         return new Response(JSON.stringify(evidence), { status: 200 });
       }
+      if (url.pathname.endsWith("/csm_bracket_candidates")) {
+        return new Response(JSON.stringify(rows.candidates), { status: 200 });
+      }
+      if (url.pathname.endsWith("/csm_candidate_evidence_links")) {
+        return new Response(JSON.stringify(rows.links), { status: 200 });
+      }
       return new Response("[]", { status: 404 });
     }
   });
   const durable = await read();
   assert.doesNotThrow(() => composeResolutionView(durable),
     "ordinary v3 partial DB read retains exact relation observations");
+  const rejectsBrokenPacket = (error) => error?.statusCode === 409
+    && error?.message === "csm_resolution_replay_integrity_invalid";
 
   const missing = await read([]);
-  assert.throws(() => composeResolutionView(missing), (error) => (
-    error?.code === "set_card_name_relation_transition_invalid"
-  ), "ordinary v3 readback rejects missing relation evidence");
+  assert.throws(() => composeResolutionView(missing), rejectsBrokenPacket,
+    "ordinary v3 readback rejects missing relation evidence");
 
   const forged = structuredClone(rows.evidence);
   const setVisual = forged.find((row) => (
@@ -429,18 +589,16 @@ const legacyRecord = {
   setVisual.raw_value = "Forged Set";
   setVisual.normalized_value = "Forged Set";
   const forgedRecord = await read(forged);
-  assert.throws(() => composeResolutionView(forgedRecord), (error) => (
-    error?.code === "set_card_name_relation_transition_invalid"
-  ), "ordinary v3 readback rejects a forged visual Set transition");
+  assert.throws(() => composeResolutionView(forgedRecord), rejectsBrokenPacket,
+    "ordinary v3 readback rejects a forged visual Set transition");
 
   const normalizedTamper = structuredClone(rows.evidence);
   normalizedTamper.find((row) => (
     row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
   )).normalized_value = "Forged Normalized Set";
   const normalizedTamperRecord = await read(normalizedTamper);
-  assert.throws(() => composeResolutionView(normalizedTamperRecord), (error) => (
-    error?.code === "durable_visual_evidence_invalid"
-  ), "ordinary v3 readback rejects raw/normalized relation evidence drift");
+  assert.throws(() => composeResolutionView(normalizedTamperRecord), rejectsBrokenPacket,
+    "ordinary v3 readback rejects raw/normalized relation evidence drift");
 
   const emptyVisual = structuredClone(rows.evidence);
   emptyVisual.find((row) => (
@@ -450,18 +608,16 @@ const legacyRecord = {
     row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
   )).normalized_value = "";
   const emptyVisualRecord = await read(emptyVisual);
-  assert.throws(() => composeResolutionView(emptyVisualRecord), (error) => (
-    error?.code === "durable_visual_evidence_invalid"
-  ), "ordinary v3 readback rejects an impossible empty visual relation row");
+  assert.throws(() => composeResolutionView(emptyVisualRecord), rejectsBrokenPacket,
+    "ordinary v3 readback rejects an impossible empty visual relation row");
 
   const crossSession = structuredClone(rows.evidence);
   crossSession.find((row) => (
     row.modality === "WHOLE_CARD_VISUAL" && row.bracket === "set"
   )).source_ref = { images: "different-session" };
   const crossSessionRecord = await read(crossSession);
-  assert.throws(() => composeResolutionView(crossSessionRecord), (error) => (
-    error?.code === "durable_visual_evidence_invalid"
-  ), "ordinary v3 readback rejects cross-session visual relation evidence");
+  assert.throws(() => composeResolutionView(crossSessionRecord), rejectsBrokenPacket,
+    "ordinary v3 readback rejects cross-session visual relation evidence");
 }
 
 // --- the view is a pure read -------------------------------------------------
@@ -473,9 +629,9 @@ const legacyRecord = {
   assert.ok(view.composer.composer_version, "the version the trace was produced under travels with it");
   assert.equal(view.composer.composer_version, THIN_COMPOSER_VERSION);
   assert.equal(view.composer.marketplace_profile_version,
-    LYNCA_STANDARD_PROFILE_VERSION_V3);
+    LYNCA_STANDARD_PROFILE_VERSION_V2);
   assert.equal(view.brackets.find((entry) => entry.bracket === "search_optimization").value,
-    "RC, Dodgers", "Activation A uses the registered CNL search projection");
+    "RC, Dodgers", "the captured writer uses the registered CNL search projection");
   assert.deepEqual(
     view.brackets.find((entry) => entry.bracket === "search_optimization").canonical_fields,
     ["components", "search_optimization", "team"]
@@ -572,6 +728,13 @@ const legacyRecord = {
     if (url.pathname.endsWith("/csm_resolved_brackets")) {
       return new Response("[]", { status: 200 });
     }
+    if ([
+      "/csm_evidence_observations",
+      "/csm_bracket_candidates",
+      "/csm_candidate_evidence_links"
+    ].some((suffix) => url.pathname.endsWith(suffix))) {
+      return new Response("[]", { status: 200 });
+    }
     return new Response("[]", { status: 404 });
   };
   const durable = await readCsmResolutionRecord({
@@ -596,8 +759,8 @@ const legacyRecord = {
   assert.equal(durable.registry_release_id, "registry_thin_20260801_v1");
   assert.equal(durable.conflict_policy_version, "none-single-observation-v1");
   assert.equal(durable.marketplace_profile_version, "ebay-profile-v1");
-  assert.ok(!requested.some((url) => url.pathname.endsWith("/csm_evidence_observations")),
-    "a baseline read must not pay for an external-evidence query");
+  assert.ok(requested.some((url) => url.pathname.endsWith("/csm_evidence_observations")),
+    "every replay read loads its packet rows before choosing a projector");
   assert.ok(!requested.some((url) => url.pathname.endsWith("/csm_registry_releases")),
     "a baseline read must not pay for an external Registry query");
   assert.doesNotMatch(JSON.stringify(durable.owner_execution_receipt),
@@ -656,7 +819,7 @@ const legacyRecord = {
         }
         if (url.pathname.endsWith("/csm_identity_resolutions")) return new Response("[]", { status: 200 });
         if (url.pathname.endsWith("/csm_resolved_brackets")) return new Response("[]", { status: 200 });
-        return new Response("[]", { status: 404 });
+        return new Response("[]", { status: 200 });
       }
     }),
     /csm_owner_execution_receipt_invalid/,
@@ -836,15 +999,99 @@ const legacyRecord = {
       selected_kind: "VALUE",
       canonical_value: bracketValue(field, decision.canonical_value)
     }));
+  const completeRowsFor = (descriptor, stored, {
+    contractVersion = "csm-stage-shadow-v2"
+  } = {}) => {
+    const observedFields = parseCanonicalFields({
+      year: stored.field_decisions.year.observed_value,
+      manufacturer: stored.field_decisions.manufacturer.observed_value,
+      product: stored.field_decisions.product.observed_value,
+      set: stored.field_decisions.set.observed_value,
+      subjects: stored.field_decisions.subjects.observed_value,
+      team: stored.field_decisions.team.observed_value,
+      card_name: "",
+      release_variant: "",
+      surface_color: "",
+      parallel_family: "",
+      parallel_exact: "",
+      descriptive_rarity: "",
+      card_number: stored.field_decisions.card_number.observed_value,
+      serial: "",
+      attributes: [],
+      grading_info: null,
+      grammar: "standard",
+      lot_count: "",
+      language: "",
+      unreadable: [],
+      low_confidence: []
+    }).fields;
+    const fields = {
+      ...observedFields,
+      ...Object.fromEntries(Object.entries(stored.field_decisions).map(
+        ([field, decision]) => [field, decision.canonical_value]
+      ))
+    };
+    const support = {
+      ...stored,
+      status: "APPLIED",
+      source_ids: EXTERNAL_IDENTITY_SUPPORT_PACK.sources.map((source) => source.source_id),
+      sources: EXTERNAL_IDENTITY_SUPPORT_PACK.sources,
+      source_field_map: Object.fromEntries(Object.entries(stored.field_decisions).map(
+        ([field, decision]) => [field, decision.source_ids]
+      )),
+      supported_fields: Object.keys(stored.field_decisions),
+      corrected_fields: Object.entries(stored.field_decisions)
+        .filter(([, decision]) => decision.action === "CORRECT_CONFLICT")
+        .map(([field]) => field)
+    };
+    const composed = composeCanonicalFieldsForStoredOutput(fields, {
+      marketplace: "EBAY",
+      ...descriptor.output,
+      contract_version: contractVersion
+    });
+    const receipts = contractVersion === "csm-stage-shadow-v3"
+      ? noSearchDurableReceipts(fields)
+      : { founderBetaWebReceipt: null, setCardNameRelationReceipt: null };
+    return buildCsmStageRows({
+      tenantId: "tenant-db",
+      recognitionSessionId: "external-session",
+      fields,
+      observedFields,
+      externalIdentitySupport: support,
+      ...receipts,
+      composed,
+      title: composed.title,
+      registryReleaseId: descriptor.receipt.registry_release_id,
+      createdAt: "2026-08-10T00:00:00Z",
+      contractVersion
+    });
+  };
   const env = {
     SUPABASE_URL: "https://example.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "service-role"
   };
   const readExternal = async ({
     descriptor, stored = storedReceipt(descriptor), outputOverrides = {},
-    resolutionOverrides = {}, registryOverrides = {}, evidenceRows = evidenceFor(stored),
-    resolvedRows = resolvedFor(stored)
+    resolutionOverrides = {}, registryOverrides = {}, evidenceRows = null,
+    resolvedRows = null, contractVersion = "csm-stage-shadow-v2"
   }) => {
+    let completeRows;
+    try {
+      completeRows = completeRowsFor(descriptor, stored, { contractVersion });
+    } catch {
+      completeRows = completeRowsFor(
+        descriptor, storedReceipt(descriptor), { contractVersion }
+      );
+    }
+    completeRows.output = {
+      ...completeRows.output,
+      structured_output: {
+        ...completeRows.output.structured_output,
+        external_identity_support: stored
+      }
+    };
+    evidenceRows ||= completeRows.evidence;
+    resolvedRows ||= completeRows.resolved;
     const requested = [];
     const fetchImpl = async (rawUrl) => {
       const url = new URL(rawUrl);
@@ -852,26 +1099,19 @@ const legacyRecord = {
       if (url.pathname.endsWith("/v4_recognition_sessions")) {
         return new Response(JSON.stringify([{
           id: "external-session", asset_id: "external-asset", created_at: "2026-08-10T00:00:00Z",
-          csm_owner_versions: null
+          csm_owner_versions: null,
+          ...completeRows.session_hashes
         }]), { status: 200 });
       }
       if (url.pathname.endsWith("/csm_marketplace_outputs")) {
         return new Response(JSON.stringify([{
-          id: "external-output", tenant_id: "tenant-db", recognition_session_id: "external-session",
-          resolution_id: "external-resolution", structured_output: {
-            composition_grammar: "standard",
-            external_identity_support: stored
-          },
-          title: "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls",
-          ...descriptor.output,
-          marketplace: "EBAY", contract_version: "csm-stage-shadow-v2",
-          created_at: "2026-08-10T00:00:00Z", ...outputOverrides
+          ...completeRows.output,
+          ...outputOverrides
         }]), { status: 200 });
       }
       if (url.pathname.endsWith("/csm_identity_resolutions")) {
         return new Response(JSON.stringify([{
-          id: "external-resolution", ...descriptor.resolution,
-          grammar: "NON_TCG", contract_version: "csm-stage-shadow-v2", revision: 1,
+          ...completeRows.resolution,
           ...resolutionOverrides
         }]), { status: 200 });
       }
@@ -885,6 +1125,12 @@ const legacyRecord = {
       }
       if (url.pathname.endsWith("/csm_evidence_observations")) {
         return new Response(JSON.stringify(evidenceRows), { status: 200 });
+      }
+      if (url.pathname.endsWith("/csm_bracket_candidates")) {
+        return new Response(JSON.stringify(completeRows.candidates), { status: 200 });
+      }
+      if (url.pathname.endsWith("/csm_candidate_evidence_links")) {
+        return new Response(JSON.stringify(completeRows.links), { status: 200 });
       }
       return new Response("[]", { status: 404 });
     };
@@ -1089,11 +1335,10 @@ const legacyRecord = {
       source_ref: { images: "external-session" }
     });
   }
-  const { value: truncated } = await readExternal({
+  await assert.rejects(() => readExternal({
     descriptor: v1, stored: storedExternal, evidenceRows: exactlyLimitedEvidence
-  });
-  assert.equal(truncated.external_identity_support, undefined,
-    "a response exactly at the query limit has no completeness proof and must fail closed");
+  }), /csm_replay_readback_truncated/,
+  "a response exactly at the query limit has no completeness proof and must fail closed");
 
   for (const [name, sourceOverride] of [
     ["path", { url: "https://www.beckett.com/basketball/changed-path" }],
@@ -1142,7 +1387,7 @@ const legacyRecord = {
   delete missingPrivateReceipt.external_identity_support;
   assert.throws(() => composeResolutionView(missingPrivateReceipt), (error) => (
     error?.statusCode === 409
-      && error?.message === "csm_resolution_external_identity_receipt_invalid"
+      && error?.message === "csm_resolution_replay_integrity_invalid"
   ), "an external output without its private receipt must fail readback closed");
 
   const v3Decisions = {
@@ -1162,7 +1407,11 @@ const legacyRecord = {
     }
   };
   const v3Stored = storedReceipt(v3, { fieldDecisions: v3Decisions });
-  const { value: v3Durable } = await readExternal({ descriptor: v3, stored: v3Stored });
+  const { value: v3Durable } = await readExternal({
+    descriptor: v3,
+    stored: v3Stored,
+    contractVersion: "csm-stage-shadow-v3"
+  });
   assert.equal(v3Durable.external_identity_support.registry_release.id,
     v3.receipt.registry_release_id);
   assert.equal(v3Durable.external_identity_support.registry_release.registry_version,
@@ -1197,66 +1446,10 @@ const legacyRecord = {
     );
   }
 
-  const v3RelationOutput = {
-    contract_version: "csm-stage-shadow-v3",
-    structured_output: {
-      ...v2Durable.replay_rows.output.structured_output,
-      founder_beta_web_receipt: {
-        schema_version: "founder-beta-web-receipt-v1",
-        provider_request_count: 1,
-        isolated_model_call_count: 0,
-        provider_model: "gpt-5.6-luna",
-        reasoning_effort: "low",
-        web_search_used: false,
-        web_search_call_count: 0,
-        queries: [],
-        urls: [],
-        field_evidence: [],
-        semantic_state_sha256: "f".repeat(64)
-      },
-      set_card_name_relation_receipt: {
-        schema_version: "set-card-name-relations-v1",
-        set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "High Risers" },
-        card_name: null
-      }
-    }
-  };
-  const v3RelationRows = structuredClone(v2Durable.replay_rows);
-  Object.assign(v3RelationRows.output, v3RelationOutput);
-  v3RelationRows.output.structured_output.sem = {
-    year: "1996-97", manufacturer: "Topps", product: "Stadium Club",
-    set: "High Risers", subject: ["Michael Jordan"],
-    search_optimization: ["Chicago Bulls"], card_number: "HR14"
-  };
-  v3RelationRows.output.structured_output.publication_coverage =
-    composeFromCanonicalFields({
-      year: "1996-97", manufacturer: "Topps", product: "Stadium Club",
-      set: "High Risers", subjects: ["Michael Jordan"], team: "Chicago Bulls",
-      card_number: "HR14", grammar: "standard"
-    }, {
-      profile: (await import("../lib/listing/thin/marketplace-composer-rules.mjs"))
-        .MARKETPLACE_PROFILES.ebayVerifiedExternalIdentity,
-      features: {
-        durable_lot_terminal_shared_only: true,
-        publication_coverage: true,
-        verified_external_identity_title: true,
-        verified_external_identity_priority_v2: true
-      }
-    }).publication_coverage;
   const { value: v3RelationDurable } = await readExternal({
     descriptor: v2,
     stored: v2Stored,
-    resolvedRows: [
-      ...resolvedFor(v2Stored),
-      {
-        bracket: "card_name", selected_kind: "EMPTY", canonical_value: null,
-        empty_reason: "ABSENT"
-      }
-    ],
-    outputOverrides: {
-      ...v3RelationOutput,
-      structured_output: v3RelationRows.output.structured_output
-    }
+    contractVersion: "csm-stage-shadow-v3"
   });
   assert.doesNotThrow(() => composeResolutionView(v3RelationDurable),
     "a real v3 external partial read keeps enough private evidence to validate Set authority");
@@ -1268,7 +1461,8 @@ const legacyRecord = {
     ))
   ));
   assert.throws(() => composeResolutionView(duplicateV3RegistryEvidence), (error) => (
-    error?.code === "external_identity_field_evidence_cardinality_invalid"
+    error?.statusCode === 409
+      && error?.message === "csm_resolution_replay_integrity_invalid"
   ), "Resolution View rejects duplicate external Registry authority evidence");
 
   const extraV3RegistryEvidence = structuredClone(v3RelationDurable);
@@ -1279,13 +1473,15 @@ const legacyRecord = {
   extraRegistryRow.source_ref.field = "parallel_exact";
   extraV3RegistryEvidence.replay_rows.evidence.push(extraRegistryRow);
   assert.throws(() => composeResolutionView(extraV3RegistryEvidence), (error) => (
-    error?.code === "external_identity_source_provenance_invalid"
+    error?.statusCode === 409
+      && error?.message === "csm_resolution_replay_integrity_invalid"
   ), "Resolution View rejects extra external Registry authority evidence");
 
   const missingV3RelationEvidence = structuredClone(v3RelationDurable);
   delete missingV3RelationEvidence.replay_rows.evidence;
   assert.throws(() => composeResolutionView(missingV3RelationEvidence), (error) => (
-    error?.code === "external_identity_registry_evidence_missing"
+    error?.statusCode === 409
+      && error?.message === "csm_resolution_replay_integrity_invalid"
   ), "v3 external relation readback fails closed when private evidence is missing");
   const durableExternalV2View = await handleResolutionViewRequest({
     tenantId: "tenant-db", assetId: "external-asset-v2",
@@ -1369,12 +1565,10 @@ const legacyRecord = {
   assert.equal(unknown.external_identity_support, undefined);
   assert.throws(() => composeResolutionView(unknown), (error) => (
     error?.statusCode === 409
-      && error?.message === "csm_resolution_external_identity_receipt_invalid"
+      && error?.message === "csm_resolution_replay_integrity_invalid"
   ), "an external output with an unknown private receipt must fail readback closed");
-  assert.ok(!unknownRequested.some((url) => (
-    url.pathname.endsWith("/csm_registry_releases")
-      || url.pathname.endsWith("/csm_evidence_observations")
-  )), "unknown releases must fail closed before provenance reads");
+  assert.ok(!unknownRequested.some((url) => url.pathname.endsWith("/csm_registry_releases")),
+    "unknown releases must fail closed before Registry projection");
 
   const tamperedReceipt = { ...v2Stored, pack_sha256: "a".repeat(64) };
   const { value: tampered, requested: tamperedRequested } = await readExternal({
@@ -1383,7 +1577,7 @@ const legacyRecord = {
   assert.equal(tampered.external_identity_support, undefined);
   assert.throws(() => composeResolutionView(tampered), (error) => (
     error?.statusCode === 409
-      && error?.message === "csm_resolution_external_identity_receipt_invalid"
+      && error?.message === "csm_resolution_replay_integrity_invalid"
   ), "an external output with a tampered private receipt must fail readback closed");
   assert.ok(!tamperedRequested.some((url) => url.pathname.endsWith("/csm_registry_releases")),
     "a receipt that differs from its append-only descriptor must fail before Registry readback");
@@ -1483,7 +1677,7 @@ const legacyRecord = {
   assert.equal(sha256Json(view), DE55_V1_REPLAY_VIEW_SHA256,
     "historical v1 rows also retain their complete de55 public projection");
 
-  await assert.rejects(handleResolutionReviewRequest({
+  const historicalReview = await handleResolutionReviewRequest({
     tenantId: "t1", reviewerId: "u1",
     payload: {
       asset_id: legacyRecord.asset_id,
@@ -1494,8 +1688,11 @@ const legacyRecord = {
       }]
     },
     dependencies: { readRecord: async () => legacyRecord, appendReview: async ({ review: value }) => value }
-  }), /csm_review_measurement_publication_coverage_missing/,
-  "historical rows remain readable but cannot manufacture a v2 field-measurement denominator");
+  });
+  assert.equal(historicalReview.schema_version, CAPTURED_E1AE_RESOLUTION_REVIEW_VERSION);
+  assert.match(historicalReview.corrected_title, /Sapphire Selections/);
+  assert.equal(historicalReview.measurement_snapshot, undefined,
+    "historical review-v1 remains reviewable without inventing a v2 denominator");
 }
 
 // --- a missing run is 404, not an empty view ---------------------------------
@@ -1511,27 +1708,31 @@ const legacyRecord = {
   const review = await handleResolutionReviewRequest({
     tenantId: "t1", reviewerId: "u1",
     payload: {
-      asset_id: "asset-1",
+      asset_id: futureReviewRecord.asset_id,
       verdict: REVIEW_VERDICT.CORRECTED,
       corrections: [{ bracket: "set", canonical_field: "set", reason: CORRECTION_REASON.MISSED_VALUE, original_value: "", corrected_value: "Sapphire Selections" }],
       // A reviewer's own title, which must be ignored entirely.
       corrected_title: "WHATEVER THE REVIEWER TYPED",
       measurement_snapshot: { schema_version: "client-forgery", brackets: [] }
     },
-    dependencies: { ...deps, appendReview: async ({ review: r }) => { appended = r; return r; } }
+    dependencies: {
+      ...futureReviewDeps,
+      appendReview: async ({ review: r }) => { appended = r; return r; }
+    }
   });
   assert.match(review.corrected_title, /Sapphire Selections/);
   assert.ok(!/WHATEVER/.test(review.corrected_title),
     "a title in the payload must never reach the record");
-  assert.equal(review.original_title, record.output_title, "the shipped output is preserved");
+  assert.equal(review.original_title, futureReviewRecord.output_title,
+    "the shipped output is preserved");
   assert.ok(appended, "the review is persisted");
   assert.equal(appended.revision_sha256, review.revision_sha256);
   // Provenance is filled from the stored run, not from the client.
-  assert.equal(review.resolution_id, "res-1");
-  assert.equal(review.output_id, "out-1");
+  assert.equal(review.resolution_id, futureReviewRecord.resolution_id);
+  assert.equal(review.output_id, futureReviewRecord.output_id);
   assert.equal(review.reviewer_id, "u1");
   assert.equal(review.measurement_basis, "FIELD_REVIEWED");
-  assert.equal(review.measurement_snapshot.asset_id, "asset-1");
+  assert.equal(review.measurement_snapshot.asset_id, futureReviewRecord.asset_id);
   assert.notEqual(review.measurement_snapshot.schema_version, "client-forgery",
     "the server-replayed view owns the measurement denominator");
   assert.match(review.measurement_snapshot_sha256, /^[0-9a-f]{64}$/);
@@ -1541,8 +1742,8 @@ const legacyRecord = {
 {
   await assert.rejects(() => handleResolutionReviewRequest({
     tenantId: "t1", reviewerId: "u1",
-    payload: { asset_id: "asset-1", verdict: REVIEW_VERDICT.APPROVED, corrections: [{ bracket: "set", reason: CORRECTION_REASON.WRONG_VALUE, corrected_value: "x" }] },
-    dependencies: deps
+    payload: { asset_id: futureReviewRecord.asset_id, verdict: REVIEW_VERDICT.APPROVED, corrections: [{ bracket: "set", reason: CORRECTION_REASON.WRONG_VALUE, corrected_value: "x" }] },
+    dependencies: futureReviewDeps
   }), /approved_with_corrections/);
 }
 

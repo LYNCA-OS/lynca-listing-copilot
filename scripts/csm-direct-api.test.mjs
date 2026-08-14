@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { CSM_THIN_RUNTIME_CONTRACT } from "../lib/listing/thin/csm-runtime-contract.mjs";
 import { readFile, readdir } from "node:fs/promises";
-import { buildAccuracyLossLedger } from "../lib/listing/thin/accuracy-loss-ledger.mjs";
+import {
+  buildAccuracyLossLedger,
+  validateAccuracyLossLedger
+} from "../lib/listing/thin/accuracy-loss-ledger.mjs";
 
 import {
   CSM_DIRECT_ESTIMATED_TOKENS,
@@ -52,7 +55,7 @@ import {
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
 import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
 import {
-  CANONICAL_FIELDS_PROMPT_VERSION,
+  CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT_VERSION as CANONICAL_FIELDS_PROMPT_VERSION,
   parseCanonicalFields
 } from "../lib/listing/thin/canonical-fields.mjs";
 import { composeCanonicalFieldsForStoredOutput } from "../lib/listing/thin/csm-replay.mjs";
@@ -93,7 +96,8 @@ import {
   THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
-  CSM_PROJECTION_ACTIVATION
+  CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
   composeLyncaStandardNameForProfile,
@@ -101,6 +105,7 @@ import {
 } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import {
   COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT,
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1,
   resolveVerifiedOriginalObservation,
   VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
@@ -236,8 +241,8 @@ function auditedProviderFields(fields) {
       ...active,
       csm_rows: activeRows
     }))).digest("hex"),
-    "5e07e998aab488f839259249192f57b336d6cbe6f5dc06c357a93447a2eff78d",
-    "the complete active CNL v0.3 public result must remain byte-identical"
+    "096e2bc743311f788f6eec817c110694eb6f4c817ab57844c236ca2241edbc32",
+    "the complete captured active CNL v0.2 public result must remain byte-identical"
   );
 }
 const CURRENT_DIRECT_EXECUTION_SHA256 = buildCsmModelExecutionContractSha256({
@@ -355,13 +360,10 @@ assert.equal(CSM_DIRECT_LOCAL_FALLBACK_CONCURRENCY, 6);
 assert.equal(CSM_DIRECT_CLAIM_POLL_MS, 1_000);
 assert.equal(CSM_DIRECT_CLAIM_TIMEOUT_MS, 145_000);
 assert.equal(CSM_DIRECT_PROVIDER_TIMEOUT_MS, 120_000);
-assert.equal(CSM_DIRECT_MAX_ATTEMPTS, 2);
-assert.equal(CSM_THIN_RUNTIME_CONTRACT.semanticResultLimit, 1);
-assert.equal(CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryLimit, 1);
-assert.equal(
-  CSM_THIN_RUNTIME_CONTRACT.automaticTransportRetryPolicy,
-  "definitive-complete-http-502-no-output-no-token-v1"
-);
+assert.equal(CSM_DIRECT_MAX_ATTEMPTS, 3);
+assert.equal(CSM_THIN_RUNTIME_CONTRACT.maximumAttempts, 3);
+assert.equal(CSM_THIN_RUNTIME_CONTRACT.retryPolicy,
+  "CAPTURED_E1AE_GENERIC_TRANSIENT_V1");
 assert.equal(CSM_DIRECT_ESTIMATED_TOKENS, 6_500);
 assert.equal(CSM_DIRECT_PROMPT_VERSION, CANONICAL_FIELDS_PROMPT_VERSION);
 assert.equal(CSM_PERSISTENCE_READINESS_CACHE_TTL_MS, 30_000);
@@ -666,7 +668,7 @@ assert.notEqual(deterministicCsmSessionId("operation-a"), deterministicCsmSessio
   assert.deepEqual(adapterRequest.init.headers, request.init.headers);
   assert.throws(
     () => resolveCsmProviderAdapter("future-provider"),
-    /unsupported_csm_provider:future-provider/,
+    /unsupported_csm_provider_adapter:future-provider:canonical-fields-request-v1/,
     "an unknown provider must fail before caller creation or fetch"
   );
 }
@@ -757,19 +759,17 @@ const canonicalImages = () => ({
 });
 
 const activeVerifiedProjection = structuredClone(CSM_PROJECTION_ACTIVATION);
-const dormantProjection = structuredClone(CSM_PROJECTION_ACTIVATION);
-dormantProjection.active_writer.standard = {
-  composer_version: THIN_COMPOSER_VERSION_V2,
-  marketplace_profile_version: EBAY_PROFILE_VERSION
+const futureVerifiedProjection = {
+  ...structuredClone(CSM_PROJECTION_ACTIVATION),
+  active_writer: structuredClone(CSM_WRITER_PROJECTION_CONTRACTS.future_v3)
 };
-dormantProjection.active_writer.verified_original_observation_overlay = null;
 const subsetAOriginalSha256 = WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images
   .map(({ content_sha256 }) => content_sha256);
 
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256
-}).resolution_contract_sha256, COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
-"Activation A must select the exact verified overlay by default");
+}).resolution_contract_sha256, COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256,
+"the captured active writer must select the exact legacy verified overlay");
 const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256,
   projectionActivation: activeVerifiedProjection
@@ -777,7 +777,7 @@ const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
 assert.equal(activeVerifiedSelection.mode,
   "EXTERNAL_AND_VERIFIED_ORIGINAL_CLOSED_PROJECTION");
 assert.equal(activeVerifiedSelection.resolution_contract_sha256,
-  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256);
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256);
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: ["1".repeat(64), "2".repeat(64)],
   projectionActivation: activeVerifiedProjection
@@ -792,10 +792,11 @@ for (const mixed of [
     }
   },
   {
-    ...dormantProjection,
+    ...futureVerifiedProjection,
     active_writer: {
-      ...dormantProjection.active_writer,
-      verified_original_observation_overlay: VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
+      ...futureVerifiedProjection.active_writer,
+      verified_original_observation_overlay:
+        activeVerifiedProjection.active_writer.verified_original_observation_overlay
     }
   }
 ]) {
@@ -878,6 +879,12 @@ function verifiedOriginalCheckpointFixture() {
       COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
     resolution_contract: COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT,
     execution_contract_sha256: "d".repeat(64),
+    prompt_version:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3.canonical_fields.semantic_prompt_version,
+    request_builder_version:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3.canonical_fields.request_builder_version,
+    response_parser_version:
+      CSM_WRITER_PROJECTION_CONTRACTS.future_v3.canonical_fields.response_parser_version,
     csm_rows: rows
   };
   result.accuracy_loss_ledger = buildAccuracyLossLedger({
@@ -925,8 +932,12 @@ function resealVerifiedOriginalPrepared(prepared) {
     resolutionContractSha256:
       COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT.contract_sha256,
     originalSetSha256: fixture.originalSetSha256,
-    projectionActivation: activeVerifiedProjection
+    projectionActivation: futureVerifiedProjection
   };
+  assert.doesNotThrow(() => validateAccuracyLossLedger(
+    fixture.prepared.accuracy_loss_ledger,
+    { result: fixture.prepared, semantics: "CURRENT" }
+  ));
   const checkpoint = buildCsmPersistenceCheckpoint(args);
   assert.equal(checkpoint.csm_persistence_checkpoint.schema_version,
     CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERIFIED_ORIGINAL_VERSION);
@@ -964,7 +975,7 @@ function resealVerifiedOriginalPrepared(prepared) {
   }), (error) => error.detail === "verified_original_observation_receipt_mismatch");
   assert.throws(() => buildCsmPersistenceCheckpoint({
     ...args,
-    projectionActivation: dormantProjection
+    projectionActivation: activeVerifiedProjection
   }), (error) => error.detail === "verified_original_observation_release_not_active");
   assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
     tenantId: args.tenantId,
@@ -1156,9 +1167,10 @@ function resealVerifiedOriginalPrepared(prepared) {
     dependencies
   });
   assert.equal(providerCalls, 1);
-  assert.deepEqual(JSON.parse(providerWire).tools, [{ type: "web_search" }]);
-  assert.equal(JSON.parse(providerWire).tool_choice, "auto");
-  assert.equal(JSON.parse(providerWire).max_tool_calls, 2);
+  for (const omitted of ["tools", "tool_choice", "max_tool_calls", "include"]) {
+    assert.equal(Object.hasOwn(JSON.parse(providerWire), omitted), false,
+      `the captured provider wire omits ${omitted}`);
+  }
   for (const hidden of [...originalSha256, originalSetSha256]) {
     assert.doesNotMatch(providerWire, new RegExp(hidden));
   }
@@ -1259,6 +1271,7 @@ function resealVerifiedOriginalPrepared(prepared) {
   const releaseV1 = EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
     .registry_thin_external_identity_high_risers_v1;
   let historicalCheckpoint = null;
+  let historicalTitle = "";
   let providerBoundaryCalls = 0;
   let recoveredOperationKey = "";
 
@@ -1277,8 +1290,10 @@ function resealVerifiedOriginalPrepared(prepared) {
     lookupOperationResultByKey: async ({ operationKey }) => {
       assert.equal(operationKey, recoveredOperationKey);
       const recognitionSessionId = deterministicCsmSessionId(operationKey);
+      const captured = capturedPreparedResult(recognitionSessionId);
+      historicalTitle = captured.title;
       const prepared = {
-        ...preparedResult(recognitionSessionId, "Historical v1 title"),
+        ...captured,
         external_identity_support: {
           ...releaseV1.receipt,
           status: "ABSTAINED",
@@ -1344,7 +1359,7 @@ function resealVerifiedOriginalPrepared(prepared) {
     callProvider: async () => { providerBoundaryCalls += 1; },
     dependencies
   });
-  assert.equal(recovered.title, "Historical v1 title");
+  assert.equal(recovered.title, historicalTitle);
   assert.equal(recovered.execution_origin, "HISTORICAL_KEY_RECOVERY");
   assert.equal(providerBoundaryCalls, 0);
 
@@ -1563,6 +1578,7 @@ function passthroughAuthority({
 }
 
 function preparedResult(recognitionSessionId, title = "Test title") {
+  const writer = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
   const rawProviderOutput = "{}";
   const ledgerResult = {
     title,
@@ -1581,10 +1597,14 @@ function preparedResult(recognitionSessionId, title = "Test title") {
   };
   const accuracyLossLedger = buildAccuracyLossLedger({
     rawProviderOutput,
-    result: ledgerResult
+    result: ledgerResult,
+    semantics: writer.accuracy_loss_ledger_semantics
   });
   return {
     ...ledgerResult,
+    prompt_version: writer.canonical_fields.semantic_prompt_version,
+    request_builder_version: writer.canonical_fields.request_builder_version,
+    response_parser_version: writer.canonical_fields.response_parser_version,
     external_identity_support: {
       schema_version: EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases[
         EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID
@@ -1608,9 +1628,23 @@ function preparedResult(recognitionSessionId, title = "Test title") {
     csm_rows: {
       resolution: {
         tenant_id: "tenant-1",
-        recognition_session_id: recognitionSessionId
+        recognition_session_id: recognitionSessionId,
+        contract_version: writer.durable_projection_contract_version,
+        revision: 1,
+        grammar: "NON_TCG",
+        registry_release_id: "registry_thin_sem_v25",
+        resolver_version: "thin-path-observation-only-v1",
+        conflict_policy_version: "none-single-observation-v1",
+        resolution_status: "COMPLETE"
       },
-      output: { title },
+      output: {
+        title,
+        contract_version: writer.durable_projection_contract_version,
+        marketplace: "EBAY",
+        composer_version: writer.standard.composer_version,
+        marketplace_profile_version: writer.standard.marketplace_profile_version,
+        structured_output: { composition_grammar: "standard" }
+      },
       session_hashes: {
         csm_recognition_packet_sha256: "1".repeat(64),
         csm_resolution_packet_sha256: "2".repeat(64),
@@ -1618,6 +1652,106 @@ function preparedResult(recognitionSessionId, title = "Test title") {
       }
     }
   };
+}
+
+function capturedPreparedResult(recognitionSessionId) {
+  const rawProviderOutput = JSON.stringify({
+    year: "2025",
+    manufacturer: "Topps",
+    product: "Chrome",
+    set: "",
+    subjects: ["Historical Player"],
+    team: "",
+    card_name: "",
+    release_variant: "",
+    surface_color: "",
+    parallel_family: "",
+    parallel_exact: "",
+    descriptive_rarity: "",
+    card_number: "1",
+    serial: "",
+    attributes: [],
+    grading_info: null,
+    grammar: "standard",
+    lot_count: "",
+    language: "",
+    unreadable: [],
+    low_confidence: [],
+    special_stamp: "",
+    description: ""
+  });
+  const observedFields = parseCanonicalFields(JSON.parse(rawProviderOutput)).fields;
+  const composed = finishCanonicalFields(observedFields);
+  const writer = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+  const csmRows = buildCsmStageRows({
+    tenantId: "tenant-1",
+    recognitionSessionId,
+    fields: composed.fields,
+    observedFields,
+    composed,
+    title: composed.title,
+    contractVersion: writer.durable_projection_contract_version
+  });
+  const result = {
+    ...composed,
+    observed_fields: observedFields,
+    raw_provider_output: rawProviderOutput,
+    prompt_version: writer.canonical_fields.semantic_prompt_version,
+    request_builder_version: writer.canonical_fields.request_builder_version,
+    response_parser_version: writer.canonical_fields.response_parser_version,
+    csm_rows: csmRows
+  };
+  result.accuracy_loss_ledger = buildAccuracyLossLedger({
+    rawProviderOutput,
+    result,
+    semantics: writer.accuracy_loss_ledger_semantics
+  });
+  return result;
+}
+
+// A historical stage-v2 packet is a closed semantic tuple, not merely a set of
+// self-consistent hashes. Re-sealing a different resolver/status/revision must
+// not turn it into a checkpoint the current reader can resume.
+{
+  const recognitionSessionId = "session-captured-resolution-tuple";
+  const args = {
+    prepared: capturedPreparedResult(recognitionSessionId),
+    tenantId: "tenant-1",
+    operationKey: "captured-resolution-tuple",
+    payloadHash: "7".repeat(64),
+    recognitionSessionId
+  };
+  const checkpoint = buildCsmPersistenceCheckpoint(args);
+  assert.equal(validateCsmPersistenceCheckpoint(checkpoint, {
+    tenantId: args.tenantId,
+    operationKey: args.operationKey,
+    payloadHash: args.payloadHash,
+    recognitionSessionId
+  }), checkpoint);
+  for (const mutate of [
+    (resolution) => { resolution.revision = 2; },
+    (resolution) => { resolution.resolution_status = "FUTURE_COMPLETE"; },
+    (resolution) => { resolution.registry_release_id = "future-registry"; },
+    (resolution) => { resolution.resolver_version = "future-resolver"; },
+    (resolution) => { resolution.conflict_policy_version = "future-conflict"; }
+  ]) {
+    const forged = structuredClone(checkpoint);
+    mutate(forged.csm_rows.resolution);
+    forged.csm_rows.resolution.recognition_packet_sha256 = computeCsmPacketHashes(
+      forged.csm_rows
+    ).csm_recognition_packet_sha256;
+    forged.csm_rows.output.resolution_packet_sha256 = computeCsmPacketHashes(
+      forged.csm_rows
+    ).csm_resolution_packet_sha256;
+    forged.csm_rows.session_hashes = computeCsmPacketHashes(forged.csm_rows);
+    forged.csm_persistence_checkpoint.packet_hashes = forged.csm_rows.session_hashes;
+    assert.throws(() => validateCsmPersistenceCheckpoint(forged, {
+      tenantId: args.tenantId,
+      operationKey: args.operationKey,
+      payloadHash: args.payloadHash,
+      recognitionSessionId
+    }), (error) => error.code === "csm_persistence_checkpoint_invalid");
+  }
 }
 
 function successfulDependencies({
@@ -1695,98 +1829,19 @@ function stagedSuccessfulDependencies(options = {}) {
   };
 }
 
-// COS-49: a terminal Lot refusal happens only after durable settlement and
-// atomic persistence. Resume reads the same authority receipt, spends zero
-// provider calls, and returns the same nonretryable review-required error.
-for (const [failureCode, terminal] of [
-  ["LOT_QUANTITY_UNRESOLVED", {
-    lot_quantity_unresolved: true, lot_single_card: false,
-    lot_unshared_attributes: [], publishable: false,
-    failure_code: "LOT_QUANTITY_UNRESOLVED"
-  }],
-  ["LOT_SINGLE_CARD", {
-    lot_quantity_unresolved: false, lot_single_card: true,
-    lot_unshared_attributes: [], publishable: false,
-    failure_code: "LOT_SINGLE_CARD"
-  }]
-]) {
-  let durable = null;
-  let providerCalls = 0;
-  let persistenceCalls = 0;
-  const authority = passthroughAuthority({
-    shallowWrapAfterSettle: true,
-    lookup: async () => durable
-      ? { status: "found", result: durable }
-      : { status: "not_found" }
+// The active captured writer predates durable Lot-terminal receipts. Their
+// future-v3 composition and replay behavior is exercised at the explicit
+// lower-level writer seam; the public error mapping remains version-neutral.
+for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
+  const terminal = Object.assign(new Error(failureCode), {
+    code: failureCode,
+    statusCode: 409,
+    retryable: false,
+    review_required: true,
+    trace_status: "PERSISTED_REVIEW_REQUIRED",
+    recognition_session_id: "csmsess_terminal_lot"
   });
-  const dependencies = successfulDependencies({ authority });
-  dependencies.preparePath = async (input) => {
-    providerCalls += 1;
-    return {
-      ...preparedResult(input.recognitionSessionId, "Diagnostic Lot title"),
-      grammar: "lot",
-      lot_quantity_unresolved: terminal.lot_quantity_unresolved,
-      lot_single_card: terminal.lot_single_card,
-      lot_unshared_attributes: terminal.lot_unshared_attributes,
-      lot_publishable: false,
-      lot_publication_failure_code: failureCode,
-      csm_rows: {
-        ...preparedResult(input.recognitionSessionId).csm_rows,
-        output: {
-          title: "Diagnostic Lot title",
-          structured_output: {
-            lot_count: failureCode === "LOT_SINGLE_CARD" ? "1" : "",
-            lot_terminal: terminal
-          }
-        }
-      },
-      execution_contract_sha256: buildCsmModelExecutionContractSha256({
-        provider: input.provider,
-        model: input.model,
-        requestedEffort: input.effort,
-        imageDetail: input.imageDetail,
-        maxOutputTokens: input.maxOutputTokens,
-        semanticPromptVersion: input.promptVersion,
-        transportProfile: input.transportProfile,
-        imageUrls: input.imageUrls
-      })
-    };
-  };
-  dependencies.persistPath = async ({ prepared }) => {
-    persistenceCalls += 1;
-    durable = {
-      ...prepared,
-      csm_persistence: { ok: true, atomic: true, session: { saved: true } }
-    };
-    return durable;
-  };
-  const request = {
-    tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
-    intentId: `terminal-${failureCode.toLowerCase()}`, dependencies
-  };
-  let first;
-  await assert.rejects(runDirectCsmAsset(request), (error) => {
-    first = error;
-    return error.code === failureCode
-      && error.statusCode === 409
-      && error.retryable === false
-      && error.review_required === true
-      && error.trace_status === "PERSISTED_REVIEW_REQUIRED"
-      && /^csmsess_[0-9a-f]{40}$/.test(error.recognition_session_id);
-  });
-  assert.equal(providerCalls, 1);
-  assert.equal(persistenceCalls, 1);
-  assert.deepEqual(durable.csm_rows.output.structured_output.lot_terminal, terminal);
-
-  await assert.rejects(runDirectCsmAsset({ ...request, resumeOnly: true }), (error) => (
-    error.code === failureCode
-      && error.recognition_session_id === first.recognition_session_id
-      && error.review_required === true
-      && error.retryable === false
-  ));
-  assert.equal(providerCalls, 1, "terminal Lot resume must add zero provider calls");
-  assert.equal(persistenceCalls, 1, "already-persisted terminal Lot must add zero writes");
-  const response = buildCsmDirectFailureResponse(first);
+  const response = buildCsmDirectFailureResponse(terminal);
   assert.equal(response.status, 409);
   assert.equal(response.body.error_type, "CSM_REVIEW_REQUIRED");
   assert.equal(response.body.trace_status, "PERSISTED_REVIEW_REQUIRED");
@@ -2197,8 +2252,12 @@ for (const [failureCode, terminal] of [
   }));
   historicalStagedContract.provider_adapter_version = "historical-openai-adapter-v1";
   historicalStagedContract.provider_adapter_sha256 = "8".repeat(64);
-  historicalStagedContract.request_builder_version = "historical-request-builder-v1";
-  historicalStagedContract.response_parser_version = "historical-response-parser-v1";
+  historicalStagedContract.request_builder_version =
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+      .canonical_fields.request_builder_version;
+  historicalStagedContract.response_parser_version =
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+      .canonical_fields.response_parser_version;
   const historicalStagedExecutionSha256 = sha256ExecutionContractValue(
     historicalStagedContract
   );
@@ -2668,7 +2727,7 @@ for (const [failureCode, terminal] of [
         model: "model-before-deployment-drift",
         requested_effort: "effort-before-deployment-drift",
         image_detail: "high",
-        prompt_version: "prompt-before-deployment-drift"
+        prompt_version: CSM_DIRECT_PROMPT_VERSION
       };
     },
     persistPath: async ({ prepared, model, effort, promptVersion }) => {
@@ -2689,7 +2748,7 @@ for (const [failureCode, terminal] of [
       resumedSessionPayload = bound.payload;
       assert.equal(model, "model-before-deployment-drift");
       assert.equal(effort, "effort-before-deployment-drift");
-      assert.equal(promptVersion, "prompt-before-deployment-drift");
+      assert.equal(promptVersion, CSM_DIRECT_PROMPT_VERSION);
       return {
         ...prepared,
         csm_persistence: { ok: true, atomic: true, session: { saved: true } }
@@ -3386,10 +3445,10 @@ await assert.rejects(
     "legacy recovery must perform zero sign, zero session recreation and zero provider work");
 }
 
-// Portable recovery is not a finite allowlist of Luna payload hashes. A future
-// profile's execution-bound checkpoint keeps the same stable operation key and
-// is recovered by key only. Its embedded historical contract validates against
-// its own SHA, never against today's active profile or adapter registry.
+// Portable recovery is not a finite allowlist of Luna payload hashes. A changed
+// model profile may keep the published canonical writer tuple and stable
+// operation key; its execution contract validates against its own SHA, never
+// against today's active model profile or adapter registry.
 {
   const task = ordinaryTask("portable-future-profile-resume");
   const operationKey = buildLunaDirectOperationKey(task);
@@ -3418,8 +3477,12 @@ await assert.rejects(
   );
   futureExecutionContract.provider_adapter_version = "future-openai-adapter-v9";
   futureExecutionContract.provider_adapter_sha256 = "9".repeat(64);
-  futureExecutionContract.request_builder_version = "future-request-builder-v4";
-  futureExecutionContract.response_parser_version = "future-response-parser-v3";
+  futureExecutionContract.request_builder_version =
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+      .canonical_fields.request_builder_version;
+  futureExecutionContract.response_parser_version =
+    CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible
+      .canonical_fields.response_parser_version;
   const futureExecutionSha256 = sha256ExecutionContractValue(futureExecutionContract);
   const historicalTask = {
     ...task,

@@ -22,6 +22,7 @@
 import { createHash } from "node:crypto";
 
 export const CSM_RESOLUTION_REVIEW_VERSION = "csm-resolution-review-v2";
+export const CAPTURED_E1AE_RESOLUTION_REVIEW_VERSION = "csm-resolution-review-v1";
 export const CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION =
   "csm-review-measurement-snapshot-v1";
 
@@ -335,6 +336,111 @@ export function validateCsmResolutionReviewIntegrity(review = {}) {
   }
   if (reviewRevisionSha256(review) !== review.revision_sha256) {
     throw new Error("csm_review_integrity_revision_hash_mismatch");
+  }
+  return true;
+}
+
+/** Frozen Production-e1ae review contract for exact stage-v2 read/write compatibility. */
+export function buildCapturedE1aeResolutionReview({
+  provenance = {},
+  verdict,
+  corrections = [],
+  originalFields = {},
+  originalTitle = "",
+  recomposeTitle,
+  reviewedAt = null,
+  excludedFromMetrics = false,
+  note = ""
+} = {}) {
+  if (!Object.values(REVIEW_VERDICT).includes(verdict)) {
+    throw new Error(`csm_review_unknown_verdict:${verdict}`);
+  }
+  const missing = REQUIRED_PROVENANCE.filter((key) => !String(provenance[key] ?? "").trim());
+  if (missing.length) throw new Error(`csm_review_missing_provenance:${missing.join(",")}`);
+  for (const correction of corrections) {
+    if (!String(correction?.bracket ?? "").trim()) {
+      throw new Error("csm_review_correction_needs_bracket");
+    }
+    if (!Object.values(CORRECTION_REASON).includes(correction.reason)) {
+      throw new Error(`csm_review_unknown_reason:${correction.reason}`);
+    }
+    if (!Object.prototype.hasOwnProperty.call(correction, "corrected_value")) {
+      throw new Error(`csm_review_correction_needs_value:${correction.bracket}`);
+    }
+  }
+  if (verdict === REVIEW_VERDICT.CORRECTED && !corrections.length) {
+    throw new Error("csm_review_corrected_without_corrections");
+  }
+  if (verdict === REVIEW_VERDICT.APPROVED && corrections.length) {
+    throw new Error("csm_review_approved_with_corrections");
+  }
+
+  const correctedFields = { ...originalFields };
+  for (const correction of corrections) {
+    correctedFields[correction.canonical_field || correction.bracket]
+      = correction.corrected_value;
+  }
+  let correctedTitle = originalTitle;
+  if (corrections.length) {
+    if (typeof recomposeTitle !== "function") throw new Error("csm_review_needs_recomposer");
+    correctedTitle = String(recomposeTitle(correctedFields) ?? "");
+  }
+  const record = {
+    schema_version: CAPTURED_E1AE_RESOLUTION_REVIEW_VERSION,
+    ...Object.fromEntries(REQUIRED_PROVENANCE.map((key) => [
+      key, String(provenance[key]).trim()
+    ])),
+    verdict,
+    corrections: corrections.map((correction) => Object.freeze({
+      bracket: correction.bracket,
+      canonical_field: correction.canonical_field || correction.bracket,
+      reason: correction.reason,
+      original_value: correction.original_value ?? "",
+      corrected_value: correction.corrected_value,
+      note: correction.note || ""
+    })),
+    original_fields: originalFields,
+    original_title: originalTitle,
+    corrected_fields: correctedFields,
+    corrected_title: correctedTitle,
+    excluded_from_metrics: Boolean(excludedFromMetrics) || verdict === REVIEW_VERDICT.UNDECIDED,
+    note,
+    reviewed_at: reviewedAt
+  };
+  record.revision_sha256 = createHash("sha256")
+    .update(JSON.stringify([
+      record.asset_id,
+      record.resolution_id,
+      record.verdict,
+      record.corrections,
+      record.corrected_title
+    ]))
+    .digest("hex");
+  return Object.freeze(record);
+}
+
+export function validateCapturedE1aeResolutionReviewIntegrity(review = {}) {
+  if (review?.schema_version !== CAPTURED_E1AE_RESOLUTION_REVIEW_VERSION) {
+    throw new Error("csm_review_integrity_contract_invalid");
+  }
+  let rebuilt;
+  try {
+    rebuilt = buildCapturedE1aeResolutionReview({
+      provenance: Object.fromEntries(REQUIRED_PROVENANCE.map((key) => [key, review[key]])),
+      verdict: review.verdict,
+      corrections: review.corrections,
+      originalFields: review.original_fields,
+      originalTitle: review.original_title,
+      recomposeTitle: () => review.corrected_title,
+      reviewedAt: review.reviewed_at,
+      excludedFromMetrics: review.excluded_from_metrics,
+      note: review.note
+    });
+  } catch (error) {
+    throw new Error(`csm_review_integrity_contract_invalid:${error.message}`);
+  }
+  if (!sameCanonicalValue(rebuilt, review)) {
+    throw new Error("csm_review_integrity_revision_mismatch");
   }
   return true;
 }

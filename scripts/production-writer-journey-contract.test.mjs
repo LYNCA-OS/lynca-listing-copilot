@@ -46,7 +46,11 @@ assert.doesNotMatch(spec, /startButton\.click\(\)/);
 assert.match(spec, /getByTestId\("start-recognition"\)\)\.toBeHidden/);
 assert.match(spec, /\/api\/v4\/listing-feedback/);
 assert.match(spec, /v4_persistence\?\.transaction\?\.saved/);
-assert.match(spec, /\[1, 2\][\s\S]*?\.toContain\(recognitionPayload\?\.provider_attempt_number\)/);
+assert.match(spec,
+  /function providerAttemptsForWriter[\s\S]*?capturedProductionWriterMode\(writerProjectionMode\) \? \[1, 2, 3\] : \[1, 2\]/,
+  "the captured writer admits its exact three-attempt retry policy without changing current writers");
+assert.match(spec,
+  /providerAttemptsForWriter\(writerProjectionMode\)[\s\S]*?\.toContain\(recognitionPayload\?\.provider_attempt_number\)/);
 assert.match(spec,
   /provider_retry_count[\s\S]*?recognitionPayload\.provider_attempt_number - 1/);
 assert.match(spec, /test\.setTimeout\(25 \* 60 \* 1000\)/,
@@ -71,6 +75,8 @@ assert.match(spec, /COMPATIBILITY_BRIDGE_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V2_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE/);
+assert.match(spec, /COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION/);
+assert.match(spec, /COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE/);
 assert.match(spec, /manifest\.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID/);
 assert.match(spec, /manifest\.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS/);
 assert.match(spec, /manifest\.bridge_marker === COMPATIBILITY_BRIDGE_V2_MARKER/);
@@ -80,6 +86,9 @@ assert.match(spec,
 assert.match(spec,
   /compatibilityBridgeWriterProjectionMode\(manifest, \{ expectedGitSha \}\)[\s\S]*?COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE/,
   "the v3 manifest mode must be sealed by the shared selector validator");
+assert.match(spec,
+  /EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID[\s\S]*?EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER/,
+  "the v4 manifest must preserve the exact selector descriptor and marker");
 assert.match(spec, /manifest\.git_sha !== expectedGitSha/,
   "the reduced manifest must be bound to the exact bridge commit");
 assert.match(spec,
@@ -155,13 +164,16 @@ assert.match(forwardReadback,
   /webIdentityQueryHasVisibleAnchors\(webReceipt\.queries\)/,
   "candidate and post-promotion readback must share the visible-query anchor gate");
 assert.match(spec,
-  /semanticCases = evidence\.cases\.filter[\s\S]*?webReceiptClassifications = semanticCases\.map[\s\S]*?classifyFounderWebSearch[\s\S]*?webReceiptClaimsMatchViews/,
-  "all semantic cases must use one shared Web classifier before either closed seal");
+  /webReceiptClassifications = capturedProductionWriterMode\(writerProjectionMode\)[\s\S]*?\? \[\] : semanticCases\.map[\s\S]*?classifyFounderWebSearch[\s\S]*?webReceiptClaimsMatchViews = capturedProductionWriterMode/,
+  "captured writer omission and receipt-bearing writers must enter distinct closed Web proofs");
+assert.match(spec,
+  /capturedProductionProjectionReceiptsOmitted[\s\S]*?hasOwnProperty\.call\(resolutionView, key\)[\s\S]*?publication_coverage/,
+  "captured writer receipt absence must be proven by own-key omission");
 assert.match(spec,
   /partitionCaseIds[\s\S]*?qualifiedGovernedWebCases[\s\S]*?strictNoSearchCases[\s\S]*?usedWithoutGovernedAppliedSupportCases[\s\S]*?new Set\(partitionCaseIds\)\.size === semanticCaseIds\.length/,
   "the bridge seal must prove an exhaustive, non-duplicated semantic partition");
 const activationProjectionCallSite = spec.match(
-  /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView\);[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
+  /founderWebSearchReceipt = founderWebSearchProof\(sourceCase, resolutionView, \{[\s\S]*?writerProjectionMode[\s\S]+?(?=\n      if \(sourceCase\.case_id === "LOT_SHARED_ONLY"\))/
 )?.[0] || "";
 assert.ok(activationProjectionCallSite,
   "the per-case Web and activation proof call site must remain explicit");
@@ -177,12 +189,15 @@ assert.doesNotMatch(spec, /query_exact/,
   "the verifier must not pretend the model-owned Web query is an exact application contract");
 assert.match(spec, /title\.startsWith\(`Lot\*\$\{sourceCase\.expected_lot_count\} `\)/);
 assert.match(directApiTest,
-  /terminal Lot refusal happens only after durable settlement[\s\S]*?LOT_QUANTITY_UNRESOLVED[\s\S]*?assert\.equal\(providerCalls, 1\)[\s\S]*?assert\.equal\(persistenceCalls, 1\)[\s\S]*?resumeOnly: true[\s\S]*?terminal Lot resume must add zero provider calls[\s\S]*?already-persisted terminal Lot must add zero writes/,
-  "unresolved Lot remains a sealed offline persist-before-409 and zero-call resume proof");
+  /active captured writer predates durable Lot-terminal receipts[\s\S]*?future-v3 composition and replay behavior[\s\S]*?LOT_QUANTITY_UNRESOLVED[\s\S]*?LOT_SINGLE_CARD/,
+  "captured writer must not inherit future Lot-terminal receipt semantics");
 assert.match(forwardReadback, /const WEB_CASE_ID = "NON_TCG_WEB_IDENTITY"/);
 assert.match(forwardReadback,
-  /evidence\.release_class === "ordinary"[\s\S]*?classification === FOUNDER_WEB_SEARCH_CLASSIFICATION\.GOVERNED_APPLIED_SUPPORT[\s\S]*?: webClassifications\.filter\(\(\{ entry \}\) => entry\?\.case_id === STANDARD_CASE_ID\)/,
-  "ordinary release readback must target an actual governed-Web case while bridge keeps Standard");
+  /capturedProductionWriter[\s\S]*?selected_forward_readback_case_id !== null[\s\S]*?sanitizedCandidateReadbackCase\(evidence, entry/,
+  "captured writer readback must select NON_TCG only after exact receipt-omission sealing");
+assert.match(forwardReadback,
+  /PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA[\s\S]*?production-forward-readback-expectation-v2[\s\S]*?PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA[\s\S]*?production-forward-readback-receipt-v2/,
+  "captured writer readback must use append-only v2 schemas");
 assert.match(forwardReadback,
   /provider_calls: 0[\s\S]*?founder_beta_web_receipt_exact_match:[\s\S]*?web_search_used:/,
   "promoted authenticated GET must prove the stored Web receipt with zero provider calls");
@@ -294,8 +309,8 @@ assert.match(spec,
   "a late recognition POST after the active normal case must fail closed");
 assert.match(spec, /providerResponseReceiptHashes\.length === expectedProviderCaseCount/);
 assert.match(spec,
-  /evidence\.cases\.every\(\(entry\) => \[1, 2\]\.includes\(entry\.provider_attempt_number\)[\s\S]*?entry\.provider_retry_count === entry\.provider_attempt_number - 1[\s\S]*?provider_transport_retry_receipt/,
-  "the final seal must accept only the exact fresh or single-502-retry tuples");
+  /evidence\.cases\.every\(\(entry\) => providerAttemptsForWriter\([\s\S]*?\.includes\(entry\.provider_attempt_number\)[\s\S]*?entry\.provider_retry_count === entry\.provider_attempt_number - 1[\s\S]*?capturedProductionWriterMode[\s\S]*?provider_transport_retry_receipt === null/,
+  "the final seal must apply the selected writer's exact retry tuple");
 assert.match(spec, /entry\.execution_receipt\?\.execution_origin === "FRESH_CURRENT"/,
   "the final seal must reject replayed, historical, or ambiguous provider results");
 assert.match(spec, /offline ordinary route coverage rejects an abort that could reach the provider @offline/);
@@ -493,6 +508,23 @@ for (const token of [
 assert.match(spec,
   /standardNonTcgWriterProjectionEvidenceActive\(\{[\s\S]*?evidence: standardCaseEvidence/,
   "the final seal must reject a Standard resolver that only self-consistently drifted");
+for (const token of [
+  "capturedProductionStandardVersionActive",
+  "capturedProductionTcgVersionActive",
+  "capturedProductionVerifiedOriginalObservationVersionActive",
+  "csm-stage-shadow-v2",
+  "CANONICAL_NAMING_RELEASE_CONTRACT_V2",
+  "VERIFIED_ORIGINAL_OBSERVATION_LEGACY_HEALTH_RECEIPT"
+]) assert.match(spec, new RegExp(token));
+assert.match(spec,
+  /capturedProductionWriterMode\(writerProjectionMode\)[\s\S]*?webReceiptClassifications\.length === 0[\s\S]*?captured_e1ae_standard_active[\s\S]*?\.length === 2/,
+  "captured final seal must prove the exact stage-v2 three-case tuple without Web receipts");
+assert.match(spec,
+  /selected_forward_readback_case_id: capturedProductionWriterMode\(writerProjectionMode\)[\s\S]*?\? null[\s\S]*?durable_projection_receipts_absent:[\s\S]*?durable_projection_receipt_omission_case_count/,
+  "captured final seal must preserve explicit null selection and exact receipt omission");
+assert.match(spec,
+  /largeStandardWriterProjectionActive[\s\S]*?grammar\?\.value === "NON_TCG"[\s\S]*?grammar\?\.raw === "standard"/,
+  "captured Large evidence must not alias a TCG grammar under the Standard version tuple");
 const executionReceiptVerifier = spec.match(
   /function liveExecutionReceiptProof[\s\S]+?(?=\nfunction assertNoPrivateFixtureKeys)/
 )?.[0] || "";
@@ -538,7 +570,7 @@ assert.match(executionReceiptVerifier, /owner\?\.provider_response_id === provid
 assert.match(executionReceiptVerifier, /Number\.isSafeInteger\(payload\?\.\[key\]\)/);
 assert.match(executionReceiptVerifier, /payload\.input_tokens > 0[\s\S]*?payload\.output_tokens > 0[\s\S]*?payload\.total_tokens > 0/);
 assert.match(executionReceiptVerifier,
-  /\[1, 2\]\.includes\(payload\?\.provider_attempt_number\)[\s\S]*?owner\?\.provider_attempt_number === payload\.provider_attempt_number/);
+  /providerAttemptsForWriter\(writerProjectionMode\)\.includes\([\s\S]*?payload\?\.provider_attempt_number[\s\S]*?owner\?\.provider_attempt_number === payload\.provider_attempt_number/);
 assert.match(executionReceiptVerifier,
   /payload\?\.provider_retry_count === payload\.provider_attempt_number - 1[\s\S]*?owner\?\.provider_retry_count === payload\.provider_retry_count/);
 assert.match(executionReceiptVerifier, /providerTransportRetryReceiptProof/);
@@ -546,7 +578,8 @@ assert.match(executionReceiptVerifier, /computeCsmOwnerExecutionReceiptSha256\(o
   "the response owner receipt must self-verify before the separate durable readback");
 assert.match(executionReceiptVerifier,
   /computedOwnerExecutionReceiptSha256 === ownerExecutionReceiptSha256/);
-assert.match(executionReceiptVerifier, /providerAuthorityReceiptProof\(payload, owner, code\)/);
+assert.match(executionReceiptVerifier,
+  /providerAuthorityReceiptProof\([\s\S]*?payload, owner, code, writerProjectionMode/);
 assert.match(executionReceiptVerifier, /payload\?\.served_model === null && owner\?\.served_model === null/,
   "unattested served model must remain an honest null in both receipts");
 assert.match(executionReceiptVerifier, /payload\?\.served_effort === null && owner\?\.reasoning_effort === null/,
@@ -701,19 +734,31 @@ assert.match(healthVerifier,
 assert.match(healthVerifier, /healthRecognitionTransportContractMatches\(health\?\.runtime\)/);
 assert.match(healthVerifier, /healthExternalIdentityContractMatches\(health\?\.runtime\)/);
 assert.match(spec, /function healthCanonicalNamingContractMatches/);
-assert.match(healthVerifier, /healthCanonicalNamingContractMatches\(health\?\.runtime\)/);
+assert.match(healthVerifier,
+  /healthCanonicalNamingContractMatches\(health\?\.runtime, writerProjectionMode\)/);
 assert.match(healthVerifier, /canonical_naming_contract_valid/);
 assert.match(healthVerifier,
   /canonical_naming_release_contract:\s*health\?\.runtime\?\.canonical_naming_target/);
 assert.match(healthVerifier,
-  /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(CANONICAL_NAMING_RELEASE_CONTRACT\)/);
+  /stableJson\(receipt\.canonical_naming_release_contract\)[\s\S]*?stableJson\(expectedCanonicalNamingContract\(writerProjectionMode\)\)/);
 assert.match(healthVerifier,
   /verified_original_observation_release_receipt:[\s\S]*?verified_original_observation/);
 assert.match(healthVerifier,
-  /stableJson\(receipt\.verified_original_observation_release_receipt\)[\s\S]*?stableJson\(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT\)/);
+  /stableJson\(receipt\.verified_original_observation_release_receipt\)[\s\S]*?stableJson\(expectedVerifiedOriginalObservationHealthReceipt\(writerProjectionMode\)\)/);
+assert.match(healthVerifier,
+  /healthProjectionActivationMatches\(health\?\.runtime, writerProjectionMode\)/,
+  "captured health must bind the exact active writer and forward-reader superset");
+assert.match(spec,
+  /function healthProjectionActivationMatches[\s\S]*?CSM_WRITER_PROJECTION_CONTRACTS\.rollback_compatible[\s\S]*?CSM_PROJECTION_ACTIVATION\.forward_readers/);
 assert.match(healthVerifier, /retired_capabilities_disabled === true/);
 assert.match(spec, /const initialHealthReceipt = writerJourneyHealthReceipt/);
 assert.match(spec, /const finalHealthReceipt = writerJourneyHealthReceipt/);
+assert.match(spec,
+  /const initialHealthReceipt = writerJourneyHealthReceipt\(\{[\s\S]{0,500}?writerProjectionMode/,
+  "the initial live health read must use the selected writer mode");
+assert.match(spec,
+  /const finalHealthReceipt = writerJourneyHealthReceipt\(\{[\s\S]{0,500}?writerProjectionMode/,
+  "the final live health read must use the selected writer mode");
 assert.match(spec, /evidence\.stages\.health = \{[\s\S]*?\.\.\.initialHealthReceipt/);
 assert.match(spec, /evidence\.stages\.release_stability = \{[\s\S]*?\.\.\.finalHealthReceipt/);
 assert.match(healthVerifier, /expectedOrigin === productionOrigin/);

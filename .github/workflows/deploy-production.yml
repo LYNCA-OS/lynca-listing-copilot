@@ -230,10 +230,12 @@ jobs:
             EXTERNAL_IDENTITY_RELEASE_CONTRACT
           } from './lib/listing/knowledge/csm-external-identity-support.mjs';
           import {
+            CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+            CANONICAL_NAMING_RELEASE_CONTRACT_V2,
             CANONICAL_NAMING_RELEASE_CONTRACT_V3
           } from './lib/listing/thin/canonical-naming-adapter.mjs';
           import {
-            VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT
+            verifiedOriginalObservationHealthReceiptForRelease
           } from './lib/listing/thin/verified-original-observation-support.mjs';
           import {
             CSM_PROJECTION_ACTIVATION
@@ -241,8 +243,25 @@ jobs:
           import { resolveCsmProviderAdapter } from './lib/listing/thin/csm-provider-adapter.mjs';
 
           const h = JSON.parse(readFileSync('/tmp/csm-thin-health-prepromotion.json', 'utf8'));
+          const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
+          const expectedCanonicalNamingTarget = [
+            CANONICAL_NAMING_RELEASE_CONTRACT_V1,
+            CANONICAL_NAMING_RELEASE_CONTRACT_V2,
+            CANONICAL_NAMING_RELEASE_CONTRACT_V3
+          ].find((contract) => (
+            contract.composer_version === activeWriter.standard.composer_version
+              && contract.marketplace_profile_version
+                === activeWriter.standard.marketplace_profile_version
+          ));
+          if (!expectedCanonicalNamingTarget) process.exit(1);
+          const expectedVerifiedOriginalObservation =
+            verifiedOriginalObservationHealthReceiptForRelease(
+              activeWriter.verified_original_observation_overlay
+            );
           const expectedProviderAdapterVersion = resolveCsmProviderAdapter(
-            CSM_ACTIVE_MODEL_PROFILE.provider
+            CSM_ACTIVE_MODEL_PROFILE.provider, {
+              requestBuilderVersion: activeWriter.canonical_fields.request_builder_version
+            }
           ).contract.id;
           const recognitionTransportContractsReady = CSM_RECOGNITION_TRANSPORT_PROFILES.every(
             (transportProfile) => {
@@ -271,13 +290,15 @@ jobs:
             && h.reasoning_effort === CSM_THIN_RUNTIME_CONTRACT.reasoningEffort
             && h.runtime?.model_profile_id === CSM_ACTIVE_MODEL_PROFILE.id
             && h.runtime?.provider_adapter_version === expectedProviderAdapterVersion
+            && h.runtime?.request_builder_version
+              === activeWriter.canonical_fields.request_builder_version
             && recognitionTransportContractsReady
             && JSON.stringify(h.runtime?.external_identity)
               === JSON.stringify(EXTERNAL_IDENTITY_RELEASE_CONTRACT)
             && JSON.stringify(h.runtime?.canonical_naming_target)
-              === JSON.stringify(CANONICAL_NAMING_RELEASE_CONTRACT_V3)
+              === JSON.stringify(expectedCanonicalNamingTarget)
             && JSON.stringify(h.runtime?.verified_original_observation)
-              === JSON.stringify(VERIFIED_ORIGINAL_OBSERVATION_HEALTH_RECEIPT)
+              === JSON.stringify(expectedVerifiedOriginalObservation)
             && JSON.stringify(h.runtime?.projection_activation)
               === JSON.stringify(CSM_PROJECTION_ACTIVATION)
             && JSON.stringify(h.runtime?.active_writer)
