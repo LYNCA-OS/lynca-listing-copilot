@@ -12,6 +12,8 @@ import {
   checkCsmPersistenceReadiness, writeCsmStagePacketAtomically,
   CSM_PRODUCT_PROJECTION_READINESS_RPC, CSM_PRODUCT_PROJECTION_VERSION,
   CSM_SUPABASE_REQUEST_TIMEOUT_MS,
+  THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT,
+  THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
   THIN_REGISTRY_RELEASE_CONTRACT
@@ -68,7 +70,13 @@ const EXTERNAL_REGISTRY_RELEASE = {
   ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
   registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
 };
-const REGISTRY_RELEASES = [REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE];
+const EXTERNAL_FORWARD_REGISTRY_RELEASE = {
+  ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
+  registry_payload: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
+};
+const REGISTRY_RELEASES = [
+  REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE
+];
 const PRODUCT_PROJECTION_READY = {
   ok: true,
   code: "csm_product_projection_ready",
@@ -264,6 +272,15 @@ function fakeStore({ failOnceOn = "" } = {}) {
   const ready = await checkCsmPersistenceReadiness({
     env: ENV,
     fetchImpl: async (url) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname.endsWith("/csm_registry_releases")) {
+        assert.equal(parsed.searchParams.get("id"), `in.(${[
+          THIN_REGISTRY_RELEASE_CONTRACT.id,
+          THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.id,
+          THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT.id
+        ].join(",")})`);
+        assert.equal(parsed.searchParams.get("limit"), "3");
+      }
       if (String(url).includes("/csm_resolution_reviews?")) return jsonResponse([]);
       if (String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
         return jsonResponse(PRODUCT_PROJECTION_READY);
@@ -295,11 +312,18 @@ function fakeStore({ failOnceOn = "" } = {}) {
   });
   assert.equal(missing.ready, false);
   assert.equal(missing.reason, "registry_release_missing");
+  const forwardMissing = await checkCsmPersistenceReadiness({
+    env: ENV,
+    fetchImpl: async () => jsonResponse([REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE])
+  });
+  assert.equal(forwardMissing.ready, false);
+  assert.equal(forwardMissing.reason, "registry_release_missing",
+    "readiness must require the additive v3 forward-reader Registry row");
   const mismatched = await checkCsmPersistenceReadiness({
     env: ENV,
     fetchImpl: async () => jsonResponse([{
       ...REGISTRY_RELEASE, content_sha256: "0".repeat(64)
-    }, EXTERNAL_REGISTRY_RELEASE])
+    }, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE])
   });
   assert.equal(mismatched.ready, false);
   assert.equal(mismatched.reason, "registry_release_contract_mismatch");

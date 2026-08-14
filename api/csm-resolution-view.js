@@ -37,6 +37,7 @@ import { readDurableProjectionReceipt } from
   "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
+  externalIdentityReplayReleaseForReceipt,
   validateExternalIdentityPublicReceipt
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
 import {
@@ -235,11 +236,27 @@ function attachExternalIdentitySupport(view, support) {
 }
 
 function externalIdentityReleaseForOutput(output) {
-  return Object.values(EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases)
-    .find((release) => (
-      output?.composer_version === release.output.composer_version
-        && output?.marketplace_profile_version === release.output.marketplace_profile_version
-    )) || null;
+  const metadata = output?.structured_output?.external_identity_support;
+  const outputFamily = Object.values(
+    EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
+  ).some((candidate) => Object.entries(candidate.output).every(
+    ([field, value]) => output?.[field] === value
+  ));
+  if (!outputFamily && metadata == null) return null;
+  const release = externalIdentityReplayReleaseForReceipt(metadata);
+  const exactReceipt = release && Object.entries(release.receipt).every(
+    ([field, value]) => metadata?.[field] === value
+  );
+  const exactOutput = release && Object.entries(release.output).every(
+    ([field, value]) => output?.[field] === value
+  );
+  if (!exactReceipt || !exactOutput) {
+    throw Object.assign(
+      new Error("csm_resolution_external_identity_receipt_invalid"),
+      { statusCode: 409 }
+    );
+  }
+  return release;
 }
 
 /**
@@ -269,10 +286,10 @@ export function composeResolutionView(record) {
   let composeCorrectedTitle;
   if (record.replay_rows) {
     const storedOutput = record.replay_rows.output;
+    const externalRelease = externalIdentityReleaseForOutput(storedOutput);
     const replayed = replayFromRows(record.replay_rows);
     fields = replayed.fields;
     composed = replayed.composed;
-    const externalRelease = externalIdentityReleaseForOutput(storedOutput);
     legacyPublicProjection = externalRelease != null;
     if (externalRelease) {
       const support = publicExternalIdentitySupport(record.external_identity_support);

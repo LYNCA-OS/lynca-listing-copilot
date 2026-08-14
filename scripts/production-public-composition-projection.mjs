@@ -38,14 +38,21 @@ function projection({ id, composerVersion, marketplaceProfileVersion, profilePub
   };
 }
 
-const externalProjections = Object.entries(
+// This matrix describes public composition behavior, not identity authority.
+// Append-only identity releases may reuse one byte-identical output tuple;
+// replay selects their authority by the persisted registry release id.
+const externalProjections = [...Object.entries(
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY.releases
-).map(([releaseId, release]) => projection({
-  id: `external_identity:${releaseId}`,
-  composerVersion: release.output.composer_version,
-  marketplaceProfileVersion: release.output.marketplace_profile_version,
-  profilePublic: false
-}));
+).reduce((byOutputTuple, [releaseId, release]) => {
+  const key = `${release.output.composer_version}\0${release.output.marketplace_profile_version}`;
+  if (!byOutputTuple.has(key)) byOutputTuple.set(key, projection({
+    id: `external_identity:${releaseId}`,
+    composerVersion: release.output.composer_version,
+    marketplaceProfileVersion: release.output.marketplace_profile_version,
+    profilePublic: false
+  }));
+  return byOutputTuple;
+}, new Map()).values()];
 
 export const PRODUCTION_PUBLIC_COMPOSITION_PROJECTION_MATRIX = deepFreeze([
   projection({

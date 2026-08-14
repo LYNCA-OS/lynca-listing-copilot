@@ -330,6 +330,49 @@ try {
     "the reviewed v2 release time must be part of the migration-time contract");
   assert.doesNotMatch(externalIdentitySqlV2, /\b(?:delete|update|drop|truncate|alter)\b/i,
     "the v2 Registry seed must remain additive");
+  const externalIdentityMigrationV3 =
+    "20260813221955_csm_external_identity_high_risers_registry_v3.sql";
+  assert.ok(externalIdentityMigrationV3 > externalIdentityMigrationV2,
+    "the v3 forward-reader Registry release must follow promoted v2");
+  const externalIdentitySqlV3 = await readFile(
+    join(canonicalMigrationDir, externalIdentityMigrationV3),
+    "utf8"
+  );
+  const externalIdentityPayloadV3 = {
+    mode: "post_observation_exact_external_identity",
+    external_catalog: true,
+    pack_id: "lynca.csm.external-identity",
+    pack_version: "2026-08-10",
+    index_id: "basketball.1996-97-topps-stadium-club-high-risers",
+    pack_sha256: "f8d94d725140118e3a1e91ae758ebbe9e9c10cbd517a010b7b5f2d64a5dc28d2",
+    index_sha256: "984f718fd917a7d685f446bcdbed43f95667021443259134e7b7872fa225ce96",
+    resolution_contract_sha256:
+      "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+    provider_calls_added: 0
+  };
+  const externalIdentityPayloadsV3 = [...externalIdentitySqlV3.matchAll(
+    /'(\{\s*"mode":"post_observation_exact_external_identity"[\s\S]*?\})'::jsonb/g
+  )].map((match) => JSON.parse(match[1]));
+  assert.equal(externalIdentityPayloadsV3.length, 2);
+  for (const payload of externalIdentityPayloadsV3) {
+    assert.deepEqual(payload, externalIdentityPayloadV3,
+      "v3 insertion and migration assertion must bind the same whole payload");
+  }
+  for (const literal of [
+    "registry_thin_external_identity_high_risers_v3",
+    "thin-path-external-identity-high-risers-v3",
+    "migration:20260813221955",
+    "2026-08-13T22:19:55Z"
+  ]) assert.match(externalIdentitySqlV3, new RegExp(literal));
+  assert.equal(
+    (externalIdentitySqlV3.match(/insert\s+into\s+public\.csm_registry_releases/gi) || []).length,
+    1
+  );
+  assert.match(externalIdentitySqlV3, /on conflict \(id\) do nothing/i);
+  assert.match(externalIdentitySqlV3, /registry_payload\s*=\s*'\{/i);
+  assert.doesNotMatch(externalIdentitySqlV3, /registry_payload\s*->>/i);
+  assert.doesNotMatch(externalIdentitySqlV3, /\b(?:delete|update|drop|truncate|alter)\b/i,
+    "the forward-reader seed must remain additive and must not activate writes");
   const [providerAdmissionSql, providerPacerSql, productProjectionSql] = await Promise.all([
     readFile(join(canonicalMigrationDir, providerAdmissionMigration), "utf8"),
     readFile(join(canonicalMigrationDir, providerPacerMigration), "utf8"),
