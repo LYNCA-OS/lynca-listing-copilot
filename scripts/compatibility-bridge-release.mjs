@@ -574,6 +574,28 @@ export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID =
   "7e0fc39ad5f6d28b34540b15aa140706b29ef075";
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256 =
   "c86d713dbc674f6f17afa015fb66194f85fb970af3171941b7d8c0d87ee107ef";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID =
+  "listing-copilot-tcg-grammar-context-v4-exact-v42-history-repair-v1";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER =
+  "tcg-grammar-context-v4-exact-v42-history-repair-v1";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA =
+  "2edf243fb8841e2e04ffff64b9b8ddf4722d0efa";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA =
+  "afb54d691df67628b9c92d1d14f6cd20fddca8a3";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID =
+  "31890365218";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE =
+  "external_identity_v3_activation_release_git_object_invalid";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID =
+  "RELEASE_ARTIFACT";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE =
+  "RELEASE_ARTIFACT";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA =
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA =
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256 =
+  "8844de4317c2041cec419cd4008dccd243f313deb6ba116de9cc2623938a6197";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V36_SHA256 =
   "e8b4c161e1bbbfb58786fa44ea3d40b15cc6fe8573c9ab8a00100cf7c146e43f";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V37_SHA256 =
@@ -1163,6 +1185,13 @@ export const ACTIVATION_A_FIELD_SOURCE_LEDGER_REPAIR_CHANGED_PATHS = Object.free
 export const ACTIVATION_A_DEPTH2_HISTORY_REPAIR_CHANGED_PATHS = Object.freeze([
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs"
+]);
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS = Object.freeze([
+  ".github/workflows/ci.yml",
+  ".github/workflows/deploy-production.yml",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-release-boundaries.test.mjs"
 ]);
 export const ACTIVATION_A_CANONICAL_SEM_PROJECTION_REPAIR_CHANGED_PATHS = Object.freeze([
   "csm/ontology/title-derived-sem.mjs",
@@ -2326,6 +2355,20 @@ function exactTcgGrammarContextActivationChangedPaths(values) {
   return actual;
 }
 
+function exactTcgGrammarContextActivationExactV42RepairChangedPaths(values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  if (stableJson(actual)
+      !== stableJson(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS)) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_changed_paths_mismatch");
+  }
+  return actual;
+}
+
 function exactCanonicalNamingActivationChangedPaths(values) {
   if (!Array.isArray(values) || values.some((value) => (
     typeof value !== "string" || !value || value !== value.trim()
@@ -2910,6 +2953,25 @@ function tcgGrammarContextActivationArtifactManifestSha256(changedPaths) {
       TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true,
     changed_paths: exactTcgGrammarContextActivationChangedPaths(changedPaths)
+  }));
+}
+
+function tcgGrammarContextActivationExactV42RepairArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    repair_descriptor_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID,
+    repair_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER,
+    parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+    parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA,
+    required_rollback_tree_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA,
+    changed_paths: exactTcgGrammarContextActivationExactV42RepairChangedPaths(changedPaths)
   }));
 }
 
@@ -3677,6 +3739,73 @@ export function materializeTcgGrammarContextActivationSelectionForTest(args) {
   return materializeTcgGrammarContextActivationSelection(args);
 }
 
+function materializeTcgGrammarContextActivationExactV42RepairSelection({
+  candidateGitSha,
+  candidateTreeSha,
+  parentGitShas,
+  parentTreeSha,
+  changedPaths
+} = {}) {
+  const expectedSha = exactGitSha(candidateGitSha);
+  const actualTree = exactGitSha(candidateTreeSha);
+  if (stableJson(parentGitShas)
+      !== stableJson([TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA])) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_parent_mismatch");
+  }
+  if (exactGitSha(parentTreeSha)
+      !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_parent_tree_mismatch");
+  }
+  if (actualTree === TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_candidate_tree_mismatch");
+  }
+  const artifactPaths = exactTcgGrammarContextActivationExactV42RepairChangedPaths(
+    changedPaths
+  );
+  const contract = tcgGrammarContextActivationExactV42RepairRuntimeContractProof();
+  return Object.freeze({
+    schema_version: "production-release-selection-v48",
+    release_class: ORDINARY_RELEASE_CLASS,
+    repair_descriptor_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER,
+    git_tree_sha: actualTree,
+    parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+    parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA,
+    required_rollback_tree_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA,
+    artifact_manifest_sha256:
+      tcgGrammarContextActivationExactV42RepairArtifactManifestSha256(artifactPaths),
+    git_sha: expectedSha,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true,
+    contract_sha256: contract.contract_sha256
+  });
+}
+
+export function materializeTcgGrammarContextActivationExactV42RepairSelectionForTest(args) {
+  return materializeTcgGrammarContextActivationExactV42RepairSelection(args);
+}
+
 function verifyHistoricalRuntimeEvidence({
   contentManifest,
   diffIdentity,
@@ -3939,6 +4068,32 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (parentGitSha === TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA) {
+      const candidateIdentity = exactGitCommitObjectIdentity(expectedSha, {
+        failureCode: "tcg_grammar_context_activation_exact_v42_repair_git_object_invalid"
+      });
+      if (stableJson(candidateIdentity.parent_git_shas) !== stableJson(parents)) {
+        throw failure("tcg_grammar_context_activation_exact_v42_repair_parent_mismatch");
+      }
+      if (headTreeSha != null
+          && exactGitSha(headTreeSha) !== candidateIdentity.git_tree_sha) {
+        throw failure("tcg_grammar_context_activation_exact_v42_repair_candidate_tree_mismatch");
+      }
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse",
+        `${TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA}^{tree}`
+      ]));
+      return materializeTcgGrammarContextActivationExactV42RepairSelection({
+        candidateGitSha: expectedSha,
+        candidateTreeSha: candidateIdentity.git_tree_sha,
+        parentGitShas: candidateIdentity.parent_git_shas,
+        parentTreeSha: actualParentTree,
+        changedPaths: changedPaths ?? gitChangedPaths(
+          TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+          expectedSha
+        )
+      });
+    }
     if (TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA != null
         && parentGitSha === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA) {
       if (expectedSha === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA) {
@@ -7365,6 +7520,66 @@ export function tcgGrammarContextActivationTopologyProof() {
   });
 }
 
+export function tcgGrammarContextActivationExactV42RepairRuntimeContractProof() {
+  const body = {
+    schema_version:
+      "listing-copilot-tcg-grammar-context-v4-exact-v42-history-repair-proof-v1",
+    selection_schema_version: "production-release-selection-v48",
+    rollback_lineage_schema_version:
+      "production-release-rollback-lineage-receipt-v49",
+    release_class: ORDINARY_RELEASE_CLASS,
+    repair_descriptor_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID,
+    repair_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER,
+    required_parent_git_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+    required_parent_tree_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA,
+    required_rollback_tree_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA,
+    base_activation_selection_schema_version: "production-release-selection-v46",
+    base_activation_runtime_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256,
+    checkout_depth: 3,
+    exact_historical_fetch_depth: 1,
+    exact_historical_fetch_refetch: true,
+    exact_historical_local_ref: "refs/heads/lynca-historical-v42",
+    required_historical_git_object_sha:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha,
+    historical_fixture_mode: "depth3-plus-exact-v42-local-ref",
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    runtime_behavior_changed: false,
+    provider_calls: 0,
+    parity_required: true
+  };
+  const contractSha256 = sha256(stableJson(body));
+  if (contractSha256
+      !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure(
+      "tcg_grammar_context_activation_exact_v42_repair_runtime_contract_hash_mismatch"
+    );
+  }
+  return Object.freeze({ ...body, contract_sha256: contractSha256 });
+}
+
 function historicalProjectionHealthProof({
   selection,
   health,
@@ -8346,6 +8561,163 @@ function verifyExternalIdentityV3ActivationRollbackLineage({
   return EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43;
 }
 
+function verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidence(selection, {
+  gitTextReader = gitText,
+  rebuildSelection = ({ gitSha }) => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha
+  })
+} = {}) {
+  const releaseGitSha = exactGitSha(selection?.git_sha);
+  let releaseIdentity;
+  try {
+    releaseIdentity = exactGitCommitObjectIdentity(releaseGitSha, {
+      gitTextReader,
+      failureCode: "tcg_grammar_context_activation_exact_v42_repair_git_object_invalid"
+    });
+  } catch {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_git_object_invalid");
+  }
+  if (stableJson(releaseIdentity.parent_git_shas) !== stableJson([
+    TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA
+  ])) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_parent_mismatch");
+  }
+  if (releaseIdentity.git_tree_sha !== selection?.git_tree_sha) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_candidate_tree_mismatch");
+  }
+  let rebuiltSelection;
+  try {
+    rebuiltSelection = rebuildSelection({ gitSha: releaseGitSha });
+  } catch {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_selection_object_mismatch");
+  }
+  if (stableJson(rebuiltSelection) !== stableJson(selection)) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_selection_object_mismatch");
+  }
+  return Object.freeze({
+    schema_version:
+      "tcg-grammar-context-activation-exact-v42-repair-git-object-evidence-v1",
+    verification_source: "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION",
+    commit_exists: true,
+    git_sha: releaseGitSha,
+    git_tree_sha: releaseIdentity.git_tree_sha,
+    parent_git_shas: Object.freeze([...releaseIdentity.parent_git_shas]),
+    selection_sha256: sha256(stableJson(rebuiltSelection))
+  });
+}
+
+export function verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidenceForTest(args) {
+  return verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidence(
+    args?.selection,
+    {
+      gitTextReader: args?.gitTextReader,
+      rebuildSelection: args?.rebuildSelection
+    }
+  );
+}
+
+function verifyTcgGrammarContextActivationExactV42RepairRollbackLineage({
+  selection,
+  rollbackReceipt
+} = {}) {
+  if (!exactKeys(selection, [
+    "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+    "transition_marker", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
+    "failed_run_id", "failure_code", "failed_case_id", "failed_phase",
+    "required_rollback_git_sha", "required_rollback_tree_sha",
+    "artifact_manifest_sha256", "git_sha", "active_writer_contract_id",
+    "projection_activation_state", "active_writer_contract_sha256",
+    "projection_activation_sha256", "forward_readers_sha256",
+    "registry_content_sha256", "resolution_contract_sha256",
+    "writer_journey_manifest", "parity_required", "contract_sha256"
+  ])
+      || selection.schema_version !== "production-release-selection-v48"
+      || selection.release_class !== ORDINARY_RELEASE_CLASS
+      || selection.repair_descriptor_id
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID
+      || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+      || selection.transition_marker
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER
+      || selection.parent_git_sha
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA
+      || selection.parent_tree_sha
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA
+      || selection.failed_run_id
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID
+      || selection.failure_code
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE
+      || selection.failed_case_id
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID
+      || selection.failed_phase
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE
+      || selection.required_rollback_git_sha
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA
+      || selection.required_rollback_tree_sha
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA
+      || selection.artifact_manifest_sha256
+        !== tcgGrammarContextActivationExactV42RepairArtifactManifestSha256(
+          TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS
+        )
+      || selection.active_writer_contract_id
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID
+      || selection.projection_activation_state !== TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE
+      || selection.active_writer_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256
+      || selection.projection_activation_sha256
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256
+      || selection.forward_readers_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256
+      || selection.registry_content_sha256 !== TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+      || selection.resolution_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256
+      || selection.writer_journey_manifest
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION
+      || selection.parity_required !== true
+      || selection.contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_selection_invalid");
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha
+      !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA) {
+    throw failure("tcg_grammar_context_activation_exact_v42_repair_rollback_mismatch");
+  }
+  const gitObjectEvidence =
+    verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidence(selection);
+  return Object.freeze({
+    schema_version: "production-release-rollback-lineage-receipt-v49",
+    release_class: ORDINARY_RELEASE_CLASS,
+    repair_descriptor_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER,
+    release_git_sha: exactGitSha(selection.git_sha),
+    release_tree_sha: exactGitSha(selection.git_tree_sha),
+    release_parent_git_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+    release_parent_tree_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE,
+    required_rollback_git_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA,
+    required_rollback_tree_sha:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA,
+    captured_rollback_git_sha: capturedRollbackSha,
+    artifact_manifest_sha256: selection.artifact_manifest_sha256,
+    runtime_contract_sha256: selection.contract_sha256,
+    release_git_object_verified: gitObjectEvidence.commit_exists,
+    release_git_object_verification_source: gitObjectEvidence.verification_source,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true,
+    lineage_verified: true
+  });
+}
+
 function verifyTcgGrammarContextActivationRollbackLineage({
   selection,
   rollbackReceipt
@@ -8491,6 +8863,25 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  const tcgGrammarContextActivationExactV42RepairFamily =
+    selection?.schema_version === "production-release-selection-v48"
+    || selection?.repair_descriptor_id
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID
+    || selection?.parent_git_sha
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA;
+  if (tcgGrammarContextActivationExactV42RepairFamily) {
+    if (selection?.schema_version !== "production-release-selection-v48"
+        || selection?.repair_descriptor_id
+          !== TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID) {
+      throw failure(
+        "ordinary_release_tcg_grammar_context_activation_exact_v42_repair_selection_invalid"
+      );
+    }
+    return verifyTcgGrammarContextActivationExactV42RepairRollbackLineage({
+      selection,
+      rollbackReceipt
+    });
+  }
   const tcgGrammarContextActivationFamily =
     selection?.schema_version === "production-release-selection-v46"
     || selection?.activation_descriptor_id === TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID
@@ -11620,6 +12011,19 @@ async function main(argv) {
   }
   if (mode === "verify-health"
       && selection.schema_version === "production-release-selection-v46") {
+    const health = await readJson(values.get("--health"), "compatibility_bridge_health");
+    await exclusivePrivateWrite(
+      values.get("--out"),
+      tcgGrammarContextActivationRuntimeContractProof({
+        health,
+        gitSha: selection.git_sha,
+        candidateGitSha: selection.git_sha
+      })
+    );
+    return;
+  }
+  if (mode === "verify-health"
+      && selection.schema_version === "production-release-selection-v48") {
     const health = await readJson(values.get("--health"), "compatibility_bridge_health");
     await exclusivePrivateWrite(
       values.get("--out"),

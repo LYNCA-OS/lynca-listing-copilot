@@ -16,6 +16,16 @@ jobs:
           # Bridge B validates HEAD -> failed parent -> canonical rollback.
           # Three commits are the minimum history that keeps that proof real.
           fetch-depth: 3
+      - name: Fetch the exact historical v42 release object
+        run: |
+          historical_v42_sha=20298d18ea540a7dd5a660458a1cb9646ba65342
+          historical_v42_ref=refs/heads/lynca-historical-v42
+          git fetch --no-tags --refetch --depth=1 origin \
+            "$historical_v42_sha:$historical_v42_ref"
+          test "$(git rev-parse "$historical_v42_ref")" = "$historical_v42_sha"
+          test "$(git cat-file -t "$historical_v42_sha")" = "commit"
+          test "$(git rev-parse "$historical_v42_sha^{tree}")" = \
+            "ec560447430bb2ba8206dc1282e514fe41ee7e7c"
       - uses: actions/setup-node@v5
         with:
           node-version: 22
