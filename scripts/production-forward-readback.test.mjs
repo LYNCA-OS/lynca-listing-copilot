@@ -59,6 +59,8 @@ import {
   TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
   TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
 } from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
+import { THIN_RESOLVER_VERSION } from
+  "../lib/listing/thin/csm-persistence.mjs";
 
 const candidateOrigin = "https://lynca-listing-copilot-bridge123.vercel.app";
 const candidateGitSha = "a".repeat(40);
@@ -947,6 +949,32 @@ const tcgGrammarContextPublicReceipt = {
 assert.equal(productionTcgGrammarContextAuthorityReceiptExact(
   tcgGrammarContextPublicReceipt
 ), true);
+const tcgGrammarContextNotRequiredCurrentImageReceipt = {
+  ...clone(tcgGrammarContextPublicReceipt),
+  source_authority: {
+    authority_used: "CURRENT_IMAGE",
+    field_authority: ["card_number", "set"].map((field) => ({
+      field,
+      current_image_source_present: true,
+      web_source_present: false
+    }))
+  }
+};
+assert.equal(productionTcgGrammarContextAuthorityReceiptExact(
+  tcgGrammarContextNotRequiredCurrentImageReceipt
+), true, "the image-authorized NOT_REQUIRED variant is the other honest live shape");
+for (const mutate of [
+  (value) => { value.source_authority.authority_used = "CURRENT_IMAGE"; },
+  (value) => {
+    value.source_authority.field_authority[1].current_image_source_present = true;
+  },
+  (value) => { value.source_authority.field_authority[1].web_source_present = false; }
+]) {
+  const crossSpliced = clone(tcgGrammarContextPublicReceipt);
+  mutate(crossSpliced);
+  assert.equal(productionTcgGrammarContextAuthorityReceiptExact(crossSpliced), false,
+    "the two NOT_REQUIRED variants are indivisible; splicing one onto the other fails");
+}
 const tcgGrammarContextAppliedPublicReceipt = {
   ...clone(tcgGrammarContextPublicReceipt),
   status: "APPLIED",
@@ -972,8 +1000,7 @@ for (const entry of futureV4Evidence.cases) {
     csm_contract: "csm-stage-shadow-v4"
   };
 }
-futureV4TcgCase.versions.resolver =
-  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version;
+futureV4TcgCase.versions.resolver = THIN_RESOLVER_VERSION;
 futureV4TcgCase.versions.composer = "thin-marketplace-composer-v2";
 futureV4TcgCase.versions.marketplace_profile = "ebay-profile-v1";
 futureV4TcgCase.expected_grammar = "TCG";
@@ -987,7 +1014,7 @@ futureV4View.grammar = {
   ...futureV4View.grammar,
   value: "TCG",
   raw: "tcg",
-  resolver_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
+  resolver_version: THIN_RESOLVER_VERSION
 };
 for (const bracket of futureV4View.brackets) {
   if (bracket.canonical_field === "set") {
@@ -1022,6 +1049,8 @@ assert.deepEqual(productionTcgGrammarContextAuthorityProof(futureV4View),
   tcgGrammarContextPublicReceipt);
 const futureV4AppliedView = clone(futureV4View);
 futureV4AppliedView.grammar.raw = "standard";
+futureV4AppliedView.grammar.resolver_version =
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version;
 futureV4AppliedView.tcg_grammar_context_authority_receipt =
   clone(tcgGrammarContextAppliedPublicReceipt);
 assert.deepEqual(productionTcgGrammarContextAuthorityProof(futureV4AppliedView),
