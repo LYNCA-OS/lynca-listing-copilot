@@ -37,6 +37,7 @@ import {
 } from "../lib/listing/csm/resolution-review.mjs";
 import { readCsmResolutionRecord, appendCsmResolutionReview } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
   EBAY_PROFILE_VERSION,
   THIN_COMPOSER_VERSION_V1,
   THIN_COMPOSER_VERSION_V2,
@@ -61,6 +62,9 @@ import { activeWriterProjectionContract } from
 const EXTERNAL_IDENTITY_FIELDS = Object.freeze([
   "year", "manufacturer", "product", "set", "subjects", "team", "card_number"
 ]);
+
+export const CSM_TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_VERSION =
+  "csm-tcg-grammar-context-authority-public-receipt.v1";
 
 const EXTERNAL_IDENTITY_ACTIONS = new Set([
   "FILL", "CORROBORATE", "NORMALIZE_ALIAS", "CORRECT_CONFLICT"
@@ -189,8 +193,51 @@ export function publicVerifiedOriginalObservationSupport(value) {
     : null;
 }
 
-export function publicDurableProjectionReceipts(replayRows) {
+function publicTcgGrammarContextAuthorityReceipt(receipt) {
+  const source = receipt.tcg_field_source_authority_receipt;
+  const claim = receipt.tcg_grammar_context_claim_receipt;
+  return Object.freeze({
+    schema_version: CSM_TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_VERSION,
+    status: claim.status,
+    claim_id: claim.claim_id,
+    raw_grammar: claim.raw_grammar,
+    resolved_grammar: claim.resolved_grammar,
+    normalized_set: claim.normalized_set,
+    normalized_card_number: claim.normalized_card_number,
+    registry_release_id: claim.registry_release_id,
+    registry_content_sha256: claim.registry_content_sha256,
+    registry_record_sha256: claim.registry_record_sha256,
+    normalization_version: claim.normalization_version,
+    policy_version: claim.policy_version,
+    reason_code: claim.reason_code,
+    conflict_codes: Object.freeze([...claim.conflict_codes]),
+    ip_action: claim.ip_action,
+    web_authority_used: claim.web_authority_used,
+    source_authority: Object.freeze({
+      authority_used: source.authority_used,
+      field_authority: Object.freeze(source.field_authority.map((row) => Object.freeze({
+        field: row.field,
+        current_image_source_present: row.current_image_source_present,
+        web_source_present: row.web_source_present
+      })))
+    })
+  });
+}
+
+export function publicDurableProjectionReceipts(replayRows, {
+  sourceExecutionVerified = false
+} = {}) {
   if (!replayRows) return null;
+  const stageV4 = replayRows?.output?.contract_version
+    === CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION;
+  // Row-only replay proves packet consistency, not that this authority bundle
+  // belongs to the stored session/provider execution. Only the Supabase
+  // session-aware readback may authorize a public Grammar authority receipt.
+  if (stageV4 && sourceExecutionVerified !== true) {
+    throw Object.assign(new Error("csm_resolution_durable_projection_receipt_invalid"), {
+      statusCode: 409
+    });
+  }
   let receipt;
   try { receipt = readDurableProjectionReceipt(replayRows); }
   catch (error) {
@@ -206,7 +253,11 @@ export function publicDurableProjectionReceipts(replayRows) {
   return Object.freeze({
     founder_beta_web_receipt: structuredClone(receipt.founder_beta_web_receipt),
     set_card_name_relation_receipt:
-      structuredClone(receipt.set_card_name_relation_receipt)
+      structuredClone(receipt.set_card_name_relation_receipt),
+    ...(stageV4 ? {
+        tcg_grammar_context_authority_receipt:
+          publicTcgGrammarContextAuthorityReceipt(receipt)
+      } : {})
   });
 }
 
@@ -443,7 +494,13 @@ export async function handleResolutionViewRequest({
   const verifiedOriginalObservationSupport = publicVerifiedOriginalObservationSupport(
     record.verified_original_observation_support
   );
-  const durableProjectionReceipts = publicDurableProjectionReceipts(record.replay_rows);
+  const durableProjectionReceipts = publicDurableProjectionReceipts(
+    record.replay_rows,
+    {
+      sourceExecutionVerified:
+        record.tcg_grammar_context_source_execution_verified === true
+    }
+  );
   const publicView = attachExternalIdentitySupport(view, externalIdentitySupport);
   // If the stored title and the recomposed one disagree, the explanation does
   // not describe what shipped. Say so rather than presenting it as the trace.

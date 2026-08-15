@@ -10,7 +10,9 @@ import {
   THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
-  THIN_REGISTRY_RELEASE_CONTRACT
+  THIN_REGISTRY_RELEASE_CONTRACT,
+  THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT,
+  THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   CSM_PROVIDER_AUTHORITY_LIMITS,
@@ -25,6 +27,10 @@ import {
   CSM_PROJECTION_ACTIVATION,
   CSM_WRITER_PROJECTION_CONTRACTS
 } from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 
 const ENV = {
   CSM_PERSISTENCE_ENABLED: "true",
@@ -77,6 +83,10 @@ const fetchImpl = async (url, init = {}) => {
       {
         ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
         registry_payload: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
+      },
+      {
+        ...THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT,
+        registry_payload: THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT
       }
     ]);
   }
@@ -135,6 +145,10 @@ function fetchWithExternalRegistryPayload(registryPayload) {
         {
           ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
           registry_payload: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
+        },
+        {
+          ...THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT
         }
       ]);
     }
@@ -158,6 +172,37 @@ function fetchWithForwardRegistryPayload(registryPayload) {
         {
           ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
           registry_payload: registryPayload
+        },
+        {
+          ...THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT
+        }
+      ]);
+    }
+    return fetchImpl(url, init);
+  };
+}
+
+function fetchWithTcgGrammarContextRegistryPayload(registryPayload) {
+  return async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/csm_registry_releases")) {
+      return response([
+        {
+          ...THIN_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: { mode: "local_sem_and_composer_only", external_catalog: false }
+        },
+        {
+          ...THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT
+        },
+        {
+          ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
+        },
+        {
+          ...THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT,
+          registry_payload: registryPayload
         }
       ]);
     }
@@ -177,6 +222,11 @@ assert.equal(ready.model, "gpt-5.6-luna");
 assert.equal(ready.reasoning_effort, CSM_THIN_RUNTIME_CONTRACT.reasoningEffort);
 assert.deepEqual(ready.external_identity, activeExternalIdentityRelease,
   "database readiness must attest the same external identity release advertised by health");
+assert.deepEqual(ready.tcg_grammar_context, {
+  registry_release_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+  registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256,
+  resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+}, "readiness evidence must identify the exact dormant-or-active Grammar authority row");
 assert.deepEqual(
   externalIdentityReleaseContractForRegistryRelease(
     CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible.external_identity.registry_release_id
@@ -248,6 +298,19 @@ await assert.rejects(
   (error) => error.code === "csm_persistence_not_ready"
     && error.detail === "registry_release_contract_mismatch",
   "database readiness must fail closed when the v3 forward-reader row drifts"
+);
+
+await assert.rejects(
+  checkCsmThinProductionReadiness({
+    env: ENV,
+    fetchImpl: fetchWithTcgGrammarContextRegistryPayload({
+      ...THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT,
+      resolution_contract_sha256: "0".repeat(64)
+    })
+  }),
+  (error) => error.code === "csm_persistence_not_ready"
+    && error.detail === "registry_release_contract_mismatch",
+  "database readiness must fail closed when the v4 Grammar registry row drifts"
 );
 
 const databaseOnlyScopes = [];

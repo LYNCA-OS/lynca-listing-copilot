@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import {
   persistPreparedCanonicalListingPath,
@@ -26,11 +27,18 @@ import { writeCsmStageRows } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import {
   buildCsmStageRows,
   CSM_STAGE_LEGACY_CONTRACT_VERSION,
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
   computeCsmPacketHashes,
   THIN_COMPOSER_VERSION_V1
 } from "../lib/listing/thin/csm-persistence.mjs";
 import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
-import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  CANONICAL_NAMING_TCG_GRAMMAR_AUTHORITY_MISSING,
+  runCanonicalListingPath
+} from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  CANONICAL_FIELD_SOURCE_FIELDS
+} from "../lib/listing/thin/canonical-fields.mjs";
 import { patchSupabaseRow } from "../lib/supabase-rest.mjs";
 import {
   composeLyncaStandardNameForProfile,
@@ -46,6 +54,18 @@ import {
 
 const ACTIVE_WRITER = CSM_PROJECTION_ACTIVATION.active_writer;
 const ACTIVE_PROMPT_VERSION = ACTIVE_WRITER.canonical_fields.semantic_prompt_version;
+const productionTcgGrammarMisroute = JSON.parse(readFileSync(new URL(
+  "./fixtures/production-writer-journey-tcg-grammar-misroute-v1.json",
+  import.meta.url
+), "utf8"));
+const v4SourceAuthorityContext = Object.freeze({
+  operationPayloadSha256: "a".repeat(64),
+  originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+  recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+  providerClientRequestId: "lynca-orchestration-v4-attempt-1",
+  tenantId: "tenant-grammar-v4",
+  recognitionSessionId: "session-grammar-v4"
+});
 
 const enabledEnv = {
   SUPABASE_URL: "https://example.supabase.co",
@@ -140,6 +160,21 @@ const common = {
   attributes: [], grade: "CGC 10", grammar: "tcg", lot_count: "",
   language: "JP", unreadable: [], low_confidence: []
 };
+
+// The failed live provider response did not retain its raw field_sources. This
+// fixture reconstructs only the strict one-call response envelope around the
+// exact durable canonical values; no missing authority is invented.
+const productionTcgGrammarMisrouteProviderFields = Object.freeze(Object.fromEntries([
+  ...CANONICAL_FIELD_SOURCE_FIELDS,
+  "unreadable",
+  "low_confidence"
+].filter((field) => Object.hasOwn(
+  productionTcgGrammarMisroute.sanitized_canonical_fields,
+  field
+)).map((field) => [
+  field,
+  structuredClone(productionTcgGrammarMisroute.sanitized_canonical_fields[field])
+])));
 
 // PostgREST match filters are operators, not raw values. This reproduces the
 // production failure that previously emitted `tenant_id=tenant-legacy`.
@@ -263,6 +298,9 @@ const common = {
   assert.equal(Object.prototype.hasOwnProperty.call(
     result.csm_owner_versions, "latency_stages_ms"
   ), true, "optional receipt fields stay explicit so the v1 digest has one complete shape");
+  assert.equal(Object.hasOwn(
+    result.csm_owner_versions, "operation_payload_sha256"
+  ), false, "pre-v4 owner receipt bytes remain unchanged");
   const reorderedOwnerReceipt = Object.fromEntries(
     Object.entries(result.csm_owner_versions).reverse()
   );
@@ -306,6 +344,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   assert.notEqual(result.csm_rows.output.dropped_trace[key], undefined,
     `dropped_trace.${key} must carry a value, not survive as undefined`);
 }
+
   assert.ok(result.csm_rows.output.dropped_trace.suppressed_by_profile.includes("search_optimization"));
   assert.deepEqual(writes.tables, [
     "csm_evidence_observations", "csm_bracket_candidates", "csm_candidate_evidence_links",
@@ -317,14 +356,174 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   );
 }
 
-// The active Web-v2 writer binds the provider's served effort into its durable
-// execution receipt. A response that omits that echo must fail before any Web
-// receipt or owner trace can be invented.
+// A fresh v4 response proves the exact approved Standard -> TCG transition in
+// one paid call and persists the raw/resolved Grammar pair. The failed v3 row
+// is never migrated or reinterpreted.
 {
-  await assert.rejects(prepareCanonicalListingPath({
-    tenantId: "tenant-1", recognitionSessionId: "session-unattested-effort",
+  const baseProvider = providerFor(productionTcgGrammarMisrouteProviderFields);
+  let providerCalls = 0;
+  const v4Writer = CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
+  const v4Compiled = compileCsmModelExecution({
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    writerContract: v4Writer
+  });
+  const v4Execution = v4Compiled.execution_contract;
+  const v4 = await runCanonicalListingPath({
+    compiledRequest: v4Compiled.provider_request,
+    provider: v4Execution.provider,
+    model: v4Execution.model,
+    effort: v4Execution.requested_effort,
+    imageDetail: v4Execution.image_detail,
+    maxOutputTokens: v4Execution.max_output_tokens,
+    writerContract: v4Writer,
+    providerClientRequestId: v4SourceAuthorityContext.providerClientRequestId,
+    sourceAuthorityContext: v4SourceAuthorityContext,
+    resolveObservation: (observation) => resolveCanonicalObservation(observation, {
+      writerContract: v4Writer
+    }),
+    callProvider: async (request) => {
+      providerCalls += 1;
+      return baseProvider(request);
+    }
+  });
+  assert.equal(providerCalls, 1);
+  assert.equal(v4.observed_fields.grammar, "standard");
+  assert.equal(v4.fields.grammar, "tcg");
+  assert.equal(v4.fields.ip, "");
+  assert.equal(v4.tcg_grammar_context_claim_receipt.status, "APPLIED");
+  assert.equal(v4.external_identity_support, undefined);
+  assert.equal(v4.verified_original_observation_support, undefined);
+
+  const verifiedAbstainContext = {
+    operationPayloadSha256: "d".repeat(64),
+    originalImageFingerprints: [
+      `sha256:${"e".repeat(64)}`, `sha256:${"f".repeat(64)}`
+    ],
+    recognitionImageFingerprints: [
+      `sha256:${"e".repeat(64)}`, `sha256:${"f".repeat(64)}`
+    ],
+    providerClientRequestId: "lynca-orchestration-v4-verified-attempt-1",
+    tenantId: "tenant-grammar-v4",
+    recognitionSessionId: "session-grammar-v4-verified"
+  };
+  const verifiedAbstain = await runCanonicalListingPath({
+    imageUrls: [
+      "https://example.test/front.jpg", "https://example.test/back.jpg"
+    ],
+    model: "gpt-5.6-luna",
+    effort: "low",
+    writerContract: v4Writer,
+    providerClientRequestId: verifiedAbstainContext.providerClientRequestId,
+    sourceAuthorityContext: verifiedAbstainContext,
+    resolveObservation: (observation) => resolveCanonicalObservation(observation, {
+      writerContract: v4Writer,
+      externalIdentityContext: {
+        originalImageSha256: [
+          "161f0d97df619f8d34b2453551567a0473d3e477c3e0ec9295029fbce8c59e44",
+          "cef46b5d761d2d20f5cd21d611cab8d8037721bcdb4ae8c1a0d4441439a6fdc3"
+        ]
+      }
+    }),
+    callProvider: providerFor({
+      year: "2025", manufacturer: "", product: "", set: "",
+      subjects: ["Cooper Flagg"], team: "Mavericks", card_name: "",
+      release_variant: "", surface_color: "Gold", parallel_family: "Refractor",
+      parallel_exact: "Gold Refractor", descriptive_rarity: "",
+      card_number: "251", serial: "30/50", attributes: ["RC"],
+      grading_info: null, grammar: "standard", lot_count: "", language: "",
+      unreadable: [], low_confidence: [], special_stamp: "", description: ""
+    })
+  });
+  assert.equal(verifiedAbstain.tcg_grammar_context_claim_receipt.status, "ABSTAIN");
+  assert.equal(verifiedAbstain.tcg_field_source_authority_receipt.authority_used,
+    "ABSTAIN");
+  assert.ok(verifiedAbstain.verified_original_observation_support);
+
+  const v4Rows = buildCsmStageRows({
+    tenantId: "tenant-grammar-v4",
+    recognitionSessionId: "session-grammar-v4",
+    fields: v4.fields,
+    observedFields: v4.observed_fields,
+    composed: {
+      grammar: v4.grammar,
+      brackets: v4.brackets,
+      bracket_text: v4.bracket_text,
+      dropped: v4.dropped_brackets,
+      suppressed: v4.suppressed_brackets,
+      restored: v4.restored_brackets,
+      truncated: v4.truncated,
+      input_empty_fields: v4.input_empty_fields,
+      normalization_reasons: v4.normalization_reasons,
+      character_budget: v4.character_budget,
+      length: v4.length,
+      composer_version: v4.composer_version,
+      marketplace_profile_version: v4.marketplace_profile_version,
+      canonical_naming_trace: v4.canonical_naming_trace,
+      canonical_naming_publishable: v4.canonical_naming_publishable,
+      publication_coverage: v4.publication_coverage,
+      lot_quantity_unresolved: v4.lot_quantity_unresolved,
+      lot_single_card: v4.lot_single_card,
+      lot_unshared_attributes: v4.lot_unshared_attributes,
+      lot_publishable: v4.lot_publishable,
+      lot_publication_failure_code: v4.lot_publication_failure_code
+    },
+    founderBetaWebReceipt: v4.founder_beta_web_receipt,
+    setCardNameRelationReceipt: v4.set_card_name_relation_receipt,
+    tcgFieldSourceAuthorityReceipt: v4.tcg_field_source_authority_receipt,
+    tcgGrammarContextClaimReceipt: v4.tcg_grammar_context_claim_receipt,
+    registryReleaseId: v4.resolution_contract.registry_release_id,
+    contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
+    title: v4.title
+  });
+  assert.equal(v4Rows.output.contract_version,
+    CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION);
+  assert.equal(v4Rows.output.structured_output.observed_composition_grammar, "standard");
+  assert.equal(v4Rows.resolution.grammar, "TCG");
+
+  let v4SessionPatch = null;
+  const v4Persisted = await persistPreparedCanonicalListingPath({
+    tenantId: "tenant-grammar-v4",
+    recognitionSessionId: "session-grammar-v4",
+    prepared: {
+      ...v4,
+      prompt_version: v4Execution.semantic_prompt_version,
+      max_output_tokens: v4Execution.max_output_tokens,
+      model_profile_id: v4Execution.model_profile_id,
+      provider_adapter_version: v4Execution.provider_adapter_version,
+      request_builder_version: v4Execution.request_builder_version,
+      response_parser_version: v4Execution.response_parser_version,
+      optimization_pack_id: v4Execution.optimization_pack_id,
+      optimization_pack_sha256: v4Execution.optimization_pack_sha256,
+      execution_contract_sha256: v4Compiled.execution_contract_sha256,
+      execution_contract: v4Execution,
+      csm_rows: v4Rows
+    },
+    writeRows: async (_rows, options) => {
+      v4SessionPatch = options.sessionPatch;
+      return {
+        ok: true, atomic: true, replayed: false,
+        session: { saved: true }, written: {}
+      };
+    }
+  });
+  assert.equal(v4SessionPatch.csm_owner_versions.operation_payload_sha256,
+    v4.tcg_field_source_authority_receipt.operation_payload_sha256);
+  assert.equal(v4Persisted.csm_owner_versions.operation_payload_sha256,
+    v4SourceAuthorityContext.operationPayloadSha256);
+}
+
+// The dormant v4 writer binds the provider's served effort into its durable
+// execution receipt. The bridge keeps captured Production active, so exercise
+// the future writer explicitly rather than changing today's default.
+{
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.test/front.jpg"],
+    model: "gpt-5.6-luna",
+    effort: "low",
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4,
+    providerClientRequestId: v4SourceAuthorityContext.providerClientRequestId,
+    sourceAuthorityContext: v4SourceAuthorityContext,
     callProvider: async () => new Response(JSON.stringify({
       id: "resp_without_effort_echo",
       model: "gpt-5.6-luna",

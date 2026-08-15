@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,7 +20,10 @@ import {
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_MARKER,
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
-  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
 } from "./compatibility-bridge-release.mjs";
 import {
   PRODUCTION_STANDARD_P0_VERIFIER_CONTRACT,
@@ -32,12 +36,17 @@ import {
   PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA,
   PRODUCTION_FORWARD_READBACK_EXPECTATION_SCHEMA,
   PRODUCTION_FORWARD_READBACK_RECEIPT_SCHEMA,
+  PRODUCTION_FORWARD_READBACK_TCG_GRAMMAR_CONTEXT_EXPECTATION_SCHEMA,
+  PRODUCTION_FORWARD_READBACK_TCG_GRAMMAR_CONTEXT_RECEIPT_SCHEMA,
+  TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_SCHEMA,
   buildProductionForwardReadbackExpectation,
   classifyFounderWebSearch,
   classifyFounderWebSearchSignals,
   FOUNDER_WEB_SEARCH_CLASSIFICATION,
   governedIdentityAppliedSupportUrl,
   governedAppliedWebSupportProof,
+  productionTcgGrammarContextAuthorityProof,
+  productionTcgGrammarContextAuthorityReceiptExact,
   productionForwardReadbackAssetId,
   strictNoSearchReceipt,
   webIdentityQueryHasVisibleAnchors,
@@ -45,6 +54,11 @@ import {
   verifyProductionForwardReadback,
   writeProductionForwardReadbackExpectation
 } from "./production-forward-readback.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_NORMALIZATION_VERSION,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 
 const candidateOrigin = "https://lynca-listing-copilot-bridge123.vercel.app";
 const candidateGitSha = "a".repeat(40);
@@ -216,6 +230,17 @@ assert.equal(promotedReceipt.canonical_read_deployment_git_sha, candidateGitSha)
 assert.equal(promotedReceipt.full_resolution_view_exact_match, true);
 
 const clone = (value) => structuredClone(value);
+const stableJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableJson(value[key])}`
+    )).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+const stableSha256 = (value) => createHash("sha256")
+  .update(stableJson(value), "utf8").digest("hex");
 for (const mutate of [
   (value) => { value.passed = false; },
   (value) => { value.release_class = "unsupported-release-class"; },
@@ -485,6 +510,22 @@ const checkpointReaderExpectation = buildProductionForwardReadbackExpectation({
 assert.deepEqual(checkpointReaderExpectation, capturedExpectation,
   "the checkpoint-reader sibling must preserve the captured V4 expectation bytes");
 assert.equal(JSON.stringify(checkpointReaderExpectation), JSON.stringify(capturedExpectation));
+const tcgGrammarContextReaderBridgeEvidence = {
+  ...clone(capturedEvidence),
+  compatibility_bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+  compatibility_bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+  writer_projection_mode: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
+};
+const tcgGrammarContextReaderBridgeExpectation = buildProductionForwardReadbackExpectation({
+  evidence: tcgGrammarContextReaderBridgeEvidence,
+  resolutionView: capturedResolutionView,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.deepEqual(tcgGrammarContextReaderBridgeExpectation, capturedExpectation,
+  "the TCG Grammar context reader bridge must preserve the captured V4 expectation bytes");
+assert.equal(JSON.stringify(tcgGrammarContextReaderBridgeExpectation),
+  JSON.stringify(capturedExpectation));
 const capturedReceipt = verifyProductionForwardReadback({
   evidence: capturedEvidence,
   expectation: capturedExpectation,
@@ -517,6 +558,20 @@ const checkpointReaderReceipt = verifyProductionForwardReadback({
 assert.deepEqual(checkpointReaderReceipt, capturedReceipt,
   "the checkpoint-reader sibling must preserve the captured V4 receipt bytes");
 assert.equal(JSON.stringify(checkpointReaderReceipt), JSON.stringify(capturedReceipt));
+const tcgGrammarContextReaderBridgeReceipt = verifyProductionForwardReadback({
+  evidence: tcgGrammarContextReaderBridgeEvidence,
+  expectation: tcgGrammarContextReaderBridgeExpectation,
+  resolutionView: capturedResolutionView,
+  responseUrl,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha,
+  rollbackReceipt,
+  now: () => new Date("2026-08-14T12:05:00.000Z")
+});
+assert.deepEqual(tcgGrammarContextReaderBridgeReceipt, capturedReceipt,
+  "the TCG Grammar context reader bridge must preserve the captured V4 receipt bytes");
+assert.equal(JSON.stringify(tcgGrammarContextReaderBridgeReceipt),
+  JSON.stringify(capturedReceipt));
 
 const assertCapturedEvidenceRejected = (mutate, source = capturedEvidence) => {
   const changed = clone(source);
@@ -570,6 +625,24 @@ for (const mutate of [
   (value) => { value.writer_projection_mode = PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE; },
   (value) => { value.compatibility_bridge_descriptor_id = "unknown-descriptor"; }
 ]) assertCapturedEvidenceRejected(mutate, checkpointReaderEvidence);
+for (const mutate of [
+  (value) => { delete value.compatibility_bridge_descriptor_id; },
+  (value) => {
+    value.compatibility_bridge_descriptor_id =
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID;
+  },
+  (value) => {
+    value.compatibility_bridge_marker = EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER;
+  },
+  (value) => {
+    value.writer_projection_mode =
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE;
+  },
+  (value) => { value.compatibility_bridge_descriptor_id = "unknown-descriptor"; },
+  (value) => { value.compatibility_bridge_marker = "unknown-marker"; },
+  (value) => { value.writer_projection_mode = "unknown-writer-mode"; },
+  (value) => { value.schema_version = "production-writer-journey-evidence-unknown"; }
+]) assertCapturedEvidenceRejected(mutate, tcgGrammarContextReaderBridgeEvidence);
 for (const mutate of [
   (value) => {
     value.compatibility_bridge_descriptor_id =
@@ -840,6 +913,153 @@ assert.equal(ordinaryReceipt.provider_calls, 0);
 assert.equal(ordinaryReceipt.founder_beta_web_receipt_exact_match, true);
 assert.equal(ordinaryReceipt.web_search_used, true);
 assert.equal(ordinaryReceipt.web_search_call_count, 1);
+
+// Future Activation A selects the exact TCG session for the zero-provider GET.
+// Existing ordinary v3 and captured B schemas above remain unchanged.
+const tcgGrammarContextPublicReceipt = {
+  schema_version: TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_SCHEMA,
+  status: "APPLIED",
+  claim_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0].claim_id,
+  raw_grammar: "standard",
+  resolved_grammar: "tcg",
+  normalized_set: "Trainer Gallery",
+  normalized_card_number: "TG22/TG30",
+  registry_release_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+  registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256,
+  registry_record_sha256: stableSha256(TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0]),
+  normalization_version: TCG_GRAMMAR_CONTEXT_NORMALIZATION_VERSION,
+  policy_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.conflict_policy_version,
+  reason_code: "EXACT_JOINT_SET_NUMBER_NAMESPACE",
+  conflict_codes: [],
+  ip_action: "UNCHANGED",
+  web_authority_used: false,
+  source_authority: {
+    authority_used: "CURRENT_IMAGE",
+    field_authority: ["card_number", "set"].map((field) => ({
+      field,
+      current_image_source_present: true,
+      web_source_present: false
+    }))
+  }
+};
+assert.equal(productionTcgGrammarContextAuthorityReceiptExact(
+  tcgGrammarContextPublicReceipt
+), true);
+const futureV4Evidence = clone(ordinaryEvidence);
+const futureV4TcgCase = futureV4Evidence.cases.find((entry) => entry.case_id === "TCG");
+for (const entry of futureV4Evidence.cases) {
+  entry.versions = {
+    ...(entry.versions || futureV4TcgCase.versions),
+    csm_contract: "csm-stage-shadow-v4"
+  };
+}
+futureV4TcgCase.versions.resolver =
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version;
+futureV4TcgCase.versions.composer = "thin-marketplace-composer-v2";
+futureV4TcgCase.versions.marketplace_profile = "ebay-profile-v1";
+futureV4TcgCase.expected_grammar = "TCG";
+futureV4TcgCase.tcg_grammar_context_authority_receipt =
+  clone(tcgGrammarContextPublicReceipt);
+futureV4Evidence.final_seal.selected_forward_readback_case_id = "TCG";
+const futureV4View = clone(ordinaryView);
+futureV4View.asset_id = futureV4TcgCase.asset_id;
+futureV4View.recognition_session_id = futureV4TcgCase.recognition_session_id;
+futureV4View.grammar = {
+  ...futureV4View.grammar,
+  value: "TCG",
+  raw: "standard",
+  resolver_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
+};
+for (const bracket of futureV4View.brackets) {
+  if (bracket.canonical_field === "set") {
+    bracket.value = "Trainer Gallery";
+    bracket.selected_candidate = "Trainer Gallery";
+    bracket.rendered_text = "Trainer Gallery";
+  }
+  if (bracket.canonical_field === "card_number") {
+    bracket.value = "TG22/TG30";
+    bracket.selected_candidate = "TG22/TG30";
+    bracket.rendered_text = "#TG22/TG30";
+  }
+}
+const futureV4Title = "Trainer Gallery Eternatus #TG22/TG30";
+futureV4View.composer = {
+  ...futureV4View.composer,
+  title: futureV4Title,
+  stored_title: futureV4Title,
+  length: futureV4Title.length,
+  composer_version: "thin-marketplace-composer-v2",
+  marketplace_profile_version: "ebay-profile-v1"
+};
+futureV4TcgCase.title_length = futureV4Title.length;
+futureV4View.founder_beta_web_receipt = clone(strictNoSearchV1);
+futureV4View.set_card_name_relation_receipt = {
+  ...clone(ordinaryView.set_card_name_relation_receipt),
+  set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "Trainer Gallery" }
+};
+futureV4View.tcg_grammar_context_authority_receipt =
+  clone(tcgGrammarContextPublicReceipt);
+assert.deepEqual(productionTcgGrammarContextAuthorityProof(futureV4View),
+  tcgGrammarContextPublicReceipt);
+const futureV4Expectation = buildProductionForwardReadbackExpectation({
+  evidence: futureV4Evidence,
+  resolutionView: futureV4View,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.equal(futureV4Expectation.schema_version,
+  PRODUCTION_FORWARD_READBACK_TCG_GRAMMAR_CONTEXT_EXPECTATION_SCHEMA);
+assert.equal(futureV4Expectation.case_id, "TCG");
+const futureV4Receipt = verifyPromotedProductionForwardReadback({
+  evidence: futureV4Evidence,
+  expectation: futureV4Expectation,
+  resolutionView: futureV4View,
+  responseUrl: `https://listing.lyncafei.team/api/csm-resolution-view?asset_id=${
+    futureV4TcgCase.asset_id
+  }`,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+});
+assert.equal(futureV4Receipt.schema_version,
+  PRODUCTION_FORWARD_READBACK_TCG_GRAMMAR_CONTEXT_RECEIPT_SCHEMA);
+assert.equal(futureV4Receipt.provider_calls, 0);
+assert.equal(futureV4Receipt.tcg_grammar_context_authority_receipt_exact_match, true);
+assert.equal(futureV4Receipt.tcg_grammar_context_registry_release_id,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id);
+assert.equal(futureV4Receipt.tcg_grammar_context_registry_content_sha256,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256);
+assert.equal(futureV4Receipt.tcg_grammar_context_resolution_contract_sha256,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256);
+assert.equal(futureV4Receipt.tcg_grammar_context_web_authority_used, false);
+for (const mutate of [
+  (value) => { delete value.tcg_grammar_context_authority_receipt; },
+  (value) => { value.tcg_grammar_context_authority_receipt.web_authority_used = true; },
+  (value) => { value.brackets.find((row) => row.canonical_field === "set")
+    .selected_candidate = "Trainer Gallery Drift"; }
+]) {
+  const changed = clone(futureV4View);
+  mutate(changed);
+  assert.throws(() => verifyPromotedProductionForwardReadback({
+    evidence: futureV4Evidence,
+    expectation: futureV4Expectation,
+    resolutionView: changed,
+    responseUrl: `https://listing.lyncafei.team/api/csm-resolution-view?asset_id=${
+      futureV4TcgCase.asset_id
+    }`,
+    deploymentUrl: candidateOrigin,
+    gitSha: candidateGitSha
+  }), /production_forward_readback_/);
+}
+const historicalViewWithV4Receipt = clone(ordinaryView);
+historicalViewWithV4Receipt.tcg_grammar_context_authority_receipt =
+  clone(tcgGrammarContextPublicReceipt);
+assert.throws(() => buildProductionForwardReadbackExpectation({
+  evidence: ordinaryEvidence,
+  resolutionView: historicalViewWithV4Receipt,
+  deploymentUrl: candidateOrigin,
+  gitSha: candidateGitSha
+}), /production_forward_readback_resolution_view_invalid/,
+"v1-v3 views must not acquire the v4 public field");
 const transportProofTamper = clone(ordinaryEvidence);
 transportProofTamper.cases.find((entry) => entry.transport_only).founder_web_search =
   clone(ordinaryEvidence.cases.find((entry) => entry.case_id === "TCG").founder_web_search);

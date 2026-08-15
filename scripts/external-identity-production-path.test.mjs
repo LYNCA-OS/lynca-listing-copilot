@@ -14,8 +14,10 @@ import {
   buildCsmStageRows,
   computeCsmPacketHashes,
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+  CSM_STAGE_LEGACY_CONTRACT_VERSION,
   EBAY_EXTERNAL_IDENTITY_PROFILE_VERSION,
-  THIN_EXTERNAL_IDENTITY_COMPOSER_VERSION
+  THIN_EXTERNAL_IDENTITY_COMPOSER_VERSION,
+  THIN_EXTERNAL_IDENTITY_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   CANONICAL_FIELD_SOURCE_FIELDS
@@ -38,9 +40,6 @@ import {
   EXTERNAL_IDENTITY_REPLAY_COMPATIBILITY_REGISTRY,
   EXTERNAL_IDENTITY_RESOLUTION_CONTRACT
 } from "../lib/listing/knowledge/csm-external-identity-support.mjs";
-import {
-  CSM_PROJECTION_ACTIVATION
-} from "../lib/listing/thin/csm-projection-activation.mjs";
 
 const HR14_ORIGINAL_SHA256 = Object.freeze([
   "8641baae2722318061dc7d9431e8764e4fe72d809bf1d668294c823c1105811a",
@@ -125,8 +124,6 @@ const liveCandidateObservation = {
   print_finish: "Members Only",
   card_number: "HR14"
 };
-const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
-
 let providerCalls = 0;
 const prepared = await prepareCanonicalListingPath({
   tenantId: "tenant-external",
@@ -140,10 +137,10 @@ const prepared = await prepareCanonicalListingPath({
     assert.equal(request.model, "gpt-5.6-luna");
     assert.equal(request.reasoning.effort, "low");
     assert.equal(request.max_output_tokens, 8192);
-    assert.deepEqual(request.tools, [{ type: "web_search" }]);
-    assert.equal(request.tool_choice, "auto");
-    assert.equal(request.max_tool_calls, 2);
-    assert.deepEqual(request.include, ["web_search_call.action.sources"]);
+    for (const key of ["tools", "tool_choice", "max_tool_calls", "include"]) {
+      assert.equal(Object.hasOwn(request, key), false,
+        `the rollback-compatible bridge must omit ${key}`);
+    }
     const providerWire = JSON.stringify(request);
     for (const secretIdentity of [...HR14_ORIGINAL_SHA256, HR14_ORIGINAL_SET_SHA256]) {
       assert.doesNotMatch(providerWire, new RegExp(secretIdentity),
@@ -168,12 +165,8 @@ assert.equal(prepared.fields.year, "1996-97");
 assert.equal(prepared.fields.set, "High Risers");
 assert.equal(prepared.fields.team, "Chicago Bulls");
 assert.equal(prepared.fields.card_number, "HR14");
-assert.deepEqual(prepared.set_card_name_relation_receipt, {
-  schema_version: "set-card-name-relations-v1",
-  set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: "High Risers" },
-  card_name: null
-});
-assert.equal(prepared.founder_beta_web_receipt.outcome, "NOT_USED");
+assert.equal(Object.hasOwn(prepared, "set_card_name_relation_receipt"), false,
+  "the rollback-compatible writer must omit the future relation receipt");
 for (const physicalField of [
   "surface_color", "parallel_family", "parallel_exact", "print_finish", "serial", "grade"
 ]) {
@@ -192,17 +185,14 @@ assert.ok(prepared.dropped_brackets.includes("print_finish"));
 assert.ok(!prepared.dropped_brackets.includes("card_number"));
 assert.equal(
   prepared.resolution_contract_sha256,
-  activeWriter.external_identity.resolution_contract_sha256
+  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
 );
-assert.equal(prepared.csm_rows.resolution.registry_release_id,
-  activeWriter.external_identity.registry_release_id);
-assert.equal(prepared.csm_rows.resolution.resolver_version,
-  activeWriter.external_identity.resolver_version);
-assert.equal(prepared.csm_rows.output.composer_version,
-  activeWriter.external_identity.composer_version);
+assert.equal(prepared.csm_rows.resolution.registry_release_id, EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID);
+assert.equal(prepared.csm_rows.resolution.resolver_version, THIN_EXTERNAL_IDENTITY_RESOLVER_VERSION);
+assert.equal(prepared.csm_rows.output.composer_version, THIN_EXTERNAL_IDENTITY_COMPOSER_VERSION);
 assert.equal(
   prepared.csm_rows.output.marketplace_profile_version,
-  activeWriter.external_identity.marketplace_profile_version
+  EBAY_EXTERNAL_IDENTITY_PROFILE_VERSION
 );
 assert.equal(
   prepared.csm_rows.output.structured_output.external_identity_support.match_mode,
@@ -223,8 +213,8 @@ for (const bracket of ["year", "manufacturer", "product", "set", "subject", "car
 }
 assert.deepEqual(verifyReplay(prepared.csm_rows, prepared.title).problems, []);
 assert.equal(createHash("sha256").update(JSON.stringify(prepared.csm_rows)).digest("hex"),
-  "df58dea89b1dbe22673141ca5ab757fc2c28ad2cf00509869a40fc0e01d2779f",
-"the activated external-v3 writer must keep its complete production packet byte-stable");
+  "b31da7564d4f8e4529aa6b3afed3f784ef90ec3bdbf954ce80de011f3567b1e3",
+"the bridge must leave captured-e1ae external-v2 rows byte-identical");
 
 // Producer and validator must agree that identity-equivalent spacing is a
 // presentation alias, not a canonical presentation. Exercise the full path so
@@ -264,7 +254,7 @@ for (const [index, setAlias] of ["high risers", "HIGH RISERS"].entries()) {
   assert.equal(setAliasPrepared.fields.set, "High Risers");
   assert.equal(setAliasPrepared.external_identity_support.field_decisions.set.action,
     "CORROBORATE");
-  assert.equal(setAliasPrepared.set_card_name_relation_receipt.set.value, "High Risers");
+  assert.equal(Object.hasOwn(setAliasPrepared, "set_card_name_relation_receipt"), false);
   assert.deepEqual(verifyReplay(
     setAliasPrepared.csm_rows, setAliasPrepared.title
   ).problems, []);
@@ -280,7 +270,7 @@ const setFillPrepared = await prepareCanonicalListingPath({
   callProvider: completedProvider({ ...liveCandidateObservation, set: "" })
 });
 assert.equal(setFillPrepared.external_identity_support.field_decisions.set.action, "FILL");
-assert.equal(setFillPrepared.set_card_name_relation_receipt.set.value, "High Risers");
+assert.equal(Object.hasOwn(setFillPrepared, "set_card_name_relation_receipt"), false);
 assert.deepEqual(verifyReplay(setFillPrepared.csm_rows, setFillPrepared.title).problems, []);
 
 assert.throws(() => validateSetCardNameRelationTransition({
@@ -546,8 +536,8 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
   ));
   reseal(duplicateCoverage);
   assert.throws(() => replayFromRows(duplicateCoverage),
-    /external_identity_evidence_invalid/,
-    "the stage-v3 forward reader must reject duplicate Registry authority evidence");
+    /external_identity_field_evidence_cardinality_invalid/,
+    "direct replay must reject duplicate Registry authority evidence");
   const checked = verifyReplay(duplicateCoverage, prepared.title);
   assert.equal(checked.ok, false);
   assert.ok(checked.problems.some((problem) => (
@@ -564,8 +554,8 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
   extraCoverage.evidence.push(extra);
   reseal(extraCoverage);
   assert.throws(() => replayFromRows(extraCoverage),
-    /external_identity_evidence_cardinality_invalid/,
-    "the stage-v3 forward reader must reject extra Registry authority evidence");
+    /external_identity_source_provenance_invalid/,
+    "direct replay must reject extra Registry authority evidence");
   const checked = verifyReplay(extraCoverage, prepared.title);
   assert.equal(checked.ok, false);
   assert.ok(checked.problems.some((problem) => (
@@ -675,8 +665,8 @@ for (const mutate of [
 }
 
 // No exact registry support changes neither canonical facts nor deterministic
-// CSM packet bytes. The active Web/relation receipts remain identical; only the
-// top-level ABSTAINED registry diagnostic is additional.
+// CSM packet bytes. The rollback writer omits future Web/relation receipts;
+// only the top-level ABSTAINED registry diagnostic is additional.
 const noMatchFields = {
   ...observedHr14,
   product: "Topps Chrome",
@@ -697,7 +687,7 @@ const baseline = finishCanonicalTitle(JSON.stringify(noMatchFields));
 const baselineRows = buildCsmStageRows({
   tenantId: "tenant-external",
   recognitionSessionId: "session-no-match",
-  contractVersion: activeWriter.durable_projection_contract_version,
+  contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION,
   fields: baseline.fields,
   composed: {
     grammar: baseline.grammar,
@@ -714,16 +704,8 @@ const baselineRows = buildCsmStageRows({
     composer_version: baseline.composer_version,
     marketplace_profile_version: baseline.marketplace_profile_version,
     canonical_naming_trace: baseline.canonical_naming_trace,
-    canonical_naming_publishable: baseline.canonical_naming_publishable,
-    publication_coverage: baseline.publication_coverage,
-    lot_quantity_unresolved: baseline.lot_quantity_unresolved,
-    lot_single_card: baseline.lot_single_card,
-    lot_unshared_attributes: baseline.lot_unshared_attributes,
-    lot_publishable: baseline.lot_publishable,
-    lot_publication_failure_code: baseline.lot_publication_failure_code
+    canonical_naming_publishable: baseline.canonical_naming_publishable
   },
-  founderBetaWebReceipt: noMatch.founder_beta_web_receipt,
-  setCardNameRelationReceipt: noMatch.set_card_name_relation_receipt,
   title: baseline.title,
   createdAt
 });

@@ -100,6 +100,7 @@ import {
   COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
   COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION,
   COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+  COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_DESCRIPTOR_ID,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_MARKER,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID,
@@ -107,6 +108,9 @@ import {
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
   compatibilityBridgeWriterProjectionMode,
   ORDINARY_RELEASE_CLASS
 } from "../scripts/compatibility-bridge-release.mjs";
@@ -119,6 +123,8 @@ import {
   buildProductionForwardReadbackExpectation,
   classifyFounderWebSearch,
   FOUNDER_WEB_SEARCH_CLASSIFICATION,
+  productionTcgGrammarContextAuthorityProof,
+  productionTcgGrammarContextAuthorityReceiptExact,
   WEB_IDENTITY_CONTENT_ACCEPTANCE,
   webIdentityContentProjectionProof,
   webIdentityQueryHasVisibleAnchors,
@@ -129,10 +135,16 @@ import {
   summarizeWriterEditableTitleLatency
 } from "../scripts/production-writer-title-latency.mjs";
 import {
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
   EBAY_PROFILE_VERSION,
   THIN_COMPOSER_VERSION_V2,
   THIN_RESOLVER_VERSION
 } from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_NORMALIZATION_VERSION,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 
 const expectedExecutionContractByTransportLaneAndImageCount = Object.freeze(Object.fromEntries(
   CSM_RECOGNITION_TRANSPORT_PROFILES.map((transportProfile) => [
@@ -166,7 +178,8 @@ function offlineWriterProjectionContractForId(contractId) {
   }
   const selected = [
     CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible,
-    CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+    CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3,
+    CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4
   ].find((writer) => writer.contract_id === normalized);
   if (!selected) {
     throw new Error("WRITER_JOURNEY_OFFLINE_WRITER_CONTRACT_ID invalid");
@@ -222,6 +235,9 @@ const verifierErrorCodes = Object.freeze({
   TITLE_UI_RECOGNITION_MISMATCH: "TITLE_UI_RECOGNITION_MISMATCH",
   TITLE_STORED_UI_MISMATCH: "TITLE_STORED_UI_MISMATCH",
   TITLE_CHANGED_AFTER_GLASS_BOX: "TITLE_CHANGED_AFTER_GLASS_BOX",
+  RESOLUTION_GRAMMAR_MISMATCH: "RESOLUTION_GRAMMAR_MISMATCH",
+  TCG_GRAMMAR_CONTEXT_AUTHORITY_MISMATCH:
+    "TCG_GRAMMAR_CONTEXT_AUTHORITY_MISMATCH",
   VERSION_CONTRACT_MISMATCH: "VERSION_CONTRACT_MISMATCH",
   VERSION_RESOLVER_MISMATCH: "VERSION_RESOLVER_MISMATCH",
   VERSION_COMPOSER_MISMATCH: "VERSION_COMPOSER_MISMATCH",
@@ -327,6 +343,37 @@ function stableJson(value) {
   return JSON.stringify(value);
 }
 
+function offlineTcgGrammarContextPublicReceipt() {
+  return Object.freeze({
+    schema_version: "csm-tcg-grammar-context-authority-public-receipt.v1",
+    status: "APPLIED",
+    claim_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0].claim_id,
+    raw_grammar: "standard",
+    resolved_grammar: "tcg",
+    normalized_set: "Trainer Gallery",
+    normalized_card_number: "TG22/TG30",
+    registry_release_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256,
+    registry_record_sha256: sha256(stableJson(
+      TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0]
+    )),
+    normalization_version: TCG_GRAMMAR_CONTEXT_NORMALIZATION_VERSION,
+    policy_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.conflict_policy_version,
+    reason_code: "EXACT_JOINT_SET_NUMBER_NAMESPACE",
+    conflict_codes: [],
+    ip_action: "UNCHANGED",
+    web_authority_used: false,
+    source_authority: {
+      authority_used: "CURRENT_IMAGE",
+      field_authority: ["card_number", "set"].map((field) => ({
+        field,
+        current_image_source_present: true,
+        web_source_present: false
+      }))
+    }
+  });
+}
+
 function healthRecognitionTransportContractMatches(runtime) {
   return CSM_RECOGNITION_TRANSPORT_PROFILES.every((profile) => {
     const lane = profile.lane_version;
@@ -344,7 +391,8 @@ function healthRecognitionTransportContractMatches(runtime) {
 function capturedProductionWriterMode(writerProjectionMode) {
   return [
     COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
-    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+    TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
   ].includes(writerProjectionMode);
 }
 
@@ -2051,6 +2099,17 @@ function validateSourceCasesManifest(manifest, {
     && manifest.bridge_marker === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER
     && compatibilityBridgeWriterProjectionMode(manifest, { expectedGitSha })
       === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE;
+  const compatibilityBridgeV5TcgGrammarContext =
+    releaseClass === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && hasExactKeys(manifest, [
+      "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker", "git_sha",
+      "writer_projection_mode", "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION
+    && manifest.bridge_descriptor_id === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID
+    && manifest.bridge_marker === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER
+    && compatibilityBridgeWriterProjectionMode(manifest, { expectedGitSha })
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE;
   if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(releaseClass)
     || manifest?.evidence_scope !== "LIVE_CONTRACT_RECEIPT_ONLY"
     || manifest?.accuracy_claim !== null
@@ -2071,7 +2130,8 @@ function validateSourceCasesManifest(manifest, {
       manifest.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
       || (!compatibilityBridgeV1 && !compatibilityBridgeV2
         && !compatibilityBridgeV3 && !compatibilityBridgeV4
-        && !compatibilityBridgeV4CheckpointReader)
+        && !compatibilityBridgeV4CheckpointReader
+        && !compatibilityBridgeV5TcgGrammarContext)
       || !/^[0-9a-f]{40}$/.test(String(expectedGitSha || ""))
       || manifest.git_sha !== expectedGitSha
     ))) {
@@ -2390,6 +2450,26 @@ function observationLegacyVersionActive(versions) {
     && compatibilityBridgeStandardVersionActive(versions);
 }
 
+function tcgGrammarContextV4WriterActive(writer) {
+  return writer?.durable_projection_contract_version
+    === CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+    && writer?.tcg_grammar_context?.registry_release_id
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id
+    && writer?.tcg_grammar_context?.registry_content_sha256
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256
+    && writer?.tcg_grammar_context?.resolution_contract_sha256
+      === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256;
+}
+
+function tcgGrammarContextV4VersionActive(versions) {
+  return versions?.csm_contract
+    === CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+    && versions?.resolver
+      === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
+    && versions?.composer === THIN_COMPOSER_VERSION_V2
+    && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
+}
+
 function capturedProductionTcgVersionActive(versions) {
   return versions?.csm_contract === "csm-stage-shadow-v2"
     && observationLegacyVersionActive(versions);
@@ -2569,7 +2649,13 @@ function ordinaryActivationSeal({
       writerContract: writer,
       evidence: standardCaseEvidence
     })
-    && observationLegacyVersionActive(tcgCaseEvidence?.versions)
+    && (tcgGrammarContextV4WriterActive(writer)
+      ? tcgGrammarContextV4VersionActive(tcgCaseEvidence?.versions)
+        && productionTcgGrammarContextAuthorityReceiptExact(
+          tcgCaseEvidence?.tcg_grammar_context_authority_receipt
+        )
+      : observationLegacyVersionActive(tcgCaseEvidence?.versions)
+        && tcgCaseEvidence?.tcg_grammar_context_authority_receipt == null)
     && largeCaseEvidence?.overlap_observed === true
     && largeStandardWriterProjectionActive({
       writerProjectionMode,
@@ -3414,6 +3500,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       let activationProjectionReceipt = null;
       let founderWebSearchReceipt = null;
       let lotSharedOnlyReceipt = null;
+      let tcgGrammarContextAuthorityReceipt = null;
 
       failurePhase = "TITLE_UI";
       const titleEditableAtMs = await titleEditableAtPromise;
@@ -3448,19 +3535,36 @@ test("production writer journey verifies Glass Box and staged large-image transp
       expect(resolutionResponse.ok(), "resolution view must be readable in the live writer journey").toBeTruthy();
       expect(resolutionView?.asset_id).toBe(recognitionPayload.asset_id);
       expect(resolutionView?.recognition_session_id).toBe(recognitionPayload.recognition_session_id);
-      expect(resolutionView?.grammar?.value).toBe(sourceCase.expected_grammar);
+      requireInvariant(
+        resolutionView?.grammar?.value === sourceCase.expected_grammar,
+        verifierErrorCodes.RESOLUTION_GRAMMAR_MISMATCH
+      );
       const versions = recognitionVersionReceipt(recognitionPayload, resolutionView, {
         writerProjectionMode
       });
       if (sourceCase.case_id === "TCG") {
-        requireInvariant((!capturedProductionWriterMode(writerProjectionMode)
-          && observationLegacyVersionActive(versions))
+        const writer = expectedWriterProjectionContract(writerProjectionMode);
+        const tcgGrammarContextV4 = tcgGrammarContextV4WriterActive(writer);
+        tcgGrammarContextAuthorityReceipt =
+          productionTcgGrammarContextAuthorityProof(resolutionView);
+        requireInvariant((tcgGrammarContextV4
+          && tcgGrammarContextV4VersionActive(versions)
+          && tcgGrammarContextAuthorityReceipt != null)
+          || (!tcgGrammarContextV4
+            && !capturedProductionWriterMode(writerProjectionMode)
+            && observationLegacyVersionActive(versions)
+            && !Object.prototype.hasOwnProperty.call(
+              resolutionView || {}, "tcg_grammar_context_authority_receipt"
+            ))
           || (capturedProductionWriterMode(writerProjectionMode)
             && capturedProductionTcgVersionActive(versions)
             && publicProjectionSupportOmitted(resolutionView, [
-              "verified_original_observation_support", "external_identity_support"
+              "verified_original_observation_support", "external_identity_support",
+              "tcg_grammar_context_authority_receipt"
             ])),
-          verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
+          tcgGrammarContextV4
+            ? verifierErrorCodes.TCG_GRAMMAR_CONTEXT_AUTHORITY_MISMATCH
+            : verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
       }
       if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
         requireInvariant(resolutionView?.grammar?.raw === "standard"
@@ -3661,6 +3765,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
         } : {}),
         ...(lotSharedOnlyReceipt ? {
           lot_shared_only: lotSharedOnlyReceipt
+        } : {}),
+        ...(tcgGrammarContextAuthorityReceipt ? {
+          tcg_grammar_context_authority_receipt:
+            tcgGrammarContextAuthorityReceipt
         } : {}),
         ...titleEvidenceReceipt({
           titleBeforePanel,
@@ -4031,6 +4139,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
       entry.case_id === "NON_TCG"
     ));
     const tcgCaseEvidence = evidence.cases.find((entry) => entry.case_id === "TCG");
+    const tcgGrammarContextV4 = tcgGrammarContextV4WriterActive(
+      expectedWriterProjectionContract(writerProjectionMode)
+    );
     const webCaseEvidence = evidence.cases.find(
       (entry) => entry.case_id === "NON_TCG_WEB_IDENTITY"
     );
@@ -4195,7 +4306,9 @@ test("production writer journey verifies Glass Box and staged large-image transp
         ? 0 : semanticCases.length,
       transport_only_web_excluded_case_count: transportOnlyCases.length,
       selected_forward_readback_case_id: capturedProductionWriterMode(writerProjectionMode)
-        ? null : governedWebCaseEvidence?.case_id,
+        ? null : tcgGrammarContextV4
+          ? tcgCaseEvidence?.case_id
+          : governedWebCaseEvidence?.case_id,
       durable_projection_receipts_absent:
         capturedProductionWriterMode(writerProjectionMode),
       durable_projection_receipt_omission_case_count:
@@ -4208,7 +4321,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
     evidence.stages.live_contract = { passed: true, case_count: evidence.cases.length };
     evidence.passed = true;
     const forwardReadbackResolutionView = parityRequired
-      ? resolutionViewsByCaseId.get(governedWebCaseEvidence?.case_id)
+      ? resolutionViewsByCaseId.get(tcgGrammarContextV4
+        ? tcgCaseEvidence?.case_id : governedWebCaseEvidence?.case_id)
       : standardResolutionView;
     requireInvariant(forwardReadbackResolutionView != null,
       verifierErrorCodes.RESOLUTION_VIEW_MISMATCH);
@@ -4298,6 +4412,42 @@ test("offline TCG authority abstention bypasses designated relation proof @offli
   expect(() => activationProjectionProofForCase(
     { case_id: "NON_TCG_WEB_IDENTITY" }, resolutionView, "Anthony Edwards"
   )).toThrow(verifierErrorCodes.ACTIVATION_RECEIPT_MISMATCH);
+});
+
+test("offline v4 TCG public authority receipt is exact and fail closed @offline", () => {
+  const receipt = offlineTcgGrammarContextPublicReceipt();
+  const view = {
+    grammar: {
+      value: "TCG",
+      raw: "standard",
+      resolver_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
+    },
+    brackets: [{
+      canonical_field: "set",
+      selected_candidate: "Trainer Gallery"
+    }, {
+      canonical_field: "card_number",
+      selected_candidate: "TG22/TG30"
+    }],
+    tcg_grammar_context_authority_receipt: receipt
+  };
+  expect(productionTcgGrammarContextAuthorityProof(view)).toEqual(receipt);
+  for (const mutate of [
+    (value) => { delete value.tcg_grammar_context_authority_receipt; },
+    (value) => { value.grammar.raw = "tcg"; },
+    (value) => { value.brackets[0].selected_candidate = "Trainer Gallery Drift"; },
+    (value) => {
+      value.tcg_grammar_context_authority_receipt.web_authority_used = true;
+    },
+    (value) => {
+      value.tcg_grammar_context_authority_receipt.source_authority
+        .field_authority[1].current_image_source_present = false;
+    }
+  ]) {
+    const changed = structuredClone(view);
+    mutate(changed);
+    expect(productionTcgGrammarContextAuthorityProof(changed)).toBeNull();
+  }
 });
 
 test("offline verifier boundaries redact titles and reject identity drift @offline", async ({}, testInfo) => {
@@ -4453,6 +4603,14 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     responseUrl: `${productionOrigin}/api/health`,
     writerProjectionMode:
       EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  }).runtime_contract_valid === true, verifierErrorCodes.GENERIC);
+  requireInvariant(writerJourneyHealthReceipt({
+    httpOk: true,
+    health: capturedProductionHealth,
+    expectedSha: offlineSha,
+    expectedOrigin: productionOrigin,
+    responseUrl: `${productionOrigin}/api/health`,
+    writerProjectionMode: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
   }).runtime_contract_valid === true, verifierErrorCodes.GENERIC);
   for (const mutate of [
     (health) => { health.runtime.canonical_naming_target = CANONICAL_NAMING_RELEASE_CONTRACT_V3; },
@@ -4815,6 +4973,17 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
     expectedGitSha: bridgeGitSha
   }).length === 2, verifierErrorCodes.GENERIC);
+  const tcgGrammarContextReaderBridgeManifest = {
+    ...checkpointReaderBridgeManifest,
+    schema_version: COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
+    bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+    bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+    writer_projection_mode: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  };
+  requireInvariant(validateSourceCasesManifest(tcgGrammarContextReaderBridgeManifest, {
+    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    expectedGitSha: bridgeGitSha
+  }).length === 2, verifierErrorCodes.GENERIC);
   for (const [candidate, options] of [
     [bridgeManifest, { releaseClass: ORDINARY_RELEASE_CLASS }],
     [manifest, {
@@ -4878,6 +5047,47 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     }],
     [{ ...checkpointReaderBridgeManifest,
       writer_projection_mode: COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      schema_version: COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      bridge_descriptor_id: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      bridge_marker: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      writer_projection_mode:
+        EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      schema_version: "writer-journey-compatibility-bridge-unknown-cases-v1" }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      bridge_descriptor_id: "unknown-tcg-grammar-context-reader-bridge" }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      bridge_marker: "unknown-tcg-grammar-context-reader-bridge" }, {
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      expectedGitSha: bridgeGitSha
+    }],
+    [{ ...tcgGrammarContextReaderBridgeManifest,
+      writer_projection_mode: "unknown-tcg-grammar-context-reader-bridge" }, {
       releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
       expectedGitSha: bridgeGitSha
     }],
@@ -5751,6 +5961,10 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     ...capturedSealInput,
     writerProjectionMode:
       EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
+  }), verifierErrorCodes.GENERIC);
+  requireInvariant(compatibilityBridgeSeal({
+    ...capturedSealInput,
+    writerProjectionMode: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
   }), verifierErrorCodes.GENERIC);
   for (const mutation of [{
     writerProjectionMode: COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE

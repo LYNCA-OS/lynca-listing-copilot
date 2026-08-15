@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   CANONICAL_FIELDS_SCHEMA,
@@ -6,12 +7,25 @@ import {
   CANONICAL_ATTRIBUTES,
   CANONICAL_FIELDS_PROMPT,
   CANONICAL_SERIAL_EXACT_PROMPT,
+  CANONICAL_FIELDS_PARSER_SEMANTICS,
+  CANONICAL_TCG_GRAMMAR_CONTEXT_APPLIED_DEFECT,
+  CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT,
   semCanonicalEditableFields,
   buildCanonicalFieldsRequest,
   parseCanonicalFields
 } from "../lib/listing/thin/canonical-fields.mjs";
 import { BRACKET_ORDER, DROP_ORDER, composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
-import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  CANONICAL_NAMING_TCG_GRAMMAR_AUTHORITY_MISSING,
+  finishCanonicalTitle
+} from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import {
   emitCsm, emitValidationEvent, classifyReviewedTitle,
   checkNumberBrackets, unknownFieldNames,
@@ -38,6 +52,41 @@ const fields = (overrides = {}) => parseCanonicalFields({
   card_number: "", serial: "", attributes: [], grade: "", grammar: "standard",
   lot_count: "", unreadable: [], low_confidence: [], ...overrides
 }).fields;
+const productionTcgGrammarMisroute = JSON.parse(readFileSync(new URL(
+  "./fixtures/production-writer-journey-tcg-grammar-misroute-v1.json",
+  import.meta.url
+), "utf8"));
+const v4Writer = CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
+const grammarContextSourceExecution = Object.freeze({
+  operationPayloadSha256: "a".repeat(64),
+  originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+  recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+  providerClientRequestId: "lynca-canonical-fields-attempt-1",
+  providerResponseId: "resp_canonical_fields_1",
+  tenantId: "tenant-canonical-fields",
+  recognitionSessionId: "session-canonical-fields"
+});
+const grammarContextReceipts = (raw, fieldSources) => {
+  const founderBetaWebReceipt = {
+    schema_version: "founder-beta-web-receipt-v2",
+    semantic_state_sha256: "1".repeat(64)
+  };
+  const source = buildTcgFieldSourceAuthorityReceipt({
+    fieldSources,
+    fields: raw,
+    originalImageCount: 1,
+    semanticStateSha256: founderBetaWebReceipt.semantic_state_sha256,
+    founderBetaWebReceipt,
+    sourceExecution: grammarContextSourceExecution
+  });
+  return {
+    source,
+    claim: buildTcgGrammarContextClaimReceipt({
+      fields: raw,
+      fieldSourceAuthorityReceipt: source
+    })
+  };
+};
 
 // ---------------------------------------------------------------- the schema
 
@@ -187,10 +236,13 @@ assert.ok(CANONICAL_FIELD_NAMES.includes("language"), "COS-9 language must suppo
 {
   const pokemon = parseCanonicalFields({
     grammar: "standard", manufacturer: "Pokémon", product: "Mega Brave",
-    subjects: ["Charizard"], parallel_exact: "Gold Refractor"
+    subjects: ["Charizard"], parallel_exact: "Gold Refractor",
+    card_number: "TG22/TG30"
   });
   assert.equal(pokemon.fields.grammar, "tcg");
+  assert.equal(pokemon.fields.card_number, "TG22/TG30");
   assert.ok(pokemon.defects.includes("grammar_standard_but_csm_says_tcg"));
+  assert.ok(!pokemon.defects.includes(CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT));
   assert.equal(pokemon.fields.print_finish, "",
     "grammar correction must complete before product finish admission");
   assert.ok(pokemon.fields.withheld_finish_terms.some((term) => (
@@ -212,6 +264,141 @@ assert.ok(CANONICAL_FIELD_NAMES.includes("language"), "COS-9 language must suppo
   assert.equal(panini.fields.grammar, "standard");
   assert.ok(!panini.defects.includes("grammar_standard_but_csm_says_tcg"));
   assert.equal(panini.fields.print_finish, "Silver Prizm");
+}
+
+// A failed protected Writer Journey proved the inverse boundary matters too.
+// COS-38 lets TCG context classify a subset number; a TCG-shaped number cannot
+// manufacture that context. Preserve the exact sanitized observation, report
+// the missing authority, and stop before a Standard title can be published.
+{
+  assert.equal(productionTcgGrammarMisroute.schema_version,
+    "production-writer-journey-tcg-grammar-misroute-v1");
+  assert.equal(productionTcgGrammarMisroute.provenance.raw_provider_field_sources_retained,
+    false, "the fixture must not invent provider field-source rows that were not retained");
+  assert.equal(productionTcgGrammarMisroute.provenance.source_partition_proven, false,
+    "durable projection rows cannot retroactively prove the raw source partition");
+  const raw = productionTcgGrammarMisroute.sanitized_canonical_fields;
+  const current = parseCanonicalFields(raw);
+  assert.equal(raw.grammar, "standard", "the provider observation stays immutable");
+  assert.equal(current.fields.grammar, "standard", "WEB_V2 remains immutable");
+  assert.equal(current.fields.ip, "", "the parser must not invent Pokemon IP");
+  assert.equal(current.fields.card_number, "TG22/TG30");
+  assert.equal(current.fields.serial, "");
+  assert.ok(!current.defects.includes(CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT));
+
+  const approved = grammarContextReceipts(raw, [
+    { field: "set", source_ids: ["original_image_1"] },
+    { field: "card_number", source_ids: ["original_image_1"] }
+  ]);
+  const resolved = parseCanonicalFields(raw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT,
+    tcgFieldSourceAuthorityReceipt: approved.source,
+    tcgGrammarContextClaimReceipt: approved.claim
+  });
+  assert.equal(approved.claim.status, "APPLIED");
+  assert.equal(resolved.observed_fields.grammar, "standard");
+  assert.equal(resolved.fields.grammar, "tcg");
+  assert.equal(resolved.fields.ip, "", "the approved claim cannot author IP");
+  assert.ok(resolved.defects.includes(CANONICAL_TCG_GRAMMAR_CONTEXT_APPLIED_DEFECT));
+  const resolvedTitle = finishCanonicalTitle(JSON.stringify(raw), {
+    writerContract: v4Writer,
+    tcgFieldSourceAuthorityReceipt: approved.source,
+    tcgGrammarContextClaimReceipt: approved.claim
+  });
+  assert.equal(resolvedTitle.canonical_naming_publishable, true);
+  assert.ok(resolvedTitle.title.length > 0);
+
+  const webOnly = grammarContextReceipts(raw, [
+    { field: "set", source_ids: ["https://pokemon.com/list"] },
+    { field: "card_number", source_ids: ["original_image_1"] }
+  ]);
+  const abstained = finishCanonicalTitle(JSON.stringify(raw), {
+    writerContract: v4Writer,
+    tcgFieldSourceAuthorityReceipt: webOnly.source,
+    tcgGrammarContextClaimReceipt: webOnly.claim
+  });
+  assert.equal(webOnly.claim.status, "ABSTAIN");
+  assert.equal(abstained.title, "");
+  assert.equal(abstained.canonical_naming_publishable, false);
+  assert.equal(abstained.canonical_naming_failure_code,
+    CANONICAL_NAMING_TCG_GRAMMAR_AUTHORITY_MISSING);
+
+  const webPokemonRaw = { ...raw, manufacturer: "Pokemon" };
+  const webPokemon = grammarContextReceipts(webPokemonRaw, [
+    { field: "set", source_ids: ["https://pokemon.com/list"] },
+    { field: "card_number", source_ids: ["original_image_1"] }
+  ]);
+  const webPokemonParsed = parseCanonicalFields(webPokemonRaw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT,
+    tcgFieldSourceAuthorityReceipt: webPokemon.source,
+    tcgGrammarContextClaimReceipt: webPokemon.claim
+  });
+  assert.equal(webPokemon.claim.status, "ABSTAIN");
+  assert.equal(webPokemonParsed.fields.ip, "Pokemon");
+  assert.equal(webPokemonParsed.fields.grammar, "standard",
+    "a Web-supported Pokemon identity may not bypass the approved Grammar authority");
+  assert.ok(webPokemonParsed.defects.includes(
+    CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT
+  ));
+
+  const captured = parseCanonicalFields(raw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.CAPTURED_E1AE_V1
+  });
+  assert.ok(!captured.defects.includes(CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT),
+    "captured e1ae parsing remains literal historical behavior");
+
+}
+
+for (const cardNumber of ["RC1/RC100", "SP1/SP50", "AU1/AU25", "TT1/TT99"]) {
+  const raw = {
+    grammar: "standard", manufacturer: "Topps", product: "Sports Insert",
+    subjects: ["Player"], card_number: cardNumber
+  };
+  const receipts = grammarContextReceipts(raw, [
+    { field: "set", source_ids: ["original_image_1"] },
+    { field: "card_number", source_ids: ["original_image_1"] }
+  ]);
+  const parsed = parseCanonicalFields(raw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT,
+    tcgFieldSourceAuthorityReceipt: receipts.source,
+    tcgGrammarContextClaimReceipt: receipts.claim
+  });
+  assert.equal(parsed.fields.grammar, "standard", `${cardNumber} must not infer TCG`);
+  assert.ok(parsed.defects.includes(CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT),
+    `${cardNumber} is ambiguous and must fail closed rather than publish`);
+}
+
+for (const cardNumber of [
+  "17/50", "04/10", "1/1", "150/299", "086/070", "139/205",
+  "221", "OP01-120", "TAEV-EN006", "PSA/DNA", "TG22/30", "A/1"
+]) {
+  const raw = { grammar: "standard", card_number: cardNumber };
+  const receipts = grammarContextReceipts(raw, [
+    { field: "set", source_ids: ["original_image_1"] },
+    { field: "card_number", source_ids: ["original_image_1"] }
+  ]);
+  const parsed = parseCanonicalFields(raw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT,
+    tcgFieldSourceAuthorityReceipt: receipts.source,
+    tcgGrammarContextClaimReceipt: receipts.claim
+  });
+  assert.ok(!parsed.defects.includes(CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT),
+    `${cardNumber} is not the unresolved letter-prefix ratio boundary`);
+}
+
+{
+  const raw = { grammar: "tcg", card_number: "TG22/TG30" };
+  const receipts = grammarContextReceipts(raw, [
+    { field: "set", source_ids: ["original_image_1"] },
+    { field: "card_number", source_ids: ["original_image_1"] }
+  ]);
+  const rawTcg = parseCanonicalFields(raw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT,
+    tcgFieldSourceAuthorityReceipt: receipts.source,
+    tcgGrammarContextClaimReceipt: receipts.claim
+  });
+  assert.equal(rawTcg.fields.grammar, "tcg");
+  assert.ok(!rawTcg.defects.includes(CANONICAL_TCG_GRAMMAR_AUTHORITY_MISSING_DEFECT));
 }
 
 // SSP is [Descriptive Rarity], a CSM bracket of its own, not a component.

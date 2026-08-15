@@ -13,7 +13,7 @@ import {
 
 const [
   login, index, app, spec, feedbackApi, workflow, releaseWorkflow, packageText,
-  directApiTest, forwardReadback, parityReadback
+  directApiTest, forwardReadback, parityReadback, resolutionApi
 ] = await Promise.all([
   readFile(new URL("../app/login.html", import.meta.url), "utf8"),
   readFile(new URL("../app/index.html", import.meta.url), "utf8"),
@@ -25,7 +25,8 @@ const [
   readFile(new URL("../package.json", import.meta.url), "utf8"),
   readFile(new URL("./csm-direct-api.test.mjs", import.meta.url), "utf8"),
   readFile(new URL("./production-forward-readback.mjs", import.meta.url), "utf8"),
-  readFile(new URL("./production-parity-readback.mjs", import.meta.url), "utf8")
+  readFile(new URL("./production-parity-readback.mjs", import.meta.url), "utf8"),
+  readFile(new URL("../api/csm-resolution-view.js", import.meta.url), "utf8")
 ]);
 const packageJson = JSON.parse(packageText);
 
@@ -81,6 +82,7 @@ assert.match(spec, /COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION/);
 assert.match(spec, /COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE/);
+assert.match(spec, /COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION/);
 assert.match(spec, /EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE/);
 assert.match(spec, /manifest\.bridge_descriptor_id === COMPATIBILITY_BRIDGE_V2_DESCRIPTOR_ID/);
 assert.match(spec, /manifest\.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS/);
@@ -97,6 +99,12 @@ assert.match(spec,
 assert.match(spec,
   /compatibilityBridgeV4CheckpointReader[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE/,
   "the checkpoint-reader sibling must preserve its exact v4 descriptor, marker, and mode");
+assert.match(spec,
+  /compatibilityBridgeV5TcgGrammarContext[\s\S]*?COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION[\s\S]*?TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID[\s\S]*?TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER[\s\S]*?TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE/,
+  "the TCG Grammar context reader bridge must preserve its exact v5 provenance tuple");
+assert.match(spec,
+  /function capturedProductionWriterMode[\s\S]*?TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE/,
+  "the v5 provenance must retain captured-e1ae Writer Journey semantics");
 assert.match(spec, /manifest\.git_sha !== expectedGitSha/,
   "the reduced manifest must be bound to the exact bridge commit");
 assert.match(spec,
@@ -210,11 +218,11 @@ assert.match(forwardReadback,
   /PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_EXPECTATION_SCHEMA[\s\S]*?production-forward-readback-expectation-v2[\s\S]*?PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_RECEIPT_SCHEMA[\s\S]*?production-forward-readback-receipt-v2/,
   "captured writer readback must use append-only v2 schemas");
 assert.match(forwardReadback,
-  /PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_PROVENANCE[\s\S]*?EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID/,
-  "forward readback must admit only the two closed captured-writer provenance tuples");
+  /PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_PROVENANCE[\s\S]*?EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID[\s\S]*?EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID[\s\S]*?TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID[\s\S]*?TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER[\s\S]*?TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE/,
+  "forward readback must admit only the three closed captured-writer provenance tuples");
 assert.match(forwardReadback,
   /writerProjectionMode: PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE/,
-  "the new sibling must normalize to the historical captured V4 public bytes");
+  "captured-writer provenance must normalize to the historical captured V4 public bytes");
 assert.match(forwardReadback,
   /provider_calls: 0[\s\S]*?founder_beta_web_receipt_exact_match:[\s\S]*?web_search_used:/,
   "promoted authenticated GET must prove the stored Web receipt with zero provider calls");
@@ -229,6 +237,36 @@ assert.match(spec, /resolution_view_schema/);
 assert.match(spec, /csm_owner_versions/);
 assert.match(spec, /VERSION_RESOLVER_MISMATCH/);
 assert.match(spec, /VERSION_COMPOSER_MISMATCH/);
+assert.match(spec,
+  /resolutionView\?\.grammar\?\.value === sourceCase\.expected_grammar[\s\S]*?verifierErrorCodes\.RESOLUTION_GRAMMAR_MISMATCH/,
+  "a live grammar drift must persist an actionable sanitized failure code");
+assert.match(spec,
+  /productionTcgGrammarContextAuthorityProof\(resolutionView\)[\s\S]*?TCG_GRAMMAR_CONTEXT_AUTHORITY_MISMATCH/,
+  "stage-v4 TCG must prove its session-authorized public receipt in the real Writer Journey");
+assert.match(spec,
+  /tcg_grammar_context_authority_receipt:[\s\S]*?tcgGrammarContextAuthorityReceipt/,
+  "Writer Journey evidence must retain only the sanitized TCG authority receipt");
+assert.match(spec,
+  /selected_forward_readback_case_id:[\s\S]*?tcgGrammarContextV4[\s\S]*?tcgCaseEvidence\?\.case_id/,
+  "stage-v4 post-promotion readback must select the exact TCG session");
+assert.match(forwardReadback,
+  /production-forward-readback-expectation-v3[\s\S]*?production-forward-readback-receipt-v3/,
+  "stage-v4 zero-provider readback must use an append-only receipt schema");
+assert.match(forwardReadback,
+  /productionTcgGrammarContextAuthorityProof[\s\S]*?normalized_set[\s\S]*?normalized_card_number[\s\S]*?resolver_version/,
+  "the public proof must bind Grammar, CURRENT_IMAGE Set/Card, and the resolution tuple");
+assert.match(forwardReadback,
+  /tcg_grammar_context_authority_receipt_exact_match: true[\s\S]*?tcg_grammar_context_resolution_contract_sha256[\s\S]*?tcg_grammar_context_web_authority_used: false/,
+  "zero-provider Production readback must seal the exact registry/resolution authority tuple");
+assert.match(resolutionApi,
+  /stageV4[\s\S]*?sourceExecutionVerified !== true[\s\S]*?statusCode: 409/,
+  "row-only stage-v4 projection must fail closed before public receipt projection");
+assert.match(resolutionApi,
+  /tcg_grammar_context_source_execution_verified === true/,
+  "only the session-aware DB readback flag may authorize the public receipt");
+assert.doesNotMatch(spec,
+  /expect\(resolutionView\?\.grammar\?\.value\)\.toBe\(sourceCase\.expected_grammar\)/,
+  "raw Playwright grammar matchers collapse the exact failure into WRITER_JOURNEY_FAILED");
 assert.match(spec, /STANDARD_P0_IDENTITY_MISMATCH/);
 assert.match(spec, /CANONICAL_NAMING_RELEASE_CONTRACT/);
 assert.match(spec, /canonicalNamingVersionActive/);
@@ -294,8 +332,8 @@ assert.match(spec,
   /serialDriftCode === verifierErrorCodes\.STANDARD_P0_IDENTITY_MISMATCH[\s\S]*?serial_selected_exact === false/,
   "correct version tuples with serial drift must not be mislabeled as composer drift");
 assert.match(spec,
-  /governedWebCaseEvidence[\s\S]*?resolutionViewsByCaseId\.get\(governedWebCaseEvidence\?\.case_id\)[\s\S]*?buildProductionForwardReadbackExpectation\(\{[\s\S]*?evidence,[\s\S]*?resolutionView: forwardReadbackResolutionView/,
-  "the actual governed-Web-positive view must seed both zero-call readbacks");
+  /forwardReadbackResolutionView = parityRequired[\s\S]*?resolutionViewsByCaseId\.get\(tcgGrammarContextV4[\s\S]*?tcgCaseEvidence\?\.case_id : governedWebCaseEvidence\?\.case_id\)[\s\S]*?buildProductionForwardReadbackExpectation\(\{[\s\S]*?evidence,[\s\S]*?resolutionView: forwardReadbackResolutionView/,
+  "v4 must seed zero-call readback from TCG while historical ordinary keeps the governed-Web case");
 for (const key of [
   "qualified_governed_web_support_case_count", "strict_no_search_case_count",
   "selected_forward_readback_case_id"
