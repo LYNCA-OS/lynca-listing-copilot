@@ -11,7 +11,9 @@ import {
 } from "../api/csm-resolution-view.js";
 import {
   buildCsmResolutionReview, buildReviewMeasurementSnapshot, projectReviewAccuracy,
-  REVIEW_VERDICT, CORRECTION_REASON, REVIEW_MEASUREMENT_BASIS
+  REVIEW_VERDICT, CORRECTION_REASON, REVIEW_MEASUREMENT_BASIS,
+  CAPTURED_REVIEW_MEASUREMENT_SNAPSHOT_VERSION,
+  CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION
 } from "../lib/listing/csm/resolution-review.mjs";
 import {
   CANONICAL_FIELDS_PARSER_SEMANTICS,
@@ -62,7 +64,7 @@ const base = {
   lot_count: "", language: "", unreadable: [], low_confidence: []
 };
 
-const measurementFor = (provenance, grammar = "standard") =>
+const measurementFor = (provenance, grammar = "standard", confidence = "OBSERVED") =>
   buildReviewMeasurementSnapshot({
     view: {
       schema_version: provenance.view_version,
@@ -74,6 +76,7 @@ const measurementFor = (provenance, grammar = "standard") =>
         bracket,
         canonical_field: bracket,
         state: bracket === "set" ? BRACKET_STATE.ABSENT : BRACKET_STATE.VALUE,
+        semantic_confidence: bracket === "set" ? null : confidence,
         composer_disposition: bracket === "set"
           ? COMPOSER_DISPOSITION.NOT_APPLICABLE
           : COMPOSER_DISPOSITION.INCLUDED,
@@ -95,6 +98,32 @@ const measurementFor = (provenance, grammar = "standard") =>
 const measurementOriginalFields = Object.freeze({
   set: "", print_finish: "x", card_name: "x", product: "x"
 });
+
+// Confidence calibration is useful only if the server freezes the band that
+// was actually shown. Missing or invented bands fail closed at write time.
+{
+  const { fields, composed } = run(base);
+  const validView = buildCsmResolutionView({
+    fields, composed,
+    assetId: "confidence-contract-a",
+    recognitionSessionId: "confidence-contract-s"
+  });
+  const missing = structuredClone(validView);
+  delete missing.brackets.find((row) => row.state === BRACKET_STATE.VALUE)
+    .semantic_confidence;
+  assert.throws(() => buildReviewMeasurementSnapshot({
+    view: missing,
+    composerVersion: "v"
+  }), /semantic_confidence_invalid/);
+
+  const invented = structuredClone(validView);
+  invented.brackets.find((row) => row.state === BRACKET_STATE.ABSENT)
+    .semantic_confidence = "OBSERVED";
+  assert.throws(() => buildReviewMeasurementSnapshot({
+    view: invented,
+    composerVersion: "v"
+  }), /semantic_confidence_unexpected/);
+}
 
 // --- every bracket appears, including the empty ones --------------------------
 {
@@ -354,6 +383,7 @@ const measurementOriginalFields = Object.freeze({
         bracket: "search_optimization",
         canonical_fields: ["components", "search_optimization", "team"],
         state: BRACKET_STATE.ABSENT,
+        semantic_confidence: null,
         composer_disposition: COMPOSER_DISPOSITION.NOT_APPLICABLE,
         rendered_text: null
       }]
@@ -455,20 +485,22 @@ const measurementOriginalFields = Object.freeze({
     resolver_version: "v", composer_version: "v", view_version: "v", reviewer_id: "u", tenant_id: "t"
   };
   let sequence = 0;
-  const mk = (verdict, corrections = []) => {
+  const mk = (verdict, corrections = [], confidence = "OBSERVED") => {
     const provenance = { ...full, asset_id: `a${++sequence}`, resolution_id: `r${sequence}` };
     return buildCsmResolutionReview({
       provenance, verdict, corrections, originalFields: measurementOriginalFields, originalTitle: "t",
-      recomposeTitle: () => "t2", measurementSnapshot: measurementFor(provenance)
+      recomposeTitle: () => "t2", measurementSnapshot: measurementFor(
+        provenance, "standard", confidence
+      )
     });
   };
   const projection = projectReviewAccuracy([
     mk(REVIEW_VERDICT.APPROVED),
-    mk(REVIEW_VERDICT.CORRECTED, [{ bracket: "print_finish", reason: CORRECTION_REASON.WRONG_VALUE, corrected_value: "Gold Refractor" }]),
+    mk(REVIEW_VERDICT.CORRECTED, [{ bracket: "print_finish", reason: CORRECTION_REASON.WRONG_VALUE, corrected_value: "Gold Refractor" }], "LOW"),
     mk(REVIEW_VERDICT.CORRECTED, [{ bracket: "set", reason: CORRECTION_REASON.MISSED_VALUE, corrected_value: "Refractor" }]),
     mk(REVIEW_VERDICT.UNDECIDED)
   ], { cohortId: "cos42-unit-cohort" });
-  assert.equal(projection.schema_version, "csm-review-accuracy-projection-v2");
+  assert.equal(projection.schema_version, "csm-review-accuracy-projection-v3");
   assert.equal(projection.measurement_basis, REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED);
   assert.match(projection.cohort_sha256, /^[0-9a-f]{64}$/);
   assert.equal(projection.distinct_reviewers, 1);
@@ -478,6 +510,10 @@ const measurementOriginalFields = Object.freeze({
   assert.equal(printFinish.reviewed, 3, "every frozen bracket contributes its denominator");
   assert.equal(printFinish.corrections, 1);
   assert.equal(printFinish.by_reason.WRONG_VALUE, 1);
+  assert.deepEqual(printFinish.confidence_calibration.LOW,
+    { reviewed: 1, errors: 1, error_rate: 1 });
+  assert.deepEqual(printFinish.confidence_calibration.OBSERVED,
+    { reviewed: 2, errors: 0, error_rate: 0 });
   const set = projection.cells.find((cell) => cell.bracket === "set");
   assert.equal(set.empty_reviewed, 3);
   assert.equal(set.composer_eligible, 0);
@@ -501,18 +537,22 @@ const measurementOriginalFields = Object.freeze({
       composer: { title: "Lot*2 A B", character_budget: 80, length: 9, truncated: false },
       brackets: [
         { bracket: "set", canonical_field: "set", state: BRACKET_STATE.ABSENT,
+          semantic_confidence: null,
           composer_disposition: COMPOSER_DISPOSITION.NOT_APPLICABLE, rendered_text: null },
         { bracket: "print_finish", canonical_field: "print_finish", state: BRACKET_STATE.VALUE,
+          semantic_confidence: "LOW",
           composer_disposition: COMPOSER_DISPOSITION.DROPPED_FOR_BUDGET, rendered_text: null,
           publication_coverage: [{ bracket: "print_finish", source_field: "print_finish",
             source_index: 0, canonical_value: "Refractor",
             disposition: PUBLICATION_DISPOSITION.DROPPED_FOR_BUDGET }] },
         { bracket: "product", canonical_field: "product", state: BRACKET_STATE.VALUE,
+          semantic_confidence: "OBSERVED",
           composer_disposition: COMPOSER_DISPOSITION.SUPPRESSED_BY_PROFILE, rendered_text: null,
           publication_coverage: [{ bracket: "product", source_field: "product",
             source_index: 0, canonical_value: "Prizm",
             disposition: PUBLICATION_DISPOSITION.SUPPRESSED_BY_PROFILE }] },
         { bracket: "search_optimization", canonical_field: "team", state: BRACKET_STATE.VALUE,
+          semantic_confidence: "OBSERVED",
           composer_disposition: COMPOSER_DISPOSITION.NORMALIZED, rendered_text: "RC",
           partially_published: true, publication_coverage: [
             { bracket: "search_optimization", source_field: "components",
@@ -570,6 +610,7 @@ const measurementOriginalFields = Object.freeze({
       brackets: [{
         bracket: "card_number", canonical_field: "card_number",
         state: BRACKET_STATE.INSUFFICIENT_EVIDENCE,
+        semantic_confidence: null,
         composer_disposition: COMPOSER_DISPOSITION.NOT_APPLICABLE,
         rendered_text: null
       }]
@@ -589,6 +630,34 @@ const measurementOriginalFields = Object.freeze({
   assert.equal(cell.insufficient_evidence_error_rate, 1);
   assert.equal(cell.absent_reviewed, 0);
   assert.equal(cell.absent_error_rate, null);
+}
+
+// Historical v1 snapshots remain replayable, but they cannot manufacture a
+// confidence label that the operator never reviewed.
+{
+  const provenance = {
+    asset_id: "legacy-confidence-a", recognition_session_id: "legacy-confidence-s",
+    resolution_id: "legacy-confidence-r", output_id: "legacy-confidence-o",
+    resolver_version: "v", composer_version: "v", view_version: "v",
+    reviewer_id: "manager-1", tenant_id: "tenant-1"
+  };
+  const current = measurementFor(provenance);
+  assert.equal(current.schema_version, CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION);
+  const legacy = {
+    ...structuredClone(current),
+    schema_version: CAPTURED_REVIEW_MEASUREMENT_SNAPSHOT_VERSION,
+    brackets: current.brackets.map(({ semantic_confidence: _ignored, ...row }) => row)
+  };
+  const review = buildCsmResolutionReview({
+    provenance, verdict: REVIEW_VERDICT.APPROVED,
+    originalFields: measurementOriginalFields, originalTitle: "t",
+    measurementSnapshot: legacy
+  });
+  const printFinish = projectReviewAccuracy([review], {
+    cohortId: "legacy-confidence-v1"
+  }).cells.find((cell) => cell.bracket === "print_finish");
+  assert.deepEqual(printFinish.confidence_calibration.UNAVAILABLE,
+    { reviewed: 1, errors: 0, error_rate: 0 });
 }
 
 console.log("csm-resolution-view.test.mjs OK");

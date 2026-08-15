@@ -314,8 +314,8 @@ const manualRecoveryUi = js.slice(
   js.indexOf("async function saveManualRecoveryForResult"),
   js.indexOf("async function saveFeedbackForResult")
 );
-assert.match(manualRecoveryUi, /result\.feedbackStatus = "saved";\s*result\.persistenceStatus = "persisted";/,
-  "a durably saved manual recovery must satisfy the same writer completion contract as AI feedback");
+assert.match(manualRecoveryUi, /result\.feedbackStatus = rejected \? "skipped" : "saved";\s*result\.persistenceStatus = "persisted";/,
+  "manual recovery must distinguish a saved title from a persisted rejection");
 assert.doesNotMatch(manualRecoveryUi, /result\.persistenceStatus = "saved";/,
   "manual recovery must not invent a persistence state the writer queue cannot recognize");
 assert.match(manualRecoveryUi, /manual_recovery_submission_id: result\.pendingManualRecoverySubmissionId/,

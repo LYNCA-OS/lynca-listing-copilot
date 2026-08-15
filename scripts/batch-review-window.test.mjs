@@ -2,11 +2,34 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
+  batchAssetReviewStatus,
   batchReviewWindow,
   INTAKE_PREVIEW_CARD_WINDOW
 } from "../lib/listing/client/batch-recognition-intent.mjs";
 
 const batch = (n) => Array.from({ length: n }, (_, i) => ({ index: i + 1 }));
+
+// The full-batch rail has one canonical six-state projection. In particular,
+// Explicit rejection must win even when a replayed/legacy result carries the
+// generic saved status.
+{
+  const cases = [
+    [{}, { code: "pending", label: "等待中" }],
+    [{ processing: true }, { code: "pending", label: "排队中" }],
+    [{ processing: true, active: true }, { code: "recognizing", label: "识别中" }],
+    [{ result: { confidence: "FAILED" } }, { code: "failed", label: "失败" }],
+    [{ result: { confidence: "HIGH" } }, { code: "ready", label: "待录入" }],
+    [{ result: { confidence: "FAILED", feedbackStatus: "saved", persistenceStatus: "persisted" } }, { code: "saved", label: "已入库" }],
+    [{ result: { confidence: "FAILED", feedbackStatus: "saved", persistenceStatus: "persisted", explicitReviewOutcome: "REJECTED" } }, { code: "rejected", label: "已记录拒绝" }],
+    [{ result: { confidence: "HIGH", feedbackStatus: "skipped", persistenceStatus: "persisted" } }, { code: "rejected", label: "已记录拒绝" }],
+    [{ result: { confidence: "FAILED", retryStatus: "submitting" } }, { code: "recognizing", label: "识别中" }],
+    [{ result: { confidence: "HIGH", feedbackStatus: "saving", persistenceStatus: "saving" } }, { code: "ready", label: "待录入" }],
+    [{ result: { confidence: "HIGH", feedbackStatus: "saved", persistenceStatus: "persisted", retryStatus: "submitting" } }, { code: "saved", label: "已入库" }]
+  ];
+  for (const [input, expected] of cases) {
+    assert.deepEqual(batchAssetReviewStatus(input), expected);
+  }
+}
 
 // COS-50's headline case: a 20-card batch must never present itself as 8 / 8.
 {
@@ -84,11 +107,36 @@ for (const [focus, expectedFrom] of [[9, 9], [20, 17], [1, 1], [8, 1]]) {
   assert.equal(large.pages, 13);
 }
 
+// `from` / `to` are positions in the window, not asset IDs. Preparation may
+// safely reject one pair and leave a gap in the immutable asset indexes.
+{
+  const gap = batchReviewWindow([{ index: 1 }, { index: 3 }, { index: 4 }]);
+  assert.deepEqual(gap.visible.map((card) => card.index), [1, 3, 4]);
+  assert.equal(gap.from, 1);
+  assert.equal(gap.to, 3);
+}
+
 // The product must show total and window separately, and must not claim 8 / 8.
 const js = await readFile("app/listing-copilot.js", "utf8");
 const html = await readFile("app/index.html", "utf8");
 assert.match(js, /batchReviewWindow\(/, "the review surface must use the two-axis window");
-assert.match(js, /正在显示/, "copy must distinguish the visible window from the batch total");
+assert.match(js, /const reviewAssets = \[\.\.\.state\.assets\]/,
+  "standard review navigation must retain saved and rejected cards");
+assert.match(js, /data-batch-status=/, "off-window cards must expose their real state");
+assert.match(js, /selected \? 'aria-current="true"' : ""/,
+  "aria-current must describe one selected card, not every visible card");
+assert.match(js, /const visible = window\.visible\.some/,
+  "window membership must use positions rather than assuming gap-free asset indexes");
+assert.match(js, /elements\.assetPreviewList\.innerHTML = navigation \+ groups\.map/,
+  "the full-batch rail must remain visible after the first recognition result arrives");
+assert.match(js, /正在显示第 \$\{window\.from\}–\$\{window\.to\} 项/,
+  "position copy must not misrepresent gap-bearing asset indexes as card numbers");
+assert.match(js, /function syncBatchRailStatus\(asset\)/,
+  "in-place recognition updates must have a narrow rail synchronizer");
+assert.match(js, /state\.activeAssetIndexes\.add\(asset\.index\);\s*syncBatchRailStatus\(asset\);/,
+  "the rail must enter recognizing state when the worker claims an asset");
+assert.match(js, /state\.activeAssetIndexes\.delete\(asset\.index\);\s*syncBatchRailStatus\(asset\);/,
+  "the rail must settle immediately when an in-place result arrives");
 assert.doesNotMatch(js, /\$\{visible\.length\} \/ \$\{INTAKE_PREVIEW_CARD_WINDOW\}/,
   "the queue footer must not read as window-size / window-size");
 assert.doesNotMatch(html, /最多显示 8 张/, "static copy must not contradict the batch counter");

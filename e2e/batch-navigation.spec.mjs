@@ -28,19 +28,29 @@ const harness = (total) => `<!doctype html>
 <script type="module">
 ${sdk}
 const total = ${total};
-const cards = Array.from({length: total}, (_, i) => ({index: i + 1}));
+const fixtures = new Map([
+  [1, {result: null, processing: false, active: false}],
+  [2, {result: null, processing: true, active: true}],
+  [3, {result: {confidence: "FAILED"}}],
+  [4, {result: {confidence: "HIGH"}}],
+  [5, {result: {confidence: "HIGH", feedbackStatus: "saved", persistenceStatus: "persisted"}}],
+  [6, {result: {confidence: "HIGH", feedbackStatus: "skipped", persistenceStatus: "persisted"}}]
+]);
+const cards = Array.from({length: total}, (_, i) => ({index: i + 1, ...(fixtures.get(i + 1) || {result: {confidence: "HIGH"}})}));
 let start = 0, focus = null;
 function render() {
   const w = batchReviewWindow(cards, { start, focusIndex: focus });
   start = w.start;
   const rail = cards.map((c) => {
     const visible = w.visible.some((v) => v.index === c.index);
-    return \`<button type="button" class="batch-rail-item\${visible ? " is-visible" : ""}" data-batch-focus="\${c.index}" aria-current="\${visible}">\${c.index}</button>\`;
+    const selected = c.index === focus;
+    const status = batchAssetReviewStatus(c);
+    return \`<button type="button" class="batch-rail-item\${visible ? " is-visible" : ""}\${selected ? " is-selected" : ""}" data-batch-focus="\${c.index}" data-batch-status="\${status.code}" \${selected ? 'aria-current="true"' : ""} aria-label="卡片 \${c.index} · \${status.label}"><span>\${c.index}</span><small>\${status.label}</small></button>\`;
   }).join("");
   document.querySelector("#assetPreviewList").innerHTML = \`
     <nav class="batch-navigation" aria-label="全批导航">
       <div class="batch-navigation-summary">
-        <strong data-summary>正在显示 \${w.from}–\${w.to} / 共 \${w.total} 张</strong>
+        <strong data-summary>正在显示第 \${w.from}–\${w.to} 项 / 共 \${w.total} 张</strong>
         <span data-pages>第 \${w.page} / \${w.pages} 页</span>
       </div>
       <div class="batch-navigation-controls">
@@ -57,6 +67,7 @@ document.addEventListener("click", (event) => {
   if (pick) { focus = Number(pick.dataset.batchFocus); render(); }
 });
 render();
+window.__setResult = (index, result) => { const card = cards.find((item) => item.index === index); card.result = result; card.processing = false; card.active = false; render(); };
 window.__ready = true;
 </script></body></html>`;
 
@@ -67,7 +78,7 @@ async function open(page, total) {
 
 test("a 20-card batch never presents itself as 8 / 8", async ({ page }) => {
   await open(page, 20);
-  await expect(page.locator("[data-summary]")).toHaveText("正在显示 1–8 / 共 20 张");
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 1–8 项 / 共 20 张");
   await expect(page.locator("[data-pages]")).toHaveText("第 1 / 3 页");
   // Every card index is discoverable before anything is saved. This is the
   // complaint: cards 9-20 could not be seen to exist at all.
@@ -79,28 +90,58 @@ test("a 20-card batch never presents itself as 8 / 8", async ({ page }) => {
 test("cards 9 and 20 open directly, without saving cards 1-8 first", async ({ page }) => {
   await open(page, 20);
   await page.click('[data-batch-focus="9"]');
-  await expect(page.locator("[data-summary]")).toHaveText("正在显示 9–16 / 共 20 张");
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 9–16 项 / 共 20 张");
   await expect(page.locator('[data-batch-focus="9"]')).toHaveAttribute("aria-current", "true");
+  await expect(page.locator('[aria-current="true"]')).toHaveCount(1);
 
   await page.click('[data-batch-focus="20"]');
-  await expect(page.locator("[data-summary]")).toHaveText("正在显示 17–20 / 共 20 张");
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 17–20 项 / 共 20 张");
   await expect(page.locator('[data-batch-focus="20"]')).toHaveAttribute("aria-current", "true");
+  await expect(page.locator('[aria-current="true"]')).toHaveCount(1);
   await expect(page.locator('[data-batch-window="next"]')).toBeDisabled();
+});
+
+test("off-window states are explicit and persistence keeps selection context", async ({ page }) => {
+  await open(page, 20);
+  for (const [index, status] of [[1, "pending"], [2, "recognizing"], [3, "failed"], [4, "ready"], [5, "saved"], [6, "rejected"]]) {
+    await expect(page.locator(`[data-batch-focus="${index}"]`)).toHaveAttribute("data-batch-status", status);
+  }
+
+  await page.click('[data-batch-focus="20"]');
+  await page.evaluate(() => window.__setResult(20, {
+    confidence: "HIGH",
+    feedbackStatus: "saved",
+    persistenceStatus: "persisted"
+  }));
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 17–20 项 / 共 20 张");
+  await expect(page.locator('[data-batch-focus="20"]')).toHaveAttribute("aria-current", "true");
+  await expect(page.locator('[data-batch-focus="20"]')).toHaveAttribute("data-batch-status", "saved");
+
+  await page.click('[data-batch-focus="19"]');
+  await page.evaluate(() => window.__setResult(19, {
+    confidence: "FAILED",
+    feedbackStatus: "skipped",
+    persistenceStatus: "persisted",
+    explicitReviewOutcome: "REJECTED"
+  }));
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 17–20 项 / 共 20 张");
+  await expect(page.locator('[data-batch-focus="19"]')).toHaveAttribute("aria-current", "true");
+  await expect(page.locator('[data-batch-focus="19"]')).toHaveAttribute("data-batch-status", "rejected");
 });
 
 test("window controls walk the batch and stop at both ends", async ({ page }) => {
   await open(page, 20);
   await page.click('[data-batch-window="next"]');
-  await expect(page.locator("[data-summary]")).toHaveText("正在显示 9–16 / 共 20 张");
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 9–16 项 / 共 20 张");
   await page.click('[data-batch-window="next"]');
-  await expect(page.locator("[data-summary]")).toHaveText("正在显示 17–20 / 共 20 张");
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 17–20 项 / 共 20 张");
   await page.click('[data-batch-window="previous"]');
-  await expect(page.locator("[data-summary]")).toHaveText("正在显示 9–16 / 共 20 张");
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 9–16 项 / 共 20 张");
 });
 
 test("a 100-card rail scrolls inside itself and never scrolls the page sideways", async ({ page }) => {
   await open(page, 100);
-  await expect(page.locator("[data-summary]")).toHaveText("正在显示 1–8 / 共 100 张");
+  await expect(page.locator("[data-summary]")).toHaveText("正在显示第 1–8 项 / 共 100 张");
   const metrics = await page.evaluate(() => {
     const rail = document.querySelector(".batch-rail");
     return {

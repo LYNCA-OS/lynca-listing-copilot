@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
+import { readFile } from "node:fs/promises";
 import uploadUrlHandler from "../api/listing-image-upload-url.js";
+import verifyExistingHandler from "../api/listing-image-verify-existing.js";
 import verifyUploadHandler from "../api/listing-image-verify-upload.js";
 import { cookieName, createListingSessionToken } from "../lib/listing-session.mjs";
 import {
@@ -657,7 +659,7 @@ async function callUploadApi(body) {
   };
 }
 
-async function callVerifyApi(body) {
+async function callVerifyApi(body, handler = verifyUploadHandler) {
   const req = new EventEmitter();
   req.method = "POST";
   req.headers = { cookie: sessionCookie() };
@@ -673,7 +675,7 @@ async function callVerifyApi(body) {
     }
   };
 
-  const promise = verifyUploadHandler(req, res);
+  const promise = handler(req, res);
   await new Promise((resolve) => setTimeout(resolve, 0));
   req.emit("data", JSON.stringify(body));
   req.emit("end");
@@ -763,6 +765,124 @@ assert.equal(verifyApiResponse.body.verification.content_sha256, pngVerification
 assert.equal(verifyApiResponse.body.verification.content_hash_verified, true);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), /test-service-role/);
 assert.doesNotMatch(JSON.stringify(verifyApiResponse.body), new RegExp(pngSignatureHex));
+
+// COS-51: the browser collision-recovery request must carry the hash it already
+// computed. Without it, verify-existing reads only 64KB; every real card photo
+// is larger, so the record cannot become canonical and the recovery answers 503.
+const browserSource = await readFile("app/listing-copilot.js", "utf8");
+const collisionRecovery = browserSource.slice(
+  browserSource.indexOf("async function recoverCollidedStorageObjects"),
+  browserSource.indexOf("async function rebindAssetInput", browserSource.indexOf("async function recoverCollidedStorageObjects"))
+);
+const verifyExistingRequestStart = collisionRecovery.indexOf(
+  "const verify = await fetchStorageApiJson(\"/api/listing-image-verify-existing\""
+);
+const verifyExistingRequest = collisionRecovery.slice(
+  verifyExistingRequestStart,
+  collisionRecovery.indexOf("}, { timeoutMs:", verifyExistingRequestStart)
+);
+assert.ok(verifyExistingRequestStart >= 0, "browser collision recovery must call verify-existing");
+assert.match(verifyExistingRequest, /contentSha256:\s*row\.contentSha256/,
+  "browser verify-existing requests must bind the stored object to the bytes being retried");
+assert.match(collisionRecovery, /content_hash_matches_expected\s*===\s*true/,
+  "browser recovery must require the server's explicit expected-hash match receipt");
+
+const largeExistingBytes = Buffer.concat([
+  Buffer.from("89504e470d0a1a0a0000000d49484452000004b0000003840802000000", "hex"),
+  Buffer.alloc(70 * 1024)
+]);
+const largeExistingSha256 = crypto.createHash("sha256").update(largeExistingBytes).digest("hex");
+const largeExistingPath = `tenants/${tenantId}/listing-assets/2026-06-22/${durableAssetId}/image_1_original-front-existing-large.png`;
+const existingBasePayload = {
+  assetId: durableAssetId,
+  imageId: "front-existing-large",
+  role: "image_1_original",
+  fileName: "front-existing-large.png",
+  contentType: "image/png",
+  objectPath: largeExistingPath,
+  bucket: "listing-card-images",
+  cropMetadata: null
+};
+
+let rejectedExistingStorageReads = 0;
+let rejectedExistingVerificationWrites = 0;
+globalThis.fetch = tenantAwareFetch(async () => {
+  rejectedExistingStorageReads += 1;
+  return objectResponse(largeExistingBytes, {
+    "content-type": "image/png",
+    "content-range": `bytes 0-${largeExistingBytes.length - 1}/${largeExistingBytes.length}`
+  });
+}, {
+  verificationFetch: async () => {
+    rejectedExistingVerificationWrites += 1;
+    return new Response("[]", { status: 201, headers: { "content-type": "application/json" } });
+  }
+});
+for (const contentSha256 of [undefined, "not-a-sha256"]) {
+  const rejected = await callVerifyApi({ ...existingBasePayload, contentSha256 }, verifyExistingHandler);
+  assert.equal(rejected.statusCode, 400);
+  assert.equal(rejected.body.code, "expected_content_sha256_required");
+}
+assert.equal(rejectedExistingStorageReads, 0, "missing or invalid expectations must fail before reading Storage");
+assert.equal(rejectedExistingVerificationWrites, 0, "missing or invalid expectations must never write canonical verification");
+
+let mismatchedExistingVerificationWrites = 0;
+globalThis.fetch = tenantAwareFetch(async () => objectResponse(largeExistingBytes, {
+  "content-type": "image/png",
+  "content-range": `bytes 0-${largeExistingBytes.length - 1}/${largeExistingBytes.length}`
+}), {
+  verificationFetch: async () => {
+    mismatchedExistingVerificationWrites += 1;
+    return new Response("[]", { status: 201, headers: { "content-type": "application/json" } });
+  }
+});
+const mismatchedExistingResponse = await callVerifyApi({
+  ...existingBasePayload,
+  contentSha256: "f".repeat(64)
+}, verifyExistingHandler);
+assert.equal(mismatchedExistingResponse.statusCode, 409);
+assert.equal(mismatchedExistingResponse.body.code, "existing_object_content_hash_mismatch");
+assert.equal(mismatchedExistingVerificationWrites, 0,
+  "a full-read hash mismatch must never become a canonical verification record");
+
+let largeExistingStorageRead = null;
+let largeExistingVerificationRow = null;
+globalThis.fetch = tenantAwareFetch(async (input, init = {}) => {
+  largeExistingStorageRead = { input: String(input), init };
+  return objectResponse(largeExistingBytes, {
+    "content-type": "image/png",
+    "content-range": `bytes 0-${largeExistingBytes.length - 1}/${largeExistingBytes.length}`
+  });
+}, {
+  verificationFetch: async (_input, init = {}) => {
+    largeExistingVerificationRow = JSON.parse(init.body);
+    return new Response(JSON.stringify([largeExistingVerificationRow]), {
+      status: 201,
+      headers: { "content-type": "application/json" }
+    });
+  }
+});
+const largeExistingResponse = await callVerifyApi({
+  ...existingBasePayload,
+  contentSha256: largeExistingSha256,
+}, verifyExistingHandler);
+assert.ok(largeExistingBytes.length > 64 * 1024, "regression fixture must exceed the old prefix-read ceiling");
+assert.equal(largeExistingStorageRead.init.headers.range, undefined,
+  "an expected hash must force a complete existing-object read");
+assert.equal(largeExistingResponse.statusCode, 200, JSON.stringify(largeExistingResponse.body));
+assert.equal(largeExistingResponse.body.verification.read_whole_object, true);
+assert.equal(largeExistingResponse.body.verification.content_sha256, largeExistingSha256);
+assert.equal(largeExistingResponse.body.verification.content_hash_verified, true);
+assert.equal(largeExistingResponse.body.verification.content_hash_matches_expected, true);
+assert.equal(largeExistingResponse.body.verification_record.saved, true);
+assert.equal(largeExistingResponse.body.verification_record.durable, true);
+assert.equal(largeExistingVerificationRow.canonical_eligible, true);
+assert.equal(largeExistingVerificationRow.content_hash_verified, true);
+assert.equal(largeExistingVerificationRow.content_sha256, largeExistingSha256);
+globalThis.fetch = tenantAwareFetch(async () => objectResponse(pngVerificationBytes, {
+  "content-type": "image/png",
+  "content-range": `bytes 0-${pngVerificationBytes.length - 1}/${pngVerificationBytes.length}`
+}));
 
 const batchVerifyResponse = await callVerifyApi({
   assetId: durableAssetId,

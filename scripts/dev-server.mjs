@@ -71,6 +71,8 @@ const LAZY_API_ROUTES = Object.freeze({
   "/api/listing-image-upload-relay": "api/listing-image-upload-relay.js",
   "/api/csm-resolution-view": "api/csm-resolution-view.js",
   "/api/listing-manual-recovery": "api/listing-manual-recovery.js",
+  "/api/v4/listing-feedback": "api/v4/listing-feedback.js",
+  "/api/v4/listing-export-workbook": "api/v4/listing-export-workbook.js",
   "/api/health": "api/health.js"
 });
 

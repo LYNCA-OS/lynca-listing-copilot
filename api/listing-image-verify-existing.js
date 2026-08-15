@@ -67,6 +67,18 @@ export default async function handler(req, res) {
 
   const objectPath = payload.objectPath || payload.object_path;
   const assetId = payload.assetId || payload.asset_id;
+  const expectedContentSha256 = String(
+    payload.contentSha256 || payload.content_sha256 || ""
+  ).trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(expectedContentSha256)) {
+    sendJson(res, 400, {
+      ok: false,
+      code: "expected_content_sha256_required",
+      retryable: false,
+      message: "A valid content SHA-256 is required to verify an existing image."
+    });
+    return;
+  }
   let uploadIdentity;
   try {
     normalizeDurableListingAssetId(assetId);
@@ -97,8 +109,18 @@ export default async function handler(req, res) {
       tenantId: context.tenantId,
       objectPath,
       bucket: payload.bucket || payload.storage_bucket,
-      expectedContentSha256: payload.contentSha256 || payload.content_sha256 || ""
+      expectedContentSha256
     });
+    if (verification.content_hash_matches_expected !== true
+        || String(verification.content_sha256 || "").toLowerCase() !== expectedContentSha256) {
+      sendJson(res, 409, {
+        ok: false,
+        code: "existing_object_content_hash_mismatch",
+        retryable: false,
+        message: "The existing image does not match the bytes being recovered."
+      });
+      return;
+    }
     let verificationRecord = {
       saved: false,
       durable: false

@@ -23,8 +23,17 @@ import { createHash } from "node:crypto";
 
 export const CSM_RESOLUTION_REVIEW_VERSION = "csm-resolution-review-v2";
 export const CAPTURED_E1AE_RESOLUTION_REVIEW_VERSION = "csm-resolution-review-v1";
-export const CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION =
+export const CAPTURED_REVIEW_MEASUREMENT_SNAPSHOT_VERSION =
   "csm-review-measurement-snapshot-v1";
+export const CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION =
+  "csm-review-measurement-snapshot-v2";
+
+export const REVIEW_SEMANTIC_CONFIDENCE = Object.freeze({
+  LOW: "LOW",
+  OBSERVED: "OBSERVED",
+  VERIFIED_EXTERNAL: "VERIFIED_EXTERNAL",
+  UNAVAILABLE: "UNAVAILABLE"
+});
 
 export const REVIEW_MEASUREMENT_BASIS = Object.freeze({
   FIELD_REVIEWED: "FIELD_REVIEWED",
@@ -243,9 +252,20 @@ export function buildReviewMeasurementSnapshot({
     if (row.state !== "VALUE" && coverageAtoms.length) {
       throw new Error(`csm_review_measurement_publication_coverage_unexpected:${bracket}`);
     }
+    const semanticConfidence = row.semantic_confidence == null
+      ? null : String(row.semantic_confidence).trim();
+    const measuredConfidence = Object.values(REVIEW_SEMANTIC_CONFIDENCE)
+      .filter((value) => value !== REVIEW_SEMANTIC_CONFIDENCE.UNAVAILABLE);
+    if (row.state === "VALUE" && !measuredConfidence.includes(semanticConfidence)) {
+      throw new Error(`csm_review_measurement_semantic_confidence_invalid:${bracket}`);
+    }
+    if (row.state !== "VALUE" && semanticConfidence !== null) {
+      throw new Error(`csm_review_measurement_semantic_confidence_unexpected:${bracket}`);
+    }
     return {
       bracket,
       state: row.state,
+      semantic_confidence: semanticConfidence,
       canonical_fields: [...new Set(canonicalFields)],
       composer_disposition: row.composer_disposition,
       rendered_text_present: row.rendered_text != null && String(row.rendered_text).length > 0,
@@ -279,7 +299,8 @@ export function buildReviewMeasurementSnapshot({
 }
 
 export function reviewMeasurementSnapshotSha256(snapshot) {
-  if (snapshot?.schema_version !== CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION
+  if (![CAPTURED_REVIEW_MEASUREMENT_SNAPSHOT_VERSION,
+    CSM_REVIEW_MEASUREMENT_SNAPSHOT_VERSION].includes(snapshot?.schema_version)
       || snapshot?.measurement_basis !== REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED
       || !Array.isArray(snapshot?.brackets) || !snapshot.brackets.length) {
     throw new Error("csm_review_measurement_snapshot_invalid");
@@ -684,6 +705,12 @@ export function projectReviewAccuracy(reviews = [], { cohortId } = {}) {
         composer_omissions: 0,
         profile_suppressed: 0,
         partial_publications: 0,
+        confidence_calibration: Object.fromEntries(
+          Object.values(REVIEW_SEMANTIC_CONFIDENCE).map((band) => [band, {
+            reviewed: 0,
+            errors: 0
+          }])
+        ),
         by_reason: {}
       };
       cell.reviewed++;
@@ -693,6 +720,17 @@ export function projectReviewAccuracy(reviews = [], { cohortId } = {}) {
         for (const reason of new Set(bracketCorrections.map((entry) => entry.reason))) {
           cell.by_reason[reason] = (cell.by_reason[reason] || 0) + 1;
         }
+      }
+      if (bracket.state === "VALUE") {
+        const band = bracket.semantic_confidence
+          || REVIEW_SEMANTIC_CONFIDENCE.UNAVAILABLE;
+        if (!Object.prototype.hasOwnProperty.call(cell.confidence_calibration, band)) {
+          throw new Error(
+            `csm_review_accuracy_semantic_confidence_invalid:${review.asset_id}:${bracket.bracket}`
+          );
+        }
+        cell.confidence_calibration[band].reviewed++;
+        if (bracketCorrections.length) cell.confidence_calibration[band].errors++;
       }
       const empty = bracket.state !== "VALUE";
       const correctionAddsValue = bracketCorrections.some((correction) => {
@@ -734,7 +772,7 @@ export function projectReviewAccuracy(reviews = [], { cohortId } = {}) {
     review_revision_sha256: [...revisions].sort()
   }));
   return deepFreeze({
-    schema_version: "csm-review-accuracy-projection-v2",
+    schema_version: "csm-review-accuracy-projection-v3",
     measurement_basis: REVIEW_MEASUREMENT_BASIS.FIELD_REVIEWED,
     cohort_id: cohort,
     cohort_sha256: cohortSha256,
@@ -745,6 +783,12 @@ export function projectReviewAccuracy(reviews = [], { cohortId } = {}) {
     reviewer_counts: Object.fromEntries([...reviewerCounts.entries()].sort()),
     cells: [...cells.values()].map((cell) => ({
       ...cell,
+      confidence_calibration: Object.fromEntries(
+        Object.entries(cell.confidence_calibration).map(([band, values]) => [band, {
+          ...values,
+          error_rate: values.reviewed ? values.errors / values.reviewed : null
+        }])
+      ),
       correction_rate: cell.reviewed ? cell.corrections / cell.reviewed : 0,
       empty_error_rate: cell.empty_reviewed ? cell.empty_errors / cell.empty_reviewed : null,
       absent_error_rate: cell.absent_reviewed ? cell.absent_errors / cell.absent_reviewed : null,

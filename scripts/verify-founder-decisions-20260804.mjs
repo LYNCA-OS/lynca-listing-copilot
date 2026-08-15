@@ -17,8 +17,10 @@ import { parseCanonicalFields, CANONICAL_FIELDS_SCHEMA, CANONICAL_FIELDS_PROMPT 
 import { BRACKET_ORDER, DROP_ORDER, composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { MARKETPLACE_PROFILES } from "../lib/listing/thin/marketplace-composer-rules.mjs";
 import { buildCsmResolutionView } from "../csm/contracts/resolution-view.mjs";
-import { routeReviewPatterns, OWNING_LAYER, CORRECTION_REASON } from "../csm/contracts/resolution-review.mjs";
-import { TENANT_PERMISSIONS } from "../lib/tenant/permissions.mjs";
+import {
+  routeReviewPatterns, projectReviewAccuracy, OWNING_LAYER, CORRECTION_REASON
+} from "../csm/contracts/resolution-review.mjs";
+import { TENANT_PERMISSIONS, permissionScopeFor } from "../lib/tenant/permissions.mjs";
 import {
   APPROVED_PRINT_FINISH_CLAIMS,
   PRINT_FINISH_REGISTRY_RELEASE
@@ -126,6 +128,9 @@ check("COS-42", "field review needs a reviewer permission writers lack", () => {
   assert.ok(TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS);
   assert.notEqual(TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS, TENANT_PERMISSIONS.EDIT_TITLE);
   assert.notEqual(TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS, TENANT_PERMISSIONS.SUBMIT_FEEDBACK);
+  assert.equal(permissionScopeFor("OWNER", TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS), "TENANT");
+  assert.equal(permissionScopeFor("MANAGER", TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS), "TENANT");
+  assert.equal(permissionScopeFor("WRITER", TENANT_PERMISSIONS.REVIEW_SEMANTIC_FIELDS), "NONE");
 });
 check("COS-42", "one correction routes nowhere", () => {
   const one = routeReviewPatterns([{
@@ -324,6 +329,14 @@ check("COS-42", "every bracket including EMPTY is exposed", () => {
   assert.ok(v.brackets.some((b) => b.state === "ABSENT"));
   assert.ok(v.brackets.every((b) => b.alternate_candidates.length === 0));
 });
+check("COS-42", "no governed reviews yields an explicit zero denominator, not accuracy", () => {
+  const projection = projectReviewAccuracy([], { cohortId: "cos42-no-governed-reviews" });
+  assert.equal(projection.measurement_basis, "FIELD_REVIEWED");
+  assert.equal(projection.reviews_counted, 0);
+  assert.equal(projection.distinct_reviewers, 0);
+  assert.deepEqual(projection.reviewer_counts, {});
+  assert.deepEqual(projection.cells, []);
+});
 
 check("COS-56", "Product > Set > Card Name, with Card Name EMPTY when exhausted", () => {
   // Approved 2026-08-07. The rule has to be stated where the MODEL reads it,
@@ -367,21 +380,6 @@ const UNIMPLEMENTED = [
       "that plainly is better than a clause that asserts the sentence exists.",
       "Making it verifiable means per-card observation within a lot image,",
       "which is a capability decision, not a test."
-    ].join("\n        ")
-  },
-  {
-    decision: "COS-42",
-    clause: "accuracy projection lacks EMPTY/omission denominators and provenance",
-    why: [
-      "The read-only Resolution View and its real TCG/NON_TCG operator receipts",
-      "are complete. Protected run 31520433083 rendered the Glass Box for each",
-      "persisted session without changing the generated title.",
-      "",
-      "The remaining gap is measurement: `projectReviewAccuracy` exposes only",
-      "correction_rate and by_reason. It does not publish explicit EMPTY-error",
-      "or Composer-omission denominators, nor distinguish FIELD_REVIEWED from",
-      "TITLE_DERIVED provenance. COS-42 stays open until those metrics are",
-      "defined and exercised by governed structured reviews."
     ].join("\n        ")
   }
 ];

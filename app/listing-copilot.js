@@ -1,7 +1,18 @@
 import { renderCsmGlassBox, loadCsmResolutionView } from "./csm-glass-box.mjs";
 import { assetSingleFlightKey, claimAssetSingleFlight } from "./asset-single-flight.mjs";
 import {
+  CONVERSATION_WRITER_MODE,
+  WRITER_TERMINAL_EVENTS,
+  appendWriterTerminalEvent,
+  conversationLedgerSummary,
+  createWriterTerminalLedger,
+  groupConversationAssets,
+  selectWriterTerminalExportRows,
+  writerTerminalExportReadiness
+} from "./conversation-writer-mode.mjs";
+import {
   analyzeImageQualityFromImageData,
+  batchAssetReviewStatus,
   batchReviewWindow,
   claimNextBatchAsset,
   defaultCaptureProfileId,
@@ -12,10 +23,8 @@ import {
   windowIntakePreviewGroups
 } from "./listing-copilot-sdk.mjs";
 import {
-  nextWriterOutstandingIndex,
   WRITER_EXPORT_MAX_ROWS,
   writerFeedbackDecision,
-  writerExportRowsReady,
   writerExportWithinLimit,
   writerFeedbackPersisted
 } from "./writer-wheel-mode.mjs";
@@ -25,6 +34,7 @@ const maxTitleLength = 80;
 const MAX_DIRECT_RECOGNITION_WORKERS = 6;
 const MAX_BACKGROUND_PREP_WORKERS = 4;
 const IMAGE_PREPROCESS_CONCURRENCY = 4;
+const TERMINAL_RENDER_CARD_WINDOW = 30;
 const STORAGE_UPLOAD_CONCURRENCY = 3;
 const STORAGE_OBJECT_UPLOAD_TIMEOUT_MS = 30000;
 const STORAGE_UPLOAD_RELAY_MAX_BYTES = 3_200_000;
@@ -89,17 +99,16 @@ const state = {
   // a rendering bound and never a limit on what is reachable.
   reviewWindowStart: 0,
   reviewFocusIndex: null,
+  terminalWindowStart: 0,
   workspaceMode: "standard",
-  writerActiveIndex: null,
-  writerTransition: "",
-  writerFocusPending: false,
   writerSaveInFlight: false,
-  writerReviewComplete: false,
-  writerCompletionFocusPending: false,
   writerCompositionActive: false,
   fileSelectionPointerRequested: false,
   workbenchTransitionSequence: 0,
   activeWorkbenchTransition: null,
+  terminalLedger: null,
+  terminalEventSequence: 0,
+  terminalProjectionError: "",
   backgroundPreparationRunId: 0,
   backgroundRecognitionBatchId: "",
   assetLifecycleGeneration: 0
@@ -870,6 +879,118 @@ function createClientBatchId() {
   return `web-csm-${random}`;
 }
 
+function terminalEventId(prefix = "event") {
+  state.terminalEventSequence += 1;
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${state.terminalEventSequence}`;
+  return `${prefix}-${random}`;
+}
+
+function appendTerminalEvent(event) {
+  if (!state.terminalLedger || state.terminalProjectionError) return null;
+  try {
+    state.terminalLedger = appendWriterTerminalEvent(state.terminalLedger, {
+      ...event,
+      id: terminalEventId(String(event.type || "event").toLowerCase()),
+      occurred_at: new Date().toISOString()
+    });
+    return state.terminalLedger;
+  } catch (error) {
+    // Terminal is an additive projection. A local ledger defect must never
+    // turn a successful provider response, persisted review, or workbook into
+    // a failure in the existing Standard/Writer transaction.
+    state.terminalProjectionError = String(error?.message || "writer_terminal_projection_failed");
+    return null;
+  }
+}
+
+function ensureTerminalLedger({ rebuildOnProjectionError = false } = {}) {
+  if (state.terminalLedger && !state.terminalProjectionError) return state.terminalLedger;
+  if (state.terminalLedger && !rebuildOnProjectionError) return state.terminalLedger;
+  const existingSessionId = String(state.terminalLedger?.session_id || "").trim();
+  if (rebuildOnProjectionError) state.terminalLedger = null;
+  state.terminalProjectionError = "";
+  try {
+    state.terminalLedger = createWriterTerminalLedger({
+      sessionId: existingSessionId || terminalEventId("terminal-session")
+    });
+  } catch (error) {
+    state.terminalProjectionError = String(error?.message || "writer_terminal_projection_failed");
+    state.terminalLedger = null;
+    return null;
+  }
+  for (const asset of [...state.assets].sort((left, right) => left.index - right.index)) {
+    appendTerminalEvent({
+      type: WRITER_TERMINAL_EVENTS.INTAKE_APPENDED,
+      turn_id: String(asset.intakeTurnId || "legacy-turn"),
+      asset_index: asset.index,
+      image_count: asset.images?.length || 0
+    });
+    const result = resultForAsset(asset);
+    if (!result) continue;
+    const failed = normalizeConfidence(result.confidence) === "FAILED";
+    const title = failed ? "" : terminalRecognitionTitle(result);
+    if (failed || title) {
+      appendTerminalEvent({
+        type: WRITER_TERMINAL_EVENTS.RECOGNITION_SETTLED,
+        asset_index: asset.index,
+        attempt_id: terminalEventId("seed-attempt"),
+        outcome: failed ? "FAILED" : "READY",
+        title
+      });
+    }
+    if (writerFeedbackPersisted(result)) {
+      const rejected = result.feedbackStatus === "skipped"
+        || result.explicitReviewOutcome === "REJECTED";
+      appendTerminalEvent({
+        type: WRITER_TERMINAL_EVENTS.REVIEW_PERSISTED,
+        asset_index: asset.index,
+        decision: rejected ? "REJECTED" : "SAVED",
+        title: rejected ? "" : finalTitleForResult(result)
+      });
+    }
+  }
+  return state.terminalLedger;
+}
+
+function recordTerminalRecognition(result) {
+  if (!state.terminalLedger || !result) return;
+  const failed = normalizeConfidence(result.confidence) === "FAILED";
+  const title = failed ? "" : terminalRecognitionTitle(result);
+  if (!failed && !title) return;
+  appendTerminalEvent({
+    type: WRITER_TERMINAL_EVENTS.RECOGNITION_SETTLED,
+    asset_index: result.index,
+    attempt_id: String(
+      result.provider_response_id
+      || result.response_id
+      || result.recognition_session_id
+      || terminalEventId("attempt")
+    ),
+    outcome: failed ? "FAILED" : "READY",
+    title
+  });
+}
+
+function terminalRecognitionTitle(result) {
+  return String(
+    result?.generatedTitle
+    || result?.rendered_title
+    || result?.final_title
+    || result?.title
+    || ""
+  ).trim();
+}
+
+function recordTerminalReview(result, { rejected = false } = {}) {
+  if (!state.terminalLedger || !result) return;
+  appendTerminalEvent({
+    type: WRITER_TERMINAL_EVENTS.REVIEW_PERSISTED,
+    asset_index: result.index,
+    decision: rejected ? "REJECTED" : "SAVED",
+    title: rejected ? "" : finalTitleForResult(result)
+  });
+}
+
 function storageReady() {
   return true;
 }
@@ -1049,6 +1170,8 @@ async function recoverCollidedStorageObjects(asset, rows, collisions) {
         tenantId: canonicalAssetTenantId(asset),
         assetId
       });
+      const expectedSha = String(row.contentSha256 || "").trim().toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(expectedSha)) throw new Error("existing_object_expected_hash_missing");
       const verify = await fetchStorageApiJson("/api/listing-image-verify-existing", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1059,6 +1182,7 @@ async function recoverCollidedStorageObjects(asset, rows, collisions) {
           role: row.storageRole,
           fileName: row.image.name,
           contentType: row.contentType,
+          contentSha256: row.contentSha256,
           objectPath,
           bucket: collision.bucket || undefined,
           cropMetadata: row.image.cropMetadata || row.image.crop_metadata || null
@@ -1070,8 +1194,8 @@ async function recoverCollidedStorageObjects(asset, rows, collisions) {
       // stale or foreign object, not a resumable upload, and binding it would
       // put someone else's image behind this card's title.
       const storedSha = String(verify.payload.verification?.content_sha256 || "").toLowerCase();
-      const expectedSha = String(row.contentSha256 || "").toLowerCase();
-      if (expectedSha && storedSha && storedSha !== expectedSha) throw new Error("existing_object_content_mismatch");
+      const matchesExpected = verify.payload.verification?.content_hash_matches_expected === true;
+      if (!matchesExpected || storedSha !== expectedSha) throw new Error("existing_object_content_mismatch");
 
       applyVerifiedStorageBinding({
         asset,
@@ -1830,7 +1954,7 @@ async function prepareAssetInBackground(asset, runId) {
     } finally {
       if (!state.processing && runId === state.backgroundPreparationRunId) {
         renderResultControls();
-        if (!writerModeActive()) renderAssetRowInPlace(asset);
+        renderAssetRowInPlace(asset);
         syncBackgroundPreparationStatus();
       }
     }
@@ -2947,8 +3071,21 @@ export const __listingCopilotAppTestHooks = {
     intentId: state.backgroundRecognitionBatchId,
     preparingFiles: state.preparingFiles,
     processing: state.processing,
-    resultIndexes: state.results.map((result) => Number(result.index))
+    resultIndexes: state.results.map((result) => Number(result.index)),
+    workspaceMode: state.workspaceMode,
+    terminalWindowStart: state.terminalWindowStart,
+    terminalRenderCardWindow: TERMINAL_RENDER_CARD_WINDOW,
+    writerDirectory: state.terminalLedger ? {
+      sessionId: state.terminalLedger.session_id,
+      eventCount: state.terminalLedger.events.length,
+      projectionError: state.terminalProjectionError,
+      exportReady: completedExportRowsReady(),
+      ...conversationLedgerSummary({ assets: state.assets, results: state.results })
+    } : null
   }),
+  injectTerminalProjectionErrorForTest: (message = "synthetic_projection_error") => {
+    state.terminalProjectionError = String(message);
+  },
   recognitionClockFromServerPayload,
   recoverStagedRequestOnce,
   settleOriginalUploadBeforeRebind,
@@ -2957,6 +3094,7 @@ export const __listingCopilotAppTestHooks = {
   shouldUseStorageFirstImage,
   shouldFallbackFastIngest,
   startCsmWarmup,
+  setWorkspaceMode,
   storageDimensionsForImage,
   storageSourceForImage,
   syncAssetGenerationTimingFromServer,
@@ -2964,13 +3102,14 @@ export const __listingCopilotAppTestHooks = {
   workspaceActionLocks
 };
 
-function createClientAsset(images, index) {
+function createClientAsset(images, index, { intakeTurnId = "legacy-turn" } = {}) {
   return {
     id: `asset-${index}`,
     clientAssetRef: `asset-${index}`,
     durableAssetId: "",
     durableTenantId: "",
     lifecycleGeneration: state.assetLifecycleGeneration,
+    intakeTurnId,
     index,
     images
   };
@@ -2993,12 +3132,21 @@ function buildAssets() {
   state.assets = assets;
 }
 
-function writerModeActive() {
-  return state.workspaceMode === "writer";
+function terminalModeActive() {
+  return state.workspaceMode === CONVERSATION_WRITER_MODE;
+}
+
+function terminalPairContractActive() {
+  // Pair identity belongs to the session, not the currently visible projection.
+  // Queue Overview and Writer Terminal must therefore reject the same malformed
+  // append instead of letting a view switch create a one-image directory entry.
+  return state.mode === "pair";
 }
 
 function workspaceInteractionLocked(currentState = state) {
   return currentState.writerSaveInFlight
+    || currentState.results?.some?.((result) => result?.feedbackStatus === "saving"
+      || result?.persistenceStatus === "saving") === true
     || currentState.exportingWorkbook
     || currentState.preparingFiles;
 }
@@ -3013,76 +3161,6 @@ function workspaceActionLocks(currentState = state) {
     intakeLocked,
     resetLocked: intakeLocked || currentState.processing === true
   };
-}
-
-function writerSavedAssets() {
-  return state.assets.filter((asset) => {
-    const result = resultForAsset(asset);
-    return result?.feedbackStatus === "saved" && writerFeedbackPersisted(result);
-  });
-}
-
-function writerProcessedCount() {
-  return state.assets.filter((asset) => writerFeedbackPersisted(resultForAsset(asset))).length;
-}
-
-function writerOutstandingAssets() {
-  return state.assets.filter((asset) => !writerFeedbackPersisted(resultForAsset(asset)));
-}
-
-function syncWriterActiveIndex() {
-  if (!state.assets.length) {
-    state.writerActiveIndex = null;
-    return null;
-  }
-
-  const current = state.assets.find((asset) => asset.index === Number(state.writerActiveIndex));
-  if (state.writerReviewComplete && writerProcessedCount() === state.assets.length && current) return current;
-  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
-  const next = outstanding[0] || state.assets[0];
-  state.writerActiveIndex = next?.index ?? null;
-  return next || null;
-}
-
-function scheduleWriterInputFocus(assetIndex = state.writerActiveIndex) {
-  if (!writerModeActive() || !Number.isFinite(Number(assetIndex))) return;
-  const focus = () => {
-    const input = elements.assetPreviewList.querySelector(`[data-title-input="${Number(assetIndex)}"]:not([disabled])`);
-    const currentCard = elements.assetPreviewList.querySelector(`[data-writer-card="${Number(assetIndex)}"]`);
-    const focusTarget = input || currentCard;
-    if (!focusTarget) return;
-    focusTarget.focus({ preventScroll: true });
-    if (input) {
-      const end = input.value.length;
-      input.setSelectionRange?.(end, end);
-    }
-    state.writerFocusPending = false;
-  };
-  if (globalThis.requestAnimationFrame) globalThis.requestAnimationFrame(focus);
-  else setTimeout(focus, 0);
-}
-
-function scheduleWriterCompletionFocus() {
-  if (!writerModeActive() || !state.writerCompletionFocusPending) return;
-  const focus = () => {
-    const action = elements.assetPreviewList.querySelector("[data-writer-export]:not([disabled]), [data-writer-go]:not([disabled])");
-    action?.focus({ preventScroll: true });
-    state.writerCompletionFocusPending = false;
-  };
-  if (globalThis.requestAnimationFrame) globalThis.requestAnimationFrame(focus);
-  else setTimeout(focus, 0);
-}
-
-function setWriterActiveIndex(index, { focus = true, animate = false, direction = "" } = {}) {
-  if (workspaceInteractionLocked()) return;
-  const asset = state.assets.find((candidate) => candidate.index === Number(index));
-  if (!asset) return;
-  state.writerActiveIndex = asset.index;
-  state.writerTransition = animate && ["forward", "backward"].includes(direction) ? direction : "";
-  state.writerFocusPending = focus;
-  state.writerReviewComplete = true;
-  state.writerCompletionFocusPending = false;
-  renderResults({ forceWriterRender: true });
 }
 
 function clearCardViewTransitionNames() {
@@ -3106,7 +3184,8 @@ function setCardViewTransitionNames(indexes = []) {
 }
 
 function visibleOutstandingAssetIndexes() {
-  return writerOutstandingAssets()
+  return state.assets
+    .filter((asset) => !writerFeedbackPersisted(resultForAsset(asset)))
     .sort((left, right) => left.index - right.index)
     .slice(0, INTAKE_PREVIEW_CARD_WINDOW)
     .map((asset) => asset.index);
@@ -3120,15 +3199,6 @@ function renderQueueAdvance(beforeIndexes = [], { animate = true } = {}) {
     prepareSharedElements: () => setCardViewTransitionNames(transitionIndexes),
     update: () => renderResults({ forceWriterRender: true })
   });
-}
-
-function writerWheelVisibleAssetIndexes(activeIndex = state.writerActiveIndex) {
-  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
-  const current = outstanding.find((asset) => asset.index === Number(activeIndex)) || outstanding[0];
-  if (!current) return [];
-  return [current, ...outstanding.filter((asset) => asset.index !== current.index)]
-    .slice(0, INTAKE_PREVIEW_CARD_WINDOW)
-    .map((asset) => asset.index);
 }
 
 function workbenchViewTransitionAllowed() {
@@ -3197,33 +3267,40 @@ function updateWorkspaceModeUi() {
   elements.resetButton.disabled = actionLocks.resetLocked;
   elements.dropZone.setAttribute("aria-disabled", actionLocks.intakeLocked ? "true" : "false");
   if (elements.workspaceModeHint) {
-    elements.workspaceModeHint.textContent = writerModeActive()
-      ? "只看当前卡片；Enter 确认入库并推进到下一张。"
+    elements.workspaceModeHint.textContent = terminalModeActive()
+      ? "像对话一样持续追加卡片；标题与 Excel 始终来自同一资产目录。"
       : "查看全部卡片，逐张检查和编辑。";
   }
-  if (elements.assetBoardTitle) elements.assetBoardTitle.textContent = writerModeActive() ? "写手滚轮" : "标题";
+  if (elements.assetBoardTitle) {
+    elements.assetBoardTitle.textContent = terminalModeActive()
+      ? "写手终端"
+      : "标题";
+  }
 }
 
 function setWorkspaceMode(mode, { animate = false } = {}) {
   if (workspaceInteractionLocked()) return;
-  const nextMode = mode === "writer" ? "writer" : "standard";
+  // `terminal` was the short-lived additive experiment key. Normalize it to
+  // the original Writer key so old callers cannot recreate a third mode.
+  const nextMode = mode === CONVERSATION_WRITER_MODE || mode === "terminal"
+    ? CONVERSATION_WRITER_MODE
+    : "standard";
   if (state.workspaceMode === nextMode) return;
-  let transitionIndexes = writerWheelVisibleAssetIndexes();
-  if (nextMode === "writer") {
-    state.writerActiveIndex = null;
-    const current = syncWriterActiveIndex();
-    transitionIndexes = writerWheelVisibleAssetIndexes(current?.index);
+  if (nextMode === CONVERSATION_WRITER_MODE
+      && (state.mode !== "pair" || state.assets.some((asset) => asset.images?.length !== 2))) {
+    setStatus("写手终端只接受完整的正反面卡片；当前目录含单图资产，未切换模式。");
+    return;
   }
+  if (nextMode === CONVERSATION_WRITER_MODE) {
+    ensureTerminalLedger({ rebuildOnProjectionError: true });
+  }
+  const transitionIndexes = visibleOutstandingAssetIndexes();
   runWorkbenchViewTransition({
     kind: "mode",
     enabled: animate && transitionIndexes.length > 0,
     prepareSharedElements: () => setCardViewTransitionNames(transitionIndexes),
     update: () => {
       state.workspaceMode = nextMode;
-      state.writerTransition = "";
-      state.writerFocusPending = nextMode === "writer";
-      state.writerReviewComplete = false;
-      state.writerCompletionFocusPending = false;
       closeImageModal();
       updateWorkspaceModeUi();
       renderResults({ forceWriterRender: true });
@@ -3236,8 +3313,9 @@ function updatePreviewSummary() {
     elements.previewSummary.textContent = "等待上传图片。";
     return;
   }
-  if (writerModeActive()) {
-    elements.previewSummary.textContent = `${writerProcessedCount()} / ${state.assets.length} 张已处理，${writerSavedAssets().length} 张已入库。`;
+  if (terminalModeActive()) {
+    const summary = conversationLedgerSummary({ assets: state.assets, results: state.results });
+    elements.previewSummary.textContent = `${summary.turns} 次追加 · ${summary.completed} / ${summary.assets} 张已返回结果。`;
     return;
   }
   const orphanNote = state.mode === "pair" && state.files.length % 2 === 1
@@ -3296,9 +3374,11 @@ function renderPreviews({ rebuildAssets = true } = {}) {
   if (!state.assets.length) {
     closeImageModal();
     elements.previewSummary.textContent = "等待上传图片。";
-    elements.assetPreviewList.innerHTML = `<div class="empty-state">${writerModeActive()
-      ? "选择图片后，当前卡片会进入写手滚轮。"
-      : "选择图片后，卡片会按上传顺序出现在这里。"}</div>`;
+    if (terminalModeActive()) {
+      renderConversationTerminal();
+      return;
+    }
+    elements.assetPreviewList.innerHTML = `<div class="empty-state">选择图片后，卡片会按上传顺序出现在这里。</div>`;
     return;
   }
 
@@ -3313,8 +3393,6 @@ function renderResults({ forceWriterRender = false } = {}) {
     && elements.assetPreviewList.contains(document.activeElement);
   renderResultControls();
   if (!preserveFocusedTitleInput) renderAssetRows();
-  if (writerModeActive() && state.writerFocusPending && !preserveFocusedTitleInput) scheduleWriterInputFocus();
-  if (writerModeActive() && state.writerCompletionFocusPending && !preserveFocusedTitleInput) scheduleWriterCompletionFocus();
 }
 
 function renderResultControls() {
@@ -3326,7 +3404,14 @@ function renderResultControls() {
 }
 
 function renderAssetRowInPlace(asset) {
-  if (writerModeActive()) return false;
+  if (terminalModeActive()) {
+    const current = elements.assetPreviewList.querySelector(`[data-terminal-asset="${Number(asset.index)}"]`);
+    // An off-window card still settles in the shared ledger, but it must not
+    // force a full 30-card Terminal rebuild for every background response.
+    if (current) current.outerHTML = terminalResultHtml(asset);
+    updateExportWorkbookControls();
+    return true;
+  }
   const current = elements.assetPreviewList.querySelector(`[data-asset-row="${Number(asset.index)}"]`);
   if (!current) return false;
   current.outerHTML = assetRowHtml(asset);
@@ -3344,13 +3429,22 @@ function generatedTitleResults() {
 }
 
 function completedExportRowsReady() {
-  if (writerModeActive()) {
-    return writerExportRowsReady({
-      assets: writerSavedAssets(),
-      results: state.results,
-      processing: state.writerSaveInFlight || state.preparingFiles || state.retryInFlight,
-      exporting: state.exportingWorkbook,
-      finalTitleForResult
+  if (state.terminalLedger) {
+    if (!state.assets.length) return false;
+    if (state.terminalProjectionError) return false;
+    if (state.processing || state.exportingWorkbook || state.preparingFiles || state.retryInFlight) return false;
+    if (state.results.some((result) => result.feedbackStatus === "saving" || result.persistenceStatus === "saving")) {
+      return false;
+    }
+    const readiness = writerTerminalExportReadiness(state.terminalLedger);
+    if (!readiness.ready || readiness.card_count !== state.assets.length) return false;
+    const titleByIndex = new Map(readiness.rows
+      .map((row) => [Number(row.asset_index), row.final_title]));
+    return readiness.rows.every((row) => {
+      const asset = state.assets.find((candidate) => Number(candidate.index) === Number(row.asset_index));
+      if (!asset) return false;
+      const ledgerTitle = String(titleByIndex.get(Number(asset.index)) || "").trim();
+      return Boolean(ledgerTitle && ledgerTitle === finalTitleForResult(resultForAsset(asset)));
     });
   }
   if (!state.assets.length) return false;
@@ -3364,7 +3458,7 @@ function completedExportRowsReady() {
 function setExportWorkbookStatus(message = "") {
   if (!elements.exportWorkbookStatus) return;
   elements.exportWorkbookStatus.textContent = message;
-  elements.assetPreviewList.querySelectorAll("[data-writer-export-status]").forEach((status) => {
+  elements.assetPreviewList.querySelectorAll("[data-terminal-export-status]").forEach((status) => {
     status.textContent = message;
   });
 }
@@ -3375,15 +3469,16 @@ function updateExportWorkbookControls() {
     elements.exportWorkbookButton.disabled = !ready;
     elements.exportWorkbookButton.textContent = state.exportingWorkbook
       ? "正在导出…"
-      : writerModeActive()
-        ? `导出已入库 ${writerSavedAssets().length} 张`
-        : "导出 Excel";
+      : "导出 Excel";
   }
-  elements.assetPreviewList.querySelectorAll("[data-writer-export]").forEach((button) => {
+  elements.assetPreviewList.querySelectorAll("[data-terminal-export]").forEach((button) => {
+    const terminalRows = state.terminalLedger
+      ? selectWriterTerminalExportRows(state.terminalLedger).length
+      : 0;
     button.disabled = !ready;
     button.textContent = state.exportingWorkbook
       ? "正在导出…"
-      : `导出已入库 ${writerSavedAssets().length} 张`;
+      : `导出 ${terminalRows} 张 Excel`;
   });
 }
 
@@ -3422,129 +3517,122 @@ function fieldCropStrip(asset) {
   return "";
 }
 
-function writerAssetStatusLabel(asset) {
+function terminalTurnPreviewHtml(turn) {
+  return turn.assets.map((asset) => {
+    const image = asset.images?.[0];
+    return `<button type="button" class="terminal-card-preview" data-preview-asset="${asset.index}" data-preview-image="0" aria-label="预览卡片 ${asset.index}">
+      ${image ? `<img src="${escapeHtml(imagePreviewUrl(image))}" alt="" loading="lazy" decoding="async">` : ""}
+      <span>卡片 ${asset.index}</span>
+    </button>`;
+  }).join("");
+}
+
+function terminalResultHtml(asset) {
   const result = resultForAsset(asset);
-  if (!result) return state.processing ? "识别中" : "等待生成";
-  if (result.feedbackStatus === "saved" && writerFeedbackPersisted(result)) return "已入库";
-  if (result.feedbackStatus === "skipped" && writerFeedbackPersisted(result)) return "已记录拒绝";
-  if (result.feedbackStatus === "skipped") return "未留存";
-  if (result.feedbackStatus === "saving") return "正在入库";
-  return "待录入";
+  const status = batchAssetReviewStatus({
+    result,
+    processing: state.processing,
+    active: state.activeAssetIndexes.has(asset.index)
+  });
+  return `<article class="terminal-result-card" data-terminal-asset="${asset.index}" data-card-transition-index="${asset.index}">
+    <header><strong>卡片 ${asset.index}</strong><span data-terminal-status="${status.code}">${escapeHtml(status.label)}</span></header>
+    ${result ? TitleCardComponent(result, asset) : pendingBox(asset)}
+  </article>`;
 }
 
-function writerCurrentCardHtml(asset) {
-  const result = resultForAsset(asset);
-  const status = writerAssetStatusLabel(asset);
-  return `
-    <article class="writer-wheel-card" data-writer-card="${asset.index}" data-card-transition-index="${asset.index}" aria-current="true" aria-label="当前卡片 ${asset.index}，${escapeHtml(status)}" tabindex="-1">
-      <header class="writer-wheel-card-head">
-        <div><span>当前卡片</span><strong>卡片 ${asset.index}</strong></div>
-        <small>${escapeHtml(status)}</small>
-      </header>
-      <div class="asset-row-card writer-wheel-current-card" data-asset-index="${asset.index}" data-asset-row="${asset.index}">
-        <div class="asset-source">
-          <div class="preview-images ${asset.images.length === 1 ? "single" : ""}">
-            ${asset.images.map((image, imageIndex) => `
-              <button class="thumb-button" type="button" data-preview-asset="${asset.index}" data-preview-image="${imageIndex}" aria-label="打开卡片图片预览">
-                <img class="thumb" src="${escapeHtml(imagePreviewUrl(image))}" alt="${escapeHtml(image.name)}" loading="lazy" decoding="async">
-              </button>
-            `).join("")}
-          </div>
-          <div class="preview-meta"><h3>卡片 ${asset.index}</h3><span>${assetCountLabel(asset.images.length)}</span></div>
+function terminalTurnHtml(turn, turnNumber) {
+  const settled = turn.assets.filter((asset) => resultForAsset(asset)).length;
+  const totalAssets = Number(turn.total_asset_count || turn.assets.length);
+  const partial = totalAssets !== turn.assets.length;
+  return `<section class="terminal-turn" data-terminal-turn="${escapeHtml(turn.id)}">
+    <div class="terminal-message terminal-message-user">
+      <header><span>你</span><small>第 ${turnNumber} 次追加</small></header>
+      <p>添加 ${totalAssets} 张卡（${turn.image_count} 张正反面图片）${partial ? ` · 本段显示 ${turn.assets.length} 张` : ""}</p>
+      <div class="terminal-card-strip">${terminalTurnPreviewHtml(turn)}</div>
+    </div>
+    <div class="terminal-message terminal-message-assistant">
+      <header><span>LYNCA</span><small>${settled} / ${turn.assets.length} 张${partial ? "本段" : ""}已完成 · 每张独立识别</small></header>
+      <div class="terminal-result-list">${turn.assets.map(terminalResultHtml).join("")}</div>
+    </div>
+  </section>`;
+}
+
+function renderConversationTerminal({ scrollTo = "preserve" } = {}) {
+  const previousThread = elements.assetPreviewList.querySelector(".terminal-thread");
+  const previousScrollTop = Number(previousThread?.scrollTop || 0);
+  const previousLastTurnId = previousThread?.lastElementChild?.dataset?.terminalTurn || "";
+  const stayAtLatest = !previousThread
+    || previousThread.scrollHeight - previousThread.scrollTop - previousThread.clientHeight < 48;
+  const orderedAssets = [...state.assets].sort((left, right) => Number(left.index) - Number(right.index));
+  const terminalWindow = batchReviewWindow(orderedAssets, {
+    start: state.terminalWindowStart,
+    size: TERMINAL_RENDER_CARD_WINDOW
+  });
+  state.terminalWindowStart = terminalWindow.start;
+  const visibleIndexes = new Set(terminalWindow.visible.map((asset) => Number(asset.index)));
+  const allTurns = groupConversationAssets(orderedAssets);
+  const turns = allTurns.flatMap((turn, turnIndex) => {
+    const visibleAssets = turn.assets.filter((asset) => visibleIndexes.has(Number(asset.index)));
+    return visibleAssets.length ? [{
+      ...turn,
+      assets: visibleAssets,
+      total_asset_count: turn.assets.length,
+      turn_number: turnIndex + 1
+    }] : [];
+  });
+  const summary = conversationLedgerSummary({ assets: state.assets, results: state.results });
+  const assetIndexes = state.assets
+    .map((asset) => Number(asset.index))
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+  const directoryRange = assetIndexes.length
+    ? `卡片 ${assetIndexes[0]}–${assetIndexes.at(-1)} · 实际 ${assetIndexes.length} 张`
+    : "等待第一组卡片";
+  const exportCount = state.terminalLedger
+    ? selectWriterTerminalExportRows(state.terminalLedger).length
+    : 0;
+  const intakeLocked = workspaceActionLocks().intakeLocked;
+  const turnRange = turns.length
+    ? `第 ${turns[0].turn_number}${turns.length > 1 ? `–${turns.at(-1).turn_number}` : ""} 次追加`
+    : "";
+  elements.assetPreviewList.innerHTML = `<section class="terminal-shell" aria-label="写手终端">
+    <header class="terminal-session-head">
+      <div><span>当前目录</span><strong>${summary.assets} 张卡 · ${summary.turns} 次追加</strong></div>
+      <small>${directoryRange}</small>
+      ${terminalWindow.pages > 1 ? `<nav class="terminal-window-nav" aria-label="对话分段导航">
+        <span data-terminal-window-summary>显示卡片 ${terminalWindow.from}–${terminalWindow.to} / ${terminalWindow.total} · ${turnRange}</span>
+        <div>
+          <button type="button" data-terminal-window="previous" ${terminalWindow.hasPrevious ? "" : "disabled"}>较早记录</button>
+          <button type="button" data-terminal-window="next" ${terminalWindow.hasNext ? "" : "disabled"}>较新记录</button>
         </div>
-        ${result ? resultBox(result, asset) : pendingBox(asset)}
-      </div>
-    </article>
-  `;
-}
-
-function writerQueueWindowHtml(current) {
-  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
-  // COS-50: the strip still renders at most eight, but it now says how many
-  // there are. `8 / 8` read as "this batch has 8 cards" on a 20-card batch,
-  // which is the reading that made a correctly accepted batch look truncated.
-  const queueWindow = batchReviewWindow(outstanding, { focusIndex: current.index });
-  const visible = queueWindow.visible;
-  const queued = visible.filter((asset) => asset.index !== current.index);
-  if (!queued.length) return "";
-  return `
-    <section class="writer-queue-window" aria-label="待处理卡片队列">
-      <header><strong>待处理窗口</strong><span>正在显示 ${queueWindow.from}–${queueWindow.to} / 共 ${queueWindow.total} 张</span></header>
-      <div class="writer-queue-window-list">
-        ${queued.map((asset, index) => {
-          const image = asset.images?.[0];
-          return `
-            <div class="writer-queue-window-item" data-card-transition-index="${asset.index}" aria-label="队列第 ${index + 2} 张，卡片 ${asset.index}">
-              ${image ? `<img src="${escapeHtml(imagePreviewUrl(image))}" alt="" loading="lazy" decoding="async">` : ""}
-              <span>卡片 ${asset.index}</span>
-              <small>${escapeHtml(writerAssetStatusLabel(asset))}</small>
-            </div>
-          `;
-        }).join("")}
-      </div>
-    </section>
-  `;
-}
-
-function writerCompletionHtml() {
-  const savedCount = writerSavedAssets().length;
-  const rejectedCount = state.assets.filter((asset) => {
-    const result = resultForAsset(asset);
-    return result?.feedbackStatus === "skipped" && writerFeedbackPersisted(result);
-  }).length;
-  const detail = rejectedCount
-    ? `${savedCount} 张已入库，${rejectedCount} 张已记录拒绝。Excel 只包含已入库卡片。`
-    : `${savedCount} 张卡片已全部入库，可以直接导出。`;
-  return `
-    <section class="writer-wheel-complete" aria-live="polite">
-      <span>本轮完成</span>
-      <h3>${savedCount} 张已入库</h3>
-      <p>${escapeHtml(detail)}</p>
-      <div class="writer-wheel-complete-actions">
-        <button class="primary-button" type="button" data-writer-export ${completedExportRowsReady() ? "" : "disabled"}>导出已入库 ${savedCount} 张</button>
-        ${state.assets.length ? `<button class="copy-button" type="button" data-writer-go="${state.assets[state.assets.length - 1].index}" data-writer-direction="backward">回看上一张</button>` : ""}
-      </div>
-      <p class="writer-wheel-export-status" data-writer-export-status role="status" aria-live="polite">${escapeHtml(elements.exportWorkbookStatus?.textContent || "")}</p>
-    </section>
-  `;
-}
-
-function renderWriterWheel() {
-  const allProcessed = state.assets.length > 0 && writerProcessedCount() === state.assets.length;
-  if (allProcessed && !state.writerSaveInFlight && !state.writerReviewComplete) {
-    elements.assetPreviewList.innerHTML = writerCompletionHtml();
-    updateExportWorkbookControls();
-    return;
+      </nav>` : ""}
+    </header>
+    <div class="terminal-thread" role="log" aria-live="polite" aria-relevant="additions text">
+      ${state.terminalProjectionError
+        ? `<div class="terminal-ledger-error" role="alert"><strong>终端投影已暂停</strong><p>卡片识别与保存没有受影响。请切换到队列总览后再返回终端以重建目录。</p></div>`
+        : ""}
+      ${turns.length
+        ? turns.map((turn) => terminalTurnHtml(turn, turn.turn_number)).join("")
+        : `<div class="terminal-empty"><strong>把第一组卡片放进来</strong><p>每张卡使用相邻的正面与背面；之后可以继续追加。</p></div>`}
+    </div>
+    <footer class="terminal-composer">
+      <button class="primary-button" type="button" data-terminal-add ${intakeLocked ? "disabled" : ""}>＋ 添加${summary.assets ? "更多" : ""}卡片</button>
+      <span>同一会话累计，不覆盖之前的标题。</span>
+      <button class="copy-button" type="button" data-terminal-export ${completedExportRowsReady() ? "" : "disabled"}>导出 ${exportCount} 张 Excel</button>
+    </footer>
+    <p class="terminal-export-status" data-terminal-export-status role="status" aria-live="polite">${escapeHtml(elements.exportWorkbookStatus?.textContent || "")}</p>
+  </section>`;
+  const nextThread = elements.assetPreviewList.querySelector(".terminal-thread");
+  const appendedTurn = Boolean(turns.length && turns.at(-1).id !== previousLastTurnId);
+  if (nextThread) {
+    if (scrollTo === "start") {
+      nextThread.scrollTop = 0;
+    } else {
+      nextThread.scrollTop = stayAtLatest || appendedTurn
+        ? nextThread.scrollHeight
+        : Math.min(previousScrollTop, nextThread.scrollHeight - nextThread.clientHeight);
+    }
   }
-
-  const current = syncWriterActiveIndex();
-  if (!current) {
-    elements.assetPreviewList.innerHTML = `<div class="empty-state">等待卡片进入写手队列。</div>`;
-    return;
-  }
-
-  const savedCount = writerSavedAssets().length;
-  const writerTransition = state.writerTransition;
-  state.writerTransition = "";
-  elements.assetPreviewList.innerHTML = `
-    <section class="writer-wheel" aria-label="写手模式单卡队列">
-      <header class="writer-wheel-head">
-        <div><span>写手队列</span><strong>${current.index} / ${state.assets.length}</strong></div>
-        <p>${savedCount} 张已入库 · Enter 保存并推进</p>
-      </header>
-      <div class="writer-wheel-viewport" data-writer-wheel>
-        <div class="writer-wheel-track writer-queue-mode ${writerTransition ? `writer-transition-${writerTransition}` : ""}">
-          ${writerCurrentCardHtml(current)}
-        </div>
-      </div>
-      ${writerQueueWindowHtml(current)}
-      <footer class="writer-wheel-footer">
-        <span>标题保存成功后卡片才会上移；失败会停留在当前卡。</span>
-        <button class="copy-button" type="button" data-writer-export ${completedExportRowsReady() ? "" : "disabled"}>导出已入库 ${savedCount} 张</button>
-      </footer>
-      <p class="writer-wheel-export-status" data-writer-export-status role="status" aria-live="polite">${escapeHtml(elements.exportWorkbookStatus?.textContent || "")}</p>
-    </section>
-  `;
   updateExportWorkbookControls();
 }
 
@@ -3561,21 +3649,28 @@ function renderWriterWheel() {
  * recognising shows that when opened, which is information; refusing to open it
  * is the behaviour being repaired.
  */
-function batchNavigationHtml(window, assets) {
+function batchNavigationHtml(window, assets, { selectedIndex = null } = {}) {
   if (!window.total) return "";
   const rail = assets.map((asset) => {
-    const active = asset.index >= window.from && asset.index <= window.to
-      && window.visible.some((visible) => visible.index === asset.index);
-    return `<button type="button" class="batch-rail-item${active ? " is-visible" : ""}"
+    const visible = window.visible.some((candidate) => candidate.index === asset.index);
+    const selected = Number(asset.index) === Number(selectedIndex);
+    const status = batchAssetReviewStatus({
+      result: resultForAsset(asset),
+      processing: state.processing,
+      active: state.activeAssetIndexes.has(asset.index)
+    });
+    return `<button type="button" class="batch-rail-item${visible ? " is-visible" : ""}${selected ? " is-selected" : ""}"
       data-batch-focus="${asset.index}"
-      aria-current="${active ? "true" : "false"}"
-      title="${escapeHtml(`卡片 ${asset.index} · ${writerAssetStatusLabel(asset)}`)}"
-    >${asset.index}</button>`;
+      data-batch-status="${status.code}"
+      ${selected ? 'aria-current="true"' : ""}
+      aria-label="${escapeHtml(`卡片 ${asset.index} · ${status.label}`)}"
+      title="${escapeHtml(`卡片 ${asset.index} · ${status.label}`)}"
+    ><span>${asset.index}</span><small>${escapeHtml(status.label)}</small></button>`;
   }).join("");
   return `
     <nav class="batch-navigation" aria-label="全批导航">
       <div class="batch-navigation-summary">
-        <strong>正在显示 ${window.from}–${window.to} / 共 ${window.total} 张</strong>
+        <strong>正在显示第 ${window.from}–${window.to} 项 / 共 ${window.total} 张</strong>
         <span>第 ${window.page} / ${window.pages} 页</span>
       </div>
       <div class="batch-navigation-controls">
@@ -3587,19 +3682,42 @@ function batchNavigationHtml(window, assets) {
   `;
 }
 
+function syncBatchRailStatus(asset) {
+  if (!asset || terminalModeActive()) return false;
+  const button = elements.assetPreviewList.querySelector(
+    `[data-batch-focus="${Number(asset.index)}"]`
+  );
+  if (!button) return false;
+  const status = batchAssetReviewStatus({
+    result: resultForAsset(asset),
+    processing: state.processing,
+    active: state.activeAssetIndexes.has(asset.index)
+  });
+  const label = `卡片 ${asset.index} · ${status.label}`;
+  button.dataset.batchStatus = status.code;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  const statusText = button.querySelector("small");
+  if (statusText) statusText.textContent = status.label;
+  return true;
+}
+
 function renderAssetRows() {
-  if (!state.assets.length) return;
-  if (writerModeActive()) {
-    renderWriterWheel();
+  if (terminalModeActive()) {
+    renderConversationTerminal();
     return;
   }
-
+  if (!state.assets.length) return;
   // COS-50: the render stays bounded at eight cards; what changed is that the
   // window can MOVE. One constant used to decide both how much DOM is live and
   // which cards the operator may reach, so a 20-card batch showed `8 / 8` and
   // cards 9-20 could not be opened until earlier ones were saved.
-  const outstanding = writerOutstandingAssets().sort((left, right) => left.index - right.index);
-  const reviewWindow = batchReviewWindow(outstanding, {
+  // Standard review is a view over the full batch, including persisted cards.
+  // Removing saved/rejected cards from this model loses the exact window and
+  // selection context the operator used to make that decision. Writer mode
+  // keeps its separate outstanding-only sequential queue above.
+  const reviewAssets = [...state.assets].sort((left, right) => left.index - right.index);
+  const reviewWindow = batchReviewWindow(reviewAssets, {
     start: state.reviewWindowStart,
     focusIndex: state.reviewFocusIndex
   });
@@ -3609,7 +3727,9 @@ function renderAssetRows() {
     elements.assetPreviewList.innerHTML = `<div class="empty-state"><strong>本批卡片已全部确认</strong><p>可以导出已入库标题，或开始下一批。</p></div>`;
     return;
   }
-  const navigation = batchNavigationHtml(reviewWindow, outstanding);
+  const navigation = batchNavigationHtml(reviewWindow, reviewAssets, {
+    selectedIndex: state.reviewFocusIndex
+  });
   const hasAnyResult = state.results.length > 0;
   if (!hasAnyResult) {
     elements.assetPreviewList.innerHTML = navigation + visibleAssets.map(assetRowHtml).join("");
@@ -3645,7 +3765,7 @@ function renderAssetRows() {
     }
   ].filter((group) => group.assets.length);
 
-  elements.assetPreviewList.innerHTML = groups.map((group) => `
+  elements.assetPreviewList.innerHTML = navigation + groups.map((group) => `
     <section class="asset-review-group ${group.key}">
       <div class="asset-review-group-head">
         <span>${escapeHtml(group.label)}</span>
@@ -3968,6 +4088,14 @@ async function handleFiles(
   const candidates = [...fileList];
   const imageFiles = candidates.filter(isSupportedImageFile);
   if (!imageFiles.length) return;
+  if (terminalPairContractActive() && imageFiles.length !== candidates.length) {
+    setStatus("写手终端本次选择含不支持的文件；为避免正反面重新配对，本次未添加任何图片。");
+    return;
+  }
+  if (terminalPairContractActive() && (state.mode !== "pair" || imageFiles.length % 2 !== 0)) {
+    setStatus("写手终端要求每张卡都有相邻的正面与背面；本次未添加任何图片。请补齐后重新选择。");
+    return;
+  }
 
   const batchWasEmpty = state.assets.length === 0;
   // The batch clock starts HERE -- the moment the writer's files arrive -- not
@@ -3983,13 +4111,15 @@ async function handleFiles(
     ? ++state.assetLifecycleGeneration
     : state.assetLifecycleGeneration;
   const filePreparationRunId = state.filePreparationRunId + 1;
+  const intakeTurnId = `turn-${filePreparationRunId}`;
   const firstAssetIndex = state.assets.reduce((max, asset) => Math.max(max, Number(asset.index) || 0), 0) + 1;
   const intakePreviewRecords = createIntakePreviewRecords(imageFiles);
-  let initialWriterForwardReady = null;
   state.filePreparationRunId = filePreparationRunId;
   state.preparingFiles = true;
   releaseIntakePreviewRecords();
   state.intakePreviewRecords = intakePreviewRecords;
+  if (batchWasEmpty) state.workspaceMode = CONVERSATION_WRITER_MODE;
+  if (terminalModeActive()) ensureTerminalLedger();
   renderInstantIntakePreviews(intakePreviewRecords);
 
   try {
@@ -3998,12 +4128,9 @@ async function handleFiles(
       : `已追加 ${imageFiles.length} 张图片；正在校验原图并延续当前识别任务…`, { busy: true });
     closeImageModal();
     if (batchWasEmpty) {
-      state.workspaceMode = "writer";
-      state.writerActiveIndex = null;
-      state.writerTransition = "";
-      state.writerFocusPending = writerModeActive();
-      state.writerReviewComplete = false;
-      state.writerCompletionFocusPending = false;
+      state.reviewWindowStart = 0;
+      state.reviewFocusIndex = null;
+      state.terminalWindowStart = 0;
       state.writerCompositionActive = false;
       state.assetProgress = new Map();
       stopProgressTicker();
@@ -4018,7 +4145,7 @@ async function handleFiles(
     const groupSize = state.mode === "single" ? 1 : 2;
     const fileGroups = [];
     for (let index = 0; index < imageFiles.length; index += groupSize) {
-      fileGroups.push({ index: firstAssetIndex + Math.floor(index / groupSize), files: imageFiles.slice(index, index + groupSize) });
+      fileGroups.push({ files: imageFiles.slice(index, index + groupSize) });
     }
     const backgroundRunId = batchWasEmpty
       ? beginBackgroundPreparationRun()
@@ -4026,7 +4153,7 @@ async function handleFiles(
     const groupPreparationConcurrency = state.mode === "single"
       ? IMAGE_PREPROCESS_CONCURRENCY
       : Math.max(1, Math.floor(IMAGE_PREPROCESS_CONCURRENCY / 2));
-    await mapWithConcurrency(fileGroups, groupPreparationConcurrency, async (group) => {
+    const preparedGroups = await mapWithConcurrency(fileGroups, groupPreparationConcurrency, async (group) => {
       const outcomes = await Promise.all(group.files.map(async (file) => {
         try {
           return { image: await prepareFile(file) };
@@ -4035,39 +4162,65 @@ async function handleFiles(
         }
       }));
       const images = outcomes.flatMap((item) => item.image ? [item.image] : []);
-      outcomes.forEach((item) => {
-        if (item.failure) failures.push(item.failure);
-      });
-      if (
-        lifecycleGeneration !== state.assetLifecycleGeneration
-        || state.filePreparationRunId !== filePreparationRunId
-        || backgroundRunId !== state.backgroundPreparationRunId
-      ) {
-        releaseImagePreviewUrls(images);
-        return null;
-      }
-      if (!images.length) return null;
-
-      // A card starts uploading as soon as its own image group is readable.
-      // Slow files later in the batch no longer hold earlier cards at a
-      // whole-batch barrier.
-      const asset = createClientAsset(images, group.index);
-      state.assets.push(asset);
-      state.assets.sort((left, right) => left.index - right.index);
-      state.files = state.assets.flatMap((entry) => entry.images);
-      scheduleAssetBackgroundPreparation(asset, backgroundRunId);
-      if (state.processing) state.processingTotal = state.assets.length;
-      syncProcessButtonState();
-      syncBackgroundPreparationStatus();
-      requestRecognitionContinuation({ lifecycleGeneration, filePreparationRunId });
-      return asset;
+      return {
+        files: group.files,
+        images,
+        failures: outcomes.flatMap((item) => item.failure ? [item.failure] : [])
+      };
     });
+    failures.push(...preparedGroups.flatMap((group) => group.failures));
+    const preparedImages = preparedGroups.flatMap((group) => group.images);
+    if (
+      lifecycleGeneration !== state.assetLifecycleGeneration
+      || state.filePreparationRunId !== filePreparationRunId
+      || backgroundRunId !== state.backgroundPreparationRunId
+    ) {
+      releaseImagePreviewUrls(preparedImages);
+      releaseIntakePreviewRecords(intakePreviewRecords);
+      return;
+    }
+    const incompleteGroup = preparedGroups.some((group) => group.images.length !== group.files.length);
+    if (failures.length || incompleteGroup) {
+      // One selection is one pairing transaction. Committing the readable
+      // pairs while dropping a failed side would either leave an index hole or
+      // silently re-pair later fronts/backs. Keep preparation concurrent, but
+      // publish nothing until every atom in the selection has passed.
+      releaseImagePreviewUrls(preparedImages);
+      setStatus(`本次选择未添加：${failures.join("；") || "有图片未能完整读取"}。请修复后重新选择整组图片。`);
+      releaseIntakePreviewRecords(intakePreviewRecords);
+      return;
+    }
+
+    const preparedAssets = preparedGroups.map((group, offset) => createClientAsset(
+      group.images,
+      firstAssetIndex + offset,
+      { intakeTurnId }
+    ));
+    state.assets.push(...preparedAssets);
+    state.assets.sort((left, right) => left.index - right.index);
+    state.terminalWindowStart = Math.floor(
+      Math.max(0, state.assets.length - 1) / TERMINAL_RENDER_CARD_WINDOW
+    ) * TERMINAL_RENDER_CARD_WINDOW;
+    for (const asset of preparedAssets) {
+      appendTerminalEvent({
+        type: WRITER_TERMINAL_EVENTS.INTAKE_APPENDED,
+        turn_id: intakeTurnId,
+        asset_index: asset.index,
+        image_count: asset.images.length
+      });
+      scheduleAssetBackgroundPreparation(asset, backgroundRunId);
+    }
+    state.files = state.assets.flatMap((entry) => entry.images);
+    if (state.processing) state.processingTotal = state.assets.length;
+    syncProcessButtonState();
+    syncBackgroundPreparationStatus();
+    requestRecognitionContinuation({ lifecycleGeneration, filePreparationRunId });
     const prepareElapsedMs = Math.round(performance.now() - prepareStartedAt);
     if (
       lifecycleGeneration !== state.assetLifecycleGeneration
       || state.filePreparationRunId !== filePreparationRunId
     ) {
-      releaseImagePreviewUrls(state.files);
+      releaseImagePreviewUrls(preparedImages);
       releaseIntakePreviewRecords(intakePreviewRecords);
       return;
     }
@@ -4095,7 +4248,6 @@ async function handleFiles(
         renderResults();
       }
     });
-    if (intakeTransition?.finished) initialWriterForwardReady = Promise.resolve(intakeTransition.finished).catch(() => {});
     if (intakeTransition?.updateCallbackDone) await Promise.resolve(intakeTransition.updateCallbackDone).catch(() => {});
     if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
   } finally {
@@ -4114,18 +4266,6 @@ async function handleFiles(
         // Selecting card images is the recognition intent. Asset-ready calls
         // start the pool progressively; this batch-end call is the fail-safe.
         requestRecognitionContinuation({ lifecycleGeneration, filePreparationRunId });
-      }
-      if (initialWriterForwardReady) {
-        void initialWriterForwardReady.then(() => {
-          if (
-            lifecycleGeneration !== state.assetLifecycleGeneration
-            || state.filePreparationRunId !== filePreparationRunId
-            || !writerModeActive()
-          ) return;
-          state.writerTransition = "forward";
-          state.writerFocusPending = true;
-          renderResults({ forceWriterRender: true });
-        });
       }
     }
   }
@@ -4209,6 +4349,7 @@ async function processTitles() {
       state.processingTotal = state.assets.length;
       markAssetQueued(asset, generationQueuedAt);
       state.activeAssetIndexes.add(asset.index);
+      syncBatchRailStatus(asset);
       setAssetProgress(asset.index, "准备直接识别", 0.03);
 
       try {
@@ -4217,16 +4358,20 @@ async function processTitles() {
         markAssetFinished(asset.index, { failed: normalizeConfidence(result.confidence) === "FAILED" });
         clearAssetProgress(asset.index);
         attachGenerationTimingToResult(result);
+        recordTerminalRecognition(result);
         state.results.push(result);
         state.results.sort((a, b) => a.index - b.index);
       } catch (error) {
         if (lifecycleGeneration !== state.assetLifecycleGeneration) return;
         markAssetFinished(asset.index, { failed: true });
         clearAssetProgress(asset.index);
-        state.results.push(failedResult(asset, error, recognitionBatchId));
+        const result = failedResult(asset, error, recognitionBatchId);
+        recordTerminalRecognition(result);
+        state.results.push(result);
       }
 
       state.activeAssetIndexes.delete(asset.index);
+      syncBatchRailStatus(asset);
       completedCount += 1;
       state.completedAssetCount = completedCount;
       state.results.sort((a, b) => a.index - b.index);
@@ -4365,6 +4510,7 @@ async function runAssetRetry({ asset, current, retryState, assetIndex }) {
     result.feedbackMessage = retryState.input_rebind_required
       ? "图片已绑定到新的不可变资产，并完成重新识别。"
       : "已通过 CSM 薄链路重新识别。";
+    recordTerminalRecognition(result);
     state.results = state.results.filter((item) => item.index !== asset.index);
     state.results.push(result);
     state.results.sort((a, b) => a.index - b.index);
@@ -4383,6 +4529,13 @@ async function runAssetRetry({ asset, current, retryState, assetIndex }) {
     current.error_code = String(error?.code || current.error_code || "").trim();
     current.retryable = error?.retryable !== false;
     current.feedbackMessage = `重新识别失败：${error.message || "请再次重试"}`;
+    recordTerminalRecognition({
+      ...current,
+      confidence: "FAILED",
+      provider_response_id: "",
+      response_id: "",
+      recognition_session_id: ""
+    });
     setStatus(`卡片 ${asset.index} 重新识别失败。`);
   } finally {
     state.retryInFlight = Math.max(0, state.retryInFlight - 1);
@@ -4544,7 +4697,7 @@ async function saveManualRecoveryForResult(result, asset, { deferFinalRender = f
     if (request.error || request.payload?.ok !== true) {
       throw new Error(request.payload?.message || request.payload?.error || `保存失败：${request.response?.status || "network"}`);
     }
-    result.feedbackStatus = "saved";
+    result.feedbackStatus = rejected ? "skipped" : "saved";
     result.persistenceStatus = "persisted";
     result.manualRecoverySource = request.payload.source;
     result.manualRecoverySubmissionId = request.payload.manual_recovery_submission_id;
@@ -4557,6 +4710,7 @@ async function saveManualRecoveryForResult(result, asset, { deferFinalRender = f
     result.feedbackMessage = rejected
       ? "已记录「识别失败后拒绝」，可继续下一张。"
       : "已记录「识别失败后人工标题」（不进入训练，不作为语义真值）。";
+    recordTerminalReview(result, { rejected });
     return true;
   } catch (error) {
     result.feedbackStatus = "";
@@ -4673,6 +4827,7 @@ async function saveFeedbackForResult(result, asset, { deferFinalRender = false }
         : payload.training_eligible === false
           ? "写手反馈已入库；当前处于观察期，不自动进入训练集。"
           : `写手反馈已保存，并生成学习事件：${payload.learning_event_id || "已写入"}。`;
+    recordTerminalReview(result, { rejected });
     return true;
   } catch (error) {
     result.feedbackStatus = "";
@@ -4685,103 +4840,25 @@ async function saveFeedbackForResult(result, asset, { deferFinalRender = false }
 }
 
 async function saveTitleFeedback(button, { animate = true } = {}) {
+  if (workspaceInteractionLocked()) return false;
   const result = state.results.find((item) => item.index === Number(button.dataset.saveTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.saveTitle));
   if (!result || !asset || result.feedbackStatus === "saving" || writerFeedbackPersisted(result)) return false;
   const beforeIndexes = visibleOutstandingAssetIndexes();
-  const persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
-  if (persisted) renderQueueAdvance(beforeIndexes, { animate });
-  else renderResults();
-  return persisted;
-}
-
-function advanceWriterAfterPersistence(index) {
-  const nextIndex = nextWriterOutstandingIndex({
-    assets: state.assets,
-    results: state.results,
-    currentIndex: index
-  });
-  state.writerReviewComplete = false;
-  state.writerTransition = "";
-  state.writerActiveIndex = nextIndex;
-  state.writerFocusPending = Number.isFinite(Number(nextIndex));
-  state.writerCompletionFocusPending = nextIndex === null;
-}
-
-async function saveWriterTitleAndAdvance(resultIndex, { animate = true } = {}) {
-  if (workspaceInteractionLocked()) return false;
-  const index = Number(resultIndex);
-  const result = state.results.find((item) => item.index === index);
-  const asset = state.assets.find((item) => item.index === index);
-  if (!result || !asset) return false;
-  if (writerFeedbackPersisted(result)) {
-    advanceWriterAfterPersistence(index);
-    renderResults({ forceWriterRender: true });
-    return true;
-  }
-  const title = finalTitleForResult(result);
-  if (!title) {
-    result.feedbackMessage = "标题不能为空，请输入最终英文标题后再按 Enter。";
-    state.writerFocusPending = true;
-    renderResults({ forceWriterRender: true });
-    return false;
-  }
-  if (title.length > maxTitleLength) {
-    result.feedbackMessage = `标题不能超过 ${maxTitleLength} 个字符。`;
-    state.writerFocusPending = true;
-    renderResults({ forceWriterRender: true });
-    return false;
-  }
-
   state.writerSaveInFlight = true;
-  const beforeIndexes = visibleOutstandingAssetIndexes();
   let persisted = false;
   try {
     persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
-    if (!persisted) return false;
-    advanceWriterAfterPersistence(index);
-    return true;
+    return persisted;
   } finally {
     state.writerSaveInFlight = false;
-    if (!persisted) state.writerFocusPending = true;
     if (persisted) renderQueueAdvance(beforeIndexes, { animate });
-    else renderResults({ forceWriterRender: true });
-  }
-}
-
-async function rejectWriterTitleAndAdvance(resultIndex, { animate = true } = {}) {
-  if (workspaceInteractionLocked()) return false;
-  const index = Number(resultIndex);
-  const result = state.results.find((item) => item.index === index);
-  const asset = state.assets.find((item) => item.index === index);
-  if (!result || !asset) return false;
-  if (writerFeedbackPersisted(result)) {
-    advanceWriterAfterPersistence(index);
-    renderResults({ forceWriterRender: true });
-    return true;
-  }
-
-  state.writerSaveInFlight = true;
-  const beforeIndexes = visibleOutstandingAssetIndexes();
-  result.explicitReviewOutcome = "REJECTED";
-  result.feedbackStatus = "";
-  result.persistenceStatus = "";
-  result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
-  let persisted = false;
-  try {
-    persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
-    if (!persisted) return false;
-    advanceWriterAfterPersistence(index);
-    return true;
-  } finally {
-    state.writerSaveInFlight = false;
-    if (!persisted) state.writerFocusPending = true;
-    if (persisted) renderQueueAdvance(beforeIndexes, { animate });
-    else renderResults({ forceWriterRender: true });
+    else renderResults();
   }
 }
 
 async function rejectTitleFeedback(button, { animate = true } = {}) {
+  if (workspaceInteractionLocked()) return false;
   const result = state.results.find((item) => item.index === Number(button.dataset.rejectTitle));
   const asset = state.assets.find((item) => item.index === Number(button.dataset.rejectTitle));
   if (!result || writerFeedbackPersisted(result) || result.feedbackStatus === "saving") return false;
@@ -4790,10 +4867,16 @@ async function rejectTitleFeedback(button, { animate = true } = {}) {
   result.feedbackStatus = "";
   result.persistenceStatus = "";
   result.feedbackMessage = "已标记为拒绝，正在写入训练负例…";
-  const persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
-  if (persisted) renderQueueAdvance(beforeIndexes, { animate });
-  else renderResults();
-  return persisted;
+  state.writerSaveInFlight = true;
+  let persisted = false;
+  try {
+    persisted = await saveFeedbackForResult(result, asset, { deferFinalRender: true });
+    return persisted;
+  } finally {
+    state.writerSaveInFlight = false;
+    if (persisted) renderQueueAdvance(beforeIndexes, { animate });
+    else renderResults();
+  }
 }
 
 async function copyAllTitles() {
@@ -4846,9 +4929,7 @@ function buildWriterExportRows(
 async function exportWriterWorkbook() {
   if (workspaceInteractionLocked()) return;
   if (!completedExportRowsReady()) {
-    setExportWorkbookStatus(writerModeActive()
-      ? "至少有一张卡片成功入库后才能导出。"
-      : "所有资产生成并完成写手编辑后才能导出。");
+    setExportWorkbookStatus("所有卡片生成完成后才能导出；已拒绝的卡片不会进入 Excel。");
     return;
   }
   if (!storageReady()) {
@@ -4856,15 +4937,24 @@ async function exportWriterWorkbook() {
     return;
   }
 
-  const exportingWriterRows = writerModeActive();
-  const exportAssets = exportingWriterRows ? [...writerSavedAssets()] : [...state.assets];
+  // The ledger is the session export authority in both projections. Switching
+  // to Queue Overview must not re-admit rejected cards or unsaved local edits.
+  const exportingTerminalRows = Boolean(state.terminalLedger);
+  let exportAssets = [...state.assets];
+  const terminalExportRows = exportingTerminalRows
+    ? selectWriterTerminalExportRows(state.terminalLedger)
+    : [];
+  if (exportingTerminalRows) {
+    const selectedIndexes = new Set(terminalExportRows.map((row) => Number(row.asset_index)));
+    exportAssets = exportAssets.filter((asset) => selectedIndexes.has(Number(asset.index)));
+  }
   if (!writerExportWithinLimit(exportAssets.length)) {
     setExportWorkbookStatus(`单次最多导出 ${WRITER_EXPORT_MAX_ROWS} 张卡片；请缩小本轮批次后重试。`);
     return;
   }
-  const titleSnapshotByIndex = new Map(exportAssets.map((asset) => {
-    return [Number(asset.index), finalTitleForResult(resultForAsset(asset))];
-  }));
+  const titleSnapshotByIndex = new Map(exportingTerminalRows
+    ? terminalExportRows.map((row) => [Number(row.asset_index), row.final_title])
+    : exportAssets.map((asset) => [Number(asset.index), finalTitleForResult(resultForAsset(asset))]));
 
   state.exportingWorkbook = true;
   renderResults({ forceWriterRender: true });
@@ -4875,7 +4965,7 @@ async function exportWriterWorkbook() {
       await ensureAssetOriginalImagesUploaded(asset);
     });
     const rows = buildWriterExportRows(exportAssets, {
-      requireSaved: exportingWriterRows,
+      requireSaved: false,
       titleSnapshotByIndex
     });
     const exportRequest = await fetchJsonWithRetry(EXPORT_WORKBOOK_API_ENDPOINT, {
@@ -4896,6 +4986,13 @@ async function exportWriterWorkbook() {
     if (exportRequest.error) {
       throw new Error(payload.message || `导出失败：${response.status}`);
     }
+    if (exportingTerminalRows) {
+      appendTerminalEvent({
+        type: WRITER_TERMINAL_EVENTS.EXPORT_RECORDED,
+        batch_id: String(payload.batch_id || terminalEventId("local-export")),
+        asset_indexes: rows.map((row) => row.asset_index)
+      });
+    }
 
     if (payload.download_url) {
       const link = document.createElement("a");
@@ -4906,9 +5003,7 @@ async function exportWriterWorkbook() {
       link.click();
       link.remove();
     }
-    setExportWorkbookStatus(exportingWriterRows
-      ? `已生成包含 ${rows.length} 张已入库卡片的 Excel，并留存批次 ${payload.batch_id || ""}。`
-      : `已生成 Excel，并留存批次 ${payload.batch_id || ""}。`);
+    setExportWorkbookStatus(`已生成包含 ${rows.length} 张卡片的 Excel，并留存批次 ${payload.batch_id || ""}。`);
   } catch (error) {
     setExportWorkbookStatus(error.message || "导出失败。");
   } finally {
@@ -4956,14 +5051,15 @@ function resetTool() {
   state.exportingWorkbook = false;
   state.preparingFiles = false;
   state.filePreparationRunId += 1;
-  state.writerActiveIndex = null;
-  state.writerTransition = "";
-  state.writerFocusPending = false;
   state.writerSaveInFlight = false;
-  state.writerReviewComplete = false;
-  state.writerCompletionFocusPending = false;
   state.writerCompositionActive = false;
   state.retryInFlight = 0;
+  state.reviewWindowStart = 0;
+  state.reviewFocusIndex = null;
+  state.terminalWindowStart = 0;
+  state.terminalLedger = null;
+  state.terminalEventSequence = 0;
+  state.terminalProjectionError = "";
   setExportWorkbookStatus("");
   stopProgressTicker();
   state.completedAssetCount = 0;
@@ -5019,14 +5115,16 @@ function bindEvents() {
       state.backgroundRecognitionBatchId = "";
       state.mode = input.value;
       state.results = [];
-      state.writerActiveIndex = null;
-      state.writerReviewComplete = false;
-      state.writerFocusPending = writerModeActive();
-      state.writerCompletionFocusPending = false;
+      state.terminalLedger = null;
+      state.terminalProjectionError = "";
+      state.reviewWindowStart = 0;
+      state.reviewFocusIndex = null;
+      state.terminalWindowStart = 0;
       state.writerCompositionActive = false;
       resetGenerationTimings();
       closeImageModal();
       renderPreviews();
+      if (terminalModeActive()) ensureTerminalLedger();
       renderResults();
       startBackgroundPreparation("mode_changed");
     });
@@ -5050,24 +5148,47 @@ function bindEvents() {
     void handleFiles(event.dataTransfer.files, { animateIntake: true });
   });
 
+  ["dragenter", "dragover"].forEach((eventName) => {
+    elements.assetPreviewList.addEventListener(eventName, (event) => {
+      if (!terminalModeActive()) return;
+      event.preventDefault();
+      elements.assetPreviewList.classList.add("is-terminal-dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach((eventName) => {
+    elements.assetPreviewList.addEventListener(eventName, (event) => {
+      if (!terminalModeActive()) return;
+      event.preventDefault();
+      elements.assetPreviewList.classList.remove("is-terminal-dragging");
+      if (eventName === "drop") void handleFiles(event.dataTransfer.files, { animateIntake: true });
+    });
+  });
+
   elements.processButton.addEventListener("click", processTitles);
   elements.resetButton.addEventListener("click", resetTool);
   elements.copyAllButton.addEventListener("click", copyAllTitles);
   elements.exportWorkbookButton.addEventListener("click", exportWriterWorkbook);
 
   elements.assetPreviewList.addEventListener("click", (event) => {
-    const writerGoButton = event.target.closest("[data-writer-go]");
-    if (writerGoButton) {
-      setWriterActiveIndex(Number(writerGoButton.dataset.writerGo), {
-        focus: true,
-        animate: event.detail > 0,
-        direction: writerGoButton.dataset.writerDirection
-      });
+    const terminalWindowButton = event.target.closest("[data-terminal-window]");
+    if (terminalWindowButton) {
+      const step = terminalWindowButton.dataset.terminalWindow === "previous" ? -1 : 1;
+      state.terminalWindowStart = Math.max(
+        0,
+        state.terminalWindowStart + step * TERMINAL_RENDER_CARD_WINDOW
+      );
+      renderConversationTerminal({ scrollTo: "start" });
       return;
     }
 
-    const writerExportButton = event.target.closest("[data-writer-export]");
-    if (writerExportButton) {
+    const terminalAddButton = event.target.closest("[data-terminal-add]");
+    if (terminalAddButton) {
+      elements.imageInput.click();
+      return;
+    }
+
+    const terminalExportButton = event.target.closest("[data-terminal-export]");
+    if (terminalExportButton) {
       void exportWriterWorkbook();
       return;
     }
@@ -5086,15 +5207,13 @@ function bindEvents() {
 
     const saveButton = event.target.closest("[data-save-title]");
     if (saveButton) {
-      if (writerModeActive()) void saveWriterTitleAndAdvance(Number(saveButton.dataset.saveTitle), { animate: true });
-      else void saveTitleFeedback(saveButton, { animate: true });
+      void saveTitleFeedback(saveButton, { animate: true });
       return;
     }
 
     const rejectButton = event.target.closest("[data-reject-title]");
     if (rejectButton) {
-      if (writerModeActive()) void rejectWriterTitleAndAdvance(Number(rejectButton.dataset.rejectTitle), { animate: true });
-      else void rejectTitleFeedback(rejectButton, { animate: true });
+      void rejectTitleFeedback(rejectButton, { animate: true });
       return;
     }
 
@@ -5166,10 +5285,6 @@ function bindEvents() {
     const currentPosition = inputs.indexOf(titleInput);
     const nextResultIndex = Number(inputs[currentPosition + 1]?.dataset.titleInput);
     finalizeTitleOverride(titleInput);
-    if (writerModeActive()) {
-      void saveWriterTitleAndAdvance(resultIndex, { animate: false });
-      return;
-    }
     if (saveButton && !saveButton.disabled) {
       void saveTitleFeedback(saveButton, { animate: false }).then((saved) => {
         if (!saved || !Number.isFinite(nextResultIndex)) return;
