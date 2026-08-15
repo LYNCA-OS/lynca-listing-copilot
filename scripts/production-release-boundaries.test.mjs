@@ -380,40 +380,59 @@ assert.doesNotMatch(writerJourneyWorkflow,
 assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow,
-  /actions\/checkout@v5\s*\n\s*with:\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 4/,
-  "main history must retain repair, failed parent, activation, and rollback independently of v42");
+  /actions\/checkout@v5\s*\n\s*with:\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 2/,
+  "main checkout must retain only the candidate and its direct parent");
 assert.equal(
   [...workflow.matchAll(
-    /git fetch --no-tags --depth=4 origin main:refs\/remotes\/origin\/main/g
+    /git fetch --no-tags --depth=2 origin main:refs\/remotes\/origin\/main/g
   )].length,
   2,
-  "both main-ref freshness checks must retain the stable four-object window"
+  "both main-ref freshness checks must keep the fixed candidate/parent window"
 );
+const exactReleaseObjectBindings = [
+  ["failed_v4", "d11830049cf7e19016844dbb44ee30178f8ee925",
+    "6cfac615bf282537f7ae7ae81e20e4441ad6de5f",
+    "refs/heads/lynca-failed-v4-verifier"],
+  ["activation_v4", "2edf243fb8841e2e04ffff64b9b8ddf4722d0efa",
+    "afb54d691df67628b9c92d1d14f6cd20fddca8a3",
+    "refs/heads/lynca-tcg-v4-activation"],
+  ["rollback_v4", "85ecd6ebfd032f47e8884579c4fb87ddf121aa16",
+    "66bc3bdafd5d3db9db278b16f79a3907c332c017",
+    "refs/heads/lynca-tcg-v4-rollback"],
+  ["historical_v42", "20298d18ea540a7dd5a660458a1cb9646ba65342",
+    "ec560447430bb2ba8206dc1282e514fe41ee7e7c",
+    "refs/heads/lynca-historical-v42"]
+];
+const occurrences = (source, fragment) => source.split(fragment).length - 1;
+for (const [name, sha, tree, localRef] of exactReleaseObjectBindings) {
+  assert.equal(occurrences(workflow, `${name}_sha=${sha}`), 2,
+    `both deploy freshness gates must pin ${name}`);
+  assert.equal(occurrences(workflow, `${name}_ref=${localRef}`), 2,
+    `both deploy freshness gates must pin the ${name} local ref`);
+  assert.equal(occurrences(workflow, `"$${name}_sha:$${name}_ref"`), 1,
+    `${name} must be fetched exactly once through its immutable refspec`);
+  assert.equal(occurrences(workflow, `"${tree}"`), 2,
+    `both deploy freshness gates must freeze the ${name} tree`);
+  assert.equal(occurrences(ciWorkflow, `${name}_sha=${sha}`), 1,
+    `PR CI must pin ${name}`);
+  assert.equal(occurrences(ciWorkflow, `${name}_ref=${localRef}`), 1,
+    `PR CI must pin the ${name} local ref`);
+  assert.equal(occurrences(ciWorkflow, `"$${name}_sha:$${name}_ref"`), 1,
+    `PR CI must fetch ${name} through its immutable refspec`);
+  assert.equal(occurrences(ciWorkflow, `"${tree}"`), 1,
+    `PR CI must freeze the ${name} tree`);
+}
 assert.equal(
   [...workflow.matchAll(
-    /historical_v42_ref=refs\/heads\/lynca-historical-v42/g
-  )].length,
-  2,
-  "both gates must bind historical v42 through the same local ref"
-);
-assert.equal(
-  [...workflow.matchAll(
-    /git fetch --no-tags --refetch --depth=1 origin \\\n+\s*"\$historical_v42_sha:\$historical_v42_ref"/g
+    /git fetch --no-tags --refetch --depth=1 origin \\/g
   )].length,
   1,
-  "the exact v42 commit and tree must be refetched once before release tests"
-);
-assert.equal(
-  [...workflow.matchAll(
-    /test "\$\(git rev-parse "\$historical_v42_ref"\)" = "\$historical_v42_sha"/g
-  )].length,
-  2,
-  "the exact v42 ref must survive both main freshness gates"
+  "all immutable release objects must be refetched once before release tests"
 );
 assert.doesNotMatch(workflow, /git fetch --no-tags --depth=1 origin main:/,
-  "a depth-one main re-fetch would erase the rollback parent required by selection");
-assert.doesNotMatch(workflow, /git fetch --no-tags --depth=2/,
-  "a depth-two main re-fetch would lose the deployed rollback from the repair window");
+  "a depth-one main re-fetch would erase the direct parent required by selection");
+assert.doesNotMatch(workflow, /(?:fetch-depth:|--depth=)[34]/,
+  "release topology must not encode an ever-growing ancestry window");
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
 assert.doesNotMatch(workflow, /VERCEL_DEPLOY_HOOK_URL|Deploy Hook|vercel-deploy-hook/,
   "a branch-reading deploy hook can race with main and must not mutate production");
@@ -604,18 +623,17 @@ assert.equal(
   "one repository script must own the complete checkout-independent release suite"
 );
 assert.match(ciWorkflow,
-  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 4/,
-  "PR CI must test the exact head while retaining the failed verifier, activation, and rollback");
+  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 2/,
+  "PR CI must test the exact head with only its direct parent in the shallow window");
 assert.equal(
   [...ciWorkflow.matchAll(
-    /git fetch --no-tags --refetch --depth=1 origin \\\n+\s*"\$historical_v42_sha:\$historical_v42_ref"/g
+    /git fetch --no-tags --refetch --depth=1 origin \\/g
   )].length,
   1,
-  "PR CI must fetch exact v42 through the stable local ref before release tests"
+  "PR CI must refetch the exact immutable release object set once"
 );
-assert.match(ciWorkflow,
-  /test "\$\(git rev-parse "\$historical_v42_sha\^\{tree\}"\)" = \\\n+\s*"ec560447430bb2ba8206dc1282e514fe41ee7e7c"/,
-  "PR CI must freeze the exact historical v42 tree instead of trusting ref reachability");
+assert.doesNotMatch(ciWorkflow, /(?:fetch-depth:|--depth=)[34]/,
+  "PR CI must not encode an ever-growing ancestry window");
 assert.match(ciWorkflow, /run: npm run test:release/,
   "CI and production deploy must execute the same release suite");
 assert.doesNotMatch(packageJson.scripts["test:release"], /test:internal-library/,

@@ -435,6 +435,7 @@ import {
   TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_CHANGED_PATHS,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_EXACT_RELEASE_OBJECTS,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_FAILED_CASE_ID,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_FAILED_PHASE,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_FAILED_RUN_ID,
@@ -5284,9 +5285,37 @@ assert.equal(tcgGrammarContextLiveWjV4RepairProof.selection_schema_version,
   "production-release-selection-v50");
 assert.equal(tcgGrammarContextLiveWjV4RepairProof.rollback_lineage_schema_version,
   "production-release-rollback-lineage-receipt-v51");
-assert.equal(tcgGrammarContextLiveWjV4RepairProof.checkout_depth, 4);
+assert.equal(tcgGrammarContextLiveWjV4RepairProof.checkout_depth, 2);
 assert.equal(tcgGrammarContextLiveWjV4RepairProof.historical_fixture_mode,
-  "depth4-plus-exact-v42-local-ref");
+  "depth2-plus-exact-immutable-release-objects");
+assert.deepEqual(tcgGrammarContextLiveWjV4RepairProof.exact_release_objects,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_EXACT_RELEASE_OBJECTS);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_EXACT_RELEASE_OBJECTS, [
+  {
+    role: "FAILED_LIVE_WJ_V4_VERIFIER",
+    git_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_PARENT_SHA,
+    git_tree_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_PARENT_TREE_SHA,
+    local_ref: "refs/heads/lynca-failed-v4-verifier"
+  },
+  {
+    role: "TCG_GRAMMAR_CONTEXT_V4_ACTIVATION",
+    git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+    git_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+    local_ref: "refs/heads/lynca-tcg-v4-activation"
+  },
+  {
+    role: "TCG_GRAMMAR_CONTEXT_V4_ROLLBACK",
+    git_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_SHA,
+    git_tree_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_TREE_SHA,
+    local_ref: "refs/heads/lynca-tcg-v4-rollback"
+  },
+  {
+    role: "EXTERNAL_IDENTITY_V3_ACTIVATION_V42",
+    git_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha,
+    git_tree_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_tree_sha,
+    local_ref: "refs/heads/lynca-historical-v42"
+  }
+]);
 assert.equal(tcgGrammarContextLiveWjV4RepairProof.forward_readback_receipt_contract,
   "STATUS_SPECIFIC_EXACT_APPLIED_OR_NOT_REQUIRED_V1");
 assert.equal(tcgGrammarContextLiveWjV4RepairProof.runtime_behavior_changed, false);

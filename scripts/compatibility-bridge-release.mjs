@@ -616,7 +616,7 @@ export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_SHA =
 export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_TREE_SHA =
   TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA;
 export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_RUNTIME_CONTRACT_SHA256 =
-  "c1dfa2752624354b185c76770bbb1ddd15d39143f25024f3b162366693c502f5";
+  "838bdafae886d6f53e214bad1a39ddab335e18e6bf61d7dfbc53274acd5f787b";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V36_SHA256 =
   "e8b4c161e1bbbfb58786fa44ea3d40b15cc6fe8573c9ab8a00100cf7c146e43f";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V37_SHA256 =
@@ -1811,6 +1811,35 @@ export const EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42 = Object.f
   contract_sha256:
     "eb3613df8f8b53f9d751590a484252c6a177c2955b677c00fbab2b9929f9db30"
 });
+
+export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_EXACT_RELEASE_OBJECTS =
+  Object.freeze([
+    Object.freeze({
+      role: "FAILED_LIVE_WJ_V4_VERIFIER",
+      git_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_PARENT_SHA,
+      git_tree_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_PARENT_TREE_SHA,
+      local_ref: "refs/heads/lynca-failed-v4-verifier"
+    }),
+    Object.freeze({
+      role: "TCG_GRAMMAR_CONTEXT_V4_ACTIVATION",
+      git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+      git_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+      local_ref: "refs/heads/lynca-tcg-v4-activation"
+    }),
+    Object.freeze({
+      role: "TCG_GRAMMAR_CONTEXT_V4_ROLLBACK",
+      git_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_SHA,
+      git_tree_sha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_TREE_SHA,
+      local_ref: "refs/heads/lynca-tcg-v4-rollback"
+    }),
+    Object.freeze({
+      role: "EXTERNAL_IDENTITY_V3_ACTIVATION_V42",
+      git_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha,
+      git_tree_sha:
+        EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_tree_sha,
+      local_ref: "refs/heads/lynca-historical-v42"
+    })
+  ]);
 
 export const EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43 = Object.freeze({
   schema_version: "production-release-rollback-lineage-receipt-v43",
@@ -7751,13 +7780,12 @@ export function tcgGrammarContextLiveWjV4RepairRuntimeContractProof() {
     base_repair_selection_schema_version: "production-release-selection-v48",
     base_repair_runtime_contract_sha256:
       TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256,
-    checkout_depth: 4,
+    checkout_depth: 2,
     exact_historical_fetch_depth: 1,
     exact_historical_fetch_refetch: true,
-    exact_historical_local_ref: "refs/heads/lynca-historical-v42",
-    required_historical_git_object_sha:
-      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha,
-    historical_fixture_mode: "depth4-plus-exact-v42-local-ref",
+    exact_release_objects:
+      TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_EXACT_RELEASE_OBJECTS,
+    historical_fixture_mode: "depth2-plus-exact-immutable-release-objects",
     forward_readback_receipt_contract:
       "STATUS_SPECIFIC_EXACT_APPLIED_OR_NOT_REQUIRED_V1",
     active_writer_contract_id:
