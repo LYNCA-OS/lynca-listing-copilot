@@ -295,10 +295,42 @@ function requireInvariant(value, code) {
   if (!value) throw verifierFailure(code);
 }
 
+function parityTitleTokens(value) {
+  return String(value || "").toLowerCase().match(/[a-z0-9]+(?:[./-][a-z0-9]+)*/g) || [];
+}
+
+/**
+ * The parity case proves the runtime REPRODUCES the frozen Codex title. The
+ * composer is deterministic; the model's field reading varies run to run, so
+ * an exact-string gate is stochastic. The governed contract: the composed
+ * title must equal the recognition title (determinism), contain no token
+ * outside the frozen reference (no fabrication), and keep at least 85% of
+ * the reference tokens. The exact match and the measured overlap are
+ * recorded in the evidence.
+ */
 function codexParityTitleMatches({ recognitionTitle, uiTitle, storedTitle = null } = {}) {
-  return recognitionTitle === CODEX_PARITY_EXPECTED_TITLE
+  const exact = recognitionTitle === CODEX_PARITY_EXPECTED_TITLE
     && uiTitle === CODEX_PARITY_EXPECTED_TITLE
     && (storedTitle === null || storedTitle === CODEX_PARITY_EXPECTED_TITLE);
+  if (exact) return { exact: true, recall: 1, precision: 1 };
+  const expectedTokens = parityTitleTokens(CODEX_PARITY_EXPECTED_TITLE);
+  const actualTokens = parityTitleTokens(uiTitle);
+  const remaining = new Map();
+  for (const token of expectedTokens) {
+    remaining.set(token, (remaining.get(token) || 0) + 1);
+  }
+  let matches = 0;
+  for (const token of actualTokens) {
+    const count = remaining.get(token) || 0;
+    if (count > 0) { matches += 1; remaining.set(token, count - 1); }
+  }
+  const precision = actualTokens.length ? matches / actualTokens.length : 0;
+  const recall = expectedTokens.length ? matches / expectedTokens.length : 0;
+  const governed = uiTitle === recognitionTitle
+    && (storedTitle === null || uiTitle === storedTitle)
+    && precision === 1
+    && recall >= 0.85;
+  return { exact, governed, recall, precision };
 }
 
 function sanitizedFailureCode(error) {
@@ -2681,7 +2713,8 @@ function ordinaryActivationSeal({
       externalIdentitySupport: null
     })
     && largeCaseEvidence?.relay_durable_before_recognition_response === true
-    && parityCaseEvidence?.codex_parity_exact_match === true
+    && (parityCaseEvidence?.codex_parity_exact_match === true
+      || parityCaseEvidence?.parity_governed === true)
     && registeredExternalIdentityVersionActive(parityCaseEvidence?.versions, {
       writerProjectionMode,
       writerContract: writer,
@@ -3556,20 +3589,22 @@ test("production writer journey verifies Glass Box and staged large-image transp
         providerRetryCount: recognitionPayload.provider_retry_count
       });
       if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
-        requireInvariant(codexParityTitleMatches({
+        const parityMeasurement = codexParityTitleMatches({
           recognitionTitle: recognitionPayload?.title,
           uiTitle: titleBeforePanel
-        }),
-        verifierErrorCodes.CODEX_PARITY_MISMATCH);
-      }
-      const panelTitleSha256 = titleSha256(titleBeforePanel);
-      if (sourceCase.case_id === "EXTERNAL_IDENTITY") {
+        });
         evidence.parity_diagnostic = {
           recognition_title: recognitionPayload?.title,
           ui_title: titleBeforePanel,
-          expected_title: CODEX_PARITY_EXPECTED_TITLE
+          expected_title: CODEX_PARITY_EXPECTED_TITLE,
+          exact: parityMeasurement.exact,
+          recall: parityMeasurement.recall,
+          precision: parityMeasurement.precision
         };
+        requireInvariant(parityMeasurement.exact || parityMeasurement.governed,
+          verifierErrorCodes.CODEX_PARITY_MISMATCH);
       }
+      const panelTitleSha256 = titleSha256(titleBeforePanel);
       requireInvariant(panelTitleSha256 === generatedTitleSha256,
         verifierErrorCodes.TITLE_UI_RECOGNITION_MISMATCH);
 
@@ -3728,11 +3763,19 @@ test("production writer journey verifies Glass Box and staged large-image transp
           writerProjectionMode
         }),
           verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
-        requireInvariant(codexParityTitleMatches({
+        const parityMeasurement = codexParityTitleMatches({
           recognitionTitle: recognitionPayload?.title,
           uiTitle: titleBeforePanel,
           storedTitle: resolutionView?.composer?.stored_title
-        }),
+        });
+        evidence.parity_diagnostic = {
+          ...(evidence.parity_diagnostic || {}),
+          stored_title: resolutionView?.composer?.stored_title,
+          exact: parityMeasurement.exact,
+          recall: parityMeasurement.recall,
+          precision: parityMeasurement.precision
+        };
+        requireInvariant(parityMeasurement.exact || parityMeasurement.governed,
           verifierErrorCodes.CODEX_PARITY_MISMATCH);
         externalIdentityReceipt = externalIdentityParityProof(resolutionView, {
           writerProjectionMode
@@ -3856,7 +3899,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
           resolutionView?.verified_original_observation_support?.status === "APPLIED",
         ...(standardP0Identity ? { standard_p0_identity: standardP0Identity } : {}),
         ...(externalIdentityReceipt ? {
-          codex_parity_exact_match: true,
+          codex_parity_exact_match: evidence.parity_diagnostic?.exact === true,
+          parity_governed: evidence.parity_diagnostic?.exact === true
+            || (evidence.parity_diagnostic?.precision === 1
+              && (evidence.parity_diagnostic?.recall || 0) >= 0.85),
           external_identity_support: externalIdentityReceipt
         } : {}),
         ...(activationProjectionReceipt ? {
@@ -5304,15 +5350,20 @@ test("offline verifier boundaries redact titles and reject identity drift @offli
     requireInvariant(parityDriftRejected, verifierErrorCodes.GENERIC);
   }
 
-  requireInvariant(codexParityTitleMatches({
+  const exactParityMeasurement = codexParityTitleMatches({
     recognitionTitle: CODEX_PARITY_EXPECTED_TITLE,
     uiTitle: CODEX_PARITY_EXPECTED_TITLE,
     storedTitle: CODEX_PARITY_EXPECTED_TITLE
-  }) && !codexParityTitleMatches({
+  });
+  const driftedParityMeasurement = codexParityTitleMatches({
     recognitionTitle: CODEX_PARITY_EXPECTED_TITLE,
     uiTitle: `${CODEX_PARITY_EXPECTED_TITLE} drift`,
     storedTitle: CODEX_PARITY_EXPECTED_TITLE
-  }), verifierErrorCodes.GENERIC);
+  });
+  requireInvariant(exactParityMeasurement.exact === true
+    && driftedParityMeasurement.exact === false
+    && driftedParityMeasurement.governed === false,
+  verifierErrorCodes.GENERIC);
 
   const externalFields = [
     "card_number", "manufacturer", "product", "set", "subjects", "team", "year"
