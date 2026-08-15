@@ -815,8 +815,8 @@ const subsetAOriginalSha256 = WRITER_JOURNEY_STANDARD_P0_SOURCE_CONTRACT.images
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256
 }).resolution_contract_sha256,
-COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256,
-"the behavior-neutral bridge must retain the captured Production resolution pair");
+COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3.contract_sha256,
+"the active v4 writer must use the external-v3 verified resolution pair");
 const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256,
   projectionActivation: activeVerifiedProjection
@@ -824,12 +824,12 @@ const activeVerifiedSelection = selectCsmPostObservationResolutionContract({
 assert.equal(activeVerifiedSelection.mode,
   "EXTERNAL_AND_VERIFIED_ORIGINAL_CLOSED_PROJECTION");
 assert.equal(activeVerifiedSelection.resolution_contract_sha256,
-  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_V1.contract_sha256);
+  COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3.contract_sha256);
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: ["1".repeat(64), "2".repeat(64)],
   projectionActivation: activeVerifiedProjection
-}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256,
-"the captured bridge writer must retain its external-only contract for an unmatched set");
+}).resolution_contract_sha256, EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.contract_sha256,
+"the active v4 writer must retain external-v3 authority for an unmatched set");
 assert.equal(selectCsmPostObservationResolutionContract({
   originalImageSha256: subsetAOriginalSha256,
   projectionActivation: rollbackVerifiedProjection
@@ -985,12 +985,20 @@ function tcgGrammarContextCheckpointFixture({
   recognitionImageFingerprints = originalImageFingerprints,
   verifiedOriginalImageSha256 = null,
   providerAttemptNumber = 1,
-  providerResponseId = "resp-tcg-grammar-context-v4"
+  providerResponseId = "resp-tcg-grammar-context-v4",
+  providerClientRequestId = null,
+  subject = "Eternatus"
 } = {}) {
   const writer = CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
+  const boundProviderClientRequestId = providerClientRequestId
+    || deterministicProviderClientRequestId({
+      operationKey,
+      payloadHash,
+      attempt: providerAttemptNumber
+    });
   const raw = {
     year: "", ip: "", language: "", manufacturer: "", product: "",
-    set, subjects: ["Eternatus"], team: "", card_name: "",
+    set, subjects: [subject], team: "", card_name: "",
     release_variant: "", surface_color: "", parallel_family: "",
     parallel_exact: "", descriptive_rarity: "", card_number: cardNumber,
     serial: "", attributes: [], grading_info: null, grammar, lot_count: "",
@@ -1024,11 +1032,7 @@ function tcgGrammarContextCheckpointFixture({
       operationPayloadSha256: payloadHash,
       originalImageFingerprints,
       recognitionImageFingerprints,
-      providerClientRequestId: deterministicProviderClientRequestId({
-        operationKey,
-        payloadHash,
-        attempt: providerAttemptNumber
-      }),
+      providerClientRequestId: boundProviderClientRequestId,
       providerResponseId,
       tenantId,
       recognitionSessionId
@@ -1143,11 +1147,7 @@ function tcgGrammarContextCheckpointFixture({
     response_parser_version: writer.canonical_fields.response_parser_version,
     provider_attempt_number: providerAttemptNumber,
     provider_retry_count: Math.max(0, providerAttemptNumber - 1),
-    provider_client_request_id: deterministicProviderClientRequestId({
-      operationKey,
-      payloadHash,
-      attempt: providerAttemptNumber
-    }),
+    provider_client_request_id: boundProviderClientRequestId,
     provider_response_id: providerResponseId,
     csm_rows: rows
   };
@@ -1766,6 +1766,7 @@ function tcgGrammarContextCheckpointFixture({
   ];
   const originalSetSha256 =
     "61ee1d99b10690cf5877e9b5f08b53ba98051a3961d0a9e5c04f9e8e130db159";
+  const imageFingerprints = originalSha256.map((sha) => `sha256:${sha}`);
   const canonical = {
     asset_id: "asset-1",
     image_generation_id: "asset-1",
@@ -1857,7 +1858,7 @@ function tcgGrammarContextCheckpointFixture({
   }
   assert.equal(
     result.title,
-    "1996-97 Topps Stadium Club High Risers #HR14 Michael Jordan Chicago Bulls"
+    "1996-97 Topps Stadium Club High Risers Michael Jordan Chicago Bulls"
   );
   assert.equal(result.external_identity_support, undefined);
   assert.equal(Object.hasOwn(result.fields, "search_optimization"), false,
@@ -1867,7 +1868,7 @@ function tcgGrammarContextCheckpointFixture({
     "contract_version", "recognition_session_id", "resolver_version"
   ]);
   assert.deepEqual(Object.keys(result.csm_rows.output).sort(), [
-    "composer_version", "contract_version"
+    "composer_version", "contract_version", "marketplace_profile_version"
   ]);
   for (const hidden of [...originalSha256, originalSetSha256]) {
     assert.doesNotMatch(JSON.stringify(result), new RegExp(hidden),
@@ -1876,16 +1877,16 @@ function tcgGrammarContextCheckpointFixture({
   assert.doesNotMatch(JSON.stringify(result), /original_set_sha256|source_ref/);
   assert.equal(
     persistenceInput.csm_persistence_checkpoint.external_identity_receipt.status,
-    "APPLIED"
+    "ABSTAINED"
+  );
+  assert.equal(
+    persistenceInput.csm_persistence_checkpoint.external_identity_receipt.reason,
+    "MISSING_REQUIRED_ANCHOR"
   );
   assert.equal(Object.hasOwn(
     persistenceInput.csm_persistence_checkpoint.external_identity_receipt,
     "original_set_sha256"
-  ), true);
-  assert.equal(
-    persistenceInput.csm_persistence_checkpoint.external_identity_receipt.original_set_sha256,
-    originalSetSha256
-  );
+  ), false);
   assert.equal(
     persistenceInput.csm_persistence_checkpoint.external_identity_receipt.request_original_set_sha256,
     originalSetSha256
@@ -1898,7 +1899,9 @@ function tcgGrammarContextCheckpointFixture({
     recognitionSessionId: checkpointMarker.recognition_session_id,
     executionContractSha256: persistenceInput.execution_contract_sha256,
     resolutionContractSha256: persistenceInput.resolution_contract_sha256,
-    originalSetSha256
+    originalSetSha256,
+    originalImageFingerprints: imageFingerprints,
+    recognitionImageFingerprints: imageFingerprints
   }).title, result.title);
   const identityReceiptTampered = structuredClone(persistenceInput);
   identityReceiptTampered.csm_persistence_checkpoint.external_identity_receipt
@@ -1910,7 +1913,9 @@ function tcgGrammarContextCheckpointFixture({
     recognitionSessionId: checkpointMarker.recognition_session_id,
     executionContractSha256: persistenceInput.execution_contract_sha256,
     resolutionContractSha256: persistenceInput.resolution_contract_sha256,
-    originalSetSha256
+    originalSetSha256,
+    originalImageFingerprints: imageFingerprints,
+    recognitionImageFingerprints: imageFingerprints
   }), (error) => error.code === "csm_persistence_checkpoint_invalid"
     && error.detail === "external_identity_receipt_mismatch");
   assert.equal(result.csm_persistence_checkpoint, undefined);
@@ -2267,7 +2272,7 @@ function passthroughAuthority({
 }
 
 function preparedResult(recognitionSessionId, title = "Test title", {
-  writer = CSM_PROJECTION_ACTIVATION.active_writer
+  writer = CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
 } = {}) {
   const externalResolutionContract = writer.external_identity.registry_release_id
       === EXTERNAL_IDENTITY_RESOLUTION_CONTRACT_V3.registry_release_id
@@ -2526,9 +2531,7 @@ function successfulDependencies({
         assert.ok(Array.isArray(fingerprints) && fingerprints.length > 0);
         assert.ok(fingerprints.every((value) => /^sha256:[0-9a-f]{64}$/.test(value)));
       }
-      return {
-        ...preparedResult(input.recognitionSessionId),
-        execution_contract_sha256: buildCsmModelExecutionContractSha256({
+      const executionContract = buildCsmModelExecutionContract({
           provider: input.provider,
           model: input.model,
           requestedEffort: input.effort,
@@ -2537,7 +2540,24 @@ function successfulDependencies({
           semanticPromptVersion: input.promptVersion,
           transportProfile: input.transportProfile,
           imageUrls: input.imageUrls
-        })
+      });
+      const activeFixture = tcgGrammarContextCheckpointFixture({
+          recognitionSessionId: input.recognitionSessionId,
+          set: "",
+          cardNumber: "",
+          payloadHash: input.sourceAuthorityContext.operationPayloadSha256,
+          originalImageFingerprints:
+            input.sourceAuthorityContext.originalImageFingerprints,
+          recognitionImageFingerprints:
+            input.sourceAuthorityContext.recognitionImageFingerprints,
+          providerClientRequestId: input.providerClientRequestId,
+          providerResponseId: "resp-successful-dependencies",
+          subject: "Test title"
+      });
+      return {
+        ...activeFixture,
+        execution_contract_sha256: sha256ExecutionContractValue(executionContract),
+        execution_contract: executionContract
       };
     },
     persistPath: async ({ prepared }) => {
@@ -2805,12 +2825,35 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
         return "data:image/jpeg;base64,derived";
       },
       createSession: async () => ({ persistence: { recognition_session: { saved: true } } }),
-      preparePath: async ({ recognitionSessionId, imageUrls, transportProfile }) => {
+      preparePath: async ({
+        recognitionSessionId,
+        imageUrls,
+        transportProfile,
+        providerClientRequestId,
+        sourceAuthorityContext
+      }) => {
         assert.deepEqual(imageUrls, ["data:image/jpeg;base64,derived"]);
         assert.equal(transportProfile, CSM_STAGED_TRANSPORT_PROFILE);
+        const executionContract = buildCsmModelExecutionContract({
+          transportProfile,
+          imageUrls,
+          writerContract: CSM_PROJECTION_ACTIVATION.active_writer
+        });
         return {
-          ...preparedResult(recognitionSessionId, "Staged title"),
-          execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256
+          ...tcgGrammarContextCheckpointFixture({
+            recognitionSessionId,
+            set: "",
+            cardNumber: "",
+            payloadHash: sourceAuthorityContext.operationPayloadSha256,
+            originalImageFingerprints: sourceAuthorityContext.originalImageFingerprints,
+            recognitionImageFingerprints:
+              sourceAuthorityContext.recognitionImageFingerprints,
+            providerClientRequestId,
+            providerResponseId: "resp-staged-identity",
+            subject: "Staged title"
+          }),
+          execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
+          execution_contract: executionContract
         };
       },
       persistPath: async ({ prepared }) => ({
@@ -2907,10 +2950,25 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     content_sha256: "d".repeat(64),
     original_content_sha256: IMAGE_HASH
   }];
+  const stagedExecutionContract = buildCsmModelExecutionContract({
+    transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1),
+    writerContract: CSM_PROJECTION_ACTIVATION.active_writer
+  });
   const checkpoint = buildCsmPersistenceCheckpoint({
     prepared: {
-      ...preparedResult(sessionId, "Resume-only title"),
+      ...tcgGrammarContextCheckpointFixture({
+        recognitionSessionId: sessionId,
+        set: "",
+        cardNumber: "",
+        operationKey,
+        payloadHash,
+        originalImageFingerprints: task.image_fingerprints,
+        recognitionImageFingerprints: task.recognition_fingerprints,
+        subject: "Resume-only title"
+      }),
       execution_contract_sha256: task.execution_contract_sha256,
+      execution_contract: stagedExecutionContract,
       model: task.model,
       requested_effort: task.reasoning_effort,
       image_detail: task.detail,
@@ -2924,11 +2982,13 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     recognitionInput,
     executionContractSha256: task.execution_contract_sha256,
     resolutionContractSha256: task.resolution_contract_sha256,
+    originalImageFingerprints: task.image_fingerprints,
+    recognitionImageFingerprints: task.recognition_fingerprints,
     operationScope: "derived_checkpoint"
   });
   assert.equal(
     checkpoint.csm_persistence_checkpoint.schema_version,
-    CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION
+    CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION
   );
   assert.equal(
     checkpoint.csm_persistence_checkpoint.execution_contract_sha256,
@@ -2941,6 +3001,8 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     recognitionSessionId: sessionId,
     executionContractSha256: task.execution_contract_sha256,
     resolutionContractSha256: task.resolution_contract_sha256,
+    originalImageFingerprints: task.image_fingerprints,
+    recognitionImageFingerprints: task.recognition_fingerprints,
     operationScope: "derived_checkpoint"
   }).title, checkpoint.title);
   assert.throws(() => validateCsmPersistenceCheckpoint(checkpoint, {
@@ -2949,6 +3011,7 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     payloadHash,
     recognitionSessionId: sessionId,
     executionContractSha256: "e".repeat(64),
+    resolutionContractSha256: task.resolution_contract_sha256,
     operationScope: "derived_checkpoint"
   }), (error) => error.code === "csm_persistence_checkpoint_invalid"
     && error.detail === "execution_contract_sha256_mismatch");
@@ -2966,6 +3029,7 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     payloadHash,
     recognitionSessionId: sessionId,
     executionContractSha256: task.execution_contract_sha256,
+    resolutionContractSha256: task.resolution_contract_sha256,
     operationScope: "derived_checkpoint"
   }), (error) => error.code === "csm_persistence_checkpoint_invalid"
     && error.detail === "execution_contract_sha256_mismatch");
@@ -3344,10 +3408,25 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     derived_available: false,
     derived_bytes: null
   }];
+  const directExecutionContract = buildCsmModelExecutionContract({
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1),
+    writerContract: CSM_PROJECTION_ACTIVATION.active_writer
+  });
   const checkpoint = buildCsmPersistenceCheckpoint({
     prepared: {
-      ...preparedResult(sessionId, "Recovered normal title"),
+      ...tcgGrammarContextCheckpointFixture({
+        recognitionSessionId: sessionId,
+        set: "",
+        cardNumber: "",
+        operationKey,
+        payloadHash,
+        originalImageFingerprints: task.image_fingerprints,
+        recognitionImageFingerprints: task.recognition_fingerprints,
+        subject: "Recovered normal title"
+      }),
       execution_contract_sha256: task.execution_contract_sha256,
+      execution_contract: directExecutionContract,
       model: task.model,
       requested_effort: task.reasoning_effort,
       image_detail: task.detail,
@@ -3360,7 +3439,9 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
     recognitionSessionDeferred: true,
     recognitionInput,
     executionContractSha256: task.execution_contract_sha256,
-    resolutionContractSha256: task.resolution_contract_sha256
+    resolutionContractSha256: task.resolution_contract_sha256,
+    originalImageFingerprints: task.image_fingerprints,
+    recognitionImageFingerprints: task.recognition_fingerprints
   });
   const firstSession = buildCsmRecognitionSessionRow({
     sessionId,
@@ -3541,11 +3622,32 @@ for (const failureCode of ["LOT_QUANTITY_UNRESOLVED", "LOT_SINGLE_CARD"]) {
       deferredSessionArgs = args;
       return { persistence: { recognition_session: { saved: true, deferred: true } } };
     },
-    preparePath: async ({ recognitionSessionId }) => {
+    preparePath: async ({
+      recognitionSessionId,
+      providerClientRequestId,
+      sourceAuthorityContext
+    }) => {
       providerCalls += 1;
+      const executionContract = buildCsmModelExecutionContract({
+        transportProfile: CSM_STAGED_TRANSPORT_PROFILE,
+        imageUrls: csmExecutionContractImageUrls(1),
+        writerContract: CSM_PROJECTION_ACTIVATION.active_writer
+      });
       return {
-        ...preparedResult(recognitionSessionId, "Recovered staged title"),
+        ...tcgGrammarContextCheckpointFixture({
+          recognitionSessionId,
+          set: "",
+          cardNumber: "",
+          payloadHash: sourceAuthorityContext.operationPayloadSha256,
+          originalImageFingerprints: sourceAuthorityContext.originalImageFingerprints,
+          recognitionImageFingerprints:
+            sourceAuthorityContext.recognitionImageFingerprints,
+          providerClientRequestId,
+          providerResponseId: "resp-staged-upload-loss",
+          subject: "Recovered staged title"
+        }),
         execution_contract_sha256: CURRENT_STAGED_EXECUTION_SHA256,
+        execution_contract: executionContract,
         model: "model-before-deployment-drift",
         requested_effort: "effort-before-deployment-drift",
         image_detail: "high",
@@ -4065,11 +4167,34 @@ await assert.rejects(
     return durable;
   };
   const dependencies = successfulDependencies({ events, authority });
-  dependencies.preparePath = async ({ recognitionSessionId }) => {
+  dependencies.preparePath = async ({
+    recognitionSessionId,
+    providerClientRequestId,
+    sourceAuthorityContext,
+    imageUrls,
+    transportProfile
+  }) => {
     prepareCalls += 1;
+    const executionContract = buildCsmModelExecutionContract({
+      transportProfile,
+      imageUrls,
+      writerContract: CSM_PROJECTION_ACTIVATION.active_writer
+    });
     return {
-      ...preparedResult(recognitionSessionId, "Resume title"),
-      execution_contract_sha256: CURRENT_DIRECT_EXECUTION_SHA256
+      ...tcgGrammarContextCheckpointFixture({
+        recognitionSessionId,
+        set: "",
+        cardNumber: "",
+        payloadHash: sourceAuthorityContext.operationPayloadSha256,
+        originalImageFingerprints: sourceAuthorityContext.originalImageFingerprints,
+        recognitionImageFingerprints:
+          sourceAuthorityContext.recognitionImageFingerprints,
+        providerClientRequestId,
+        providerResponseId: "resp-resume-title",
+        subject: "Resume title"
+      }),
+      execution_contract_sha256: CURRENT_DIRECT_EXECUTION_SHA256,
+      execution_contract: executionContract
     };
   };
   dependencies.persistPath = async ({ prepared }) => {
@@ -4115,17 +4240,34 @@ await assert.rejects(
   const operationKey = buildLunaDirectOperationKey(task);
   const payloadHash = buildLunaDirectPayloadHash(task);
   const sessionId = deterministicCsmSessionId(operationKey);
+  const executionContract = buildCsmModelExecutionContract({
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1),
+    writerContract: CSM_PROJECTION_ACTIVATION.active_writer
+  });
   const durable = buildCsmPersistenceCheckpoint({
     prepared: {
-      ...preparedResult(sessionId, "Deferred resume title"),
-      execution_contract_sha256: task.execution_contract_sha256
+      ...tcgGrammarContextCheckpointFixture({
+        recognitionSessionId: sessionId,
+        set: "",
+        cardNumber: "",
+        operationKey,
+        payloadHash,
+        originalImageFingerprints: task.image_fingerprints,
+        recognitionImageFingerprints: task.recognition_fingerprints,
+        subject: "Deferred resume title"
+      }),
+      execution_contract_sha256: task.execution_contract_sha256,
+      execution_contract: executionContract
     },
     tenantId: "tenant-1",
     operationKey,
     payloadHash,
     recognitionSessionId: sessionId,
     executionContractSha256: task.execution_contract_sha256,
-    resolutionContractSha256: task.resolution_contract_sha256
+    resolutionContractSha256: task.resolution_contract_sha256,
+    originalImageFingerprints: task.image_fingerprints,
+    recognitionImageFingerprints: task.recognition_fingerprints
   });
   const events = [];
   const authority = passthroughAuthority();
@@ -4161,7 +4303,8 @@ await assert.rejects(
     tenantId: "tenant-1",
     operationKey,
     payloadHash: legacyPayloadHash,
-    recognitionSessionId: sessionId
+    recognitionSessionId: sessionId,
+    projectionActivation: futureExternalIdentityV3Projection
   });
   const mislabeledLegacy = {
     ...durable,
@@ -4171,7 +4314,8 @@ await assert.rejects(
     tenantId: "tenant-1",
     operationKey,
     payloadHash: legacyPayloadHash,
-    recognitionSessionId: sessionId
+    recognitionSessionId: sessionId,
+    projectionActivation: futureExternalIdentityV3Projection
   }), (error) => error.code === "csm_persistence_checkpoint_invalid"
     && error.detail === "legacy_result_contains_execution_contract");
   const events = [];
@@ -4223,7 +4367,8 @@ await assert.rejects(
     tenantId: "tenant-1",
     operationKey,
     payloadHash: legacyPayloadHash,
-    recognitionSessionId: sessionId
+    recognitionSessionId: sessionId,
+    projectionActivation: futureExternalIdentityV3Projection
   });
   const authorityEvents = [];
   const authority = {
@@ -4300,10 +4445,10 @@ await assert.rejects(
   futureExecutionContract.provider_adapter_version = "future-openai-adapter-v9";
   futureExecutionContract.provider_adapter_sha256 = "9".repeat(64);
   futureExecutionContract.request_builder_version =
-    CSM_PROJECTION_ACTIVATION.active_writer
+    CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
       .canonical_fields.request_builder_version;
   futureExecutionContract.response_parser_version =
-    CSM_PROJECTION_ACTIVATION.active_writer
+    CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
       .canonical_fields.response_parser_version;
   const futureExecutionSha256 = sha256ExecutionContractValue(futureExecutionContract);
   const historicalTask = {
@@ -4340,7 +4485,8 @@ await assert.rejects(
     operationKey,
     payloadHash: historicalPayloadHash,
     recognitionSessionId: sessionId,
-    executionContractSha256: futureExecutionSha256
+    executionContractSha256: futureExecutionSha256,
+    projectionActivation: futureExternalIdentityV3Projection
   });
   durable.provider_authority_receipt = providerAuthorityReceipt({
     operationKey,
@@ -4490,20 +4636,37 @@ await assert.rejects(
 {
   const task = ordinaryTask("bound-intent");
   const operationKey = buildLunaDirectOperationKey(task);
+  const payloadHash = buildLunaDirectPayloadHash(task);
   const sessionId = deterministicCsmSessionId(operationKey);
+  const executionContract = buildCsmModelExecutionContract({
+    transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+    imageUrls: csmExecutionContractImageUrls(1),
+    writerContract: CSM_PROJECTION_ACTIVATION.active_writer
+  });
   const checkpoint = buildCsmPersistenceCheckpoint({
     prepared: {
-      ...preparedResult(sessionId),
-      execution_contract_sha256: task.execution_contract_sha256
+      ...tcgGrammarContextCheckpointFixture({
+        recognitionSessionId: sessionId,
+        set: "",
+        cardNumber: "",
+        operationKey,
+        payloadHash,
+        originalImageFingerprints: task.image_fingerprints,
+        recognitionImageFingerprints: task.recognition_fingerprints
+      }),
+      execution_contract_sha256: task.execution_contract_sha256,
+      execution_contract: executionContract
     },
     tenantId: "tenant-1", operationKey,
-    payloadHash: buildLunaDirectPayloadHash(task), recognitionSessionId: sessionId,
+    payloadHash, recognitionSessionId: sessionId,
     executionContractSha256: task.execution_contract_sha256,
-    resolutionContractSha256: task.resolution_contract_sha256
+    resolutionContractSha256: task.resolution_contract_sha256,
+    originalImageFingerprints: task.image_fingerprints,
+    recognitionImageFingerprints: task.recognition_fingerprints
   });
   assert.equal(
     checkpoint.csm_persistence_checkpoint.schema_version,
-    CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
+    CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION
   );
   assert.equal(
     Object.hasOwn(checkpoint.csm_persistence_checkpoint, "execution_contract_sha256"),
@@ -4542,7 +4705,7 @@ await assert.rejects(
     tenantId: "tenant-1", userId: "user-1", assetId: "asset-1",
     intentId: task.intent_id, manualRetry: true, dependencies: tamperDependencies
   }), (error) => error.code === "csm_persistence_checkpoint_invalid"
-    && error.detail === "result_execution_contract_sha256_mismatch");
+    && error.detail === "historical_execution_receipt_invalid");
   assert.equal(providerBoundaryCalls, 0);
   assert.equal(writerCalls, 0);
 
@@ -4555,7 +4718,8 @@ await assert.rejects(
     operationKey,
     payloadHash: buildLunaDirectPayloadHash(task),
     recognitionSessionId: sessionId,
-    executionContractSha256: task.execution_contract_sha256
+    executionContractSha256: task.execution_contract_sha256,
+    projectionActivation: futureExternalIdentityV3Projection
   }), (error) => error.code === "csm_persistence_checkpoint_invalid"
     && error.detail === "prepared_execution_contract_sha256_mismatch");
 

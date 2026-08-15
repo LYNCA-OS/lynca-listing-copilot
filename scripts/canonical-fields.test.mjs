@@ -712,7 +712,9 @@ assert.match(
     subjects: ["Luisangel Acuna 大发时时彩"], team: "Mets", card_number: "", serial: "12/50",
     attributes: ["Auto", "RC"], grade: "", grammar: "standard", lot_count: "",
     unreadable: [], low_confidence: ["surface_color"]
-  }));
+  }), {
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+  });
   assert.ok(finished.sanitised);
   assert.ok(!/[一-鿿]/.test(finished.title));
   assert.match(finished.title, /Luisangel Acuna/);
@@ -725,7 +727,9 @@ assert.match(
 // A response that is not JSON degrades to an empty object rather than throwing
 // mid-run: one malformed card must not cost the other 149.
 {
-  const finished = finishCanonicalTitle("I'm sorry, I can't read this card.");
+  const finished = finishCanonicalTitle("I'm sorry, I can't read this card.", {
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+  });
   assert.equal(finished.title, "");
   assert.deepEqual(finished.field_defects, ["unparseable"]);
 }

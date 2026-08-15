@@ -67,6 +67,30 @@ const v4SourceAuthorityContext = Object.freeze({
   recognitionSessionId: "session-grammar-v4"
 });
 
+function activeV4SourceOptions({
+  tenantId = "tenant-1",
+  recognitionSessionId,
+  imageCount = 1,
+  providerClientRequestId = `lynca-${recognitionSessionId}-attempt-1`
+}) {
+  const digest = createHash("sha256").update(recognitionSessionId).digest("hex");
+  const imageFingerprints = Array.from(
+    { length: imageCount }, (_, index) => `sha256:${createHash("sha256")
+      .update(`${recognitionSessionId}:${index}`).digest("hex")}`
+  );
+  return {
+    providerClientRequestId,
+    sourceAuthorityContext: {
+      operationPayloadSha256: digest,
+      originalImageFingerprints: imageFingerprints,
+      recognitionImageFingerprints: imageFingerprints,
+      providerClientRequestId,
+      tenantId,
+      recognitionSessionId
+    }
+  };
+}
+
 const enabledEnv = {
   SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role",
@@ -199,21 +223,21 @@ const productionTcgGrammarMisrouteProviderFields = Object.freeze(Object.fromEntr
 // COS-9 and COS-25 together: Language survives the real parser, title
 // projection, canonical rows and transport, in FK order.
 {
-  const writes = recorder();
+  let atomicWrites = 0;
   let patchedHashes = null;
   const result = await runPersistedCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-tcg",
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     promptVersion: ACTIVE_PROMPT_VERSION,
-    providerClientRequestId: "lynca-client-trace",
-    callProvider: providerFor(common), env: enabledEnv, fetchImpl: writes.fetchImpl,
+    ...activeV4SourceOptions({
+      recognitionSessionId: "session-tcg",
+      providerClientRequestId: "lynca-client-trace"
+    }),
+    callProvider: providerFor(common), env: enabledEnv,
     createdAt: "2026-08-01T00:00:00Z",
-    writeRows: writeCsmStageRows,
-    writerOptions: unclaimedWriterOptions,
-    patchSession: async ({ id, match, patch }) => {
-      assert.equal(id, "session-tcg");
-      assert.equal(match.tenant_id, "tenant-1");
+    writeRows: async (_rows, { sessionPatch: patch }) => {
+      atomicWrites += 1;
       assert.equal(patch.csm_grammar, "TCG");
       assert.equal(patch.csm_recognition_stage_status, "COMPLETE");
       assert.equal(patch.csm_owner_versions.prompt_version, ACTIVE_PROMPT_VERSION);
@@ -267,15 +291,15 @@ const productionTcgGrammarMisrouteProviderFields = Object.freeze(Object.fromEntr
       assert.match(patch.csm_recognition_packet_sha256, /^[0-9a-f]{64}$/);
       assert.match(patch.csm_resolution_packet_sha256, /^[0-9a-f]{64}$/);
       assert.match(patch.csm_marketplace_packet_sha256, /^[0-9a-f]{64}$/);
-      assert.equal(match.csm_recognition_packet_sha256, patch.csm_recognition_packet_sha256);
-      assert.equal(match.csm_resolution_packet_sha256, patch.csm_resolution_packet_sha256);
-      assert.equal(match.csm_marketplace_packet_sha256, patch.csm_marketplace_packet_sha256);
       patchedHashes = {
         csm_recognition_packet_sha256: patch.csm_recognition_packet_sha256,
         csm_resolution_packet_sha256: patch.csm_resolution_packet_sha256,
         csm_marketplace_packet_sha256: patch.csm_marketplace_packet_sha256
       };
-      return { saved: true };
+      return {
+        ok: true, atomic: true, replayed: false,
+        session: { saved: true }, written: {}
+      };
     }
   });
   assert.match(result.title, /^2025 Pokemon JP /);
@@ -300,7 +324,14 @@ const productionTcgGrammarMisrouteProviderFields = Object.freeze(Object.fromEntr
   ), true, "optional receipt fields stay explicit so the v1 digest has one complete shape");
   assert.equal(Object.hasOwn(
     result.csm_owner_versions, "operation_payload_sha256"
-  ), false, "pre-v4 owner receipt bytes remain unchanged");
+  ), true, "the active v4 owner receipt must bind the paid operation payload");
+  assert.equal(
+    result.csm_owner_versions.operation_payload_sha256,
+    activeV4SourceOptions({
+      recognitionSessionId: "session-tcg",
+      providerClientRequestId: "lynca-client-trace"
+    }).sourceAuthorityContext.operationPayloadSha256
+  );
   const reorderedOwnerReceipt = Object.fromEntries(
     Object.entries(result.csm_owner_versions).reverse()
   );
@@ -346,10 +377,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
 }
 
   assert.ok(result.csm_rows.output.dropped_trace.suppressed_by_profile.includes("search_optimization"));
-  assert.deepEqual(writes.tables, [
-    "csm_evidence_observations", "csm_bracket_candidates", "csm_candidate_evidence_links",
-    "csm_identity_resolutions", "csm_resolved_brackets", "csm_marketplace_outputs"
-  ]);
+  assert.equal(atomicWrites, 1, "the active v4 packet and owner receipt commit once atomically");
   assert.equal(
     result.csm_rows.resolved.find((row) => row.bracket === "language").canonical_value,
     "JP"
@@ -536,11 +564,11 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
 // Persistence failure is isolated to this attempt, but the production
 // boundary fails closed: the deterministic title must not become a usable 200.
 {
-  const writes = recorder({ failTable: "csm_identity_resolutions" });
   let patchCalls = 0;
   await assert.rejects(
     runPersistedCanonicalListingPath({
       tenantId: "tenant-1", recognitionSessionId: "session-failure",
+      ...activeV4SourceOptions({ recognitionSessionId: "session-failure" }),
       imageUrls: ["https://example.test/front.jpg"],
       transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
       callProvider: providerFor({
@@ -548,9 +576,11 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
         product: "Chrome", set: "", subjects: ["Victor Wembanyama"],
         descriptive_rarity: "", card_number: "221"
       }),
-      env: enabledEnv, fetchImpl: writes.fetchImpl,
-      writeRows: writeCsmStageRows,
-      writerOptions: unclaimedWriterOptions,
+      env: enabledEnv,
+      writeRows: async () => ({
+        ok: false, code: "csm_stage_write_failed", statusCode: 503,
+        written: {}, failedTable: "csm_identity_resolutions"
+      }),
       patchSession: async () => { patchCalls += 1; return { saved: true }; }
     }),
     (error) => {
@@ -570,6 +600,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   await assert.rejects(
     runPersistedCanonicalListingPath({
       tenantId: "tenant-1", recognitionSessionId: "session-conflict",
+      ...activeV4SourceOptions({ recognitionSessionId: "session-conflict" }),
       imageUrls: ["https://example.test/front.jpg"],
       transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
       callProvider: providerFor(common),
@@ -589,6 +620,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   let patchCalls = 0;
   const replay = await runPersistedCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-replay",
+    ...activeV4SourceOptions({ recognitionSessionId: "session-replay" }),
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: providerFor(common),
@@ -620,6 +652,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
   const prepared = await prepareCanonicalListingPath({
     tenantId: "tenant-1",
     recognitionSessionId: "session-resume",
+    ...activeV4SourceOptions({ recognitionSessionId: "session-resume" }),
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: async (request) => {
@@ -759,6 +792,9 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
 {
   const prepared = await prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-v3-overbudget-resume",
+    ...activeV4SourceOptions({
+      recognitionSessionId: "session-v3-overbudget-resume"
+    }),
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: providerFor({
@@ -879,6 +915,7 @@ for (const key of ["empty_at_input", "normalization_reason_codes", "character_bu
 {
   const prepared = await prepareCanonicalListingPath({
     tenantId: "tenant-1", recognitionSessionId: "session-v1-resume",
+    ...activeV4SourceOptions({ recognitionSessionId: "session-v1-resume" }),
     imageUrls: ["https://example.test/front.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     callProvider: providerFor(common)

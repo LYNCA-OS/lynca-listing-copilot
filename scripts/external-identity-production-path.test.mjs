@@ -31,6 +31,8 @@ import {
   VERIFIED_EXTERNAL_IDENTITY_DROP_ORDER_V2
 } from "../lib/listing/thin/canonical-composer.mjs";
 import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs";
+import { CSM_PROJECTION_ACTIVATION } from
+  "../lib/listing/thin/csm-projection-activation.mjs";
 import {
   validateSetCardNameRelationTransition
 } from "../lib/listing/thin/set-card-name-reconciliation.mjs";
@@ -45,6 +47,7 @@ const HR14_ORIGINAL_SHA256 = Object.freeze([
   "8641baae2722318061dc7d9431e8764e4fe72d809bf1d668294c823c1105811a",
   "7551abbd6a90f94771396eb46f726f20c49b0745d23db4f82a8db5c82296ca01"
 ]);
+const activeWriter = CSM_PROJECTION_ACTIVATION.active_writer;
 const HR14_ORIGINAL_SET_SHA256 = computeVerifiedOriginalSetSha256(HR14_ORIGINAL_SHA256);
 assert.deepEqual(VERIFIED_EXTERNAL_IDENTITY_DROP_ORDER_V2, [
   "print_finish", "card_number", "descriptive_rarity", "manufacturer",
@@ -53,6 +56,22 @@ assert.deepEqual(VERIFIED_EXTERNAL_IDENTITY_DROP_ORDER_V2, [
 
 const createdAt = "2026-08-10T00:00:00Z";
 const clone = (value) => structuredClone(value);
+
+function activeV4SourceOptions(recognitionSessionId, imageCount = 2) {
+  const providerClientRequestId = `lynca-${recognitionSessionId}-attempt-1`;
+  const fingerprints = HR14_ORIGINAL_SHA256.slice(0, imageCount)
+    .map((sha) => `sha256:${sha}`);
+  return {
+    providerClientRequestId,
+    sourceAuthorityContext: {
+      operationPayloadSha256: createHash("sha256")
+        .update(recognitionSessionId).digest("hex"),
+      originalImageFingerprints: fingerprints,
+      recognitionImageFingerprints: fingerprints,
+      providerClientRequestId
+    }
+  };
+}
 
 function reseal(rows) {
   rows.resolution.recognition_packet_sha256 = computeCsmPacketHashes(rows).csm_recognition_packet_sha256;
@@ -131,16 +150,17 @@ const prepared = await prepareCanonicalListingPath({
   imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+  ...activeV4SourceOptions("session-hr14"),
   createdAt,
   callProvider: completedProvider(liveCandidateObservation, (request) => {
     providerCalls += 1;
     assert.equal(request.model, "gpt-5.6-luna");
     assert.equal(request.reasoning.effort, "low");
     assert.equal(request.max_output_tokens, 8192);
-    for (const key of ["tools", "tool_choice", "max_tool_calls", "include"]) {
-      assert.equal(Object.hasOwn(request, key), false,
-        `the rollback-compatible bridge must omit ${key}`);
-    }
+    assert.deepEqual(request.tools, [{ type: "web_search" }]);
+    assert.equal(request.tool_choice, "auto");
+    assert.equal(request.max_tool_calls, 2);
+    assert.deepEqual(request.include, ["web_search_call.action.sources"]);
     const providerWire = JSON.stringify(request);
     for (const secretIdentity of [...HR14_ORIGINAL_SHA256, HR14_ORIGINAL_SET_SHA256]) {
       assert.doesNotMatch(providerWire, new RegExp(secretIdentity),
@@ -165,8 +185,14 @@ assert.equal(prepared.fields.year, "1996-97");
 assert.equal(prepared.fields.set, "High Risers");
 assert.equal(prepared.fields.team, "Chicago Bulls");
 assert.equal(prepared.fields.card_number, "HR14");
-assert.equal(Object.hasOwn(prepared, "set_card_name_relation_receipt"), false,
-  "the rollback-compatible writer must omit the future relation receipt");
+assert.deepEqual(prepared.set_card_name_relation_receipt, {
+  schema_version: "set-card-name-relations-v1",
+  set: {
+    predicate: "CURRENT_CARD_MEMBER_OF_SET",
+    value: "High Risers"
+  },
+  card_name: null
+});
 for (const physicalField of [
   "surface_color", "parallel_family", "parallel_exact", "print_finish", "serial", "grade"
 ]) {
@@ -185,14 +211,17 @@ assert.ok(prepared.dropped_brackets.includes("print_finish"));
 assert.ok(!prepared.dropped_brackets.includes("card_number"));
 assert.equal(
   prepared.resolution_contract_sha256,
-  EXTERNAL_IDENTITY_RESOLUTION_CONTRACT.contract_sha256
+  activeWriter.external_identity.resolution_contract_sha256
 );
-assert.equal(prepared.csm_rows.resolution.registry_release_id, EXTERNAL_IDENTITY_REGISTRY_RELEASE_ID);
-assert.equal(prepared.csm_rows.resolution.resolver_version, THIN_EXTERNAL_IDENTITY_RESOLVER_VERSION);
-assert.equal(prepared.csm_rows.output.composer_version, THIN_EXTERNAL_IDENTITY_COMPOSER_VERSION);
+assert.equal(prepared.csm_rows.resolution.registry_release_id,
+  activeWriter.external_identity.registry_release_id);
+assert.equal(prepared.csm_rows.resolution.resolver_version,
+  activeWriter.external_identity.resolver_version);
+assert.equal(prepared.csm_rows.output.composer_version,
+  activeWriter.external_identity.composer_version);
 assert.equal(
   prepared.csm_rows.output.marketplace_profile_version,
-  EBAY_EXTERNAL_IDENTITY_PROFILE_VERSION
+  activeWriter.external_identity.marketplace_profile_version
 );
 assert.equal(
   prepared.csm_rows.output.structured_output.external_identity_support.match_mode,
@@ -213,8 +242,8 @@ for (const bracket of ["year", "manufacturer", "product", "set", "subject", "car
 }
 assert.deepEqual(verifyReplay(prepared.csm_rows, prepared.title).problems, []);
 assert.equal(createHash("sha256").update(JSON.stringify(prepared.csm_rows)).digest("hex"),
-  "b31da7564d4f8e4529aa6b3afed3f784ef90ec3bdbf954ce80de011f3567b1e3",
-"the bridge must leave captured-e1ae external-v2 rows byte-identical");
+  "38a2af0099de73a9fc73bf9e440f861de4adef2fa6507df0cc06de7c53f8ad2a",
+"the v4 activation must keep its external-v3 packet byte-exact");
 
 // Producer and validator must agree that identity-equivalent spacing is a
 // presentation alias, not a canonical presentation. Exercise the full path so
@@ -226,6 +255,7 @@ const aliasPrepared = await prepareCanonicalListingPath({
   imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+  ...activeV4SourceOptions("session-hr14-card-number-alias"),
   createdAt,
   callProvider: completedProvider({ ...liveCandidateObservation, card_number: "HR 14" }, () => {
     aliasProviderCalls += 1;
@@ -247,6 +277,7 @@ for (const [index, setAlias] of ["high risers", "HIGH RISERS"].entries()) {
     imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
     transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
     externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+    ...activeV4SourceOptions(`session-hr14-set-alias-${index}`),
     createdAt,
     callProvider: completedProvider({ ...liveCandidateObservation, set: setAlias })
   });
@@ -254,7 +285,7 @@ for (const [index, setAlias] of ["high risers", "HIGH RISERS"].entries()) {
   assert.equal(setAliasPrepared.fields.set, "High Risers");
   assert.equal(setAliasPrepared.external_identity_support.field_decisions.set.action,
     "CORROBORATE");
-  assert.equal(Object.hasOwn(setAliasPrepared, "set_card_name_relation_receipt"), false);
+  assert.ok(setAliasPrepared.set_card_name_relation_receipt);
   assert.deepEqual(verifyReplay(
     setAliasPrepared.csm_rows, setAliasPrepared.title
   ).problems, []);
@@ -266,11 +297,12 @@ const setFillPrepared = await prepareCanonicalListingPath({
   imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+  ...activeV4SourceOptions("session-hr14-set-fill"),
   createdAt,
   callProvider: completedProvider({ ...liveCandidateObservation, set: "" })
 });
 assert.equal(setFillPrepared.external_identity_support.field_decisions.set.action, "FILL");
-assert.equal(Object.hasOwn(setFillPrepared, "set_card_name_relation_receipt"), false);
+assert.ok(setFillPrepared.set_card_name_relation_receipt);
 assert.deepEqual(verifyReplay(setFillPrepared.csm_rows, setFillPrepared.title).problems, []);
 
 assert.throws(() => validateSetCardNameRelationTransition({
@@ -289,6 +321,7 @@ const teamFillPrepared = await prepareCanonicalListingPath({
   imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
   externalIdentityContext: { originalImageSha256: HR14_ORIGINAL_SHA256 },
+  ...activeV4SourceOptions("session-hr14-team-fill-rc"),
   createdAt,
   callProvider: completedProvider({
     ...liveCandidateObservation,
@@ -341,6 +374,7 @@ const exactPrepared = await prepareCanonicalListingPath({
   recognitionSessionId: "session-hr14-exact-release-replay",
   imageUrls: ["https://example.test/front.jpg", "https://example.test/back.jpg"],
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  ...activeV4SourceOptions("session-hr14-exact-release-replay"),
   createdAt,
   callProvider: completedProvider({
     ...observedHr14,
@@ -536,7 +570,7 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
   ));
   reseal(duplicateCoverage);
   assert.throws(() => replayFromRows(duplicateCoverage),
-    /external_identity_field_evidence_cardinality_invalid/,
+    /external_identity_evidence_invalid/,
     "direct replay must reject duplicate Registry authority evidence");
   const checked = verifyReplay(duplicateCoverage, prepared.title);
   assert.equal(checked.ok, false);
@@ -554,7 +588,7 @@ for (const field of ["composer_version", "marketplace_profile_version"]) {
   extraCoverage.evidence.push(extra);
   reseal(extraCoverage);
   assert.throws(() => replayFromRows(extraCoverage),
-    /external_identity_source_provenance_invalid/,
+    /external_identity_evidence_cardinality_invalid/,
     "direct replay must reject extra Registry authority evidence");
   const checked = verifyReplay(extraCoverage, prepared.title);
   assert.equal(checked.ok, false);
@@ -664,9 +698,9 @@ for (const mutate of [
   }), /external_identity_release_receipt_mismatch/);
 }
 
-// No exact registry support changes neither canonical facts nor deterministic
-// CSM packet bytes. The rollback writer omits future Web/relation receipts;
-// only the top-level ABSTAINED registry diagnostic is additional.
+// No exact registry support changes no canonical facts. The active v4 writer
+// still seals its Web, relation, and Grammar-context receipts around that same
+// observation, so replay -- rather than legacy-row equality -- is the boundary.
 const noMatchFields = {
   ...observedHr14,
   product: "Topps Chrome",
@@ -680,40 +714,20 @@ const noMatch = await prepareCanonicalListingPath({
   recognitionSessionId: "session-no-match",
   imageUrls: ["https://example.test/front.jpg"],
   transportProfile: CSM_CANONICAL_SIGNED_URL_TRANSPORT_PROFILE,
+  ...activeV4SourceOptions("session-no-match", 1),
   createdAt,
   callProvider: completedProvider(noMatchFields)
 });
-const baseline = finishCanonicalTitle(JSON.stringify(noMatchFields));
-const baselineRows = buildCsmStageRows({
-  tenantId: "tenant-external",
-  recognitionSessionId: "session-no-match",
-  contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION,
-  fields: baseline.fields,
-  composed: {
-    grammar: baseline.grammar,
-    brackets: baseline.brackets,
-    bracket_text: baseline.bracket_text,
-    dropped: baseline.dropped_brackets,
-    suppressed: baseline.suppressed_brackets,
-    restored: baseline.restored_brackets,
-    truncated: baseline.truncated,
-    input_empty_fields: baseline.input_empty_fields,
-    normalization_reasons: baseline.normalization_reasons,
-    character_budget: baseline.character_budget,
-    length: baseline.length,
-    composer_version: baseline.composer_version,
-    marketplace_profile_version: baseline.marketplace_profile_version,
-    canonical_naming_trace: baseline.canonical_naming_trace,
-    canonical_naming_publishable: baseline.canonical_naming_publishable
-  },
-  title: baseline.title,
-  createdAt
+const baseline = finishCanonicalTitle(JSON.stringify(noMatchFields), {
+  writerContract: activeWriter,
+  tcgFieldSourceAuthorityReceipt: noMatch.tcg_field_source_authority_receipt,
+  tcgGrammarContextClaimReceipt: noMatch.tcg_grammar_context_claim_receipt
 });
 assert.equal(noMatch.external_identity_support.status, "ABSTAINED");
 assert.equal(noMatch.external_identity_support.reason, "NO_EXACT_MATCH");
 assert.equal(noMatch.title, baseline.title);
 assert.deepEqual(noMatch.fields, baseline.fields);
-assert.deepEqual(noMatch.csm_rows, baselineRows);
+assert.deepEqual(verifyReplay(noMatch.csm_rows, noMatch.title).problems, []);
 
 // The model-execution wire remains the same model contract; the detachable
 // resolution contract is a post-observation receipt, not prompt pollution.

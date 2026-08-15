@@ -76,7 +76,10 @@ assert.equal(activeVerifiedOriginalObservationReleaseId(),
 assert.equal(validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION).state,
   activeWriter.contract_id === CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID
     ? CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_STATE_DORMANT
-    : CSM_PROJECTION_STATE_ACTIVE);
+    : activeWriter.contract_id
+      === CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4.contract_id
+      ? CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_STATE_ACTIVE
+      : CSM_PROJECTION_STATE_ACTIVE);
 assert.equal(CSM_PROJECTION_STATE_DORMANT, "DORMANT_FORWARD_READER_BRIDGE");
 const checkpointBridgeActivationBody = {
   schema_version: "csm-projection-activation.v2",

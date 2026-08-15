@@ -5,6 +5,10 @@ import { finishCanonicalTitle } from "../lib/listing/thin/thin-listing-path.mjs"
 import {
   activeWriterProjectionContract
 } from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 
 const card = (overrides = {}) => ({
   year: "", ip: "", language: "", manufacturer: "", product: "", set: "",
@@ -28,6 +32,31 @@ const positive = card({
   serial: "018/150",
   components: ["RC"],
   grade: "PSA 10"
+});
+
+const founderBetaWebReceipt = Object.freeze({
+  schema_version: "founder-beta-web-receipt-v2",
+  semantic_state_sha256: "1".repeat(64)
+});
+const tcgFieldSourceAuthorityReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: [],
+  fields: positive,
+  originalImageCount: 1,
+  semanticStateSha256: founderBetaWebReceipt.semantic_state_sha256,
+  founderBetaWebReceipt,
+  sourceExecution: {
+    operationPayloadSha256: "a".repeat(64),
+    originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+    recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+    providerClientRequestId: "lynca-exact-parallel-attempt-1",
+    providerResponseId: "resp_exact_parallel_1",
+    tenantId: "tenant-exact-parallel",
+    recognitionSessionId: "session-exact-parallel"
+  }
+});
+const tcgGrammarContextClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: positive,
+  fieldSourceAuthorityReceipt: tcgFieldSourceAuthorityReceipt
 });
 
 {
@@ -93,22 +122,27 @@ const positive = card({
   assert.ok(!candidate.normalization_reasons.includes("print_finish:exact_parallel_color_compacted"));
 }
 
-// The rollback bridge routes every Standard write through the captured CNL
-// v0.2 contract. Legacy feature switches cannot select a second active writer;
-// the v2/eBay ablation remains covered directly above and other CNL versions
-// remain available only through stored-version replay.
+// Activation keeps the Standard Composer tuple atomic while the v4 parser
+// requires its sealed source-authority receipts. Legacy feature switches cannot
+// select a second writer; the v2/eBay ablation remains covered directly above.
 {
   const payload = JSON.stringify(positive);
   const writer = activeWriterProjectionContract();
+  const tcgContext = {
+    tcgFieldSourceAuthorityReceipt,
+    tcgGrammarContextClaimReceipt
+  };
   const baseline = finishCanonicalTitle(payload, {
     exactParallelColorCompaction: false,
-    writerContract: writer
+    writerContract: writer,
+    ...tcgContext
   });
   const candidate = finishCanonicalTitle(payload, {
     exactParallelColorCompaction: true,
-    writerContract: writer
+    writerContract: writer,
+    ...tcgContext
   });
-  const active = finishCanonicalTitle(payload);
+  const active = finishCanonicalTitle(payload, tcgContext);
   assert.equal(JSON.stringify(candidate.fields), JSON.stringify(baseline.fields));
   assert.equal(JSON.stringify(active.fields), JSON.stringify(candidate.fields));
   assert.equal(candidate.title, baseline.title);

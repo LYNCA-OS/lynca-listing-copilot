@@ -404,6 +404,7 @@ import {
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_RUNTIME_CONTRACT_SHA256,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256,
@@ -471,6 +472,8 @@ import {
   compatibilityBridgeV2RuntimeContractProof,
   compatibilityBridgeRuntimeContractProof,
   compatibilityBridgeWriterProjectionMode,
+  materializeTcgGrammarContextActivationRuntimeContractForTest,
+  materializeTcgGrammarContextActivationSelectionForTest,
   materializeTcgGrammarContextReaderBridgeRuntimeContractForTest,
   tcgGrammarContextActivationRuntimeContractProof,
   tcgGrammarContextActivationTopologyProof,
@@ -489,6 +492,7 @@ import {
   verifyOrdinaryRollbackLineage,
   verifyTcgGrammarContextReaderBridgeCommitMessageForTest,
   verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest,
+  verifyTcgGrammarContextActivationGitObjectEvidenceForTest,
   verifyTcgGrammarContextOrdinaryParentBoundaryForTest,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
@@ -4253,10 +4257,10 @@ for (const frozen of [
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256
 ]) assert.match(frozen, /^[0-9a-f]{64}$/);
 assert.match(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATCH_ID, /^[0-9a-f]{40}$/);
-for (const pending of [
-  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
-  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA
-]) assert.equal(pending, null);
+assert.equal(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
+  "85ecd6ebfd032f47e8884579c4fb87ddf121aa16");
+assert.equal(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA,
+  "66bc3bdafd5d3db9db278b16f79a3907c332c017");
 const frozenTcgGrammarContextReaderBridgeRuntimeProof =
   tcgGrammarContextReaderBridgeRuntimeContractProof();
 assert.equal(frozenTcgGrammarContextReaderBridgeRuntimeProof.contract_sha256,
@@ -4321,8 +4325,16 @@ assert.equal(tcgGrammarContextRuntimeProof.historical_lineage_v43_sha256,
 assert.equal(tcgGrammarContextRuntimeProof.failure_code, "WRITER_JOURNEY_FAILED");
 assert.equal(tcgGrammarContextRuntimeProof.diagnosed_invariant,
   "RESOLUTION_GRAMMAR_MISMATCH");
+const tcgGrammarContextReaderBridgeProjectionActivation = Object.freeze({
+  schema_version: CSM_PROJECTION_ACTIVATION.schema_version,
+  activation_id: CSM_PROJECTION_ACTIVATION.activation_id,
+  active_writer: CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible,
+  forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
+  activation_sha256:
+    TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256
+});
 assert.deepEqual(tcgGrammarContextRuntimeProof.projection_activation,
-  CSM_PROJECTION_ACTIVATION);
+  tcgGrammarContextReaderBridgeProjectionActivation);
 assert.deepEqual(tcgGrammarContextRuntimeProof.active_writer,
   CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible);
 assert.deepEqual(tcgGrammarContextRuntimeProof.future_writer,
@@ -4356,16 +4368,19 @@ const tcgGrammarContextHealth = Object.freeze({
   runtime: Object.freeze({
     model_profile_id: "openai-gpt-5.6-luna-csm-v1",
     request_builder_version:
-      CSM_PROJECTION_ACTIVATION.active_writer.canonical_fields.request_builder_version,
-    projection_activation: CSM_PROJECTION_ACTIVATION,
-    active_writer: CSM_PROJECTION_ACTIVATION.active_writer,
+      tcgGrammarContextReaderBridgeProjectionActivation.active_writer
+        .canonical_fields.request_builder_version,
+    projection_activation: tcgGrammarContextReaderBridgeProjectionActivation,
+    active_writer: tcgGrammarContextReaderBridgeProjectionActivation.active_writer,
     forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
     external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
     verified_original_observation: verifiedOriginalObservationHealthReceiptForReleases({
       verifiedOriginalObservationReleaseId:
-        CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay,
+        tcgGrammarContextReaderBridgeProjectionActivation.active_writer
+          .verified_original_observation_overlay,
       externalIdentityRegistryReleaseId:
-        CSM_PROJECTION_ACTIVATION.active_writer.external_identity.registry_release_id
+        tcgGrammarContextReaderBridgeProjectionActivation.active_writer
+          .external_identity.registry_release_id
     })
   })
 });
@@ -4802,8 +4817,10 @@ assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
 assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA);
-assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA, null,
-"A remains unselectable until B has a committed SHA/tree");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+  "85ecd6ebfd032f47e8884579c4fb87ddf121aa16");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+  "66bc3bdafd5d3db9db278b16f79a3907c332c017");
 assert.equal(tcgGrammarContextActivationTopology.projection_activation_state,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE);
 assert.equal(tcgGrammarContextActivationTopology.active_writer_contract_sha256,
@@ -4812,16 +4829,261 @@ assert.equal(tcgGrammarContextActivationTopology.projection_activation_sha256,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256);
 assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
   "writer-journey-cases-v4");
-assert.deepEqual(TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS, []);
-assert.deepEqual(TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS, []);
-for (const pending of [
+const expectedTcgGrammarContextActivationCorePaths = Object.freeze([
+  "lib/listing/thin/csm-projection-activation.mjs",
+  "scripts/accuracy-loss-ledger.test.mjs",
+  "scripts/canonical-fields.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/csm-projection-activation.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/exact-parallel-color-compaction.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/external-identity-rollback-bridge.test.mjs",
+  "scripts/writer-old-reader-new-e1ae-oracle.test.mjs"
+]);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS,
+  expectedTcgGrammarContextActivationCorePaths);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS, [
+  ...expectedTcgGrammarContextActivationCorePaths,
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
+].sort());
+for (const frozen of [
   TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256,
-  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256
-]) assert.equal(pending, null);
-assert.throws(() => tcgGrammarContextActivationRuntimeContractProof(),
-  (error) => error.code === "tcg_grammar_context_activation_runtime_freeze_pending");
+]) assert.match(frozen, /^[0-9a-f]{64}$/);
+assert.match(TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID, /^[0-9a-f]{40}$/);
+assert.equal(tcgGrammarContextActivationTopology.runtime_freeze_pending, false);
+const tcgGrammarContextActivationRuntimeManifest = Object.freeze(
+  await Promise.all(TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS.map(async (entry) => {
+    const bytes = await readFile(path.join(process.cwd(), entry));
+    return Object.freeze({
+      path: entry,
+      mode: "100644",
+      bytes: bytes.length,
+      sha256: sha256(bytes)
+    });
+  }))
+);
+assert.equal(sha256(JSON.stringify(tcgGrammarContextActivationRuntimeManifest)),
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256);
+const tcgGrammarContextActivationRuntimeDiffIdentity = Object.freeze({
+  full_index_sha256: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256,
+  patch_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID
+});
+const frozenTcgGrammarContextActivationProof =
+  tcgGrammarContextActivationRuntimeContractProof();
+assert.equal(frozenTcgGrammarContextActivationProof.contract_sha256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256);
+assert.equal(frozenTcgGrammarContextActivationProof.schema_version,
+  "tcg-grammar-context-activation-runtime-proof-v1");
+assert.equal(frozenTcgGrammarContextActivationProof.active_writer.contract_id,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID);
+assert.deepEqual(frozenTcgGrammarContextActivationProof.projection_activation,
+  CSM_PROJECTION_ACTIVATION);
+assert.equal(frozenTcgGrammarContextActivationProof.runtime_file_count,
+  expectedTcgGrammarContextActivationCorePaths.length);
+assert.equal(frozenTcgGrammarContextActivationProof.health_bound, false);
+const tcgGrammarContextActivationRuntimeFreeze = Object.freeze({
+  core_paths: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS,
+  changed_paths: TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS,
+  runtime_content_manifest_sha256:
+    TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256,
+  runtime_full_index_sha256:
+    TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256,
+  runtime_patch_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID,
+  runtime_contract_sha256: TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256
+});
+const materializedTcgGrammarContextActivationProof =
+  materializeTcgGrammarContextActivationRuntimeContractForTest({
+    runtimeFreeze: tcgGrammarContextActivationRuntimeFreeze,
+    candidateGitSha: "a".repeat(40),
+    runtimeContentManifest: tcgGrammarContextActivationRuntimeManifest,
+    runtimeDiffIdentity: tcgGrammarContextActivationRuntimeDiffIdentity
+  });
+assert.equal(materializedTcgGrammarContextActivationProof.contract_sha256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256);
+const tcgGrammarContextActivationSelection =
+  materializeTcgGrammarContextActivationSelectionForTest({
+    candidateGitSha: "a".repeat(40),
+    candidateTreeSha: "f".repeat(40),
+    parentGitShas: [TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA],
+    parentTreeSha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+    changedPaths: TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS,
+    runtimeContentManifest: tcgGrammarContextActivationRuntimeManifest,
+    runtimeDiffIdentity: tcgGrammarContextActivationRuntimeDiffIdentity
+  });
+assert.equal(tcgGrammarContextActivationSelection.schema_version,
+  "production-release-selection-v46");
+assert.equal(tcgGrammarContextActivationSelection.parent_git_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA);
+assert.equal(tcgGrammarContextActivationSelection.parent_tree_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA);
+assert.equal(tcgGrammarContextActivationSelection.artifact_manifest_sha256,
+  "33638543b949175b3b425e3498f40624c79ea9f7d26f5dc7cdeb757eea4e4f7d");
+assert.equal(tcgGrammarContextActivationSelection.contract_sha256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256);
+for (const [overrides, code] of [
+  [{ candidateGitSha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA },
+    "tcg_grammar_context_activation_candidate_mismatch"],
+  [{ parentGitShas: ["0".repeat(40)] },
+    "tcg_grammar_context_activation_parent_mismatch"],
+  [{ parentTreeSha: "0".repeat(40) },
+    "tcg_grammar_context_activation_parent_tree_mismatch"],
+  [{ candidateTreeSha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA },
+    "tcg_grammar_context_activation_candidate_tree_mismatch"]
+]) {
+  assert.throws(() => materializeTcgGrammarContextActivationSelectionForTest({
+    candidateGitSha: "a".repeat(40),
+    candidateTreeSha: "f".repeat(40),
+    parentGitShas: [TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA],
+    parentTreeSha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+    changedPaths: TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS,
+    runtimeContentManifest: tcgGrammarContextActivationRuntimeManifest,
+    runtimeDiffIdentity: tcgGrammarContextActivationRuntimeDiffIdentity,
+    ...overrides
+  }), (error) => error.code === code);
+}
+const tcgGrammarContextActivationHealthGitSha = "b".repeat(40);
+const tcgGrammarContextActivationWriter =
+  CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
+const tcgGrammarContextActivationVerifiedHealth =
+  verifiedOriginalObservationHealthReceiptForReleases({
+    verifiedOriginalObservationReleaseId:
+      tcgGrammarContextActivationWriter.verified_original_observation_overlay,
+    externalIdentityRegistryReleaseId:
+      tcgGrammarContextActivationWriter.external_identity.registry_release_id
+  });
+const tcgGrammarContextActivationHealth = Object.freeze({
+  ready: true,
+  deployment: Object.freeze({ git_commit_sha: tcgGrammarContextActivationHealthGitSha }),
+  runtime: Object.freeze({
+    model_profile_id: "openai-gpt-5.6-luna-csm-v1",
+    request_builder_version:
+      tcgGrammarContextActivationWriter.canonical_fields.request_builder_version,
+    projection_activation: CSM_PROJECTION_ACTIVATION,
+    active_writer: tcgGrammarContextActivationWriter,
+    forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
+    external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
+    verified_original_observation: tcgGrammarContextActivationVerifiedHealth
+  })
+});
+const tcgGrammarContextActivationHealthProof =
+  materializeTcgGrammarContextActivationRuntimeContractForTest({
+    runtimeFreeze: tcgGrammarContextActivationRuntimeFreeze,
+    candidateGitSha: tcgGrammarContextActivationHealthGitSha,
+    runtimeContentManifest: tcgGrammarContextActivationRuntimeManifest,
+    runtimeDiffIdentity: tcgGrammarContextActivationRuntimeDiffIdentity,
+    health: tcgGrammarContextActivationHealth,
+    gitSha: tcgGrammarContextActivationHealthGitSha
+  });
+assert.equal(tcgGrammarContextActivationHealthProof.health_bound, true);
+assert.equal(tcgGrammarContextActivationHealthProof.deployment_git_sha,
+  tcgGrammarContextActivationHealthGitSha);
+for (const health of [
+  { ...tcgGrammarContextActivationHealth, ready: false },
+  { ...tcgGrammarContextActivationHealth,
+    deployment: { git_commit_sha: "c".repeat(40) } },
+  { ...tcgGrammarContextActivationHealth, runtime: {
+    ...tcgGrammarContextActivationHealth.runtime,
+    request_builder_version: "cross-spliced-request-builder"
+  } },
+  { ...tcgGrammarContextActivationHealth, runtime: {
+    ...tcgGrammarContextActivationHealth.runtime,
+    active_writer: CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3
+  } },
+  { ...tcgGrammarContextActivationHealth, runtime: {
+    ...tcgGrammarContextActivationHealth.runtime,
+    forward_readers: {
+      ...CSM_PROJECTION_ACTIVATION.forward_readers,
+      cross_spliced: true
+    }
+  } }
+]) {
+  assert.throws(() => materializeTcgGrammarContextActivationRuntimeContractForTest({
+    runtimeFreeze: tcgGrammarContextActivationRuntimeFreeze,
+    candidateGitSha: tcgGrammarContextActivationHealthGitSha,
+    runtimeContentManifest: tcgGrammarContextActivationRuntimeManifest,
+    runtimeDiffIdentity: tcgGrammarContextActivationRuntimeDiffIdentity,
+    health,
+    gitSha: tcgGrammarContextActivationHealthGitSha
+  }), (error) => error.code === "tcg_grammar_context_activation_health_contract_invalid");
+}
+for (const [runtimeContentManifest, runtimeDiffIdentity] of [
+  [tcgGrammarContextActivationRuntimeManifest.map((entry, index) => (
+    index === 0 ? { ...entry, sha256: "0".repeat(64) } : entry
+  )), tcgGrammarContextActivationRuntimeDiffIdentity],
+  [tcgGrammarContextActivationRuntimeManifest, {
+    ...tcgGrammarContextActivationRuntimeDiffIdentity,
+    patch_id: "0".repeat(40)
+  }]
+]) {
+  assert.throws(() => materializeTcgGrammarContextActivationRuntimeContractForTest({
+    runtimeFreeze: tcgGrammarContextActivationRuntimeFreeze,
+    candidateGitSha: "a".repeat(40),
+    runtimeContentManifest,
+    runtimeDiffIdentity
+  }), (error) => error.code === "tcg_grammar_context_activation_runtime_evidence_invalid");
+}
+const tcgGrammarContextActivationEvidenceSelection = Object.freeze({
+  git_sha: "d".repeat(40),
+  git_tree_sha: "e".repeat(40),
+  exact_selection_marker: "v46"
+});
+const tcgGrammarContextActivationEvidenceCommit = ({
+  tree = tcgGrammarContextActivationEvidenceSelection.git_tree_sha,
+  parent = TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA
+} = {}) => [
+  `tree ${tree}`,
+  `parent ${parent}`,
+  "author LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "committer LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "",
+  "fixture activation commit"
+].join("\n");
+const tcgGrammarContextActivationEvidenceReader = (args) => {
+  if (args[0] === "cat-file" && args[1] === "-t") return "commit";
+  if (args[0] === "cat-file" && args[1] === "-p") {
+    return tcgGrammarContextActivationEvidenceCommit();
+  }
+  throw new Error("unexpected_git_read");
+};
+const tcgGrammarContextActivationGitEvidence =
+  verifyTcgGrammarContextActivationGitObjectEvidenceForTest({
+    selection: tcgGrammarContextActivationEvidenceSelection,
+    gitTextReader: tcgGrammarContextActivationEvidenceReader,
+    rebuildSelection: () => tcgGrammarContextActivationEvidenceSelection
+  });
+assert.equal(tcgGrammarContextActivationGitEvidence.commit_exists, true);
+assert.deepEqual(tcgGrammarContextActivationGitEvidence.parent_git_shas,
+  [TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA]);
+assert.equal(tcgGrammarContextActivationGitEvidence.verification_source,
+  "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION");
+for (const [gitTextReader, rebuildSelection, code] of [
+  [() => { throw new Error("missing"); },
+    () => tcgGrammarContextActivationEvidenceSelection,
+    "tcg_grammar_context_activation_git_object_invalid"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextActivationEvidenceCommit({ parent: "f".repeat(40) }),
+    () => tcgGrammarContextActivationEvidenceSelection,
+    "tcg_grammar_context_activation_release_parent_mismatch"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextActivationEvidenceCommit({ tree: "0".repeat(40) }),
+    () => tcgGrammarContextActivationEvidenceSelection,
+    "tcg_grammar_context_activation_release_tree_mismatch"],
+  [tcgGrammarContextActivationEvidenceReader,
+    () => ({ ...tcgGrammarContextActivationEvidenceSelection,
+      exact_selection_marker: "cross-spliced" }),
+    "tcg_grammar_context_activation_release_selection_object_mismatch"]
+]) {
+  assert.throws(() => verifyTcgGrammarContextActivationGitObjectEvidenceForTest({
+    selection: tcgGrammarContextActivationEvidenceSelection,
+    gitTextReader,
+    rebuildSelection
+  }), (error) => error.code === code);
+}
 assert.throws(() => verifyCompatibilityBridgeSelection({
   releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   gitSha: "a".repeat(40),
@@ -8969,6 +9231,8 @@ try {
     actualParent === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA;
   const actualExternalIdentityV3Activation =
     actualParent === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA;
+  const actualTcgGrammarContextActivation =
+    actualParent === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA;
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
@@ -9005,7 +9269,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualExternalIdentityV3Activation
+  const actualTransitionMarker = actualTcgGrammarContextActivation
+    ? TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER
+    : actualExternalIdentityV3Activation
     ? EXTERNAL_IDENTITY_V3_ACTIVATION_MARKER
     : actualActivationAResolverRelationRebase
     ? ACTIVATION_A_RESOLVER_RELATION_REBASE_MARKER
@@ -9134,6 +9400,19 @@ try {
         === "external_identity_v3_checkpoint_reader_bridge_tracked_workspace_dirty";
     }, "a dirty activation worktree must not re-select its committed bridge parent");
     await assert.rejects(stat(selectionPath), { code: "ENOENT" });
+  } else if (actualHead === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA
+      && actualTrackedWorkspaceDirty) {
+    assert.throws(() => execFileSync(process.execPath, [
+      script, "verify-selection",
+      "--release-class", COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      "--git-sha", actualHead,
+      "--out", selectionPath
+    ], { env, encoding: "utf8" }), (error) => {
+      const failureReceipt = JSON.parse(String(error.stderr || "").trim());
+      return failureReceipt.code
+        === "tcg_grammar_context_reader_bridge_tracked_workspace_dirty";
+    }, "a dirty A worktree must not re-select its committed B parent");
+    await assert.rejects(stat(selectionPath), { code: "ENOENT" });
   } else {
   execFileSync(process.execPath, [
     script, "verify-selection",
@@ -9173,7 +9452,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualExternalIdentityV3Activation
+      actualTcgGrammarContextActivation
+        ? "production-release-selection-v46"
+      : actualExternalIdentityV3Activation
         ? "production-release-selection-v42"
       : actualActivationAResolverRelationRebase
         ? "production-release-selection-v26"
@@ -9220,7 +9501,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualExternalIdentityV3Activation
+      actualTcgGrammarContextActivation
+        ? TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA
+      : actualExternalIdentityV3Activation
         ? EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_SHA
       : actualActivationAResolverRelationRebase
         ? ACTIVATION_A_RESOLVER_RELATION_REBASE_ROLLBACK_SHA
@@ -9262,7 +9545,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualExternalIdentityV3Activation
+      actualTcgGrammarContextActivation
+        ? "production-release-rollback-lineage-receipt-v47"
+      : actualExternalIdentityV3Activation
         ? "production-release-rollback-lineage-receipt-v43"
       : actualActivationAResolverRelationRebase
         ? "production-release-rollback-lineage-receipt-v27"
@@ -9306,7 +9591,26 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualExternalIdentityV3Activation) {
+    if (actualTcgGrammarContextActivation) {
+      assert.equal(savedSelection.activation_descriptor_id,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID);
+      assert.equal(savedSelection.parent_tree_sha,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA);
+      assert.equal(savedSelection.active_writer_contract_id,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID);
+      assert.equal(savedSelection.projection_activation_state,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE);
+      assert.equal(savedSelection.contract_sha256,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.activation_descriptor_id,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA);
+      assert.equal(savedLineage.runtime_contract_sha256,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256);
+      assert.equal(savedLineage.release_git_object_verified, true);
+    } else if (actualExternalIdentityV3Activation) {
       assert.equal(savedSelection.activation_descriptor_id,
         EXTERNAL_IDENTITY_V3_ACTIVATION_DESCRIPTOR_ID);
       assert.equal(savedSelection.parent_tree_sha,

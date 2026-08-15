@@ -47,8 +47,8 @@ import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 
-const ACTIVE_EXTERNAL_V3_WRITER_ID =
-  "stage-v3-web-v2-external-identity-v3-writer-v1";
+const ACTIVE_TCG_GRAMMAR_CONTEXT_V4_WRITER_ID =
+  "stage-v4-web-v3-tcg-grammar-context-external-identity-v3-writer-v1";
 const currentRoot = process.cwd();
 const rollbackRoot = mkdtempSync(join(tmpdir(), "lynca-external-rollback-writer-"));
 process.once("exit", () => rmSync(rollbackRoot, { recursive: true, force: true }));
@@ -58,7 +58,7 @@ cpSync(join(currentRoot, "csm"), join(rollbackRoot, "csm"), { recursive: true })
 copyFileSync(join(currentRoot, "package.json"), join(rollbackRoot, "package.json"));
 const activationPath = join(rollbackRoot, "lib/listing/thin/csm-projection-activation.mjs");
 const activeDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
-  + `  "${ACTIVE_EXTERNAL_V3_WRITER_ID}";`;
+  + `  "${ACTIVE_TCG_GRAMMAR_CONTEXT_V4_WRITER_ID}";`;
 const rollbackDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
   + "  CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID;";
 const activationSource = readFileSync(activationPath, "utf8");

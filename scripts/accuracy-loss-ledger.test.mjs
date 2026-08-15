@@ -34,9 +34,14 @@ import {
   THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
+  ACTIVE_WRITER_CONTRACT_ID,
   activeStandardWriterProjection,
   CSM_WRITER_PROJECTION_CONTRACTS
 } from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
 import { resolvedFieldsToSemSuggestion } from "../lib/listing/csm/title-derived-sem.mjs";
 import { toResolvedFields } from "../lib/listing/thin/csm-emit.mjs";
@@ -45,8 +50,6 @@ import {
   validateCsmPersistenceCheckpoint
 } from "../api/csm-listing-title.js";
 
-const ACTIVE_EXTERNAL_V3_WRITER_ID =
-  "stage-v3-web-v2-external-identity-v3-writer-v1";
 const currentRoot = process.cwd();
 const rollbackRoot = mkdtempSync(join(tmpdir(), "lynca-accuracy-ledger-writer-"));
 process.once("exit", () => rmSync(rollbackRoot, { recursive: true, force: true }));
@@ -56,7 +59,7 @@ cpSync(join(currentRoot, "csm"), join(rollbackRoot, "csm"), { recursive: true })
 copyFileSync(join(currentRoot, "package.json"), join(rollbackRoot, "package.json"));
 const activationPath = join(rollbackRoot, "lib/listing/thin/csm-projection-activation.mjs");
 const activeDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
-  + `  "${ACTIVE_EXTERNAL_V3_WRITER_ID}";`;
+  + `  "${ACTIVE_WRITER_CONTRACT_ID}";`;
 const rollbackDeclaration = "export const ACTIVE_WRITER_CONTRACT_ID =\n"
   + "  CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID;";
 const activationSource = readFileSync(activationPath, "utf8");
@@ -79,6 +82,38 @@ const rollbackApi = await import(
 const prepareRollbackCanonicalListingPath =
   rollbackOrchestration.prepareCanonicalListingPath;
 const buildRollbackCsmPersistenceCheckpoint = rollbackApi.buildCsmPersistenceCheckpoint;
+
+const activeGrammarContextWebReceipt = Object.freeze({
+  schema_version: "founder-beta-web-receipt-v2",
+  semantic_state_sha256: "1".repeat(64)
+});
+function finishActiveCanonicalTitle(payload) {
+  const fields = JSON.parse(payload);
+  const tcgFieldSourceAuthorityReceipt = buildTcgFieldSourceAuthorityReceipt({
+    fieldSources: [],
+    fields,
+    originalImageCount: 1,
+    semanticStateSha256: activeGrammarContextWebReceipt.semantic_state_sha256,
+    founderBetaWebReceipt: activeGrammarContextWebReceipt,
+    sourceExecution: {
+      operationPayloadSha256: "a".repeat(64),
+      originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+      recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+      providerClientRequestId: "lynca-accuracy-ledger-attempt-1",
+      providerResponseId: "resp_accuracy_ledger_1",
+      tenantId: "tenant-accuracy-ledger",
+      recognitionSessionId: "session-accuracy-ledger"
+    }
+  });
+  const tcgGrammarContextClaimReceipt = buildTcgGrammarContextClaimReceipt({
+    fields,
+    fieldSourceAuthorityReceipt: tcgFieldSourceAuthorityReceipt
+  });
+  return finishCanonicalTitle(payload, {
+    tcgFieldSourceAuthorityReceipt,
+    tcgGrammarContextClaimReceipt
+  });
+}
 
 const providerFields = {
   year: "2025", manufacturer: "Topps", product: "Chrome", set: "Cosmic",
@@ -332,19 +367,19 @@ assert.notEqual(
 );
 
 const unsupportedRaw = JSON.stringify({ subjects: { name: "Not an allowed source shape" } });
-const unsupportedResult = finishCanonicalTitle(unsupportedRaw);
+const unsupportedResult = finishActiveCanonicalTitle(unsupportedRaw);
 const unsupportedLedger = buildAccuracyLossLedger({ rawProviderOutput: unsupportedRaw, result: unsupportedResult });
 assert.deepEqual(unsupportedLedger.stages.admitted_canonical_fields.fields
   .find(({ field }) => field === "subject").reason_codes, ["UNSUPPORTED_SOURCE_SHAPE"]);
 
 const rejectedRaw = JSON.stringify({ attributes: ["Not a canonical attribute"] });
-const rejectedResult = finishCanonicalTitle(rejectedRaw);
+const rejectedResult = finishActiveCanonicalTitle(rejectedRaw);
 const rejectedLedger = buildAccuracyLossLedger({ rawProviderOutput: rejectedRaw, result: rejectedResult });
 assert.deepEqual(rejectedLedger.stages.admitted_canonical_fields.fields
   .find(({ field }) => field === "search_optimization").reason_codes, ["PARSER_REJECTED"]);
 
 const derivedRaw = JSON.stringify({ manufacturer: "Pokemon", product: "Mega Brave" });
-const derivedResult = finishCanonicalTitle(derivedRaw);
+const derivedResult = finishActiveCanonicalTitle(derivedRaw);
 const derivedLedger = buildAccuracyLossLedger({ rawProviderOutput: derivedRaw, result: derivedResult });
 const derivedIp = derivedLedger.stages.admitted_canonical_fields.fields
   .find(({ field }) => field === "ip_sport");
@@ -352,7 +387,7 @@ assert.equal(derivedIp.status, "derived");
 assert.deepEqual(derivedIp.reason_codes, ["CSM_SEM_DERIVED"]);
 
 const admittedDescriptionRaw = JSON.stringify({ description: "Case Hit" });
-const admittedDescriptionResult = finishCanonicalTitle(admittedDescriptionRaw);
+const admittedDescriptionResult = finishActiveCanonicalTitle(admittedDescriptionRaw);
 const admittedDescriptionLedger = buildAccuracyLossLedger({
   rawProviderOutput: admittedDescriptionRaw,
   result: admittedDescriptionResult
@@ -365,7 +400,7 @@ assert.ok(!admittedDescriptionLedger.stages.admitted_canonical_fields.reason_cod
   .includes("CANONICAL_FIELD_DROPPED"));
 
 const emptySuppressionRaw = JSON.stringify({ year: "2024", subjects: ["A"], grammar: "standard" });
-const emptySuppressionResult = finishCanonicalTitle(emptySuppressionRaw);
+const emptySuppressionResult = finishActiveCanonicalTitle(emptySuppressionRaw);
 const emptySuppressionLedger = buildAccuracyLossLedger({
   rawProviderOutput: emptySuppressionRaw,
   result: emptySuppressionResult
