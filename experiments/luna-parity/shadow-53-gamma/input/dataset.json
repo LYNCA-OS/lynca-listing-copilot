@@ -1,0 +1,1279 @@
+{
+  "schema_version": "csm-gamma-53-luna-shadow-dataset-v1",
+  "cohort_id": "founder-gamma-training-2026-08-13",
+  "cohort_collection_sha256": "b95ed769a9a306fd15b67a3e95e0209ad9202c28558b7d6b0feed7e342352f5a",
+  "items": [
+    {
+      "asset_id": "gamma-training-a-b",
+      "physical_card_id": "gamma-training-a-b",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-b",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/b.webp",
+          "content_type": "image/webp",
+          "content_sha256": "4a5bb84e68db53a64a65ea643d1a98dafbe1d024df0a173de3ec49fd0819b9e2",
+          "byte_length": 552612
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/bb.webp",
+          "content_type": "image/webp",
+          "content_sha256": "46043dda5ae54eb6159a6b8c140cc7379b6104b3084b2244072c6bd4f0f0bd35",
+          "byte_length": 419854
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-c",
+      "physical_card_id": "gamma-training-a-c",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-c",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/c.webp",
+          "content_type": "image/webp",
+          "content_sha256": "efc25769dc86d0e25e6f8864c5388326aa7681d87bfdbf3663e5085560b70aba",
+          "byte_length": 479420
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/cc.webp",
+          "content_type": "image/webp",
+          "content_sha256": "b8adc3d9266a665c191e55237faf247e979e8b629e4191315f899a5ec2c4fbff",
+          "byte_length": 456832
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-d",
+      "physical_card_id": "gamma-training-a-d",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-d",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/d.webp",
+          "content_type": "image/webp",
+          "content_sha256": "32f6533242a986720456cf187cdf5e0b438d5d277fe3eb5c799b6f8d4ac6206b",
+          "byte_length": 672306
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/dd.webp",
+          "content_type": "image/webp",
+          "content_sha256": "bbc21e27ba02e47f1f93cb66b16228790ace6e7ce140470742134c35c8666265",
+          "byte_length": 406520
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-e",
+      "physical_card_id": "gamma-training-a-e",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-e",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/e.webp",
+          "content_type": "image/webp",
+          "content_sha256": "53a5ff32e75e4805042823bb41acbb22dad200d2de0b01e289d4da4abd742c36",
+          "byte_length": 697756
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/ee.webp",
+          "content_type": "image/webp",
+          "content_sha256": "dc042f3d94e3ecab98add380a1ca87b6eeba0a2f50fc174283cb6ba603476694",
+          "byte_length": 408804
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-f",
+      "physical_card_id": "gamma-training-a-f",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-f",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/f.webp",
+          "content_type": "image/webp",
+          "content_sha256": "259b8577ff7d58833dbeedd1b5a0b8c6744f865d9d52de730071dbb328c48dac",
+          "byte_length": 632156
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/ff.webp",
+          "content_type": "image/webp",
+          "content_sha256": "70e98730a1140829f8610382342c1aad69fb19509e12267184b9546715fab816",
+          "byte_length": 418192
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-g",
+      "physical_card_id": "gamma-training-a-g",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-g",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/g.webp",
+          "content_type": "image/webp",
+          "content_sha256": "3ce0276b77fc12a57d2c3164a68ade14b0bb8f17e43d1a268bcdc3c4e9f13c38",
+          "byte_length": 546820
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/gg.webp",
+          "content_type": "image/webp",
+          "content_sha256": "8ef2322522637772d2ea4a247337a2abe34d169ff5eb42ba2f0da98f7a54e8ab",
+          "byte_length": 629354
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-h",
+      "physical_card_id": "gamma-training-a-h",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-h",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/h.webp",
+          "content_type": "image/webp",
+          "content_sha256": "49a8a1c24eae0b1ed0a69fac384a5443810fbc4652839edc2b4a810ad6a602b3",
+          "byte_length": 666084
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/hh.webp",
+          "content_type": "image/webp",
+          "content_sha256": "278364a36f0f49011c02ffe4db956888f947b56867da4f90155a82f0e00707f2",
+          "byte_length": 431704
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-i",
+      "physical_card_id": "gamma-training-a-i",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-i",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/i.webp",
+          "content_type": "image/webp",
+          "content_sha256": "4e80bf7fcc3f8cd6dcd8817ce31673a6f806883ccf7e00cad164bcf4c746a8ec",
+          "byte_length": 441142
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/ii.webp",
+          "content_type": "image/webp",
+          "content_sha256": "d3bffb8a08eb591519c2387aa3717dbc20eeb60c057fe2fae9a15365f8ae1f3b",
+          "byte_length": 426356
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-j",
+      "physical_card_id": "gamma-training-a-j",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-j",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/j.webp",
+          "content_type": "image/webp",
+          "content_sha256": "748295211fc2bd81afa339f54feb4ee92cd5ba8352faf245d6097812d92643e1",
+          "byte_length": 427722
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/jj.webp",
+          "content_type": "image/webp",
+          "content_sha256": "9a75ea453d064428f1869e620fc0208c61fb5ff5567c6f7e6a1ec3e087907cbd",
+          "byte_length": 460116
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-k",
+      "physical_card_id": "gamma-training-a-k",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-k",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/k.webp",
+          "content_type": "image/webp",
+          "content_sha256": "43dc52df5fe72f4ccf5f3bd9129b481e9964ed170ec12f5fd3e7cc67bfb97ceb",
+          "byte_length": 429720
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/kk.webp",
+          "content_type": "image/webp",
+          "content_sha256": "6a7e7c7819c0404c09e62c41c310a607c6da9fe927d52b8338eb73f373b86bbc",
+          "byte_length": 421256
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-l",
+      "physical_card_id": "gamma-training-a-l",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-l",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/l.webp",
+          "content_type": "image/webp",
+          "content_sha256": "ceb5b99955b786e36b0edcf96db58bc6b908ed5cfb5536f8a64315f00f0a7dd7",
+          "byte_length": 478536
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/ll.webp",
+          "content_type": "image/webp",
+          "content_sha256": "a471a1bf2cb460b207c0c1e71d53bab3e7b2825814d3edaf2414fdee119b7f90",
+          "byte_length": 428810
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-m",
+      "physical_card_id": "gamma-training-a-m",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-m",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/m.webp",
+          "content_type": "image/webp",
+          "content_sha256": "cd1d997bc0b9b8a552a9bcfda62f7d486336f4519f1fd982039c6b7f98dc5e2e",
+          "byte_length": 383032
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/mm.webp",
+          "content_type": "image/webp",
+          "content_sha256": "42ed50873941085fd1fed80429849bea835e1a58d52b0bb80645640599fc6684",
+          "byte_length": 462628
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-n",
+      "physical_card_id": "gamma-training-a-n",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-n",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/n.webp",
+          "content_type": "image/webp",
+          "content_sha256": "f43890d5f575c2c78813a68a2989f2fa06069fbe677259d79dcec2b39c159099",
+          "byte_length": 351332
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/nn.webp",
+          "content_type": "image/webp",
+          "content_sha256": "c94a7509a145405d3b357bba6d0205bdccacde060ea64900f3ea43ff25171e57",
+          "byte_length": 446104
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-o",
+      "physical_card_id": "gamma-training-a-o",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-o",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/o.webp",
+          "content_type": "image/webp",
+          "content_sha256": "88e698c66be937b9c7c8567780a247e40553f7405eeec6213e5fb2b4e5b2cfb1",
+          "byte_length": 586880
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/oo.webp",
+          "content_type": "image/webp",
+          "content_sha256": "7ea4e360cb8da4e6d06190ed55c9bd55b25e48ce9a56fd3b440d33f86bcce665",
+          "byte_length": 435778
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-p",
+      "physical_card_id": "gamma-training-a-p",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-p",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/p.webp",
+          "content_type": "image/webp",
+          "content_sha256": "9548809f8707d66523a4b007acb6ecfbe9d47f1e5cb9f3a326b47e42918d76a3",
+          "byte_length": 480098
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/pp.webp",
+          "content_type": "image/webp",
+          "content_sha256": "a842b66ba2de1df235dbf5b620df3d045329dabce1843d6e2ea57f872eca29d1",
+          "byte_length": 423870
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-r",
+      "physical_card_id": "gamma-training-a-r",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-r",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/r.webp",
+          "content_type": "image/webp",
+          "content_sha256": "fdc81706a72fdef2828e8492575604dc6547085e6fe762104ff225b329f5c592",
+          "byte_length": 561294
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/rr.webp",
+          "content_type": "image/webp",
+          "content_sha256": "1c9d5acdd8d0fbb4b5e8f0379b3ee0daadd7c8d2c5b2c6fe8349bb4e4dc5d799",
+          "byte_length": 470898
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-s",
+      "physical_card_id": "gamma-training-a-s",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-s",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/s.webp",
+          "content_type": "image/webp",
+          "content_sha256": "39df62bdead8a9204c703dd79e0367f2bdab20937e082b8cbc18a40759eb0e7e",
+          "byte_length": 503470
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/ss.webp",
+          "content_type": "image/webp",
+          "content_sha256": "cef0fd575ad3a0eb3c3ce6244b9bfc37cc33abb9bb76920703d9ca350693cf8c",
+          "byte_length": 466542
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-a-t",
+      "physical_card_id": "gamma-training-a-t",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-a-t",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/t.webp",
+          "content_type": "image/webp",
+          "content_sha256": "dbc4b18a957c68753ddafeb959a570b9b9738084feeaf0e673037cbca0ccd2e6",
+          "byte_length": 517262
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset A/tt.webp",
+          "content_type": "image/webp",
+          "content_sha256": "c8878ffb9c14e30a7508a9fe5e18cea66cd3ba6b223f698f8a7e6d5353eeba1e",
+          "byte_length": 636446
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-c",
+      "physical_card_id": "gamma-training-b-c",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-c",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/c.webp",
+          "content_type": "image/webp",
+          "content_sha256": "e05f77a812b18924343c71724dd514619e82e612f7b9fa1ac97190e25ad4c263",
+          "byte_length": 374664
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/cc.webp",
+          "content_type": "image/webp",
+          "content_sha256": "ef60eb18e8263f69655ed3f08d21942e8f1c983eff3d0c1a96948264340386d1",
+          "byte_length": 260736
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-d",
+      "physical_card_id": "gamma-training-b-d",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-d",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/d.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5354a2429ff36871113df2f114ccc6aa2c15be9080397eef2a69ff1a22ec5e55",
+          "byte_length": 408082
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/dd.webp",
+          "content_type": "image/webp",
+          "content_sha256": "7067a61db8f22465310ba93acce7cb4c1cc82879359e9be6084d052d2006a29f",
+          "byte_length": 292670
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-f",
+      "physical_card_id": "gamma-training-b-f",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-f",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/f.webp",
+          "content_type": "image/webp",
+          "content_sha256": "f0c5908568fa22b5a87da4585f059b482546bd7fa5b3ddb5c73682ae2903bc04",
+          "byte_length": 422394
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/ff.webp",
+          "content_type": "image/webp",
+          "content_sha256": "61ca2c13dec521bf57b68a15b1543fb5f357b4f09907ad53cb5032b257500302",
+          "byte_length": 269578
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-h",
+      "physical_card_id": "gamma-training-b-h",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-h",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/h.webp",
+          "content_type": "image/webp",
+          "content_sha256": "7662996fada39d8fd51a094f64818408fbc26a74c890e4dbd07054fbc92476d9",
+          "byte_length": 599174
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/hh.webp",
+          "content_type": "image/webp",
+          "content_sha256": "e1e6e7e84a08cbae1fbab7428a6e53be8d57eb14a1f7cac1fe44a3a7406fa359",
+          "byte_length": 476288
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-j",
+      "physical_card_id": "gamma-training-b-j",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-j",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/j.webp",
+          "content_type": "image/webp",
+          "content_sha256": "468a37dbf55bd07604e22e3c4d6ecd5b7eb785e9245652419a9fc860c3788fc3",
+          "byte_length": 440674
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/jj.webp",
+          "content_type": "image/webp",
+          "content_sha256": "f06f0309db1cd842535dd37e1384ee7716a361e4b43acd2f11190d4a45176dd2",
+          "byte_length": 280522
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-l",
+      "physical_card_id": "gamma-training-b-l",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-l",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/l.webp",
+          "content_type": "image/webp",
+          "content_sha256": "f74797bc6a741324790dde3d927f0e3a3111106922f74422293501fa4de73ae5",
+          "byte_length": 380068
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/ll.webp",
+          "content_type": "image/webp",
+          "content_sha256": "9946e0558d8a7573ca93e5c97f74a1c0016f094ff801db6d6b5347b79faaf100",
+          "byte_length": 238766
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-n",
+      "physical_card_id": "gamma-training-b-n",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-n",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/n.webp",
+          "content_type": "image/webp",
+          "content_sha256": "581fd7539fa655dd12b01b79500a28c49ad02e65671cf64c81ed99cd5e0c5e6e",
+          "byte_length": 501240
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/nn.webp",
+          "content_type": "image/webp",
+          "content_sha256": "a730a1e6d8428ac7ec957b63d9906a0a0d4a9f91f52d781f98864ee2731164bc",
+          "byte_length": 346406
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-o",
+      "physical_card_id": "gamma-training-b-o",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-o",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/o.webp",
+          "content_type": "image/webp",
+          "content_sha256": "88f53bdd5c621e4e189e669c94e25e1ac4185a9c3a6a31abe33879af7b4cdb71",
+          "byte_length": 358158
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/oo.webp",
+          "content_type": "image/webp",
+          "content_sha256": "a020c015e82d74caf1ce9016a984c5b62620dd9f6caf17fbab2e22bd46f88ce4",
+          "byte_length": 385732
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-p",
+      "physical_card_id": "gamma-training-b-p",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-p",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/p.webp",
+          "content_type": "image/webp",
+          "content_sha256": "d4081c99db63c47a448fab7556f23cd3aed4b50c6bdd6c859fe6721b0524add1",
+          "byte_length": 596634
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/pp.webp",
+          "content_type": "image/webp",
+          "content_sha256": "294872f25daaee76895164ccfa2a46dbebb376532b1bdfc034f1aaf274901e38",
+          "byte_length": 408994
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-b-r",
+      "physical_card_id": "gamma-training-b-r",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-b-r",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/r.webp",
+          "content_type": "image/webp",
+          "content_sha256": "05b71247ee44599887f7f502d1a528eec8236f9c1b36033f9f165b4cce2d48d3",
+          "byte_length": 574920
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset B/rr.webp",
+          "content_type": "image/webp",
+          "content_sha256": "a9e78341b3e4c6e2ff904e9a80324a77aab04c51cf9bf7d993017bb27fd0e520",
+          "byte_length": 398442
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-a",
+      "physical_card_id": "gamma-training-c-a",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-a",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/a.webp",
+          "content_type": "image/webp",
+          "content_sha256": "90fcf0fd538b7e356972bdbcca93f3daa05927246f027dc8ea8015a3b459f36c",
+          "byte_length": 598714
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/aa.webp",
+          "content_type": "image/webp",
+          "content_sha256": "ccb52047ac2dd558d76d024401eb0c68848bff50ab296b93c38b1825f7c06a31",
+          "byte_length": 377152
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-b",
+      "physical_card_id": "gamma-training-c-b",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-b",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/b.webp",
+          "content_type": "image/webp",
+          "content_sha256": "c58b0df51b0bba265be724f844ab3556f3c309db6050da1eeeeb8dc4c0957450",
+          "byte_length": 490312
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/bb.webp",
+          "content_type": "image/webp",
+          "content_sha256": "ab446d61b0174c2537e25456c8679a2f9608b3416fb2aa895b24d345591c3b9f",
+          "byte_length": 531058
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-c",
+      "physical_card_id": "gamma-training-c-c",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-c",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/c.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5da1151e7ac54e2b337463daaaa4c338da37c4d0c9666d2da427c6c8aa3d7c13",
+          "byte_length": 329124
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/cc.webp",
+          "content_type": "image/webp",
+          "content_sha256": "7af8c265c0cdc70bc579d11190153187fabd5dd5c62fd4caefcdb2b3f51d301b",
+          "byte_length": 311634
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-d",
+      "physical_card_id": "gamma-training-c-d",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-d",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/d.webp",
+          "content_type": "image/webp",
+          "content_sha256": "6a70b54cfdd31e0dcc93916b0f58810ed0deaed74c66e72a6445fd57c8bf948f",
+          "byte_length": 422014
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/dd.webp",
+          "content_type": "image/webp",
+          "content_sha256": "9e2af3b53ed71e5c78f80d98dd8024b080ed0c88d4b943686f692fea20130e09",
+          "byte_length": 299146
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-e",
+      "physical_card_id": "gamma-training-c-e",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-e",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/e.webp",
+          "content_type": "image/webp",
+          "content_sha256": "eae39f4409ea59657129de0c5490e5dc75eef73e190d098f192b84a636684966",
+          "byte_length": 446858
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/ee.webp",
+          "content_type": "image/webp",
+          "content_sha256": "504cec8d2e8f11e56a09d3d1e24acc3a958a2f171db31ecfa3ce3b3ba44b2b32",
+          "byte_length": 321812
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-f",
+      "physical_card_id": "gamma-training-c-f",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-f",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/f.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5ae493c3ebf31817e0a355f258262b6d557d6fdaec2063957fd0b0b8c2a06960",
+          "byte_length": 456666
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/ff.webp",
+          "content_type": "image/webp",
+          "content_sha256": "0ef3b268ce868081e74281a29dbdfe09b2df0439d80bad51f4e643e89008da45",
+          "byte_length": 335990
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-g",
+      "physical_card_id": "gamma-training-c-g",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-g",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/g.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5db6affe12083a78f5ab7bd10b95ff5340622fe592d6af6fee970d86897efa83",
+          "byte_length": 474474
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/gg.webp",
+          "content_type": "image/webp",
+          "content_sha256": "3307762beb6f25c048cedbffd6deac5faf09628624700e90ec621b1a91b53760",
+          "byte_length": 318068
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-h",
+      "physical_card_id": "gamma-training-c-h",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-h",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/h.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5edab632c06d0b6fb4d838b478a89f2c050520beb0933845529b6205dfe707b7",
+          "byte_length": 501192
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/hh.webp",
+          "content_type": "image/webp",
+          "content_sha256": "155f5d69784db1eb2cf8e7a65a91f7a559e2827022fa6bc4d59b69dc95b5c497",
+          "byte_length": 323226
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-i",
+      "physical_card_id": "gamma-training-c-i",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-i",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/i.webp",
+          "content_type": "image/webp",
+          "content_sha256": "a3c7d6e294e8cfc6c264698e103aaeb84ef28d2522265e1f72c5736a343f7606",
+          "byte_length": 469248
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/ii.webp",
+          "content_type": "image/webp",
+          "content_sha256": "ac0085f6a66732bad11f2e23a608bfb05a6fe0798b82c2a19307eb76baffd9ae",
+          "byte_length": 408330
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-j",
+      "physical_card_id": "gamma-training-c-j",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-j",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/j.webp",
+          "content_type": "image/webp",
+          "content_sha256": "40350e00073bb217d1732bd91a0ea1de2a0db91c275a2b6a0d11c10f7b46a3a5",
+          "byte_length": 524154
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/jj.webp",
+          "content_type": "image/webp",
+          "content_sha256": "485b3ae378e64b217fe891ed939de59526de71f982c49a55c7f0e970335e1899",
+          "byte_length": 360968
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-k",
+      "physical_card_id": "gamma-training-c-k",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-k",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/k.webp",
+          "content_type": "image/webp",
+          "content_sha256": "c75f5f72d7c73abe4032cdeef9a2a811eef9bd63cec1fabdde07cd4f86d1c036",
+          "byte_length": 478086
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/kk.webp",
+          "content_type": "image/webp",
+          "content_sha256": "c61759ab92bb16768ba1db31a6d74dae3838fc43e2dca690a0f44b0568a04820",
+          "byte_length": 341642
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-l",
+      "physical_card_id": "gamma-training-c-l",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-l",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/l.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5128a1c5f3366e96d73a2f2fd0cf79510c81d3ce1c1d215a4375e2853bad6a9c",
+          "byte_length": 428476
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/ll.webp",
+          "content_type": "image/webp",
+          "content_sha256": "4f32f11bf8248bfb92f75255f882eea1049a59ea94bd726da08b63aef3debba4",
+          "byte_length": 409936
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-m",
+      "physical_card_id": "gamma-training-c-m",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-m",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/m.webp",
+          "content_type": "image/webp",
+          "content_sha256": "d9b920214d57a2b13320d7450f3d58256633f800e5695f2fbad8a376098ae47a",
+          "byte_length": 346030
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/mm.webp",
+          "content_type": "image/webp",
+          "content_sha256": "4dc5fda1a147e18e686f4c4eb706ae831e40e8f0464ab5dcc56838b02a669fc5",
+          "byte_length": 433306
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-n",
+      "physical_card_id": "gamma-training-c-n",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-n",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/n.webp",
+          "content_type": "image/webp",
+          "content_sha256": "98f3e22924de08891e104fa561777073a3be178d015154c870fe79e29ee2d4cb",
+          "byte_length": 445782
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/nn.webp",
+          "content_type": "image/webp",
+          "content_sha256": "2ad23630bbb54fe393295eec85a69366d3c08552800487391f7d9503e4b1e0e4",
+          "byte_length": 508346
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-o",
+      "physical_card_id": "gamma-training-c-o",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-o",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/o.webp",
+          "content_type": "image/webp",
+          "content_sha256": "ff7eac1c632bae3e7f8cc650303487545ee8ee4f81fd184e633632ba97c7482e",
+          "byte_length": 441126
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/oo.webp",
+          "content_type": "image/webp",
+          "content_sha256": "bddb473a1283ef72656badbaf73076ec69c002908f8181b179ea35a55d549749",
+          "byte_length": 481422
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-p",
+      "physical_card_id": "gamma-training-c-p",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-p",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/p.webp",
+          "content_type": "image/webp",
+          "content_sha256": "76c004f3883659691fe027f207b4b7e4bb0597010c48648687984be4a5b3af8e",
+          "byte_length": 454744
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/pp.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5ad503f05feea21e09f67aada4b21317bf4197491a270fa1eec6a7b2c63d7922",
+          "byte_length": 394952
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-q",
+      "physical_card_id": "gamma-training-c-q",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-q",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/q.webp",
+          "content_type": "image/webp",
+          "content_sha256": "7b8485eaac6295852e1ec1c7d3c9069ed79a2c911dd5624f7ad102cc8df465be",
+          "byte_length": 353696
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/qq.webp",
+          "content_type": "image/webp",
+          "content_sha256": "027a6843004be8c47d4da14f19618e370fbacabf54aa0f8f10ec5a855ff12b9d",
+          "byte_length": 447846
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-r",
+      "physical_card_id": "gamma-training-c-r",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-r",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/r.webp",
+          "content_type": "image/webp",
+          "content_sha256": "3034497d9d327306f50140e1edf0c8bc316279afdfd717674539d9e08c7ee2c1",
+          "byte_length": 423462
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/rr.webp",
+          "content_type": "image/webp",
+          "content_sha256": "3a24182e283d90fedd0e552b8fa98c0411a8ff341c64a7f2d82b1f95b1fe3f4b",
+          "byte_length": 503866
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-s",
+      "physical_card_id": "gamma-training-c-s",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-s",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/s.webp",
+          "content_type": "image/webp",
+          "content_sha256": "fe2213f247e04010188da7dd1580b694310dcadd5a476f87ba1a45a2713691b3",
+          "byte_length": 402160
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/ss.webp",
+          "content_type": "image/webp",
+          "content_sha256": "1d0b8b50cdc421f4935572e49c61ff49a103283ee9639ff3215c19712151a17d",
+          "byte_length": 512172
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-t",
+      "physical_card_id": "gamma-training-c-t",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-t",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/t.webp",
+          "content_type": "image/webp",
+          "content_sha256": "c41c62c9f8c1551f0389a5ae31d25531900de98fd48b2f5d999429942d713774",
+          "byte_length": 437198
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/tt.webp",
+          "content_type": "image/webp",
+          "content_sha256": "7e583c2cd846e06ec8f13f5eecb49b107dd1a425f9294581c5228e408a410da8",
+          "byte_length": 420704
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-u",
+      "physical_card_id": "gamma-training-c-u",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-u",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/u.webp",
+          "content_type": "image/webp",
+          "content_sha256": "a7e5d53a44097e5d11882c2fbf1668ec4ea5ff94128ecbd37a4450b12a1c3036",
+          "byte_length": 384442
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/uu.webp",
+          "content_type": "image/webp",
+          "content_sha256": "76b5ad865ca5db77e51d6864c25ef323ab609c509c14d5de0df5029bc680f707",
+          "byte_length": 532816
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-v",
+      "physical_card_id": "gamma-training-c-v",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-v",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/v.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5d1d761f09a95d5fed4cad7130caaff7664c0b0d60ba4c35dad09560ca41b960",
+          "byte_length": 379326
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/vv.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5af40617ac506d7ab9bf94c7751deafac87add7b75d800478309948cba6f146b",
+          "byte_length": 488208
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-w",
+      "physical_card_id": "gamma-training-c-w",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-w",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/w.webp",
+          "content_type": "image/webp",
+          "content_sha256": "f053e9161a39e9f6328c053631f57ff3d0d4827f6c0b29c0960f4f3b0c2c0ff6",
+          "byte_length": 494028
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/ww.webp",
+          "content_type": "image/webp",
+          "content_sha256": "f62b593be02e37698d944baa207e973d165c6eac9d7a543e430fb451b63fc666",
+          "byte_length": 374130
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-c-x",
+      "physical_card_id": "gamma-training-c-x",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-c-x",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/x.webp",
+          "content_type": "image/webp",
+          "content_sha256": "9fbbac43ebebccd17687546762d5055816462b17a3316034504586bef95876f0",
+          "byte_length": 477008
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/Subset C/xx.webp",
+          "content_type": "image/webp",
+          "content_sha256": "c39604658dd80867a7b949f8be9078db90952049cdfa55f809f1ce993cf499d3",
+          "byte_length": 462658
+        }
+      ]
+    },
+    {
+      "asset_id": "gamma-training-root-b",
+      "physical_card_id": "gamma-training-root-b",
+      "sealed_eval_label_ref": {
+        "key": "gamma-training-root-b",
+        "path": "golden/sealed-labels.jsonl"
+      },
+      "images": [
+        {
+          "role": "front_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/b.webp",
+          "content_type": "image/webp",
+          "content_sha256": "5c0f1f525f035b3f69247b83c1a344b4abe7d6ba20c527c3f1ba35dd0a510dff",
+          "byte_length": 335722
+        },
+        {
+          "role": "back_original",
+          "local_path": "/private/tmp/csmdata-over80-20260815/assets/bb.webp",
+          "content_type": "image/webp",
+          "content_sha256": "397514ce94791c22fa4476f708e8e98371d3bdab655000b1cc166351bbbdfe96",
+          "byte_length": 222908
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+{
+  "schema_version": "luna-parity-sealed-label-map-v1",
+  "assets_manifest_sha256": "dba094cbef7f96c6179a67111840bd656fdbbaa429fc7f5c5fd5bcdad4cb8304",
+  "dataset_sha256": "98353f2ee26e6433ae5d875e5674df3cc1837b20b17de95eab800091747b02ef",
+  "expected_labels_path": "golden/sealed-labels.jsonl",
+  "sealed_labels_sha256": "8e3124fb745925d28bf61ad356be8a224ce1b72ebec58c4655ec2c237ace2773",
+  "sealed_label_bytes_read": false,
+  "selected_asset_ids_sha256": "76c72d8c425cab373721a3de3a0a33755b4d19bf1abd51b6ce297d71f6dcf19d",
+  "mapping_sha256": "e4db7f1378e7dbed10a678a5eb87c865443d98668444bf0d07f2bb2af29821d7",
+  "mapping": [
+    {
+      "asset_id": "gamma-training-a-b",
+      "label_key": "gamma-training-a-b"
+    },
+    {
+      "asset_id": "gamma-training-a-c",
+      "label_key": "gamma-training-a-c"
+    },
+    {
+      "asset_id": "gamma-training-a-d",
+      "label_key": "gamma-training-a-d"
+    },
+    {
+      "asset_id": "gamma-training-a-e",
+      "label_key": "gamma-training-a-e"
+    },
+    {
+      "asset_id": "gamma-training-a-f",
+      "label_key": "gamma-training-a-f"
+    },
+    {
+      "asset_id": "gamma-training-a-g",
+      "label_key": "gamma-training-a-g"
+    },
+    {
+      "asset_id": "gamma-training-a-h",
+      "label_key": "gamma-training-a-h"
+    },
+    {
+      "asset_id": "gamma-training-a-i",
+      "label_key": "gamma-training-a-i"
+    },
+    {
+      "asset_id": "gamma-training-a-j",
+      "label_key": "gamma-training-a-j"
+    },
+    {
+      "asset_id": "gamma-training-a-k",
+      "label_key": "gamma-training-a-k"
+    },
+    {
+      "asset_id": "gamma-training-a-l",
+      "label_key": "gamma-training-a-l"
+    },
+    {
+      "asset_id": "gamma-training-a-m",
+      "label_key": "gamma-training-a-m"
+    },
+    {
+      "asset_id": "gamma-training-a-n",
+      "label_key": "gamma-training-a-n"
+    },
+    {
+      "asset_id": "gamma-training-a-o",
+      "label_key": "gamma-training-a-o"
+    },
+    {
+      "asset_id": "gamma-training-a-p",
+      "label_key": "gamma-training-a-p"
+    },
+    {
+      "asset_id": "gamma-training-a-r",
+      "label_key": "gamma-training-a-r"
+    },
+    {
+      "asset_id": "gamma-training-a-s",
+      "label_key": "gamma-training-a-s"
+    },
+    {
+      "asset_id": "gamma-training-a-t",
+      "label_key": "gamma-training-a-t"
+    },
+    {
+      "asset_id": "gamma-training-b-c",
+      "label_key": "gamma-training-b-c"
+    },
+    {
+      "asset_id": "gamma-training-b-d",
+      "label_key": "gamma-training-b-d"
+    },
+    {
+      "asset_id": "gamma-training-b-f",
+      "label_key": "gamma-training-b-f"
+    },
+    {
+      "asset_id": "gamma-training-b-h",
+      "label_key": "gamma-training-b-h"
+    },
+    {
+      "asset_id": "gamma-training-b-j",
+      "label_key": "gamma-training-b-j"
+    },
+    {
+      "asset_id": "gamma-training-b-l",
+      "label_key": "gamma-training-b-l"
+    },
+    {
+      "asset_id": "gamma-training-b-n",
+      "label_key": "gamma-training-b-n"
+    },
+    {
+      "asset_id": "gamma-training-b-o",
+      "label_key": "gamma-training-b-o"
+    },
+    {
+      "asset_id": "gamma-training-b-p",
+      "label_key": "gamma-training-b-p"
+    },
+    {
+      "asset_id": "gamma-training-b-r",
+      "label_key": "gamma-training-b-r"
+    },
+    {
+      "asset_id": "gamma-training-c-a",
+      "label_key": "gamma-training-c-a"
+    },
+    {
+      "asset_id": "gamma-training-c-b",
+      "label_key": "gamma-training-c-b"
+    },
+    {
+      "asset_id": "gamma-training-c-c",
+      "label_key": "gamma-training-c-c"
+    },
+    {
+      "asset_id": "gamma-training-c-d",
+      "label_key": "gamma-training-c-d"
+    },
+    {
+      "asset_id": "gamma-training-c-e",
+      "label_key": "gamma-training-c-e"
+    },
+    {
+      "asset_id": "gamma-training-c-f",
+      "label_key": "gamma-training-c-f"
+    },
+    {
+      "asset_id": "gamma-training-c-g",
+      "label_key": "gamma-training-c-g"
+    },
+    {
+      "asset_id": "gamma-training-c-h",
+      "label_key": "gamma-training-c-h"
+    },
+    {
+      "asset_id": "gamma-training-c-i",
+      "label_key": "gamma-training-c-i"
+    },
+    {
+      "asset_id": "gamma-training-c-j",
+      "label_key": "gamma-training-c-j"
+    },
+    {
+      "asset_id": "gamma-training-c-k",
+      "label_key": "gamma-training-c-k"
+    },
+    {
+      "asset_id": "gamma-training-c-l",
+      "label_key": "gamma-training-c-l"
+    },
+    {
+      "asset_id": "gamma-training-c-m",
+      "label_key": "gamma-training-c-m"
+    },
+    {
+      "asset_id": "gamma-training-c-n",
+      "label_key": "gamma-training-c-n"
+    },
+    {
+      "asset_id": "gamma-training-c-o",
+      "label_key": "gamma-training-c-o"
+    },
+    {
+      "asset_id": "gamma-training-c-p",
+      "label_key": "gamma-training-c-p"
+    },
+    {
+      "asset_id": "gamma-training-c-q",
+      "label_key": "gamma-training-c-q"
+    },
+    {
+      "asset_id": "gamma-training-c-r",
+      "label_key": "gamma-training-c-r"
+    },
+    {
+      "asset_id": "gamma-training-c-s",
+      "label_key": "gamma-training-c-s"
+    },
+    {
+      "asset_id": "gamma-training-c-t",
+      "label_key": "gamma-training-c-t"
+    },
+    {
+      "asset_id": "gamma-training-c-u",
+      "label_key": "gamma-training-c-u"
+    },
+    {
+      "asset_id": "gamma-training-c-v",
+      "label_key": "gamma-training-c-v"
+    },
+    {
+      "asset_id": "gamma-training-c-w",
+      "label_key": "gamma-training-c-w"
+    },
+    {
+      "asset_id": "gamma-training-c-x",
+      "label_key": "gamma-training-c-x"
+    },
+    {
+      "asset_id": "gamma-training-root-b",
+      "label_key": "gamma-training-root-b"
+    }
+  ]
+}
