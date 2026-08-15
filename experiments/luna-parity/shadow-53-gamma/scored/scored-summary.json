@@ -1,0 +1,1138 @@
+{
+  "schema_version": "luna-parity-blind-score-v1",
+  "authority": "evaluation_only",
+  "production_authorized": false,
+  "decision": "NO_MECHANISM_SIGNAL",
+  "score_contract_sha256": "bfabab802ce7f0cd159bca4748c035608158f262c743a899f874dd54c52618ad",
+  "execution_run_fingerprint": "bb538849905e3f5005724fcb71f527c50b0f5399d2c19b5335034de576fa055e",
+  "sealed_labels_opened_after_complete_validation": true,
+  "metric_scope": "writer_reviewed_title_token_proxy",
+  "typed_field_gold": false,
+  "cards": 53,
+  "control_arm": "runtime_active_high_low",
+  "treatment_arm": "lynca_csm_direct_title_high_low",
+  "control_mean_f1": 0.7183511022243477,
+  "treatment_mean_f1": 0.7197561942780197,
+  "paired_mean_delta_f1": 0.001405092053672208,
+  "sign_test": {
+    "wins": 27,
+    "losses": 24,
+    "ties": 2,
+    "p": 0.7797679305530743
+  },
+  "rows": [
+    {
+      "asset_id": "gamma-training-a-b",
+      "reference": "2026 Bowman Chrome Jacob Misiorowski RC #35",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Jacob Misiorowski RC Brewers #35",
+      "control": {
+        "precision": 0.875,
+        "recall": 1,
+        "f1": 0.9333333333333333
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Jacob Misiorowski RC #35 Refractor Milwaukee Brewers",
+      "treatment": {
+        "precision": 0.7,
+        "recall": 1,
+        "f1": 0.8235294117647058
+      },
+      "delta_f1": -0.1098039215686275,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-c",
+      "reference": "2026 Bowman Chrome Samuel Basallo RC #93",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Samuel Basallo Refractor RC Orioles #93",
+      "control": {
+        "precision": 0.7777777777777778,
+        "recall": 1,
+        "f1": 0.8750000000000001
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Samuel Basallo RC #93 Baltimore Orioles Refractor",
+      "treatment": {
+        "precision": 0.7,
+        "recall": 1,
+        "f1": 0.8235294117647058
+      },
+      "delta_f1": -0.05147058823529427,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-d",
+      "reference": "2026 Bowman Baseball  Dasan Hill Chrome Prospect BCP-88 Wave Refractor 022/350",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Dasan Hill Raywave Twins #BCP-88 09/150",
+      "control": {
+        "precision": 0.6666666666666666,
+        "recall": 0.5454545454545454,
+        "f1": 0.6
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Dasan Hill 1st Bowman Refractor #BCP-88 Twins Prospect",
+      "treatment": {
+        "precision": 0.7272727272727273,
+        "recall": 0.7272727272727273,
+        "f1": 0.7272727272727273
+      },
+      "delta_f1": 0.12727272727272732,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-e",
+      "reference": "2026 Bowman Chrome Wei-En Lin Fuchsia Wave Refractor #BCP-125 137/199",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome 1st Bowman Wei-En Lin Purple Shimmer Athletics #BCP-125",
+      "control": {
+        "precision": 0.5454545454545454,
+        "recall": 0.6,
+        "f1": 0.5714285714285713
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Wei-En Lin BCP-125 Purple Shimmer Refractor Athletics",
+      "treatment": {
+        "precision": 0.7,
+        "recall": 0.7,
+        "f1": 0.7
+      },
+      "delta_f1": 0.12857142857142867,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-f",
+      "reference": "2026 Bowman Baseball Ethan Dorchies Aqua Shimmer Refractor #BCP-52 094/125",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Ethan Dorchies Aqua Raywave 1st Bowman #BCP-52 077/499",
+      "control": {
+        "precision": 0.5454545454545454,
+        "recall": 0.6,
+        "f1": 0.5714285714285713
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Ethan Dorchies Milwaukee Brewers Mojo Refractor BCP-52",
+      "treatment": {
+        "precision": 0.6,
+        "recall": 0.6,
+        "f1": 0.6
+      },
+      "delta_f1": 0.028571428571428692,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-g",
+      "reference": "2026 Bowman Baseball Nick Kurtz Power Chords PC-6 Aqua Refractor 010/125",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Power Toppers Nick Kurtz Athletics #PC-6 10/125",
+      "control": {
+        "precision": 0.4444444444444444,
+        "recall": 0.36363636363636365,
+        "f1": 0.39999999999999997
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Nick Kurtz Power Pours PC-6 Orange /125 RC Athletics",
+      "treatment": {
+        "precision": 0.3333333333333333,
+        "recall": 0.36363636363636365,
+        "f1": 0.34782608695652173
+      },
+      "delta_f1": -0.05217391304347824,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-h",
+      "reference": "2026 Bowman Chrome Dauri Fernandez Yellow Wave Refractor #BCP-116 08/75",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Dauri Fernandez 1st Bowman Green Shimmer Guardians #BCP-116",
+      "control": {
+        "precision": 0.5454545454545454,
+        "recall": 0.6,
+        "f1": 0.5714285714285713
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Dauri Fernandez BCP-116 Cleveland Guardians Yellow Refractor",
+      "treatment": {
+        "precision": 0.8,
+        "recall": 0.8,
+        "f1": 0.8000000000000002
+      },
+      "delta_f1": 0.22857142857142887,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-i",
+      "reference": "2026 Bowman Baseball Felnin Celesten Orange Refractor #BCP-57 02/25",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Briefing Felnin Celesten Mariners #BCP-57 02/25",
+      "control": {
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1": 0.6666666666666666
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Felnin Celesten Orange Refractor /25 BCP-57 Mariners",
+      "treatment": {
+        "precision": 0.7,
+        "recall": 0.7777777777777778,
+        "f1": 0.7368421052631577
+      },
+      "delta_f1": 0.07017543859649111,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-j",
+      "reference": "2026 Bowman Luke Keaschall Gold #57 16/50",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Luke Keaschall Twins #57 16/50",
+      "control": {
+        "precision": 0.75,
+        "recall": 0.8571428571428571,
+        "f1": 0.7999999999999999
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Luke Keaschall Gold Refractor RC #57 16/50 Twins",
+      "treatment": {
+        "precision": 0.6363636363636364,
+        "recall": 1,
+        "f1": 0.7777777777777778
+      },
+      "delta_f1": -0.022222222222222143,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-k",
+      "reference": "2026 Bowman Walker Jenkins Gold #BP-98 19/50",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Topps Bowman Walker Jenkins Twins #BP-98 19/50",
+      "control": {
+        "precision": 0.75,
+        "recall": 0.8571428571428571,
+        "f1": 0.7999999999999999
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Walker Jenkins Gold /50 19/50 BP-98 Minnesota Twins RC Prospect",
+      "treatment": {
+        "precision": 0.5833333333333334,
+        "recall": 1,
+        "f1": 0.7368421052631579
+      },
+      "delta_f1": -0.06315789473684208,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-l",
+      "reference": "2026 Bowman Michael Harris II Orange Pattern #21 25/25",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Topps Bowman Michael Harris II Braves #21 1/25",
+      "control": {
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1": 0.6666666666666666
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Michael Harris II Orange Parallel /25 #21 Atlanta Braves",
+      "treatment": {
+        "precision": 0.6363636363636364,
+        "recall": 0.7777777777777778,
+        "f1": 0.7000000000000001
+      },
+      "delta_f1": 0.03333333333333344,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-m",
+      "reference": "2026 Bowman Baseball Victor Figueroa 1st Chrome Auto CPA-VF",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome 1st Bowman Victor Figueroa Auto Orioles #CPA-VF",
+      "control": {
+        "precision": 0.8,
+        "recall": 0.8888888888888888,
+        "f1": 0.8421052631578948
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome 1st Victor Figueroa Auto CPA-VF Orioles",
+      "treatment": {
+        "precision": 0.8888888888888888,
+        "recall": 0.8888888888888888,
+        "f1": 0.8888888888888888
+      },
+      "delta_f1": 0.04678362573099404,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-n",
+      "reference": "2026 Bowman Baseball Brendan Tunink 1st Chrome Auto CPA-BT",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Prospect Autographs Brendan Tunink Dodgers #CPA-BT",
+      "control": {
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1": 0.6666666666666666
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Brendan Tunink 1st Bowman Auto CPA-BT Dodgers RC",
+      "treatment": {
+        "precision": 0.7272727272727273,
+        "recall": 0.8888888888888888,
+        "f1": 0.7999999999999999
+      },
+      "delta_f1": 0.1333333333333333,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-o",
+      "reference": "2026 Bowman Chrome Marconi German Gold Shimmer Autograph #CPA-MG 31/50",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome 1st Bowman Marconi German Gold Shimmer Auto #CPA-MG 31/50",
+      "control": {
+        "precision": 0.75,
+        "recall": 0.9,
+        "f1": 0.8181818181818182
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome Marconi German Gold Refractor Auto /50 CPA-MG Nationals RC",
+      "treatment": {
+        "precision": 0.5833333333333334,
+        "recall": 0.7,
+        "f1": 0.6363636363636365
+      },
+      "delta_f1": -0.18181818181818177,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-p",
+      "reference": "2026 Bowman Baseball Byron Buxton Kris Bryant Draft Pick Pairings DPPA-BB 08/25",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Byron Buxton Kris Bryant Refractor Auto #DPPA-BB 08/25",
+      "control": {
+        "precision": 0.7272727272727273,
+        "recall": 0.6666666666666666,
+        "f1": 0.6956521739130435
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Baseball Draft Pick Pairings Auto Byron Buxton Kris Bryant DPPA-BB",
+      "treatment": {
+        "precision": 0.9166666666666666,
+        "recall": 0.9166666666666666,
+        "f1": 0.9166666666666666
+      },
+      "delta_f1": 0.22101449275362317,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-r",
+      "reference": "2026 Bowman Baseball JoJo Parker Chrome Prospect  BCP-147 Wave Refractor 210/350",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Bowman Chrome Briefing Jojo Parker Blue Jays #BCP-147 210/350",
+      "control": {
+        "precision": 0.7,
+        "recall": 0.6363636363636364,
+        "f1": 0.6666666666666666
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Bowman Chrome JoJo Parker BCP-147 Blue Jays 210/350 Refractor Prospect",
+      "treatment": {
+        "precision": 0.8181818181818182,
+        "recall": 0.8181818181818182,
+        "f1": 0.8181818181818182
+      },
+      "delta_f1": 0.1515151515151516,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-s",
+      "reference": "2025-26 Panini Select EuroLeague Blatt Bryant Select Pairings Auto #SP-DGN 38/49",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "Select EuroLeague Basketball Pairings Tamir Blatt Elijah Bryant #SP-DGN 38/49",
+      "control": {
+        "precision": 0.7,
+        "recall": 0.6363636363636364,
+        "f1": 0.6666666666666666
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025-26 Panini Select EuroLeague Tamir Blatt Elijah Bryant Dual Auto /49 SP-DGN",
+      "treatment": {
+        "precision": 0.6666666666666666,
+        "recall": 0.7272727272727273,
+        "f1": 0.6956521739130435
+      },
+      "delta_f1": 0.02898550724637683,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-a-t",
+      "reference": "2026 Bowman Chrome Jac Caglianone Spotlights Red Refractor #BS-4 5/5",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Jac Caglianone RC Royals #BS-4 5/5",
+      "control": {
+        "precision": 0.6666666666666666,
+        "recall": 0.6,
+        "f1": 0.631578947368421
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Topps Bowman Chrome BS-4 Jac Caglianone RC 5/5 Kansas City Royals",
+      "treatment": {
+        "precision": 0.5833333333333334,
+        "recall": 0.7,
+        "f1": 0.6363636363636365
+      },
+      "delta_f1": 0.004784688995215447,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-c",
+      "reference": "2025 Topps Royalty WWE Otis Imperial Ink #IMP-OTI 43/99",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Royalty WWE Imperial Ink Otis Auto RAW #IMP-OTI 43/99",
+      "control": {
+        "precision": 0.8181818181818182,
+        "recall": 1,
+        "f1": 0.9
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps WWE Royalty Imperial Ink Otis Auto 43/99 IMP-OTI",
+      "treatment": {
+        "precision": 0.9,
+        "recall": 1,
+        "f1": 0.9473684210526316
+      },
+      "delta_f1": 0.047368421052631615,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-d",
+      "reference": "2025 Topps Royalty WWE Maryse Royalty Autographs #RAU-MAR 77/99",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Royalty WWE Autographs Maryse WWE #CMP108316 77/99",
+      "control": {
+        "precision": 0.7777777777777778,
+        "recall": 0.7777777777777778,
+        "f1": 0.7777777777777778
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Royalty WWE Maryse Autograph 77/99 Certified Auto /99",
+      "treatment": {
+        "precision": 0.6,
+        "recall": 0.6666666666666666,
+        "f1": 0.631578947368421
+      },
+      "delta_f1": -0.14619883040935677,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-f",
+      "reference": "2025 Topps Royalty WWE Uncle Howdy Imperial Ink Blue #IMP-UHO 06/25",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Royalty WWE Imperial Ink Uncle Howdy Auto SmackDown #IMP-UHO 06/25",
+      "control": {
+        "precision": 0.8333333333333334,
+        "recall": 0.9090909090909091,
+        "f1": 0.8695652173913043
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps WWE Royalty Uncle Howdy Imperial Ink Auto 06/25 IMP-UHO",
+      "treatment": {
+        "precision": 0.9090909090909091,
+        "recall": 0.9090909090909091,
+        "f1": 0.9090909090909091
+      },
+      "delta_f1": 0.03952569169960474,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-h",
+      "reference": "2026 Pokemon CN 琉琪亚的展现 257/208 CSV9C SAR",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Pokemon CN #257/208",
+      "control": {
+        "precision": 1,
+        "recall": 0.6666666666666666,
+        "f1": 0.8
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "Pokemon Chinese Lisia's Appeal 257/208 SAR SV9C Pokémon Card",
+      "treatment": {
+        "precision": 0.2727272727272727,
+        "recall": 0.5,
+        "f1": 0.3529411764705882
+      },
+      "delta_f1": -0.44705882352941184,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-j",
+      "reference": "2025 Topps Royalty WWE Ricky Saints Regalia Relics Purple #RR-2 34/50",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Royalty WWE Regalia Relics Ricky Saints RC Relic NXT #RR-2 34/50",
+      "control": {
+        "precision": 0.7692307692307693,
+        "recall": 0.9090909090909091,
+        "f1": 0.8333333333333333
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps WWE Royalty Ricky Saints Regalia Relics RR-2 /50 NXT Rookie Card",
+      "treatment": {
+        "precision": 0.6923076923076923,
+        "recall": 0.8181818181818182,
+        "f1": 0.7500000000000001
+      },
+      "delta_f1": -0.08333333333333315,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-l",
+      "reference": "2025 Topps Royalty WWE Shawn Michaels Blue #091 22/25",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Shawn Michaels WWE #091 22/25",
+      "control": {
+        "precision": 1,
+        "recall": 0.7777777777777778,
+        "f1": 0.8750000000000001
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps WWE Shawn Michaels Metaverse Card 091/25 Serial #22/25 Parallel",
+      "treatment": {
+        "precision": 0.5454545454545454,
+        "recall": 0.6666666666666666,
+        "f1": 0.6
+      },
+      "delta_f1": -0.27500000000000013,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-n",
+      "reference": "2025 Topps Chrome Jo'Quavious Woody Marks Pink Refractor Auto RC #RA-WMA 232/250",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "Topps Chrome Rookies Auto Variation Jo'Quavious \"Woody\" Marks RC #RA-WMA 232/250",
+      "control": {
+        "precision": 0.8333333333333334,
+        "recall": 0.7692307692307693,
+        "f1": 0.8
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Jo'Quavious \"Woody\" Marks RC Auto Pink Refractor /250 #232/250",
+      "treatment": {
+        "precision": 0.9230769230769231,
+        "recall": 0.9230769230769231,
+        "f1": 0.9230769230769231
+      },
+      "delta_f1": 0.12307692307692308,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-o",
+      "reference": "2026 Topps Chrome WWE Rusev Red Brand Autograph #RBA-RSV",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Topps Chrome WWE Red Brand Chrome Auto Rusev WWE #RBA-RSV",
+      "control": {
+        "precision": 0.7272727272727273,
+        "recall": 0.8888888888888888,
+        "f1": 0.7999999999999999
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2026 Topps Chrome WWE Rusev Red Brand Chrome Autograph RBA-RSV Auto",
+      "treatment": {
+        "precision": 0.8181818181818182,
+        "recall": 1,
+        "f1": 0.9
+      },
+      "delta_f1": 0.10000000000000009,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-p",
+      "reference": "2025 Topps Chrome Emeka Egbuka Pink X-Fractor #312",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Emeka Egbuka Pink Xfractor RC Buccaneers #312",
+      "control": {
+        "precision": 0.7,
+        "recall": 0.875,
+        "f1": 0.7777777777777777
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Emeka Egbuka RC Pink X-Fractor #312 Buccaneers",
+      "treatment": {
+        "precision": 0.8,
+        "recall": 1,
+        "f1": 0.888888888888889
+      },
+      "delta_f1": 0.11111111111111127,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-b-r",
+      "reference": "2025 Topps Chrome Quinshon Judkins Purple Wave Refractor #325 30/75",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Quinshon Judkins RC Browns #325",
+      "control": {
+        "precision": 0.75,
+        "recall": 0.6,
+        "f1": 0.6666666666666665
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Quinshon Judkins RC Purple Refractor #325 Browns",
+      "treatment": {
+        "precision": 0.8,
+        "recall": 0.8,
+        "f1": 0.8000000000000002
+      },
+      "delta_f1": 0.13333333333333364,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-a",
+      "reference": "2025 Topps Finest Bucky Irving Black Refractor #259 04/10",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Finest Performance Bucky Irving Rare Buccaneers #259 04/10",
+      "control": {
+        "precision": 0.7,
+        "recall": 0.7777777777777778,
+        "f1": 0.7368421052631577
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Finest Bucky Irving Rare Refractor RC #259 Tampa Bay Buccaneers",
+      "treatment": {
+        "precision": 0.5833333333333334,
+        "recall": 0.7777777777777778,
+        "f1": 0.6666666666666666
+      },
+      "delta_f1": -0.07017543859649111,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-b",
+      "reference": "2025 Topps Finest Cooper DeJean Autograph Refractor #FA-CDJ",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Finest Football Autographs Cooper DeJean Refractor Eagles #FA-CDJ",
+      "control": {
+        "precision": 0.7,
+        "recall": 0.875,
+        "f1": 0.7777777777777777
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Finest Football Cooper DeJean Auto Refractor FA-CDJ Eagles RC",
+      "treatment": {
+        "precision": 0.6363636363636364,
+        "recall": 0.875,
+        "f1": 0.7368421052631579
+      },
+      "delta_f1": -0.040935672514619825,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-c",
+      "reference": "2025-26 Bowman Chrome Madison Booker Future Script Orange Refractor #FS-MB 02/25",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025-26 Topps Future Stars Madison Booker Orange Refractor Auto #FS-MB 02/25",
+      "control": {
+        "precision": 0.7272727272727273,
+        "recall": 0.7272727272727273,
+        "f1": 0.7272727272727273
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025-26 Bowman Chrome Future Stars Madison Booker Orange Auto /25 02/25 FS-MB",
+      "treatment": {
+        "precision": 0.75,
+        "recall": 0.8181818181818182,
+        "f1": 0.7826086956521738
+      },
+      "delta_f1": 0.05533596837944654,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-d",
+      "reference": "2025 Topps Chrome Marvel Fantasma 1st Appearance Black Refractor #82 08/10",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Marvel Isabella Alvarez Fantasma 1st Edition #82 08/10",
+      "control": {
+        "precision": 0.7272727272727273,
+        "recall": 0.7272727272727273,
+        "f1": 0.7272727272727273
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Marvel Fantasma #82 1st Print 08/10 Refractor Parallel",
+      "treatment": {
+        "precision": 0.8181818181818182,
+        "recall": 0.8181818181818182,
+        "f1": 0.8181818181818182
+      },
+      "delta_f1": 0.09090909090909094,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-e",
+      "reference": "2025 Keepsake Premiere Edition Michael Jackson Bad World Tour #46 01/01",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Michael Jackson #46 01/01",
+      "control": {
+        "precision": 0.8333333333333334,
+        "recall": 0.45454545454545453,
+        "f1": 0.5882352941176471
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "Michael Jackson Bad World Tour Card #46 01/01 Keepsake Premiere Edition",
+      "treatment": {
+        "precision": 0.9090909090909091,
+        "recall": 0.9090909090909091,
+        "f1": 0.9090909090909091
+      },
+      "delta_f1": 0.320855614973262,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-f",
+      "reference": "2025 Topps Chrome Will Anderson Jr. Black Leather Refractor #121 01/10",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2024 Topps Chrome Will Anderson Jr. Black Wave Texans #121 09/10",
+      "control": {
+        "precision": 0.6363636363636364,
+        "recall": 0.6363636363636364,
+        "f1": 0.6363636363636364
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Will Anderson Jr. #121 Texans Gold Refractor /10 RC",
+      "treatment": {
+        "precision": 0.6666666666666666,
+        "recall": 0.7272727272727273,
+        "f1": 0.6956521739130435
+      },
+      "delta_f1": 0.059288537549407105,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-g",
+      "reference": "2025 Topps Chrome Ja'Marr Chase Ultra Violet #UV-16",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Ultraviolet Ja'Marr Chase Bengals #UV-16",
+      "control": {
+        "precision": 0.7777777777777778,
+        "recall": 0.7777777777777778,
+        "f1": 0.7777777777777778
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Ja'Marr Chase UV-16 Ultra-Violet Cincinnati Bengals #1",
+      "treatment": {
+        "precision": 0.6,
+        "recall": 0.6666666666666666,
+        "f1": 0.631578947368421
+      },
+      "delta_f1": -0.14619883040935677,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-h",
+      "reference": "2025 Topps Chrome Tetairoa McMillan Green Lava Refractor #326 08/99",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Tetairoa McMillan Green Refractor RC Panthers #326 08/99",
+      "control": {
+        "precision": 0.8181818181818182,
+        "recall": 0.9,
+        "f1": 0.8571428571428572
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome TETAIROA MCMILLAN RC Green Refractor /99 #326 08/99",
+      "treatment": {
+        "precision": 0.8181818181818182,
+        "recall": 0.9,
+        "f1": 0.8571428571428572
+      },
+      "delta_f1": 0,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-i",
+      "reference": "2025 Topps Chrome Travis Kelce Shadow Etch #SE-28",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Etch Travis Kelce Shadowball Chiefs #SE-28",
+      "control": {
+        "precision": 0.7777777777777778,
+        "recall": 0.875,
+        "f1": 0.823529411764706
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Travis Kelce Shadow Etch SE-28 Kansas City Chiefs Refractor",
+      "treatment": {
+        "precision": 0.6666666666666666,
+        "recall": 1,
+        "f1": 0.8
+      },
+      "delta_f1": -0.02352941176470591,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-j",
+      "reference": "2025 Topps Chrome George Pickens Green Geometric Autograph #BA-GP 03/99",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Football Base Auto George Pickens Variation #BA-GP 03/99",
+      "control": {
+        "precision": 0.6363636363636364,
+        "recall": 0.7,
+        "f1": 0.6666666666666666
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Football George Pickens Base Auto Green Shimmer /99 03/99",
+      "treatment": {
+        "precision": 0.5833333333333334,
+        "recall": 0.7,
+        "f1": 0.6363636363636365
+      },
+      "delta_f1": -0.030303030303030165,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-k",
+      "reference": "2025 Panini Absolute Jalen Milroe Kaboom #13",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Panini Absolute Football Kaboom! Jalen Milroe RC Seahawks #13",
+      "control": {
+        "precision": 0.7,
+        "recall": 1,
+        "f1": 0.8235294117647058
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Panini Absolute Jalen Milroe Seattle Seahawks Rookie Holo No. 13",
+      "treatment": {
+        "precision": 0.5454545454545454,
+        "recall": 0.8571428571428571,
+        "f1": 0.6666666666666665
+      },
+      "delta_f1": -0.15686274509803932,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-l",
+      "reference": "2025 Topps Chrome Aaron Judge All-Star Game Green Refractor #ASGC-8 76/99",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Aaron Judge Yankees #CMP130993 76/99",
+      "control": {
+        "precision": 0.75,
+        "recall": 0.5454545454545454,
+        "f1": 0.631578947368421
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome Aaron Judge All-Star Game Green Refractor ASGC-8 Yankees",
+      "treatment": {
+        "precision": 0.9090909090909091,
+        "recall": 0.9090909090909091,
+        "f1": 0.9090909090909091
+      },
+      "delta_f1": 0.27751196172248804,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-m",
+      "reference": "2025 Topps Chrome Dylan Crews Blue Ice Autograph #USA-DC 171/199",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Dylan Crews RC Auto Nationals #USA-DC 171/199",
+      "control": {
+        "precision": 0.7,
+        "recall": 0.7,
+        "f1": 0.7
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "Dylan Crews 2025 Topps Chrome RC Auto Blue Parallel /199 Nationals 171/199",
+      "treatment": {
+        "precision": 0.5833333333333334,
+        "recall": 0.7,
+        "f1": 0.6363636363636365
+      },
+      "delta_f1": -0.06363636363636349,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-n",
+      "reference": "2025 Bowman Draft Chrome Cameron Millar Gold Raywave Autograph #CPA-CMI 02/50",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Prospect Autographs Cameron Millar Royals #CPA-CMI 02/50",
+      "control": {
+        "precision": 0.7,
+        "recall": 0.6363636363636364,
+        "f1": 0.6666666666666666
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome Cameron Millar 1st Bowman Auto Orange Shimmer /50 CPA-CMI RC",
+      "treatment": {
+        "precision": 0.46153846153846156,
+        "recall": 0.5454545454545454,
+        "f1": 0.4999999999999999
+      },
+      "delta_f1": -0.16666666666666674,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-o",
+      "reference": "2025 Bowman Draft Chrome Kaeden Kent Blue RayWave Autograph #CPA-KKE 042/150",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Prospect Autographs Kaeden Kent Blue Shimmer #CPA-KKE 042/150",
+      "control": {
+        "precision": 0.7272727272727273,
+        "recall": 0.7272727272727273,
+        "f1": 0.7272727272727273
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome Kaeden Kent 1st Auto Blue Refractor /150 CPA-KKE",
+      "treatment": {
+        "precision": 0.6363636363636364,
+        "recall": 0.6363636363636364,
+        "f1": 0.6363636363636364
+      },
+      "delta_f1": -0.09090909090909094,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-p",
+      "reference": "2025-26 Bowman Chrome Dylan Harper Green Geometric #BCV-2 46/99",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Dylan Harper Green Shimmer RC Spurs #BCV-2 46/99",
+      "control": {
+        "precision": 0.6363636363636364,
+        "recall": 0.7777777777777778,
+        "f1": 0.7000000000000001
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome Dylan Harper RC Green /99 Spurs 46/99 BCV-2",
+      "treatment": {
+        "precision": 0.6363636363636364,
+        "recall": 0.7777777777777778,
+        "f1": 0.7000000000000001
+      },
+      "delta_f1": 0,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-q",
+      "reference": "2025 Bowman Draft Chrome Steele Hall Blue Autograph #CPA-SHA 031/150",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome 1st Bowman Steele Hall Auto Cincinnati Reds #CPA-SHA 031/150",
+      "control": {
+        "precision": 0.5833333333333334,
+        "recall": 0.7,
+        "f1": 0.6363636363636365
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome 1st Steele Hall Auto 031/150 CPA-SHA Reds",
+      "treatment": {
+        "precision": 0.7,
+        "recall": 0.7,
+        "f1": 0.7
+      },
+      "delta_f1": 0.06363636363636349,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-r",
+      "reference": "2025 Bowman Draft Chrome Gage Wood Blue Refractor Autograph #CPA-GW 148/150",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Gage Wood Blue Refractor Auto Phillies #CPA-GW 48/150",
+      "control": {
+        "precision": 0.7272727272727273,
+        "recall": 0.7272727272727273,
+        "f1": 0.7272727272727273
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome Gage Wood 1st Bowman Auto Blue /150 Phillies CPA-GW",
+      "treatment": {
+        "precision": 0.5833333333333334,
+        "recall": 0.6363636363636364,
+        "f1": 0.6086956521739131
+      },
+      "delta_f1": -0.11857707509881421,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-s",
+      "reference": "2025 Bowman Draft Chrome Caden Bodine Purple Refractor Autograph #CPA-CB 009/250",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Caden Bodine Auto Orioles #CPA-CB 009/250",
+      "control": {
+        "precision": 0.7777777777777778,
+        "recall": 0.6363636363636364,
+        "f1": 0.7000000000000001
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome 1st Caden Bodine Auto /250 #CPA-CB 009/250 Orioles",
+      "treatment": {
+        "precision": 0.6363636363636364,
+        "recall": 0.6363636363636364,
+        "f1": 0.6363636363636364
+      },
+      "delta_f1": -0.06363636363636371,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-t",
+      "reference": "2025-26 Bowman Chrome Cooper Flagg Red Rookie #BRR-1",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Rookies Cooper Flagg Refractor RC Mavericks #BRR-1",
+      "control": {
+        "precision": 0.5,
+        "recall": 0.625,
+        "f1": 0.5555555555555556
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome Cooper Flagg RC Refractor BRR-1 Dallas Mavericks Rookie Card",
+      "treatment": {
+        "precision": 0.5,
+        "recall": 0.75,
+        "f1": 0.6
+      },
+      "delta_f1": 0.0444444444444444,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-u",
+      "reference": "2025 Bowman Draft Chrome Eli Willits Autograph #CPA-EW",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome 1st Bowman Eli Willits Auto Washington Nationals #CPA-EW",
+      "control": {
+        "precision": 0.5454545454545454,
+        "recall": 0.75,
+        "f1": 0.631578947368421
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome 1st Bowman Eli Willits Auto CPA-EW Nationals",
+      "treatment": {
+        "precision": 0.6,
+        "recall": 0.75,
+        "f1": 0.6666666666666665
+      },
+      "delta_f1": 0.0350877192982455,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-v",
+      "reference": "2025 Bowman Draft Chrome Dax Kilby Autograph #CPA-DK",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Bowman Chrome Dax Kilby Auto Yankees #CPA-DK",
+      "control": {
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Bowman Chrome Dax Kilby 1st Bowman Auto Yankees CPA-DK",
+      "treatment": {
+        "precision": 0.6,
+        "recall": 0.75,
+        "f1": 0.6666666666666665
+      },
+      "delta_f1": -0.08333333333333348,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-w",
+      "reference": "2025 Topps Chrome Formula 1 Leclerc Hamilton Duo Logofractor Orange #165 23/25",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2025 Topps Chrome Formula 1 Duo Charles Leclerc Lewis Hamilton #165 23/25",
+      "control": {
+        "precision": 0.8333333333333334,
+        "recall": 0.8333333333333334,
+        "f1": 0.8333333333333334
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025 Topps Chrome F1 Duo Leclerc Hamilton Orange Refractor 23/25 #165",
+      "treatment": {
+        "precision": 0.8181818181818182,
+        "recall": 0.75,
+        "f1": 0.7826086956521738
+      },
+      "delta_f1": -0.050724637681159535,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-c-x",
+      "reference": "2025-26 Topps Chrome Cactus Jack Kon Knueppel #64",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "2026 Topps Chrome All-Star 2026 Kon Knueppel RC Hornets #64",
+      "control": {
+        "precision": 0.5,
+        "recall": 0.625,
+        "f1": 0.5555555555555556
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "2025-26 Topps Chrome NBA Kon Knueppel RC #64 Charlotte Hornets All-Star 2026",
+      "treatment": {
+        "precision": 0.5,
+        "recall": 0.75,
+        "f1": 0.6
+      },
+      "delta_f1": 0.0444444444444444,
+      "control_over_80": false,
+      "treatment_over_80": false
+    },
+    {
+      "asset_id": "gamma-training-root-b",
+      "reference": "1998-99 Upper Deck MJx Michael Jordan Timepieces Bronze #5 021/230 Die-Cut",
+      "control_arm": "runtime_active_high_low",
+      "control_title": "1998 Upper Deck MJX MJ Timeline Michael Jordan Bulls #5",
+      "control": {
+        "precision": 0.6,
+        "recall": 0.5454545454545454,
+        "f1": 0.5714285714285713
+      },
+      "treatment_arm": "lynca_csm_direct_title_high_low",
+      "treatment_title": "1998 Upper Deck Michael Jordan MJ Timeline #5 Chicago Bulls #12 Jersey",
+      "treatment": {
+        "precision": 0.4166666666666667,
+        "recall": 0.45454545454545453,
+        "f1": 0.43478260869565216
+      },
+      "delta_f1": -0.13664596273291912,
+      "control_over_80": false,
+      "treatment_over_80": false
+    }
+  ]
+}
