@@ -67,6 +67,7 @@ import {
   CSM_PROJECTION_ACTIVATION,
   CSM_PROJECTION_STATE_ACTIVE,
   CSM_PROJECTION_STATE_DORMANT,
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_STATE_ACTIVE,
   CSM_TCG_GRAMMAR_CONTEXT_PENDING_CHECKPOINT_READER,
   CSM_WRITER_PROJECTION_CONTRACTS,
   validateCsmProjectionActivation
@@ -512,8 +513,10 @@ export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS = Object.freeze([
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs"
 ].sort());
-export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA = null;
-export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA = null;
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA =
+  "85ecd6ebfd032f47e8884579c4fb87ddf121aa16";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA =
+  "66bc3bdafd5d3db9db278b16f79a3907c332c017";
 export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_CONTENT_MANIFEST_SHA256 =
   "bd4ce084687f31c1c71a4ee1862245a07a26f56429b22458b44dccefe8edcd7e";
 export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_FULL_INDEX_SHA256 =
@@ -528,13 +531,13 @@ export const TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID =
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER =
   "tcg-grammar-context-v4-one-id-active-v1";
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA =
-  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA;
+  "85ecd6ebfd032f47e8884579c4fb87ddf121aa16";
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA =
-  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA;
+  "66bc3bdafd5d3db9db278b16f79a3907c332c017";
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA =
-  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA;
+  "85ecd6ebfd032f47e8884579c4fb87ddf121aa16";
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA =
-  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA;
+  "66bc3bdafd5d3db9db278b16f79a3907c332c017";
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID =
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID;
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE =
@@ -545,12 +548,32 @@ export const TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256 =
   "535e8f90e303594e06f8b2462bfb7535671d037f6d7b295c3b36d912a191a7bd";
 export const TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION =
   "writer-journey-cases-v4";
-export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS = Object.freeze([]);
-export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS = Object.freeze([]);
-export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256 = null;
-export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256 = null;
-export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID = null;
-export const TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256 = null;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS = Object.freeze([
+  "lib/listing/thin/csm-projection-activation.mjs",
+  "scripts/accuracy-loss-ledger.test.mjs",
+  "scripts/canonical-fields.test.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/csm-projection-activation.test.mjs",
+  "scripts/csm-resolution-api.test.mjs",
+  "scripts/exact-parallel-color-compaction.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/external-identity-rollback-bridge.test.mjs",
+  "scripts/writer-old-reader-new-e1ae-oracle.test.mjs"
+]);
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS = Object.freeze([
+  ...TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS,
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
+].sort());
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256 =
+  "7b0605f1fd703a3c0c05117dabdaa3ffd1b5884f14dd9777d5a08837a8fb4362";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256 =
+  "89c70dcf823c822432a272a8c15b980a6945df88d78955ccf07973b8edb331af";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID =
+  "7e0fc39ad5f6d28b34540b15aa140706b29ef075";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256 =
+  "c86d713dbc674f6f17afa015fb66194f85fb970af3171941b7d8c0d87ee107ef";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V36_SHA256 =
   "e8b4c161e1bbbfb58786fa44ea3d40b15cc6fe8573c9ab8a00100cf7c146e43f";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V37_SHA256 =
@@ -3587,6 +3610,73 @@ export function verifyTcgGrammarContextOrdinaryParentBoundaryForTest(args) {
   );
 }
 
+function materializeTcgGrammarContextActivationSelection({
+  candidateGitSha,
+  candidateTreeSha,
+  parentGitShas,
+  parentTreeSha,
+  changedPaths,
+  runtimeContentManifest = null,
+  runtimeDiffIdentity = null
+} = {}) {
+  const expectedSha = exactGitSha(candidateGitSha);
+  const actualTree = exactGitSha(candidateTreeSha);
+  const actualParentTree = exactGitSha(parentTreeSha);
+  if (expectedSha === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA) {
+    throw failure("tcg_grammar_context_activation_candidate_mismatch");
+  }
+  if (stableJson(parentGitShas)
+      !== stableJson([TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA])) {
+    throw failure("tcg_grammar_context_activation_parent_mismatch");
+  }
+  if (actualParentTree !== TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA) {
+    throw failure("tcg_grammar_context_activation_parent_tree_mismatch");
+  }
+  if (actualTree === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA) {
+    throw failure("tcg_grammar_context_activation_candidate_tree_mismatch");
+  }
+  const artifactPaths = exactTcgGrammarContextActivationChangedPaths(changedPaths);
+  const contract = tcgGrammarContextActivationRuntimeContractProof({
+    candidateGitSha: expectedSha,
+    runtimeContentManifest,
+    runtimeDiffIdentity
+  });
+  return Object.freeze({
+    schema_version: "production-release-selection-v46",
+    release_class: ORDINARY_RELEASE_CLASS,
+    activation_descriptor_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
+    git_tree_sha: actualTree,
+    parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+    parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
+    artifact_manifest_sha256:
+      tcgGrammarContextActivationArtifactManifestSha256(artifactPaths),
+    git_sha: expectedSha,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true,
+    contract_sha256: contract.contract_sha256
+  });
+}
+
+export function materializeTcgGrammarContextActivationSelectionForTest(args) {
+  return materializeTcgGrammarContextActivationSelection(args);
+}
+
 function verifyHistoricalRuntimeEvidence({
   contentManifest,
   diffIdentity,
@@ -3640,7 +3730,9 @@ export function verifyCompatibilityBridgeSelection({
   checkpointReaderRuntimeContentManifest = null,
   checkpointReaderRuntimeDiffIdentity = null,
   externalIdentityV3ActivationRuntimeContentManifest = null,
-  externalIdentityV3ActivationRuntimeDiffIdentity = null
+  externalIdentityV3ActivationRuntimeDiffIdentity = null,
+  tcgGrammarContextActivationRuntimeContentManifest = null,
+  tcgGrammarContextActivationRuntimeDiffIdentity = null
 } = {}) {
   const selected = String(releaseClass || "").trim();
   if (![ORDINARY_RELEASE_CLASS, COMPATIBILITY_BRIDGE_RELEASE_CLASS].includes(selected)) {
@@ -3864,39 +3956,17 @@ export function verifyCompatibilityBridgeSelection({
       if (actualTree === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA) {
         throw failure("tcg_grammar_context_activation_candidate_tree_mismatch");
       }
-      const contract = tcgGrammarContextActivationRuntimeContractProof();
       const artifactPaths = exactTcgGrammarContextActivationChangedPaths(
         changedPaths ?? gitChangedPaths(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA, expectedSha)
       );
-      return Object.freeze({
-        schema_version: "production-release-selection-v46",
-        release_class: ORDINARY_RELEASE_CLASS,
-        activation_descriptor_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
-        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
-        transition_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
-        git_tree_sha: actualTree,
-        parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
-        parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
-        required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
-        required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
-        artifact_manifest_sha256:
-          tcgGrammarContextActivationArtifactManifestSha256(artifactPaths),
-        git_sha: expectedSha,
-        active_writer_contract_id:
-          TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
-        projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
-        active_writer_contract_sha256:
-          TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
-        projection_activation_sha256:
-          TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
-        forward_readers_sha256:
-          TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
-        registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
-        resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
-        writer_journey_manifest:
-          TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
-        parity_required: true,
-        contract_sha256: contract.contract_sha256
+      return materializeTcgGrammarContextActivationSelection({
+        candidateGitSha: expectedSha,
+        candidateTreeSha: actualTree,
+        parentGitShas: parents,
+        parentTreeSha: actualParentTree,
+        changedPaths: artifactPaths,
+        runtimeContentManifest: tcgGrammarContextActivationRuntimeContentManifest,
+        runtimeDiffIdentity: tcgGrammarContextActivationRuntimeDiffIdentity
       });
     }
     if (parentGitSha === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA) {
@@ -7223,7 +7293,48 @@ export function tcgGrammarContextReaderBridgeTopologyProof() {
   });
 }
 
+function tcgGrammarContextActivationRuntimeFreeze() {
+  return Object.freeze({
+    core_paths: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS,
+    changed_paths: TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS,
+    runtime_content_manifest_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256,
+    runtime_full_index_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256,
+    runtime_patch_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID,
+    runtime_contract_sha256: TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+function tcgGrammarContextActivationRuntimeFreezeReady(runtimeFreeze) {
+  const pathListReady = (values) => Array.isArray(values)
+    && values.length > 0
+    && values.every((value) => (
+      typeof value === "string" && value.length > 0 && value === value.trim()
+    ))
+    && new Set(values).size === values.length
+    && stableJson(values) === stableJson([...values].sort());
+  const selectorPaths = [
+    "scripts/compatibility-bridge-release.mjs",
+    "scripts/compatibility-bridge-release.test.mjs"
+  ];
+  return exactKeys(runtimeFreeze, [
+    "core_paths", "changed_paths", "runtime_content_manifest_sha256",
+    "runtime_full_index_sha256", "runtime_patch_id", "runtime_contract_sha256"
+  ])
+    && pathListReady(runtimeFreeze.core_paths)
+    && pathListReady(runtimeFreeze.changed_paths)
+    && selectorPaths.every((entry) => !runtimeFreeze.core_paths.includes(entry))
+    && stableJson(runtimeFreeze.changed_paths)
+      === stableJson([...runtimeFreeze.core_paths, ...selectorPaths].sort())
+    && /^[0-9a-f]{64}$/.test(String(runtimeFreeze.runtime_content_manifest_sha256 || ""))
+    && /^[0-9a-f]{64}$/.test(String(runtimeFreeze.runtime_full_index_sha256 || ""))
+    && /^[0-9a-f]{40}$/.test(String(runtimeFreeze.runtime_patch_id || ""))
+    && /^[0-9a-f]{64}$/.test(String(runtimeFreeze.runtime_contract_sha256 || ""));
+}
+
 export function tcgGrammarContextActivationTopologyProof() {
+  const runtimeFreeze = tcgGrammarContextActivationRuntimeFreeze();
   return Object.freeze({
     schema_version: "tcg-grammar-context-activation-release-topology-proof-v1",
     selection_schema_version: "production-release-selection-v46",
@@ -7249,7 +7360,8 @@ export function tcgGrammarContextActivationTopologyProof() {
     resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
     behavior_neutral: false,
     parity_required: true,
-    runtime_freeze_pending: true
+    runtime_freeze_pending:
+      !tcgGrammarContextActivationRuntimeFreezeReady(runtimeFreeze)
   });
 }
 
@@ -7381,7 +7493,15 @@ function materializeTcgGrammarContextReaderBridgeRuntimeContract({
 
   const activeWriter = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
   const futureWriter = CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
-  const forwardReaders = CSM_PROJECTION_ACTIVATION.forward_readers;
+  const bridgeProjectionActivation = Object.freeze({
+    schema_version: CSM_PROJECTION_ACTIVATION.schema_version,
+    activation_id: CSM_PROJECTION_ACTIVATION.activation_id,
+    active_writer: activeWriter,
+    forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
+    activation_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256
+  });
+  const forwardReaders = bridgeProjectionActivation.forward_readers;
   const pendingCheckpoint = CSM_TCG_GRAMMAR_CONTEXT_PENDING_CHECKPOINT_READER;
   const activeExternalIdentityRelease = EXTERNAL_IDENTITY_RELEASE_CONTRACT;
   const activeVerifiedHealth = verifiedOriginalObservationHealthReceiptForReleases({
@@ -7391,17 +7511,17 @@ function materializeTcgGrammarContextReaderBridgeRuntimeContract({
       activeWriter.external_identity.registry_release_id
   });
   const { activation_sha256: activationSha256, ...activationBody } =
-    CSM_PROJECTION_ACTIVATION;
+    bridgeProjectionActivation;
   const { descriptor_sha256: pendingDescriptorSha256, ...pendingDescriptorBody } =
     pendingCheckpoint;
-  const activation = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
+  const activation = validateCsmProjectionActivation(bridgeProjectionActivation);
   const runtimeReady = activation.state
       === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE
     && activeWriter.contract_id
       === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID
     && futureWriter.contract_id
       === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID
-    && stableJson(CSM_PROJECTION_ACTIVATION.active_writer) === stableJson(activeWriter)
+    && stableJson(bridgeProjectionActivation.active_writer) === stableJson(activeWriter)
     && stableJson(forwardReaders.tcg_grammar_context_pending_checkpoint)
       === stableJson(pendingCheckpoint)
     && activationSha256
@@ -7466,7 +7586,7 @@ function materializeTcgGrammarContextReaderBridgeRuntimeContract({
       && health?.runtime?.request_builder_version
         === activeWriter.canonical_fields.request_builder_version
       && stableJson(health?.runtime?.projection_activation)
-        === stableJson(CSM_PROJECTION_ACTIVATION)
+        === stableJson(bridgeProjectionActivation)
       && stableJson(health?.runtime?.active_writer) === stableJson(activeWriter)
       && stableJson(health?.runtime?.forward_readers) === stableJson(forwardReaders)
       && stableJson(health?.runtime?.external_identity)
@@ -7516,7 +7636,7 @@ function materializeTcgGrammarContextReaderBridgeRuntimeContract({
     decision_document_sha256: TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256,
     registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
     resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
-    projection_activation: CSM_PROJECTION_ACTIVATION,
+    projection_activation: bridgeProjectionActivation,
     active_writer: activeWriter,
     future_writer: futureWriter,
     forward_readers: forwardReaders,
@@ -7571,30 +7691,251 @@ export function tcgGrammarContextReaderBridgeRuntimeContractProof(args = {}) {
   return proof;
 }
 
-export function tcgGrammarContextActivationRuntimeContractProof() {
-  tcgGrammarContextActivationTopologyProof();
-  const freezeReady = TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA != null
-    && TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA != null
-    && TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA
-      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA
-    && TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA
-      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA
-    && TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS.length > 0
-    && TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS.length > 0
-    && /^[0-9a-f]{64}$/.test(String(
-      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256 || ""
-    ))
-    && /^[0-9a-f]{64}$/.test(String(
-      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256 || ""
-    ))
-    && /^[0-9a-f]{40}$/.test(String(
-      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID || ""
-    ))
-    && /^[0-9a-f]{64}$/.test(String(
-      TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256 || ""
+function materializeTcgGrammarContextActivationRuntimeContract({
+  runtimeFreeze,
+  candidateGitSha = null,
+  runtimeContentManifest = null,
+  runtimeDiffIdentity = null,
+  health = null,
+  gitSha = null
+} = {}) {
+  if (!tcgGrammarContextActivationRuntimeFreezeReady(runtimeFreeze)) {
+    throw failure("tcg_grammar_context_activation_runtime_freeze_pending");
+  }
+  if (candidateGitSha != null && gitSha != null
+      && exactGitSha(candidateGitSha) !== exactGitSha(gitSha)) {
+    throw failure("tcg_grammar_context_activation_runtime_candidate_mismatch");
+  }
+  const injectedRuntimeEvidence = runtimeContentManifest != null
+    || runtimeDiffIdentity != null;
+  if (injectedRuntimeEvidence
+      && (runtimeContentManifest == null || runtimeDiffIdentity == null)) {
+    throw failure("tcg_grammar_context_activation_runtime_evidence_incomplete");
+  }
+  const manifest = runtimeContentManifest ?? (candidateGitSha == null ? null
+    : committedRuntimeArtifactManifest(
+      candidateGitSha,
+      runtimeFreeze.core_paths,
+      "tcg_grammar_context_activation_runtime_content_unavailable"
     ));
-  if (!freezeReady) throw failure("tcg_grammar_context_activation_runtime_freeze_pending");
-  throw failure("tcg_grammar_context_activation_runtime_contract_not_materialized");
+  const diffIdentity = runtimeDiffIdentity ?? (candidateGitSha == null ? null
+    : committedRuntimeDiffIdentity(
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+      candidateGitSha,
+      runtimeFreeze.core_paths,
+      "tcg_grammar_context_activation_runtime_diff_unavailable"
+    ));
+  const manifestPaths = Array.isArray(manifest)
+    ? manifest.map((entry) => entry?.path) : null;
+  const runtimeEvidenceReady = (candidateGitSha == null
+      && manifest == null && diffIdentity == null)
+    || (Array.isArray(manifest)
+      && stableJson(manifestPaths) === stableJson(runtimeFreeze.core_paths)
+      && manifest.every((entry) => (
+        entry && exactKeys(entry, ["path", "mode", "bytes", "sha256"])
+        && entry.mode === "100644"
+        && Number.isSafeInteger(entry.bytes) && entry.bytes >= 0
+        && /^[0-9a-f]{64}$/.test(String(entry.sha256 || ""))
+      ))
+      && sha256(JSON.stringify(manifest))
+        === runtimeFreeze.runtime_content_manifest_sha256
+      && exactKeys(diffIdentity, ["full_index_sha256", "patch_id"])
+      && diffIdentity.full_index_sha256 === runtimeFreeze.runtime_full_index_sha256
+      && diffIdentity.patch_id === runtimeFreeze.runtime_patch_id);
+  if (!runtimeEvidenceReady) {
+    throw failure("tcg_grammar_context_activation_runtime_evidence_invalid");
+  }
+
+  const activeWriter = CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
+  const forwardReaders = CSM_PROJECTION_ACTIVATION.forward_readers;
+  const pendingCheckpoint = CSM_TCG_GRAMMAR_CONTEXT_PENDING_CHECKPOINT_READER;
+  const activeExternalIdentityRelease = EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3;
+  const activeCombinedPair = COMBINED_POST_OBSERVATION_RESOLUTION_CONTRACT_EXTERNAL_V3;
+  const { contract_sha256: combinedPairSha256, ...combinedPairBody } =
+    activeCombinedPair;
+  const activeVerifiedHealth = verifiedOriginalObservationHealthReceiptForReleases({
+    verifiedOriginalObservationReleaseId:
+      activeWriter.verified_original_observation_overlay,
+    externalIdentityRegistryReleaseId:
+      activeWriter.external_identity.registry_release_id
+  });
+  const { activation_sha256: activationSha256, ...activationBody } =
+    CSM_PROJECTION_ACTIVATION;
+  const { descriptor_sha256: pendingDescriptorSha256, ...pendingDescriptorBody } =
+    pendingCheckpoint;
+  const activation = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
+  const runtimeReady = ACTIVE_WRITER_CONTRACT_ID
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID
+    && CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_STATE_ACTIVE
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE
+    && activation.state === TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE
+    && activation.contract_id
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID
+    && activeWriter.contract_id
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID
+    && stableJson(CSM_PROJECTION_ACTIVATION.active_writer) === stableJson(activeWriter)
+    && activationSha256
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256
+    && sha256(stableJson(activationBody)) === activationSha256
+    && sha256(stableJson(activeWriter))
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256
+    && sha256(stableJson(forwardReaders))
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256
+    && activeWriter.durable_projection_contract_version === "csm-stage-shadow-v4"
+    && activeWriter.canonical_fields.semantic_prompt_version
+      === "csm-canonical-fields-web-v2"
+    && activeWriter.canonical_fields.request_builder_version
+      === "canonical-fields-web-request-v3-source-authority"
+    && activeWriter.canonical_fields.response_parser_version
+      === "canonical-output-v6-source-authority"
+    && activeWriter.standard.composer_version === "thin-marketplace-composer-v3"
+    && activeWriter.standard.marketplace_profile_version === "lynca-standard-name-v0.3"
+    && activeWriter.durable_tcg_grammar_context_receipts === true
+    && stableJson(forwardReaders.tcg_grammar_context_pending_checkpoint)
+      === stableJson(pendingCheckpoint)
+    && pendingDescriptorSha256
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256
+    && sha256(stableJson(pendingDescriptorBody)) === pendingDescriptorSha256
+    && pendingCheckpoint.writer.contract_id === activeWriter.contract_id
+    && pendingCheckpoint.writer.writer_contract_sha256
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256
+    && TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.decision_document_sha256
+      === TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256
+    && TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+    && TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.registry_release_id
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id
+    && TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.registry_content_sha256
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+    && TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+      === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256
+    && stableJson(activeWriter.tcg_grammar_context) === stableJson({
+      registry_release_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+      registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256,
+      resolution_contract_sha256:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256,
+      resolver_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version,
+      conflict_policy_version:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.conflict_policy_version,
+      field_source_authority_receipt_schema_version:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+          .field_source_authority_receipt_schema_version,
+      grammar_context_claim_receipt_schema_version:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+          .grammar_context_claim_receipt_schema_version
+    })
+    && stableJson(pendingCheckpoint.grammar_context)
+      === stableJson(activeWriter.tcg_grammar_context)
+    && activeWriter.external_identity.registry_release_id
+      === activeExternalIdentityRelease.registry_release.id
+    && activeWriter.external_identity.resolution_contract_sha256
+      === activeExternalIdentityRelease.resolution_contract.sha256
+    && combinedPairSha256
+      === activeVerifiedHealth.post_observation_contract_sha256
+    && sha256(stableJson(combinedPairBody)) === combinedPairSha256
+    && stableJson(activeVerifiedHealth)
+      === stableJson(VERIFIED_ORIGINAL_OBSERVATION_EXTERNAL_V3_HEALTH_RECEIPT);
+  if (!runtimeReady) {
+    throw failure("tcg_grammar_context_activation_runtime_contract_invalid");
+  }
+
+  let healthBound = false;
+  let deploymentSha = null;
+  if (health != null) {
+    try {
+      deploymentSha = exactGitSha(gitSha);
+    } catch {
+      throw failure("tcg_grammar_context_activation_health_contract_invalid");
+    }
+    healthBound = health?.ready === true
+      && health?.deployment?.git_commit_sha === deploymentSha
+      && health?.runtime?.model_profile_id === expectedModelProfileId
+      && health?.runtime?.request_builder_version
+        === activeWriter.canonical_fields.request_builder_version
+      && stableJson(health?.runtime?.projection_activation)
+        === stableJson(CSM_PROJECTION_ACTIVATION)
+      && stableJson(health?.runtime?.active_writer) === stableJson(activeWriter)
+      && stableJson(health?.runtime?.forward_readers) === stableJson(forwardReaders)
+      && stableJson(health?.runtime?.external_identity)
+        === stableJson(activeExternalIdentityRelease)
+      && stableJson(health?.runtime?.verified_original_observation)
+        === stableJson(activeVerifiedHealth)
+      && stableJson(health?.runtime?.active_writer)
+        === stableJson(health?.runtime?.projection_activation?.active_writer)
+      && stableJson(health?.runtime?.forward_readers)
+        === stableJson(health?.runtime?.projection_activation?.forward_readers);
+    if (!healthBound) {
+      throw failure("tcg_grammar_context_activation_health_contract_invalid");
+    }
+  }
+
+  const body = {
+    schema_version: "tcg-grammar-context-activation-runtime-proof-v1",
+    activation_descriptor_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
+    activation_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
+    required_parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+    required_parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    pending_descriptor_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256,
+    decision_document_sha256: TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    active_writer: activeWriter,
+    projection_activation: CSM_PROJECTION_ACTIVATION,
+    forward_readers: forwardReaders,
+    active_pending_checkpoint_reader: pendingCheckpoint,
+    active_external_identity_release: activeExternalIdentityRelease,
+    active_combined_post_observation_resolution_contract: activeCombinedPair,
+    active_verified_original_observation_health: activeVerifiedHealth,
+    tcg_grammar_context_registry_release: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+    tcg_grammar_context_resolution_contract: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT,
+    runtime_content_manifest_sha256: runtimeFreeze.runtime_content_manifest_sha256,
+    runtime_full_index_sha256: runtimeFreeze.runtime_full_index_sha256,
+    runtime_patch_id: runtimeFreeze.runtime_patch_id,
+    runtime_file_count: runtimeFreeze.core_paths.length,
+    runtime_file_mode: "100644",
+    runtime_identity_source: "frozen-release-constants",
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    tcg_grammar_context_writer_active: true,
+    pending_checkpoint_forward_reader_active: true,
+    parity_required: true,
+    behavior_neutral: false,
+    health_bound: healthBound,
+    deployment_git_sha: deploymentSha
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
+// Pure materializer for pre-freeze tests. Release selection never calls this seam.
+export function materializeTcgGrammarContextActivationRuntimeContractForTest(args) {
+  return materializeTcgGrammarContextActivationRuntimeContract(args);
+}
+
+export function tcgGrammarContextActivationRuntimeContractProof(args = {}) {
+  tcgGrammarContextActivationTopologyProof();
+  const runtimeFreeze = tcgGrammarContextActivationRuntimeFreeze();
+  if (!tcgGrammarContextActivationRuntimeFreezeReady(runtimeFreeze)) {
+    throw failure("tcg_grammar_context_activation_runtime_freeze_pending");
+  }
+  const proof = materializeTcgGrammarContextActivationRuntimeContract({
+    ...args,
+    runtimeFreeze
+  });
+  if (args.health == null
+      && proof.contract_sha256 !== runtimeFreeze.runtime_contract_sha256) {
+    throw failure("tcg_grammar_context_activation_runtime_contract_hash_mismatch");
+  }
+  return proof;
 }
 
 export function externalIdentityV3ActivationRuntimeContractProof({
@@ -8059,6 +8400,7 @@ function verifyTcgGrammarContextActivationRollbackLineage({
   if (capturedRollbackSha !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA) {
     throw failure("tcg_grammar_context_activation_rollback_mismatch");
   }
+  const gitObjectEvidence = verifyTcgGrammarContextActivationGitObjectEvidence(selection);
   return Object.freeze({
     schema_version: "production-release-rollback-lineage-receipt-v47",
     release_class: ORDINARY_RELEASE_CLASS,
@@ -8085,10 +8427,63 @@ function verifyTcgGrammarContextActivationRollbackLineage({
     resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
     artifact_manifest_sha256: selection.artifact_manifest_sha256,
     runtime_contract_sha256: selection.contract_sha256,
+    release_git_object_verified: gitObjectEvidence.commit_exists,
+    release_git_object_verification_source: gitObjectEvidence.verification_source,
     writer_journey_manifest:
       TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true,
     lineage_verified: true
+  });
+}
+
+function verifyTcgGrammarContextActivationGitObjectEvidence(selection, {
+  gitTextReader = gitText,
+  rebuildSelection = verifyCompatibilityBridgeSelection
+} = {}) {
+  const releaseGitSha = exactGitSha(selection?.git_sha);
+  let releaseIdentity;
+  try {
+    releaseIdentity = exactGitCommitObjectIdentity(releaseGitSha, {
+      gitTextReader,
+      failureCode: "tcg_grammar_context_activation_git_object_invalid"
+    });
+  } catch {
+    throw failure("tcg_grammar_context_activation_git_object_invalid");
+  }
+  if (stableJson(releaseIdentity.parent_git_shas)
+      !== stableJson([TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA])) {
+    throw failure("tcg_grammar_context_activation_release_parent_mismatch");
+  }
+  if (releaseIdentity.git_tree_sha !== selection?.git_tree_sha) {
+    throw failure("tcg_grammar_context_activation_release_tree_mismatch");
+  }
+  let rebuiltSelection;
+  try {
+    rebuiltSelection = rebuildSelection({
+      releaseClass: ORDINARY_RELEASE_CLASS,
+      gitSha: releaseGitSha
+    });
+  } catch {
+    throw failure("tcg_grammar_context_activation_release_selection_object_mismatch");
+  }
+  if (stableJson(rebuiltSelection) !== stableJson(selection)) {
+    throw failure("tcg_grammar_context_activation_release_selection_object_mismatch");
+  }
+  return Object.freeze({
+    schema_version: "tcg-grammar-context-activation-git-object-evidence-v1",
+    verification_source: "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION",
+    commit_exists: true,
+    git_sha: releaseGitSha,
+    git_tree_sha: releaseIdentity.git_tree_sha,
+    parent_git_shas: Object.freeze([...releaseIdentity.parent_git_shas]),
+    selection_sha256: sha256(stableJson(rebuiltSelection))
+  });
+}
+
+export function verifyTcgGrammarContextActivationGitObjectEvidenceForTest(args) {
+  return verifyTcgGrammarContextActivationGitObjectEvidence(args?.selection, {
+    gitTextReader: args?.gitTextReader,
+    rebuildSelection: args?.rebuildSelection
   });
 }
 
@@ -11225,10 +11620,14 @@ async function main(argv) {
   }
   if (mode === "verify-health"
       && selection.schema_version === "production-release-selection-v46") {
-    await readJson(values.get("--health"), "compatibility_bridge_health");
+    const health = await readJson(values.get("--health"), "compatibility_bridge_health");
     await exclusivePrivateWrite(
       values.get("--out"),
-      tcgGrammarContextActivationRuntimeContractProof()
+      tcgGrammarContextActivationRuntimeContractProof({
+        health,
+        gitSha: selection.git_sha,
+        candidateGitSha: selection.git_sha
+      })
     );
     return;
   }
