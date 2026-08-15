@@ -5747,7 +5747,8 @@ assert.deepEqual(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ACTIVATION_DEFERRAL_CHANGED_PATH
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/csm-persistence.test.mjs",
-  "scripts/production-forward-readback.mjs"
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs"
 ]);
 const tcgGrammarContextLiveWjV4ActivationDeferralProof =
   tcgGrammarContextLiveWjV4ActivationDeferralRuntimeContractProof();
