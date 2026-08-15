@@ -701,7 +701,8 @@ export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ACTIVATION_DEFERRAL_CHANGED_PATHS =
     "scripts/compatibility-bridge-release.mjs",
     "scripts/compatibility-bridge-release.test.mjs",
     "scripts/csm-persistence.test.mjs",
-    "scripts/production-forward-readback.mjs"
+    "scripts/production-forward-readback.mjs",
+    "scripts/production-forward-readback.test.mjs"
   ]);
 export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ACTIVATION_DEFERRAL_RUNTIME_CONTRACT_SHA256 =
   "6d89e23130d4e5d4b2c9e6c103ad2f469ccb1ad5cc8b1e0138844506a2654110";

@@ -964,16 +964,21 @@ assert.equal(productionTcgGrammarContextAuthorityReceiptExact(
   tcgGrammarContextNotRequiredCurrentImageReceipt
 ), true, "the image-authorized NOT_REQUIRED variant is the other honest live shape");
 for (const mutate of [
-  (value) => { value.source_authority.authority_used = "CURRENT_IMAGE"; },
+  (value) => { value.raw_grammar = "standard"; },
+  (value) => { value.status = "APPLIED"; },
+  (value) => { value.reason_code = "EXACT_JOINT_SET_NUMBER_NAMESPACE"; },
   (value) => {
-    value.source_authority.field_authority[1].current_image_source_present = true;
+    value.source_authority.authority_used = "CURRENT_IMAGE";
+    value.source_authority.field_authority[1].current_image_source_present = false;
   },
-  (value) => { value.source_authority.field_authority[1].web_source_present = false; }
+  (value) => { value.web_authority_used = true; },
+  (value) => { value.conflict_codes = ["REGISTRY_RECORD_NOT_MATCHED"]; }
 ]) {
   const crossSpliced = clone(tcgGrammarContextPublicReceipt);
   mutate(crossSpliced);
   assert.equal(productionTcgGrammarContextAuthorityReceiptExact(crossSpliced), false,
-    "the two NOT_REQUIRED variants are indivisible; splicing one onto the other fails");
+    "the NOT_REQUIRED transition is indivisible: raw grammar, status, reason, "
+    + "authority consistency, and web authority are one contract");
 }
 const tcgGrammarContextAppliedPublicReceipt = {
   ...clone(tcgGrammarContextPublicReceipt),
@@ -1063,12 +1068,16 @@ for (const mutate of [
   (value) => {
     value.source_authority.field_authority[1].current_image_source_present = true;
   },
-  (value) => { value.source_authority.field_authority[1].web_source_present = false; }
+  (value) => { value.web_authority_used = true; },
+  (value) => { value.conflict_codes = ["REGISTRY_RECORD_NOT_MATCHED"]; },
+  (value) => { value.registry_release_id = "registry_other"; }
 ]) {
   const crossSpliced = clone(tcgGrammarContextPublicReceipt);
   mutate(crossSpliced);
   assert.equal(productionTcgGrammarContextAuthorityReceiptExact(crossSpliced), false,
-    "status, raw grammar, reason, and image authority are one indivisible path");
+    "status, raw grammar, reason, authority consistency, and the registry "
+    + "release identity are one indivisible path; web row flags are model "
+    + "behavior evidence and stay free");
 }
 const futureV4Expectation = buildProductionForwardReadbackExpectation({
   evidence: futureV4Evidence,
