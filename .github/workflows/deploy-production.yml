@@ -26,8 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # Candidate, parent, and rollback; exact v42 is pinned below for replay tests.
-          fetch-depth: 3
+          # Candidate, failed verifier, activation, and rollback; exact v42 is pinned below.
+          fetch-depth: 4
       - name: Fail closed unless this dispatch targets the current main commit
         env:
           DISPATCH_REF: ${{ github.ref }}
@@ -37,7 +37,7 @@ jobs:
           test "$DEFAULT_BRANCH" = "main"
           test "$DISPATCH_REF" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
-          git fetch --no-tags --depth=3 origin main:refs/remotes/origin/main
+          git fetch --no-tags --depth=4 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
           historical_v42_sha=20298d18ea540a7dd5a660458a1cb9646ba65342
           historical_v42_ref=refs/heads/lynca-historical-v42
@@ -129,7 +129,7 @@ jobs:
         env:
           DISPATCH_SHA: ${{ github.sha }}
         run: |
-          git fetch --no-tags --depth=3 origin main:refs/remotes/origin/main
+          git fetch --no-tags --depth=4 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
           historical_v42_sha=20298d18ea540a7dd5a660458a1cb9646ba65342
           historical_v42_ref=refs/heads/lynca-historical-v42

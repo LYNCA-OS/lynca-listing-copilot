@@ -380,14 +380,14 @@ assert.doesNotMatch(writerJourneyWorkflow,
 assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow,
-  /actions\/checkout@v5\s*\n\s*with:\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 3/,
-  "main history must retain candidate, parent, and rollback independently of v42");
+  /actions\/checkout@v5\s*\n\s*with:\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 4/,
+  "main history must retain repair, failed parent, activation, and rollback independently of v42");
 assert.equal(
   [...workflow.matchAll(
-    /git fetch --no-tags --depth=3 origin main:refs\/remotes\/origin\/main/g
+    /git fetch --no-tags --depth=4 origin main:refs\/remotes\/origin\/main/g
   )].length,
   2,
-  "both main-ref freshness checks must retain the stable three-object window"
+  "both main-ref freshness checks must retain the stable four-object window"
 );
 assert.equal(
   [...workflow.matchAll(
@@ -604,8 +604,8 @@ assert.equal(
   "one repository script must own the complete checkout-independent release suite"
 );
 assert.match(ciWorkflow,
-  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 3/,
-  "PR CI must test the exact head while retaining the failed bridge and its parent");
+  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 4/,
+  "PR CI must test the exact head while retaining the failed verifier, activation, and rollback");
 assert.equal(
   [...ciWorkflow.matchAll(
     /git fetch --no-tags --refetch --depth=1 origin \\\n+\s*"\$historical_v42_sha:\$historical_v42_ref"/g
