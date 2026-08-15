@@ -458,6 +458,18 @@ import {
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_PIN_ROLLBACK_SHA,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_PIN_ROLLBACK_TREE_SHA,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_PIN_RUNTIME_CONTRACT_SHA256,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_CHANGED_PATHS,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILED_CASE_ID,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILED_PHASE,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILED_RUN_ID,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILURE_CODE,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_MARKER,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_RUNTIME_CONTRACT_SHA256,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
@@ -512,6 +524,7 @@ import {
   materializeTcgGrammarContextActivationExactV42RepairSelectionForTest,
   materializeTcgGrammarContextLiveWjV4RepairSelectionForTest,
   materializeTcgGrammarContextLiveWjV4RollbackPinSelectionForTest,
+  materializeTcgGrammarContextLiveWjV4DirectObservationSelectionForTest,
   materializeTcgGrammarContextActivationRuntimeContractForTest,
   materializeTcgGrammarContextActivationSelectionForTest,
   materializeTcgGrammarContextReaderBridgeRuntimeContractForTest,
@@ -519,6 +532,7 @@ import {
   tcgGrammarContextActivationExactV42RepairRuntimeContractProof,
   tcgGrammarContextLiveWjV4RepairRuntimeContractProof,
   tcgGrammarContextLiveWjV4RollbackPinRuntimeContractProof,
+  tcgGrammarContextLiveWjV4DirectObservationRuntimeContractProof,
   tcgGrammarContextActivationTopologyProof,
   tcgGrammarContextReaderBridgeRuntimeContractProof,
   tcgGrammarContextReaderBridgeTopologyProof,
@@ -539,6 +553,7 @@ import {
   verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidenceForTest,
   verifyTcgGrammarContextLiveWjV4RepairGitObjectEvidenceForTest,
   verifyTcgGrammarContextLiveWjV4RollbackPinGitObjectEvidenceForTest,
+  verifyTcgGrammarContextLiveWjV4DirectObservationGitObjectEvidenceForTest,
   verifyTcgGrammarContextOrdinaryParentBoundaryForTest,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
@@ -5551,6 +5566,145 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
   selection: tcgGrammarContextLiveWjV4RollbackPinSelection,
   rollbackReceipt: { git_sha: "9".repeat(40) }
 }), (error) => error.code === "tcg_grammar_context_live_wj_v4_rollback_pin_rollback_mismatch");
+
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_DESCRIPTOR_ID,
+  "listing-copilot-tcg-grammar-context-v4-live-writer-journey-direct-observation-v1");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_MARKER,
+  "tcg-grammar-context-v4-live-writer-journey-direct-observation-v1");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA,
+  "87e58e0d345158f2da38de8f49fc9707a87c5aae");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_TREE_SHA,
+  "2da2bfd4926de4a104bb1b6d4957bb9200913e1f");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILED_RUN_ID,
+  "31897958953");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILURE_CODE,
+  "ordinary_release_rollback_mismatch");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILED_CASE_ID,
+  "RELEASE_ARTIFACT");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_FAILED_PHASE,
+  "RELEASE_ARTIFACT");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_CHANGED_PATHS, [
+  "e2e/production-writer-journey.spec.mjs",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs"
+]);
+const tcgGrammarContextLiveWjV4DirectObservationProof =
+  tcgGrammarContextLiveWjV4DirectObservationRuntimeContractProof();
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationProof.selection_schema_version,
+  "production-release-selection-v54");
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationProof.rollback_lineage_schema_version,
+  "production-release-rollback-lineage-receipt-v55");
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationProof.required_rollback_git_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationProof.runtime_behavior_changed, false);
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationProof.provider_calls, 0);
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationProof.forward_readback_receipt_contract,
+  "STATUS_SPECIFIC_EXACT_APPLIED_OR_NOT_REQUIRED_OR_DIRECT_OBSERVATION_V1");
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationProof.contract_sha256,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_RUNTIME_CONTRACT_SHA256);
+const tcgGrammarContextLiveWjV4DirectObservationSelection =
+  materializeTcgGrammarContextLiveWjV4DirectObservationSelectionForTest({
+    candidateGitSha: "5".repeat(40),
+    candidateTreeSha: "6".repeat(40),
+    parentGitShas: [TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA],
+    parentTreeSha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_TREE_SHA,
+    changedPaths: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_CHANGED_PATHS
+  });
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationSelection.schema_version,
+  "production-release-selection-v54");
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationSelection.parent_git_sha,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA);
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationSelection.required_rollback_git_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+for (const [overrides, code] of [
+  [{ parentGitShas: ["0".repeat(40)] },
+    "tcg_grammar_context_live_wj_v4_direct_observation_parent_mismatch"],
+  [{ parentTreeSha: "0".repeat(40) },
+    "tcg_grammar_context_live_wj_v4_direct_observation_parent_tree_mismatch"],
+  [{ candidateTreeSha:
+      TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_TREE_SHA },
+    "tcg_grammar_context_live_wj_v4_direct_observation_candidate_tree_mismatch"],
+  [{ changedPaths:
+      TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_CHANGED_PATHS.slice(1) },
+    "tcg_grammar_context_live_wj_v4_direct_observation_changed_paths_mismatch"]
+]) {
+  assert.throws(() => materializeTcgGrammarContextLiveWjV4DirectObservationSelectionForTest({
+    candidateGitSha: "5".repeat(40),
+    candidateTreeSha: "6".repeat(40),
+    parentGitShas: [TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA],
+    parentTreeSha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_TREE_SHA,
+    changedPaths: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_CHANGED_PATHS,
+    ...overrides
+  }), (error) => error.code === code);
+}
+const tcgGrammarContextLiveWjV4DirectObservationEvidenceCommit = ({
+  tree = tcgGrammarContextLiveWjV4DirectObservationSelection.git_tree_sha,
+  parent = TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA
+} = {}) => [
+  `tree ${tree}`,
+  `parent ${parent}`,
+  "author LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "committer LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "",
+  "fixture live WJ v4 direct observation commit"
+].join("\n");
+const tcgGrammarContextLiveWjV4DirectObservationEvidenceReader = (args) => {
+  if (args[0] === "cat-file" && args[1] === "-t") return "commit";
+  if (args[0] === "cat-file" && args[1] === "-p") {
+    return tcgGrammarContextLiveWjV4DirectObservationEvidenceCommit();
+  }
+  throw new Error("unexpected_git_read");
+};
+const tcgGrammarContextLiveWjV4DirectObservationEvidence =
+  verifyTcgGrammarContextLiveWjV4DirectObservationGitObjectEvidenceForTest({
+    selection: tcgGrammarContextLiveWjV4DirectObservationSelection,
+    gitTextReader: tcgGrammarContextLiveWjV4DirectObservationEvidenceReader,
+    rebuildSelection: () => tcgGrammarContextLiveWjV4DirectObservationSelection
+  });
+assert.equal(tcgGrammarContextLiveWjV4DirectObservationEvidence.commit_exists, true);
+assert.deepEqual(tcgGrammarContextLiveWjV4DirectObservationEvidence.parent_git_shas,
+  [TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA]);
+for (const [gitTextReader, rebuildSelection, code] of [
+  [() => { throw new Error("missing"); },
+    () => tcgGrammarContextLiveWjV4DirectObservationSelection,
+    "tcg_grammar_context_live_wj_v4_direct_observation_git_object_invalid"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextLiveWjV4DirectObservationEvidenceCommit({ parent: "7".repeat(40) }),
+    () => tcgGrammarContextLiveWjV4DirectObservationSelection,
+    "tcg_grammar_context_live_wj_v4_direct_observation_parent_mismatch"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextLiveWjV4DirectObservationEvidenceCommit({ tree: "8".repeat(40) }),
+    () => tcgGrammarContextLiveWjV4DirectObservationSelection,
+    "tcg_grammar_context_live_wj_v4_direct_observation_candidate_tree_mismatch"],
+  [tcgGrammarContextLiveWjV4DirectObservationEvidenceReader,
+    () => ({ ...tcgGrammarContextLiveWjV4DirectObservationSelection,
+      parity_required: false }),
+    "tcg_grammar_context_live_wj_v4_direct_observation_selection_object_mismatch"]
+]) {
+  assert.throws(() => verifyTcgGrammarContextLiveWjV4DirectObservationGitObjectEvidenceForTest({
+    selection: tcgGrammarContextLiveWjV4DirectObservationSelection,
+    gitTextReader,
+    rebuildSelection
+  }), (error) => error.code === code);
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: { ...tcgGrammarContextLiveWjV4DirectObservationSelection,
+    parity_required: false },
+  rollbackReceipt: { git_sha:
+    TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_ROLLBACK_SHA }
+}), (error) => error.code
+  === "tcg_grammar_context_live_wj_v4_direct_observation_selection_invalid");
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: tcgGrammarContextLiveWjV4DirectObservationSelection,
+  rollbackReceipt: { git_sha: "9".repeat(40) }
+}), (error) => error.code
+  === "tcg_grammar_context_live_wj_v4_direct_observation_rollback_mismatch");
 assert.throws(() => verifyCompatibilityBridgeSelection({
   releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   gitSha: "a".repeat(40),
@@ -9706,6 +9860,8 @@ try {
     actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_PARENT_SHA;
   const actualTcgGrammarContextLiveWjV4RollbackPin =
     actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_PIN_PARENT_SHA;
+  const actualTcgGrammarContextLiveWjV4DirectObservation =
+    actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_PARENT_SHA;
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
@@ -9742,7 +9898,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualTcgGrammarContextLiveWjV4RollbackPin
+  const actualTransitionMarker = actualTcgGrammarContextLiveWjV4DirectObservation
+    ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_MARKER
+    : actualTcgGrammarContextLiveWjV4RollbackPin
     ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_PIN_MARKER
     : actualTcgGrammarContextLiveWjV4Repair
     ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_MARKER
@@ -9931,7 +10089,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualTcgGrammarContextLiveWjV4RollbackPin
+      actualTcgGrammarContextLiveWjV4DirectObservation
+        ? "production-release-selection-v54"
+      : actualTcgGrammarContextLiveWjV4RollbackPin
         ? "production-release-selection-v52"
       : actualTcgGrammarContextLiveWjV4Repair
         ? "production-release-selection-v50"
@@ -9986,7 +10146,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualTcgGrammarContextLiveWjV4RollbackPin
+      actualTcgGrammarContextLiveWjV4DirectObservation
+        ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_DIRECT_OBSERVATION_ROLLBACK_SHA
+      : actualTcgGrammarContextLiveWjV4RollbackPin
         ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_PIN_ROLLBACK_SHA
       : actualTcgGrammarContextLiveWjV4Repair
         ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_SHA
@@ -10036,7 +10198,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualTcgGrammarContextLiveWjV4RollbackPin
+      actualTcgGrammarContextLiveWjV4DirectObservation
+        ? "production-release-rollback-lineage-receipt-v55"
+      : actualTcgGrammarContextLiveWjV4RollbackPin
         ? "production-release-rollback-lineage-receipt-v53"
       : actualTcgGrammarContextLiveWjV4Repair
         ? "production-release-rollback-lineage-receipt-v51"

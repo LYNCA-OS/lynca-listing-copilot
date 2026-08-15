@@ -2461,11 +2461,18 @@ function tcgGrammarContextV4WriterActive(writer) {
       === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256;
 }
 
-function tcgGrammarContextV4VersionActive(versions) {
+function tcgGrammarContextV4VersionActive(versions, receipt = null) {
+  // The TCG acceptance card runs the legacy observation path under the v4
+  // durable contract: v2 composer and ebay-profile-v1 in both states, with
+  // the resolver following the receipt status — the observation resolver
+  // when the card was already TCG (NOT_REQUIRED), the TCG context resolver
+  // when a standard-to-tcg transition was applied (APPLIED).
   return versions?.csm_contract
     === CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
     && versions?.resolver
-      === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
+      === (receipt?.status === "NOT_REQUIRED"
+        ? THIN_RESOLVER_VERSION
+        : TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version)
     && versions?.composer === THIN_COMPOSER_VERSION_V2
     && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
 }
@@ -2650,7 +2657,8 @@ function ordinaryActivationSeal({
       evidence: standardCaseEvidence
     })
     && (tcgGrammarContextV4WriterActive(writer)
-      ? tcgGrammarContextV4VersionActive(tcgCaseEvidence?.versions)
+      ? tcgGrammarContextV4VersionActive(tcgCaseEvidence?.versions,
+          tcgCaseEvidence?.tcg_grammar_context_authority_receipt)
         && productionTcgGrammarContextAuthorityReceiptExact(
           tcgCaseEvidence?.tcg_grammar_context_authority_receipt
         )
@@ -3559,7 +3567,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
           resolution_view: resolutionView
         };
         requireInvariant((tcgGrammarContextV4
-          && tcgGrammarContextV4VersionActive(versions)
+          && tcgGrammarContextV4VersionActive(versions,
+            tcgGrammarContextAuthorityReceipt)
           && tcgGrammarContextAuthorityReceipt != null)
           || (!tcgGrammarContextV4
             && !capturedProductionWriterMode(writerProjectionMode)
@@ -3578,6 +3587,11 @@ test("production writer journey verifies Glass Box and staged large-image transp
             : verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
       }
       if (sourceCase.case_id === "NON_TCG_WEB_IDENTITY") {
+        evidence.activation_diagnostic = {
+          writer_projection_mode: writerProjectionMode,
+          versions,
+          resolution_view: resolutionView
+        };
         requireInvariant(resolutionView?.grammar?.raw === "standard"
           && observationCanonicalV3VersionActive(versions),
         verifierErrorCodes.VERSION_COMPOSER_MISMATCH);
