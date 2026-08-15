@@ -3547,15 +3547,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
         const tcgGrammarContextV4 = tcgGrammarContextV4WriterActive(writer);
         tcgGrammarContextAuthorityReceipt =
           productionTcgGrammarContextAuthorityProof(resolutionView);
-        if (process.env.TCG_DEBUG_DUMP) {
-          await writeFile(process.env.TCG_DEBUG_DUMP, JSON.stringify({
-            writerProjectionMode,
-            tcgGrammarContextV4,
-            tcgGrammarContextAuthorityReceipt,
-            versions,
-            resolutionView
-          }, null, 2));
-        }
+        // Permanent failing-case diagnostic: when the TCG acceptance case
+        // fails its verifier, the evidence must carry the live resolution
+        // view, the recognized versions, and the receipt proof result so the
+        // failure is diagnosable from the deploy artifact alone.
+        evidence.tcg_diagnostic = {
+          writer_projection_mode: writerProjectionMode,
+          tcg_grammar_context_v4_writer_active: tcgGrammarContextV4,
+          versions,
+          authority_receipt: tcgGrammarContextAuthorityReceipt,
+          resolution_view: resolutionView
+        };
         requireInvariant((tcgGrammarContextV4
           && tcgGrammarContextV4VersionActive(versions)
           && tcgGrammarContextAuthorityReceipt != null)
