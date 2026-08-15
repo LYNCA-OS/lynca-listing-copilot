@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { handleManualRecoveryRequest } from "../api/listing-manual-recovery.js";
 import {
@@ -21,6 +22,19 @@ import {
 //
 // All external boundaries are injected below. Any accidental un-injected fetch
 // therefore fails the test instead of escaping to a real service.
+
+const liveReproductionSource = readFileSync(
+  new URL("./reproduce-cos51-storage-collision.mjs", import.meta.url),
+  "utf8"
+);
+assert.match(liveReproductionSource, /expectedOriginalCount:\s*1/,
+  "the live isolated fixture must create the one-image asset it declares");
+assert.match(liveReproductionSource,
+  /mismatched\.status\s*===\s*409[\s\S]*existing_object_content_hash_mismatch[\s\S]*retryable\s*===\s*false/,
+  "the live mismatch receipt must be an exact fail-closed 409 contract");
+assert.match(liveReproductionSource,
+  /content_hash_matches_expected\s*===\s*true[\s\S]*verification_record\?\.saved\s*===\s*true[\s\S]*verification_record\?\.durable\s*===\s*true/,
+  "the live reuse receipt must prove the complete hash and durable record");
 
 const tenantId = "tenant_cos51_isolated";
 const operatorId = "writer_cos51_isolated";

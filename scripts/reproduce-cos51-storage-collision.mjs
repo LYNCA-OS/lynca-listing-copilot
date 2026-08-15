@@ -140,8 +140,15 @@ try {
   assetId = String(process.env.COS51_ASSET_ID || "").trim();
   if (!assetId) {
     const created = await api("/api/listing-asset-create", {
-      clientAssetRef: `cos51-collision-${Date.now()}`
+      clientAssetRef: `cos51-collision-${Date.now()}`,
+      expectedOriginalCount: 1
     });
+    record("the isolated one-image asset is created durably",
+      created.status === 201
+        && created.payload?.ok === true
+        && typeof created.payload?.request_id === "string"
+        && created.payload.request_id.length > 0,
+      `${created.status} ${JSON.stringify(created.payload).slice(0, 220)}`);
     assetId = created.payload?.id || created.payload?.asset_id || created.payload?.asset?.id;
   }
   if (!assetId) {
@@ -209,7 +216,13 @@ try {
       contentType: "image/jpeg", objectPath, contentSha256: jpegSha256
     });
     record("matching bytes verify and are reused",
-      verified.status === 200 && verified.payload?.ok === true,
+      verified.status === 200
+        && verified.payload?.ok === true
+        && verified.payload?.verification?.content_hash_matches_expected === true
+        && String(verified.payload?.verification?.content_sha256 || "").toLowerCase()
+          === jpegSha256
+        && verified.payload?.verification_record?.saved === true
+        && verified.payload?.verification_record?.durable === true,
       `${verified.status} ${JSON.stringify(verified.payload).slice(0, 240)}`);
 
     // 4. Mismatched bytes must NOT verify. Same path, different content would
@@ -219,8 +232,11 @@ try {
       assetId, imageId: "front-1", role: "front_original", fileName: "front.jpg",
       contentType: "image/jpeg", objectPath, contentSha256: otherSha256
     });
-    record("mismatched bytes are refused rather than verified into place",
-      !(mismatched.status === 200 && mismatched.payload?.ok === true),
+    record("mismatched bytes fail closed without a retry or overwrite",
+      mismatched.status === 409
+        && mismatched.payload?.ok === false
+        && mismatched.payload?.code === "existing_object_content_hash_mismatch"
+        && mismatched.payload?.retryable === false,
       `${mismatched.status} ${JSON.stringify(mismatched.payload).slice(0, 240)}`);
   }
 } finally {
