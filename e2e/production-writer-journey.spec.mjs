@@ -2466,10 +2466,8 @@ function tcgGrammarContextV4VersionActive(versions) {
     === CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
     && versions?.resolver
       === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
-    && versions?.composer
-      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version
-    && versions?.marketplace_profile
-      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version;
+    && versions?.composer === THIN_COMPOSER_VERSION_V2
+    && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
 }
 
 function capturedProductionTcgVersionActive(versions) {
@@ -3549,6 +3547,15 @@ test("production writer journey verifies Glass Box and staged large-image transp
         const tcgGrammarContextV4 = tcgGrammarContextV4WriterActive(writer);
         tcgGrammarContextAuthorityReceipt =
           productionTcgGrammarContextAuthorityProof(resolutionView);
+        if (process.env.TCG_DEBUG_DUMP) {
+          await writeFile(process.env.TCG_DEBUG_DUMP, JSON.stringify({
+            writerProjectionMode,
+            tcgGrammarContextV4,
+            tcgGrammarContextAuthorityReceipt,
+            versions,
+            resolutionView
+          }, null, 2));
+        }
         requireInvariant((tcgGrammarContextV4
           && tcgGrammarContextV4VersionActive(versions)
           && tcgGrammarContextAuthorityReceipt != null)
