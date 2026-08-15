@@ -78,7 +78,11 @@ const normalizedRows = normalizeWriterExportRows([{
     objectPath: "tenants/tenant_a/listing-assets/2026-08-15/asset-a/front.webp",
     bucket: "listing-card-images",
     originalType: "image/webp",
-    storageVerified: true
+    storageVerified: true,
+    contentSha256: "a".repeat(64),
+    embedDataUrl: `data:image/jpeg;base64,${Buffer.from([
+      0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0
+    ]).toString("base64")}`
   }]
 }]);
 const now = new Date("2026-08-15T12:00:00Z");
@@ -186,6 +190,10 @@ try {
   insertJsonRow("public.v4_writer_export_batches", tenantA.batchRow);
   tenantA.itemRows.forEach((row) => insertJsonRow("public.v4_writer_export_items", row));
 
+  assert.doesNotMatch(JSON.stringify(tenantA.itemRows), /embedDataUrl|embed_data_url|data:image/i,
+    "request-scoped JPEG workbook bytes must not enter Postgres image_refs");
+  assert.equal(tenantA.batchRow.manifest.display_derivative_count, 1);
+
   assert.equal(
     sql("select tenant_id from public.v4_writer_export_batches where id = 'writer_export_postgres_a'"),
     "tenant_a"
@@ -205,6 +213,52 @@ try {
   assert.equal(
     sql("select manifest ->> 'training_admission' from public.v4_writer_export_batches where id = 'writer_export_postgres_a'"),
     "requires_independent_persisted_review_event"
+  );
+  assert.equal(
+    sql("select image_refs::text ~ 'data:image|embedDataUrl|embed_data_url' from public.v4_writer_export_items where export_batch_id = 'writer_export_postgres_a'"),
+    "f"
+  );
+
+  const pending = buildWriterExportPersistenceRows({
+    tenantId: "tenant_a",
+    batchId: "writer_export_postgres_failure",
+    normalizedRows,
+    exportedBy: "writer-a",
+    bucket: "listing-card-images",
+    objectPath: buildWriterExportObjectPath({
+      tenantId: "tenant_a",
+      batchId: "writer_export_postgres_failure",
+      now
+    }),
+    fileName: "writer_export_postgres_failure.xlsx",
+    fileSizeBytes: null,
+    status: "PENDING",
+    embeddedImageCount: null,
+    now
+  });
+  insertJsonRow("public.v4_writer_export_batches", pending.batchRow);
+  const failed = buildWriterExportPersistenceRows({
+    ...pending.batchRow,
+    tenantId: "tenant_a",
+    batchId: "writer_export_postgres_failure",
+    normalizedRows,
+    exportedBy: "writer-a",
+    bucket: "listing-card-images",
+    objectPath: pending.batchRow.storage_object_path,
+    fileName: pending.batchRow.file_name,
+    fileSizeBytes: null,
+    status: "FAILED",
+    embeddedImageCount: null,
+    failurePhase: "item_persistence",
+    now
+  });
+  sql(`update public.v4_writer_export_batches
+    set status = 'FAILED', manifest = ${sqlLiteral(JSON.stringify(failed.manifest))}::jsonb
+    where tenant_id = 'tenant_a' and id = 'writer_export_postgres_failure' and status = 'PENDING'`);
+  assert.equal(
+    sql("select status || ':' || (manifest ->> 'failure_phase') from public.v4_writer_export_batches where id = 'writer_export_postgres_failure'"),
+    "FAILED:item_persistence",
+    "a failed post-upload transaction must remain discoverable instead of becoming an orphan"
   );
 
   assert.match(

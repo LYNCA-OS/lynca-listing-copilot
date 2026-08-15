@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlGQAAAAASUVORK5CYII=";
+const WEBP_BASE64 = "UklGRhoAAABXRUJQVlA4TA4AAAAvAAAAAAcQEf0PRET/Aw==";
 const contentTypes = Object.freeze({
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -80,7 +81,7 @@ function durableAssetId(index) {
 }
 
 async function installApiMocks(page) {
-  const state = { ingestRequests: 0 };
+  const state = { ingestRequests: 0, exportRequests: [] };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -146,6 +147,25 @@ async function installApiMocks(page) {
       });
       return;
     }
+    if (url.pathname === "/api/v4/listing-export-workbook") {
+      const rawBody = request.postData() || "";
+      const body = JSON.parse(rawBody);
+      state.exportRequests.push({ bytes: Buffer.byteLength(rawBody), body });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          batch_id: "writer_export_renderer",
+          tenant_id: "tenant_renderer_test",
+          asset_count: body.rows.length,
+          item_count: body.rows.length,
+          file_name: "writer_export_renderer.xlsx",
+          download_url: ""
+        })
+      });
+      return;
+    }
     await route.fulfill({
       status: 404,
       contentType: "application/json",
@@ -168,17 +188,21 @@ async function dropImageSelection(page, {
   target,
   count,
   firstFileNumber = 1,
-  corruptOffset = -1
+  corruptOffset = -1,
+  format = "png"
 }) {
-  return page.evaluate(({ selector, count: fileCount, first, corrupt, pngBase64 }) => {
-    const png = Uint8Array.from(atob(pngBase64), (character) => character.charCodeAt(0));
+  return page.evaluate(({ selector, count: fileCount, first, corrupt, imageFormat, pngBase64, webpBase64 }) => {
+    const bytes = Uint8Array.from(
+      atob(imageFormat === "webp" ? webpBase64 : pngBase64),
+      (character) => character.charCodeAt(0)
+    );
     const transfer = new DataTransfer();
     for (let offset = 0; offset < fileCount; offset += 1) {
       const corruptFile = offset === corrupt;
       transfer.items.add(new File(
-        [corruptFile ? new Uint8Array([0, 1, 2, 3]) : png],
-        `card-${first + offset}.${corruptFile ? "heic" : "png"}`,
-        { type: corruptFile ? "image/heic" : "image/png" }
+        [corruptFile ? new Uint8Array([0, 1, 2, 3]) : bytes],
+        `card-${first + offset}.${corruptFile ? "heic" : imageFormat}`,
+        { type: corruptFile ? "image/heic" : `image/${imageFormat}` }
       ));
     }
     const element = document.querySelector(selector);
@@ -208,7 +232,9 @@ async function dropImageSelection(page, {
     count,
     first: firstFileNumber,
     corrupt: corruptOffset,
-    pngBase64: PNG_BASE64
+    imageFormat: format,
+    pngBase64: PNG_BASE64,
+    webpBase64: WEBP_BASE64
   });
 }
 
@@ -314,6 +340,31 @@ test("a failed pair preparation rejects the whole real selection without a direc
   const recovered = await page.evaluate(() => globalThis.__listingCopilotHooks.listingCopilotStateSnapshot());
   expect(recovered.assetIndexes).toEqual([1, 2]);
   expect(api.ingestRequests).toBe(requestsBefore + 1);
+});
+
+test("WebP originals become bounded JPEG workbook display bytes before export", async ({ page }) => {
+  const api = await installApiMocks(page);
+  await openApp(page);
+  await dropImageSelection(page, { target: "#dropZone", count: 2, format: "webp" });
+  await waitForDirectory(page, { assets: 1, results: 1 });
+
+  await page.locator('button[data-workspace-mode="standard"]').click();
+  await expect(page.locator("#exportWorkbookButton")).toBeEnabled();
+  await page.locator("#exportWorkbookButton").click();
+  await expect.poll(() => api.exportRequests.length).toBe(1);
+
+  const [{ bytes, body }] = api.exportRequests;
+  expect(bytes).toBeLessThanOrEqual(4_000_000);
+  expect(body.rows).toHaveLength(1);
+  expect(body.rows[0].images).toHaveLength(2);
+  for (const image of body.rows[0].images) {
+    expect(image.originalType).toBe("image/webp");
+    expect(image.objectPath).toMatch(/\.webp$/);
+    expect(image.embedDataUrl).toMatch(/^data:image\/jpeg;base64,/);
+    expect(Buffer.from(image.embedDataUrl.split(",")[1], "base64").subarray(0, 3)).toEqual(
+      Buffer.from([0xff, 0xd8, 0xff])
+    );
+  }
 });
 
 test("a 100-card session keeps at most 30 full cards in the real DOM and all pages reachable", async ({ page }) => {

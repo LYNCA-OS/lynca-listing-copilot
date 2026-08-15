@@ -46,7 +46,11 @@ const STORAGE_VERIFY_TIMEOUT_MS = STORAGE_CONTROL_RECOVERY_TIMEOUT_MS;
 const STORAGE_VERIFY_RETRY_DELAYS_MS = STORAGE_CONTROL_RECOVERY_DELAYS_MS;
 const ASSET_CREATE_REQUEST_TIMEOUT_MS = 3500;
 const FEEDBACK_REQUEST_TIMEOUT_MS = 20000;
-const EXPORT_REQUEST_TIMEOUT_MS = 90000;
+const EXPORT_REQUEST_TIMEOUT_MS = 280000;
+const WRITER_EXPORT_REQUEST_MAX_BYTES = 4_000_000;
+const WRITER_EXPORT_IMAGE_MAX_EDGE = 480;
+const WRITER_EXPORT_IMAGE_QUALITY = 0.70;
+const WRITER_EXPORT_IMAGE_CONCURRENCY = 2;
 const CSM_THIN_REQUEST_TIMEOUT_MS = 290000; // csm-runtime-contract.mjs
 const IMAGE_MAX_EDGE = 2200;
 const IMAGE_MIN_EDGE = 1400;
@@ -468,7 +472,7 @@ function stringByteLength(value) {
   return new Blob([String(value || "")]).size;
 }
 
-async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
+async function compressImageDataUrl(originalDataUrl, maxEdge, quality, { analyzeQuality = true } = {}) {
   const image = await loadImage(originalDataUrl);
   const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -482,7 +486,9 @@ async function compressImageDataUrl(originalDataUrl, maxEdge, quality) {
   context.fillRect(0, 0, width, height);
   context.drawImage(image, 0, 0, width, height);
 
-  const imageQuality = analyzeImageQualityFromImageData(context.getImageData(0, 0, width, height));
+  const imageQuality = analyzeQuality
+    ? analyzeImageQualityFromImageData(context.getImageData(0, 0, width, height))
+    : null;
 
   return {
     dataUrl: canvasToDataUrl(canvas, quality),
@@ -860,12 +866,21 @@ function excelEmbeddableImageType(image = {}) {
   return type === "image/jpeg" || type === "image/jpg" || type === "image/png";
 }
 
-function exportImageReference(image) {
+async function exportImageReference(image) {
   const reference = reviewImageReference(image);
   if (!reference.objectPath || !excelEmbeddableImageType(image)) {
-    reference.embedDataUrl = String(image.dataUrl || "").startsWith("data:image/")
-      ? image.dataUrl
-      : "";
+    const source = imagePreviewUrl(image);
+    if (!source) throw new Error("Excel 图片预览不可用，已停止导出。");
+    const displayImage = await compressImageDataUrl(
+      source,
+      WRITER_EXPORT_IMAGE_MAX_EDGE,
+      WRITER_EXPORT_IMAGE_QUALITY,
+      { analyzeQuality: false }
+    );
+    if (!String(displayImage.dataUrl || "").startsWith("data:image/jpeg;base64,")) {
+      throw new Error("Excel 图片转换失败，已停止导出。");
+    }
+    reference.embedDataUrl = displayImage.dataUrl;
   }
   return reference;
 }
@@ -4897,11 +4912,11 @@ function primaryImagesForExport(asset = {}) {
     .slice(0, 2);
 }
 
-function buildWriterExportRows(
+async function buildWriterExportRows(
   assets = state.assets,
   { requireSaved = false, titleSnapshotByIndex = new Map() } = {}
 ) {
-  return assets.map((asset) => {
+  return mapWithConcurrency(assets, WRITER_EXPORT_IMAGE_CONCURRENCY, async (asset) => {
     const result = resultForAsset(asset);
     if (!result) throw new Error(`资产 ${asset.index} 还没有生成结果。`);
     if (requireSaved && !(result.feedbackStatus === "saved" && writerFeedbackPersisted(result))) {
@@ -4911,7 +4926,7 @@ function buildWriterExportRows(
       ? String(titleSnapshotByIndex.get(Number(asset.index)) || "").trim()
       : finalTitleForResult(result);
     if (!finalTitle) throw new Error(`资产 ${asset.index} 缺少最终标题。`);
-    const images = primaryImagesForExport(asset).map(exportImageReference).filter((image) => {
+    const images = (await Promise.all(primaryImagesForExport(asset).map(exportImageReference))).filter((image) => {
       return image.objectPath || image.embedDataUrl;
     });
     if (!images.length) throw new Error(`资产 ${asset.index} 缺少可导出的图片。`);
@@ -4964,17 +4979,22 @@ async function exportWriterWorkbook() {
     await mapWithConcurrency(exportAssets, 2, async (asset) => {
       await ensureAssetOriginalImagesUploaded(asset);
     });
-    const rows = buildWriterExportRows(exportAssets, {
+    const rows = await buildWriterExportRows(exportAssets, {
       requireSaved: false,
       titleSnapshotByIndex
     });
+    const requestBody = JSON.stringify({ rows });
+    const requestBytes = new Blob([requestBody]).size;
+    if (requestBytes > WRITER_EXPORT_REQUEST_MAX_BYTES) {
+      throw new Error(`Excel 请求为 ${requestBytes} 字节，超过 ${WRITER_EXPORT_REQUEST_MAX_BYTES} 字节；请缩小本轮批次后重试。`);
+    }
     const exportRequest = await fetchJsonWithRetry(EXPORT_WORKBOOK_API_ENDPOINT, {
       method: "POST",
       headers: {
         "content-type": "application/json"
       },
       credentials: "same-origin",
-      body: JSON.stringify({ rows })
+      body: requestBody
     }, {
       timeoutMs: EXPORT_REQUEST_TIMEOUT_MS,
       maxAttempts: 1,

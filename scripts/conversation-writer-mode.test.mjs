@@ -180,6 +180,17 @@ assert.doesNotMatch(readinessSource, /terminalModeActive\(\)/,
 const exportSource = js.slice(js.indexOf("async function exportWriterWorkbook"), js.indexOf("function resetTool"));
 assert.match(exportSource, /const exportingTerminalRows = Boolean\(state\.terminalLedger\)/,
   "export row selection must remain ledger-backed in both projections");
+assert.match(js, /const WRITER_EXPORT_REQUEST_MAX_BYTES = 4_000_000;/);
+assert.match(js, /const WRITER_EXPORT_IMAGE_MAX_EDGE = 480;/);
+assert.match(js, /const WRITER_EXPORT_IMAGE_QUALITY = 0\.70;/);
+const exportImageSource = js.slice(js.indexOf("async function exportImageReference"), js.indexOf("function imageIsDerivedForRequest"));
+assert.match(exportImageSource, /compressImageDataUrl\([\s\S]*WRITER_EXPORT_IMAGE_MAX_EDGE,[\s\S]*WRITER_EXPORT_IMAGE_QUALITY/,
+  "WebP workbook display bytes must reuse the bounded browser canvas path");
+assert.match(exportImageSource, /data:image\/jpeg;base64/,
+  "the browser must fail closed unless the display derivative is a JPEG");
+assert.match(exportSource, /const requestBytes = new Blob\(\[requestBody\]\)\.size/);
+assert.match(exportSource, /requestBytes > WRITER_EXPORT_REQUEST_MAX_BYTES/,
+  "the exact serialized JSON body must fail before POST when it exceeds 4 MB");
 assert.match(js, /const result = await processAssetViaCsmThinPath\(asset/,
   "the existing per-card provider boundary remains unchanged");
 assert.match(js, /state\.terminalProjectionError = String\(error\?\.message/,

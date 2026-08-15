@@ -93,6 +93,12 @@
         "sin1"
       ]
     },
+    "api/v4/listing-export-workbook.js": {
+      "maxDuration": 300,
+      "regions": [
+        "sin1"
+      ]
+    },
     "api/listing-image-verify-upload.js": {
       "regions": [
         "sin1"
