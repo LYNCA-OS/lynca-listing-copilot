@@ -785,7 +785,8 @@ export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_PARITY_GOVERNED_CHANGED_PATHS =
   Object.freeze([
     "e2e/production-writer-journey.spec.mjs",
     "scripts/compatibility-bridge-release.mjs",
-    "scripts/compatibility-bridge-release.test.mjs"
+    "scripts/compatibility-bridge-release.test.mjs",
+    "scripts/production-forward-readback.mjs"
   ]);
 export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_PARITY_GOVERNED_RUNTIME_CONTRACT_SHA256 =
   "554a5c50506f58ca42be13cd53d7239d4596f5e790751c0aefd33b339f99798f";

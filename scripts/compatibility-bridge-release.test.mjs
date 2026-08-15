@@ -6193,7 +6193,8 @@ assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_PARITY_GOVERNED_ROLLBACK_TREE_SHA,
 assert.deepEqual(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_PARITY_GOVERNED_CHANGED_PATHS, [
   "e2e/production-writer-journey.spec.mjs",
   "scripts/compatibility-bridge-release.mjs",
-  "scripts/compatibility-bridge-release.test.mjs"
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-forward-readback.mjs"
 ]);
 const tcgGrammarContextLiveWjV4ParityGovernedProof =
   tcgGrammarContextLiveWjV4ParityGovernedRuntimeContractProof();

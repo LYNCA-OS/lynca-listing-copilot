@@ -137,57 +137,27 @@ const TCG_GRAMMAR_CONTEXT_FIELD_AUTHORITY_KEYS = Object.freeze([
   "current_image_source_present", "field", "web_source_present"
 ]);
 const TCG_GRAMMAR_CONTEXT_ACCEPTED_RECEIPT_PATHS = Object.freeze({
-  APPLIED: Object.freeze([
-    Object.freeze({
-      raw_grammar: "standard",
-      resolved_grammar: "tcg",
-      reason_code: "EXACT_JOINT_SET_NUMBER_NAMESPACE",
-      source_authority: Object.freeze({
-        authority_used: "CURRENT_IMAGE",
-        field_authority: Object.freeze([
-          Object.freeze({ field: "card_number", current_image_source_present: true,
-            web_source_present: false }),
-          Object.freeze({ field: "set", current_image_source_present: true,
-            web_source_present: false })
-        ])
-      })
-    })
-  ]),
-  // Both variants are honest emissions of the same acceptance case: the card
-  // is already TCG (no standard-to-tcg transition), and the tracked fields
-  // are authorized either from the image alone (CURRENT_IMAGE, both image) or
-  // with the set corroborated by web support (ABSTAIN, web set). The Web is
-  // never admitted as Grammar authority; web_authority_used stays false.
-  NOT_REQUIRED: Object.freeze([
-    Object.freeze({
-      raw_grammar: "tcg",
-      resolved_grammar: "tcg",
-      reason_code: "RAW_TCG_GRAMMAR_UNCHANGED",
-      source_authority: Object.freeze({
-        authority_used: "CURRENT_IMAGE",
-        field_authority: Object.freeze([
-          Object.freeze({ field: "card_number", current_image_source_present: true,
-            web_source_present: false }),
-          Object.freeze({ field: "set", current_image_source_present: true,
-            web_source_present: false })
-        ])
-      })
-    }),
-    Object.freeze({
-      raw_grammar: "tcg",
-      resolved_grammar: "tcg",
-      reason_code: "RAW_TCG_GRAMMAR_UNCHANGED",
-      source_authority: Object.freeze({
-        authority_used: "ABSTAIN",
-        field_authority: Object.freeze([
-          Object.freeze({ field: "card_number", current_image_source_present: true,
-            web_source_present: false }),
-          Object.freeze({ field: "set", current_image_source_present: false,
-            web_source_present: true })
-        ])
-      })
-    })
-  ])
+  // Two transitions, not four exact byte shapes. The provider's web usage for
+  // the tracked fields varies run to run (image only, web support, or both,
+  // in any combination — observed 2026-08-16: card_number web true + set web
+  // true under ABSTAIN). The Web is never admitted as Grammar authority
+  // (web_authority_used stays false), so the field rows are model behavior
+  // evidence, not part of the transition contract. Bind only what the
+  // transition means.
+  APPLIED: Object.freeze({
+    raw_grammar: "standard",
+    resolved_grammar: "tcg",
+    reason_code: "EXACT_JOINT_SET_NUMBER_NAMESPACE",
+    authority_used: "CURRENT_IMAGE",
+    both_fields_current_image: true
+  }),
+  NOT_REQUIRED: Object.freeze({
+    raw_grammar: "tcg",
+    resolved_grammar: "tcg",
+    reason_code: "RAW_TCG_GRAMMAR_UNCHANGED",
+    authority_used: null,
+    both_fields_current_image: false
+  })
 });
 
 const normalizedQueryText = (queries) => (Array.isArray(queries) ? queries : [])
@@ -401,10 +371,18 @@ const TCG_GRAMMAR_CONTEXT_REGISTRY_RECORD_SHA256 = sha256Stable(
 function exactTcgGrammarContextAuthorityReceipt(value) {
   const source = value?.source_authority;
   const fieldAuthority = source?.field_authority;
-  const acceptedPaths = TCG_GRAMMAR_CONTEXT_ACCEPTED_RECEIPT_PATHS[value?.status] || [];
-  const shared = exactKeys(value, TCG_GRAMMAR_CONTEXT_PUBLIC_RECEIPT_KEYS)
+  const transition = TCG_GRAMMAR_CONTEXT_ACCEPTED_RECEIPT_PATHS[value?.status];
+  const authorityConsistent = source?.authority_used === "CURRENT_IMAGE"
+    ? fieldAuthority?.every((row) => row.current_image_source_present === true)
+    : source?.authority_used === "ABSTAIN"
+      ? fieldAuthority?.some((row) => row.current_image_source_present === false)
+      : false;
+  return exactKeys(value, TCG_GRAMMAR_CONTEXT_PUBLIC_RECEIPT_KEYS)
     && value.schema_version === TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_SCHEMA
-    && acceptedPaths.length > 0
+    && Boolean(transition)
+    && value.raw_grammar === transition.raw_grammar
+    && value.resolved_grammar === transition.resolved_grammar
+    && value.reason_code === transition.reason_code
     && value.registry_release_id === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id
     && value.registry_content_sha256
       === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256
@@ -420,29 +398,18 @@ function exactTcgGrammarContextAuthorityReceipt(value) {
     && fieldAuthority.every((row) => (
       exactKeys(row, TCG_GRAMMAR_CONTEXT_FIELD_AUTHORITY_KEYS)
     ))
-    && acceptedPaths.some((acceptedPath) => (
-      value.raw_grammar === acceptedPath.raw_grammar
-      && value.resolved_grammar === acceptedPath.resolved_grammar
-      && value.reason_code === acceptedPath.reason_code
-      && source.authority_used === acceptedPath.source_authority.authority_used
-      && stableJson(fieldAuthority)
-        === stableJson(acceptedPath.source_authority.field_authority)
-    ));
-  if (!shared) return false;
-  // An APPLIED standard-to-tcg transition requires the exact registry match:
-  // the claim id, the frozen set/card-number identity, and the record hash.
-  if (value.status === "APPLIED") {
-    return value.claim_id === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0].claim_id
-      && value.normalized_set === "Trainer Gallery"
-      && value.normalized_card_number === "TG22/TG30"
-      && value.registry_record_sha256 === TCG_GRAMMAR_CONTEXT_REGISTRY_RECORD_SHA256;
-  }
-  // NOT_REQUIRED is a structural contract: the card was already TCG, so no
-  // transition was applied. The claim fields (claim_id, registry record hash,
-  // normalized set/card number) are recognition evidence and may be null or
-  // empty when the provider did not resolve the registry identity — binding
-  // them to the frozen case would reject honest model variance.
-  return true;
+    && authorityConsistent
+    && (transition.authority_used == null
+      || source.authority_used === transition.authority_used)
+    && (transition.both_fields_current_image
+      ? fieldAuthority.every((row) => row.current_image_source_present === true)
+      : true)
+    && (value.status === "APPLIED"
+      ? value.claim_id === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0].claim_id
+        && value.normalized_set === "Trainer Gallery"
+        && value.normalized_card_number === "TG22/TG30"
+        && value.registry_record_sha256 === TCG_GRAMMAR_CONTEXT_REGISTRY_RECORD_SHA256
+      : true);
 }
 
 export function productionTcgGrammarContextAuthorityReceiptExact(value) {
