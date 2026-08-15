@@ -5,9 +5,15 @@ import { resolve } from "node:path";
 
 import {
   buildCsmStageRows, CSM_BRACKETS, MODALITIES, EMPTY_REASONS, VALUE_KINDS,
-  CSM_STAGE_LEGACY_CONTRACT_VERSION, THIN_REGISTRY_RELEASE_ID
+  CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+  CSM_STAGE_LEGACY_CONTRACT_VERSION,
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
+  THIN_REGISTRY_RELEASE_ID
 } from "../lib/listing/thin/csm-persistence.mjs";
-import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import {
+  CANONICAL_FIELDS_PARSER_SEMANTICS,
+  parseCanonicalFields
+} from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
 import { composeLyncaStandardName } from "../lib/listing/thin/canonical-naming-adapter.mjs";
 import { semCanonicalEditableFields } from "../lib/listing/csm/sem-definition.mjs";
@@ -17,6 +23,11 @@ import {
 } from "../lib/listing/csm/title-derived-sem.mjs";
 import { toResolvedFields } from "../lib/listing/thin/csm-emit.mjs";
 import { replayFromRows } from "../lib/listing/thin/csm-replay.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 
 // The schema is the migration, not a copy of it in this file. Parsing the real
 // SQL is what makes drift a test failure instead of an insert-time constraint
@@ -507,6 +518,95 @@ assert.deepEqual(
 );
 assert.equal(rows.output.dropped_trace.character_budget, composed.character_budget);
 assert.equal(rows.output.dropped_trace.rendered_length, composed.length);
+
+// Stage-v4 is a new durable identity, not a new meaning smuggled into v3.
+// The exact approved transition changes Grammar only and seals both authority
+// receipts; v3 rejects the same keys even when the packet could be rehashed.
+{
+  const raw = {
+    grammar: "standard", set: "Trainer Gallery", card_number: "TG22/TG30",
+    subjects: ["Eternatus"], product: "Brilliant Stars",
+    unreadable: [], low_confidence: []
+  };
+  const founderReceipt = noSearchReceipts(raw).founderBetaWebReceipt;
+  const sourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+    fieldSources: [
+      { field: "set", source_ids: ["original_image_1"] },
+      { field: "card_number", source_ids: ["original_image_1"] }
+    ],
+    fields: raw,
+    originalImageCount: 1,
+    semanticStateSha256: founderReceipt.semantic_state_sha256,
+    founderBetaWebReceipt: founderReceipt,
+    sourceExecution: {
+      operationPayloadSha256: "a".repeat(64),
+      originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+      recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+      providerClientRequestId: "lynca-persistence-test-attempt-1",
+      providerResponseId: "resp_persistence_test_1",
+      tenantId: "t1",
+      recognitionSessionId: "tcg-grammar-v4"
+    }
+  });
+  const claimReceipt = buildTcgGrammarContextClaimReceipt({
+    fields: raw,
+    fieldSourceAuthorityReceipt: sourceReceipt
+  });
+  const parsed = parseCanonicalFields(raw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT,
+    tcgFieldSourceAuthorityReceipt: sourceReceipt,
+    tcgGrammarContextClaimReceipt: claimReceipt
+  });
+  const v4Composed = composeFromCanonicalFields(parsed.fields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
+  const relationReceipt = noSearchReceipts(parsed.fields).setCardNameRelationReceipt;
+  const v4Rows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "tcg-grammar-v4",
+    fields: parsed.fields,
+    observedFields: parsed.observed_fields,
+    composed: v4Composed,
+    title: v4Composed.title,
+    founderBetaWebReceipt: founderReceipt,
+    setCardNameRelationReceipt: relationReceipt,
+    tcgFieldSourceAuthorityReceipt: sourceReceipt,
+    tcgGrammarContextClaimReceipt: claimReceipt,
+    registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+    contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+  });
+  assert.equal(v4Rows.output.contract_version,
+    CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION);
+  assert.equal(v4Rows.output.structured_output.observed_composition_grammar, "standard");
+  assert.equal(v4Rows.output.structured_output.composition_grammar, "tcg");
+  assert.equal(v4Rows.resolution.grammar, "TCG");
+  assert.equal(v4Rows.resolution.registry_release_id,
+    TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id);
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "tcg-grammar-v3-splice",
+    fields: parsed.fields,
+    observedFields: parsed.observed_fields,
+    composed: v4Composed,
+    title: v4Composed.title,
+    founderBetaWebReceipt: founderReceipt,
+    setCardNameRelationReceipt: relationReceipt,
+    tcgFieldSourceAuthorityReceipt: sourceReceipt,
+    tcgGrammarContextClaimReceipt: claimReceipt,
+    registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+    contractVersion: CSM_DURABLE_PROJECTION_CONTRACT_VERSION
+  }), /tcg_grammar_context_receipt_outside_contract/);
+  assert.throws(() => buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "tcg-grammar-v4-missing",
+    fields: parsed.fields,
+    observedFields: parsed.observed_fields,
+    composed: v4Composed,
+    title: v4Composed.title,
+    founderBetaWebReceipt: founderReceipt,
+    setCardNameRelationReceipt: relationReceipt,
+    registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+    contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+  }), /tcg_grammar_context_receipt_missing/);
+}
 
 // Inferred parents are a Composer normalization, not an observed input. The
 // trace must still say that Manufacturer was empty at input even though the

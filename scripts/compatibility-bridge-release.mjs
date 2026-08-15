@@ -67,9 +67,14 @@ import {
   CSM_PROJECTION_ACTIVATION,
   CSM_PROJECTION_STATE_ACTIVE,
   CSM_PROJECTION_STATE_DORMANT,
+  CSM_TCG_GRAMMAR_CONTEXT_PENDING_CHECKPOINT_READER,
   CSM_WRITER_PROJECTION_CONTRACTS,
   validateCsmProjectionActivation
 } from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import {
   composeCanonicalFieldsForStoredOutput,
   validateVerifiedOriginalObservationReplayPacket
@@ -132,6 +137,8 @@ export const COMPATIBILITY_BRIDGE_V3_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-v3-cases-v1";
 export const COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION =
   "writer-journey-compatibility-bridge-v4-cases-v1";
+export const COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION =
+  "writer-journey-compatibility-bridge-v5-cases-v1";
 export const COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE =
   "legacy-standard-v2-no-overlay-v1";
 export const COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE =
@@ -402,6 +409,148 @@ export const EXTERNAL_IDENTITY_V3_ACTIVATION_CORE_PATCH_ID =
   "be0bcc9213efd17a538ac50a9d9d7d815c41dd07";
 export const EXTERNAL_IDENTITY_V3_ACTIVATION_RUNTIME_CONTRACT_SHA256 =
   "eb3613df8f8b53f9d751590a484252c6a177c2955b677c00fbab2b9929f9db30";
+export const EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40_SHA256 =
+  "8f49c54cecd1e477b0ab24ccb3664f828b513baca773277a3f3ee334c549771a";
+export const EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41_SHA256 =
+  "16af83eb0e281075bfe8a13515192a4da890d14ec6da88ced29ec5550e8cd321";
+export const EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256 =
+  "66368f639d09470dcd8a03d0b19357936fffc48d21571238aec2b5658b453e81";
+export const EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256 =
+  "8c9bce9b09892ed04ba2d09d0c7a98aa6754012e6773a977783394a1e6bbfc7b";
+
+// TCG Grammar context is a new append-only two-stage release family. B is a
+// behavior-neutral child of the failed 20298 activation, but deliberately
+// rolls back to the last promoted 5c checkpoint. A is not selectable until B
+// has a committed SHA/tree; once frozen, B is both A's direct parent and its
+// only valid rollback target.
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID =
+  "listing-copilot-tcg-grammar-context-v4-checkpoint-forward-reader-bridge-v1";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER =
+  "tcg-grammar-context-v4-pending-checkpoint-forward-reader-dormant-v1";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE =
+  "captured-e1ae-v1-writer-tcg-grammar-context-v4-forward-reader-v1";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA =
+  "20298d18ea540a7dd5a660458a1cb9646ba65342";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA =
+  "ec560447430bb2ba8206dc1282e514fe41ee7e7c";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA =
+  "5c835c817244e186332b38e2baedd80366f55a80";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA =
+  "97bb336a3f2d79d49277f0a168e99cdc828ef678";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_RUN_ID = "31820306085";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE =
+  "WRITER_JOURNEY_FAILED";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT =
+  "RESOLUTION_GRAMMAR_MISMATCH";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_CASE_ID = "TCG";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_PHASE = "RESOLUTION_VIEW";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID =
+  "captured-production-e1ae-v1";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE =
+  "DORMANT_V4_TCG_GRAMMAR_CONTEXT_FORWARD_READER";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID =
+  "stage-v4-web-v3-tcg-grammar-context-external-identity-v3-writer-v1";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SCHEMA =
+  "csm-tcg-grammar-context-pending-checkpoint-reader.v1";
+export const TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256 =
+  "e3bdcbee1b37c17fda2446b1f877ee652b230b35e9e089290433c50410b63705";
+export const TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256 =
+  "f883fbbb643e2b2b88d70b4bbde1dbe2657e37367a7fad6f0adaf68cb825de41";
+export const TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256 =
+  "8453fc8cb395da8708874baad69dd06924bee21a33f62b6e1926a0bd0f2cca06";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256 =
+  "8645b8ba3820992f0d18a29a0a3be5cc268cd698f9925814b5d501dc1471fdfb";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256 =
+  "d5ad2efa82694ebe5ea81ea9125403b6854dc6ad2e1cfb56c0f97eb4b20b7330";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256 =
+  "d89e73312e7917efb9277d8f546b6056448d5e6fc5c0b4f1346ace8eb0b09a14";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256 =
+  "0cb8ab447c0bfe4e31773d91e65e7d5abf219b5c7987ebb8da26bf2582b2de48";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256 =
+  "52296e3b58daa944bdc90f90d2361bd897eab7d4d938027aa66b53227262e90f";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS = Object.freeze([
+  "api/csm-listing-title.js",
+  "api/csm-resolution-view.js",
+  "docs/csm/decision-proposals/tcg-grammar-context-authority-v1.md",
+  "e2e/production-writer-journey.spec.mjs",
+  "infrastructure/supabase-production/supabase/migrations/20260815034533_csm_tcg_grammar_context_trainer_gallery_registry_v1.sql",
+  "lib/listing/thin/canonical-fields.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-orchestration.mjs",
+  "lib/listing/thin/csm-owner-execution-receipt.mjs",
+  "lib/listing/thin/csm-persistence.mjs",
+  "lib/listing/thin/csm-projection-activation.mjs",
+  "lib/listing/thin/csm-provider-adapter.mjs",
+  "lib/listing/thin/csm-replay.mjs",
+  "lib/listing/thin/csm-supabase-writer.mjs",
+  "lib/listing/thin/tcg-grammar-context-authority.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "package.json",
+  "scripts/canonical-fields.test.mjs",
+  "scripts/check-csm-thin-production-readiness.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-model-optimization-pack.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/csm-persistence.test.mjs",
+  "scripts/csm-production-readiness.test.mjs",
+  "scripts/csm-projection-activation.test.mjs",
+  "scripts/csm-replay.test.mjs",
+  "scripts/csm-resolution-view.test.mjs",
+  "scripts/csm-supabase-writer.test.mjs",
+  "scripts/csm-tcg-grammar-context-registry-migration.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/fixtures/production-writer-journey-tcg-grammar-misroute-v1.json",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/tcg-grammar-context-authority.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS = Object.freeze([
+  ...TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
+].sort());
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA = null;
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA = null;
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_CONTENT_MANIFEST_SHA256 =
+  "bd4ce084687f31c1c71a4ee1862245a07a26f56429b22458b44dccefe8edcd7e";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_FULL_INDEX_SHA256 =
+  "eddc3658f790ab69f16c9863920601a2b608fe588e5a97a1d839001fbe96639c";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATCH_ID =
+  "cf69d0cb7225e4461d8db95bceb578be2f01a777";
+export const TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256 =
+  "4e25df17f86a46f01f31d7290d0293a5032e99afa45880e50a1136455c269ca9";
+
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID =
+  "listing-copilot-tcg-grammar-context-v4-one-id-activation-v1";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER =
+  "tcg-grammar-context-v4-one-id-active-v1";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA =
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA =
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA =
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA =
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID =
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE =
+  "ACTIVE_V4_TCG_GRAMMAR_CONTEXT";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256 =
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256 =
+  "535e8f90e303594e06f8b2462bfb7535671d037f6d7b295c3b36d912a191a7bd";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION =
+  "writer-journey-cases-v4";
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS = Object.freeze([]);
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS = Object.freeze([]);
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256 = null;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256 = null;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID = null;
+export const TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256 = null;
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V36_SHA256 =
   "e8b4c161e1bbbfb58786fa44ea3d40b15cc6fe8573c9ab8a00100cf7c146e43f";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V37_SHA256 =
@@ -1465,6 +1614,156 @@ export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V39 = Object.freeze(
   lineage_verified: true
 });
 
+// Exact receipts emitted for 5c835c81. Keep them literal: v40/v41 are release
+// history and must not inherit a later forward-reader or activation alias.
+export const EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40 =
+  Object.freeze({
+    schema_version: "production-release-selection-v40",
+    release_class: "compatibility-bridge",
+    bridge_descriptor_id:
+      "listing-copilot-external-identity-v3-checkpoint-forward-reader-bridge-v1",
+    bridge_marker: "external-identity-v3-pending-checkpoint-forward-reader-dormant-v1",
+    commit_trailer_sha256:
+      "23e5c4ab994fb44ea7db2675e1bfe285605bca48afd41d8e4ef6904235a13110",
+    git_tree_sha: "97bb336a3f2d79d49277f0a168e99cdc828ef678",
+    parent_git_sha: "b1596450f53ea50c89b99fc41c10e41ad355bdf3",
+    parent_tree_sha: "80d255de5a2ae32a4262f62cc42f9a6167df951f",
+    required_rollback_git_sha: "b1596450f53ea50c89b99fc41c10e41ad355bdf3",
+    required_rollback_tree_sha: "80d255de5a2ae32a4262f62cc42f9a6167df951f",
+    historical_selection_v38_sha256:
+      "11632217a1e392b7f98bbe86d0f0bb9dd5d0b5834205585087d25e100ad82bab",
+    historical_lineage_v39_sha256:
+      "136d840632c4770252dbc0eaddd4586c670d57e1c425c7db48e1320bb539b60c",
+    artifact_manifest_sha256:
+      "744c865da1f58120b7c41ece9de1fbb5e785f2bcef47c5c2c16118ab38931af8",
+    git_sha: "5c835c817244e186332b38e2baedd80366f55a80",
+    writer_journey_manifest: "writer-journey-compatibility-bridge-v4-cases-v1",
+    writer_projection_mode:
+      "captured-e1ae-v2-writer-external-v3-checkpoint-forward-reader-v1",
+    parity_required: false,
+    contract_sha256:
+      "94cd4b77ea8afb290bbb65db62ace996e46591cbfede1bd5eb972755da810398"
+  });
+
+export const EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41 =
+  Object.freeze({
+    schema_version: "production-release-rollback-lineage-receipt-v41",
+    release_class: "compatibility-bridge",
+    bridge_descriptor_id:
+      "listing-copilot-external-identity-v3-checkpoint-forward-reader-bridge-v1",
+    bridge_marker: "external-identity-v3-pending-checkpoint-forward-reader-dormant-v1",
+    release_git_sha: "5c835c817244e186332b38e2baedd80366f55a80",
+    release_tree_sha: "97bb336a3f2d79d49277f0a168e99cdc828ef678",
+    release_parent_git_sha: "b1596450f53ea50c89b99fc41c10e41ad355bdf3",
+    release_parent_tree_sha: "80d255de5a2ae32a4262f62cc42f9a6167df951f",
+    required_rollback_git_sha: "b1596450f53ea50c89b99fc41c10e41ad355bdf3",
+    required_rollback_tree_sha: "80d255de5a2ae32a4262f62cc42f9a6167df951f",
+    captured_rollback_git_sha: "b1596450f53ea50c89b99fc41c10e41ad355bdf3",
+    historical_selection_v38_sha256:
+      "11632217a1e392b7f98bbe86d0f0bb9dd5d0b5834205585087d25e100ad82bab",
+    historical_lineage_v39_sha256:
+      "136d840632c4770252dbc0eaddd4586c670d57e1c425c7db48e1320bb539b60c",
+    projection_activation_sha256:
+      "fb3f4339af5044e3148a3b65e733fe5fd790ddbb02a371e7bb6f782a041d6dbe",
+    checkpoint_descriptor_sha256:
+      "f0afeed9f603386e1eb743f678c920256ab6f862383a264dd31607c246ba37da",
+    active_writer_contract_sha256:
+      "8645b8ba3820992f0d18a29a0a3be5cc268cd698f9925814b5d501dc1471fdfb",
+    future_v2_writer_contract_sha256:
+      "c46cfb61583f7c01dcddcce6cdec2e3bf47832f2067635ffee4a0df0686ee5ff",
+    future_v3_writer_contract_sha256:
+      "3a262b60bf08b12598b1ba1529f44f073ef0bb01aab794651beb008876e7f6ce",
+    combined_pair_contract_sha256:
+      "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed",
+    active_health_receipt_sha256:
+      "bc9b6b32f281644b07cfb3a10d9b54314b7e611b20728d8ca3cb18ddcb9c69de",
+    future_health_receipt_sha256:
+      "648b1efe2a1f14aff8fa30b51fbf56fb5e918de0aa754cc01450bf7d3f0ab8ba",
+    artifact_manifest_sha256:
+      "744c865da1f58120b7c41ece9de1fbb5e785f2bcef47c5c2c16118ab38931af8",
+    runtime_contract_sha256:
+      "94cd4b77ea8afb290bbb65db62ace996e46591cbfede1bd5eb972755da810398",
+    writer_projection_mode:
+      "captured-e1ae-v2-writer-external-v3-checkpoint-forward-reader-v1",
+    lineage_verified: true
+  });
+
+// Exact receipts emitted for 20298d18. They describe the failed v3 activation
+// object that B descends from; today's v4 activation must never rewrite them.
+export const EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42 = Object.freeze({
+  schema_version: "production-release-selection-v42",
+  release_class: "ordinary",
+  activation_descriptor_id: "listing-copilot-external-identity-v3-one-id-activation-v1",
+  lineage_marker: "linear-ordinary-parent-rollback-v1",
+  transition_marker: "external-identity-v3-one-id-active-v1",
+  git_tree_sha: "ec560447430bb2ba8206dc1282e514fe41ee7e7c",
+  parent_git_sha: "5c835c817244e186332b38e2baedd80366f55a80",
+  parent_tree_sha: "97bb336a3f2d79d49277f0a168e99cdc828ef678",
+  required_rollback_git_sha: "5c835c817244e186332b38e2baedd80366f55a80",
+  required_rollback_tree_sha: "97bb336a3f2d79d49277f0a168e99cdc828ef678",
+  artifact_manifest_sha256:
+    "b6c4cb37d762a15c4cbceaa7d8f22c937e0d25de887067cb6526198493c6a65b",
+  git_sha: "20298d18ea540a7dd5a660458a1cb9646ba65342",
+  active_writer_contract_id: "stage-v3-web-v2-external-identity-v3-writer-v1",
+  projection_activation_state: "ACTIVE_V3_VERIFIED_OVERLAY",
+  active_writer_contract_sha256:
+    "3a262b60bf08b12598b1ba1529f44f073ef0bb01aab794651beb008876e7f6ce",
+  projection_activation_sha256:
+    "5c2893908e362c2d42869201c5e907e4b3942622e842042c8c835483de0bf423",
+  durable_projection_contract_version: "csm-stage-shadow-v3",
+  semantic_prompt_version: "csm-canonical-fields-web-v2",
+  request_builder_version: "canonical-fields-web-request-v2",
+  response_parser_version: "canonical-output-v5-web-receipt-outcome",
+  composer_version: "thin-marketplace-composer-v3",
+  marketplace_profile_version: "lynca-standard-name-v0.3",
+  verified_original_observation_release_id: "verified_original_closed_projection_subset_a_v2",
+  external_identity_registry_release_id: "registry_thin_external_identity_high_risers_v3",
+  external_identity_resolution_contract_sha256:
+    "14a0c6dee064019e21840b19c419495e40cbdd4b6e8a97a57fdc7ba66c25e09e",
+  combined_pair_contract_sha256:
+    "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed",
+  active_health_receipt_sha256:
+    "648b1efe2a1f14aff8fa30b51fbf56fb5e918de0aa754cc01450bf7d3f0ab8ba",
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true,
+  contract_sha256:
+    "eb3613df8f8b53f9d751590a484252c6a177c2955b677c00fbab2b9929f9db30"
+});
+
+export const EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43 = Object.freeze({
+  schema_version: "production-release-rollback-lineage-receipt-v43",
+  release_class: "ordinary",
+  activation_descriptor_id: "listing-copilot-external-identity-v3-one-id-activation-v1",
+  lineage_marker: "linear-ordinary-parent-rollback-v1",
+  transition_marker: "external-identity-v3-one-id-active-v1",
+  release_git_sha: "20298d18ea540a7dd5a660458a1cb9646ba65342",
+  release_tree_sha: "ec560447430bb2ba8206dc1282e514fe41ee7e7c",
+  release_parent_git_sha: "5c835c817244e186332b38e2baedd80366f55a80",
+  release_parent_tree_sha: "97bb336a3f2d79d49277f0a168e99cdc828ef678",
+  required_rollback_git_sha: "5c835c817244e186332b38e2baedd80366f55a80",
+  required_rollback_tree_sha: "97bb336a3f2d79d49277f0a168e99cdc828ef678",
+  captured_rollback_git_sha: "5c835c817244e186332b38e2baedd80366f55a80",
+  release_git_object_verified: true,
+  release_git_object_verification_source: "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION",
+  active_writer_contract_id: "stage-v3-web-v2-external-identity-v3-writer-v1",
+  projection_activation_state: "ACTIVE_V3_VERIFIED_OVERLAY",
+  active_writer_contract_sha256:
+    "3a262b60bf08b12598b1ba1529f44f073ef0bb01aab794651beb008876e7f6ce",
+  projection_activation_sha256:
+    "5c2893908e362c2d42869201c5e907e4b3942622e842042c8c835483de0bf423",
+  combined_pair_contract_sha256:
+    "6c59b33636b1ba4fd920793992d89517ded3b754076c019164a7acf95e78f2ed",
+  active_health_receipt_sha256:
+    "648b1efe2a1f14aff8fa30b51fbf56fb5e918de0aa754cc01450bf7d3f0ab8ba",
+  artifact_manifest_sha256:
+    "b6c4cb37d762a15c4cbceaa7d8f22c937e0d25de887067cb6526198493c6a65b",
+  runtime_contract_sha256:
+    "eb3613df8f8b53f9d751590a484252c6a177c2955b677c00fbab2b9929f9db30",
+  writer_journey_manifest: "writer-journey-cases-v4",
+  parity_required: true,
+  lineage_verified: true
+});
+
 // This is the exact no-health proof emitted by b1596450. Keep it independent
 // from live activation aliases: later forward-reader additions must not rewrite
 // already-promoted v38/v39 history.
@@ -1670,6 +1969,16 @@ if (sha256(stableJson(EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V36))
       !== EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V38_SHA256
     || sha256(stableJson(EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V39))
       !== EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V39_SHA256
+    || sha256(stableJson(
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40
+    )) !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40_SHA256
+    || sha256(stableJson(
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41
+    )) !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41_SHA256
+    || sha256(stableJson(EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42))
+      !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256
+    || sha256(stableJson(EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43))
+      !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256
     || historicalRuntimeContractSha256
       !== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_RUNTIME_CONTRACT_SHA256
     || sha256(stableJson(historicalRuntimeContractBody))
@@ -1684,11 +1993,43 @@ function exactGitSha(value) {
 }
 
 function gitText(args) {
-  return execFileSync("git", args, {
+  return execFileSync("git", ["--no-replace-objects", ...args], {
     cwd: repoRoot,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
   }).trim();
+}
+
+function exactGitCommitObjectIdentity(commitSha, {
+  gitTextReader = gitText,
+  failureCode = "compatibility_bridge_git_commit_object_invalid"
+} = {}) {
+  try {
+    const gitSha = exactGitSha(commitSha);
+    if (gitTextReader(["cat-file", "-t", gitSha]) !== "commit") {
+      throw new Error("git_object_not_commit");
+    }
+    const commitLines = gitTextReader(["cat-file", "-p", gitSha]).split(/\r?\n/);
+    const headerEnd = commitLines.indexOf("");
+    if (headerEnd === -1) throw new Error("git_commit_header_missing");
+    const headerLines = commitLines.slice(0, headerEnd);
+    const treeLines = headerLines.filter((line) => line.startsWith("tree "));
+    const parentLines = headerLines.filter((line) => line.startsWith("parent "));
+    if (treeLines.length !== 1
+        || !/^tree [0-9a-f]{40}$/.test(treeLines[0])
+        || parentLines.some((line) => !/^parent [0-9a-f]{40}$/.test(line))) {
+      throw new Error("git_commit_header_invalid");
+    }
+    return Object.freeze({
+      git_sha: gitSha,
+      git_tree_sha: exactGitSha(treeLines[0].slice("tree ".length)),
+      parent_git_shas: Object.freeze(parentLines.map((line) => (
+        exactGitSha(line.slice("parent ".length))
+      )))
+    });
+  } catch {
+    throw failure(failureCode);
+  }
 }
 
 function bridgeCommitTree(value) {
@@ -1720,6 +2061,36 @@ function bridgeV2CommitTree(value) {
   ));
   if (!match) throw failure("compatibility_bridge_v2_commit_marker_invalid");
   return match[1];
+}
+
+function verifyTcgGrammarContextReaderBridgeCommitMessage(commitMessage, gitTreeSha) {
+  const treeSha = exactGitSha(gitTreeSha);
+  const commitTree = bridgeV2CommitTree(commitMessage);
+  const lines = String(commitMessage || "").split("\n");
+  while (lines.at(-1) === "") lines.pop();
+  const classMentions = lines.filter((line) => (
+    line.includes("LYNCA-Release-Class:")
+  ));
+  const treeMentions = lines.filter((line) => (
+    line.includes(`${COMPATIBILITY_BRIDGE_TREE_TRAILER}:`)
+  ));
+  if (classMentions.length !== 1
+      || treeMentions.length !== 1
+      || lines.at(-2) !== COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER
+      || lines.at(-1) !== `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${commitTree}`) {
+    throw failure("compatibility_bridge_v2_commit_marker_invalid");
+  }
+  if (commitTree !== treeSha) {
+    throw failure("tcg_grammar_context_reader_bridge_tree_mismatch");
+  }
+  return treeSha;
+}
+
+export function verifyTcgGrammarContextReaderBridgeCommitMessageForTest({
+  commitMessage,
+  gitTreeSha
+} = {}) {
+  return verifyTcgGrammarContextReaderBridgeCommitMessage(commitMessage, gitTreeSha);
 }
 
 function exactChangedPaths(values) {
@@ -1892,6 +2263,42 @@ function exactExternalIdentityV3ActivationChangedPaths(values) {
   const actual = [...values].sort();
   if (stableJson(actual) !== stableJson(EXTERNAL_IDENTITY_V3_ACTIVATION_CHANGED_PATHS)) {
     throw failure("external_identity_v3_activation_changed_paths_mismatch");
+  }
+  return actual;
+}
+
+function exactTcgGrammarContextReaderBridgeChangedPaths(values) {
+  if (TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS.length === 0
+      || TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS.length === 0) {
+    throw failure("tcg_grammar_context_reader_bridge_path_freeze_pending");
+  }
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("tcg_grammar_context_reader_bridge_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  if (stableJson(actual) !== stableJson(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS)) {
+    throw failure("tcg_grammar_context_reader_bridge_changed_paths_mismatch");
+  }
+  return actual;
+}
+
+function exactTcgGrammarContextActivationChangedPaths(values) {
+  if (TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS.length === 0
+      || TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS.length === 0
+      || TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA == null
+      || TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA == null) {
+    throw failure("tcg_grammar_context_activation_path_freeze_pending");
+  }
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure("tcg_grammar_context_activation_changed_paths_invalid");
+  }
+  const actual = [...values].sort();
+  if (stableJson(actual) !== stableJson(TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS)) {
+    throw failure("tcg_grammar_context_activation_changed_paths_mismatch");
   }
   return actual;
 }
@@ -2411,6 +2818,78 @@ function externalIdentityV3ActivationArtifactManifestSha256(changedPaths) {
   }));
 }
 
+function tcgGrammarContextReaderBridgeArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+    bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+    parent_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+    parent_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE,
+    diagnosed_invariant:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_PHASE,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA,
+    historical_selection_v42_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256,
+    historical_lineage_v43_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE,
+    future_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID,
+    pending_descriptor_schema:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SCHEMA,
+    decision_document_sha256: TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
+    future_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256,
+    pending_descriptor_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256,
+    writer_journey_manifest: COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
+    writer_projection_mode:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+    changed_paths: exactTcgGrammarContextReaderBridgeChangedPaths(changedPaths)
+  }));
+}
+
+function tcgGrammarContextActivationArtifactManifestSha256(changedPaths) {
+  return sha256(stableJson({
+    activation_descriptor_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
+    activation_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
+    parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+    parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true,
+    changed_paths: exactTcgGrammarContextActivationChangedPaths(changedPaths)
+  }));
+}
+
 function canonicalNamingActivationArtifactManifestSha256(changedPaths) {
   return sha256(stableJson({
     activation_marker: CANONICAL_NAMING_ACTIVATION_MARKER,
@@ -2780,7 +3259,9 @@ function committedRuntimeContentManifest(candidateSha, runtimePaths, failureCode
   try {
     return runtimePaths.map((entry) => Object.freeze({
       path: entry,
-      sha256: sha256(execFileSync("git", ["show", `${sha}:${entry}`], {
+      sha256: sha256(execFileSync("git", [
+        "--no-replace-objects", "show", `${sha}:${entry}`
+      ], {
         cwd: repoRoot,
         maxBuffer: 16 * 1024 * 1024
       }))
@@ -2801,7 +3282,9 @@ function committedRuntimeArtifactManifest(candidateSha, runtimePaths, failureCod
       return [match[2], match[1]];
     }));
     return runtimePaths.map((entry) => {
-      const bytes = execFileSync("git", ["show", `${sha}:${entry}`], {
+      const bytes = execFileSync("git", [
+        "--no-replace-objects", "show", `${sha}:${entry}`
+      ], {
         cwd: repoRoot,
         maxBuffer: 16 * 1024 * 1024
       });
@@ -2822,12 +3305,15 @@ function committedRuntimeDiffIdentity(parentSha, candidateSha, runtimePaths, fai
   const candidate = exactGitSha(candidateSha);
   try {
     const fullIndexPatch = execFileSync("git", [
-      "diff", "--binary", "--full-index", parent, candidate, "--", ...runtimePaths
+      "--no-replace-objects", "diff", "--binary", "--full-index",
+      parent, candidate, "--", ...runtimePaths
     ], {
       cwd: repoRoot,
       maxBuffer: 16 * 1024 * 1024
     });
-    const patchIdOutput = execFileSync("git", ["patch-id", "--stable"], {
+    const patchIdOutput = execFileSync("git", [
+      "--no-replace-objects", "patch-id", "--stable"
+    ], {
       cwd: repoRoot,
       input: fullIndexPatch,
       encoding: "utf8",
@@ -2868,7 +3354,9 @@ function frozenWorkspaceRuntimeDiffIdentity(
     const addedPaths = [];
     for (const entry of runtimePaths) {
       try {
-        execFileSync("git", ["cat-file", "-e", `${parent}:${entry}`], {
+        execFileSync("git", [
+          "--no-replace-objects", "cat-file", "-e", `${parent}:${entry}`
+        ], {
           cwd: repoRoot,
           stdio: "ignore"
         });
@@ -2878,7 +3366,8 @@ function frozenWorkspaceRuntimeDiffIdentity(
       }
     }
     const trackedPatch = execFileSync("git", [
-      "diff", "--binary", "--full-index", parent, candidate, "--", ...trackedPaths
+      "--no-replace-objects", "diff", "--binary", "--full-index",
+      parent, candidate, "--", ...trackedPaths
     ], {
       cwd: repoRoot,
       maxBuffer: 16 * 1024 * 1024
@@ -2886,7 +3375,8 @@ function frozenWorkspaceRuntimeDiffIdentity(
     const addedPatches = addedPaths.map((entry) => {
       try {
         return execFileSync("git", [
-          "diff", "--no-index", "--binary", "--full-index", "--", "/dev/null", entry
+          "--no-replace-objects", "diff", "--no-index", "--binary",
+          "--full-index", "--", "/dev/null", entry
         ], {
           cwd: repoRoot,
           maxBuffer: 16 * 1024 * 1024
@@ -2897,7 +3387,9 @@ function frozenWorkspaceRuntimeDiffIdentity(
       }
     });
     const fullIndexPatch = Buffer.concat([trackedPatch, ...addedPatches]);
-    const patchIdOutput = execFileSync("git", ["patch-id", "--stable"], {
+    const patchIdOutput = execFileSync("git", [
+      "--no-replace-objects", "patch-id", "--stable"
+    ], {
       cwd: repoRoot,
       input: fullIndexPatch,
       encoding: "utf8",
@@ -2909,6 +3401,220 @@ function frozenWorkspaceRuntimeDiffIdentity(
     });
   } catch {
     throw failure(failureCode);
+  }
+}
+
+function materializeTcgGrammarContextReaderBridgeSelection({
+  candidateGitSha,
+  candidateTreeSha,
+  parentGitShas,
+  parentTreeSha,
+  changedPaths,
+  commitMessage,
+  runtimeContentManifest,
+  runtimeDiffIdentity
+}) {
+  const expectedSha = exactGitSha(candidateGitSha);
+  const actualTree = exactGitSha(candidateTreeSha);
+  const actualParentTree = exactGitSha(parentTreeSha);
+  if (expectedSha === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA) {
+    throw failure("tcg_grammar_context_reader_bridge_candidate_mismatch");
+  }
+  if (stableJson(parentGitShas)
+      !== stableJson([TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA])) {
+    throw failure("tcg_grammar_context_reader_bridge_parent_mismatch");
+  }
+  if (actualParentTree !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA) {
+    throw failure("tcg_grammar_context_reader_bridge_parent_tree_mismatch");
+  }
+  if (actualTree === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA) {
+    throw failure("tcg_grammar_context_reader_bridge_candidate_tree_mismatch");
+  }
+  verifyTcgGrammarContextReaderBridgeCommitMessage(commitMessage, actualTree);
+  const artifactPaths = exactTcgGrammarContextReaderBridgeChangedPaths(changedPaths);
+  const contract = tcgGrammarContextReaderBridgeRuntimeContractProof({
+    candidateGitSha: expectedSha,
+    runtimeContentManifest,
+    runtimeDiffIdentity
+  });
+  return Object.freeze({
+    schema_version: "production-release-selection-v44",
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+    bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+    commit_trailer_sha256: sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER),
+    git_tree_sha: actualTree,
+    parent_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+    parent_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE,
+    diagnosed_invariant: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_PHASE,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA,
+    historical_selection_v42_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256,
+    historical_lineage_v43_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256,
+    artifact_manifest_sha256:
+      tcgGrammarContextReaderBridgeArtifactManifestSha256(artifactPaths),
+    git_sha: expectedSha,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE,
+    future_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID,
+    pending_descriptor_schema:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SCHEMA,
+    decision_document_sha256: TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
+    future_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256,
+    pending_descriptor_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256,
+    writer_journey_manifest: COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
+    writer_projection_mode:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+    parity_required: false,
+    contract_sha256: contract.contract_sha256
+  });
+}
+
+function rebuildTcgGrammarContextReaderBridgeSelectionFromGitObject(releaseSha) {
+  const releaseGitSha = exactGitSha(releaseSha);
+  let releaseTreeSha;
+  let parentGitShas;
+  let parentTreeSha;
+  let commitMessage;
+  try {
+    gitText(["cat-file", "-e", `${releaseGitSha}^{commit}`]);
+    const revision = gitText(["rev-list", "--parents", "-n", "1", releaseGitSha])
+      .split(/\s+/);
+    if (revision.shift() !== releaseGitSha) throw new Error("release_revision_mismatch");
+    parentGitShas = revision;
+    if (stableJson(parentGitShas)
+        !== stableJson([TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA])) {
+      throw new Error("release_parent_mismatch");
+    }
+    releaseTreeSha = exactGitSha(gitText(["rev-parse", `${releaseGitSha}^{tree}`]));
+    parentTreeSha = exactGitSha(gitText([
+      "rev-parse", `${TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA}^{tree}`
+    ]));
+    commitMessage = gitText(["show", "-s", "--format=%B", releaseGitSha]);
+  } catch {
+    throw failure("tcg_grammar_context_reader_bridge_parent_git_object_invalid");
+  }
+  const runtimeContentManifest = committedRuntimeArtifactManifest(
+    releaseGitSha,
+    TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+    "tcg_grammar_context_reader_bridge_parent_runtime_content_unavailable"
+  );
+  const runtimeDiffIdentity = committedRuntimeDiffIdentity(
+    TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+    releaseGitSha,
+    TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+    "tcg_grammar_context_reader_bridge_parent_runtime_diff_unavailable"
+  );
+  return materializeTcgGrammarContextReaderBridgeSelection({
+    candidateGitSha: releaseGitSha,
+    candidateTreeSha: releaseTreeSha,
+    parentGitShas,
+    parentTreeSha,
+    changedPaths: gitChangedPaths(
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+      releaseGitSha
+    ),
+    commitMessage,
+    runtimeContentManifest,
+    runtimeDiffIdentity
+  });
+}
+
+function verifyTcgGrammarContextOrdinaryParentBoundary(parentSha, {
+  gitTextReader = gitText,
+  allowMissingParentObject = false
+} = {}) {
+  const parentGitSha = exactGitSha(parentSha);
+  if (ordinaryTransitionMarker(parentGitSha) != null) return null;
+  let parentIdentity;
+  try {
+    parentIdentity = exactGitCommitObjectIdentity(parentGitSha, {
+      gitTextReader,
+      failureCode: "ordinary_release_parent_git_object_invalid"
+    });
+  } catch {
+    if (allowMissingParentObject) return null;
+    throw failure("ordinary_release_parent_git_object_invalid");
+  }
+  const parentGitShas = parentIdentity.parent_git_shas;
+  if (!parentGitShas.includes(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA)) {
+    return null;
+  }
+  if (stableJson(parentGitShas)
+      !== stableJson([TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA])) {
+    throw failure("ordinary_release_tcg_grammar_context_reader_bridge_parent_unverified");
+  }
+  const parentTreeSha = parentIdentity.git_tree_sha;
+  if (TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA !== parentGitSha
+      || TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA !== parentTreeSha) {
+    throw failure("ordinary_release_tcg_grammar_context_activation_freeze_required");
+  }
+  return Object.freeze({
+    schema_version: "production-release-selection-v44",
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+    git_sha: parentGitSha,
+    git_tree_sha: parentTreeSha
+  });
+}
+
+export function verifyTcgGrammarContextOrdinaryParentBoundaryForTest(args) {
+  return verifyTcgGrammarContextOrdinaryParentBoundary(
+    args?.parentGitSha,
+    {
+      gitTextReader: args?.gitTextReader,
+      allowMissingParentObject: args?.allowMissingParentObject === true
+    }
+  );
+}
+
+function verifyHistoricalRuntimeEvidence({
+  contentManifest,
+  diffIdentity,
+  runtimePaths,
+  contentManifestSha256,
+  fullIndexSha256,
+  patchId,
+  incompleteCode,
+  invalidCode
+}) {
+  const injected = contentManifest != null || diffIdentity != null;
+  if (!injected) return;
+  if (contentManifest == null || diffIdentity == null) throw failure(incompleteCode);
+  const paths = Array.isArray(contentManifest)
+    ? contentManifest.map((entry) => entry?.path) : null;
+  if (!Array.isArray(contentManifest)
+      || stableJson(paths) !== stableJson(runtimePaths)
+      || contentManifest.some((entry) => (
+        !entry || !exactKeys(entry, ["path", "mode", "bytes", "sha256"])
+        || entry.mode !== "100644"
+        || !Number.isSafeInteger(entry.bytes) || entry.bytes < 0
+        || !/^[0-9a-f]{64}$/.test(String(entry.sha256 || ""))
+      ))
+      || sha256(JSON.stringify(contentManifest)) !== contentManifestSha256
+      || !exactKeys(diffIdentity, ["full_index_sha256", "patch_id"])
+      || diffIdentity.full_index_sha256 !== fullIndexSha256
+      || diffIdentity.patch_id !== patchId) {
+    throw failure(invalidCode);
   }
 }
 
@@ -2943,6 +3649,85 @@ export function verifyCompatibilityBridgeSelection({
   const expectedSha = exactGitSha(gitSha);
   const actualHead = exactGitSha(headSha ?? gitText(["rev-parse", "HEAD"]));
   if (actualHead !== expectedSha) throw failure("compatibility_bridge_head_sha_mismatch");
+  if (expectedSha === EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha) {
+    if (selected !== ORDINARY_RELEASE_CLASS) {
+      throw failure("external_identity_v3_activation_historical_release_class_mismatch");
+    }
+    const actualTree = exactGitSha(
+      headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
+    );
+    const parents = parentShas ?? gitParentShas(expectedSha);
+    const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+      "rev-parse", `${EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA}^{tree}`
+    ]));
+    if (actualTree !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_tree_sha
+        || stableJson(parents) !== stableJson([EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA])
+        || actualParentTree !== EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_TREE_SHA) {
+      throw failure("external_identity_v3_activation_historical_git_object_mismatch");
+    }
+    if (changedPaths != null) exactExternalIdentityV3ActivationChangedPaths(changedPaths);
+    verifyHistoricalRuntimeEvidence({
+      contentManifest: externalIdentityV3ActivationRuntimeContentManifest,
+      diffIdentity: externalIdentityV3ActivationRuntimeDiffIdentity,
+      runtimePaths: EXTERNAL_IDENTITY_V3_ACTIVATION_CORE_PATHS,
+      contentManifestSha256:
+        EXTERNAL_IDENTITY_V3_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256,
+      fullIndexSha256: EXTERNAL_IDENTITY_V3_ACTIVATION_CORE_FULL_INDEX_SHA256,
+      patchId: EXTERNAL_IDENTITY_V3_ACTIVATION_CORE_PATCH_ID,
+      incompleteCode: "external_identity_v3_activation_runtime_evidence_incomplete",
+      invalidCode: "external_identity_v3_activation_historical_runtime_evidence_invalid"
+    });
+    return EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42;
+  }
+  if (expectedSha
+      === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40.git_sha) {
+    if (selected !== COMPATIBILITY_BRIDGE_RELEASE_CLASS) {
+      throw failure(
+        "external_identity_v3_checkpoint_reader_bridge_historical_release_class_mismatch"
+      );
+    }
+    const actualTree = exactGitSha(
+      headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
+    );
+    const parents = parentShas ?? gitParentShas(expectedSha);
+    const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+      "rev-parse", `${EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA}^{tree}`
+    ]));
+    if (actualTree
+          !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40
+            .git_tree_sha
+        || stableJson(parents) !== stableJson([
+          EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA
+        ])
+        || actualParentTree
+          !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_TREE_SHA) {
+      throw failure("external_identity_v3_checkpoint_reader_bridge_historical_git_object_mismatch");
+    }
+    if (changedPaths != null) {
+      exactExternalIdentityV3CheckpointReaderBridgeChangedPaths(changedPaths);
+    }
+    if (commitMessage != null
+        && bridgeV2CommitTree(commitMessage)
+          !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40
+            .git_tree_sha) {
+      throw failure("external_identity_v3_checkpoint_reader_bridge_historical_tree_mismatch");
+    }
+    verifyHistoricalRuntimeEvidence({
+      contentManifest: checkpointReaderRuntimeContentManifest,
+      diffIdentity: checkpointReaderRuntimeDiffIdentity,
+      runtimePaths: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_CORE_PATHS,
+      contentManifestSha256:
+        EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_CORE_CONTENT_MANIFEST_SHA256,
+      fullIndexSha256:
+        EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_CORE_FULL_INDEX_SHA256,
+      patchId: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_CORE_PATCH_ID,
+      incompleteCode:
+        "external_identity_v3_checkpoint_reader_bridge_runtime_evidence_incomplete",
+      invalidCode:
+        "external_identity_v3_checkpoint_reader_bridge_historical_runtime_evidence_invalid"
+    });
+    return EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40;
+  }
   if (expectedSha
       === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_ALTERNATE_PARENT_SHA) {
     throw failure("external_identity_v3_bridge_source_v4_marker_repair_candidate_mismatch");
@@ -2968,6 +3753,9 @@ export function verifyCompatibilityBridgeSelection({
       throw failure(
         "ordinary_release_external_identity_v3_checkpoint_reader_bridge_required"
       );
+    }
+    if (parentGitSha === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA) {
+      throw failure("ordinary_release_tcg_grammar_context_reader_bridge_required");
     }
     if (parentGitSha
         === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_ALTERNATE_PARENT_SHA) {
@@ -3059,6 +3847,61 @@ export function verifyCompatibilityBridgeSelection({
       throw failure("activation_a_field_source_reference_repair_parent_mismatch");
     }
     const transitionMarker = ordinaryTransitionMarker(parentGitSha);
+    if (TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA != null
+        && parentGitSha === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA) {
+      if (expectedSha === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA) {
+        throw failure("tcg_grammar_context_activation_candidate_mismatch");
+      }
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse", `${TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA}^{tree}`
+      ]));
+      if (actualParentTree !== TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA) {
+        throw failure("tcg_grammar_context_activation_parent_tree_mismatch");
+      }
+      const actualTree = exactGitSha(
+        headTreeSha ?? gitText(["rev-parse", `${expectedSha}^{tree}`])
+      );
+      if (actualTree === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA) {
+        throw failure("tcg_grammar_context_activation_candidate_tree_mismatch");
+      }
+      const contract = tcgGrammarContextActivationRuntimeContractProof();
+      const artifactPaths = exactTcgGrammarContextActivationChangedPaths(
+        changedPaths ?? gitChangedPaths(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA, expectedSha)
+      );
+      return Object.freeze({
+        schema_version: "production-release-selection-v46",
+        release_class: ORDINARY_RELEASE_CLASS,
+        activation_descriptor_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
+        lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+        transition_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
+        git_tree_sha: actualTree,
+        parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+        parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+        required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
+        required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
+        artifact_manifest_sha256:
+          tcgGrammarContextActivationArtifactManifestSha256(artifactPaths),
+        git_sha: expectedSha,
+        active_writer_contract_id:
+          TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+        projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+        active_writer_contract_sha256:
+          TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+        projection_activation_sha256:
+          TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+        forward_readers_sha256:
+          TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+        registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+        resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+        writer_journey_manifest:
+          TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+        parity_required: true,
+        contract_sha256: contract.contract_sha256
+      });
+    }
+    if (parentGitSha === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA) {
+      throw failure("external_identity_v3_activation_historical_candidate_mismatch");
+    }
     if (parentGitSha === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA) {
       if (expectedSha === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA) {
         throw failure("external_identity_v3_activation_candidate_mismatch");
@@ -3831,6 +4674,18 @@ export function verifyCompatibilityBridgeSelection({
         contract_sha256: contract.contract_sha256
       });
     }
+    verifyTcgGrammarContextOrdinaryParentBoundary(parentGitSha);
+    const candidateIdentity = exactGitCommitObjectIdentity(expectedSha, {
+      failureCode: "ordinary_release_candidate_git_object_invalid"
+    });
+    if (stableJson(candidateIdentity.parent_git_shas)
+        !== stableJson([parentGitSha])) {
+      throw failure("ordinary_release_candidate_parent_mismatch");
+    }
+    if (headTreeSha != null
+        && exactGitSha(headTreeSha) !== candidateIdentity.git_tree_sha) {
+      throw failure("ordinary_release_candidate_tree_mismatch");
+    }
     return Object.freeze({
       schema_version: "production-release-selection-v3",
       release_class: selected,
@@ -3922,6 +4777,69 @@ export function verifyCompatibilityBridgeSelection({
     throw failure("compatibility_bridge_parent_invalid");
   }
   const bridgeParent = exactGitSha(bridgeParents[0]);
+  if (bridgeParent === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA) {
+    tcgGrammarContextReaderBridgeRuntimeContractProof();
+    const candidateIdentity = exactGitCommitObjectIdentity(expectedSha, {
+      failureCode: "tcg_grammar_context_reader_bridge_candidate_git_object_invalid"
+    });
+    if (stableJson(candidateIdentity.parent_git_shas) !== stableJson(bridgeParents)) {
+      throw failure("tcg_grammar_context_reader_bridge_parent_mismatch");
+    }
+    if (headTreeSha != null
+        && exactGitSha(headTreeSha) !== candidateIdentity.git_tree_sha) {
+      throw failure("tcg_grammar_context_reader_bridge_tree_mismatch");
+    }
+    const parentIdentity = exactGitCommitObjectIdentity(
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+      { failureCode: "tcg_grammar_context_reader_bridge_parent_git_object_invalid" }
+    );
+    if (parentTreeSha != null
+        && exactGitSha(parentTreeSha) !== parentIdentity.git_tree_sha) {
+      throw failure("tcg_grammar_context_reader_bridge_parent_tree_mismatch");
+    }
+    const actualCommitMessage = gitText(["show", "-s", "--format=%B", expectedSha]);
+    if (commitMessage != null
+        && String(commitMessage).trim() !== actualCommitMessage) {
+      throw failure("tcg_grammar_context_reader_bridge_commit_message_mismatch");
+    }
+    const actualChangedPaths = gitChangedPaths(
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+      expectedSha
+    );
+    if (changedPaths != null
+        && stableJson([...changedPaths].sort())
+          !== stableJson([...actualChangedPaths].sort())) {
+      throw failure("tcg_grammar_context_reader_bridge_changed_paths_mismatch");
+    }
+    requireTrackedWorkspaceAtCandidate(
+      expectedSha,
+      "tcg_grammar_context_reader_bridge_tracked_workspace_dirty"
+    );
+    const runtimeContentManifest = committedRuntimeArtifactManifest(
+      expectedSha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+      "tcg_grammar_context_reader_bridge_runtime_content_unavailable"
+    );
+    const runtimeDiffIdentity = committedRuntimeDiffIdentity(
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+      expectedSha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+      "tcg_grammar_context_reader_bridge_runtime_diff_unavailable"
+    );
+    return materializeTcgGrammarContextReaderBridgeSelection({
+      candidateGitSha: expectedSha,
+      candidateTreeSha: candidateIdentity.git_tree_sha,
+      parentGitShas: candidateIdentity.parent_git_shas,
+      parentTreeSha: parentIdentity.git_tree_sha,
+      changedPaths: actualChangedPaths,
+      commitMessage: actualCommitMessage,
+      runtimeContentManifest,
+      runtimeDiffIdentity
+    });
+  }
+  if (bridgeParent === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA) {
+    throw failure("external_identity_v3_checkpoint_reader_bridge_historical_candidate_mismatch");
+  }
   if (bridgeParent === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA) {
     const message = commitMessage ?? gitText(["show", "-s", "--format=%B", expectedSha]);
     const messageTree = bridgeV2CommitTree(message);
@@ -5931,7 +6849,7 @@ export function externalIdentityV3BridgeWriterOldReaderNewRuntimeContractProof({
       "external_identity_v3_bridge_writer_old_reader_new_runtime_content_unavailable"
     ));
   const diffIdentity = runtimeDiffIdentity ?? (candidateGitSha == null ? null
-    : frozenWorkspaceRuntimeDiffIdentity(
+    : committedRuntimeDiffIdentity(
       EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_PARENT_SHA,
       candidateGitSha,
       EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_CORE_PATHS,
@@ -6256,6 +7174,427 @@ export function externalIdentityV3CheckpointReaderBridgeRuntimeContractProof({
     throw failure("external_identity_v3_checkpoint_reader_bridge_runtime_contract_hash_mismatch");
   }
   return Object.freeze({ ...body, contract_sha256: contractSha256 });
+}
+
+export function tcgGrammarContextReaderBridgeTopologyProof() {
+  const runtimeFreeze = tcgGrammarContextReaderBridgeRuntimeFreeze();
+  return Object.freeze({
+    schema_version: "tcg-grammar-context-reader-bridge-release-topology-proof-v1",
+    selection_schema_version: "production-release-selection-v44",
+    rollback_lineage_schema_version:
+      "production-release-rollback-lineage-receipt-v45",
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+    bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+    required_parent_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+    required_parent_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE,
+    diagnosed_invariant: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_PHASE,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE,
+    future_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
+    future_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256,
+    pending_descriptor_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    future_writer_active: false,
+    behavior_neutral: true,
+    parity_required: false,
+    committed_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
+    committed_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA,
+    runtime_freeze_pending:
+      !tcgGrammarContextReaderBridgeRuntimeFreezeReady(runtimeFreeze)
+  });
+}
+
+export function tcgGrammarContextActivationTopologyProof() {
+  return Object.freeze({
+    schema_version: "tcg-grammar-context-activation-release-topology-proof-v1",
+    selection_schema_version: "production-release-selection-v46",
+    rollback_lineage_schema_version:
+      "production-release-rollback-lineage-receipt-v47",
+    release_class: ORDINARY_RELEASE_CLASS,
+    activation_descriptor_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
+    transition_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
+    required_parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+    required_parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    behavior_neutral: false,
+    parity_required: true,
+    runtime_freeze_pending: true
+  });
+}
+
+function historicalProjectionHealthProof({
+  selection,
+  health,
+  expectedActivationSha256,
+  expectedActiveWriterSha256
+}) {
+  const activation = health?.runtime?.projection_activation;
+  const { activation_sha256: claimedActivationSha256, ...activationBody } =
+    activation && typeof activation === "object" ? activation : {};
+  const activeWriter = health?.runtime?.active_writer;
+  const forwardReaders = health?.runtime?.forward_readers;
+  if (health?.ready !== true
+      || health?.deployment?.git_commit_sha !== selection.git_sha
+      || claimedActivationSha256 !== expectedActivationSha256
+      || sha256(stableJson(activationBody)) !== expectedActivationSha256
+      || sha256(stableJson(activeWriter)) !== expectedActiveWriterSha256
+      || stableJson(activeWriter) !== stableJson(activation?.active_writer)
+      || stableJson(forwardReaders) !== stableJson(activation?.forward_readers)) {
+    throw failure("historical_projection_health_contract_invalid");
+  }
+  return Object.freeze({
+    schema_version: "historical-projection-health-proof-v1",
+    release_selection_schema_version: selection.schema_version,
+    deployment_git_sha: selection.git_sha,
+    projection_activation_sha256: expectedActivationSha256,
+    active_writer_contract_sha256: expectedActiveWriterSha256,
+    runtime_contract_sha256: selection.contract_sha256,
+    health_bound: true
+  });
+}
+
+function tcgGrammarContextReaderBridgeRuntimeFreeze() {
+  return Object.freeze({
+    core_paths: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+    changed_paths: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS,
+    runtime_content_manifest_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_CONTENT_MANIFEST_SHA256,
+    runtime_full_index_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_FULL_INDEX_SHA256,
+    runtime_patch_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATCH_ID,
+    runtime_contract_sha256: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256
+  });
+}
+
+function tcgGrammarContextReaderBridgeRuntimeFreezeReady(runtimeFreeze) {
+  const pathListReady = (values) => Array.isArray(values)
+    && values.length > 0
+    && values.every((value) => (
+      typeof value === "string" && value.length > 0 && value === value.trim()
+    ))
+    && new Set(values).size === values.length
+    && stableJson(values) === stableJson([...values].sort());
+  const selectorPaths = [
+    "scripts/compatibility-bridge-release.mjs",
+    "scripts/compatibility-bridge-release.test.mjs"
+  ];
+  return exactKeys(runtimeFreeze, [
+    "core_paths", "changed_paths", "runtime_content_manifest_sha256",
+    "runtime_full_index_sha256", "runtime_patch_id", "runtime_contract_sha256"
+  ])
+    && pathListReady(runtimeFreeze.core_paths)
+    && pathListReady(runtimeFreeze.changed_paths)
+    && selectorPaths.every((entry) => !runtimeFreeze.core_paths.includes(entry))
+    && stableJson(runtimeFreeze.changed_paths)
+      === stableJson([...runtimeFreeze.core_paths, ...selectorPaths].sort())
+    && /^[0-9a-f]{64}$/.test(String(runtimeFreeze.runtime_content_manifest_sha256 || ""))
+    && /^[0-9a-f]{64}$/.test(String(runtimeFreeze.runtime_full_index_sha256 || ""))
+    && /^[0-9a-f]{40}$/.test(String(runtimeFreeze.runtime_patch_id || ""))
+    && /^[0-9a-f]{64}$/.test(String(runtimeFreeze.runtime_contract_sha256 || ""));
+}
+
+function materializeTcgGrammarContextReaderBridgeRuntimeContract({
+  runtimeFreeze,
+  candidateGitSha = null,
+  runtimeContentManifest = null,
+  runtimeDiffIdentity = null,
+  health = null,
+  gitSha = null
+} = {}) {
+  if (!tcgGrammarContextReaderBridgeRuntimeFreezeReady(runtimeFreeze)) {
+    throw failure("tcg_grammar_context_reader_bridge_runtime_freeze_pending");
+  }
+  if (candidateGitSha != null && gitSha != null
+      && exactGitSha(candidateGitSha) !== exactGitSha(gitSha)) {
+    throw failure("tcg_grammar_context_reader_bridge_runtime_candidate_mismatch");
+  }
+  const injectedRuntimeEvidence = runtimeContentManifest != null
+    || runtimeDiffIdentity != null;
+  if (injectedRuntimeEvidence
+      && (runtimeContentManifest == null || runtimeDiffIdentity == null)) {
+    throw failure("tcg_grammar_context_reader_bridge_runtime_evidence_incomplete");
+  }
+  const manifest = runtimeContentManifest ?? (candidateGitSha == null ? null
+    : committedRuntimeArtifactManifest(
+      candidateGitSha,
+      runtimeFreeze.core_paths,
+      "tcg_grammar_context_reader_bridge_runtime_content_unavailable"
+    ));
+  const diffIdentity = runtimeDiffIdentity ?? (candidateGitSha == null ? null
+    : committedRuntimeDiffIdentity(
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+      candidateGitSha,
+      runtimeFreeze.core_paths,
+      "tcg_grammar_context_reader_bridge_runtime_diff_unavailable"
+    ));
+  const manifestPaths = Array.isArray(manifest)
+    ? manifest.map((entry) => entry?.path) : null;
+  const runtimeEvidenceReady = (candidateGitSha == null
+      && manifest == null && diffIdentity == null)
+    || (Array.isArray(manifest)
+      && stableJson(manifestPaths) === stableJson(runtimeFreeze.core_paths)
+      && manifest.every((entry) => (
+        entry && exactKeys(entry, ["path", "mode", "bytes", "sha256"])
+        && entry.mode === "100644"
+        && Number.isSafeInteger(entry.bytes) && entry.bytes >= 0
+        && /^[0-9a-f]{64}$/.test(String(entry.sha256 || ""))
+      ))
+      && sha256(JSON.stringify(manifest))
+        === runtimeFreeze.runtime_content_manifest_sha256
+      && exactKeys(diffIdentity, ["full_index_sha256", "patch_id"])
+      && diffIdentity.full_index_sha256 === runtimeFreeze.runtime_full_index_sha256
+      && diffIdentity.patch_id === runtimeFreeze.runtime_patch_id);
+  if (!runtimeEvidenceReady) {
+    throw failure("tcg_grammar_context_reader_bridge_runtime_evidence_invalid");
+  }
+
+  const activeWriter = CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible;
+  const futureWriter = CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
+  const forwardReaders = CSM_PROJECTION_ACTIVATION.forward_readers;
+  const pendingCheckpoint = CSM_TCG_GRAMMAR_CONTEXT_PENDING_CHECKPOINT_READER;
+  const activeExternalIdentityRelease = EXTERNAL_IDENTITY_RELEASE_CONTRACT;
+  const activeVerifiedHealth = verifiedOriginalObservationHealthReceiptForReleases({
+    verifiedOriginalObservationReleaseId:
+      activeWriter.verified_original_observation_overlay,
+    externalIdentityRegistryReleaseId:
+      activeWriter.external_identity.registry_release_id
+  });
+  const { activation_sha256: activationSha256, ...activationBody } =
+    CSM_PROJECTION_ACTIVATION;
+  const { descriptor_sha256: pendingDescriptorSha256, ...pendingDescriptorBody } =
+    pendingCheckpoint;
+  const activation = validateCsmProjectionActivation(CSM_PROJECTION_ACTIVATION);
+  const runtimeReady = activation.state
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE
+    && activeWriter.contract_id
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID
+    && futureWriter.contract_id
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID
+    && stableJson(CSM_PROJECTION_ACTIVATION.active_writer) === stableJson(activeWriter)
+    && stableJson(forwardReaders.tcg_grammar_context_pending_checkpoint)
+      === stableJson(pendingCheckpoint)
+    && activationSha256
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256
+    && sha256(stableJson(activationBody)) === activationSha256
+    && sha256(stableJson(activeWriter))
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256
+    && sha256(stableJson(futureWriter))
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256
+    && sha256(stableJson(forwardReaders))
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256
+    && pendingDescriptorSha256
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256
+    && sha256(stableJson(pendingDescriptorBody)) === pendingDescriptorSha256
+    && pendingCheckpoint.writer.contract_id === futureWriter.contract_id
+    && pendingCheckpoint.writer.writer_contract_sha256
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256
+    && TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.decision_document_sha256
+      === TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256
+    && TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+    && TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.registry_release_id
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id
+    && TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.registry_content_sha256
+      === TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+    && TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+      === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256
+    && stableJson(futureWriter.tcg_grammar_context) === stableJson({
+      registry_release_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+      registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256,
+      resolution_contract_sha256:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256,
+      resolver_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version,
+      conflict_policy_version:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.conflict_policy_version,
+      field_source_authority_receipt_schema_version:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+          .field_source_authority_receipt_schema_version,
+      grammar_context_claim_receipt_schema_version:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+          .grammar_context_claim_receipt_schema_version
+    })
+    && stableJson(pendingCheckpoint.grammar_context)
+      === stableJson(futureWriter.tcg_grammar_context)
+    && activeWriter.external_identity.registry_release_id
+      === activeExternalIdentityRelease.registry_release.id;
+  if (!runtimeReady) {
+    throw failure("tcg_grammar_context_reader_bridge_runtime_contract_invalid");
+  }
+
+  let healthBound = false;
+  let deploymentSha = null;
+  if (health != null) {
+    try {
+      deploymentSha = exactGitSha(gitSha);
+    } catch {
+      throw failure("tcg_grammar_context_reader_bridge_health_contract_invalid");
+    }
+    healthBound = health?.ready === true
+      && health?.deployment?.git_commit_sha === deploymentSha
+      && health?.runtime?.model_profile_id === expectedModelProfileId
+      && health?.runtime?.request_builder_version
+        === activeWriter.canonical_fields.request_builder_version
+      && stableJson(health?.runtime?.projection_activation)
+        === stableJson(CSM_PROJECTION_ACTIVATION)
+      && stableJson(health?.runtime?.active_writer) === stableJson(activeWriter)
+      && stableJson(health?.runtime?.forward_readers) === stableJson(forwardReaders)
+      && stableJson(health?.runtime?.external_identity)
+        === stableJson(activeExternalIdentityRelease)
+      && stableJson(health?.runtime?.verified_original_observation)
+        === stableJson(activeVerifiedHealth)
+      && stableJson(health?.runtime?.active_writer)
+        === stableJson(health?.runtime?.projection_activation?.active_writer)
+      && stableJson(health?.runtime?.forward_readers)
+        === stableJson(health?.runtime?.projection_activation?.forward_readers);
+    if (!healthBound) {
+      throw failure("tcg_grammar_context_reader_bridge_health_contract_invalid");
+    }
+  }
+
+  const body = {
+    schema_version: "tcg-grammar-context-reader-bridge-runtime-proof-v1",
+    bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+    bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+    required_parent_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+    required_parent_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA,
+    historical_selection_v40_sha256:
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40_SHA256,
+    historical_lineage_v41_sha256:
+      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41_SHA256,
+    historical_selection_v42_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256,
+    historical_lineage_v43_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE,
+    diagnosed_invariant: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_PHASE,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
+    future_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256,
+    pending_descriptor_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    decision_document_sha256: TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    projection_activation: CSM_PROJECTION_ACTIVATION,
+    active_writer: activeWriter,
+    future_writer: futureWriter,
+    forward_readers: forwardReaders,
+    future_pending_checkpoint: pendingCheckpoint,
+    active_external_identity_release: activeExternalIdentityRelease,
+    active_verified_original_observation_health: activeVerifiedHealth,
+    tcg_grammar_context_registry_release: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+    tcg_grammar_context_resolution_contract: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT,
+    runtime_content_manifest_sha256: runtimeFreeze.runtime_content_manifest_sha256,
+    runtime_full_index_sha256: runtimeFreeze.runtime_full_index_sha256,
+    runtime_patch_id: runtimeFreeze.runtime_patch_id,
+    runtime_file_count: runtimeFreeze.core_paths.length,
+    runtime_file_mode: "100644",
+    runtime_identity_source: "frozen-release-constants",
+    writer_journey_manifest: COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
+    writer_projection_mode:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+    captured_production_forward_readback_required: true,
+    captured_production_forward_readback_git_sha:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+    captured_production_forward_readback_provider_calls: 0,
+    future_writer_active: false,
+    pending_checkpoint_forward_reader_active: true,
+    parity_required: false,
+    behavior_neutral: true,
+    health_bound: healthBound,
+    deployment_git_sha: deploymentSha
+  };
+  return Object.freeze({ ...body, contract_sha256: sha256(stableJson(body)) });
+}
+
+// This pure seam exists so the fail-closed body can be exercised before the
+// final path/hash freeze. Production selection and CLI paths never call it.
+export function materializeTcgGrammarContextReaderBridgeRuntimeContractForTest(args) {
+  return materializeTcgGrammarContextReaderBridgeRuntimeContract(args);
+}
+
+export function tcgGrammarContextReaderBridgeRuntimeContractProof(args = {}) {
+  tcgGrammarContextReaderBridgeTopologyProof();
+  const runtimeFreeze = tcgGrammarContextReaderBridgeRuntimeFreeze();
+  if (!tcgGrammarContextReaderBridgeRuntimeFreezeReady(runtimeFreeze)) {
+    throw failure("tcg_grammar_context_reader_bridge_runtime_freeze_pending");
+  }
+  const proof = materializeTcgGrammarContextReaderBridgeRuntimeContract({
+    ...args,
+    runtimeFreeze
+  });
+  if (args.health == null
+      && proof.contract_sha256 !== runtimeFreeze.runtime_contract_sha256) {
+    throw failure("tcg_grammar_context_reader_bridge_runtime_contract_hash_mismatch");
+  }
+  return proof;
+}
+
+export function tcgGrammarContextActivationRuntimeContractProof() {
+  tcgGrammarContextActivationTopologyProof();
+  const freezeReady = TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA != null
+    && TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA != null
+    && TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA
+    && TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA
+      === TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA
+    && TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS.length > 0
+    && TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS.length > 0
+    && /^[0-9a-f]{64}$/.test(String(
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256 || ""
+    ))
+    && /^[0-9a-f]{64}$/.test(String(
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256 || ""
+    ))
+    && /^[0-9a-f]{40}$/.test(String(
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID || ""
+    ))
+    && /^[0-9a-f]{64}$/.test(String(
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256 || ""
+    ));
+  if (!freezeReady) throw failure("tcg_grammar_context_activation_runtime_freeze_pending");
+  throw failure("tcg_grammar_context_activation_runtime_contract_not_materialized");
 }
 
 export function externalIdentityV3ActivationRuntimeContractProof({
@@ -6606,20 +7945,16 @@ export function canonicalNamingActivationA3RuntimeContractProof({
 
 function verifyExternalIdentityV3ActivationGitObjectEvidence(selection) {
   const releaseGitSha = exactGitSha(selection.git_sha);
-  let releaseTreeSha;
-  let parentGitShas;
+  let releaseIdentity;
   try {
-    gitText(["cat-file", "-e", `${releaseGitSha}^{commit}`]);
-    const revision = gitText(["rev-list", "--parents", "-n", "1", releaseGitSha])
-      .split(/\s+/);
-    if (revision.shift() !== releaseGitSha) {
-      throw failure("external_identity_v3_activation_release_git_object_invalid");
-    }
-    releaseTreeSha = exactGitSha(gitText(["rev-parse", `${releaseGitSha}^{tree}`]));
-    parentGitShas = revision;
+    releaseIdentity = exactGitCommitObjectIdentity(releaseGitSha, {
+      failureCode: "external_identity_v3_activation_release_git_object_invalid"
+    });
   } catch {
     throw failure("external_identity_v3_activation_release_git_object_invalid");
   }
+  const releaseTreeSha = releaseIdentity.git_tree_sha;
+  const parentGitShas = releaseIdentity.parent_git_shas;
   if (parentGitShas.length !== 1
       || parentGitShas[0] !== EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA) {
     throw failure("external_identity_v3_activation_release_parent_mismatch");
@@ -6631,7 +7966,11 @@ function verifyExternalIdentityV3ActivationGitObjectEvidence(selection) {
   try {
     rebuiltSelection = verifyCompatibilityBridgeSelection({
       releaseClass: ORDINARY_RELEASE_CLASS,
-      gitSha: releaseGitSha
+      gitSha: releaseGitSha,
+      headSha: releaseGitSha,
+      headTreeSha: releaseTreeSha,
+      parentShas: parentGitShas,
+      parentTreeSha: EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_TREE_SHA
     });
   } catch {
     throw failure("external_identity_v3_activation_release_selection_object_mismatch");
@@ -6654,99 +7993,100 @@ function verifyExternalIdentityV3ActivationRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  if (stableJson(selection)
+      !== stableJson(EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42)) {
+    throw failure("external_identity_v3_activation_historical_selection_literal_mismatch");
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha !== EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_SHA) {
+    throw failure("external_identity_v3_activation_rollback_mismatch");
+  }
+  verifyExternalIdentityV3ActivationGitObjectEvidence(selection);
+  return EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43;
+}
+
+function verifyTcgGrammarContextActivationRollbackLineage({
+  selection,
+  rollbackReceipt
+} = {}) {
+  const contract = tcgGrammarContextActivationRuntimeContractProof();
   if (!exactKeys(selection, [
     "schema_version", "release_class", "activation_descriptor_id", "lineage_marker",
     "transition_marker", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
     "required_rollback_git_sha", "required_rollback_tree_sha",
     "artifact_manifest_sha256", "git_sha", "active_writer_contract_id",
     "projection_activation_state", "active_writer_contract_sha256",
-    "projection_activation_sha256",
-    "durable_projection_contract_version", "semantic_prompt_version",
-    "request_builder_version", "response_parser_version", "composer_version",
-    "marketplace_profile_version", "verified_original_observation_release_id",
-    "external_identity_registry_release_id",
-    "external_identity_resolution_contract_sha256", "combined_pair_contract_sha256",
-    "active_health_receipt_sha256", "writer_journey_manifest", "parity_required",
+    "projection_activation_sha256", "forward_readers_sha256",
+    "registry_content_sha256", "resolution_contract_sha256",
+    "writer_journey_manifest", "parity_required",
     "contract_sha256"
   ])
-      || selection.schema_version !== "production-release-selection-v42"
+      || selection.schema_version !== "production-release-selection-v46"
       || selection.release_class !== ORDINARY_RELEASE_CLASS
-      || selection.activation_descriptor_id !== EXTERNAL_IDENTITY_V3_ACTIVATION_DESCRIPTOR_ID
+      || selection.activation_descriptor_id !== TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID
       || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
-      || selection.transition_marker !== EXTERNAL_IDENTITY_V3_ACTIVATION_MARKER
-      || selection.parent_git_sha !== EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA
-      || selection.parent_tree_sha !== EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_TREE_SHA
-      || selection.required_rollback_git_sha !== EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_SHA
+      || selection.transition_marker !== TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER
+      || selection.parent_git_sha !== TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA
+      || selection.parent_tree_sha !== TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA
+      || selection.required_rollback_git_sha !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA
       || selection.required_rollback_tree_sha
-        !== EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_TREE_SHA
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA
+      || selection.parent_git_sha !== selection.required_rollback_git_sha
+      || selection.parent_tree_sha !== selection.required_rollback_tree_sha
       || selection.artifact_manifest_sha256
-        !== externalIdentityV3ActivationArtifactManifestSha256(
-          EXTERNAL_IDENTITY_V3_ACTIVATION_CHANGED_PATHS
+        !== tcgGrammarContextActivationArtifactManifestSha256(
+          TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS
         )
-      || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))
-      || selection.git_sha === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA
-      || !/^[0-9a-f]{40}$/.test(String(selection.git_tree_sha || ""))
-      || selection.git_tree_sha === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_TREE_SHA
       || selection.active_writer_contract_id
-        !== EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID
-      || selection.projection_activation_state !== EXTERNAL_IDENTITY_V3_ACTIVATION_STATE
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID
+      || selection.projection_activation_state !== TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE
       || selection.active_writer_contract_sha256
-        !== EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_WRITER_SHA256
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256
       || selection.projection_activation_sha256
-        !== EXTERNAL_IDENTITY_V3_ACTIVATION_PROJECTION_ACTIVATION_SHA256
-      || selection.durable_projection_contract_version !== "csm-stage-shadow-v3"
-      || selection.semantic_prompt_version !== "csm-canonical-fields-web-v2"
-      || selection.request_builder_version !== "canonical-fields-web-request-v2"
-      || selection.response_parser_version !== "canonical-output-v5-web-receipt-outcome"
-      || selection.composer_version !== "thin-marketplace-composer-v3"
-      || selection.marketplace_profile_version !== "lynca-standard-name-v0.3"
-      || selection.verified_original_observation_release_id
-        !== VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
-      || selection.external_identity_registry_release_id
-        !== EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.registry_release.id
-      || selection.external_identity_resolution_contract_sha256
-        !== EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3.resolution_contract.sha256
-      || selection.combined_pair_contract_sha256
-        !== EXTERNAL_IDENTITY_V3_ACTIVATION_COMBINED_PAIR_SHA256
-      || selection.active_health_receipt_sha256
-        !== EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_HEALTH_SHA256
-      || selection.writer_journey_manifest !== ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256
+      || selection.forward_readers_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256
+      || selection.registry_content_sha256 !== TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+      || selection.resolution_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256
+      || selection.writer_journey_manifest
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION
       || selection.parity_required !== true
-      || selection.contract_sha256 !== EXTERNAL_IDENTITY_V3_ACTIVATION_RUNTIME_CONTRACT_SHA256) {
-    throw failure("external_identity_v3_activation_selection_invalid");
+      || selection.contract_sha256 !== contract.contract_sha256) {
+    throw failure("tcg_grammar_context_activation_selection_invalid");
   }
   const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
-  if (capturedRollbackSha !== EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_SHA) {
-    throw failure("external_identity_v3_activation_rollback_mismatch");
+  if (capturedRollbackSha !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA) {
+    throw failure("tcg_grammar_context_activation_rollback_mismatch");
   }
-  const verifiedGitObject = verifyExternalIdentityV3ActivationGitObjectEvidence(
-    selection
-  );
   return Object.freeze({
-    schema_version: "production-release-rollback-lineage-receipt-v43",
+    schema_version: "production-release-rollback-lineage-receipt-v47",
     release_class: ORDINARY_RELEASE_CLASS,
-    activation_descriptor_id: EXTERNAL_IDENTITY_V3_ACTIVATION_DESCRIPTOR_ID,
+    activation_descriptor_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
     lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
-    transition_marker: EXTERNAL_IDENTITY_V3_ACTIVATION_MARKER,
+    transition_marker: TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
     release_git_sha: exactGitSha(selection.git_sha),
     release_tree_sha: exactGitSha(selection.git_tree_sha),
-    release_parent_git_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA,
-    release_parent_tree_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_TREE_SHA,
-    required_rollback_git_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_SHA,
-    required_rollback_tree_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_TREE_SHA,
+    release_parent_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+    release_parent_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
     captured_rollback_git_sha: capturedRollbackSha,
-    release_git_object_verified: true,
-    release_git_object_verification_source: verifiedGitObject.verification_source,
-    active_writer_contract_id: EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
-    projection_activation_state: EXTERNAL_IDENTITY_V3_ACTIVATION_STATE,
-    active_writer_contract_sha256: EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_WRITER_SHA256,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
     projection_activation_sha256:
-      EXTERNAL_IDENTITY_V3_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
-    combined_pair_contract_sha256: EXTERNAL_IDENTITY_V3_ACTIVATION_COMBINED_PAIR_SHA256,
-    active_health_receipt_sha256: EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_HEALTH_SHA256,
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
     artifact_manifest_sha256: selection.artifact_manifest_sha256,
     runtime_contract_sha256: selection.contract_sha256,
-    writer_journey_manifest: ACTIVATION_A_WRITER_JOURNEY_MANIFEST_VERSION,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
     parity_required: true,
     lineage_verified: true
   });
@@ -6756,6 +8096,21 @@ export function verifyOrdinaryRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
+  const tcgGrammarContextActivationFamily =
+    selection?.schema_version === "production-release-selection-v46"
+    || selection?.activation_descriptor_id === TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID
+    || (TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA != null && (
+      selection?.git_sha === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA
+      || selection?.parent_git_sha === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA
+    ));
+  if (tcgGrammarContextActivationFamily) {
+    if (selection?.schema_version !== "production-release-selection-v46"
+        || selection?.activation_descriptor_id
+          !== TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID) {
+      throw failure("ordinary_release_tcg_grammar_context_activation_selection_invalid");
+    }
+    return verifyTcgGrammarContextActivationRollbackLineage({ selection, rollbackReceipt });
+  }
   const externalIdentityV3ActivationFamily =
     selection?.schema_version === "production-release-selection-v42"
     || selection?.activation_descriptor_id === EXTERNAL_IDENTITY_V3_ACTIVATION_DESCRIPTOR_ID
@@ -8224,99 +9579,215 @@ function verifyExternalIdentityV3BridgeSourceV4MarkerRepairRollbackLineage({
   });
 }
 
+function verifyTcgGrammarContextReaderBridgeGitObjectEvidence(selection, {
+  gitTextReader = gitText,
+  rebuildSelection = ({ gitSha }) =>
+    rebuildTcgGrammarContextReaderBridgeSelectionFromGitObject(gitSha)
+} = {}) {
+  const releaseGitSha = exactGitSha(selection.git_sha);
+  let releaseIdentity;
+  try {
+    releaseIdentity = exactGitCommitObjectIdentity(releaseGitSha, {
+      gitTextReader,
+      failureCode: "tcg_grammar_context_reader_bridge_release_git_object_invalid"
+    });
+  } catch {
+    throw failure("tcg_grammar_context_reader_bridge_release_git_object_invalid");
+  }
+  const releaseTreeSha = releaseIdentity.git_tree_sha;
+  const parentGitShas = releaseIdentity.parent_git_shas;
+  if (parentGitShas.length !== 1
+      || parentGitShas[0] !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA) {
+    throw failure("tcg_grammar_context_reader_bridge_release_parent_mismatch");
+  }
+  if (releaseTreeSha !== selection.git_tree_sha) {
+    throw failure("tcg_grammar_context_reader_bridge_release_tree_mismatch");
+  }
+  let rebuiltSelection;
+  try {
+    rebuiltSelection = rebuildSelection({
+      releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      gitSha: releaseGitSha
+    });
+  } catch {
+    throw failure("tcg_grammar_context_reader_bridge_release_selection_object_mismatch");
+  }
+  if (stableJson(rebuiltSelection) !== stableJson(selection)) {
+    throw failure("tcg_grammar_context_reader_bridge_release_selection_object_mismatch");
+  }
+  return Object.freeze({
+    schema_version: "tcg-grammar-context-reader-bridge-git-object-evidence-v1",
+    verification_source: "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION",
+    commit_exists: true,
+    git_sha: releaseGitSha,
+    git_tree_sha: releaseTreeSha,
+    parent_git_shas: Object.freeze([...parentGitShas]),
+    selection_sha256: sha256(stableJson(rebuiltSelection))
+  });
+}
+
+// The injected readers keep the Git-object failure matrix deterministic before
+// the final B commit exists. Production lineage always uses the private default.
+export function verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest(args) {
+  return verifyTcgGrammarContextReaderBridgeGitObjectEvidence(
+    args?.selection,
+    {
+      gitTextReader: args?.gitTextReader,
+      rebuildSelection: args?.rebuildSelection
+    }
+  );
+}
+
+function verifyTcgGrammarContextReaderBridgeRollbackLineage({
+  selection,
+  rollbackReceipt
+} = {}) {
+  const contract = tcgGrammarContextReaderBridgeRuntimeContractProof();
+  if (!exactKeys(selection, [
+    "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
+    "commit_trailer_sha256", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
+    "failed_run_id", "failure_code", "diagnosed_invariant", "failed_case_id",
+    "failed_phase", "required_rollback_git_sha", "required_rollback_tree_sha",
+    "historical_selection_v42_sha256", "historical_lineage_v43_sha256",
+    "artifact_manifest_sha256", "git_sha", "active_writer_contract_id",
+    "projection_activation_state", "future_writer_contract_id",
+    "pending_descriptor_schema", "decision_document_sha256", "registry_content_sha256",
+    "resolution_contract_sha256", "projection_activation_sha256",
+    "forward_readers_sha256", "active_writer_contract_sha256",
+    "future_writer_contract_sha256", "pending_descriptor_sha256",
+    "writer_journey_manifest", "writer_projection_mode",
+    "parity_required", "contract_sha256"
+  ])
+      || selection.schema_version !== "production-release-selection-v44"
+      || selection.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
+      || selection.bridge_descriptor_id !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID
+      || selection.bridge_marker !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER
+      || selection.commit_trailer_sha256 !== sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER)
+      || selection.parent_git_sha !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA
+      || selection.parent_tree_sha !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA
+      || selection.failed_run_id !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_RUN_ID
+      || selection.failure_code !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE
+      || selection.diagnosed_invariant
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT
+      || selection.failed_case_id !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_CASE_ID
+      || selection.failed_phase !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_PHASE
+      || selection.required_rollback_git_sha !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA
+      || selection.required_rollback_tree_sha
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA
+      || selection.required_rollback_git_sha === selection.parent_git_sha
+      || selection.historical_selection_v42_sha256
+        !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256
+      || selection.historical_lineage_v43_sha256
+        !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256
+      || selection.artifact_manifest_sha256
+        !== tcgGrammarContextReaderBridgeArtifactManifestSha256(
+          TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS
+        )
+      || selection.active_writer_contract_id
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID
+      || selection.projection_activation_state
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE
+      || selection.future_writer_contract_id
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID
+      || selection.pending_descriptor_schema
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SCHEMA
+      || selection.decision_document_sha256 !== TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256
+      || selection.registry_content_sha256 !== TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+      || selection.resolution_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256
+      || selection.projection_activation_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256
+      || selection.forward_readers_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256
+      || selection.active_writer_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256
+      || selection.future_writer_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256
+      || selection.pending_descriptor_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256
+      || selection.writer_journey_manifest !== COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION
+      || selection.writer_projection_mode
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
+      || selection.parity_required !== false
+      || selection.contract_sha256 !== contract.contract_sha256) {
+    throw failure("tcg_grammar_context_reader_bridge_selection_invalid");
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA) {
+    throw failure("tcg_grammar_context_reader_bridge_rollback_mismatch");
+  }
+  verifyTcgGrammarContextReaderBridgeGitObjectEvidence(selection);
+  return Object.freeze({
+    schema_version: "production-release-rollback-lineage-receipt-v45",
+    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+    bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+    bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+    release_git_sha: exactGitSha(selection.git_sha),
+    release_tree_sha: exactGitSha(selection.git_tree_sha),
+    release_parent_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+    release_parent_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA,
+    failed_run_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_RUN_ID,
+    failure_code: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE,
+    diagnosed_invariant: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT,
+    failed_case_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_CASE_ID,
+    failed_phase: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILED_PHASE,
+    required_rollback_git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+    required_rollback_tree_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA,
+    captured_rollback_git_sha: capturedRollbackSha,
+    release_git_object_verified: true,
+    release_git_object_verification_source:
+      "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION",
+    historical_selection_v42_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256,
+    historical_lineage_v43_sha256:
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE,
+    future_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_CONTRACT_ID,
+    pending_descriptor_schema:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SCHEMA,
+    decision_document_sha256: TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
+    future_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256,
+    pending_descriptor_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256,
+    artifact_manifest_sha256: selection.artifact_manifest_sha256,
+    runtime_contract_sha256: selection.contract_sha256,
+    writer_projection_mode:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+    lineage_verified: true
+  });
+}
+
 function verifyExternalIdentityV3CheckpointReaderBridgeRollbackLineage({
   selection,
   rollbackReceipt
 } = {}) {
-  if (!exactKeys(selection, [
-    "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
-    "commit_trailer_sha256", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
-    "required_rollback_git_sha", "required_rollback_tree_sha",
-    "historical_selection_v38_sha256", "historical_lineage_v39_sha256",
-    "artifact_manifest_sha256", "git_sha", "writer_journey_manifest",
-    "writer_projection_mode", "parity_required", "contract_sha256"
-  ])
-      || selection.schema_version !== "production-release-selection-v40"
-      || selection.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS
-      || selection.bridge_descriptor_id
-        !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID
-      || selection.bridge_marker !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER
-      || selection.commit_trailer_sha256 !== sha256(COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER)
-      || selection.parent_git_sha
-        !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA
-      || selection.parent_tree_sha
-        !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_TREE_SHA
-      || selection.required_rollback_git_sha
-        !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ROLLBACK_SHA
-      || selection.required_rollback_tree_sha
-        !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ROLLBACK_TREE_SHA
-      || selection.historical_selection_v38_sha256
-        !== EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V38_SHA256
-      || selection.historical_lineage_v39_sha256
-        !== EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V39_SHA256
-      || selection.artifact_manifest_sha256
-        !== externalIdentityV3CheckpointReaderBridgeArtifactManifestSha256(
-          EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_CHANGED_PATHS
-        )
-      || selection.writer_journey_manifest !== COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION
-      || selection.writer_projection_mode
-        !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
-      || selection.parity_required !== false
-      || selection.contract_sha256
-        !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256
-      || !/^[0-9a-f]{40}$/.test(String(selection.git_sha || ""))
-      || selection.git_sha === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA
-      || !/^[0-9a-f]{40}$/.test(String(selection.git_tree_sha || ""))
-      || selection.git_tree_sha
-        === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_TREE_SHA) {
-    throw failure("external_identity_v3_checkpoint_reader_bridge_selection_invalid");
+  if (stableJson(selection)
+      !== stableJson(
+        EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40
+      )) {
+    throw failure(
+      "external_identity_v3_checkpoint_reader_bridge_historical_selection_literal_mismatch"
+    );
   }
   const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
   if (capturedRollbackSha
       !== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ROLLBACK_SHA) {
     throw failure("external_identity_v3_checkpoint_reader_bridge_rollback_mismatch");
   }
-  return Object.freeze({
-    schema_version: "production-release-rollback-lineage-receipt-v41",
-    release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
-    bridge_descriptor_id: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
-    bridge_marker: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
-    release_git_sha: exactGitSha(selection.git_sha),
-    release_tree_sha: exactGitSha(selection.git_tree_sha),
-    release_parent_git_sha: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA,
-    release_parent_tree_sha:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_TREE_SHA,
-    required_rollback_git_sha:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ROLLBACK_SHA,
-    required_rollback_tree_sha:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ROLLBACK_TREE_SHA,
-    captured_rollback_git_sha: capturedRollbackSha,
-    historical_selection_v38_sha256:
-      EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V38_SHA256,
-    historical_lineage_v39_sha256:
-      EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V39_SHA256,
-    projection_activation_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVATION_SHA256,
-    checkpoint_descriptor_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_SHA256,
-    active_writer_contract_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
-    future_v2_writer_contract_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_FUTURE_V2_WRITER_SHA256,
-    future_v3_writer_contract_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_FUTURE_V3_WRITER_SHA256,
-    combined_pair_contract_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_COMBINED_PAIR_SHA256,
-    active_health_receipt_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVE_HEALTH_SHA256,
-    future_health_receipt_sha256:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_FUTURE_HEALTH_SHA256,
-    artifact_manifest_sha256: selection.artifact_manifest_sha256,
-    runtime_contract_sha256: selection.contract_sha256,
-    writer_projection_mode:
-      EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE,
-    lineage_verified: true
-  });
+  return EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41;
 }
 
 function verifyExternalIdentityV3BridgeWriterOldReaderNewRollbackLineage({
@@ -8544,6 +10015,20 @@ export function verifyReleaseRollbackLineage({
 } = {}) {
   if (selection?.release_class === ORDINARY_RELEASE_CLASS) {
     return verifyOrdinaryRollbackLineage({ selection, rollbackReceipt });
+  }
+  if (selection?.schema_version === "production-release-selection-v44"
+      || selection?.bridge_descriptor_id
+        === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID
+      || selection?.parent_git_sha === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA) {
+    if (selection?.schema_version !== "production-release-selection-v44"
+        || selection?.bridge_descriptor_id
+          !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID) {
+      throw failure("tcg_grammar_context_reader_bridge_selection_family_mismatch");
+    }
+    return verifyTcgGrammarContextReaderBridgeRollbackLineage({
+      selection,
+      rollbackReceipt
+    });
   }
   if (selection?.schema_version === "production-release-selection-v40"
       || selection?.bridge_descriptor_id
@@ -9371,8 +10856,21 @@ export function compatibilityBridgeWriterProjectionMode(manifest, {
     && manifest.bridge_marker === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER
     && manifest.writer_projection_mode
       === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE;
+  const tcgGrammarContextV5 = common
+    && exactKeys(manifest, [
+      "schema_version", "release_class", "bridge_descriptor_id", "bridge_marker",
+      "git_sha", "writer_projection_mode", "evidence_scope", "accuracy_claim", "cases"
+    ])
+    && manifest.schema_version === COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION
+    && manifest.bridge_descriptor_id === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID
+    && manifest.bridge_marker === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER
+    && manifest.writer_projection_mode
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE;
   if (historicalV1 || historicalV2) {
     return COMPATIBILITY_BRIDGE_V2_WRITER_PROJECTION_MODE;
+  }
+  if (tcgGrammarContextV5) {
+    return TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE;
   }
   if (checkpointV4) {
     return EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE;
@@ -9460,6 +10958,20 @@ export function buildCompatibilityBridgeManifest({ selection, sourceManifest } =
     && selection?.writer_projection_mode
       === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE
     && selection?.parity_required === false;
+  const tcgGrammarContextReaderBridge =
+    selection?.release_class === COMPATIBILITY_BRIDGE_RELEASE_CLASS
+    && selection?.bridge_descriptor_id === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID
+    && selection?.bridge_marker === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER
+    && selection?.writer_journey_manifest === COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION
+    && selection?.writer_projection_mode
+      === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE
+    && selection?.parity_required === false;
+  if (tcgGrammarContextReaderBridge) {
+    verifyTcgGrammarContextReaderBridgeRollbackLineage({
+      selection,
+      rollbackReceipt: { git_sha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA }
+    });
+  }
   if (externalIdentityV3CheckpointReaderBridge) {
     verifyExternalIdentityV3CheckpointReaderBridgeRollbackLineage({
       selection,
@@ -9490,7 +11002,8 @@ export function buildCompatibilityBridgeManifest({ selection, sourceManifest } =
       && !externalIdentityV3BridgeSourceV4MarkerRepair
       && !externalIdentityV3BridgeWriterJourneyModeRepair
       && !externalIdentityV3BridgeWriterOldReaderNew
-      && !externalIdentityV3CheckpointReaderBridge) {
+      && !externalIdentityV3CheckpointReaderBridge
+      && !tcgGrammarContextReaderBridge) {
     throw failure("compatibility_bridge_selection_required");
   }
   const source = validateOrdinaryCases(sourceManifest);
@@ -9498,11 +11011,29 @@ export function buildCompatibilityBridgeManifest({ selection, sourceManifest } =
         || externalIdentityV3BridgeSourceV4MarkerRepair
         || externalIdentityV3BridgeWriterJourneyModeRepair
         || externalIdentityV3BridgeWriterOldReaderNew
-        || externalIdentityV3CheckpointReaderBridge)
+        || externalIdentityV3CheckpointReaderBridge
+        || tcgGrammarContextReaderBridge)
       && source.schemaVersion !== "writer-journey-cases-v4") {
     throw failure("compatibility_bridge_source_manifest_invalid");
   }
   const { cases } = source;
+  if (tcgGrammarContextReaderBridge) {
+    const manifest = Object.freeze({
+      schema_version: COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
+      release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+      bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+      bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+      git_sha: exactGitSha(selection.git_sha),
+      writer_projection_mode: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+      evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
+      accuracy_claim: null,
+      cases
+    });
+    compatibilityBridgeWriterProjectionMode(manifest, {
+      expectedGitSha: selection.git_sha
+    });
+    return manifest;
+  }
   if (externalIdentityV3CheckpointReaderBridge) {
     const manifest = Object.freeze({
       schema_version: COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION,
@@ -9682,10 +11213,23 @@ async function main(argv) {
       && selection.schema_version === "production-release-selection-v42") {
     const health = await readJson(values.get("--health"), "compatibility_bridge_health");
     await exclusivePrivateWrite(values.get("--out"),
-      externalIdentityV3ActivationRuntimeContractProof({
+      historicalProjectionHealthProof({
+        selection,
         health,
-        gitSha: selection.git_sha
+        expectedActivationSha256:
+          EXTERNAL_IDENTITY_V3_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+        expectedActiveWriterSha256:
+          EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_WRITER_SHA256
       }));
+    return;
+  }
+  if (mode === "verify-health"
+      && selection.schema_version === "production-release-selection-v46") {
+    await readJson(values.get("--health"), "compatibility_bridge_health");
+    await exclusivePrivateWrite(
+      values.get("--out"),
+      tcgGrammarContextActivationRuntimeContractProof()
+    );
     return;
   }
   if (selection.release_class !== COMPATIBILITY_BRIDGE_RELEASE_CLASS) {
@@ -9703,10 +11247,21 @@ async function main(argv) {
   }
   const health = await readJson(values.get("--health"), "compatibility_bridge_health");
   const proof = selection.bridge_descriptor_id
+    === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID
+        ? tcgGrammarContextReaderBridgeRuntimeContractProof({
+          health,
+          gitSha: selection.git_sha,
+          candidateGitSha: selection.git_sha
+        })
+    : selection.bridge_descriptor_id
     === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID
-    ? externalIdentityV3CheckpointReaderBridgeRuntimeContractProof({
+    ? historicalProjectionHealthProof({
+      selection,
       health,
-      gitSha: selection.git_sha
+      expectedActivationSha256:
+        EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVATION_SHA256,
+      expectedActiveWriterSha256:
+        EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVE_WRITER_SHA256
     })
     : selection.bridge_descriptor_id
     === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID

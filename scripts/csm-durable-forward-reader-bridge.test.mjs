@@ -12,11 +12,22 @@ import {
 import { SEM_STANDARD_VERSION } from "../lib/listing/csm/sem-definition.mjs";
 import {
   CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+  CSM_FORWARD_READER_BRIDGE_VERSION,
+  CSM_TCG_GRAMMAR_CONTEXT_FORWARD_READER_VERSION,
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
   readDurableProjectionReceipt,
   validateFounderBetaWebReceipt
 } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
-import { buildCsmStageRows } from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  buildCsmStageRows,
+  computeCsmPacketHashes
+} from "../lib/listing/thin/csm-persistence.mjs";
 import { replayFromRows, verifyReplay } from "../lib/listing/thin/csm-replay.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import {
   resolveVerifiedOriginalObservation,
   VERIFIED_ORIGINAL_OBSERVATION_RELEASE_ID
@@ -273,9 +284,18 @@ const webReceipt = {
   semantic_state_sha256: "a".repeat(64)
 };
 standardRows.output.structured_output.founder_beta_web_receipt = webReceipt;
+const exactV3Receipt = readDurableProjectionReceipt(standardRows);
 assert.deepEqual(
-  readDurableProjectionReceipt(standardRows).founder_beta_web_receipt,
-  webReceipt
+  exactV3Receipt,
+  {
+    bridge_version: CSM_FORWARD_READER_BRIDGE_VERSION,
+    publication_coverage: standardRows.output.structured_output.publication_coverage,
+    lot_terminal: null,
+    founder_beta_web_receipt: webReceipt,
+    set_card_name_relation_receipt:
+      standardRows.output.structured_output.set_card_name_relation_receipt
+  },
+  "the legal stage-v3 receipt projection must stay byte-shaped as reader-v1"
 );
 for (const mutate of [
   (receipt) => { receipt.provider_model = "gpt-5.6"; },
@@ -575,9 +595,282 @@ assert.equal(readDurableProjectionReceipt(legacy), null);
 assert.equal(replayFromRows(legacy).title, rows.output.title);
 
 const unknown = structuredClone(legacy);
-unknown.output.contract_version = "csm-stage-shadow-v4";
-unknown.resolution.contract_version = "csm-stage-shadow-v4";
+unknown.output.contract_version = "csm-stage-shadow-v5";
+unknown.resolution.contract_version = "csm-stage-shadow-v5";
 assert.throws(() => readDurableProjectionReceipt(unknown), /version_unsupported/);
+
+const tcgGrammarObservedFields = {
+  ...standardFields,
+  grammar: "standard",
+  lot_count: "",
+  year: "",
+  manufacturer: "",
+  product: "",
+  set: "Trainer Gallery",
+  subjects: ["Eternatus"],
+  card_name: "",
+  card_number: "TG22/TG30",
+  ip: ""
+};
+const tcgGrammarResolvedFields = { ...tcgGrammarObservedFields, grammar: "tcg" };
+const tcgGrammarComposed = composeFromCanonicalFields(tcgGrammarResolvedFields, {
+  features: { publication_coverage: true }
+});
+const tcgFieldSources = [
+  { field: "set", source_ids: ["original_image_1"] },
+  { field: "card_number", source_ids: ["original_image_1"] }
+];
+const tcgSourceExecution = {
+  operationPayloadSha256: "e".repeat(64),
+  originalImageFingerprints: [`sha256:${"1".repeat(64)}`],
+  recognitionImageFingerprints: [`sha256:${"1".repeat(64)}`],
+  providerClientRequestId: "forward-reader-tcg-client-request",
+  providerResponseId: "forward-reader-tcg-provider-response",
+  tenantId: "tcg-forward-reader-tenant",
+  recognitionSessionId: "tcg-forward-reader-session"
+};
+const tcgFieldSourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: tcgFieldSources,
+  fields: tcgGrammarObservedFields,
+  originalImageCount: 1,
+  semanticStateSha256: webReceipt.semantic_state_sha256,
+  founderBetaWebReceipt: webReceipt,
+  sourceExecution: {
+    ...tcgSourceExecution,
+    tenantId: "future-reader-tenant",
+    recognitionSessionId: "future-reader-session"
+  }
+});
+const tcgClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: tcgGrammarObservedFields,
+  fieldSourceAuthorityReceipt: tcgFieldSourceReceipt
+});
+assert.equal(tcgClaimReceipt.status, "APPLIED");
+const tcgRows = buildCsmStageRows({
+  tenantId: "tcg-forward-reader-tenant",
+  recognitionSessionId: "tcg-forward-reader-session",
+  fields: tcgGrammarResolvedFields,
+  observedFields: tcgGrammarObservedFields,
+  composed: tcgGrammarComposed,
+  title: tcgGrammarComposed.title,
+  founderBetaWebReceipt: webReceipt,
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: {
+      predicate: "CURRENT_CARD_MEMBER_OF_SET",
+      value: "Trainer Gallery"
+    },
+    card_name: null
+  },
+  tcgFieldSourceAuthorityReceipt: tcgFieldSourceReceipt,
+  tcgGrammarContextClaimReceipt: tcgClaimReceipt,
+  registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+  contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
+  createdAt: "2026-08-15T00:00:00.000Z"
+});
+
+// A v3 row may never gain v4 semantics through receipt cross-splicing, even
+// when the injected receipts are each authentic and mutually linked.
+for (const [key, receipt] of [
+  ["tcg_field_source_authority_receipt", tcgFieldSourceReceipt],
+  ["tcg_grammar_context_claim_receipt", tcgClaimReceipt]
+]) {
+  const forgedV3 = structuredClone(standardRows);
+  forgedV3.output.structured_output[key] = receipt;
+  assert.throws(
+    () => readDurableProjectionReceipt(forgedV3),
+    /tcg_grammar_context_receipt_outside_contract/,
+    `stage-v3 must reject forged ${key}`
+  );
+  const forgedNullV3 = structuredClone(standardRows);
+  forgedNullV3.output.structured_output[key] = null;
+  assert.throws(
+    () => readDurableProjectionReceipt(forgedNullV3),
+    /tcg_grammar_context_receipt_outside_contract/,
+    `stage-v3 must reject even a null ${key} splice`
+  );
+}
+
+const exactV4Receipt = readDurableProjectionReceipt(tcgRows);
+assert.deepEqual(exactV4Receipt, {
+  bridge_version: CSM_TCG_GRAMMAR_CONTEXT_FORWARD_READER_VERSION,
+  publication_coverage: tcgRows.output.structured_output.publication_coverage,
+  lot_terminal: null,
+  founder_beta_web_receipt: webReceipt,
+  set_card_name_relation_receipt:
+    tcgRows.output.structured_output.set_card_name_relation_receipt,
+  tcg_field_source_authority_receipt: tcgFieldSourceReceipt,
+  tcg_grammar_context_claim_receipt: tcgClaimReceipt
+});
+
+// A receipt-strip attacker can re-seal every packet after relabelling v4 as
+// v3. The v3 tuple itself must reject v4 Registry/resolver/policy authority;
+// receipt-key guards alone cannot distinguish this downgrade from legal v3.
+const downgradedTcgV3 = structuredClone(tcgRows);
+for (const collection of [
+  downgradedTcgV3.evidence,
+  downgradedTcgV3.candidates,
+  downgradedTcgV3.resolved
+]) {
+  for (const row of collection) {
+    row.contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+  }
+}
+downgradedTcgV3.resolution.contract_version =
+  CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+downgradedTcgV3.output.contract_version =
+  CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+delete downgradedTcgV3.output.structured_output.observed_composition_grammar;
+delete downgradedTcgV3.output.structured_output.tcg_field_source_authority_receipt;
+delete downgradedTcgV3.output.structured_output.tcg_grammar_context_claim_receipt;
+downgradedTcgV3.resolution.recognition_packet_sha256 =
+  computeCsmPacketHashes(downgradedTcgV3).csm_recognition_packet_sha256;
+downgradedTcgV3.output.resolution_packet_sha256 =
+  computeCsmPacketHashes(downgradedTcgV3).csm_resolution_packet_sha256;
+downgradedTcgV3.session_hashes = computeCsmPacketHashes(downgradedTcgV3);
+assert.throws(
+  () => readDurableProjectionReceipt(downgradedTcgV3),
+  /tcg_grammar_context_authority_outside_contract/
+);
+const downgradedTcgV3Replay = verifyReplay(
+  downgradedTcgV3, downgradedTcgV3.output.title
+);
+assert.equal(downgradedTcgV3Replay.ok, false);
+assert.ok(downgradedTcgV3Replay.problems.some(
+  ({ kind }) => kind === "tcg_grammar_context_authority_outside_contract"
+));
+
+for (const [key, expected] of [
+  ["tcg_field_source_authority_receipt", /tcg_field_source_authority_receipt_missing/],
+  ["tcg_grammar_context_claim_receipt", /tcg_grammar_context_claim_receipt_missing/]
+]) {
+  const missing = structuredClone(tcgRows);
+  delete missing.output.structured_output[key];
+  assert.throws(() => readDurableProjectionReceipt(missing), expected);
+}
+
+const otherWebReceipt = {
+  ...structuredClone(webReceipt),
+  queries: ["different but internally valid provider query"]
+};
+const otherWebBoundSourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: tcgFieldSources,
+  fields: tcgGrammarObservedFields,
+  originalImageCount: 1,
+  semanticStateSha256: otherWebReceipt.semantic_state_sha256,
+  founderBetaWebReceipt: otherWebReceipt,
+  sourceExecution: tcgSourceExecution
+});
+const otherWebBoundClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: tcgGrammarObservedFields,
+  fieldSourceAuthorityReceipt: otherWebBoundSourceReceipt
+});
+const webCrossSplice = structuredClone(tcgRows);
+webCrossSplice.output.structured_output.tcg_field_source_authority_receipt =
+  otherWebBoundSourceReceipt;
+webCrossSplice.output.structured_output.tcg_grammar_context_claim_receipt =
+  otherWebBoundClaimReceipt;
+assert.throws(() => readDurableProjectionReceipt(webCrossSplice),
+  /tcg_field_source_authority_receipt_binding_invalid/);
+
+const semanticCrossSpliceSourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: tcgFieldSources,
+  fields: tcgGrammarObservedFields,
+  originalImageCount: 1,
+  semanticStateSha256: "c".repeat(64),
+  founderBetaWebReceipt: webReceipt,
+  sourceExecution: tcgSourceExecution
+});
+const semanticCrossSpliceClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: tcgGrammarObservedFields,
+  fieldSourceAuthorityReceipt: semanticCrossSpliceSourceReceipt
+});
+const semanticCrossSplice = structuredClone(tcgRows);
+semanticCrossSplice.output.structured_output.tcg_field_source_authority_receipt =
+  semanticCrossSpliceSourceReceipt;
+semanticCrossSplice.output.structured_output.tcg_grammar_context_claim_receipt =
+  semanticCrossSpliceClaimReceipt;
+assert.throws(() => readDurableProjectionReceipt(semanticCrossSplice),
+  /tcg_field_source_authority_receipt_binding_invalid/);
+
+const wrongRowFamily = structuredClone(tcgRows);
+wrongRowFamily.candidates[0].contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+assert.throws(() => readDurableProjectionReceipt(wrongRowFamily),
+  /durable_projection_row_family_mismatch/);
+const rawGrammarTamper = structuredClone(tcgRows);
+rawGrammarTamper.output.structured_output.observed_composition_grammar = "tcg";
+assert.throws(() => readDurableProjectionReceipt(rawGrammarTamper),
+  /tcg_grammar_context_claim_receipt_invalid/);
+const cardTransitionTamper = structuredClone(tcgRows);
+const resolvedCard = cardTransitionTamper.resolved.find(
+  (row) => row.bracket === "card_number"
+);
+resolvedCard.canonical_value = "TG21/TG30";
+assert.throws(() => readDurableProjectionReceipt(cardTransitionTamper),
+  /tcg_grammar_context_applied_fields_changed|founder_beta_observed_identity_evidence_invalid/);
+const ipTransitionTamper = structuredClone(tcgRows);
+const resolvedIp = ipTransitionTamper.resolved.find((row) => row.bracket === "ip_sport");
+resolvedIp.selected_kind = "VALUE";
+resolvedIp.canonical_value = "Pokemon";
+resolvedIp.empty_reason = null;
+assert.throws(() => readDurableProjectionReceipt(ipTransitionTamper),
+  /founder_beta_observed_identity_cardinality_invalid/);
+const semTransitionTamper = structuredClone(tcgRows);
+semTransitionTamper.output.structured_output.sem.language = "Japanese";
+assert.throws(() => readDurableProjectionReceipt(semTransitionTamper),
+  /tcg_grammar_context_applied_fields_changed/);
+
+const rawTcgClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: tcgGrammarResolvedFields,
+  fieldSourceAuthorityReceipt: tcgFieldSourceReceipt
+});
+assert.equal(rawTcgClaimReceipt.status, "NOT_REQUIRED");
+const rawTcgRows = buildCsmStageRows({
+  tenantId: "tcg-forward-reader-tenant",
+  recognitionSessionId: "tcg-forward-reader-not-required-session",
+  fields: tcgGrammarResolvedFields,
+  observedFields: tcgGrammarResolvedFields,
+  composed: tcgGrammarComposed,
+  title: tcgGrammarComposed.title,
+  founderBetaWebReceipt: webReceipt,
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: {
+      predicate: "CURRENT_CARD_MEMBER_OF_SET",
+      value: "Trainer Gallery"
+    },
+    card_name: null
+  },
+  tcgFieldSourceAuthorityReceipt: tcgFieldSourceReceipt,
+  tcgGrammarContextClaimReceipt: rawTcgClaimReceipt,
+  contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
+  createdAt: "2026-08-15T00:00:00.000Z"
+});
+assert.equal(
+  readDurableProjectionReceipt(rawTcgRows)
+    .tcg_grammar_context_claim_receipt.status,
+  "NOT_REQUIRED"
+);
+const legalRawTcgV3 = structuredClone(rawTcgRows);
+for (const collection of [
+  legalRawTcgV3.evidence,
+  legalRawTcgV3.candidates,
+  legalRawTcgV3.resolved
+]) {
+  for (const row of collection) {
+    row.contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+  }
+}
+legalRawTcgV3.resolution.contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+legalRawTcgV3.output.contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+delete legalRawTcgV3.output.structured_output.observed_composition_grammar;
+delete legalRawTcgV3.output.structured_output.tcg_field_source_authority_receipt;
+delete legalRawTcgV3.output.structured_output.tcg_grammar_context_claim_receipt;
+assert.equal(
+  readDurableProjectionReceipt(legalRawTcgV3).bridge_version,
+  CSM_FORWARD_READER_BRIDGE_VERSION,
+  "raw TCG remains a legal v3 grammar without v4-only authority"
+);
 
 const v03Downgrade = structuredClone(standardRows);
 v03Downgrade.output.contract_version = "csm-stage-shadow-v2";
@@ -654,6 +947,43 @@ assert.equal(
   "USED_WITH_FIELD_EVIDENCE"
 );
 assert.equal(verifyReplay(futureRows, futureComposed.title).ok, true);
+
+// ABSTAIN does not steal authority from an independently valid verified-
+// original transition. The claim binds the observed Set/Card Number while the
+// existing v3 validator remains solely responsible for the resolved identity.
+const futureV4WebReceipt = futureRows.output.structured_output
+  .founder_beta_web_receipt;
+const futureV4SourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: [{ field: "card_number", source_ids: ["original_image_1"] }],
+  fields: futureObserved,
+  originalImageCount: 1,
+  semanticStateSha256: futureV4WebReceipt.semantic_state_sha256,
+  founderBetaWebReceipt: futureV4WebReceipt,
+  sourceExecution: tcgSourceExecution
+});
+const futureV4ClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: futureObserved,
+  fieldSourceAuthorityReceipt: futureV4SourceReceipt
+});
+assert.equal(futureV4ClaimReceipt.status, "ABSTAIN");
+const futureV4Rows = structuredClone(futureRows);
+futureV4Rows.output.contract_version =
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION;
+futureV4Rows.resolution.contract_version =
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION;
+for (const row of [...futureV4Rows.evidence, ...futureV4Rows.candidates]) {
+  row.contract_version = CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION;
+}
+futureV4Rows.output.structured_output.observed_composition_grammar = "standard";
+futureV4Rows.output.structured_output.tcg_field_source_authority_receipt =
+  futureV4SourceReceipt;
+futureV4Rows.output.structured_output.tcg_grammar_context_claim_receipt =
+  futureV4ClaimReceipt;
+assert.equal(
+  readDurableProjectionReceipt(futureV4Rows)
+    .tcg_grammar_context_claim_receipt.status,
+  "ABSTAIN"
+);
 
 const sparseFutureEvidence = structuredClone(futureRows);
 sparseFutureEvidence.evidence = sparseFutureEvidence.evidence.filter(

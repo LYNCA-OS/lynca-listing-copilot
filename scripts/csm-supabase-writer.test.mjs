@@ -4,12 +4,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  CSM_STAGE_LEGACY_CONTRACT_VERSION,
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
   buildCsmStageRows, computeCsmPacketHashes
 } from "../lib/listing/thin/csm-persistence.mjs";
 import {
   writeCsmStageRows, csmPersistenceEnabled, isCsmPersistenceConfigured,
   appendCsmResolutionReview,
-  checkCsmPersistenceReadiness, writeCsmStagePacketAtomically,
+  checkCsmPersistenceReadiness, readCsmResolutionRecord,
+  writeCsmStagePacketAtomically,
   CSM_PRODUCT_PROJECTION_READINESS_RPC, CSM_PRODUCT_PROJECTION_VERSION,
   CSM_SUPABASE_REQUEST_TIMEOUT_MS,
   THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT,
@@ -17,9 +20,26 @@ import {
   THIN_EXTERNAL_IDENTITY_REGISTRY_PAYLOAD_CONTRACT,
   THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT,
   THIN_REGISTRY_PAYLOAD_CONTRACT,
-  THIN_REGISTRY_RELEASE_CONTRACT
+  THIN_REGISTRY_RELEASE_CONTRACT,
+  THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT,
+  THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT
 } from "../lib/listing/thin/csm-supabase-writer.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import {
+  CSM_OWNER_EXECUTION_RECEIPT_KEYS,
+  sealCsmOwnerExecutionReceipt
+} from "../lib/listing/thin/csm-owner-execution-receipt.mjs";
+import {
+  FUTURE_CANONICAL_REQUEST_BUILDER_VERSION,
+  FUTURE_CANONICAL_RESPONSE_PARSER_VERSION,
+  TCG_GRAMMAR_CONTEXT_CANONICAL_REQUEST_BUILDER_VERSION,
+  TCG_GRAMMAR_CONTEXT_CANONICAL_RESPONSE_PARSER_VERSION
+} from "../lib/listing/thin/csm-provider-adapter.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import {
   buildCapturedE1aeResolutionReview,
   buildCsmResolutionReview,
@@ -45,6 +65,130 @@ const rows = buildCsmStageRows({
   tenantId: "tenant-1", recognitionSessionId: "session-1",
   fields: FIELDS, composed, title: composed.title, createdAt: "2026-08-01T00:00:00Z"
 });
+const legacyComposed = composeFromCanonicalFields(FIELDS);
+const legacyRows = buildCsmStageRows({
+  tenantId: "tenant-1", recognitionSessionId: "session-legacy",
+  fields: FIELDS, composed: legacyComposed, title: legacyComposed.title,
+  contractVersion: CSM_STAGE_LEGACY_CONTRACT_VERSION,
+  createdAt: "2026-08-01T00:00:00Z"
+});
+
+const TCG_WEB_RECEIPT = {
+  schema_version: "founder-beta-web-receipt-v1",
+  provider_request_count: 1,
+  isolated_model_call_count: 0,
+  provider_model: "gpt-5.6-luna",
+  reasoning_effort: "low",
+  web_search_used: false,
+  web_search_call_count: 0,
+  queries: [],
+  urls: [],
+  field_evidence: [],
+  semantic_state_sha256: "d".repeat(64)
+};
+const TCG_OBSERVED_FIELDS = {
+  ...FIELDS,
+  grammar: "standard",
+  year: "",
+  manufacturer: "",
+  product: "",
+  set: "Trainer Gallery",
+  subjects: ["Eternatus"],
+  card_number: "TG22/TG30",
+  serial: "",
+  surface_color: "",
+  parallel_family: "",
+  components: [],
+  attributes: [],
+  team: "",
+  grade: ""
+};
+const TCG_RESOLVED_FIELDS = { ...TCG_OBSERVED_FIELDS, grammar: "tcg" };
+const tcgComposed = composeActive(TCG_RESOLVED_FIELDS);
+const tcgFieldSources = [
+  { field: "set", source_ids: ["original_image_1"] },
+  { field: "card_number", source_ids: ["original_image_1"] }
+];
+const tcgSourceExecution = {
+  operationPayloadSha256: "e".repeat(64),
+  originalImageFingerprints: [`sha256:${"1".repeat(64)}`],
+  recognitionImageFingerprints: [`sha256:${"1".repeat(64)}`],
+  providerClientRequestId: "writer-tcg-client-request",
+  providerResponseId: "writer-tcg-provider-response",
+  tenantId: "tenant-1",
+  recognitionSessionId: "session-1"
+};
+const tcgFieldSourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: tcgFieldSources,
+  fields: TCG_OBSERVED_FIELDS,
+  originalImageCount: 1,
+  semanticStateSha256: TCG_WEB_RECEIPT.semantic_state_sha256,
+  founderBetaWebReceipt: TCG_WEB_RECEIPT,
+  sourceExecution: tcgSourceExecution
+});
+const tcgGrammarContextClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: TCG_OBSERVED_FIELDS,
+  fieldSourceAuthorityReceipt: tcgFieldSourceReceipt
+});
+const tcgRows = buildCsmStageRows({
+  tenantId: "tenant-1",
+  recognitionSessionId: "session-1",
+  fields: TCG_RESOLVED_FIELDS,
+  observedFields: TCG_OBSERVED_FIELDS,
+  composed: tcgComposed,
+  title: tcgComposed.title,
+  founderBetaWebReceipt: TCG_WEB_RECEIPT,
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: {
+      predicate: "CURRENT_CARD_MEMBER_OF_SET",
+      value: "Trainer Gallery"
+    },
+    card_name: null
+  },
+  tcgFieldSourceAuthorityReceipt: tcgFieldSourceReceipt,
+  tcgGrammarContextClaimReceipt,
+  registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+  contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
+  createdAt: "2026-08-15T00:00:00.000Z"
+});
+const rawTcgSourceExecution = {
+  ...tcgSourceExecution,
+  recognitionSessionId: "session-raw-tcg"
+};
+const rawTcgFieldSourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: tcgFieldSources,
+  fields: TCG_RESOLVED_FIELDS,
+  originalImageCount: 1,
+  semanticStateSha256: TCG_WEB_RECEIPT.semantic_state_sha256,
+  founderBetaWebReceipt: TCG_WEB_RECEIPT,
+  sourceExecution: rawTcgSourceExecution
+});
+const rawTcgClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: TCG_RESOLVED_FIELDS,
+  fieldSourceAuthorityReceipt: rawTcgFieldSourceReceipt
+});
+const rawTcgRows = buildCsmStageRows({
+  tenantId: "tenant-1",
+  recognitionSessionId: "session-raw-tcg",
+  fields: TCG_RESOLVED_FIELDS,
+  observedFields: TCG_RESOLVED_FIELDS,
+  composed: tcgComposed,
+  title: tcgComposed.title,
+  founderBetaWebReceipt: TCG_WEB_RECEIPT,
+  setCardNameRelationReceipt: {
+    schema_version: "set-card-name-relations-v1",
+    set: {
+      predicate: "CURRENT_CARD_MEMBER_OF_SET",
+      value: "Trainer Gallery"
+    },
+    card_name: null
+  },
+  tcgFieldSourceAuthorityReceipt: rawTcgFieldSourceReceipt,
+  tcgGrammarContextClaimReceipt: rawTcgClaimReceipt,
+  contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
+  createdAt: "2026-08-15T00:00:00.000Z"
+});
 
 function sessionPatchFor(stageRows) {
   return {
@@ -58,6 +202,48 @@ function sessionPatchFor(stageRows) {
     csm_resolution_stage_status: "COMPLETE",
     csm_composition_stage_status: "COMPLETE",
     ...stageRows.session_hashes
+  };
+}
+
+function sessionPatchForV4(stageRows) {
+  const sourceReceipt = stageRows.output.structured_output
+    .tcg_field_source_authority_receipt;
+  const owner = Object.fromEntries(
+    CSM_OWNER_EXECUTION_RECEIPT_KEYS.map((key) => [key, null])
+  );
+  Object.assign(owner, {
+    request_builder_version:
+      TCG_GRAMMAR_CONTEXT_CANONICAL_REQUEST_BUILDER_VERSION,
+    response_parser_version:
+      TCG_GRAMMAR_CONTEXT_CANONICAL_RESPONSE_PARSER_VERSION,
+    provider_client_request_id: tcgSourceExecution.providerClientRequestId,
+    provider_response_id: tcgSourceExecution.providerResponseId,
+    operation_payload_sha256: sourceReceipt.operation_payload_sha256,
+    resolver: stageRows.resolution.resolver_version,
+    composer: stageRows.output.composer_version,
+    marketplace_profile: stageRows.output.marketplace_profile_version
+  });
+  return {
+    ...sessionPatchFor(stageRows),
+    recognition_pipeline_fingerprint: "b".repeat(64),
+    csm_owner_versions: sealCsmOwnerExecutionReceipt(owner)
+  };
+}
+
+function sessionPatchForV3Owner(stageRows) {
+  const owner = Object.fromEntries(
+    CSM_OWNER_EXECUTION_RECEIPT_KEYS.map((key) => [key, null])
+  );
+  Object.assign(owner, {
+    request_builder_version: FUTURE_CANONICAL_REQUEST_BUILDER_VERSION,
+    response_parser_version: FUTURE_CANONICAL_RESPONSE_PARSER_VERSION,
+    resolver: stageRows.resolution.resolver_version,
+    composer: stageRows.output.composer_version,
+    marketplace_profile: stageRows.output.marketplace_profile_version
+  });
+  return {
+    ...sessionPatchFor(stageRows),
+    csm_owner_versions: sealCsmOwnerExecutionReceipt(owner)
   };
 }
 
@@ -78,8 +264,13 @@ const EXTERNAL_FORWARD_REGISTRY_RELEASE = {
   ...THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT,
   registry_payload: THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_PAYLOAD_CONTRACT
 };
+const TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_ROW = {
+  ...THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT,
+  registry_payload: THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT
+};
 const REGISTRY_RELEASES = [
-  REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE
+  REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_ROW
 ];
 const PRODUCT_PROJECTION_READY = {
   ok: true,
@@ -167,6 +358,25 @@ function jsonResponse(value, status = 200) {
     status,
     headers: { "content-type": "application/json" }
   });
+}
+
+function atomicSuccessFor(stageRows) {
+  return {
+    ok: true,
+    code: "inserted",
+    status_code: 200,
+    replayed: false,
+    atomic: true,
+    session_saved: true,
+    written: {
+      csm_evidence_observations: stageRows.evidence.length,
+      csm_bracket_candidates: stageRows.candidates.length,
+      csm_candidate_evidence_links: stageRows.links.length,
+      csm_identity_resolutions: 1,
+      csm_resolved_brackets: stageRows.resolved.length,
+      csm_marketplace_outputs: 1
+    }
+  };
 }
 
 // Registry and post-registry probes share a bounded request contract. A body that
@@ -295,9 +505,10 @@ function fakeStore({ failOnceOn = "" } = {}) {
         assert.equal(parsed.searchParams.get("id"), `in.(${[
           THIN_REGISTRY_RELEASE_CONTRACT.id,
           THIN_EXTERNAL_IDENTITY_REGISTRY_RELEASE_CONTRACT.id,
-          THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT.id
+          THIN_EXTERNAL_IDENTITY_FORWARD_REGISTRY_RELEASE_CONTRACT.id,
+          THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_CONTRACT.id
         ].join(",")})`);
-        assert.equal(parsed.searchParams.get("limit"), "3");
+        assert.equal(parsed.searchParams.get("limit"), "4");
       }
       if (String(url).includes("/csm_resolution_reviews?")) return jsonResponse([]);
       if (String(url).endsWith(`/rpc/${CSM_PRODUCT_PROJECTION_READINESS_RPC}`)) {
@@ -332,16 +543,29 @@ function fakeStore({ failOnceOn = "" } = {}) {
   assert.equal(missing.reason, "registry_release_missing");
   const forwardMissing = await checkCsmPersistenceReadiness({
     env: ENV,
-    fetchImpl: async () => jsonResponse([REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE])
+    fetchImpl: async () => jsonResponse([
+      REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE,
+      TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_ROW
+    ])
   });
   assert.equal(forwardMissing.ready, false);
   assert.equal(forwardMissing.reason, "registry_release_missing",
     "readiness must require the additive v3 forward-reader Registry row");
+  const tcgGrammarContextMissing = await checkCsmPersistenceReadiness({
+    env: ENV,
+    fetchImpl: async () => jsonResponse([
+      REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE
+    ])
+  });
+  assert.equal(tcgGrammarContextMissing.ready, false);
+  assert.equal(tcgGrammarContextMissing.reason, "registry_release_missing",
+    "readiness must require the additive TCG Grammar context Registry row");
   const mismatched = await checkCsmPersistenceReadiness({
     env: ENV,
     fetchImpl: async () => jsonResponse([{
       ...REGISTRY_RELEASE, content_sha256: "0".repeat(64)
-    }, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE])
+    }, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE,
+    TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_ROW])
   });
   assert.equal(mismatched.ready, false);
   assert.equal(mismatched.reason, "registry_release_contract_mismatch");
@@ -355,11 +579,27 @@ function fakeStore({ failOnceOn = "" } = {}) {
       fetchImpl: async () => jsonResponse([{
         ...REGISTRY_RELEASE,
         registry_payload: registryPayload
-      }, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE])
+      }, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE,
+      TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_ROW])
     });
     assert.equal(payloadMismatch.ready, false);
     assert.equal(payloadMismatch.reason, "registry_release_contract_mismatch");
   }
+  const tcgPayloadMismatch = await checkCsmPersistenceReadiness({
+    env: ENV,
+    fetchImpl: async () => jsonResponse([
+      REGISTRY_RELEASE, EXTERNAL_REGISTRY_RELEASE, EXTERNAL_FORWARD_REGISTRY_RELEASE,
+      {
+        ...TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE_ROW,
+        registry_payload: {
+          ...THIN_TCG_GRAMMAR_CONTEXT_REGISTRY_PAYLOAD_CONTRACT,
+          provider_calls_added: 1
+        }
+      }
+    ])
+  });
+  assert.equal(tcgPayloadMismatch.ready, false);
+  assert.equal(tcgPayloadMismatch.reason, "registry_release_contract_mismatch");
   let registryAttempts = 0;
   const recovered = await checkCsmPersistenceReadiness({
     env: ENV,
@@ -404,8 +644,9 @@ function fakeStore({ failOnceOn = "" } = {}) {
 // are accepted only from the transaction-backed response contract.
 {
   let requestBody = null;
+  const legacySessionPatch = sessionPatchFor(rows);
   const atomic = await writeCsmStagePacketAtomically(rows, {
-    sessionPatch: sessionPatchFor(rows),
+    sessionPatch: legacySessionPatch,
     env: ENV,
     fetchImpl: async (url, init) => {
       assert.match(String(url), /\/rpc\/persist_csm_stage_packet_v1$/);
@@ -434,7 +675,10 @@ function fakeStore({ failOnceOn = "" } = {}) {
   assert.equal(atomic.written.csm_evidence_observations, rows.evidence.length);
   assert.equal(requestBody.p_tenant_id, "tenant-1");
   assert.equal(requestBody.p_recognition_session_id, "session-1");
-  assert.deepEqual(requestBody.p_packet.session_hashes, rows.session_hashes);
+  assert.deepEqual(requestBody.p_packet, rows,
+    "v3 packet bytes must cross the Supabase transport unchanged");
+  assert.deepEqual(requestBody.p_session_patch, legacySessionPatch,
+    "v3 session patch bytes must cross the Supabase transport unchanged");
 
   let transientCalls = 0;
   const recovered = await writeCsmStagePacketAtomically(rows, {
@@ -480,6 +724,481 @@ function fakeStore({ failOnceOn = "" } = {}) {
   });
   assert.equal(invalidCounts.ok, false);
   assert.equal(invalidCounts.code, "csm_atomic_rpc_invalid_counts");
+}
+
+// Stage-v4 is a separate exact transport contract. Its private receipts stay
+// in the packet, while the session/owner tuple must identify the same writer;
+// a v3 patch cannot silently label a committed v4 packet.
+{
+  const validPatch = sessionPatchForV4(tcgRows);
+  let calls = 0;
+  const inserted = await writeCsmStagePacketAtomically(tcgRows, {
+    sessionPatch: validPatch,
+    env: ENV,
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(init.body);
+      assert.equal(body.p_session_patch.csm_contract_version,
+        CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION);
+      assert.deepEqual(
+        body.p_packet.output.structured_output.tcg_field_source_authority_receipt,
+        tcgFieldSourceReceipt
+      );
+      assert.deepEqual(
+        body.p_packet.output.structured_output.tcg_grammar_context_claim_receipt,
+        tcgGrammarContextClaimReceipt
+      );
+      return jsonResponse(atomicSuccessFor(tcgRows));
+    }
+  });
+  assert.equal(inserted.ok, true);
+  assert.equal(calls, 1);
+
+  assert.equal(rawTcgClaimReceipt.status, "NOT_REQUIRED");
+  const notRequired = await writeCsmStagePacketAtomically(rawTcgRows, {
+    sessionPatch: sessionPatchForV4(rawTcgRows),
+    env: ENV,
+    fetchImpl: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      assert.equal(body.p_packet.output.structured_output
+        .tcg_grammar_context_claim_receipt.status, "NOT_REQUIRED");
+      return jsonResponse(atomicSuccessFor(rawTcgRows));
+    }
+  });
+  assert.equal(notRequired.ok, true,
+    "NOT_REQUIRED keeps the ordinary v4 resolution tuple executable");
+
+  const downgradedPatch = {
+    ...validPatch,
+    csm_contract_version: "csm-stage-shadow-v3",
+    csm_registry_release_id: THIN_REGISTRY_RELEASE_CONTRACT.id,
+    csm_grammar: "NON_TCG"
+  };
+  const downgraded = await writeCsmStagePacketAtomically(tcgRows, {
+    sessionPatch: downgradedPatch,
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(atomicSuccessFor(tcgRows));
+    }
+  });
+  assert.equal(downgraded.ok, false);
+  assert.equal(downgraded.code, "invalid_csm_session_patch");
+  assert.equal(calls, 1, "a downgraded v4 patch must fail before the RPC");
+
+  const {
+    owner_execution_receipt_version: _ownerVersion,
+    owner_execution_receipt_sha256: _ownerSha256,
+    ...ownerPayload
+  } = validPatch.csm_owner_versions;
+  const staleOwnerPatch = {
+    ...validPatch,
+    csm_owner_versions: sealCsmOwnerExecutionReceipt({
+      ...ownerPayload,
+      response_parser_version: "canonical-output-v5-web-receipt-outcome"
+    })
+  };
+  const staleOwner = await writeCsmStagePacketAtomically(tcgRows, {
+    sessionPatch: staleOwnerPatch,
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(atomicSuccessFor(tcgRows));
+    }
+  });
+  assert.equal(staleOwner.ok, false);
+  assert.equal(staleOwner.code, "invalid_csm_session_patch");
+  assert.equal(calls, 1, "a v3 parser owner receipt must not label v4 rows");
+
+  const v5OwnerPatch = {
+    ...validPatch,
+    csm_owner_versions: sessionPatchForV3Owner(tcgRows).csm_owner_versions
+  };
+  const v5OwnerOnV4 = await writeCsmStagePacketAtomically(tcgRows, {
+    sessionPatch: v5OwnerPatch,
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(atomicSuccessFor(tcgRows));
+    }
+  });
+  assert.equal(v5OwnerOnV4.ok, false);
+  assert.equal(v5OwnerOnV4.code, "invalid_csm_session_patch");
+  assert.equal(calls, 1, "an exact v5/request-v2 owner cannot carry v4 authority");
+
+  const v5OwnerOnLegacy = await writeCsmStagePacketAtomically(legacyRows, {
+    sessionPatch: {
+      ...sessionPatchFor(legacyRows),
+      csm_owner_versions: sessionPatchForV3Owner(legacyRows).csm_owner_versions
+    },
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(atomicSuccessFor(legacyRows));
+    }
+  });
+  assert.equal(v5OwnerOnLegacy.ok, false);
+  assert.equal(v5OwnerOnLegacy.code, "invalid_csm_session_patch");
+  assert.equal(calls, 1, "a v5/request-v2 owner must remain exact stage-v3");
+
+  const v6OwnerOnV3 = await writeCsmStagePacketAtomically(rows, {
+    sessionPatch: {
+      ...sessionPatchFor(rows),
+      csm_owner_versions: validPatch.csm_owner_versions
+    },
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(atomicSuccessFor(rows));
+    }
+  });
+  assert.equal(v6OwnerOnV3.ok, false);
+  assert.equal(v6OwnerOnV3.code, "invalid_csm_session_patch");
+  assert.equal(calls, 1, "a v6/request-v3 owner must remain stage-v4");
+
+  const receiptMissing = structuredClone(tcgRows);
+  delete receiptMissing.output.structured_output.tcg_grammar_context_claim_receipt;
+  const missing = await writeCsmStagePacketAtomically(receiptMissing, {
+    sessionPatch: validPatch,
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(atomicSuccessFor(receiptMissing));
+    }
+  });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.code, "tcg_grammar_context_claim_receipt_missing");
+  assert.equal(calls, 1);
+
+  const forgedV3 = structuredClone(rows);
+  forgedV3.output.structured_output.tcg_field_source_authority_receipt =
+    tcgFieldSourceReceipt;
+  forgedV3.output.structured_output.tcg_grammar_context_claim_receipt =
+    tcgGrammarContextClaimReceipt;
+  const forged = await writeCsmStagePacketAtomically(forgedV3, {
+    sessionPatch: sessionPatchFor(forgedV3),
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse(atomicSuccessFor(forgedV3));
+    }
+  });
+  assert.equal(forged.ok, false);
+  assert.equal(forged.code, "tcg_grammar_context_receipt_outside_contract");
+  assert.equal(calls, 1);
+
+  const nonAtomic = await writeCsmStageRows(tcgRows, {
+    env: ENV,
+    fetchImpl: async () => {
+      calls += 1;
+      return jsonResponse([]);
+    }
+  });
+  assert.equal(nonAtomic.ok, false);
+  assert.equal(nonAtomic.code, "csm_v4_requires_atomic_session_patch");
+  assert.equal(calls, 1, "v4 cannot enter the hash-only legacy transport");
+}
+
+// Durable readback must reconstruct the complete v4 packet before exposing a
+// canonical payload. Session downgrade, owner downgrade, or a dropped receipt
+// makes the read fail closed instead of returning a v3-looking trace.
+{
+  const stageRowsForExecution = (sourceExecution) => {
+    const sourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+      fieldSources: tcgFieldSources,
+      fields: TCG_OBSERVED_FIELDS,
+      originalImageCount: 1,
+      semanticStateSha256: TCG_WEB_RECEIPT.semantic_state_sha256,
+      founderBetaWebReceipt: TCG_WEB_RECEIPT,
+      sourceExecution
+    });
+    const claimReceipt = buildTcgGrammarContextClaimReceipt({
+      fields: TCG_OBSERVED_FIELDS,
+      fieldSourceAuthorityReceipt: sourceReceipt
+    });
+    return buildCsmStageRows({
+      tenantId: "tenant-1",
+      recognitionSessionId: "session-1",
+      fields: TCG_RESOLVED_FIELDS,
+      observedFields: TCG_OBSERVED_FIELDS,
+      composed: tcgComposed,
+      title: tcgComposed.title,
+      founderBetaWebReceipt: TCG_WEB_RECEIPT,
+      setCardNameRelationReceipt: {
+        schema_version: "set-card-name-relations-v1",
+        set: {
+          predicate: "CURRENT_CARD_MEMBER_OF_SET",
+          value: "Trainer Gallery"
+        },
+        card_name: null
+      },
+      tcgFieldSourceAuthorityReceipt: sourceReceipt,
+      tcgGrammarContextClaimReceipt: claimReceipt,
+      registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+      contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
+      createdAt: "2026-08-15T00:00:00.000Z"
+    });
+  };
+  const donorResponseRows = stageRowsForExecution({
+    ...tcgSourceExecution,
+    providerResponseId: "writer-tcg-provider-response-donor"
+  });
+  const derivedRecognitionRows = stageRowsForExecution({
+    ...tcgSourceExecution,
+    recognitionImageFingerprints: [`sha256:${"3".repeat(64)}`]
+  });
+  const readV4 = async ({
+    stageRows = tcgRows,
+    sessionPatch = null,
+    mutateSession = (value) => value,
+    mutateOutput = (value) => value,
+    mutateResolution = (value) => value
+  } = {}) => {
+    const patch = sessionPatch || sessionPatchForV4(stageRows);
+    const session = mutateSession({
+      id: stageRows.resolution.recognition_session_id,
+      tenant_id: stageRows.resolution.tenant_id,
+      asset_id: "asset-tcg-v4",
+      created_at: "2026-08-15T00:00:00.000Z",
+      identity_snapshot: {
+        expected_original_count: 1,
+        image_references: [{
+          image_id: "original-1",
+          image_role: "front_original",
+          content_sha256: "1".repeat(64),
+          derived: false
+        }]
+      },
+      request_summary: {
+        recognition_input: [{
+          image_role: "front_original",
+          read: "original"
+        }]
+      },
+      ...patch
+    });
+    const output = mutateOutput(structuredClone(stageRows.output));
+    const resolution = mutateResolution(structuredClone(stageRows.resolution));
+    return readCsmResolutionRecord({
+      tenantId: "tenant-1",
+      assetId: "asset-tcg-v4",
+      env: ENV,
+      fetchImpl: async (rawUrl) => {
+        const table = new URL(String(rawUrl)).pathname.split("/").pop();
+        if (table === "v4_recognition_sessions") return jsonResponse([session]);
+        if (table === "csm_marketplace_outputs") return jsonResponse([output]);
+        if (table === "csm_identity_resolutions") {
+          return jsonResponse([resolution]);
+        }
+        if (table === "csm_resolved_brackets") return jsonResponse(stageRows.resolved);
+        if (table === "csm_evidence_observations") return jsonResponse(stageRows.evidence);
+        if (table === "csm_bracket_candidates") return jsonResponse(stageRows.candidates);
+        if (table === "csm_candidate_evidence_links") return jsonResponse(stageRows.links);
+        return jsonResponse({ message: `unexpected ${table}` }, 404);
+      }
+    });
+  };
+
+  const record = await readV4();
+  assert.deepEqual(
+    record.canonical_payload.tcg_field_source_authority_receipt,
+    tcgFieldSourceReceipt
+  );
+  assert.deepEqual(
+    record.canonical_payload.tcg_grammar_context_claim_receipt,
+    tcgGrammarContextClaimReceipt
+  );
+  assert.equal(record.replay_rows.output.contract_version,
+    CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION);
+  assert.equal(record.owner_execution_receipt.version,
+    "csm-owner-execution-receipt-v1");
+  assert.equal(record.tcg_grammar_context_source_execution_verified, true);
+
+  const derivedRecord = await readV4({
+    stageRows: derivedRecognitionRows,
+    mutateSession: (value) => ({
+      ...value,
+      identity_snapshot: {
+        expected_original_count: 1,
+        image_references: [
+          ...value.identity_snapshot.image_references,
+          {
+            image_id: "derived-1",
+            image_role: "readability_derived",
+            content_sha256: "3".repeat(64),
+            derived: true,
+            source_image_id: "original-1"
+          }
+        ]
+      },
+      request_summary: {
+        recognition_input: [{
+          image_role: "front_original",
+          read: "readability_derived"
+        }]
+      }
+    })
+  });
+  assert.equal(derivedRecord.tcg_grammar_context_source_execution_verified, true);
+
+  await assert.rejects(
+    readV4({ stageRows: donorResponseRows }),
+    /csm_tcg_grammar_context_readback_invalid/,
+    "same-value rows from another provider response cannot reuse this owner"
+  );
+
+  await assert.rejects(
+    readV4({
+      stageRows: legacyRows,
+      sessionPatch: sessionPatchForV3Owner(legacyRows)
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+
+  await assert.rejects(
+    readV4({
+      mutateSession: (value) => ({
+        ...value,
+        csm_contract_version: "csm-stage-shadow-v3"
+      })
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+  await assert.rejects(
+    readV4({
+      mutateSession: (value) => ({
+        ...value,
+        identity_snapshot: {
+          ...value.identity_snapshot,
+          image_references: value.identity_snapshot.image_references.map(
+            (reference) => ({ ...reference, content_sha256: "2".repeat(64) })
+          )
+        }
+      })
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+  await assert.rejects(
+    readV4({
+      mutateSession: (value) => ({
+        ...value,
+        request_summary: {
+          recognition_input: [{
+            image_role: "front_original",
+            read: "readability_derived"
+          }]
+        }
+      })
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+  await assert.rejects(
+    readV4({
+      mutateSession: (value) => {
+        const {
+          owner_execution_receipt_version: _version,
+          owner_execution_receipt_sha256: _sha256,
+          ...payload
+        } = value.csm_owner_versions;
+        return {
+          ...value,
+          csm_owner_versions: sealCsmOwnerExecutionReceipt({
+            ...payload,
+            provider_response_id: "writer-tcg-provider-response-other"
+          })
+        };
+      }
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+  for (const [label, ownerMutation] of [
+    ["operation payload", { operation_payload_sha256: "f".repeat(64) }],
+    ["provider client request", {
+      provider_client_request_id: "writer-tcg-client-request-other"
+    }]
+  ]) {
+    await assert.rejects(
+      readV4({
+        mutateSession: (value) => {
+          const {
+            owner_execution_receipt_version: _version,
+            owner_execution_receipt_sha256: _sha256,
+            ...payload
+          } = value.csm_owner_versions;
+          return {
+            ...value,
+            csm_owner_versions: sealCsmOwnerExecutionReceipt({
+              ...payload,
+              ...ownerMutation
+            })
+          };
+        }
+      }),
+      /csm_tcg_grammar_context_readback_invalid/,
+      `${label} must remain bound to the source authority receipt`
+    );
+  }
+  await assert.rejects(
+    readV4({
+      mutateSession: (value) => ({ ...value, id: "session-cross-splice" })
+    }),
+    /csm_tcg_grammar_context_readback_invalid/,
+    "a sealed authority bundle cannot move to another recognition session"
+  );
+  await assert.rejects(
+    readV4({
+      mutateSession: (value) => ({
+        ...value,
+        csm_contract_version: "csm-stage-shadow-v3"
+      }),
+      mutateOutput: (value) => ({
+        ...value,
+        contract_version: "csm-stage-shadow-v3"
+      }),
+      mutateResolution: (value) => ({
+        ...value,
+        contract_version: "csm-stage-shadow-v3"
+      })
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+  await assert.rejects(
+    readV4({
+      mutateOutput: (value) => ({
+        ...value,
+        contract_version: "csm-stage-shadow-v3"
+      })
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+  await assert.rejects(
+    readV4({
+      mutateSession: (value) => {
+        const {
+          owner_execution_receipt_version: _version,
+          owner_execution_receipt_sha256: _sha256,
+          ...payload
+        } = value.csm_owner_versions;
+        return {
+          ...value,
+          csm_owner_versions: sealCsmOwnerExecutionReceipt({
+            ...payload,
+            response_parser_version: "canonical-output-v5-web-receipt-outcome"
+          })
+        };
+      }
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
+  await assert.rejects(
+    readV4({
+      mutateOutput: (value) => {
+        delete value.structured_output.tcg_grammar_context_claim_receipt;
+        return value;
+      }
+    }),
+    /csm_tcg_grammar_context_readback_invalid/
+  );
 }
 
 // The paid result's atomic persistence receipt is bounded through response

@@ -26,6 +26,10 @@ import {
 import {
   CSM_PROJECTION_ACTIVATION
 } from "../lib/listing/thin/csm-projection-activation.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 
 const LOOKUP_HASH = "0".repeat(64);
 const activeExternalIdentityRelease = externalIdentityReleaseContractForRegistryRelease(
@@ -157,6 +161,12 @@ export async function checkCsmThinProductionReadiness({
     durable_provider_operation_key_recovery_ready: true,
     durable_provider_pacer_ready: true,
     external_identity: activeExternalIdentityRelease,
+    tcg_grammar_context: Object.freeze({
+      registry_release_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+      registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.content_sha256,
+      resolution_contract_sha256:
+        TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+    }),
     retired_capabilities_disabled: true
   });
 }

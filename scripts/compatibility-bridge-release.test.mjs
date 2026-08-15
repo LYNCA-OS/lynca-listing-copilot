@@ -244,6 +244,7 @@ import {
   COMPATIBILITY_BRIDGE_V3_WRITER_PROJECTION_MODE,
   COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION,
   COMPATIBILITY_BRIDGE_V4_WRITER_PROJECTION_MODE,
+  COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
   COMPATIBILITY_BRIDGE_V2_PARENT_SHA,
   COMPATIBILITY_BRIDGE_V2_PARENT_TREE_SHA,
   COMPATIBILITY_BRIDGE_V2_REPAIR_CHANGED_PATHS,
@@ -337,6 +338,10 @@ import {
   EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_RUNTIME_PROOF_V1,
   EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V38,
   EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V38_SHA256,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41_SHA256,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40_SHA256,
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVATION_SHA256,
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVE_HEALTH_SHA256,
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
@@ -376,6 +381,10 @@ import {
   EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_TREE_SHA,
   EXTERNAL_IDENTITY_V3_ACTIVATION_RUNTIME_CONTRACT_SHA256,
   EXTERNAL_IDENTITY_V3_ACTIVATION_STATE,
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43,
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256,
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42,
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_ACTIVATION_SHA256,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_ALTERNATE_PARENT_SHA,
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_ALTERNATE_PARENT_TREE_SHA,
@@ -395,6 +404,48 @@ import {
   EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_RUNTIME_CONTRACT_SHA256,
   LINEAR_ORDINARY_LINEAGE_MARKER,
   ORDINARY_RELEASE_CLASS,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_CONTENT_MANIFEST_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_FULL_INDEX_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATCH_ID,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+  TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
   activationAIdentityAuthorityFailsoftRuntimeContractProof,
   activationAFieldSourceReferenceRepairRuntimeContractProof,
   activationAUsedWebEvidenceBudgetRuntimeContractProof,
@@ -420,6 +471,11 @@ import {
   compatibilityBridgeV2RuntimeContractProof,
   compatibilityBridgeRuntimeContractProof,
   compatibilityBridgeWriterProjectionMode,
+  materializeTcgGrammarContextReaderBridgeRuntimeContractForTest,
+  tcgGrammarContextActivationRuntimeContractProof,
+  tcgGrammarContextActivationTopologyProof,
+  tcgGrammarContextReaderBridgeRuntimeContractProof,
+  tcgGrammarContextReaderBridgeTopologyProof,
   externalIdentityV3BridgeMarkerRepairRuntimeContractProof,
   externalIdentityV3BridgeSourceV4RepairRuntimeContractProof,
   externalIdentityV3BridgeSourceV4MarkerRepairRuntimeContractProof,
@@ -431,6 +487,9 @@ import {
   sealedV3OverlayForwardReadContractProof,
   verifyReleaseRollbackLineage,
   verifyOrdinaryRollbackLineage,
+  verifyTcgGrammarContextReaderBridgeCommitMessageForTest,
+  verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest,
+  verifyTcgGrammarContextOrdinaryParentBoundaryForTest,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
 import {
@@ -454,6 +513,7 @@ import {
 import {
   CSM_FUTURE_PENDING_CHECKPOINT_READER,
   CSM_PROJECTION_ACTIVATION,
+  CSM_TCG_GRAMMAR_CONTEXT_PENDING_CHECKPOINT_READER,
   CSM_WRITER_PROJECTION_CONTRACTS
 } from "../lib/listing/thin/csm-projection-activation.mjs";
 import {
@@ -495,7 +555,7 @@ const activationACanonicalSemProjectionRepairGitSha = "7".repeat(40);
 const activationAWebReceiptOutcomeRepairGitSha = "9".repeat(40);
 const activationACurrentCopyWebTraceRepairGitSha = "5".repeat(40);
 const activationAResolverRelationRebaseGitSha = "a".repeat(40);
-const nextOrdinaryGitSha = "d".repeat(40);
+let nextOrdinaryGitSha = null;
 const treeSha = "b".repeat(40);
 const bridgeV2GitSha = "e".repeat(40);
 const bridgeV2TreeSha = "f".repeat(40);
@@ -526,10 +586,15 @@ const externalIdentityV3BridgeWriterOldReaderNewTreeSha =
   EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_TREE_SHA;
 const externalIdentityV3CheckpointReaderBridgeGitSha = "d".repeat(40);
 const externalIdentityV3CheckpointReaderBridgeTreeSha = "e".repeat(40);
-const nextOrdinaryParentSha = activationA3GitSha;
+let nextOrdinaryParentSha = null;
 const releaseSource = await readFile(
   new URL("./compatibility-bridge-release.mjs", import.meta.url),
   "utf8"
+);
+assert.equal(
+  (releaseSource.match(/execFileSync\("git"/g) || []).length,
+  (releaseSource.match(/execFileSync\("git", \[\s*"--no-replace-objects"/g) || []).length,
+  "every production Git subprocess must ignore refs/replace"
 );
 assert.match(releaseSource,
   /COMPATIBILITY_BRIDGE_V2_WRITER_RECEIPT_REPAIR_DESCRIPTOR_ID/,
@@ -550,8 +615,26 @@ assert.match(releaseSource,
   /selection\.bridge_descriptor_id\s*=== EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_DESCRIPTOR_ID\s*\? externalIdentityV3BridgeWriterOldReaderNewRuntimeContractProof/,
   "the old-writer/new-reader bridge must dispatch its exact live health proof");
 assert.match(releaseSource,
-  /selection\.bridge_descriptor_id\s*=== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID\s*\? externalIdentityV3CheckpointReaderBridgeRuntimeContractProof/,
-  "the checkpoint bridge must dispatch its exact sibling-v4 live health proof");
+  /selection\.bridge_descriptor_id\s*=== EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID\s*\? historicalProjectionHealthProof/,
+  "historical v40 health must bind its frozen projection instead of live aliases");
+assert.match(releaseSource,
+  /selection\.bridge_descriptor_id\s*=== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID\s*\? tcgGrammarContextReaderBridgeRuntimeContractProof/,
+  "B must expose a dedicated fail-closed compatibility health branch");
+assert.match(releaseSource,
+  /TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID\s*\? tcgGrammarContextReaderBridgeRuntimeContractProof\(\{\s*health,\s*gitSha: selection\.git_sha/,
+  "B health must bind the exact deployment SHA instead of ignoring health");
+assert.match(releaseSource,
+  /requireTrackedWorkspaceAtCandidate\(\s*expectedSha,\s*"tcg_grammar_context_reader_bridge_tracked_workspace_dirty"/,
+  "B selection must reject tracked workspace substitutions");
+assert.match(releaseSource,
+  /committedRuntimeArtifactManifest\(\s*expectedSha,\s*TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS/,
+  "B selection must freeze core bytes from the candidate commit");
+assert.match(releaseSource,
+  /committedRuntimeDiffIdentity\(\s*TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,\s*expectedSha/,
+  "B selection must bind the exact 20298-to-candidate full-index patch");
+assert.match(releaseSource,
+  /tcgGrammarContextReaderBridgeRuntimeContractProof\(\{\s*candidateGitSha: expectedSha,\s*runtimeContentManifest,\s*runtimeDiffIdentity/,
+  "B selection must pass its candidate SHA with committed runtime evidence");
 assert.match(releaseSource,
   /requireTrackedWorkspaceAtCandidate\(\s*expectedSha,\s*"external_identity_v3_checkpoint_reader_bridge_tracked_workspace_dirty"/,
   "the checkpoint bridge must reject dirty candidate workspaces before runtime proof");
@@ -571,8 +654,11 @@ assert.match(releaseSource,
   /frozenWorkspaceRuntimeDiffIdentity\(\s*EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA,\s*expectedSha/,
   "the one-ID activation must bind the exact 5c835-to-candidate binary diff");
 assert.match(releaseSource,
-  /mode === "verify-health"[\s\S]*?selection\.schema_version === "production-release-selection-v42"[\s\S]*?externalIdentityV3ActivationRuntimeContractProof/,
-  "the one-ID activation must expose its dedicated fail-closed health proof");
+  /mode === "verify-health"[\s\S]*?selection\.schema_version === "production-release-selection-v42"[\s\S]*?historicalProjectionHealthProof/,
+  "historical v42 health must bind its frozen projection instead of live aliases");
+assert.match(releaseSource,
+  /mode === "verify-health"[\s\S]*?selection\.schema_version === "production-release-selection-v46"[\s\S]*?tcgGrammarContextActivationRuntimeContractProof/,
+  "A must expose a dedicated fail-closed ordinary health branch");
 assert.equal(
   COMPATIBILITY_BRIDGE_PARENT_SHA,
   "ced1a23741e179618e4e7b5eca055cb10ecac8cb"
@@ -1602,13 +1688,68 @@ const externalIdentityV3CheckpointReaderBridgeCommitMessage = [
   `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${
     externalIdentityV3CheckpointReaderBridgeTreeSha}`
 ].join("\n");
-const ordinary = verifyCompatibilityBridgeSelection({
-  releaseClass: ORDINARY_RELEASE_CLASS,
-  gitSha,
-  headSha: gitSha,
-  parentShas: [ACTIVE_V2_TRANSITION_PARENT_SHA],
-  commitMessage: "ordinary release"
-});
+const activeV2TransitionParentCommitObject = Buffer.from(
+  "dHJlZSA1NjhhM2U2ZDAyZjY4YzA4MTBmYjgzMTdlYTk2MTU2NzBkZGNmMzg3CnBhcmVudCBjZWQxYTIzNzQxZTE3OTYxOGU0ZTdiNWVjYTA1NWNiMTBlY2FjOGNiCmF1dGhvciDmtL7lpKfppqggPG5vbGFuZXZlcnJldEBnbWFpbC5jb20+IDE3ODY0MTUxMjMgKzA4MDAKY29tbWl0dGVyIFBhaURheGluQXhpbiA8bm9sYW5ldmVycmV0QGdtYWlsLmNvbT4gMTc4NjQxNTMwOCArMDgwMAoKZml4KHJlbGVhc2UpOiBzZWFsIGJyaWRnZSB3cml0ZXIgam91cm5leSB0YWlsCgpCaW5kIE93bmVyIGZlZWRiYWNrLCBkeW5hbWljIHByb3ZpZGVyIGNvdW50cywgYW5kIGV4YWN0IGRlcGxveW1lbnQgaGVhbHRoIGJlZm9yZSB0aGUgbmV4dCBwcm90ZWN0ZWQgYnJpZGdlIHJ1bi4KCkxZTkNBLVJlbGVhc2UtQ2xhc3M6IGNvbXBhdGliaWxpdHktYnJpZGdlLXYxCgpMWU5DQS1Db21wYXRpYmlsaXR5LUJyaWRnZS1UcmVlOiA1NjhhM2U2ZDAyZjY4YzA4MTBmYjgzMTdlYTk2MTU2NzBkZGNmMzg3Cg==",
+  "base64"
+);
+assert.equal(sha256(activeV2TransitionParentCommitObject),
+  "86249a900699686057d6eb538bcd1f42ce24d78eb33938aaa30ffa8418ba30a9");
+const ordinaryObjectRoot = await mkdtemp(path.join(tmpdir(), "lynca-ordinary-object-"));
+let ordinary;
+try {
+  const ordinaryObjectRepo = path.join(ordinaryObjectRoot, "repo");
+  git(ordinaryObjectRoot, [
+    "clone", "--quiet", "--no-checkout", pathToFileURL(process.cwd()).href,
+    ordinaryObjectRepo
+  ]);
+  const restoredActiveV2TransitionParent = execFileSync("git", [
+    "hash-object", "-t", "commit", "-w", "--stdin"
+  ], {
+    cwd: ordinaryObjectRepo,
+    input: activeV2TransitionParentCommitObject,
+    encoding: "utf8"
+  }).trim();
+  assert.equal(restoredActiveV2TransitionParent, ACTIVE_V2_TRANSITION_PARENT_SHA);
+  const ordinaryTreeSha = execFileSync("git", ["mktree"], {
+    cwd: ordinaryObjectRepo,
+    input: "",
+    encoding: "utf8"
+  }).trim();
+  const ordinaryGitSha = execFileSync("git", [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit-tree",
+    ordinaryTreeSha,
+    "-p", ACTIVE_V2_TRANSITION_PARENT_SHA
+  ], {
+    cwd: ordinaryObjectRepo,
+    input: "real active-v2 ordinary child\n",
+    encoding: "utf8"
+  }).trim();
+  const previousOrdinaryAlternates = process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  try {
+    const ordinaryAlternateObjects = path.join(ordinaryObjectRepo, ".git", "objects");
+    process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = previousOrdinaryAlternates
+      ? `${ordinaryAlternateObjects}${path.delimiter}${previousOrdinaryAlternates}`
+      : ordinaryAlternateObjects;
+    ordinary = verifyCompatibilityBridgeSelection({
+      releaseClass: ORDINARY_RELEASE_CLASS,
+      gitSha: ordinaryGitSha,
+      headSha: ordinaryGitSha,
+      parentShas: [ACTIVE_V2_TRANSITION_PARENT_SHA],
+      commitMessage: "ordinary release"
+    });
+  } finally {
+    if (previousOrdinaryAlternates == null) {
+      delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+    } else {
+      process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = previousOrdinaryAlternates;
+    }
+  }
+} finally {
+  await rm(ordinaryObjectRoot, { recursive: true, force: true });
+}
 assert.equal(ordinary.release_class, ORDINARY_RELEASE_CLASS);
 assert.equal(ordinary.schema_version, "production-release-selection-v3");
 assert.equal(ordinary.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
@@ -2944,16 +3085,166 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
   ],
   changedPaths: [...ACTIVATION_A_IDENTITY_AUTHORITY_FAILSOFT_CHANGED_PATHS]
 }), (error) => error.code === "ordinary_release_parent_invalid");
-const nextOrdinary = verifyCompatibilityBridgeSelection({
-  releaseClass: ORDINARY_RELEASE_CLASS,
-  gitSha: nextOrdinaryGitSha,
-  headSha: nextOrdinaryGitSha,
-  parentShas: [nextOrdinaryParentSha]
-});
+const nextOrdinaryParentObjectRoot = await mkdtemp(
+  path.join(tmpdir(), "lynca-next-ordinary-parent-object-")
+);
+let nextOrdinary;
+const previousAlternateObjectDirectories = process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+try {
+  const parentObjectRepo = path.join(nextOrdinaryParentObjectRoot, "repo");
+  await mkdir(parentObjectRepo);
+  git(parentObjectRepo, ["init", "--quiet"]);
+  await writeFile(path.join(parentObjectRepo, "ordinary-parent.txt"),
+    "real non-B ordinary parent object\n");
+  git(parentObjectRepo, ["add", "--", "ordinary-parent.txt"]);
+  git(parentObjectRepo, [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--quiet", "-m", "real non-B ordinary parent"
+  ]);
+  nextOrdinaryParentSha = git(parentObjectRepo, ["rev-parse", "HEAD"]);
+  await writeFile(path.join(parentObjectRepo, "ordinary-candidate.txt"),
+    "real ordinary candidate object\n");
+  git(parentObjectRepo, ["add", "--", "ordinary-candidate.txt"]);
+  git(parentObjectRepo, [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--quiet", "-m", "real ordinary candidate"
+  ]);
+  nextOrdinaryGitSha = git(parentObjectRepo, ["rev-parse", "HEAD"]);
+  const crossSpliceClaimedRootSha = execFileSync("git", [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit-tree", git(parentObjectRepo, ["rev-parse", `${nextOrdinaryGitSha}^{tree}`])
+  ], {
+    cwd: parentObjectRepo,
+    input: "cross-splice claimed root\n",
+    encoding: "utf8"
+  }).trim();
+  const alternateObjects = path.join(parentObjectRepo, ".git", "objects");
+  process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = previousAlternateObjectDirectories
+    ? `${alternateObjects}${path.delimiter}${previousAlternateObjectDirectories}`
+    : alternateObjects;
+  nextOrdinary = verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: nextOrdinaryGitSha,
+    headSha: nextOrdinaryGitSha,
+    parentShas: [nextOrdinaryParentSha]
+  });
+  assert.throws(() => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha: nextOrdinaryGitSha,
+    headSha: nextOrdinaryGitSha,
+    parentShas: [crossSpliceClaimedRootSha]
+  }), (error) => error.code === "ordinary_release_candidate_parent_mismatch",
+  "a real candidate whose true parent differs from the injected root must fail closed");
+} finally {
+  if (previousAlternateObjectDirectories == null) {
+    delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  } else {
+    process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = previousAlternateObjectDirectories;
+  }
+  await rm(nextOrdinaryParentObjectRoot, { recursive: true, force: true });
+}
 assert.equal(nextOrdinary.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
 assert.equal(nextOrdinary.transition_marker, null);
 assert.equal(nextOrdinary.parent_git_sha, nextOrdinaryParentSha);
 assert.equal(nextOrdinary.required_rollback_git_sha, nextOrdinaryParentSha);
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: nextOrdinaryGitSha,
+  headSha: nextOrdinaryGitSha,
+  parentShas: [activationA3GitSha]
+}), (error) => error.code === "ordinary_release_parent_git_object_invalid",
+"an injected nonexistent parent object must not bypass the production boundary");
+const replaceObjectRoot = await mkdtemp(path.join(tmpdir(), "lynca-git-replace-object-"));
+try {
+  const replaceRepo = path.join(replaceObjectRoot, "repo");
+  await mkdir(replaceRepo);
+  git(replaceRepo, ["init", "--quiet"]);
+  await writeFile(path.join(replaceRepo, "replace-object.txt"), "original parent\n");
+  git(replaceRepo, ["add", "--", "replace-object.txt"]);
+  git(replaceRepo, [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--quiet", "-m", "original parent"
+  ]);
+  const originalParentSha = git(replaceRepo, ["rev-parse", "HEAD"]);
+  await writeFile(path.join(replaceRepo, "replace-object.txt"), "original candidate\n");
+  git(replaceRepo, ["add", "--", "replace-object.txt"]);
+  git(replaceRepo, [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit", "--quiet", "-m", "original candidate"
+  ]);
+  const originalCandidateSha = git(replaceRepo, ["rev-parse", "HEAD"]);
+  const originalCandidateTree = git(replaceRepo, [
+    "--no-replace-objects", "rev-parse", `${originalCandidateSha}^{tree}`
+  ]);
+  const replacementParentSha = execFileSync("git", [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit-tree", originalCandidateTree
+  ], {
+    cwd: replaceRepo,
+    input: "replacement root\n",
+    encoding: "utf8"
+  }).trim();
+  await writeFile(path.join(replaceRepo, "replace-object.txt"), "replacement bytes\n");
+  git(replaceRepo, ["add", "--", "replace-object.txt"]);
+  const replacementTree = git(replaceRepo, ["write-tree"]);
+  const replacementCandidateSha = execFileSync("git", [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit-tree", replacementTree, "-p", replacementParentSha
+  ], {
+    cwd: replaceRepo,
+    input: "replacement candidate\n",
+    encoding: "utf8"
+  }).trim();
+  git(replaceRepo, ["replace", originalCandidateSha, replacementCandidateSha]);
+  assert.equal(git(replaceRepo, ["show", `${originalCandidateSha}:replace-object.txt`]),
+    "replacement bytes");
+  assert.equal(git(replaceRepo, [
+    "--no-replace-objects", "show", `${originalCandidateSha}:replace-object.txt`
+  ]), "original candidate");
+  const previousGitDir = process.env.GIT_DIR;
+  const previousGitWorkTree = process.env.GIT_WORK_TREE;
+  try {
+    process.env.GIT_DIR = path.join(replaceRepo, ".git");
+    process.env.GIT_WORK_TREE = replaceRepo;
+    const originalObjectSelection = verifyCompatibilityBridgeSelection({
+      releaseClass: ORDINARY_RELEASE_CLASS,
+      gitSha: originalCandidateSha,
+      headSha: originalCandidateSha,
+      headTreeSha: originalCandidateTree,
+      parentShas: [originalParentSha]
+    });
+    assert.equal(originalObjectSelection.parent_git_sha, originalParentSha);
+    assert.throws(() => verifyCompatibilityBridgeSelection({
+      releaseClass: ORDINARY_RELEASE_CLASS,
+      gitSha: originalCandidateSha,
+      headSha: originalCandidateSha,
+      headTreeSha: replacementTree,
+      parentShas: [replacementParentSha]
+    }), (error) => error.code === "ordinary_release_candidate_parent_mismatch",
+    "refs/replace must not cross-splice replacement parent/tree/bytes into the original SHA");
+  } finally {
+    if (previousGitDir == null) delete process.env.GIT_DIR;
+    else process.env.GIT_DIR = previousGitDir;
+    if (previousGitWorkTree == null) delete process.env.GIT_WORK_TREE;
+    else process.env.GIT_WORK_TREE = previousGitWorkTree;
+  }
+} finally {
+  await rm(replaceObjectRoot, { recursive: true, force: true });
+}
 assert.throws(() => verifyCompatibilityBridgeSelection({
   releaseClass: ORDINARY_RELEASE_CLASS,
   gitSha: bridgeV2GitSha,
@@ -3825,6 +4116,723 @@ for (const verifyLineage of [
   }
 }
 
+assert.equal(sha256(stableJson(
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40
+)), EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40_SHA256);
+assert.equal(sha256(stableJson(
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41
+)), EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41_SHA256);
+assert.equal(sha256(stableJson(
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42
+)), EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256);
+assert.equal(sha256(stableJson(
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43
+)), EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256);
+assert.deepEqual(verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40.git_sha,
+  headSha: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40.git_sha,
+  headTreeSha:
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40.git_tree_sha,
+  parentShas: [
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40.parent_git_sha
+  ],
+  parentTreeSha:
+    EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40.parent_tree_sha
+}), EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40,
+"v40 must replay byte-for-byte from its historical literal");
+assert.deepEqual(verifyReleaseRollbackLineage({
+  selection: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40,
+  rollbackReceipt: {
+    git_sha: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40
+      .required_rollback_git_sha
+  }
+}), EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41,
+"v41 must remain bound to the exact v40 literal");
+assert.deepEqual(verifyCompatibilityBridgeSelection({
+  releaseClass: ORDINARY_RELEASE_CLASS,
+  gitSha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha,
+  headSha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha,
+  headTreeSha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_tree_sha,
+  parentShas: [EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.parent_git_sha],
+  parentTreeSha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.parent_tree_sha
+}), EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42,
+"v42 must replay byte-for-byte from its historical literal");
+assert.deepEqual(verifyOrdinaryRollbackLineage({
+  selection: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42,
+  rollbackReceipt: {
+    git_sha: EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42
+      .required_rollback_git_sha
+  }
+}), EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43,
+"v43 must remain bound to the exact v42 literal");
+
+const tcgGrammarContextReaderBridgeTopology =
+  tcgGrammarContextReaderBridgeTopologyProof();
+assert.equal(tcgGrammarContextReaderBridgeTopology.selection_schema_version,
+  "production-release-selection-v44");
+assert.equal(tcgGrammarContextReaderBridgeTopology.rollback_lineage_schema_version,
+  "production-release-rollback-lineage-receipt-v45");
+assert.equal(tcgGrammarContextReaderBridgeTopology.required_parent_git_sha,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA);
+assert.equal(tcgGrammarContextReaderBridgeTopology.required_parent_tree_sha,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA);
+assert.equal(tcgGrammarContextReaderBridgeTopology.required_rollback_git_sha,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA);
+assert.equal(tcgGrammarContextReaderBridgeTopology.required_rollback_tree_sha,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA);
+assert.notEqual(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA,
+"B descends from failed 20298 but rolls back to promoted 5c");
+assert.equal(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FAILURE_CODE, "WRITER_JOURNEY_FAILED");
+assert.equal(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DIAGNOSED_INVARIANT,
+  "RESOLUTION_GRAMMAR_MISMATCH");
+assert.equal(tcgGrammarContextReaderBridgeTopology.projection_activation_state,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_STATE);
+assert.equal(tcgGrammarContextReaderBridgeTopology.active_writer_contract_sha256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256);
+assert.equal(tcgGrammarContextReaderBridgeTopology.future_writer_contract_sha256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FUTURE_WRITER_SHA256);
+assert.equal(tcgGrammarContextReaderBridgeTopology.pending_descriptor_sha256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PENDING_DESCRIPTOR_SHA256);
+assert.equal(tcgGrammarContextReaderBridgeTopology.projection_activation_sha256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PROJECTION_ACTIVATION_SHA256);
+assert.equal(tcgGrammarContextReaderBridgeTopology.forward_readers_sha256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256);
+assert.equal(tcgGrammarContextReaderBridgeTopology.runtime_freeze_pending, false,
+  "B path/hash freeze must not depend on its self-referential commit constants");
+const expectedTcgGrammarContextReaderBridgeCorePaths = Object.freeze([
+  "api/csm-listing-title.js",
+  "api/csm-resolution-view.js",
+  "docs/csm/decision-proposals/tcg-grammar-context-authority-v1.md",
+  "e2e/production-writer-journey.spec.mjs",
+  "infrastructure/supabase-production/supabase/migrations/20260815034533_csm_tcg_grammar_context_trainer_gallery_registry_v1.sql",
+  "lib/listing/thin/canonical-fields.mjs",
+  "lib/listing/thin/csm-forward-reader-bridge.mjs",
+  "lib/listing/thin/csm-orchestration.mjs",
+  "lib/listing/thin/csm-owner-execution-receipt.mjs",
+  "lib/listing/thin/csm-persistence.mjs",
+  "lib/listing/thin/csm-projection-activation.mjs",
+  "lib/listing/thin/csm-provider-adapter.mjs",
+  "lib/listing/thin/csm-replay.mjs",
+  "lib/listing/thin/csm-supabase-writer.mjs",
+  "lib/listing/thin/tcg-grammar-context-authority.mjs",
+  "lib/listing/thin/thin-listing-path.mjs",
+  "package.json",
+  "scripts/canonical-fields.test.mjs",
+  "scripts/check-csm-thin-production-readiness.mjs",
+  "scripts/csm-direct-api.test.mjs",
+  "scripts/csm-durable-forward-reader-bridge.test.mjs",
+  "scripts/csm-model-optimization-pack.test.mjs",
+  "scripts/csm-orchestration.test.mjs",
+  "scripts/csm-persistence.test.mjs",
+  "scripts/csm-production-readiness.test.mjs",
+  "scripts/csm-projection-activation.test.mjs",
+  "scripts/csm-replay.test.mjs",
+  "scripts/csm-resolution-view.test.mjs",
+  "scripts/csm-supabase-writer.test.mjs",
+  "scripts/csm-tcg-grammar-context-registry-migration.test.mjs",
+  "scripts/external-identity-production-path.test.mjs",
+  "scripts/fixtures/production-writer-journey-tcg-grammar-misroute-v1.json",
+  "scripts/production-forward-readback.mjs",
+  "scripts/production-forward-readback.test.mjs",
+  "scripts/production-writer-journey-contract.test.mjs",
+  "scripts/tcg-grammar-context-authority.test.mjs",
+  "scripts/thin-listing-provider-boundary.test.mjs"
+]);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATHS,
+  expectedTcgGrammarContextReaderBridgeCorePaths);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS, [
+  ...expectedTcgGrammarContextReaderBridgeCorePaths,
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs"
+].sort());
+for (const frozen of [
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_CONTENT_MANIFEST_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_FULL_INDEX_SHA256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256
+]) assert.match(frozen, /^[0-9a-f]{64}$/);
+assert.match(TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CORE_PATCH_ID, /^[0-9a-f]{40}$/);
+for (const pending of [
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_TREE_SHA
+]) assert.equal(pending, null);
+const frozenTcgGrammarContextReaderBridgeRuntimeProof =
+  tcgGrammarContextReaderBridgeRuntimeContractProof();
+assert.equal(frozenTcgGrammarContextReaderBridgeRuntimeProof.contract_sha256,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256);
+assert.equal(frozenTcgGrammarContextReaderBridgeRuntimeProof.runtime_file_count,
+  expectedTcgGrammarContextReaderBridgeCorePaths.length);
+assert.equal(frozenTcgGrammarContextReaderBridgeRuntimeProof.health_bound, false);
+assert.equal(frozenTcgGrammarContextReaderBridgeRuntimeProof.deployment_git_sha, null);
+
+const tcgGrammarContextFixtureManifest = Object.freeze([Object.freeze({
+  path: "api/health.js",
+  mode: "100644",
+  bytes: 17,
+  sha256: "1".repeat(64)
+})]);
+const tcgGrammarContextFixtureDiffIdentity = Object.freeze({
+  full_index_sha256: "2".repeat(64),
+  patch_id: "3".repeat(40)
+});
+const tcgGrammarContextFixtureRuntimeFreeze = Object.freeze({
+  core_paths: Object.freeze(["api/health.js"]),
+  changed_paths: Object.freeze([
+    "api/health.js",
+    "scripts/compatibility-bridge-release.mjs",
+    "scripts/compatibility-bridge-release.test.mjs"
+  ]),
+  runtime_content_manifest_sha256:
+    sha256(JSON.stringify(tcgGrammarContextFixtureManifest)),
+  runtime_full_index_sha256:
+    tcgGrammarContextFixtureDiffIdentity.full_index_sha256,
+  runtime_patch_id: tcgGrammarContextFixtureDiffIdentity.patch_id,
+  runtime_contract_sha256: "4".repeat(64)
+});
+const tcgGrammarContextFixtureGitSha = "a".repeat(40);
+const tcgGrammarContextRuntimeProof =
+  materializeTcgGrammarContextReaderBridgeRuntimeContractForTest({
+    runtimeFreeze: tcgGrammarContextFixtureRuntimeFreeze,
+    candidateGitSha: tcgGrammarContextFixtureGitSha,
+    runtimeContentManifest: tcgGrammarContextFixtureManifest,
+    runtimeDiffIdentity: tcgGrammarContextFixtureDiffIdentity
+  });
+const {
+  contract_sha256: tcgGrammarContextRuntimeProofSha256,
+  ...tcgGrammarContextRuntimeProofBody
+} = tcgGrammarContextRuntimeProof;
+assert.equal(sha256(stableJson(tcgGrammarContextRuntimeProofBody)),
+  tcgGrammarContextRuntimeProofSha256);
+assert.equal(tcgGrammarContextRuntimeProof.schema_version,
+  "tcg-grammar-context-reader-bridge-runtime-proof-v1");
+assert.equal(tcgGrammarContextRuntimeProof.required_parent_git_sha,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA);
+assert.equal(tcgGrammarContextRuntimeProof.required_rollback_git_sha,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA);
+assert.equal(tcgGrammarContextRuntimeProof.historical_selection_v40_sha256,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40_SHA256);
+assert.equal(tcgGrammarContextRuntimeProof.historical_lineage_v41_sha256,
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41_SHA256);
+assert.equal(tcgGrammarContextRuntimeProof.historical_selection_v42_sha256,
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42_SHA256);
+assert.equal(tcgGrammarContextRuntimeProof.historical_lineage_v43_sha256,
+  EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_LINEAGE_V43_SHA256);
+assert.equal(tcgGrammarContextRuntimeProof.failure_code, "WRITER_JOURNEY_FAILED");
+assert.equal(tcgGrammarContextRuntimeProof.diagnosed_invariant,
+  "RESOLUTION_GRAMMAR_MISMATCH");
+assert.deepEqual(tcgGrammarContextRuntimeProof.projection_activation,
+  CSM_PROJECTION_ACTIVATION);
+assert.deepEqual(tcgGrammarContextRuntimeProof.active_writer,
+  CSM_WRITER_PROJECTION_CONTRACTS.rollback_compatible);
+assert.deepEqual(tcgGrammarContextRuntimeProof.future_writer,
+  CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4);
+assert.deepEqual(tcgGrammarContextRuntimeProof.forward_readers,
+  CSM_PROJECTION_ACTIVATION.forward_readers);
+assert.deepEqual(tcgGrammarContextRuntimeProof.future_pending_checkpoint,
+  CSM_TCG_GRAMMAR_CONTEXT_PENDING_CHECKPOINT_READER);
+assert.equal(tcgGrammarContextRuntimeProof.decision_document_sha256,
+  TCG_GRAMMAR_CONTEXT_DECISION_DOCUMENT_SHA256);
+assert.equal(tcgGrammarContextRuntimeProof.registry_content_sha256,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256);
+assert.equal(tcgGrammarContextRuntimeProof.resolution_contract_sha256,
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256);
+assert.equal(tcgGrammarContextRuntimeProof.writer_journey_manifest,
+  COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION);
+assert.equal(tcgGrammarContextRuntimeProof.writer_projection_mode,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE);
+assert.equal(tcgGrammarContextRuntimeProof.captured_production_forward_readback_git_sha,
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA);
+assert.equal(tcgGrammarContextRuntimeProof.captured_production_forward_readback_provider_calls,
+  0);
+assert.equal(tcgGrammarContextRuntimeProof.future_writer_active, false);
+assert.equal(tcgGrammarContextRuntimeProof.pending_checkpoint_forward_reader_active, true);
+assert.equal(tcgGrammarContextRuntimeProof.behavior_neutral, true);
+assert.equal(tcgGrammarContextRuntimeProof.health_bound, false);
+
+const tcgGrammarContextHealth = Object.freeze({
+  ready: true,
+  deployment: Object.freeze({ git_commit_sha: tcgGrammarContextFixtureGitSha }),
+  runtime: Object.freeze({
+    model_profile_id: "openai-gpt-5.6-luna-csm-v1",
+    request_builder_version:
+      CSM_PROJECTION_ACTIVATION.active_writer.canonical_fields.request_builder_version,
+    projection_activation: CSM_PROJECTION_ACTIVATION,
+    active_writer: CSM_PROJECTION_ACTIVATION.active_writer,
+    forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
+    external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+    verified_original_observation: verifiedOriginalObservationHealthReceiptForReleases({
+      verifiedOriginalObservationReleaseId:
+        CSM_PROJECTION_ACTIVATION.active_writer.verified_original_observation_overlay,
+      externalIdentityRegistryReleaseId:
+        CSM_PROJECTION_ACTIVATION.active_writer.external_identity.registry_release_id
+    })
+  })
+});
+const tcgGrammarContextHealthProof =
+  materializeTcgGrammarContextReaderBridgeRuntimeContractForTest({
+    runtimeFreeze: tcgGrammarContextFixtureRuntimeFreeze,
+    candidateGitSha: tcgGrammarContextFixtureGitSha,
+    runtimeContentManifest: tcgGrammarContextFixtureManifest,
+    runtimeDiffIdentity: tcgGrammarContextFixtureDiffIdentity,
+    health: tcgGrammarContextHealth,
+    gitSha: tcgGrammarContextFixtureGitSha
+  });
+assert.equal(tcgGrammarContextHealthProof.health_bound, true);
+assert.equal(tcgGrammarContextHealthProof.deployment_git_sha,
+  tcgGrammarContextFixtureGitSha);
+for (const health of [
+  { ...tcgGrammarContextHealth, ready: false },
+  { ...tcgGrammarContextHealth,
+    deployment: { git_commit_sha: "b".repeat(40) } },
+  { ...tcgGrammarContextHealth, runtime: {
+    ...tcgGrammarContextHealth.runtime,
+    projection_activation: {
+      ...CSM_PROJECTION_ACTIVATION,
+      activation_id: "cross-spliced-activation"
+    }
+  } },
+  { ...tcgGrammarContextHealth, runtime: {
+    ...tcgGrammarContextHealth.runtime,
+    active_writer: {
+      ...CSM_PROJECTION_ACTIVATION.active_writer,
+      contract_id: "cross-spliced-writer"
+    }
+  } },
+  { ...tcgGrammarContextHealth, runtime: {
+    ...tcgGrammarContextHealth.runtime,
+    forward_readers: {
+      ...CSM_PROJECTION_ACTIVATION.forward_readers,
+      cross_spliced: true
+    }
+  } },
+  { ...tcgGrammarContextHealth, runtime: {
+    ...tcgGrammarContextHealth.runtime,
+    model_profile_id: "cross-spliced-model-profile"
+  } },
+  { ...tcgGrammarContextHealth, runtime: {
+    ...tcgGrammarContextHealth.runtime,
+    request_builder_version: "cross-spliced-request-builder"
+  } },
+  { ...tcgGrammarContextHealth, runtime: {
+    ...tcgGrammarContextHealth.runtime,
+    external_identity: {
+      ...EXTERNAL_IDENTITY_RELEASE_CONTRACT,
+      cross_spliced: true
+    }
+  } },
+  { ...tcgGrammarContextHealth, runtime: {
+    ...tcgGrammarContextHealth.runtime,
+    verified_original_observation: {
+      ...tcgGrammarContextHealth.runtime.verified_original_observation,
+      cross_spliced: true
+    }
+  } }
+]) {
+  assert.throws(() =>
+    materializeTcgGrammarContextReaderBridgeRuntimeContractForTest({
+      runtimeFreeze: tcgGrammarContextFixtureRuntimeFreeze,
+      candidateGitSha: tcgGrammarContextFixtureGitSha,
+      runtimeContentManifest: tcgGrammarContextFixtureManifest,
+      runtimeDiffIdentity: tcgGrammarContextFixtureDiffIdentity,
+      health,
+      gitSha: tcgGrammarContextFixtureGitSha
+    }), (error) => error.code
+      === "tcg_grammar_context_reader_bridge_health_contract_invalid");
+}
+assert.throws(() => materializeTcgGrammarContextReaderBridgeRuntimeContractForTest({
+  runtimeFreeze: tcgGrammarContextFixtureRuntimeFreeze,
+  candidateGitSha: tcgGrammarContextFixtureGitSha,
+  runtimeContentManifest: tcgGrammarContextFixtureManifest
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_runtime_evidence_incomplete");
+assert.throws(() => materializeTcgGrammarContextReaderBridgeRuntimeContractForTest({
+  runtimeFreeze: tcgGrammarContextFixtureRuntimeFreeze,
+  candidateGitSha: tcgGrammarContextFixtureGitSha,
+  runtimeContentManifest: [{
+    ...tcgGrammarContextFixtureManifest[0],
+    sha256: "f".repeat(64)
+  }],
+  runtimeDiffIdentity: tcgGrammarContextFixtureDiffIdentity
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_runtime_evidence_invalid");
+assert.throws(() => materializeTcgGrammarContextReaderBridgeRuntimeContractForTest({
+  runtimeFreeze: tcgGrammarContextFixtureRuntimeFreeze,
+  candidateGitSha: tcgGrammarContextFixtureGitSha,
+  runtimeContentManifest: tcgGrammarContextFixtureManifest,
+  runtimeDiffIdentity: {
+    ...tcgGrammarContextFixtureDiffIdentity,
+    patch_id: "f".repeat(40)
+  }
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_runtime_evidence_invalid");
+assert.throws(() => materializeTcgGrammarContextReaderBridgeRuntimeContractForTest({
+  runtimeFreeze: tcgGrammarContextFixtureRuntimeFreeze,
+  candidateGitSha: tcgGrammarContextFixtureGitSha,
+  runtimeContentManifest: tcgGrammarContextFixtureManifest,
+  runtimeDiffIdentity: tcgGrammarContextFixtureDiffIdentity,
+  health: tcgGrammarContextHealth,
+  gitSha: "b".repeat(40)
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_runtime_candidate_mismatch");
+
+const tcgGrammarContextEvidenceSelection = Object.freeze({
+  git_sha: tcgGrammarContextFixtureGitSha,
+  git_tree_sha: "b".repeat(40),
+  exact_selection_marker: "v44"
+});
+const tcgGrammarContextEvidenceRawCommit = ({
+  tree = tcgGrammarContextEvidenceSelection.git_tree_sha,
+  parent = TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA
+} = {}) => [
+  `tree ${tree}`,
+  `parent ${parent}`,
+  "author LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "committer LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "",
+  "fixture commit"
+].join("\n");
+const tcgGrammarContextEvidenceReader = (args) => {
+  if (args[0] === "cat-file" && args[1] === "-t") return "commit";
+  if (args[0] === "cat-file" && args[1] === "-p") {
+    return tcgGrammarContextEvidenceRawCommit();
+  }
+  throw new Error("unexpected_git_read");
+};
+const tcgGrammarContextGitEvidence =
+  verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest({
+    selection: tcgGrammarContextEvidenceSelection,
+    gitTextReader: tcgGrammarContextEvidenceReader,
+    rebuildSelection: () => tcgGrammarContextEvidenceSelection
+  });
+assert.equal(tcgGrammarContextGitEvidence.commit_exists, true);
+assert.deepEqual(tcgGrammarContextGitEvidence.parent_git_shas,
+  [TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA]);
+assert.equal(tcgGrammarContextGitEvidence.verification_source,
+  "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION");
+assert.throws(() => verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest({
+  selection: tcgGrammarContextEvidenceSelection,
+  gitTextReader: () => { throw new Error("missing"); },
+  rebuildSelection: () => tcgGrammarContextEvidenceSelection
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_release_git_object_invalid");
+assert.throws(() => verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest({
+  selection: tcgGrammarContextEvidenceSelection,
+  gitTextReader: (args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextEvidenceRawCommit({ parent: "c".repeat(40) }),
+  rebuildSelection: () => tcgGrammarContextEvidenceSelection
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_release_parent_mismatch");
+assert.throws(() => verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest({
+  selection: tcgGrammarContextEvidenceSelection,
+  gitTextReader: (args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextEvidenceRawCommit({ tree: "d".repeat(40) }),
+  rebuildSelection: () => tcgGrammarContextEvidenceSelection
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_release_tree_mismatch");
+assert.throws(() => verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest({
+  selection: tcgGrammarContextEvidenceSelection,
+  gitTextReader: tcgGrammarContextEvidenceReader,
+  rebuildSelection: () => ({
+    ...tcgGrammarContextEvidenceSelection,
+    exact_selection_marker: "same-parent-wrong-content"
+  })
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_release_selection_object_mismatch");
+
+const tcgGrammarContextCommitTree = "e".repeat(40);
+const tcgGrammarContextCommitMessage = [
+  "TCG Grammar context bridge",
+  "",
+  COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
+  `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${tcgGrammarContextCommitTree}`
+].join("\n");
+assert.equal(verifyTcgGrammarContextReaderBridgeCommitMessageForTest({
+  commitMessage: tcgGrammarContextCommitMessage,
+  gitTreeSha: tcgGrammarContextCommitTree
+}), tcgGrammarContextCommitTree);
+for (const commitMessage of [
+  "TCG Grammar context bridge without trailers",
+  [
+    "TCG Grammar context bridge",
+    "LYNCA-Release-Class: ordinary",
+    `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${tcgGrammarContextCommitTree}`
+  ].join("\n"),
+  `${tcgGrammarContextCommitMessage}\n${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}`,
+  `${tcgGrammarContextCommitMessage}\n${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${tcgGrammarContextCommitTree}`,
+  `${tcgGrammarContextCommitMessage}\nbody after trailers`,
+  [
+    "TCG Grammar context bridge",
+    "",
+    `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${tcgGrammarContextCommitTree}`,
+    COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER
+  ].join("\n"),
+  [
+    "TCG Grammar context bridge",
+    "",
+    `> ${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}`,
+    `> ${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${tcgGrammarContextCommitTree}`,
+    "",
+    COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
+    `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${tcgGrammarContextCommitTree}`
+  ].join("\n"),
+  [
+    "TCG Grammar context bridge",
+    "",
+    ` ${COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER}`,
+    `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${tcgGrammarContextCommitTree}`
+  ].join("\n"),
+  `${tcgGrammarContextCommitMessage}\n `
+]) {
+  assert.throws(() => verifyTcgGrammarContextReaderBridgeCommitMessageForTest({
+    commitMessage,
+    gitTreeSha: tcgGrammarContextCommitTree
+  }), (error) => error.code === "compatibility_bridge_v2_commit_marker_invalid");
+}
+assert.throws(() => verifyTcgGrammarContextReaderBridgeCommitMessageForTest({
+  commitMessage: tcgGrammarContextCommitMessage,
+  gitTreeSha: "f".repeat(40)
+}), (error) => error.code === "tcg_grammar_context_reader_bridge_tree_mismatch");
+
+const tcgGrammarContextChildBoundaryRoot = await mkdtemp(
+  path.join(tmpdir(), "lynca-tcg-grammar-context-child-boundary-")
+);
+try {
+  const boundaryRepo = path.join(tcgGrammarContextChildBoundaryRoot, "repo");
+  git(tcgGrammarContextChildBoundaryRoot, [
+    "clone", "--quiet", "--no-checkout", pathToFileURL(process.cwd()).href, boundaryRepo
+  ]);
+  git(boundaryRepo, [
+    "checkout", "--quiet", "--detach", TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA
+  ]);
+  await writeFile(path.join(boundaryRepo, "tcg-grammar-context-boundary.txt"),
+    "immutable B-family child boundary\n");
+  git(boundaryRepo, ["add", "--", "tcg-grammar-context-boundary.txt"]);
+  const boundaryBridgeTreeSha = git(boundaryRepo, ["write-tree"]);
+  const boundaryBridgeMessage = [
+    "synthetic exact B-family parent",
+    "",
+    COMPATIBILITY_BRIDGE_V2_COMMIT_TRAILER,
+    `${COMPATIBILITY_BRIDGE_TREE_TRAILER}: ${boundaryBridgeTreeSha}`
+  ].join("\n");
+  const boundaryBridgeGitSha = execFileSync("git", [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit-tree", boundaryBridgeTreeSha,
+    "-p", TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA
+  ], {
+    cwd: boundaryRepo,
+    input: boundaryBridgeMessage,
+    encoding: "utf8"
+  }).trim();
+  const commitShapedBlobSha = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+    cwd: boundaryRepo,
+    input: [
+      `tree ${boundaryBridgeTreeSha}`,
+      `parent ${TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA}`,
+      "",
+      "blob content shaped like a commit"
+    ].join("\n"),
+    encoding: "utf8"
+  }).trim();
+  git(boundaryRepo, [
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "tag", "-a", "commit-shaped-tag", "-m", "tag is not a commit", boundaryBridgeGitSha
+  ]);
+  const annotatedTagSha = git(boundaryRepo, ["rev-parse", "commit-shaped-tag"]);
+  for (const nonCommitSha of [commitShapedBlobSha, annotatedTagSha]) {
+    assert.throws(() => verifyTcgGrammarContextOrdinaryParentBoundaryForTest({
+      parentGitSha: nonCommitSha,
+      gitTextReader: (args) => git(boundaryRepo, args)
+    }), (error) => error.code === "ordinary_release_parent_git_object_invalid");
+  }
+  assert.throws(() => verifyTcgGrammarContextOrdinaryParentBoundaryForTest({
+    parentGitSha: "a".repeat(40),
+    gitTextReader: (args) => args[1] === "-t" ? "blob" : ""
+  }), (error) => error.code === "ordinary_release_parent_git_object_invalid",
+  "a test reader cannot make a non-commit object pass by forging commit-shaped bytes");
+  const crossSpliceOtherParents = ["one", "two"].map((label) => (
+    execFileSync("git", [
+      "-c", "commit.gpgsign=false",
+      "-c", "user.name=LYNCA fixture",
+      "-c", "user.email=fixture@example.invalid",
+      "commit-tree", boundaryBridgeTreeSha
+    ], {
+      cwd: boundaryRepo,
+      input: `independent cross-splice parent ${label}\n`,
+      encoding: "utf8"
+    }).trim()
+  ));
+  const crossSpliceParentSets = [
+    [
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+      crossSpliceOtherParents[0]
+    ],
+    [
+      crossSpliceOtherParents[0],
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA
+    ],
+    [
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
+      crossSpliceOtherParents[0],
+      crossSpliceOtherParents[1]
+    ]
+  ];
+  for (const crossSpliceParents of crossSpliceParentSets) {
+    const crossSpliceGitSha = execFileSync("git", [
+      "-c", "commit.gpgsign=false",
+      "-c", "user.name=LYNCA fixture",
+      "-c", "user.email=fixture@example.invalid",
+      "commit-tree", boundaryBridgeTreeSha,
+      ...crossSpliceParents.flatMap((parent) => ["-p", parent])
+    ], {
+      cwd: boundaryRepo,
+      input: "cross-spliced B-family ancestry\n",
+      encoding: "utf8"
+    }).trim();
+    assert.throws(() => verifyTcgGrammarContextOrdinaryParentBoundaryForTest({
+      parentGitSha: crossSpliceGitSha,
+      gitTextReader: (args) => git(boundaryRepo, args)
+    }), (error) => error.code
+      === "ordinary_release_tcg_grammar_context_reader_bridge_parent_unverified");
+  }
+  const boundaryOrdinaryGitSha = execFileSync("git", [
+    "-c", "commit.gpgsign=false",
+    "-c", "user.name=LYNCA fixture",
+    "-c", "user.email=fixture@example.invalid",
+    "commit-tree", boundaryBridgeTreeSha,
+    "-p", boundaryBridgeGitSha
+  ], {
+    cwd: boundaryRepo,
+    input: "ordinary child that must not fall through to selection-v3\n",
+    encoding: "utf8"
+  }).trim();
+  assert.deepEqual(git(boundaryRepo, [
+    "rev-list", "--parents", "-n", "1", boundaryOrdinaryGitSha
+  ]).split(/\s+/).slice(1), [boundaryBridgeGitSha]);
+  const boundaryGitTextReader = (args) => git(boundaryRepo, args);
+  const previousBoundaryAlternates = process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+  const boundaryAlternateObjects = path.join(boundaryRepo, ".git", "objects");
+  try {
+    process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = previousBoundaryAlternates
+      ? `${boundaryAlternateObjects}${path.delimiter}${previousBoundaryAlternates}`
+      : boundaryAlternateObjects;
+    assert.throws(() => verifyCompatibilityBridgeSelection({
+      releaseClass: ORDINARY_RELEASE_CLASS,
+      gitSha: boundaryOrdinaryGitSha,
+      headSha: boundaryOrdinaryGitSha,
+      parentShas: [boundaryBridgeGitSha]
+    }), (error) => error.code
+      === "ordinary_release_tcg_grammar_context_activation_freeze_required",
+    "the production selector must not let a real child of an unfrozen B fall through");
+  } finally {
+    if (previousBoundaryAlternates == null) {
+      delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+    } else {
+      process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = previousBoundaryAlternates;
+    }
+  }
+  assert.throws(() => verifyTcgGrammarContextOrdinaryParentBoundaryForTest({
+    parentGitSha: boundaryBridgeGitSha,
+    gitTextReader: boundaryGitTextReader
+  }), (error) => error.code
+    === "ordinary_release_tcg_grammar_context_activation_freeze_required",
+  "a real child of B must fail closed while A's B SHA/tree constants are null");
+  git(boundaryRepo, [
+    "update-ref", "refs/heads/depth2-boundary", boundaryOrdinaryGitSha
+  ]);
+  const shallowBoundaryRepo = path.join(tcgGrammarContextChildBoundaryRoot, "depth2");
+  git(tcgGrammarContextChildBoundaryRoot, [
+    "clone", "--quiet", "--depth=2", "--branch", "depth2-boundary",
+    pathToFileURL(boundaryRepo).href, shallowBoundaryRepo
+  ]);
+  assert.deepEqual(git(shallowBoundaryRepo, [
+    "rev-list", "--parents", "-n", "1", boundaryBridgeGitSha
+  ]).split(/\s+/), [boundaryBridgeGitSha],
+  "depth-2 rev-list must reproduce the hidden B parent boundary");
+  assert.match(git(shallowBoundaryRepo, ["cat-file", "-p", boundaryBridgeGitSha]),
+    new RegExp(`^parent ${TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA}$`, "m"),
+  "the raw shallow commit object must retain B's immutable parent header");
+  assert.throws(() => verifyTcgGrammarContextOrdinaryParentBoundaryForTest({
+    parentGitSha: boundaryBridgeGitSha,
+    gitTextReader: (args) => git(shallowBoundaryRepo, args)
+  }), (error) => error.code
+    === "ordinary_release_tcg_grammar_context_activation_freeze_required",
+  "a file:// depth-2 A-to-B checkout must not fall through to generic v3");
+} finally {
+  await rm(tcgGrammarContextChildBoundaryRoot, { recursive: true, force: true });
+}
+
+const tcgGrammarContextV5ManifestTuple = Object.freeze({
+  schema_version: COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION,
+  release_class: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  bridge_descriptor_id: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID,
+  bridge_marker: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER,
+  git_sha: "a".repeat(40),
+  writer_projection_mode: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE,
+  evidence_scope: "LIVE_CONTRACT_RECEIPT_ONLY",
+  accuracy_claim: null,
+  cases: Object.freeze([])
+});
+assert.equal(compatibilityBridgeWriterProjectionMode(tcgGrammarContextV5ManifestTuple),
+  TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE);
+for (const splice of [
+  { schema_version: COMPATIBILITY_BRIDGE_V4_MANIFEST_VERSION },
+  { bridge_descriptor_id: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID },
+  { bridge_marker: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER }
+]) {
+  assert.throws(() => compatibilityBridgeWriterProjectionMode({
+    ...tcgGrammarContextV5ManifestTuple,
+    ...splice
+  }), (error) => error.code === "compatibility_bridge_writer_projection_mode_invalid");
+}
+
+const tcgGrammarContextActivationTopology = tcgGrammarContextActivationTopologyProof();
+assert.equal(tcgGrammarContextActivationTopology.selection_schema_version,
+  "production-release-selection-v46");
+assert.equal(tcgGrammarContextActivationTopology.rollback_lineage_schema_version,
+  "production-release-rollback-lineage-receipt-v47");
+assert.equal(tcgGrammarContextActivationTopology.activation_descriptor_id,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID);
+assert.equal(tcgGrammarContextActivationTopology.transition_marker,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER);
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA);
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA, null,
+"A remains unselectable until B has a committed SHA/tree");
+assert.equal(tcgGrammarContextActivationTopology.projection_activation_state,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE);
+assert.equal(tcgGrammarContextActivationTopology.active_writer_contract_sha256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256);
+assert.equal(tcgGrammarContextActivationTopology.projection_activation_sha256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256);
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+  "writer-journey-cases-v4");
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS, []);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_ACTIVATION_CHANGED_PATHS, []);
+for (const pending of [
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256
+]) assert.equal(pending, null);
+assert.throws(() => tcgGrammarContextActivationRuntimeContractProof(),
+  (error) => error.code === "tcg_grammar_context_activation_runtime_freeze_pending");
+assert.throws(() => verifyCompatibilityBridgeSelection({
+  releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
+  gitSha: "a".repeat(40),
+  headSha: "a".repeat(40),
+  headTreeSha: "b".repeat(40),
+  parentTreeSha: TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA,
+  parentShas: [TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA],
+  changedPaths: []
+}), (error) => error.code
+  === "tcg_grammar_context_reader_bridge_candidate_git_object_invalid");
+
 assert.equal(EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
   "listing-copilot-external-identity-v3-checkpoint-forward-reader-bridge-v1");
 assert.equal(EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
@@ -3882,22 +4890,17 @@ for (const tupleSplice of [
     expectedGitSha: externalIdentityV3CheckpointReaderBridgeGitSha
   }), (error) => error.code === "compatibility_bridge_writer_projection_mode_invalid");
 }
-let externalIdentityV3CheckpointReaderBridge = null;
-if (EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_CORE_PATHS.length === 0) {
-  assert.throws(() => externalIdentityV3CheckpointReaderBridgeRuntimeContractProof(),
-    (error) => error.code
-      === "external_identity_v3_checkpoint_reader_bridge_runtime_freeze_pending");
-  assert.throws(() => verifyCompatibilityBridgeSelection({
-    releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
-    gitSha: externalIdentityV3CheckpointReaderBridgeGitSha,
-    headSha: externalIdentityV3CheckpointReaderBridgeGitSha,
-    headTreeSha: externalIdentityV3CheckpointReaderBridgeTreeSha,
-    parentTreeSha: EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_TREE_SHA,
-    parentShas: [EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA],
-    changedPaths: [],
-    commitMessage: externalIdentityV3CheckpointReaderBridgeCommitMessage
-  }), (error) => error.code
-    === "external_identity_v3_checkpoint_reader_bridge_path_freeze_pending");
+let externalIdentityV3CheckpointReaderBridge =
+  EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40;
+if (externalIdentityV3CheckpointReaderBridge
+    === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_SELECTION_V40) {
+  assert.deepEqual(verifyReleaseRollbackLineage({
+    selection: externalIdentityV3CheckpointReaderBridge,
+    rollbackReceipt: {
+      git_sha: externalIdentityV3CheckpointReaderBridge.required_rollback_git_sha
+    }
+  }), EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_HISTORICAL_LINEAGE_V41,
+  "v40/v41 are immutable history and no longer re-materialize from live runtime aliases");
 } else {
   const checkpointRuntimeProof =
     externalIdentityV3CheckpointReaderBridgeRuntimeContractProof({
@@ -4159,6 +5162,8 @@ assert.equal(EXTERNAL_IDENTITY_V3_ACTIVATION_CORE_PATCH_ID,
   "be0bcc9213efd17a538ac50a9d9d7d815c41dd07");
 assert.equal(EXTERNAL_IDENTITY_V3_ACTIVATION_RUNTIME_CONTRACT_SHA256,
   "eb3613df8f8b53f9d751590a484252c6a177c2955b677c00fbab2b9929f9db30");
+const rematerializeHistoricalV42FromLiveAliases = false;
+if (rematerializeHistoricalV42FromLiveAliases) {
 const externalIdentityV3ActivationRuntimeContentManifest = Object.freeze(
   await Promise.all(EXTERNAL_IDENTITY_V3_ACTIVATION_CORE_PATHS.map(async (entry) => {
     const bytes = await readFile(path.join(process.cwd(), entry));
@@ -4469,6 +5474,7 @@ for (const verifyLineage of [verifyOrdinaryRollbackLineage, verifyReleaseRollbac
   }), (error) => error.code === (checkpointParentObjectVisible
     ? "external_identity_v3_activation_release_parent_mismatch"
     : "external_identity_v3_activation_release_git_object_invalid"));
+}
 }
 
 const bridgeV2WriterReceiptRepair = verifyCompatibilityBridgeSelection({
@@ -6061,7 +7067,7 @@ assert.deepEqual(lineage, {
   release_class: ORDINARY_RELEASE_CLASS,
   lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
   transition_marker: ACTIVE_V2_TRANSITION_MARKER,
-  release_git_sha: gitSha,
+  release_git_sha: ordinary.git_sha,
   release_parent_git_sha: ACTIVE_V2_TRANSITION_PARENT_SHA,
   captured_rollback_git_sha: ACTIVE_V2_TRANSITION_PARENT_SHA,
   lineage_verified: true
@@ -7928,6 +8934,7 @@ try {
     actualTrackedWorkspaceDirty = true;
   }
   const actualReleaseClass = [
+    TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA,
     EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA,
     EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_PARENT_SHA,
     EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_JOURNEY_MODE_REPAIR_PARENT_SHA,
@@ -7958,6 +8965,8 @@ try {
     actualParent === EXTERNAL_IDENTITY_V3_BRIDGE_WRITER_OLD_READER_NEW_PARENT_SHA;
   const actualExternalIdentityV3CheckpointReaderBridge =
     actualParent === EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_PARENT_SHA;
+  const actualTcgGrammarContextReaderBridge =
+    actualParent === TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA;
   const actualExternalIdentityV3Activation =
     actualParent === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA;
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
@@ -8706,6 +9715,40 @@ try {
       assert.equal(savedLineage.release_parent_tree_sha,
         CANONICAL_NAMING_ACTIVATION_PARENT_TREE_SHA);
     }
+  } else if (actualTcgGrammarContextReaderBridge) {
+    assert.equal(savedSelection.schema_version, "production-release-selection-v44");
+    assert.equal(savedSelection.bridge_descriptor_id,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_DESCRIPTOR_ID);
+    assert.equal(savedSelection.bridge_marker,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_MARKER);
+    assert.equal(savedSelection.parent_git_sha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA);
+    assert.equal(savedSelection.parent_tree_sha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA);
+    assert.equal(savedSelection.required_rollback_git_sha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA);
+    assert.equal(savedSelection.required_rollback_tree_sha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_TREE_SHA);
+    assert.equal(savedSelection.writer_journey_manifest,
+      COMPATIBILITY_BRIDGE_V5_MANIFEST_VERSION);
+    assert.equal(savedSelection.writer_projection_mode,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE);
+    assert.equal(savedSelection.contract_sha256,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256);
+    assert.equal(savedSelection.parity_required, false);
+    assert.equal(savedLineage.schema_version,
+      "production-release-rollback-lineage-receipt-v45");
+    assert.equal(savedLineage.release_parent_git_sha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_SHA);
+    assert.equal(savedLineage.release_parent_tree_sha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_PARENT_TREE_SHA);
+    assert.equal(savedLineage.captured_rollback_git_sha,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ROLLBACK_SHA);
+    assert.equal(savedLineage.runtime_contract_sha256,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_RUNTIME_CONTRACT_SHA256);
+    assert.equal(savedLineage.writer_projection_mode,
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_WRITER_PROJECTION_MODE);
+    assert.equal(savedLineage.release_git_object_verified, true);
   } else if (actualExternalIdentityV3CheckpointReaderBridge) {
     assert.equal(savedSelection.schema_version, "production-release-selection-v40");
     assert.equal(savedSelection.bridge_descriptor_id,
@@ -9520,10 +10563,12 @@ const externalIdentityV3ActivationFixtureBase =
   && (() => {
     try {
       if (externalIdentityV3ActivationFixtureHead
-            !== EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA
-          && !(externalIdentityV3ActivationFixtureParents.length === 1
-            && externalIdentityV3ActivationFixtureParents[0]
-              === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA)) {
+            !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha
+          || git(process.cwd(), ["rev-parse", "HEAD^{tree}"])
+            !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_tree_sha
+          || externalIdentityV3ActivationFixtureParents.length !== 1
+          || externalIdentityV3ActivationFixtureParents[0]
+            !== EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.parent_git_sha) {
         return false;
       }
       git(process.cwd(), [
@@ -9551,26 +10596,15 @@ if (!checkpointReaderPostcommitSelfTest
       "clone", "--quiet", "--depth=2", pathToFileURL(process.cwd()).href, seed
     ]);
     git(seed, [
-      "checkout", "--quiet", "--detach", EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA
-    ]);
-    assert.equal(git(seed, ["rev-parse", "HEAD"]),
-      EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA);
-    assert.equal(git(seed, ["rev-parse", "HEAD^{tree}"]),
-      EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_TREE_SHA);
-    for (const relativePath of EXTERNAL_IDENTITY_V3_ACTIVATION_CHANGED_PATHS) {
-      const destination = path.join(seed, relativePath);
-      await mkdir(path.dirname(destination), { recursive: true });
-      await writeFile(destination, await readFile(path.join(process.cwd(), relativePath)));
-    }
-    git(seed, ["add", "--", ...EXTERNAL_IDENTITY_V3_ACTIVATION_CHANGED_PATHS]);
-    git(seed, [
-      "-c", "commit.gpgsign=false",
-      "-c", "user.name=LYNCA fixture",
-      "-c", "user.email=fixture@example.invalid",
-      "commit", "--quiet", "-m", "activate external identity v3 one-ID writer"
+      "checkout", "--quiet", "--detach",
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha
     ]);
     const fixtureGitSha = git(seed, ["rev-parse", "HEAD"]);
     const fixtureTreeSha = git(seed, ["rev-parse", "HEAD^{tree}"]);
+    assert.equal(fixtureGitSha,
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_sha);
+    assert.equal(fixtureTreeSha,
+      EXTERNAL_IDENTITY_V3_ACTIVATION_HISTORICAL_SELECTION_V42.git_tree_sha);
     assert.notEqual(fixtureTreeSha, EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_TREE_SHA);
     assert.deepEqual(parentShas(seed), [EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA]);
     assert.deepEqual(git(seed, [
@@ -9651,26 +10685,49 @@ if (!checkpointReaderPostcommitSelfTest
       EXTERNAL_IDENTITY_V3_ACTIVATION_ACTIVE_HEALTH_SHA256);
     assert.equal(fixtureSelection.parity_required, true);
 
-    const activeWriter = CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3;
-    const activeVerifiedHealth = verifiedOriginalObservationHealthReceiptForReleases({
-      verifiedOriginalObservationReleaseId:
-        activeWriter.verified_original_observation_overlay,
-      externalIdentityRegistryReleaseId:
-        activeWriter.external_identity.registry_release_id
-    });
-    await writeFile(healthPath, JSON.stringify({
-      ready: true,
-      deployment: { git_commit_sha: fixtureGitSha },
-      runtime: {
-        model_profile_id: "openai-gpt-5.6-luna-csm-v1",
-        request_builder_version: activeWriter.canonical_fields.request_builder_version,
-        projection_activation: CSM_PROJECTION_ACTIVATION,
-        active_writer: activeWriter,
-        forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
-        external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
-        verified_original_observation: activeVerifiedHealth
-      }
-    }), { flag: "wx", mode: 0o600 });
+    const historicalActivationModule = pathToFileURL(path.join(
+      checkout, "lib/listing/thin/csm-projection-activation.mjs"
+    )).href;
+    const historicalExternalIdentityModule = pathToFileURL(path.join(
+      checkout, "lib/listing/knowledge/csm-external-identity-support.mjs"
+    )).href;
+    const historicalVerifiedOriginalModule = pathToFileURL(path.join(
+      checkout, "lib/listing/thin/verified-original-observation-support.mjs"
+    )).href;
+    const historicalHealth = execFileSync(process.execPath, [
+      "--input-type=module", "--eval",
+      `import {
+  CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from ${JSON.stringify(historicalActivationModule)};
+import { EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3 } from ${JSON.stringify(
+        historicalExternalIdentityModule
+      )};
+import { verifiedOriginalObservationHealthReceiptForReleases } from ${JSON.stringify(
+        historicalVerifiedOriginalModule
+      )};
+const activeWriter = CSM_WRITER_PROJECTION_CONTRACTS.future_external_identity_v3;
+const verified = verifiedOriginalObservationHealthReceiptForReleases({
+  verifiedOriginalObservationReleaseId:
+    activeWriter.verified_original_observation_overlay,
+  externalIdentityRegistryReleaseId:
+    activeWriter.external_identity.registry_release_id
+});
+process.stdout.write(JSON.stringify({
+  ready: true,
+  deployment: { git_commit_sha: ${JSON.stringify(fixtureGitSha)} },
+  runtime: {
+    model_profile_id: "openai-gpt-5.6-luna-csm-v1",
+    request_builder_version: activeWriter.canonical_fields.request_builder_version,
+    projection_activation: CSM_PROJECTION_ACTIVATION,
+    active_writer: activeWriter,
+    forward_readers: CSM_PROJECTION_ACTIVATION.forward_readers,
+    external_identity: EXTERNAL_IDENTITY_RELEASE_CONTRACT_V3,
+    verified_original_observation: verified
+  }
+}));`
+    ], { cwd: checkout, env: fixtureEnv, encoding: "utf8" });
+    await writeFile(healthPath, historicalHealth, { flag: "wx", mode: 0o600 });
     execFileSync(process.execPath, [
       fixtureScript, "verify-health",
       "--release-class", ORDINARY_RELEASE_CLASS,
@@ -9817,30 +10874,29 @@ try {
     });
     await assert.rejects(stat(rejectedLineagePath), { code: "ENOENT" });
 
-    git(seed, [
-      "checkout", "--quiet", "--detach", EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA
-    ]);
-    for (const relativePath of EXTERNAL_IDENTITY_V3_ACTIVATION_CHANGED_PATHS) {
-      const destination = path.join(seed, relativePath);
-      await mkdir(path.dirname(destination), { recursive: true });
-      await writeFile(destination, await readFile(path.join(process.cwd(), relativePath)));
-    }
+    git(seed, ["checkout", "--quiet", "--detach", fixtureGitSha]);
     const wrongContentRuntimePath = path.join(
       seed, "lib/listing/thin/csm-projection-activation.mjs"
     );
     await writeFile(wrongContentRuntimePath,
       (await readFile(wrongContentRuntimePath, "utf8"))
         + "\n// same-parent wrong-content v42 decoy\n");
-    git(seed, ["add", "--", ...EXTERNAL_IDENTITY_V3_ACTIVATION_CHANGED_PATHS]);
+    git(seed, ["add", "--", "lib/listing/thin/csm-projection-activation.mjs"]);
     git(seed, [
       "-c", "commit.gpgsign=false",
       "-c", "user.name=LYNCA fixture",
       "-c", "user.email=fixture@example.invalid",
-      "commit", "--quiet", "-m", "same-parent wrong-content activation decoy"
+      "commit", "--quiet", "--amend", "--no-edit"
     ]);
     const wrongContentGitSha = git(seed, ["rev-parse", "HEAD"]);
     const wrongContentTreeSha = git(seed, ["rev-parse", "HEAD^{tree}"]);
+    assert.notEqual(wrongContentTreeSha, fixtureTreeSha);
     assert.deepEqual(parentShas(seed), [EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA]);
+    assert.deepEqual(git(seed, [
+      "diff", "--name-only", EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA,
+      wrongContentGitSha, "--"
+    ]).split("\n").filter(Boolean).sort(),
+    [...EXTERNAL_IDENTITY_V3_ACTIVATION_CHANGED_PATHS].sort());
     const wrongContentCheckout = path.join(activationFixtureRoot, "wrong-content-checkout");
     git(activationFixtureRoot, [
       "clone", "--quiet", "--depth=2", pathToFileURL(seed).href, wrongContentCheckout
@@ -10127,7 +11183,7 @@ if (externalIdentityV3CheckpointReaderBridge != null) {
   assert.equal(reducedCheckpointReaderBridge.writer_projection_mode,
     EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE);
   assert.equal(compatibilityBridgeWriterProjectionMode(reducedCheckpointReaderBridge, {
-    expectedGitSha: externalIdentityV3CheckpointReaderBridgeGitSha
+    expectedGitSha: externalIdentityV3CheckpointReaderBridge.git_sha
   }), EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_WRITER_PROJECTION_MODE);
   assert.throws(() => buildCompatibilityBridgeManifest({
     selection: externalIdentityV3CheckpointReaderBridge,

@@ -15,7 +15,9 @@ import {
 } from "../lib/listing/thin/verified-original-observation-support.mjs";
 import {
   buildCsmStageRows,
+  CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
   CSM_STAGE_LEGACY_CONTRACT_VERSION,
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION,
   computeCsmPacketHashes,
   EBAY_PROFILE_VERSION,
   LYNCA_STANDARD_PROFILE_VERSION,
@@ -23,6 +25,11 @@ import {
   THIN_COMPOSER_VERSION_V1,
   THIN_COMPOSER_VERSION_V2
 } from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt,
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import {
   composeCanonicalFieldsForStoredOutput,
   isCapturedE1aeReplayTuple,
@@ -123,6 +130,174 @@ assert.equal(tcg.rows.output.structured_output.composition_grammar, "tcg");
   assert.ok(checked.ok, JSON.stringify(checked.problems));
   assert.equal(checked.replayed.grammar, "tcg");
   assert.match(checked.replayed.title, /^2025 Pokemon JP /);
+}
+
+// Stage-v4 replay executes only the already validated stored transition. It
+// never reclassifies a TG-looking number: the raw Standard grammar remains in
+// its receipt while the resolved TCG grammar selects the exact v2/eBay tuple.
+const tcgContextObserved = parseCanonicalFields({
+  ...base,
+  year: "", manufacturer: "", product: "", set: "Trainer Gallery",
+  subjects: ["Eternatus"], team: "", card_name: "", card_number: "TG22/TG30",
+  serial: "", attributes: [], grading_info: null, grade: "",
+  grammar: "standard", language: "", ip: ""
+}).fields;
+const tcgContextResolved = { ...tcgContextObserved, grammar: "tcg" };
+const tcgContextComposed = activeCompose(tcgContextResolved);
+const tcgContextDurableReceipts = durableReceipts(tcgContextObserved);
+const tcgContextSourceExecution = Object.freeze({
+  operationPayloadSha256: "a".repeat(64),
+  originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+  recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+  providerClientRequestId: "lynca-replay-test-attempt-1",
+  providerResponseId: "resp_replay_test_1",
+  tenantId: "tenant-replay",
+  recognitionSessionId: "session-tcg-context-v4"
+});
+const tcgContextFieldSourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+  fieldSources: [
+    { field: "set", source_ids: ["original_image_1"] },
+    { field: "card_number", source_ids: ["original_image_1"] }
+  ],
+  fields: tcgContextObserved,
+  originalImageCount: 1,
+  semanticStateSha256:
+    tcgContextDurableReceipts.founderBetaWebReceipt.semantic_state_sha256,
+  founderBetaWebReceipt: tcgContextDurableReceipts.founderBetaWebReceipt,
+  sourceExecution: tcgContextSourceExecution
+});
+const tcgContextClaimReceipt = buildTcgGrammarContextClaimReceipt({
+  fields: tcgContextObserved,
+  fieldSourceAuthorityReceipt: tcgContextFieldSourceReceipt
+});
+const tcgContextRows = buildCsmStageRows({
+  tenantId: "tenant-replay",
+  recognitionSessionId: "session-tcg-context-v4",
+  fields: tcgContextResolved,
+  observedFields: tcgContextObserved,
+  composed: tcgContextComposed,
+  title: tcgContextComposed.title,
+  ...tcgContextDurableReceipts,
+  tcgFieldSourceAuthorityReceipt: tcgContextFieldSourceReceipt,
+  tcgGrammarContextClaimReceipt: tcgContextClaimReceipt,
+  registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+  contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+});
+assert.equal(tcgContextClaimReceipt.status, "APPLIED");
+assert.equal(tcgContextClaimReceipt.raw_grammar, "standard");
+assert.equal(tcgContextRows.output.composer_version, THIN_COMPOSER_VERSION_V2);
+assert.equal(tcgContextRows.output.marketplace_profile_version, EBAY_PROFILE_VERSION);
+{
+  const checked = verifyReplay(tcgContextRows, tcgContextComposed.title);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.equal(checked.replayed.grammar, "tcg");
+  assert.equal(checked.replayed.fields.grammar, "tcg");
+  assert.equal(
+    tcgContextRows.output.structured_output.observed_composition_grammar,
+    "standard"
+  );
+}
+
+// The same TG-looking values must stay Standard when the stored claim
+// abstains. This is the counterexample that prevents number-based inference
+// from creeping into replay.
+{
+  const fieldSourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+    fieldSources: [
+      { field: "card_number", source_ids: ["original_image_1"] }
+    ],
+    fields: tcgContextObserved,
+    originalImageCount: 1,
+    semanticStateSha256:
+      tcgContextDurableReceipts.founderBetaWebReceipt.semantic_state_sha256,
+    founderBetaWebReceipt: tcgContextDurableReceipts.founderBetaWebReceipt,
+    sourceExecution: {
+      ...tcgContextSourceExecution,
+      recognitionSessionId: "session-tcg-context-v4-abstain"
+    }
+  });
+  const claimReceipt = buildTcgGrammarContextClaimReceipt({
+    fields: tcgContextObserved,
+    fieldSourceAuthorityReceipt: fieldSourceReceipt
+  });
+  const composed = activeCompose(tcgContextObserved);
+  const rows = buildCsmStageRows({
+    tenantId: "tenant-replay",
+    recognitionSessionId: "session-tcg-context-v4-abstain",
+    fields: tcgContextObserved,
+    observedFields: tcgContextObserved,
+    composed,
+    title: composed.title,
+    ...tcgContextDurableReceipts,
+    tcgFieldSourceAuthorityReceipt: fieldSourceReceipt,
+    tcgGrammarContextClaimReceipt: claimReceipt,
+    contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+  });
+  assert.equal(claimReceipt.status, "ABSTAIN");
+  const checked = verifyReplay(rows, composed.title);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.equal(checked.replayed.grammar, "standard");
+}
+
+// A provider-observed TCG row is NOT_REQUIRED, and still replays through its
+// existing stored TCG composer tuple without borrowing the contextual claim.
+{
+  const claimReceipt = buildTcgGrammarContextClaimReceipt({
+    fields: tcgContextResolved,
+    fieldSourceAuthorityReceipt: tcgContextFieldSourceReceipt
+  });
+  const rows = buildCsmStageRows({
+    tenantId: "tenant-replay",
+    recognitionSessionId: "session-tcg-context-v4-not-required",
+    fields: tcgContextResolved,
+    observedFields: tcgContextResolved,
+    composed: tcgContextComposed,
+    title: tcgContextComposed.title,
+    ...tcgContextDurableReceipts,
+    tcgFieldSourceAuthorityReceipt: tcgContextFieldSourceReceipt,
+    tcgGrammarContextClaimReceipt: claimReceipt,
+    contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+  });
+  assert.equal(claimReceipt.status, "NOT_REQUIRED");
+  const checked = verifyReplay(rows, tcgContextComposed.title);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.equal(checked.replayed.grammar, "tcg");
+}
+
+// Packet re-sealing cannot turn a mutated receipt into replay authority.
+{
+  const forged = clone(tcgContextRows);
+  forged.output.structured_output.tcg_grammar_context_claim_receipt.raw_grammar = "tcg";
+  reseal(forged);
+  const checked = verifyReplay(forged, tcgContextComposed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some(({ kind }) => (
+    kind === "tcg_grammar_context_claim_receipt_invalid"
+  )), JSON.stringify(checked.problems));
+}
+
+// A v4 packet cannot be downgraded to stage-v3 while retaining its receipts.
+{
+  const downgraded = clone(tcgContextRows);
+  downgraded.output.contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+  downgraded.resolution.contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+  for (const row of [...downgraded.evidence, ...downgraded.candidates]) {
+    row.contract_version = CSM_DURABLE_PROJECTION_CONTRACT_VERSION;
+  }
+  reseal(downgraded);
+  const checked = verifyReplay(downgraded, tcgContextComposed.title);
+  assert.equal(checked.ok, false);
+  assert.ok(checked.problems.some(({ kind }) => (
+    kind === "tcg_grammar_context_receipt_outside_contract"
+  )), JSON.stringify(checked.problems));
+}
+
+// The appended v4 dispatch leaves the already published v3 replay unchanged.
+{
+  const checked = verifyReplay(standard.rows, standard.composed.title);
+  assert.ok(checked.ok, JSON.stringify(checked.problems));
+  assert.equal(checked.replayed.title, standard.composed.title);
+  assert.equal(checked.replayed.grammar, "standard");
 }
 
 // Lot is NON_TCG identity, but must retain its own composition grammar and

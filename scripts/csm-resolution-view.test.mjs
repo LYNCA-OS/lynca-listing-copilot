@@ -1,15 +1,37 @@
 #!/usr/bin/env node
 // COS-42 stage 1 and 2 contracts.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   buildCsmResolutionView, BRACKET_STATE, COMPOSER_DISPOSITION, RATIONALE
 } from "../lib/listing/csm/resolution-view.mjs";
 import {
+  CSM_TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_VERSION,
+  publicDurableProjectionReceipts
+} from "../api/csm-resolution-view.js";
+import {
   buildCsmResolutionReview, buildReviewMeasurementSnapshot, projectReviewAccuracy,
   REVIEW_VERDICT, CORRECTION_REASON, REVIEW_MEASUREMENT_BASIS
 } from "../lib/listing/csm/resolution-review.mjs";
-import { parseCanonicalFields } from "../lib/listing/thin/canonical-fields.mjs";
+import {
+  CANONICAL_FIELDS_PARSER_SEMANTICS,
+  parseCanonicalFields
+} from "../lib/listing/thin/canonical-fields.mjs";
 import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-composer.mjs";
+import {
+  buildCsmStageRows,
+  CSM_DURABLE_PROJECTION_CONTRACT_VERSION,
+  CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+} from "../lib/listing/thin/csm-persistence.mjs";
+import {
+  CSM_WRITER_PROJECTION_CONTRACTS
+} from "../lib/listing/thin/csm-projection-activation.mjs";
+import { finishCanonicalFields } from "../lib/listing/thin/thin-listing-path.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE,
+  buildTcgFieldSourceAuthorityReceipt,
+  buildTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import {
   PUBLICATION_DISPOSITION,
   createPublicationCoverage
@@ -678,3 +700,265 @@ console.log("csm-resolution-view grammar-corroboration assertions OK");
 }
 
 console.log("csm-resolution-view learning-flow assertions OK");
+
+// Stage-v4 keeps its execution-bound authority receipts private. The owner
+// read model exposes only the semantic facts needed to prove why Grammar was
+// (or was not) changed; operation, image, and provider identity hashes never
+// cross the public projection.
+function grammarContextRows({
+  recognitionSessionId,
+  cardNumber = "TG22/TG30",
+  grammar = "standard",
+  sourceAuthorized = true,
+  stageV4 = true
+}) {
+  const writer = stageV4
+    ? CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4
+    : CSM_WRITER_PROJECTION_CONTRACTS.future_v3;
+  const raw = {
+    year: "2022", ip: "", language: "", manufacturer: "",
+    product: stageV4 ? "Sword & Shield—Brilliant Stars" : "Chrome",
+    set: stageV4 ? "Trainer Gallery" : "Base",
+    subjects: [stageV4 ? "Eternatus" : "Shohei Ohtani"], team: "",
+    card_name: "", release_variant: "", surface_color: "",
+    parallel_family: "", parallel_exact: "", descriptive_rarity: "",
+    card_number: stageV4 ? cardNumber : "150", serial: "", attributes: [],
+    grading_info: null, grammar, lot_count: "", unreadable: [],
+    low_confidence: [], special_stamp: "", description: ""
+  };
+  const founderBetaWebReceipt = {
+    schema_version: "founder-beta-web-receipt-v2",
+    outcome: "NOT_USED",
+    provider_request_count: 1,
+    isolated_model_call_count: 0,
+    provider_model: "gpt-5.6-luna",
+    reasoning_effort: "low",
+    web_search_used: false,
+    web_search_call_count: 0,
+    queries: [],
+    urls: [],
+    field_evidence: [],
+    semantic_state_sha256: createHash("sha256")
+      .update(JSON.stringify(raw)).digest("hex")
+  };
+  let sourceReceipt = null;
+  let claimReceipt = null;
+  if (stageV4) {
+    const identity = createHash("sha256")
+      .update(`${recognitionSessionId}\u0000${cardNumber}\u0000${grammar}`)
+      .digest("hex");
+    sourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+      fieldSources: [
+        { field: "set", source_ids: sourceAuthorized ? ["original_image_1"] : [] },
+        { field: "card_number", source_ids: ["original_image_1"] }
+      ],
+      fields: raw,
+      originalImageCount: 1,
+      semanticStateSha256: founderBetaWebReceipt.semantic_state_sha256,
+      founderBetaWebReceipt,
+      sourceExecution: {
+        operationPayloadSha256: identity,
+        originalImageFingerprints: [`sha256:${identity}`],
+        recognitionImageFingerprints: [`sha256:${identity}`],
+        providerClientRequestId: `client-${recognitionSessionId}`,
+        providerResponseId: `response-${recognitionSessionId}`,
+        tenantId: "tenant-resolution-view-v4",
+        recognitionSessionId
+      }
+    });
+    claimReceipt = buildTcgGrammarContextClaimReceipt({
+      fields: raw,
+      fieldSourceAuthorityReceipt: sourceReceipt
+    });
+  }
+  const parsed = parseCanonicalFields(raw, {
+    semantics: stageV4
+      ? CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT
+      : writer.canonical_fields.parser_semantics,
+    ...(stageV4 ? {
+      tcgFieldSourceAuthorityReceipt: sourceReceipt,
+      tcgGrammarContextClaimReceipt: claimReceipt
+    } : {})
+  });
+  const finished = finishCanonicalFields(parsed.fields, { writerContract: writer });
+  const composed = {
+    grammar: finished.grammar,
+    brackets: finished.brackets,
+    bracket_text: finished.bracket_text,
+    dropped: finished.dropped_brackets,
+    suppressed: finished.suppressed_brackets,
+    restored: finished.restored_brackets,
+    truncated: finished.truncated,
+    input_empty_fields: finished.input_empty_fields,
+    normalization_reasons: finished.normalization_reasons,
+    character_budget: finished.character_budget,
+    length: finished.length,
+    composer_version: finished.composer_version,
+    marketplace_profile_version: finished.marketplace_profile_version,
+    canonical_naming_trace: finished.canonical_naming_trace,
+    canonical_naming_publishable: finished.canonical_naming_publishable,
+    publication_coverage: finished.publication_coverage,
+    lot_quantity_unresolved: finished.lot_quantity_unresolved,
+    lot_single_card: finished.lot_single_card,
+    lot_unshared_attributes: finished.lot_unshared_attributes,
+    lot_publishable: finished.lot_publishable,
+    lot_publication_failure_code: finished.lot_publication_failure_code
+  };
+  const rows = buildCsmStageRows({
+    tenantId: "tenant-resolution-view-v4",
+    recognitionSessionId,
+    fields: parsed.fields,
+    observedFields: parsed.observed_fields || parsed.fields,
+    composed,
+    founderBetaWebReceipt,
+    setCardNameRelationReceipt: {
+      schema_version: "set-card-name-relations-v1",
+      set: { predicate: "CURRENT_CARD_MEMBER_OF_SET", value: raw.set },
+      card_name: null
+    },
+    ...(stageV4 ? {
+      tcgFieldSourceAuthorityReceipt: sourceReceipt,
+      tcgGrammarContextClaimReceipt: claimReceipt,
+      ...(claimReceipt.status === "APPLIED" ? {
+        registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id
+      } : {}),
+      contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+    } : {
+      contractVersion: CSM_DURABLE_PROJECTION_CONTRACT_VERSION
+    }),
+    title: finished.title
+  });
+  return { rows, sourceReceipt, claimReceipt };
+}
+
+{
+  const publicKeys = [
+    "claim_id", "conflict_codes", "ip_action", "normalization_version",
+    "normalized_card_number", "normalized_set", "policy_version", "raw_grammar",
+    "reason_code", "registry_content_sha256", "registry_record_sha256",
+    "registry_release_id", "resolved_grammar", "schema_version",
+    "source_authority", "status", "web_authority_used"
+  ].sort();
+  const cases = [
+    { status: "APPLIED", cardNumber: "TG22/TG30", grammar: "standard",
+      resolvedGrammar: "tcg", sourceAuthorized: true,
+      authorityUsed: "CURRENT_IMAGE", reasonCode: "EXACT_JOINT_SET_NUMBER_NAMESPACE" },
+    { status: "ABSTAIN", cardNumber: "TG22/TG30", grammar: "standard",
+      resolvedGrammar: "standard", sourceAuthorized: false,
+      authorityUsed: "ABSTAIN", reasonCode: "CURRENT_IMAGE_AUTHORITY_MISSING" },
+    { status: "NOT_REQUIRED", cardNumber: "TG22/TG30", grammar: "tcg",
+      resolvedGrammar: "tcg", sourceAuthorized: true,
+      authorityUsed: "CURRENT_IMAGE", reasonCode: "RAW_TCG_GRAMMAR_UNCHANGED" }
+  ];
+  const unverified = grammarContextRows({
+    recognitionSessionId: "session-public-unverified"
+  });
+  assert.throws(
+    () => publicDurableProjectionReceipts(unverified.rows),
+    (error) => error.statusCode === 409
+      && error.message === "csm_resolution_durable_projection_receipt_invalid",
+    "row-only replay must not publish a session authority receipt"
+  );
+  for (const testCase of cases) {
+    const fixture = grammarContextRows({
+      recognitionSessionId: `session-public-${testCase.status.toLowerCase()}`,
+      cardNumber: testCase.cardNumber,
+      grammar: testCase.grammar,
+      sourceAuthorized: testCase.sourceAuthorized
+    });
+    const projected = publicDurableProjectionReceipts(fixture.rows, {
+      sourceExecutionVerified: true
+    });
+    const receipt = projected.tcg_grammar_context_authority_receipt;
+    assert.deepEqual(Object.keys(receipt).sort(), publicKeys);
+    assert.equal(receipt.schema_version,
+      CSM_TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_VERSION);
+    assert.equal(receipt.status, testCase.status);
+    assert.equal(receipt.raw_grammar, testCase.grammar);
+    assert.equal(receipt.resolved_grammar, testCase.resolvedGrammar);
+    assert.equal(receipt.reason_code, testCase.reasonCode);
+    assert.equal(receipt.normalized_set, "Trainer Gallery");
+    assert.equal(receipt.normalized_card_number, testCase.cardNumber);
+    assert.equal(receipt.ip_action, "UNCHANGED");
+    assert.equal(receipt.web_authority_used, false);
+    assert.deepEqual(Object.keys(receipt.source_authority).sort(), [
+      "authority_used", "field_authority"
+    ]);
+    assert.equal(receipt.source_authority.authority_used, testCase.authorityUsed);
+    assert.deepEqual(receipt.source_authority.field_authority.map((row) => row.field), [
+      "card_number", "set"
+    ]);
+    for (const row of receipt.source_authority.field_authority) {
+      assert.deepEqual(Object.keys(row).sort(), [
+        "current_image_source_present", "field", "web_source_present"
+      ]);
+      assert.equal(row.current_image_source_present,
+        row.field === "set" ? testCase.sourceAuthorized : true);
+      assert.equal(row.web_source_present, false);
+    }
+    const serialized = JSON.stringify(receipt);
+    for (const privateKey of [
+      "operation_payload_sha256", "original_image_fingerprints_sha256",
+      "recognition_image_fingerprints_sha256",
+      "provider_client_request_id_sha256", "provider_response_id_sha256",
+      "session_identity_sha256",
+      "semantic_state_sha256", "normalized_field_sources_sha256",
+      "founder_beta_web_receipt_sha256", "authorized_field_values_sha256",
+      "receipt_sha256", "field_source_authority_receipt_sha256"
+    ]) {
+      assert.equal(serialized.includes(`\"${privateKey}\"`), false,
+        `${privateKey} must stay private`);
+    }
+  }
+
+  const historical = publicDurableProjectionReceipts(grammarContextRows({
+    recognitionSessionId: "session-public-historical-v3",
+    stageV4: false
+  }).rows);
+  assert.deepEqual(Object.keys(historical).sort(), [
+    "founder_beta_web_receipt", "set_card_name_relation_receipt"
+  ], "v1-v3 public keys remain byte-compatible");
+  assert.equal(JSON.stringify(historical), JSON.stringify({
+    founder_beta_web_receipt:
+      historical.founder_beta_web_receipt,
+    set_card_name_relation_receipt:
+      historical.set_card_name_relation_receipt
+  }), "v3 receipt property order remains byte-compatible");
+
+  const target = grammarContextRows({
+    recognitionSessionId: "session-public-private-target",
+    cardNumber: "TG22/TG30"
+  });
+  const donor = grammarContextRows({
+    recognitionSessionId: "session-public-private-donor",
+    cardNumber: "TG21/TG30"
+  });
+  for (const mutate of [
+    (rows) => { delete rows.output.structured_output.tcg_field_source_authority_receipt; },
+    (rows) => { delete rows.output.structured_output.tcg_grammar_context_claim_receipt; },
+    (rows) => {
+      rows.output.structured_output.tcg_grammar_context_claim_receipt.receipt_sha256 =
+        "0".repeat(64);
+    },
+    (rows) => {
+      rows.output.structured_output.tcg_field_source_authority_receipt =
+        donor.sourceReceipt;
+      rows.output.structured_output.tcg_grammar_context_claim_receipt =
+        donor.claimReceipt;
+    }
+  ]) {
+    const invalid = structuredClone(target.rows);
+    mutate(invalid);
+    let partialProjection = null;
+    assert.throws(() => {
+      partialProjection = publicDurableProjectionReceipts(invalid, {
+        sourceExecutionVerified: true
+      });
+    }, (error) => error.statusCode === 409
+      && error.message === "csm_resolution_durable_projection_receipt_invalid");
+    assert.equal(partialProjection, null,
+      "invalid private authority must not return a partial public view");
+  }
+}
+
+console.log("csm-resolution-view v4 public Grammar authority assertions OK");

@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { CANONICAL_FIELD_SOURCE_FIELDS } from "../lib/listing/thin/canonical-fields.mjs";
+import {
+  CANONICAL_FIELD_SOURCE_FIELDS
+} from "../lib/listing/thin/canonical-fields.mjs";
 import { validateFounderBetaWebReceipt } from "../lib/listing/thin/csm-forward-reader-bridge.mjs";
 import { runCanonicalListingPath } from "../lib/listing/thin/thin-listing-path.mjs";
 import {
@@ -11,6 +14,14 @@ import {
 import {
   projectSetCardNameRelationReceipt
 } from "../lib/listing/thin/set-card-name-reconciliation.mjs";
+import {
+  CANONICAL_NAMING_TCG_GRAMMAR_AUTHORITY_MISSING
+} from "../lib/listing/thin/thin-listing-path.mjs";
+
+const productionTcgGrammarMisroute = JSON.parse(readFileSync(new URL(
+  "./fixtures/production-writer-journey-tcg-grammar-misroute-v1.json",
+  import.meta.url
+), "utf8"));
 
 const runFutureCanonicalListingPath = (options) => runCanonicalListingPath({
   ...options,
@@ -519,6 +530,80 @@ for (const [fields, expectedGrammar] of [[{
     assert.equal(result.fields.ip, "Pokemon");
     assert.ok(result.field_defects.includes("grammar_standard_but_csm_says_tcg"));
   }
+}
+
+// The approved v4 parser fixes only a fresh response that seals both fields as
+// current-image observations. The historical failure remains immutable; a
+// Web-only Set cannot borrow the approved namespace and fails closed without a
+// second provider call.
+{
+  const fixtureFields = productionTcgGrammarMisroute.sanitized_canonical_fields;
+  const sourceAuthorityContext = Object.freeze({
+    operationPayloadSha256: "a".repeat(64),
+    originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+    recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+    providerClientRequestId: "lynca-provider-boundary-attempt-1",
+    tenantId: "tenant-provider-boundary",
+    recognitionSessionId: "session-provider-boundary"
+  });
+  const providerFields = Object.fromEntries([
+    ...CANONICAL_FIELD_SOURCE_FIELDS,
+    "unreadable", "low_confidence"
+  ].filter((field) => Object.hasOwn(fixtureFields, field)).map(
+    (field) => [field, structuredClone(fixtureFields[field])]
+  ));
+  const approved = await runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4,
+    providerClientRequestId: sourceAuthorityContext.providerClientRequestId,
+    sourceAuthorityContext,
+    callProvider: async () => {
+      return new Response(JSON.stringify({
+        ...completedBody(audited(providerFields)),
+        id: "resp_provider_boundary_tcg_1"
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+  assert.equal(approved.fields.grammar, "tcg");
+  assert.equal(approved.observed_fields.grammar, "standard");
+  assert.equal(approved.fields.ip, "");
+  assert.equal(approved.tcg_grammar_context_claim_receipt.status, "APPLIED");
+
+  const officialChecklist =
+    "https://assets.pokemon.com/assets/cms2/pdf/trading-card-game/checklist/swsh3_web_cardlist_en.pdf";
+  const webOnly = audited(providerFields);
+  webOnly.field_sources = webOnly.field_sources.map((row) => row.field === "set"
+    ? { ...row, source_ids: [officialChecklist] } : row);
+  let providerCalls = 0;
+  await assert.rejects(runCanonicalListingPath({
+    imageUrls: ["https://example.invalid/card.jpg"],
+    model: "gpt-5.6-luna",
+    writerContract: CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4,
+    providerClientRequestId: sourceAuthorityContext.providerClientRequestId,
+    sourceAuthorityContext,
+    callProvider: async () => {
+      providerCalls += 1;
+      return new Response(JSON.stringify({
+        ...completedBody(webOnly),
+        id: "resp_provider_boundary_tcg_web_only_1",
+        output: [{
+          type: "web_search_call",
+          status: "completed",
+          action: { type: "open_page", url: officialChecklist }
+        }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  }), (error) => error?.name === "CanonicalProviderError"
+    && error?.provider_error_code === CANONICAL_NAMING_TCG_GRAMMAR_AUTHORITY_MISSING,
+  "a Web-only Set cannot author TCG Grammar");
+  assert.equal(providerCalls, 1, "the deterministic rejection never buys a retry");
 }
 
 {

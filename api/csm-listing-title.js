@@ -2,6 +2,7 @@
 // search, or second model round participates in this request.
 
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import { enforceApiRateLimit } from "../lib/api-rate-limit.mjs";
 import { readJsonPayload, sendJson } from "../lib/http-handler-utils.mjs";
@@ -56,6 +57,7 @@ import {
 import {
   CAPTURED_PRODUCTION_E1AE_WRITER_CONTRACT_ID,
   CSM_PROJECTION_ACTIVATION,
+  CSM_WRITER_PROJECTION_CONTRACTS,
   validateCsmProjectionActivation,
   writerProjectionContractForPreparedResult
 } from "../lib/listing/thin/csm-projection-activation.mjs";
@@ -76,6 +78,11 @@ import {
   LOT_PUBLICATION_FAILURE,
   validateLotTerminalReceipt
 } from "../lib/listing/thin/lot-terminal-contract.mjs";
+import {
+  TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT,
+  validateTcgFieldSourceAuthorityReceipt,
+  validateTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 
 const MODEL = CSM_THIN_RUNTIME_CONTRACT.model;
 const EFFORT = CSM_THIN_RUNTIME_CONTRACT.reasoningEffort;
@@ -109,6 +116,10 @@ export const CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERIFIED_ORIGINAL_VER
   "csm-persistence-checkpoint-ordinary-execution-v3";
 export const CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERIFIED_ORIGINAL_VERSION =
   "csm-persistence-checkpoint-derived-v3";
+export const CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION =
+  "csm-persistence-checkpoint-ordinary-execution-v4";
+export const CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION =
+  "csm-persistence-checkpoint-derived-v4";
 const CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_LEGACY_VERSION =
   "csm-persistence-checkpoint-ordinary-execution-v1";
 const CSM_PERSISTENCE_CHECKPOINT_DERIVED_LEGACY_VERSION =
@@ -550,11 +561,177 @@ function normalizedPostObservationCheckpointReceipts(result, {
   return { externalIdentityReceipt, verifiedOriginalObservationReceipt };
 }
 
+function normalizedTcgGrammarContextCheckpointReceipts(result, {
+  tenantId,
+  recognitionSessionId,
+  operationKey,
+  payloadHash,
+  originalImageFingerprints,
+  recognitionImageFingerprints,
+  requestOriginalSetSha256 = null,
+  resolutionContractSha256,
+  requireActiveRelease = false,
+  projectionActivation = CSM_PROJECTION_ACTIVATION,
+  writerContract = null,
+  historicalReplay = false
+} = {}) {
+  let storedWriter;
+  try {
+    storedWriter = writerProjectionContractForPreparedResult(result, {
+      historicalReplay
+    });
+  } catch {
+    throw persistenceCheckpointError("writer_contract_binding_invalid");
+  }
+  const v4Writer = CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4;
+  if (storedWriter.contract_id !== v4Writer.contract_id
+      || writerContract?.contract_id !== v4Writer.contract_id) {
+    throw persistenceCheckpointError("tcg_grammar_context_writer_contract_mismatch");
+  }
+
+  const structured = result?.csm_rows?.output?.structured_output;
+  const founderReceipt = result?.founder_beta_web_receipt;
+  const storedFounderReceipt = structured?.founder_beta_web_receipt;
+  const sourceReceipt = result?.tcg_field_source_authority_receipt;
+  const claimReceipt = result?.tcg_grammar_context_claim_receipt;
+  const storedSourceReceipt = structured?.tcg_field_source_authority_receipt;
+  const storedClaimReceipt = structured?.tcg_grammar_context_claim_receipt;
+  if (founderReceipt == null || storedFounderReceipt == null
+      || sourceReceipt == null || claimReceipt == null
+      || storedSourceReceipt == null || storedClaimReceipt == null) {
+    throw persistenceCheckpointError("tcg_grammar_context_checkpoint_receipt_missing");
+  }
+  if (!isDeepStrictEqual(founderReceipt, storedFounderReceipt)) {
+    throw persistenceCheckpointError("tcg_grammar_context_founder_receipt_mismatch");
+  }
+  if (!isDeepStrictEqual(sourceReceipt, storedSourceReceipt)) {
+    throw persistenceCheckpointError("tcg_field_source_authority_receipt_mismatch");
+  }
+  if (!isDeepStrictEqual(claimReceipt, storedClaimReceipt)) {
+    throw persistenceCheckpointError("tcg_grammar_context_claim_receipt_mismatch");
+  }
+  const rowObservedFields = {
+    set: claimReceipt?.normalized_set,
+    card_number: claimReceipt?.normalized_card_number,
+    grammar: structured?.observed_composition_grammar
+  };
+  if (!isDeepStrictEqual(rowObservedFields, {
+    set: result?.observed_fields?.set,
+    card_number: result?.observed_fields?.card_number,
+    grammar: result?.observed_fields?.grammar
+  })) {
+    throw persistenceCheckpointError("tcg_grammar_context_observed_fields_mismatch");
+  }
+  let sourceExecution;
+  try {
+    const attempt = Number(result?.provider_attempt_number);
+    const providerClientRequestId = deterministicProviderClientRequestId({
+      operationKey,
+      payloadHash,
+      attempt
+    });
+    if (result?.provider_client_request_id !== providerClientRequestId) {
+      throw new TypeError("tcg_provider_client_request_id_mismatch");
+    }
+    sourceExecution = {
+      operationPayloadSha256: payloadHash,
+      originalImageFingerprints,
+      recognitionImageFingerprints,
+      providerClientRequestId,
+      providerResponseId: requiredText(
+        result?.provider_response_id,
+        "provider_response_id"
+      ),
+      tenantId: requiredText(tenantId, "tenant_id"),
+      recognitionSessionId: requiredText(
+        recognitionSessionId,
+        "recognition_session_id"
+      )
+    };
+  } catch {
+    throw persistenceCheckpointError("tcg_grammar_context_execution_binding_invalid");
+  }
+  try {
+    validateTcgFieldSourceAuthorityReceipt(sourceReceipt, {
+      founderBetaWebReceipt: storedFounderReceipt,
+      fields: rowObservedFields,
+      sourceExecution
+    });
+    validateTcgGrammarContextClaimReceipt(claimReceipt, {
+      fields: { ...result?.observed_fields, ...rowObservedFields },
+      fieldSourceAuthorityReceipt: sourceReceipt
+    });
+  } catch {
+    throw persistenceCheckpointError("tcg_grammar_context_checkpoint_receipt_invalid");
+  }
+
+  const rawGrammar = String(result?.observed_fields?.grammar || "standard")
+    .trim().toLowerCase();
+  const resolvedGrammar = String(result?.fields?.grammar || "standard")
+    .trim().toLowerCase();
+  if (claimReceipt.raw_grammar !== rawGrammar
+      || claimReceipt.resolved_grammar !== resolvedGrammar
+      || structured.observed_composition_grammar !== rawGrammar
+      || structured.composition_grammar !== resolvedGrammar
+      || result?.csm_rows?.resolution?.grammar !== (resolvedGrammar === "tcg" ? "TCG" : "NON_TCG")) {
+    throw persistenceCheckpointError("tcg_grammar_context_grammar_binding_mismatch");
+  }
+  const replay = verifyReplay(result?.csm_rows, result?.title);
+  if (replay?.ok !== true) {
+    throw persistenceCheckpointError("tcg_grammar_context_replay_packet_invalid");
+  }
+
+  let externalIdentityReceipt = null;
+  let verifiedOriginalObservationReceipt = null;
+  if (claimReceipt.status === "APPLIED") {
+    const resolutionDigest = optionalSha256(
+      resolutionContractSha256,
+      "tcg_grammar_context_resolution_contract_sha256"
+    );
+    const resolution = result?.csm_rows?.resolution;
+    if (resolutionDigest !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+        || result?.resolution_contract_sha256 !== resolutionDigest
+        || !isDeepStrictEqual(
+          result?.resolution_contract,
+          TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+        )
+        || result?.external_identity_support != null
+        || result?.verified_original_observation_support != null
+        || structured.external_identity_support != null
+        || structured.verified_original_observation_support != null
+        || resolution?.registry_release_id
+          !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.registry_release_id
+        || resolution?.resolver_version
+          !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
+        || resolution?.conflict_policy_version
+          !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.conflict_policy_version) {
+      throw persistenceCheckpointError("tcg_grammar_context_resolution_contract_mismatch");
+    }
+  } else {
+    ({ externalIdentityReceipt, verifiedOriginalObservationReceipt } =
+      normalizedPostObservationCheckpointReceipts(result, {
+        requestOriginalSetSha256,
+        resolutionContractSha256,
+        requireActiveRelease,
+        projectionActivation,
+        writerContract: storedWriter
+      }));
+  }
+  return {
+    externalIdentityReceipt,
+    verifiedOriginalObservationReceipt,
+    tcgFieldSourceAuthorityReceipt: structuredClone(sourceReceipt),
+    tcgGrammarContextClaimReceipt: structuredClone(claimReceipt)
+  };
+}
+
 export function buildCsmPersistenceCheckpoint({
   prepared, tenantId, operationKey, payloadHash, recognitionSessionId,
   recognitionSessionDeferred = false, recognitionInput = null,
   executionContractSha256 = null, resolutionContractSha256 = null,
   originalSetSha256 = null,
+  originalImageFingerprints = null,
+  recognitionImageFingerprints = null,
   operationScope = "",
   projectionActivation = CSM_PROJECTION_ACTIVATION
 } = {}) {
@@ -601,12 +778,22 @@ export function buildCsmPersistenceCheckpoint({
     if (preparedResolutionContract !== resolutionContract) {
       throw persistenceCheckpointError("prepared_resolution_contract_sha256_mismatch");
     }
-    try {
-      validatePostObservationResolutionContract(prepared?.resolution_contract, {
-        expectedSha256: resolutionContract
-      });
-    } catch {
-      throw persistenceCheckpointError("prepared_resolution_contract_invalid");
+    if (prepared?.tcg_grammar_context_claim_receipt?.status === "APPLIED") {
+      if (resolutionContract !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+          || !isDeepStrictEqual(
+            prepared?.resolution_contract,
+            TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+          )) {
+        throw persistenceCheckpointError("prepared_resolution_contract_invalid");
+      }
+    } else {
+      try {
+        validatePostObservationResolutionContract(prepared?.resolution_contract, {
+          expectedSha256: resolutionContract
+        });
+      } catch {
+        throw persistenceCheckpointError("prepared_resolution_contract_invalid");
+      }
     }
   }
   let selected;
@@ -615,18 +802,41 @@ export function buildCsmPersistenceCheckpoint({
   } catch {
     throw persistenceCheckpointError("projection_activation_invalid");
   }
+  const tcgGrammarContextCheckpoint = selected.contract_id
+    === CSM_WRITER_PROJECTION_CONTRACTS.future_tcg_grammar_context_v4.contract_id;
+  if (tcgGrammarContextCheckpoint && (!executionContract || !resolutionContract)) {
+    throw persistenceCheckpointError("tcg_grammar_context_checkpoint_contract_missing");
+  }
   const checkpointReceipts = resolutionContract
-    ? normalizedPostObservationCheckpointReceipts(prepared, {
-        requestOriginalSetSha256: originalSetSha256,
-        resolutionContractSha256: resolutionContract,
-        requireActiveRelease: true,
-        projectionActivation,
-        writerContract: selected
-      })
+    ? tcgGrammarContextCheckpoint
+      ? normalizedTcgGrammarContextCheckpointReceipts(prepared, {
+          tenantId: tenant,
+          recognitionSessionId: session,
+          operationKey: operation,
+          payloadHash: payload,
+          originalImageFingerprints,
+          recognitionImageFingerprints,
+          requestOriginalSetSha256: originalSetSha256,
+          resolutionContractSha256: resolutionContract,
+          requireActiveRelease: true,
+          projectionActivation,
+          writerContract: selected
+        })
+      : normalizedPostObservationCheckpointReceipts(prepared, {
+          requestOriginalSetSha256: originalSetSha256,
+          resolutionContractSha256: resolutionContract,
+          requireActiveRelease: true,
+          projectionActivation,
+          writerContract: selected
+        })
     : null;
   const externalIdentityReceipt = checkpointReceipts?.externalIdentityReceipt || null;
   const verifiedOriginalObservationReceipt =
     checkpointReceipts?.verifiedOriginalObservationReceipt || null;
+  const tcgFieldSourceAuthorityReceipt =
+    checkpointReceipts?.tcgFieldSourceAuthorityReceipt || null;
+  const tcgGrammarContextClaimReceipt =
+    checkpointReceipts?.tcgGrammarContextClaimReceipt || null;
   let writer;
   try {
     writer = writerProjectionContractForPreparedResult(prepared);
@@ -653,7 +863,11 @@ export function buildCsmPersistenceCheckpoint({
     ...prepared,
     csm_persistence_checkpoint: {
       schema_version: executionContract
-        ? derivedCheckpoint
+        ? tcgGrammarContextCheckpoint
+          ? derivedCheckpoint
+            ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION
+            : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION
+          : derivedCheckpoint
           ? verifiedOriginalObservationReceipt
             ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERIFIED_ORIGINAL_VERSION
             : resolutionContract
@@ -683,6 +897,10 @@ export function buildCsmPersistenceCheckpoint({
       ...(verifiedOriginalObservationReceipt ? {
         verified_original_observation_receipt: verifiedOriginalObservationReceipt
       } : {}),
+      ...(tcgFieldSourceAuthorityReceipt ? {
+        tcg_field_source_authority_receipt: tcgFieldSourceAuthorityReceipt,
+        tcg_grammar_context_claim_receipt: tcgGrammarContextClaimReceipt
+      } : {}),
       packet_hashes: hashes,
       accuracy_loss_ledger_version: accuracyLossLedger.version,
       accuracy_loss_ledger_sha256: accuracyLossLedger.ledger_sha256
@@ -694,6 +912,8 @@ export function validateCsmPersistenceCheckpoint(result, {
   tenantId, operationKey, payloadHash, recognitionSessionId,
   executionContractSha256 = null, resolutionContractSha256 = null,
   originalSetSha256 = null,
+  originalImageFingerprints = null,
+  recognitionImageFingerprints = null,
   operationScope = ""
 } = {}) {
   const checkpoint = result?.csm_persistence_checkpoint;
@@ -721,6 +941,9 @@ export function validateCsmPersistenceCheckpoint(result, {
   const checkpointVersion = checkpoint?.schema_version;
   const allowedCheckpointVersions = executionContract
     ? [derivedCheckpoint
+        ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION
+        : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION,
+      derivedCheckpoint
         ? CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERIFIED_ORIGINAL_VERSION
         : CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERIFIED_ORIGINAL_VERSION,
       derivedCheckpoint
@@ -735,6 +958,12 @@ export function validateCsmPersistenceCheckpoint(result, {
   if (!allowedCheckpointVersions.includes(checkpointVersion)
       || checkpoint?.state !== "PERSISTENCE_PENDING") {
     throw persistenceCheckpointError("marker_missing");
+  }
+  const tcgGrammarContextCheckpoint = checkpointVersion
+      === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION;
+  if (tcgGrammarContextCheckpoint && !resolutionContract) {
+    throw persistenceCheckpointError("tcg_grammar_context_checkpoint_contract_missing");
   }
   for (const [name, value] of Object.entries(expected)) {
     if (checkpoint[name] !== value) throw persistenceCheckpointError(`${name}_mismatch`);
@@ -763,12 +992,23 @@ export function validateCsmPersistenceCheckpoint(result, {
     ) !== resolutionContract) {
       throw persistenceCheckpointError("result_resolution_contract_sha256_mismatch");
     }
-    try {
-      validatePostObservationResolutionContract(result?.resolution_contract, {
-        expectedSha256: resolutionContract
-      });
-    } catch {
-      throw persistenceCheckpointError("result_resolution_contract_invalid");
+    if (tcgGrammarContextCheckpoint
+        && result?.tcg_grammar_context_claim_receipt?.status === "APPLIED") {
+      if (resolutionContract !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+          || !isDeepStrictEqual(
+            result?.resolution_contract,
+            TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT
+          )) {
+        throw persistenceCheckpointError("result_resolution_contract_invalid");
+      }
+    } else {
+      try {
+        validatePostObservationResolutionContract(result?.resolution_contract, {
+          expectedSha256: resolutionContract
+        });
+      } catch {
+        throw persistenceCheckpointError("result_resolution_contract_invalid");
+      }
     }
   }
   const verifiedOriginalCheckpoint = checkpointVersion
@@ -778,7 +1018,51 @@ export function validateCsmPersistenceCheckpoint(result, {
     || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERSION
     || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERSION;
   let storedWriter = null;
-  if (identityReceiptCheckpoint && resolutionContract) {
+  if (tcgGrammarContextCheckpoint && resolutionContract) {
+    try {
+      storedWriter = writerProjectionContractForPreparedResult(result, {
+        historicalReplay: true
+      });
+    } catch {
+      throw persistenceCheckpointError("writer_contract_binding_invalid");
+    }
+    const expectedReceipts = normalizedTcgGrammarContextCheckpointReceipts(result, {
+      tenantId: expected.tenant_id,
+      recognitionSessionId: expected.recognition_session_id,
+      operationKey: expected.operation_key,
+      payloadHash: expected.payload_sha256,
+      originalImageFingerprints,
+      recognitionImageFingerprints,
+      requestOriginalSetSha256: originalSetSha256,
+      resolutionContractSha256: resolutionContract,
+      writerContract: storedWriter,
+      historicalReplay: true
+    });
+    if (!isDeepStrictEqual(
+      checkpoint.tcg_field_source_authority_receipt,
+      expectedReceipts.tcgFieldSourceAuthorityReceipt
+    )) {
+      throw persistenceCheckpointError("tcg_field_source_authority_receipt_mismatch");
+    }
+    if (!isDeepStrictEqual(
+      checkpoint.tcg_grammar_context_claim_receipt,
+      expectedReceipts.tcgGrammarContextClaimReceipt
+    )) {
+      throw persistenceCheckpointError("tcg_grammar_context_claim_receipt_mismatch");
+    }
+    if (!isDeepStrictEqual(
+      checkpoint.external_identity_receipt ?? null,
+      expectedReceipts.externalIdentityReceipt
+    )) {
+      throw persistenceCheckpointError("external_identity_receipt_mismatch");
+    }
+    if (!isDeepStrictEqual(
+      checkpoint.verified_original_observation_receipt ?? null,
+      expectedReceipts.verifiedOriginalObservationReceipt
+    )) {
+      throw persistenceCheckpointError("verified_original_observation_receipt_mismatch");
+    }
+  } else if (identityReceiptCheckpoint && resolutionContract) {
     normalizedPostObservationCheckpointReceipts(result, {
       requestOriginalSetSha256: originalSetSha256,
       resolutionContractSha256: resolutionContract
@@ -810,11 +1094,19 @@ export function validateCsmPersistenceCheckpoint(result, {
   } else if (checkpoint?.external_identity_receipt != null) {
     throw persistenceCheckpointError("external_identity_receipt_unexpected");
   }
-  if (!verifiedOriginalCheckpoint
+  if (!verifiedOriginalCheckpoint && !tcgGrammarContextCheckpoint
       && checkpoint?.verified_original_observation_receipt != null) {
     throw persistenceCheckpointError("verified_original_observation_receipt_unexpected");
   }
+  if (!tcgGrammarContextCheckpoint
+      && (checkpoint?.tcg_field_source_authority_receipt != null
+        || checkpoint?.tcg_grammar_context_claim_receipt != null)) {
+    throw persistenceCheckpointError("tcg_grammar_context_checkpoint_receipt_unexpected");
+  }
   const currentCheckpoint = checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_VERSION
+    || checkpointVersion
+      === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION
+    || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION
     || checkpointVersion
       === CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_VERIFIED_ORIGINAL_VERSION
     || checkpointVersion === CSM_PERSISTENCE_CHECKPOINT_DERIVED_VERIFIED_ORIGINAL_VERSION
@@ -959,10 +1251,23 @@ function historicalResolutionContractSha256(result) {
     throw persistenceCheckpointError("historical_resolution_receipt_incomplete");
   }
   const sha256 = optionalSha256(rawSha256, "historical_resolution_contract_sha256");
-  try {
-    validatePostObservationResolutionContract(contract, { expectedSha256: sha256 });
-  } catch {
-    throw persistenceCheckpointError("historical_resolution_receipt_invalid");
+  const checkpointVersion = result?.csm_persistence_checkpoint?.schema_version;
+  const tcgGrammarContextCheckpoint = [
+    CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION,
+    CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION
+  ].includes(checkpointVersion);
+  if (tcgGrammarContextCheckpoint
+      && result?.tcg_grammar_context_claim_receipt?.status === "APPLIED") {
+    if (sha256 !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.contract_sha256
+        || !isDeepStrictEqual(contract, TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT)) {
+      throw persistenceCheckpointError("historical_resolution_receipt_invalid");
+    }
+  } else {
+    try {
+      validatePostObservationResolutionContract(contract, { expectedSha256: sha256 });
+    } catch {
+      throw persistenceCheckpointError("historical_resolution_receipt_invalid");
+    }
   }
   return sha256;
 }
@@ -977,6 +1282,13 @@ function historicalOriginalSetSha256(result) {
     receipt.request_original_set_sha256,
     "historical_request_original_set_sha256"
   );
+}
+
+function isTcgGrammarContextCheckpoint(result) {
+  return [
+    CSM_PERSISTENCE_CHECKPOINT_ORDINARY_EXECUTION_TCG_GRAMMAR_CONTEXT_VERSION,
+    CSM_PERSISTENCE_CHECKPOINT_DERIVED_TCG_GRAMMAR_CONTEXT_VERSION
+  ].includes(result?.csm_persistence_checkpoint?.schema_version);
 }
 
 const PUBLIC_PERSISTED_RESULT_FIELDS = Object.freeze([
@@ -1535,6 +1847,11 @@ export async function runDirectCsmAsset({
     }
     if (durable.status === "found") {
       durableResult = durable.result;
+      if (isTcgGrammarContextCheckpoint(durableResult)) {
+        durableExecutionContractSha256 = historicalExecutionContractSha256(durableResult);
+        durableResolutionContractSha256 = historicalResolutionContractSha256(durableResult);
+        durableOriginalSetSha256 = historicalOriginalSetSha256(durableResult);
+      }
     } else {
       const code = `csm_resume_${durable.status || "not_found"}`;
       const stagedNotFound = operationScope === "derived_checkpoint"
@@ -1566,7 +1883,14 @@ export async function runDirectCsmAsset({
       durableOriginalSetSha256 = recovered.originalSetSha256;
       historicalPayloadRecovered = true;
     }
-    if (durable.status === "found") durableResult = durable.result;
+    if (durable.status === "found") {
+      durableResult = durable.result;
+      if (isTcgGrammarContextCheckpoint(durableResult)) {
+        durableExecutionContractSha256 = historicalExecutionContractSha256(durableResult);
+        durableResolutionContractSha256 = historicalResolutionContractSha256(durableResult);
+        durableOriginalSetSha256 = historicalOriginalSetSha256(durableResult);
+      }
+    }
     if (durable.status === "failed") {
       if (durable.result?.failure_phase === "CSM_PERSISTENCE") {
         throw Object.assign(new Error("csm_persistence_checkpoint_missing"), {
@@ -1670,6 +1994,12 @@ export async function runDirectCsmAsset({
         transportProfile,
         promptVersion: CSM_DIRECT_PROMPT_VERSION,
         providerClientRequestId,
+        sourceAuthorityContext: {
+          operationPayloadSha256: dispatched.payload_hash,
+          originalImageFingerprints: task.image_fingerprints,
+          recognitionImageFingerprints: task.recognition_fingerprints,
+          providerClientRequestId
+        },
         externalIdentityContext: externalIdentity.context,
         callProvider: async (request) => {
           providerCaller ||= createResponsesProviderCaller({
@@ -1716,8 +2046,13 @@ export async function runDirectCsmAsset({
       recognitionSessionDeferred,
       recognitionInput: recognition.read,
       executionContractSha256: dispatched.execution_contract_sha256 || null,
-      resolutionContractSha256: dispatched.resolution_contract_sha256 || null,
+      resolutionContractSha256:
+        prepared?.tcg_grammar_context_claim_receipt?.status === "APPLIED"
+          ? prepared.resolution_contract_sha256
+          : dispatched.resolution_contract_sha256 || null,
       originalSetSha256: dispatched.original_set_sha256 || null,
+      originalImageFingerprints: task.image_fingerprints,
+      recognitionImageFingerprints: task.recognition_fingerprints,
       operationScope,
       projectionActivation:
         dependencies.projectionActivation || CSM_PROJECTION_ACTIVATION
@@ -1812,6 +2147,8 @@ export async function runDirectCsmAsset({
     executionContractSha256: durableExecutionContractSha256,
     resolutionContractSha256: durableResolutionContractSha256,
     originalSetSha256: durableOriginalSetSha256,
+    originalImageFingerprints: task.image_fingerprints,
+    recognitionImageFingerprints: task.recognition_fingerprints,
     operationScope
   });
   if (typeof synchronizeBeforePersistence === "function") {

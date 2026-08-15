@@ -31,7 +31,18 @@ import {
   sha256OptimizationPack,
   validateCsmModelExecutionContract
 } from "../lib/listing/thin/csm-model-execution-contract.mjs";
-import { resolveCsmProviderAdapter } from "../lib/listing/thin/csm-provider-adapter.mjs";
+import {
+  CSM_OPENAI_RESPONSES_FUTURE_ADAPTER,
+  FUTURE_CANONICAL_REQUEST_BUILDER_VERSION,
+  FUTURE_CANONICAL_RESPONSE_PARSER_VERSION,
+  TCG_GRAMMAR_CONTEXT_CANONICAL_REQUEST_BUILDER_VERSION,
+  TCG_GRAMMAR_CONTEXT_CANONICAL_RESPONSE_PARSER_VERSION,
+  resolveCsmProviderAdapter
+} from "../lib/listing/thin/csm-provider-adapter.mjs";
+import {
+  validateTcgFieldSourceAuthorityReceipt,
+  validateTcgGrammarContextClaimReceipt
+} from "../lib/listing/thin/tcg-grammar-context-authority.mjs";
 import {
   EXTERNAL_IDENTITY_RELEASE_CONTRACT,
   externalIdentityReleaseContractForRegistryRelease
@@ -233,6 +244,150 @@ assert.equal(futureCompiled.provider_request.wire_request.tool_choice, "auto");
 assert.equal(futureCompiled.provider_request.wire_request.max_tool_calls, 2);
 assert.deepEqual(futureCompiled.provider_request.wire_request.include,
   ["web_search_call.action.sources"]);
+
+// V6 is append-only parser authority. It sends the exact frozen request-v2
+// bytes, then seals the already-audited source ledger without exposing it in
+// raw_output. The v5 adapter remains independently addressable and emits the
+// original receipt shape.
+assert.equal(FUTURE_CANONICAL_REQUEST_BUILDER_VERSION,
+  "canonical-fields-web-request-v2");
+assert.equal(FUTURE_CANONICAL_RESPONSE_PARSER_VERSION,
+  "canonical-output-v5-web-receipt-outcome");
+assert.equal(TCG_GRAMMAR_CONTEXT_CANONICAL_REQUEST_BUILDER_VERSION,
+  "canonical-fields-web-request-v3-source-authority");
+assert.equal(TCG_GRAMMAR_CONTEXT_CANONICAL_RESPONSE_PARSER_VERSION,
+  "canonical-output-v6-source-authority");
+const sourceAuthorityAdapter = resolveCsmProviderAdapter("openai", {
+  requestBuilderVersion: TCG_GRAMMAR_CONTEXT_CANONICAL_REQUEST_BUILDER_VERSION
+});
+const sourceAuthorityRequestInput = {
+  imageUrls: [imageUrls[0]], model: "gpt-5.6-luna", effort: "low",
+  imageDetail: "high", maxOutputTokens: 8_192
+};
+const sourceAuthorityRequest = sourceAuthorityAdapter.buildRequest(
+  sourceAuthorityRequestInput
+);
+const v5FutureRequest = CSM_OPENAI_RESPONSES_FUTURE_ADAPTER.buildRequest(
+  sourceAuthorityRequestInput
+);
+assert.deepEqual(sourceAuthorityRequest, v5FutureRequest,
+  "request-v3 changes parser identity without changing frozen Web request bytes");
+
+const tcgProviderPayload = (setSourceIds) => ({
+  year: "2022", language: "", manufacturer: "",
+  product: "Sword & Shield—Brilliant Stars", set: "Trainer Gallery",
+  subjects: ["Eternatus"], team: "", card_name: "", release_variant: "",
+  surface_color: "", parallel_family: "", parallel_exact: "",
+  descriptive_rarity: "", card_number: "TG22/TG30", serial: "",
+  attributes: [], grading_info: null, grammar: "standard", lot_count: "",
+  unreadable: ["language"], low_confidence: [], special_stamp: "",
+  description: "",
+  field_sources: [
+    { field: "year", source_ids: ["original_image_1"] },
+    { field: "product", source_ids: ["original_image_1"] },
+    { field: "set", source_ids: setSourceIds },
+    { field: "subjects", source_ids: ["original_image_1"] },
+    { field: "card_number", source_ids: ["original_image_1"] },
+    { field: "grammar", source_ids: ["original_image_1"] }
+  ],
+  set_card_name_relations: {
+    set: "CURRENT_CARD_MEMBER_OF_SET",
+    card_name: ""
+  }
+});
+const tcgProviderBody = (payload, output = []) => ({
+  id: "resp_tcg_source_authority",
+  status: "completed",
+  model: "gpt-5.6-luna",
+  reasoning: { effort: "low" },
+  output_text: JSON.stringify(payload),
+  output
+});
+const positiveProviderBody = tcgProviderBody(
+  tcgProviderPayload(["original_image_1"])
+);
+const sourceAuthorityContext = Object.freeze({
+  operationPayloadSha256: "a".repeat(64),
+  originalImageFingerprints: [`sha256:${"b".repeat(64)}`],
+  recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`],
+  providerClientRequestId: "lynca-model-pack-attempt-1",
+  tenantId: "tenant-model-pack",
+  recognitionSessionId: "session-model-pack"
+});
+const positiveV6 = sourceAuthorityAdapter.parseResponse(positiveProviderBody, {
+  request: sourceAuthorityRequest,
+  sourceAuthorityContext
+});
+assert.equal(positiveV6.ok, true);
+const positiveFields = JSON.parse(positiveV6.raw_output);
+assert.equal(Object.hasOwn(positiveFields, "field_sources"), false,
+  "raw field_sources must stop at the adapter authority boundary");
+assert.equal(Object.hasOwn(positiveFields, "set_card_name_relations"), false);
+assert.equal(validateTcgFieldSourceAuthorityReceipt(
+  positiveV6.receipt.tcg_field_source_authority_receipt,
+  {
+    sourceExecution: {
+      ...sourceAuthorityContext,
+      providerResponseId: positiveProviderBody.id
+    }
+  }
+), positiveV6.receipt.tcg_field_source_authority_receipt);
+assert.equal(positiveV6.receipt.tcg_field_source_authority_receipt.authority_used,
+  "CURRENT_IMAGE");
+assert.equal(positiveV6.receipt.tcg_grammar_context_claim_receipt.status, "APPLIED");
+assert.equal(positiveV6.receipt.tcg_grammar_context_claim_receipt.resolved_grammar,
+  "tcg");
+assert.equal(validateTcgGrammarContextClaimReceipt(
+  positiveV6.receipt.tcg_grammar_context_claim_receipt,
+  {
+    fields: positiveFields,
+    fieldSourceAuthorityReceipt:
+      positiveV6.receipt.tcg_field_source_authority_receipt
+  }
+), positiveV6.receipt.tcg_grammar_context_claim_receipt);
+
+const positiveV5 = CSM_OPENAI_RESPONSES_FUTURE_ADAPTER.parseResponse(
+  positiveProviderBody, { request: v5FutureRequest }
+);
+assert.equal(positiveV5.raw_output, positiveV6.raw_output);
+assert.equal(Object.hasOwn(positiveV5.receipt,
+  "tcg_field_source_authority_receipt"), false);
+assert.equal(Object.hasOwn(positiveV5.receipt,
+  "tcg_grammar_context_claim_receipt"), false);
+
+const officialChecklist =
+  "https://assets.pokemon.com/assets/cms2/pdf/trading-card-game/checklist/swsh3_web_cardlist_en.pdf";
+const webOnlyProviderBody = tcgProviderBody(
+  tcgProviderPayload([officialChecklist]),
+  [{
+    type: "web_search_call",
+    status: "completed",
+    action: { type: "open_page", url: officialChecklist }
+  }]
+);
+const webOnlyV6 = sourceAuthorityAdapter.parseResponse(webOnlyProviderBody, {
+  request: sourceAuthorityRequest,
+  sourceAuthorityContext
+});
+assert.equal(webOnlyV6.receipt.tcg_field_source_authority_receipt.authority_used,
+  "ABSTAIN");
+assert.equal(webOnlyV6.receipt.tcg_grammar_context_claim_receipt.status, "ABSTAIN");
+assert.equal(webOnlyV6.receipt.tcg_grammar_context_claim_receipt.web_authority_used,
+  false);
+assert.equal(Object.hasOwn(JSON.parse(webOnlyV6.raw_output), "field_sources"), false);
+
+assert.throws(() => validateTcgFieldSourceAuthorityReceipt({
+  ...positiveV6.receipt.tcg_field_source_authority_receipt,
+  authority_used: "ABSTAIN"
+}), /tcg_field_source_authority_receipt_invalid/);
+assert.throws(() => validateTcgGrammarContextClaimReceipt({
+  ...positiveV6.receipt.tcg_grammar_context_claim_receipt,
+  status: "ABSTAIN"
+}, {
+  fields: positiveFields,
+  fieldSourceAuthorityReceipt:
+    positiveV6.receipt.tcg_field_source_authority_receipt
+}), /tcg_grammar_context_claim_receipt_invalid/);
 for (const unsupported of ["temperature", "top_p", "seed"]) {
   assert.equal(Object.hasOwn(compiled.provider_request.wire_request, unsupported), false);
 }

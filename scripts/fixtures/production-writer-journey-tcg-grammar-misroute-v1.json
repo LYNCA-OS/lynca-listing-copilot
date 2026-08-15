@@ -1,0 +1,128 @@
+{
+  "schema_version": "production-writer-journey-tcg-grammar-misroute-v1",
+  "provenance": {
+    "deploy_run_id": "31820306085",
+    "case_id": "TCG",
+    "failed_phase": "RESOLUTION_VIEW",
+    "raw_provider_field_sources_retained": false,
+    "source_partition_proven": false
+  },
+  "sanitized_canonical_fields": {
+    "year": "2022",
+    "language": "",
+    "manufacturer": "",
+    "product": "Sword & Shield—Brilliant Stars",
+    "set": "Trainer Gallery",
+    "subjects": [
+      "Eternatus"
+    ],
+    "team": "",
+    "card_name": "",
+    "release_variant": "",
+    "surface_color": "",
+    "parallel_family": "",
+    "parallel_exact": "",
+    "descriptive_rarity": "",
+    "card_number": "TG22/TG30",
+    "serial": "",
+    "attributes": [],
+    "components": [],
+    "grading_info": null,
+    "grade": "",
+    "grammar": "standard",
+    "lot_count": "",
+    "special_stamp": "",
+    "description": "",
+    "print_finish": "",
+    "search_optimization": [],
+    "unreadable": [
+      "language"
+    ],
+    "low_confidence": []
+  },
+  "durable_projection_observation_rows": [
+    {
+      "field": "year",
+      "value": "2022",
+      "modality": "WHOLE_CARD_VISUAL",
+      "outcome": "KEPT",
+      "reason": "DIRECT_OBSERVATION",
+      "confidence": 0.8
+    },
+    {
+      "field": "product",
+      "value": "Sword & Shield—Brilliant Stars",
+      "modality": "WHOLE_CARD_VISUAL",
+      "outcome": "KEPT",
+      "reason": "DIRECT_OBSERVATION",
+      "confidence": 0.8
+    },
+    {
+      "field": "set",
+      "value": "Trainer Gallery",
+      "modality": "WHOLE_CARD_VISUAL",
+      "outcome": "KEPT",
+      "reason": "DIRECT_OBSERVATION",
+      "confidence": 0.8
+    },
+    {
+      "field": "subjects",
+      "value": [
+        "Eternatus"
+      ],
+      "modality": "WHOLE_CARD_VISUAL",
+      "outcome": "KEPT",
+      "reason": "DIRECT_OBSERVATION",
+      "confidence": 0.8
+    },
+    {
+      "field": "card_number",
+      "value": "TG22/TG30",
+      "modality": "WHOLE_CARD_VISUAL",
+      "outcome": "KEPT",
+      "reason": "DIRECT_OBSERVATION",
+      "confidence": 0.8
+    }
+  ],
+  "founder_beta_web_receipt": {
+    "schema_version": "founder-beta-web-receipt-v2",
+    "outcome": "USED_WITH_FIELD_EVIDENCE",
+    "provider_request_count": 1,
+    "isolated_model_call_count": 0,
+    "provider_model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "web_search_used": true,
+    "web_search_call_count": 1,
+    "queries": [
+      "site:pokemon.com Eternatus VMAX TG22/TG30 2022 checklist"
+    ],
+    "urls": [
+      "https://assets.pokemon.com/assets/cms2/pdf/trading-card-game/checklist/swsh3_web_cardlist_en.pdf"
+    ],
+    "field_evidence": [
+      {
+        "field": "product",
+        "support_urls": [
+          "https://assets.pokemon.com/assets/cms2/pdf/trading-card-game/checklist/swsh3_web_cardlist_en.pdf"
+        ],
+        "conflict_urls": [],
+        "unresolved_urls": []
+      },
+      {
+        "field": "set",
+        "support_urls": [
+          "https://assets.pokemon.com/assets/cms2/pdf/trading-card-game/checklist/swsh3_web_cardlist_en.pdf"
+        ],
+        "conflict_urls": [],
+        "unresolved_urls": []
+      }
+    ],
+    "semantic_state_sha256": "b231e93ee0cf6a00ececd37048dd30e659507644406e80f84b07aab900afff87"
+  },
+  "persisted_projection": {
+    "grammar": "NON_TCG",
+    "composition_grammar": "standard",
+    "composer_version": "thin-marketplace-composer-v3",
+    "marketplace_profile_version": "lynca-standard-name-v0.3"
+  }
+}
