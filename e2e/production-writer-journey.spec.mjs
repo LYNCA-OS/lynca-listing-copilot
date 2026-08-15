@@ -2466,10 +2466,8 @@ function tcgGrammarContextV4VersionActive(versions) {
     === CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
     && versions?.resolver
       === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
-    && versions?.composer
-      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version
-    && versions?.marketplace_profile
-      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version;
+    && versions?.composer === THIN_COMPOSER_VERSION_V2
+    && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
 }
 
 function capturedProductionTcgVersionActive(versions) {
@@ -3549,6 +3547,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
         const tcgGrammarContextV4 = tcgGrammarContextV4WriterActive(writer);
         tcgGrammarContextAuthorityReceipt =
           productionTcgGrammarContextAuthorityProof(resolutionView);
+        // Permanent failing-case diagnostic: when the TCG acceptance case
+        // fails its verifier, the evidence must carry the live resolution
+        // view, the recognized versions, and the receipt proof result so the
+        // failure is diagnosable from the deploy artifact alone.
+        evidence.tcg_diagnostic = {
+          writer_projection_mode: writerProjectionMode,
+          tcg_grammar_context_v4_writer_active: tcgGrammarContextV4,
+          versions,
+          authority_receipt: tcgGrammarContextAuthorityReceipt,
+          resolution_view: resolutionView
+        };
         requireInvariant((tcgGrammarContextV4
           && tcgGrammarContextV4VersionActive(versions)
           && tcgGrammarContextAuthorityReceipt != null)
