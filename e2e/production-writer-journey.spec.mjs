@@ -2466,8 +2466,10 @@ function tcgGrammarContextV4VersionActive(versions) {
     === CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
     && versions?.resolver
       === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
-    && versions?.composer === THIN_COMPOSER_VERSION_V2
-    && versions?.marketplace_profile === EBAY_PROFILE_VERSION;
+    && versions?.composer
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.composer_version
+    && versions?.marketplace_profile
+      === CANONICAL_NAMING_RELEASE_CONTRACT_V3.marketplace_profile_version;
 }
 
 function capturedProductionTcgVersionActive(versions) {
