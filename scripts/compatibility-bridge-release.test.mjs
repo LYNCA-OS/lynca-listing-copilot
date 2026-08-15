@@ -5273,6 +5273,7 @@ assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_ROLLBACK_TREE_SHA,
 assert.deepEqual(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_CHANGED_PATHS, [
   ".github/workflows/ci.yml",
   ".github/workflows/deploy-production.yml",
+  "e2e/production-writer-journey.spec.mjs",
   "scripts/compatibility-bridge-release.mjs",
   "scripts/compatibility-bridge-release.test.mjs",
   "scripts/production-forward-readback.mjs",
