@@ -380,17 +380,40 @@ assert.doesNotMatch(writerJourneyWorkflow,
 assert.match(workflow, /test "\$DEFAULT_BRANCH" = "main"/);
 assert.match(workflow, /test "\$DISPATCH_REF" = "refs\/heads\/main"/);
 assert.match(workflow,
-  /actions\/checkout@v5\s*\n\s*with:\s*\n\s*fetch-depth: 2/,
-  "the release selector needs the exact commit parent in the checked-out object graph");
+  /actions\/checkout@v5\s*\n\s*with:\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 3/,
+  "main history must retain candidate, parent, and rollback independently of v42");
 assert.equal(
   [...workflow.matchAll(
-    /git fetch --no-tags --depth=2 origin main:refs\/remotes\/origin\/main/g
+    /git fetch --no-tags --depth=3 origin main:refs\/remotes\/origin\/main/g
   )].length,
   2,
-  "both main-ref freshness checks must retain the selected commit parent"
+  "both main-ref freshness checks must retain the stable three-object window"
 );
-assert.doesNotMatch(workflow, /git fetch --no-tags --depth=1/,
-  "a depth-one re-fetch would erase the bridge parent required by selection");
+assert.equal(
+  [...workflow.matchAll(
+    /historical_v42_ref=refs\/heads\/lynca-historical-v42/g
+  )].length,
+  2,
+  "both gates must bind historical v42 through the same local ref"
+);
+assert.equal(
+  [...workflow.matchAll(
+    /git fetch --no-tags --refetch --depth=1 origin \\\n+\s*"\$historical_v42_sha:\$historical_v42_ref"/g
+  )].length,
+  1,
+  "the exact v42 commit and tree must be refetched once before release tests"
+);
+assert.equal(
+  [...workflow.matchAll(
+    /test "\$\(git rev-parse "\$historical_v42_ref"\)" = "\$historical_v42_sha"/g
+  )].length,
+  2,
+  "the exact v42 ref must survive both main freshness gates"
+);
+assert.doesNotMatch(workflow, /git fetch --no-tags --depth=1 origin main:/,
+  "a depth-one main re-fetch would erase the rollback parent required by selection");
+assert.doesNotMatch(workflow, /git fetch --no-tags --depth=2/,
+  "a depth-two main re-fetch would lose the deployed rollback from the repair window");
 assert.match(workflow, /test "\$\(git rev-parse origin\/main\)" = "\$DISPATCH_SHA"/);
 assert.doesNotMatch(workflow, /VERCEL_DEPLOY_HOOK_URL|Deploy Hook|vercel-deploy-hook/,
   "a branch-reading deploy hook can race with main and must not mutate production");
@@ -583,6 +606,16 @@ assert.equal(
 assert.match(ciWorkflow,
   /actions\/checkout@v5\s*\n\s*with:\s*\n\s*ref: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}\s*\n(?:\s*#[^\n]*\n)*\s*fetch-depth: 3/,
   "PR CI must test the exact head while retaining the failed bridge and its parent");
+assert.equal(
+  [...ciWorkflow.matchAll(
+    /git fetch --no-tags --refetch --depth=1 origin \\\n+\s*"\$historical_v42_sha:\$historical_v42_ref"/g
+  )].length,
+  1,
+  "PR CI must fetch exact v42 through the stable local ref before release tests"
+);
+assert.match(ciWorkflow,
+  /test "\$\(git rev-parse "\$historical_v42_sha\^\{tree\}"\)" = \\\n+\s*"ec560447430bb2ba8206dc1282e514fe41ee7e7c"/,
+  "PR CI must freeze the exact historical v42 tree instead of trusting ref reachability");
 assert.match(ciWorkflow, /run: npm run test:release/,
   "CI and production deploy must execute the same release suite");
 assert.doesNotMatch(packageJson.scripts["test:release"], /test:internal-library/,

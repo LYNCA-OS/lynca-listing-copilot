@@ -421,6 +421,18 @@ import {
   TCG_GRAMMAR_CONTEXT_ACTIVATION_RUNTIME_CONTRACT_SHA256,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
   TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
@@ -472,10 +484,12 @@ import {
   compatibilityBridgeV2RuntimeContractProof,
   compatibilityBridgeRuntimeContractProof,
   compatibilityBridgeWriterProjectionMode,
+  materializeTcgGrammarContextActivationExactV42RepairSelectionForTest,
   materializeTcgGrammarContextActivationRuntimeContractForTest,
   materializeTcgGrammarContextActivationSelectionForTest,
   materializeTcgGrammarContextReaderBridgeRuntimeContractForTest,
   tcgGrammarContextActivationRuntimeContractProof,
+  tcgGrammarContextActivationExactV42RepairRuntimeContractProof,
   tcgGrammarContextActivationTopologyProof,
   tcgGrammarContextReaderBridgeRuntimeContractProof,
   tcgGrammarContextReaderBridgeTopologyProof,
@@ -493,6 +507,7 @@ import {
   verifyTcgGrammarContextReaderBridgeCommitMessageForTest,
   verifyTcgGrammarContextReaderBridgeGitObjectEvidenceForTest,
   verifyTcgGrammarContextActivationGitObjectEvidenceForTest,
+  verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidenceForTest,
   verifyTcgGrammarContextOrdinaryParentBoundaryForTest,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
@@ -5084,6 +5099,143 @@ for (const [gitTextReader, rebuildSelection, code] of [
     rebuildSelection
   }), (error) => error.code === code);
 }
+
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID,
+  "listing-copilot-tcg-grammar-context-v4-exact-v42-history-repair-v1");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER,
+  "tcg-grammar-context-v4-exact-v42-history-repair-v1");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA,
+  "2edf243fb8841e2e04ffff64b9b8ddf4722d0efa");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+  "afb54d691df67628b9c92d1d14f6cd20fddca8a3");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_RUN_ID,
+  "31890365218");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILURE_CODE,
+  "external_identity_v3_activation_release_git_object_invalid");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_CASE_ID,
+  "RELEASE_ARTIFACT");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_FAILED_PHASE,
+  "RELEASE_ARTIFACT");
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+assert.equal(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS, [
+  ".github/workflows/ci.yml",
+  ".github/workflows/deploy-production.yml",
+  "scripts/compatibility-bridge-release.mjs",
+  "scripts/compatibility-bridge-release.test.mjs",
+  "scripts/production-release-boundaries.test.mjs"
+]);
+const tcgGrammarContextActivationExactV42RepairProof =
+  tcgGrammarContextActivationExactV42RepairRuntimeContractProof();
+assert.equal(tcgGrammarContextActivationExactV42RepairProof.selection_schema_version,
+  "production-release-selection-v48");
+assert.equal(tcgGrammarContextActivationExactV42RepairProof.rollback_lineage_schema_version,
+  "production-release-rollback-lineage-receipt-v49");
+assert.equal(tcgGrammarContextActivationExactV42RepairProof.checkout_depth, 3);
+assert.equal(tcgGrammarContextActivationExactV42RepairProof.exact_historical_local_ref,
+  "refs/heads/lynca-historical-v42");
+assert.equal(tcgGrammarContextActivationExactV42RepairProof.runtime_behavior_changed, false);
+assert.equal(tcgGrammarContextActivationExactV42RepairProof.provider_calls, 0);
+assert.equal(tcgGrammarContextActivationExactV42RepairProof.contract_sha256,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256);
+const tcgGrammarContextActivationExactV42RepairSelection =
+  materializeTcgGrammarContextActivationExactV42RepairSelectionForTest({
+    candidateGitSha: "1".repeat(40),
+    candidateTreeSha: "2".repeat(40),
+    parentGitShas: [TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA],
+    parentTreeSha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+    changedPaths: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS
+  });
+assert.equal(tcgGrammarContextActivationExactV42RepairSelection.schema_version,
+  "production-release-selection-v48");
+assert.equal(tcgGrammarContextActivationExactV42RepairSelection.parent_git_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA);
+assert.equal(tcgGrammarContextActivationExactV42RepairSelection.required_rollback_git_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+assert.equal(tcgGrammarContextActivationExactV42RepairSelection.active_writer_contract_id,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID);
+for (const [overrides, code] of [
+  [{ parentGitShas: ["0".repeat(40)] },
+    "tcg_grammar_context_activation_exact_v42_repair_parent_mismatch"],
+  [{ parentTreeSha: "0".repeat(40) },
+    "tcg_grammar_context_activation_exact_v42_repair_parent_tree_mismatch"],
+  [{ candidateTreeSha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA },
+    "tcg_grammar_context_activation_exact_v42_repair_candidate_tree_mismatch"],
+  [{ changedPaths: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS.slice(1) },
+    "tcg_grammar_context_activation_exact_v42_repair_changed_paths_mismatch"]
+]) {
+  assert.throws(() =>
+    materializeTcgGrammarContextActivationExactV42RepairSelectionForTest({
+      candidateGitSha: "1".repeat(40),
+      candidateTreeSha: "2".repeat(40),
+      parentGitShas: [TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA],
+      parentTreeSha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA,
+      changedPaths: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_CHANGED_PATHS,
+      ...overrides
+    }), (error) => error.code === code);
+}
+const tcgGrammarContextActivationExactV42RepairEvidenceCommit = ({
+  tree = tcgGrammarContextActivationExactV42RepairSelection.git_tree_sha,
+  parent = TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA
+} = {}) => [
+  `tree ${tree}`,
+  `parent ${parent}`,
+  "author LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "committer LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "",
+  "fixture exact v42 repair commit"
+].join("\n");
+const tcgGrammarContextActivationExactV42RepairEvidenceReader = (args) => {
+  if (args[0] === "cat-file" && args[1] === "-t") return "commit";
+  if (args[0] === "cat-file" && args[1] === "-p") {
+    return tcgGrammarContextActivationExactV42RepairEvidenceCommit();
+  }
+  throw new Error("unexpected_git_read");
+};
+const tcgGrammarContextActivationExactV42RepairEvidence =
+  verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidenceForTest({
+    selection: tcgGrammarContextActivationExactV42RepairSelection,
+    gitTextReader: tcgGrammarContextActivationExactV42RepairEvidenceReader,
+    rebuildSelection: () => tcgGrammarContextActivationExactV42RepairSelection
+  });
+assert.equal(tcgGrammarContextActivationExactV42RepairEvidence.commit_exists, true);
+assert.deepEqual(tcgGrammarContextActivationExactV42RepairEvidence.parent_git_shas,
+  [TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA]);
+for (const [gitTextReader, rebuildSelection, code] of [
+  [() => { throw new Error("missing"); },
+    () => tcgGrammarContextActivationExactV42RepairSelection,
+    "tcg_grammar_context_activation_exact_v42_repair_git_object_invalid"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextActivationExactV42RepairEvidenceCommit({ parent: "3".repeat(40) }),
+    () => tcgGrammarContextActivationExactV42RepairSelection,
+    "tcg_grammar_context_activation_exact_v42_repair_parent_mismatch"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextActivationExactV42RepairEvidenceCommit({ tree: "4".repeat(40) }),
+    () => tcgGrammarContextActivationExactV42RepairSelection,
+    "tcg_grammar_context_activation_exact_v42_repair_candidate_tree_mismatch"],
+  [tcgGrammarContextActivationExactV42RepairEvidenceReader,
+    () => ({ ...tcgGrammarContextActivationExactV42RepairSelection, parity_required: false }),
+    "tcg_grammar_context_activation_exact_v42_repair_selection_object_mismatch"]
+]) {
+  assert.throws(() =>
+    verifyTcgGrammarContextActivationExactV42RepairGitObjectEvidenceForTest({
+      selection: tcgGrammarContextActivationExactV42RepairSelection,
+      gitTextReader,
+      rebuildSelection
+    }), (error) => error.code === code);
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: {
+    ...tcgGrammarContextActivationExactV42RepairSelection,
+    parity_required: false
+  },
+  rollbackReceipt: {
+    git_sha: TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA
+  }
+}), (error) => error.code
+  === "tcg_grammar_context_activation_exact_v42_repair_selection_invalid");
 assert.throws(() => verifyCompatibilityBridgeSelection({
   releaseClass: COMPATIBILITY_BRIDGE_RELEASE_CLASS,
   gitSha: "a".repeat(40),
@@ -9233,6 +9385,8 @@ try {
     actualParent === EXTERNAL_IDENTITY_V3_ACTIVATION_PARENT_SHA;
   const actualTcgGrammarContextActivation =
     actualParent === TCG_GRAMMAR_CONTEXT_ACTIVATION_PARENT_SHA;
+  const actualTcgGrammarContextActivationExactV42Repair =
+    actualParent === TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_SHA;
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
@@ -9269,7 +9423,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualTcgGrammarContextActivation
+  const actualTransitionMarker = actualTcgGrammarContextActivationExactV42Repair
+    ? TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_MARKER
+    : actualTcgGrammarContextActivation
     ? TCG_GRAMMAR_CONTEXT_ACTIVATION_MARKER
     : actualExternalIdentityV3Activation
     ? EXTERNAL_IDENTITY_V3_ACTIVATION_MARKER
@@ -9452,7 +9608,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualTcgGrammarContextActivation
+      actualTcgGrammarContextActivationExactV42Repair
+        ? "production-release-selection-v48"
+      : actualTcgGrammarContextActivation
         ? "production-release-selection-v46"
       : actualExternalIdentityV3Activation
         ? "production-release-selection-v42"
@@ -9501,7 +9659,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualTcgGrammarContextActivation
+      actualTcgGrammarContextActivationExactV42Repair
+        ? TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_SHA
+      : actualTcgGrammarContextActivation
         ? TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA
       : actualExternalIdentityV3Activation
         ? EXTERNAL_IDENTITY_V3_ACTIVATION_ROLLBACK_SHA
@@ -9545,7 +9705,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualTcgGrammarContextActivation
+      actualTcgGrammarContextActivationExactV42Repair
+        ? "production-release-rollback-lineage-receipt-v49"
+      : actualTcgGrammarContextActivation
         ? "production-release-rollback-lineage-receipt-v47"
       : actualExternalIdentityV3Activation
         ? "production-release-rollback-lineage-receipt-v43"
@@ -9591,7 +9753,28 @@ try {
             ? "production-release-rollback-lineage-receipt-v6"
             : "production-release-rollback-lineage-receipt-v2");
     assert.equal(savedLineage.lineage_marker, LINEAR_ORDINARY_LINEAGE_MARKER);
-    if (actualTcgGrammarContextActivation) {
+    if (actualTcgGrammarContextActivationExactV42Repair) {
+      assert.equal(savedSelection.repair_descriptor_id,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedSelection.parent_tree_sha,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA);
+      assert.equal(savedSelection.active_writer_contract_id,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID);
+      assert.equal(savedSelection.projection_activation_state,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE);
+      assert.equal(savedSelection.contract_sha256,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256);
+      assert.match(savedSelection.artifact_manifest_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(savedLineage.repair_descriptor_id,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_DESCRIPTOR_ID);
+      assert.equal(savedLineage.release_parent_tree_sha,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_PARENT_TREE_SHA);
+      assert.equal(savedLineage.required_rollback_tree_sha,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_ROLLBACK_TREE_SHA);
+      assert.equal(savedLineage.runtime_contract_sha256,
+        TCG_GRAMMAR_CONTEXT_ACTIVATION_EXACT_V42_REPAIR_RUNTIME_CONTRACT_SHA256);
+      assert.equal(savedLineage.release_git_object_verified, true);
+    } else if (actualTcgGrammarContextActivation) {
       assert.equal(savedSelection.activation_descriptor_id,
         TCG_GRAMMAR_CONTEXT_ACTIVATION_DESCRIPTOR_ID);
       assert.equal(savedSelection.parent_tree_sha,
