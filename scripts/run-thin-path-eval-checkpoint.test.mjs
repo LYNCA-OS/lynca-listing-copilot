@@ -20,6 +20,10 @@ import {
 } from "./run-thin-path-eval.mjs";
 import { withResidualEvidenceLaneV1 } from "../lib/listing/thin/residual-evidence-lane-v1.mjs";
 import { foldFor } from "../lib/listing/evaluation/kfold-few-shot.mjs";
+import {
+  CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT,
+  CAPTURED_E1AE_CANONICAL_FIELDS_SCHEMA
+} from "../lib/listing/thin/captured-production-e1ae-assets.mjs";
 
 const root = await mkdtemp(join(tmpdir(), "thin-eval-checkpoint-adversarial-"));
 const model = "gpt-5.6-luna";
@@ -142,6 +146,71 @@ try {
     imageUrls: ["https://example.invalid/card.jpg"], model, effort, imageDetail: "original"
   });
   assert.equal(promptRequest.input[0].content.find(({ type }) => type === "input_image").detail, "original");
+
+  const parityContext = {
+    imageUrls: [
+      "https://example.invalid/front.jpg",
+      "https://example.invalid/back.jpg"
+    ],
+    model,
+    effort: "none",
+    imageDetail: "original"
+  };
+  const activeRequest = ARM_SPECS.runtime_active_high_low.buildRequest(parityContext);
+  const repeatRequest = ARM_SPECS.runtime_active_high_low_repeat.buildRequest(parityContext);
+  const originalRequest = ARM_SPECS.runtime_active_detail_original_low.buildRequest(parityContext);
+  const directRequest = ARM_SPECS.lynca_csm_direct_title_high_low.buildRequest(parityContext);
+  assert.deepEqual(repeatRequest, activeRequest,
+    "the A/A arm must be provider-byte-equivalent to the active runtime baseline");
+  assert.equal(activeRequest.input[0].content[0].text,
+    CAPTURED_E1AE_CANONICAL_FIELDS_PROMPT);
+  assert.deepEqual(activeRequest.text.format.schema,
+    CAPTURED_E1AE_CANONICAL_FIELDS_SCHEMA);
+  assert.equal(activeRequest.reasoning.effort, "low");
+  assert.equal(activeRequest.max_output_tokens, 8192);
+  assert.equal(Object.hasOwn(activeRequest, "tools"), false);
+  assert.equal(Object.hasOwn(activeRequest, "temperature"), false);
+  assert.equal(Object.hasOwn(activeRequest, "top_p"), false);
+  assert.equal(Object.hasOwn(activeRequest, "seed"), false);
+  assert.deepEqual(
+    activeRequest.input[0].content.filter(({ type }) => type === "input_image"),
+    directRequest.input[0].content.filter(({ type }) => type === "input_image")
+  );
+  assert.deepEqual(directRequest.reasoning, activeRequest.reasoning);
+  assert.equal(directRequest.max_output_tokens, activeRequest.max_output_tokens);
+  assert.equal(Object.hasOwn(directRequest, "text"), false);
+  assert.equal(Object.hasOwn(directRequest, "tools"), false);
+  assert.notEqual(requestFingerprint(directRequest), requestFingerprint(activeRequest));
+  assert.deepEqual(
+    originalRequest.input[0].content.filter(({ type }) => type === "input_image")
+      .map(({ detail }) => detail),
+    ["original", "original"]
+  );
+  assert.deepEqual(
+    activeRequest.input[0].content.filter(({ type }) => type === "input_image")
+      .map(({ detail }) => detail),
+    ["high", "high"]
+  );
+
+  const activePayload = ARM_SPECS.runtime_active_high_low.extract({
+    status: "completed",
+    model,
+    reasoning: { effort: "low" },
+    output_text: JSON.stringify({
+      year: "2024", manufacturer: "Topps", product: "Chrome", set: "",
+      subjects: ["A Player"], team: "", card_name: "", release_variant: "",
+      surface_color: "Gold", parallel_family: "Refractor", parallel_exact: "",
+      descriptive_rarity: "", card_number: "1", serial: "01/50",
+      attributes: [], grading_info: {
+        company: "", card_grade: "", auto_grade: "", grade_type: ""
+      },
+      grammar: "standard", lot_count: "", language: "", unreadable: [],
+      low_confidence: [], special_stamp: "", description: ""
+    })
+  });
+  const activeFinished = ARM_SPECS.runtime_active_high_low.finish(activePayload);
+  assert.match(activeFinished.title, /^2024 Topps Chrome A Player/);
+  assert.ok(activeFinished.length <= 80);
 
   const residualContext = {
     imageUrls: ["https://example.invalid/front.jpg", "https://example.invalid/back.jpg"],
@@ -425,6 +494,144 @@ try {
     "provider_attempt", "provider_attempt", "final_status"
   ]);
   assert.equal(retryAttemptLog.at(-1).status, "checkpoint_committed");
+
+  const frontierFront = join(root, "frontier-front.jpg");
+  const frontierBack = join(root, "frontier-back.jpg");
+  const frontBytes = Buffer.from("frontier-front-image");
+  const backBytes = Buffer.from("frontier-back-image");
+  await writeFile(frontierFront, frontBytes);
+  await writeFile(frontierBack, backBytes);
+  const frontierItem = {
+    asset_id: "asset-frontier",
+    physical_card_id: "physical-frontier",
+    sealed_eval_label_ref: { key: "label-frontier" },
+    images: [
+      {
+        role: "front_original",
+        local_path: frontierFront,
+        content_type: "image/jpeg",
+        content_sha256: createHash("sha256").update(frontBytes).digest("hex")
+      },
+      {
+        role: "back_original",
+        local_path: frontierBack,
+        content_type: "image/jpeg",
+        content_sha256: createHash("sha256").update(backBytes).digest("hex")
+      }
+    ]
+  };
+  const frontierPayload = {
+    year: "2024", manufacturer: "Topps", product: "Chrome", set: "",
+    subjects: ["Alpha"], team: "", card_name: "", release_variant: "",
+    surface_color: "", parallel_family: "", parallel_exact: "",
+    descriptive_rarity: "", card_number: "", serial: "", attributes: [],
+    grading_info: { company: "", card_grade: "", auto_grade: "", grade_type: "" },
+    grammar: "standard", lot_count: "", language: "", unreadable: [],
+    low_confidence: [], special_stamp: "", description: ""
+  };
+  const frontierArgs = (testFixture) => [
+    "--eval-root", testFixture.evalRoot,
+    "--dataset", "dataset.json",
+    "--sealed-labels", "labels.jsonl",
+    "--asset-ids-file", testFixture.assetIdsFile,
+    "--arms", "runtime_active_high_low,lynca_csm_direct_title_high_low",
+    "--limit", "1",
+    "--selection-role", "frontier_mechanism_screen",
+    "--max-attempts", "3",
+    "--concurrency", "1",
+    "--out-dir", testFixture.outDir
+  ];
+
+  const frontierSuccess = await fixture("frontier-success", [frontierItem]);
+  let frontierSuccessCalls = 0;
+  const frontierSuccessFetch = async (_url, options) => {
+    frontierSuccessCalls += 1;
+    const request = JSON.parse(options.body);
+    const images = request.input[0].content.filter(({ type }) => type === "input_image");
+    assert.equal(images.length, 2);
+    return response(200, {
+      id: `resp-frontier-${frontierSuccessCalls}`,
+      status: "completed",
+      model,
+      reasoning: { effort: "low" },
+      output_text: Object.hasOwn(request, "text")
+        ? JSON.stringify(frontierPayload)
+        : "2024 Topps Chrome Alpha",
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+    });
+  };
+  process.stdout.write = () => true;
+  process.stderr.write = () => true;
+  try {
+    const frontierSummary = await main(frontierArgs(frontierSuccess), {
+      fetchImpl: frontierSuccessFetch,
+      sleepImpl: async () => assert.fail("frontier arms must never retry")
+    });
+    assert.equal(frontierSummary.cards_paired, 1);
+  } finally {
+    process.stdout.write = previousStdout;
+    process.stderr.write = previousStderr;
+  }
+  assert.equal(frontierSuccessCalls, 2,
+    "two frontier arms must make one provider request each");
+  const frontierRows = (await readFile(
+    join(frontierSuccess.outDir, `thin-path-${model}.jsonl`), "utf8"
+  )).trim().split("\n").map(JSON.parse);
+  assert.equal(frontierRows.length, 2);
+  assert.deepEqual(frontierRows.map(({ request_attempt_count }) => request_attempt_count), [1, 1]);
+  assert.deepEqual(frontierRows.map(({ provider_max_attempts }) => provider_max_attempts), [1, 1]);
+  assert.equal(new Set(frontierRows.map(({ image_transport_sha256 }) =>
+    image_transport_sha256)).size, 1);
+  assert.equal(new Set(frontierRows.map(({ image_set_sha256 }) => image_set_sha256)).size, 1);
+
+  const frontierPartial = await fixture("frontier-partial", [frontierItem]);
+  let frontierPartialCalls = 0;
+  const frontierPartialFetch = async (_url, options) => {
+    frontierPartialCalls += 1;
+    const request = JSON.parse(options.body);
+    if (frontierPartialCalls === 2) {
+      return response(503, { error: { code: "server_error", message: "do not retry" } });
+    }
+    return response(200, {
+      id: "resp-frontier-partial-control",
+      status: "completed",
+      model,
+      reasoning: { effort: "low" },
+      output_text: Object.hasOwn(request, "text")
+        ? JSON.stringify(frontierPayload)
+        : "2024 Topps Chrome Alpha",
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 }
+    });
+  };
+  process.stdout.write = () => true;
+  process.stderr.write = () => true;
+  try {
+    const partialSummary = await main(frontierArgs(frontierPartial), {
+      fetchImpl: frontierPartialFetch,
+      sleepImpl: async () => assert.fail("a frontier 503 must not retry")
+    });
+    assert.equal(partialSummary.cards_paired, 0);
+    assert.equal(partialSummary.arms.reduce((sum, arm) => sum + arm.n, 0), 1);
+    await main(frontierArgs(frontierPartial), {
+      fetchImpl: async () => {
+        frontierPartialCalls += 1;
+        throw new Error("a claimed partial frontier pair must not resume");
+      }
+    });
+  } finally {
+    process.stdout.write = previousStdout;
+    process.stderr.write = previousStderr;
+  }
+  assert.equal(frontierPartialCalls, 2,
+    "the failed arm must get one attempt and a partial pair must remain terminal");
+  const frontierAttemptRows = (await readFile(
+    join(frontierPartial.outDir, `thin-path-${model}.attempts.jsonl`), "utf8"
+  )).trim().split("\n").map(JSON.parse);
+  assert.equal(frontierAttemptRows.filter(({ event }) => event === "provider_claimed").length, 2);
+  assert.equal(frontierAttemptRows.filter(({ event, http_status: status }) =>
+    event === "provider_attempt" && status === 503).length, 1);
+  assert.ok(frontierAttemptRows.some(({ event, status }) =>
+    event === "partial_pair_terminal" && status === "manual_review_required"));
 
   // Regression for the live k-fold leak: the old caller passed
   // `${asset_id}::${arm}` even though the corpus is keyed by sealed label.

@@ -30,6 +30,11 @@ import {
   extractProviderTitle, THIN_TITLE_PROMPT
 } from "../lib/listing/thin/thin-listing-path.mjs";
 import {
+  LUNA_PARITY_ARM_SPECS,
+  assertLunaParityRequest,
+  imageTransportSha256
+} from "../experiments/luna-parity/luna-parity-core.mjs";
+import {
   CANONICAL_FIELDS_PROMPT,
   CANONICAL_FIELDS_PROMPT_FEWSHOT,
   CANONICAL_SERIAL_EXACT_PROMPT,
@@ -444,6 +449,7 @@ export const ARM_SPECS = {
   bare_truncated: promptArm(BARE_PROMPT),
   thin_budgeted: promptArm(THIN_TITLE_PROMPT),
   thin_serial: promptArm(THIN_TITLE_PROMPT.replace("Reply with the title only", `${SERIAL_CLAUSE} Reply with the title only`)),
+  ...LUNA_PARITY_ARM_SPECS,
   thin_canonical: canonicalArm(),
   thin_canonical_high: canonicalArm("high"),
   // Reasoning-effort tiers. Tested once before the prompt was rewritten, with
@@ -535,12 +541,17 @@ const SOURCE_URLS = Object.freeze({
   residual_evidence_v1: new URL("../lib/listing/thin/residual-evidence-lane-v1.mjs", import.meta.url),
   exhaustive_observation: new URL("../lib/listing/thin/exhaustive-observation.mjs", import.meta.url),
   csm_sem_score: new URL("../lib/listing/thin/csm-sem-score.mjs", import.meta.url),
+  luna_parity_core: new URL("../experiments/luna-parity/luna-parity-core.mjs", import.meta.url),
   kfold_few_shot: new URL("../lib/listing/evaluation/kfold-few-shot.mjs", import.meta.url)
 });
 const ARM_SOURCE_ROOTS = Object.freeze({
   bare_truncated: [SOURCE_URLS.thin_listing_path],
   thin_budgeted: [SOURCE_URLS.thin_listing_path],
   thin_serial: [SOURCE_URLS.thin_listing_path],
+  runtime_active_high_low: [SOURCE_URLS.luna_parity_core],
+  runtime_active_high_low_repeat: [SOURCE_URLS.luna_parity_core],
+  runtime_active_detail_original_low: [SOURCE_URLS.luna_parity_core],
+  lynca_csm_direct_title_high_low: [SOURCE_URLS.luna_parity_core],
   thin_canonical: [SOURCE_URLS.thin_listing_path],
   thin_canonical_high: [SOURCE_URLS.thin_listing_path],
   thin_canonical_high_effort_none: [SOURCE_URLS.thin_listing_path],
@@ -643,7 +654,8 @@ function providerRequestTemplates(arm, { model, effort, imageDetail, selectedIte
       cardKey: evaluationCardIdentity(item)
     }));
   }
-  return [0, 1, 2].map((imageCount) => fingerprint({ imageCount }));
+  const imageCounts = arm.minimumImages === 1 ? [1, 2] : [0, 1, 2];
+  return imageCounts.map((imageCount) => fingerprint({ imageCount }));
 }
 
 export async function buildFinisherFingerprint({ arms, scorer = null }) {
@@ -712,7 +724,12 @@ export async function buildRunManifest({
   const armContracts = arms.map((arm) => ({
     key: arm.key,
     fixed_image_detail: arm.imageDetail || null,
+    fixed_effort: arm.effort || null,
+    fixed_max_output_tokens: arm.maxOutputTokens || null,
     eval_version: arm.evalVersion || null,
+    frontier_parity: arm.frontierParity || null,
+    minimum_images: arm.minimumImages || 0,
+    provider_max_attempts: arm.providerMaxAttempts || null,
     response_schema_name: arm.responseSchemaName || null,
     response_schema_sha256: arm.responseSchema ? sha256(JSON.stringify(arm.responseSchema)) : null,
     prompt_sha256: arm.prompt ? sha256(arm.prompt) : null,
@@ -911,9 +928,9 @@ export function imageSetFingerprint(item, images = null) {
     bucket: image?.bucket || null,
     object_path: image?.object_path || image?.objectPath || null,
     role: image?.role || null,
+    content_sha256: image?.content_sha256 || image?.contentSha256 || null,
     ...(image?.local_path || image?.localPath ? {
       local_path: image.local_path || image.localPath,
-      content_sha256: image?.content_sha256 || null
     } : {})
   }))));
 }
@@ -978,6 +995,14 @@ export function validateCheckpointRows(checkpointBody, {
     if (row.model !== model || row.requested_effort !== armEffort
         || row.served_effort !== armEffort || row.served_effort_attested !== true) {
       throw new Error(`checkpoint_request_contract_mismatch:${key}`);
+    }
+    if (arm.providerMaxAttempts != null
+        && row.provider_max_attempts !== arm.providerMaxAttempts) {
+      throw new Error(`checkpoint_provider_attempt_policy_mismatch:${key}`);
+    }
+    if (arm.frontierParity
+        && !/^[0-9a-f]{64}$/.test(String(row.image_transport_sha256 || ""))) {
+      throw new Error(`checkpoint_image_transport_receipt_missing:${key}`);
     }
     done.set(key, row);
   }
@@ -1132,6 +1157,42 @@ function scoreF1(reference, title) {
   return { recall, precision, f1: (recall + precision) ? (2 * recall * precision) / (recall + precision) : 0 };
 }
 
+export function assertFrontierParityRequest({ arm, request, imageUrls, model }) {
+  if (!arm?.frontierParity) return;
+  if (request?.model !== model) {
+    throw new Error(`frontier_parity_request_contract_mismatch:${arm.key}`);
+  }
+  assertLunaParityRequest({ arm, request, imageUrls });
+}
+
+export function imageTransportFingerprint(imageUrls = []) {
+  return imageTransportSha256(imageUrls);
+}
+
+export async function readFrontierProviderClaims(path, {
+  runFingerprint, arms, items
+}) {
+  if (!existsSync(path)) return new Set();
+  const armKeys = new Set(arms.map(({ key }) => key));
+  const assetIds = new Set(items.map(({ asset_id: assetId }) => assetId));
+  const claims = new Set();
+  for (const [index, line] of String(await readFile(path)).split("\n").entries()) {
+    if (!line.trim()) continue;
+    let row;
+    try { row = JSON.parse(line); }
+    catch { throw new Error(`frontier_claim_log_invalid_json:line_${index + 1}`); }
+    if (row?.event !== "provider_claimed") continue;
+    if (row.run_fingerprint !== runFingerprint
+        || !assetIds.has(row.asset_id) || !armKeys.has(row.arm)) {
+      throw new Error(`frontier_claim_log_scope_mismatch:line_${index + 1}`);
+    }
+    const key = `${row.asset_id}::${row.arm}`;
+    if (claims.has(key)) throw new Error(`frontier_provider_claim_duplicate:${key}`);
+    claims.add(key);
+  }
+  return claims;
+}
+
 export async function main(argv = process.argv.slice(2), {
   fetchImpl = fetch,
   sleepImpl = sleep,
@@ -1152,6 +1213,11 @@ export async function main(argv = process.argv.slice(2), {
   if (ARMS.length < 1 || ARMS.length > 2) {
     throw new Error("one or two arms required; two-arm comparisons remain paired");
   }
+  const frontierArms = ARMS.filter((arm) => arm.frontierParity);
+  if (frontierArms.length && frontierArms.length !== ARMS.length) {
+    throw new Error("frontier_parity_arms_cannot_mix_with_legacy_arms");
+  }
+  const frontierPair = frontierArms.length === 2;
 
   const model = argValue(argv, "--model", "gpt-5.6-luna");
   const effort = argValue(argv, "--effort", "none");
@@ -1171,6 +1237,9 @@ export async function main(argv = process.argv.slice(2), {
   const requestTimeoutMs = positiveIntegerArg(argv, "--request-timeout-ms", 120_000, 10_000);
   const maxAttempts = positiveIntegerArg(argv, "--max-attempts", 3);
   const concurrency = positiveIntegerArg(argv, "--concurrency", DEFAULT_THIN_PATH_EVAL_CONCURRENCY);
+  if (frontierArms.length && concurrency !== 1) {
+    throw new Error("frontier_parity_concurrency_must_be_1");
+  }
 
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
   const serviceKey = String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "");
@@ -1185,6 +1254,17 @@ export async function main(argv = process.argv.slice(2), {
   const manifestPath = resolve(outDir, `thin-path-${model}.manifest.json`);
   const inputs = await loadEvaluationInputs({ dataset, sealedLabels, assetIdsFile, limit });
   const { labels, items } = inputs;
+  if (frontierArms.length) {
+    for (const item of items) {
+      const images = (item?.images || []).slice(0, 2);
+      if (images.length !== 2
+          || images.some((image) => !signableImage(image))
+          || images[0]?.role !== "front_original"
+          || images[1]?.role !== "back_original") {
+        throw new Error(`frontier_parity_front_back_pair_required:${item?.asset_id || "missing"}`);
+      }
+    }
+  }
   const expectedManifest = await buildRunManifest({
     arms: ARMS,
     model,
@@ -1272,6 +1352,13 @@ export async function main(argv = process.argv.slice(2), {
     ));
     await durableWrite;
   };
+  const providerClaims = frontierArms.length
+    ? await readFrontierProviderClaims(attemptLogPath, {
+        runFingerprint: expectedManifest.fingerprint,
+        arms: ARMS,
+        items
+      })
+    : new Set();
   await mapConcurrent(items, concurrency, async (item, index) => {
     const reference = labels.get(String(item?.sealed_eval_label_ref?.key || ""));
     if (!reference) { process.stderr.write(`  ${index + 1}/${items.length}: no sealed label, skipped\n`); return; }
@@ -1279,13 +1366,36 @@ export async function main(argv = process.argv.slice(2), {
     // Rotate which arm goes first: whatever drifts within a card -- signed-URL
     // warmth, provider load -- otherwise lands on the same arm every time.
     const order = index % 2 === 0 ? ARMS : [...ARMS].reverse();
+    if (frontierArms.length) {
+      const completed = ARMS.filter((arm) => done.has(`${item.asset_id}::${arm.key}`));
+      const claimed = ARMS.filter((arm) => providerClaims.has(`${item.asset_id}::${arm.key}`));
+      if (completed.length === ARMS.length) return;
+      if (completed.length !== 0 || claimed.length !== 0) {
+        await appendDurable(attemptLogPath, {
+          schema_version: "thin-path-provider-final-v1",
+          event: "partial_pair_terminal",
+          status: "manual_review_required",
+          run_fingerprint: expectedManifest.fingerprint,
+          asset_id: item.asset_id,
+          completed_arms: completed.map(({ key }) => key),
+          claimed_arms: claimed.map(({ key }) => key),
+          completed_at: new Date().toISOString()
+        });
+        process.stderr.write(`  ${index + 1}/${items.length}: frontier attempt already claimed, not resumed\n`);
+        return;
+      }
+    }
 
     let imageUrls = null;
+    let imageTransportSha256 = null;
     let extraImageUrls = null;
     for (const arm of order) {
       const key = `${item.asset_id}::${arm.key}`;
       if (done.has(key)) continue;
-      if (!imageUrls) imageUrls = await signImageUrls(item.images, { supabaseUrl, serviceKey, fetchImpl });
+      if (!imageUrls) {
+        imageUrls = await signImageUrls(item.images, { supabaseUrl, serviceKey, fetchImpl });
+        imageTransportSha256 = imageTransportFingerprint(imageUrls);
+      }
       if (arm.requiresExtraImages && !extraImageUrls) {
         extraImageUrls = await signImageUrls(item.visual_extra_images || [], { supabaseUrl, serviceKey, fetchImpl });
       }
@@ -1298,6 +1408,7 @@ export async function main(argv = process.argv.slice(2), {
         imageUrls, extraImageUrls: requestExtraImageUrls, model, effort: armEffort, imageDetail,
         cardKey: evaluationCardIdentity(item)
       });
+      assertFrontierParityRequest({ arm, request, imageUrls, model });
       const requestSha256 = requestFingerprint(request);
       const requestImageEntries = [
         ...(item.images || []).slice(0, 2),
@@ -1306,9 +1417,23 @@ export async function main(argv = process.argv.slice(2), {
       const imageSetSha256 = imageSetFingerprint(item, requestImageEntries);
       const startedAt = Date.now();
       const startedAtIso = new Date(startedAt).toISOString();
+      if (arm.frontierParity) {
+        await appendDurable(attemptLogPath, {
+          schema_version: "thin-path-provider-claim-v1",
+          event: "provider_claimed",
+          run_fingerprint: expectedManifest.fingerprint,
+          asset_id: item.asset_id,
+          arm: arm.key,
+          request_sha256: requestSha256,
+          image_transport_sha256: imageTransportSha256,
+          provider_max_attempts: arm.providerMaxAttempts,
+          claimed_at: startedAtIso
+        });
+        providerClaims.add(key);
+      }
       const providerResult = await callProviderWithRetry({
         request,
-        maxAttempts,
+        maxAttempts: arm.providerMaxAttempts ?? maxAttempts,
         callProvider,
         sleepImpl,
         random,
@@ -1323,12 +1448,30 @@ export async function main(argv = process.argv.slice(2), {
       });
       if (!providerResult.ok) {
         process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: FAILED ${providerResult.error?.message || providerResult.body?.error?.message || providerResult.response?.status}\n`);
+        if (frontierPair) break;
         continue;
       }
       const { body, attemptCount } = providerResult;
       // Read back rather than assumed. One paired evaluation ran both arms on
       // the same configuration and still reported clean-looking numbers.
       const effortReceipt = providerReasoningEffortReceipt(body);
+      if (body?.model !== model) {
+        await appendDurable(attemptLogPath, {
+          schema_version: "thin-path-provider-final-v1",
+          event: "final_status",
+          status: "discarded_served_model",
+          run_fingerprint: expectedManifest.fingerprint,
+          asset_id: item.asset_id,
+          arm: arm.key,
+          request_sha256: requestSha256,
+          requested_model: model,
+          served_model: body?.model ?? null,
+          completed_at: new Date().toISOString()
+        });
+        process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: DISCARDED, provider model ${body?.model || "unattested"}\n`);
+        if (frontierPair) break;
+        continue;
+      }
       if (!effortReceipt.served_effort_attested
           || effortReceipt.served_effort !== armEffort) {
         await appendDurable(attemptLogPath, {
@@ -1344,6 +1487,7 @@ export async function main(argv = process.argv.slice(2), {
           completed_at: new Date().toISOString()
         });
         process.stderr.write(`  ${index + 1}/${items.length} ${arm.key}: DISCARDED, provider effort ${effortReceipt.served_effort || "unattested"}\n`);
+        if (frontierPair) break;
         continue;
       }
 
@@ -1351,7 +1495,7 @@ export async function main(argv = process.argv.slice(2), {
       let finished;
       let quality;
       try {
-        payload = arm.extract(body);
+        payload = arm.extract(body, { request });
         finished = arm.finish(payload);
         quality = scoreF1(reference, finished.title);
       } catch (error) {
@@ -1394,8 +1538,10 @@ export async function main(argv = process.argv.slice(2), {
         ...effortReceipt,
         request_sha256: requestSha256,
         image_set_sha256: imageSetSha256,
+        image_transport_sha256: imageTransportSha256,
         image_count: imageUrls.length + requestExtraImageUrls.length,
         request_attempt_count: attemptCount,
+        provider_max_attempts: arm.providerMaxAttempts ?? maxAttempts,
         provider_attempts: providerResult.attempts,
         run_fingerprint: expectedManifest.fingerprint,
         finisher_fingerprint: expectedManifest.finisher.fingerprint,
@@ -1496,6 +1642,11 @@ export async function main(argv = process.argv.slice(2), {
   }
 
   const deltas = paired.map(({ control: a, treatment: b }) => b.f1 - a.f1);
+  if (frontierPair && paired.some(({ control: a, treatment: b }) => (
+    a.image_transport_sha256 !== b.image_transport_sha256
+  ))) {
+    throw new Error("frontier_pair_image_transport_mismatch");
+  }
   const test = signTest(deltas);
   const effectiveImageDetails = [...new Set(ARMS.map((arm) => arm.imageDetail || imageDetail))];
 
