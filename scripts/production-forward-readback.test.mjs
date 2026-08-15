@@ -914,13 +914,15 @@ assert.equal(ordinaryReceipt.founder_beta_web_receipt_exact_match, true);
 assert.equal(ordinaryReceipt.web_search_used, true);
 assert.equal(ordinaryReceipt.web_search_call_count, 1);
 
-// Future Activation A selects the exact TCG session for the zero-provider GET.
-// Existing ordinary v3 and captured B schemas above remain unchanged.
+// The failed live v4 Writer Journey returned the already-TCG path: the provider
+// authored raw `tcg`, so the closed transition was correctly NOT_REQUIRED. Keep
+// this literal public shape as the primary fixture; the verifier must bind what
+// Production actually persisted rather than manufacture raw `standard`.
 const tcgGrammarContextPublicReceipt = {
   schema_version: TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_SCHEMA,
-  status: "APPLIED",
+  status: "NOT_REQUIRED",
   claim_id: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0].claim_id,
-  raw_grammar: "standard",
+  raw_grammar: "tcg",
   resolved_grammar: "tcg",
   normalized_set: "Trainer Gallery",
   normalized_card_number: "TG22/TG30",
@@ -929,10 +931,27 @@ const tcgGrammarContextPublicReceipt = {
   registry_record_sha256: stableSha256(TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0]),
   normalization_version: TCG_GRAMMAR_CONTEXT_NORMALIZATION_VERSION,
   policy_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.conflict_policy_version,
-  reason_code: "EXACT_JOINT_SET_NUMBER_NAMESPACE",
+  reason_code: "RAW_TCG_GRAMMAR_UNCHANGED",
   conflict_codes: [],
   ip_action: "UNCHANGED",
   web_authority_used: false,
+  source_authority: {
+    authority_used: "ABSTAIN",
+    field_authority: ["card_number", "set"].map((field) => ({
+      field,
+      current_image_source_present: field === "card_number",
+      web_source_present: field === "set"
+    }))
+  }
+};
+assert.equal(productionTcgGrammarContextAuthorityReceiptExact(
+  tcgGrammarContextPublicReceipt
+), true);
+const tcgGrammarContextAppliedPublicReceipt = {
+  ...clone(tcgGrammarContextPublicReceipt),
+  status: "APPLIED",
+  raw_grammar: "standard",
+  reason_code: "EXACT_JOINT_SET_NUMBER_NAMESPACE",
   source_authority: {
     authority_used: "CURRENT_IMAGE",
     field_authority: ["card_number", "set"].map((field) => ({
@@ -943,8 +962,8 @@ const tcgGrammarContextPublicReceipt = {
   }
 };
 assert.equal(productionTcgGrammarContextAuthorityReceiptExact(
-  tcgGrammarContextPublicReceipt
-), true);
+  tcgGrammarContextAppliedPublicReceipt
+), true, "raw standard may enter TCG only through the exact image-authorized transition");
 const futureV4Evidence = clone(ordinaryEvidence);
 const futureV4TcgCase = futureV4Evidence.cases.find((entry) => entry.case_id === "TCG");
 for (const entry of futureV4Evidence.cases) {
@@ -967,7 +986,7 @@ futureV4View.recognition_session_id = futureV4TcgCase.recognition_session_id;
 futureV4View.grammar = {
   ...futureV4View.grammar,
   value: "TCG",
-  raw: "standard",
+  raw: "tcg",
   resolver_version: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
 };
 for (const bracket of futureV4View.brackets) {
@@ -1001,6 +1020,27 @@ futureV4View.tcg_grammar_context_authority_receipt =
   clone(tcgGrammarContextPublicReceipt);
 assert.deepEqual(productionTcgGrammarContextAuthorityProof(futureV4View),
   tcgGrammarContextPublicReceipt);
+const futureV4AppliedView = clone(futureV4View);
+futureV4AppliedView.grammar.raw = "standard";
+futureV4AppliedView.tcg_grammar_context_authority_receipt =
+  clone(tcgGrammarContextAppliedPublicReceipt);
+assert.deepEqual(productionTcgGrammarContextAuthorityProof(futureV4AppliedView),
+  tcgGrammarContextAppliedPublicReceipt);
+for (const mutate of [
+  (value) => { value.raw_grammar = "standard"; },
+  (value) => { value.status = "APPLIED"; },
+  (value) => { value.reason_code = "EXACT_JOINT_SET_NUMBER_NAMESPACE"; },
+  (value) => { value.source_authority.authority_used = "CURRENT_IMAGE"; },
+  (value) => {
+    value.source_authority.field_authority[1].current_image_source_present = true;
+  },
+  (value) => { value.source_authority.field_authority[1].web_source_present = false; }
+]) {
+  const crossSpliced = clone(tcgGrammarContextPublicReceipt);
+  mutate(crossSpliced);
+  assert.equal(productionTcgGrammarContextAuthorityReceiptExact(crossSpliced), false,
+    "status, raw grammar, reason, and image authority are one indivisible path");
+}
 const futureV4Expectation = buildProductionForwardReadbackExpectation({
   evidence: futureV4Evidence,
   resolutionView: futureV4View,
@@ -1010,6 +1050,11 @@ const futureV4Expectation = buildProductionForwardReadbackExpectation({
 assert.equal(futureV4Expectation.schema_version,
   PRODUCTION_FORWARD_READBACK_TCG_GRAMMAR_CONTEXT_EXPECTATION_SCHEMA);
 assert.equal(futureV4Expectation.case_id, "TCG");
+assert.equal(futureV4Expectation.resolution_view.grammar.raw, "tcg");
+assert.equal(
+  futureV4Expectation.resolution_view.tcg_grammar_context_authority_receipt.status,
+  "NOT_REQUIRED"
+);
 const futureV4Receipt = verifyPromotedProductionForwardReadback({
   evidence: futureV4Evidence,
   expectation: futureV4Expectation,
@@ -1034,6 +1079,7 @@ assert.equal(futureV4Receipt.tcg_grammar_context_web_authority_used, false);
 for (const mutate of [
   (value) => { delete value.tcg_grammar_context_authority_receipt; },
   (value) => { value.tcg_grammar_context_authority_receipt.web_authority_used = true; },
+  (value) => { value.grammar.raw = "standard"; },
   (value) => { value.brackets.find((row) => row.canonical_field === "set")
     .selected_candidate = "Trainer Gallery Drift"; }
 ]) {

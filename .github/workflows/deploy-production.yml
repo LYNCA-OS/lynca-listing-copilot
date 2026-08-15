@@ -26,8 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # Candidate, parent, and rollback; exact v42 is pinned below for replay tests.
-          fetch-depth: 3
+          # Keep only candidate + direct parent; older release objects are pinned below.
+          fetch-depth: 2
       - name: Fail closed unless this dispatch targets the current main commit
         env:
           DISPATCH_REF: ${{ github.ref }}
@@ -37,12 +37,33 @@ jobs:
           test "$DEFAULT_BRANCH" = "main"
           test "$DISPATCH_REF" = "refs/heads/main"
           test "$(git rev-parse HEAD)" = "$DISPATCH_SHA"
-          git fetch --no-tags --depth=3 origin main:refs/remotes/origin/main
+          git fetch --no-tags --depth=2 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
+          failed_v4_sha=d11830049cf7e19016844dbb44ee30178f8ee925
+          failed_v4_ref=refs/heads/lynca-failed-v4-verifier
+          activation_v4_sha=2edf243fb8841e2e04ffff64b9b8ddf4722d0efa
+          activation_v4_ref=refs/heads/lynca-tcg-v4-activation
+          rollback_v4_sha=85ecd6ebfd032f47e8884579c4fb87ddf121aa16
+          rollback_v4_ref=refs/heads/lynca-tcg-v4-rollback
           historical_v42_sha=20298d18ea540a7dd5a660458a1cb9646ba65342
           historical_v42_ref=refs/heads/lynca-historical-v42
           git fetch --no-tags --refetch --depth=1 origin \
+            "$failed_v4_sha:$failed_v4_ref" \
+            "$activation_v4_sha:$activation_v4_ref" \
+            "$rollback_v4_sha:$rollback_v4_ref" \
             "$historical_v42_sha:$historical_v42_ref"
+          test "$(git rev-parse "$failed_v4_ref")" = "$failed_v4_sha"
+          test "$(git cat-file -t "$failed_v4_sha")" = "commit"
+          test "$(git rev-parse "$failed_v4_sha^{tree}")" = \
+            "6cfac615bf282537f7ae7ae81e20e4441ad6de5f"
+          test "$(git rev-parse "$activation_v4_ref")" = "$activation_v4_sha"
+          test "$(git cat-file -t "$activation_v4_sha")" = "commit"
+          test "$(git rev-parse "$activation_v4_sha^{tree}")" = \
+            "afb54d691df67628b9c92d1d14f6cd20fddca8a3"
+          test "$(git rev-parse "$rollback_v4_ref")" = "$rollback_v4_sha"
+          test "$(git cat-file -t "$rollback_v4_sha")" = "commit"
+          test "$(git rev-parse "$rollback_v4_sha^{tree}")" = \
+            "66bc3bdafd5d3db9db278b16f79a3907c332c017"
           test "$(git rev-parse "$historical_v42_ref")" = "$historical_v42_sha"
           test "$(git cat-file -t "$historical_v42_sha")" = "commit"
           test "$(git rev-parse "$historical_v42_sha^{tree}")" = \
@@ -129,10 +150,28 @@ jobs:
         env:
           DISPATCH_SHA: ${{ github.sha }}
         run: |
-          git fetch --no-tags --depth=3 origin main:refs/remotes/origin/main
+          git fetch --no-tags --depth=2 origin main:refs/remotes/origin/main
           test "$(git rev-parse origin/main)" = "$DISPATCH_SHA"
+          failed_v4_sha=d11830049cf7e19016844dbb44ee30178f8ee925
+          failed_v4_ref=refs/heads/lynca-failed-v4-verifier
+          activation_v4_sha=2edf243fb8841e2e04ffff64b9b8ddf4722d0efa
+          activation_v4_ref=refs/heads/lynca-tcg-v4-activation
+          rollback_v4_sha=85ecd6ebfd032f47e8884579c4fb87ddf121aa16
+          rollback_v4_ref=refs/heads/lynca-tcg-v4-rollback
           historical_v42_sha=20298d18ea540a7dd5a660458a1cb9646ba65342
           historical_v42_ref=refs/heads/lynca-historical-v42
+          test "$(git rev-parse "$failed_v4_ref")" = "$failed_v4_sha"
+          test "$(git cat-file -t "$failed_v4_sha")" = "commit"
+          test "$(git rev-parse "$failed_v4_sha^{tree}")" = \
+            "6cfac615bf282537f7ae7ae81e20e4441ad6de5f"
+          test "$(git rev-parse "$activation_v4_ref")" = "$activation_v4_sha"
+          test "$(git cat-file -t "$activation_v4_sha")" = "commit"
+          test "$(git rev-parse "$activation_v4_sha^{tree}")" = \
+            "afb54d691df67628b9c92d1d14f6cd20fddca8a3"
+          test "$(git rev-parse "$rollback_v4_ref")" = "$rollback_v4_sha"
+          test "$(git cat-file -t "$rollback_v4_sha")" = "commit"
+          test "$(git rev-parse "$rollback_v4_sha^{tree}")" = \
+            "66bc3bdafd5d3db9db278b16f79a3907c332c017"
           test "$(git rev-parse "$historical_v42_ref")" = "$historical_v42_sha"
           test "$(git cat-file -t "$historical_v42_sha")" = "commit"
           test "$(git rev-parse "$historical_v42_sha^{tree}")" = \

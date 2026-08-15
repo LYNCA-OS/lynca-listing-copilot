@@ -136,6 +136,36 @@ const TCG_GRAMMAR_CONTEXT_SOURCE_AUTHORITY_KEYS = Object.freeze([
 const TCG_GRAMMAR_CONTEXT_FIELD_AUTHORITY_KEYS = Object.freeze([
   "current_image_source_present", "field", "web_source_present"
 ]);
+const TCG_GRAMMAR_CONTEXT_ACCEPTED_RECEIPT_PATHS = Object.freeze({
+  APPLIED: Object.freeze({
+    raw_grammar: "standard",
+    resolved_grammar: "tcg",
+    reason_code: "EXACT_JOINT_SET_NUMBER_NAMESPACE",
+    source_authority: Object.freeze({
+      authority_used: "CURRENT_IMAGE",
+      field_authority: Object.freeze([
+        Object.freeze({ field: "card_number", current_image_source_present: true,
+          web_source_present: false }),
+        Object.freeze({ field: "set", current_image_source_present: true,
+          web_source_present: false })
+      ])
+    })
+  }),
+  NOT_REQUIRED: Object.freeze({
+    raw_grammar: "tcg",
+    resolved_grammar: "tcg",
+    reason_code: "RAW_TCG_GRAMMAR_UNCHANGED",
+    source_authority: Object.freeze({
+      authority_used: "ABSTAIN",
+      field_authority: Object.freeze([
+        Object.freeze({ field: "card_number", current_image_source_present: true,
+          web_source_present: false }),
+        Object.freeze({ field: "set", current_image_source_present: false,
+          web_source_present: true })
+      ])
+    })
+  })
+});
 
 const normalizedQueryText = (queries) => (Array.isArray(queries) ? queries : [])
   .map((query) => String(query ?? "").normalize("NFC").toLocaleLowerCase("en-US")
@@ -348,12 +378,13 @@ const TCG_GRAMMAR_CONTEXT_REGISTRY_RECORD_SHA256 = sha256Stable(
 function exactTcgGrammarContextAuthorityReceipt(value) {
   const source = value?.source_authority;
   const fieldAuthority = source?.field_authority;
+  const acceptedPath = TCG_GRAMMAR_CONTEXT_ACCEPTED_RECEIPT_PATHS[value?.status];
   return exactKeys(value, TCG_GRAMMAR_CONTEXT_PUBLIC_RECEIPT_KEYS)
     && value.schema_version === TCG_GRAMMAR_CONTEXT_AUTHORITY_PUBLIC_RECEIPT_SCHEMA
-    && value.status === "APPLIED"
+    && Boolean(acceptedPath)
     && value.claim_id === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.records[0].claim_id
-    && value.raw_grammar === "standard"
-    && value.resolved_grammar === "tcg"
+    && value.raw_grammar === acceptedPath?.raw_grammar
+    && value.resolved_grammar === acceptedPath?.resolved_grammar
     && value.normalized_set === "Trainer Gallery"
     && value.normalized_card_number === "TG22/TG30"
     && value.registry_release_id === TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id
@@ -363,20 +394,18 @@ function exactTcgGrammarContextAuthorityReceipt(value) {
     && value.normalization_version === TCG_GRAMMAR_CONTEXT_NORMALIZATION_VERSION
     && value.policy_version
       === TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.conflict_policy_version
-    && value.reason_code === "EXACT_JOINT_SET_NUMBER_NAMESPACE"
+    && value.reason_code === acceptedPath?.reason_code
     && Array.isArray(value.conflict_codes)
     && value.conflict_codes.length === 0
     && value.ip_action === "UNCHANGED"
     && value.web_authority_used === false
     && exactKeys(source, TCG_GRAMMAR_CONTEXT_SOURCE_AUTHORITY_KEYS)
-    && source.authority_used === "CURRENT_IMAGE"
+    && source.authority_used === acceptedPath?.source_authority.authority_used
     && Array.isArray(fieldAuthority)
-    && stableJson(fieldAuthority.map((row) => row?.field))
-      === stableJson(["card_number", "set"])
+    && stableJson(fieldAuthority)
+      === stableJson(acceptedPath?.source_authority.field_authority)
     && fieldAuthority.every((row) => (
       exactKeys(row, TCG_GRAMMAR_CONTEXT_FIELD_AUTHORITY_KEYS)
-      && row.current_image_source_present === true
-      && typeof row.web_source_present === "boolean"
     ));
 }
 
@@ -394,7 +423,7 @@ export function productionTcgGrammarContextAuthorityProof(resolutionView) {
   const cardNumber = canonicalBracketValue(resolutionView, "card_number");
   if (!exactTcgGrammarContextAuthorityReceipt(receipt)
       || resolutionView?.grammar?.value !== "TCG"
-      || resolutionView?.grammar?.raw !== "standard"
+      || resolutionView?.grammar?.raw !== receipt?.raw_grammar
       || resolutionView?.grammar?.resolver_version
         !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT.resolver_version
       || set !== receipt.normalized_set
@@ -780,7 +809,8 @@ function validateResolutionView(resolutionView, entry) {
     }
   }
   const expectedRawGrammar = tcgGrammarContextV4
-    ? "standard" : entry.expected_grammar === "NON_TCG"
+    ? entry.tcg_grammar_context_authority_receipt?.raw_grammar
+    : entry.expected_grammar === "NON_TCG"
       ? "standard" : entry.expected_grammar.toLowerCase();
   const capturedProductionWriter = entry.writer_projection_mode
     === PRODUCTION_FORWARD_READBACK_CAPTURED_WRITER_MODE;
