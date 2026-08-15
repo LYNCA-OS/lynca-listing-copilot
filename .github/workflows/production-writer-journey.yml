@@ -17,6 +17,7 @@ on:
       - "scripts/build-large-internal-writer-fixture.contract.test.mjs"
       - "scripts/build-large-internal-writer-fixture.browser.test.mjs"
       - "scripts/production-writer-journey-contract.test.mjs"
+      - "scripts/production-writer-terminal-candidate.contract.test.mjs"
       - "playwright.config.mjs"
       - "package.json"
       - "package-lock.json"
@@ -51,7 +52,9 @@ jobs:
       - run: npm run check:e2e:production-writer-journey
       - run: npm run check:e2e:batch-navigation
       - run: npm run check:e2e:writer-terminal-renderer
+      - run: npm run check:e2e:writer-terminal-candidate
       - run: npm run test:e2e:production-writer-journey:contract
+      - run: npm run test:e2e:writer-terminal-candidate:contract
       - run: node scripts/production-release-boundaries.test.mjs && node scripts/vercel-protected-health.test.mjs && node scripts/vercel-production-rollback-receipt.test.mjs
       - run: npm run test:large-internal-writer-fixture:contract
       - run: npm run test:large-internal-writer-fixture:browser
