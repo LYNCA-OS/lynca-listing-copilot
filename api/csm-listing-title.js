@@ -652,15 +652,24 @@ function normalizedTcgGrammarContextCheckpointReceipts(result, {
     throw persistenceCheckpointError("tcg_grammar_context_execution_binding_invalid");
   }
   try {
-    validateTcgFieldSourceAuthorityReceipt(sourceReceipt, {
-      founderBetaWebReceipt: storedFounderReceipt,
-      fields: rowObservedFields,
-      sourceExecution
-    });
-    validateTcgGrammarContextClaimReceipt(claimReceipt, {
-      fields: { ...result?.observed_fields, ...rowObservedFields },
-      fieldSourceAuthorityReceipt: sourceReceipt
-    });
+    // The joint namespace is a standard-to-tcg transition question; a LOT is
+    // outside it. An observed lot carries no registry claim, so re-deriving
+    // the claim against the resolved fields must not run (regression: the
+    // LOT_SHARED_ONLY acceptance case failed the persistence checkpoint with
+    // tcg_grammar_context_checkpoint_receipt_invalid on real lot output).
+    const observedGrammar = String(result?.observed_fields?.grammar || "standard")
+      .trim().toLowerCase();
+    if (observedGrammar === "standard" || observedGrammar === "tcg") {
+      validateTcgFieldSourceAuthorityReceipt(sourceReceipt, {
+        founderBetaWebReceipt: storedFounderReceipt,
+        fields: rowObservedFields,
+        sourceExecution
+      });
+      validateTcgGrammarContextClaimReceipt(claimReceipt, {
+        fields: { ...result?.observed_fields, ...rowObservedFields },
+        fieldSourceAuthorityReceipt: sourceReceipt
+      });
+    }
   } catch {
     throw persistenceCheckpointError("tcg_grammar_context_checkpoint_receipt_invalid");
   }
