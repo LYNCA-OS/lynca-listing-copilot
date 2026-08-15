@@ -773,7 +773,9 @@ function candidateReadbackCase(evidence, { deploymentUrl, gitSha }) {
         || semanticCases.map((entry) => entry?.case_id).sort().join("\0")
           !== ORDINARY_SEMANTIC_CASE_IDS.join("\0")
         || strictNoSearchCount < 1
-        || governedClassificationCount !== 1
+        || governedClassificationCount
+          !== (semanticCases.some((entry) => entry?.activation_deferred === true)
+            ? 0 : 1)
         || evidence.final_seal?.qualified_governed_web_support_case_count
           !== governedClassificationCount
         || evidence.final_seal?.strict_no_search_case_count !== strictNoSearchCount

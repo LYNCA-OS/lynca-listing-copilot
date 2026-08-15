@@ -608,6 +608,77 @@ assert.equal(rows.output.dropped_trace.rendered_length, composed.length);
   }), /tcg_grammar_context_receipt_missing/);
 }
 
+// A LOT is outside the standard-to-tcg joint namespace. An observed lot
+// carries no registry claim; the claim machinery must not run against
+// re-derived fields (regression: the LOT_SHARED_ONLY acceptance case 503'd
+// with tcg_grammar_context_receipt_invalid on a real lot output whose card
+// numbers were semicolon-joined, e.g. "BCP-122; BCP-38; BCP-42").
+{
+  const raw = {
+    grammar: "lot", set: "Bowman Briefing",
+    card_number: "BCP-122; BCP-38; BCP-42",
+    subjects: ["Sam Petersen", "Luis Cova", "David Davalillo"],
+    lot_count: "3", product: "Bowman Chrome",
+    unreadable: [], low_confidence: []
+  };
+  const founderReceipt = noSearchReceipts(raw).founderBetaWebReceipt;
+  const sourceReceipt = buildTcgFieldSourceAuthorityReceipt({
+    fieldSources: [
+      { field: "set", source_ids: ["original_image_2"] },
+      { field: "card_number", source_ids: ["original_image_1", "original_image_2"] }
+    ],
+    fields: raw,
+    originalImageCount: 2,
+    semanticStateSha256: founderReceipt.semantic_state_sha256,
+    founderBetaWebReceipt: founderReceipt,
+    sourceExecution: {
+      operationPayloadSha256: "a".repeat(64),
+      originalImageFingerprints: [`sha256:${"b".repeat(64)}`, `sha256:${"b".repeat(64)}`],
+      recognitionImageFingerprints: [`sha256:${"c".repeat(64)}`, `sha256:${"c".repeat(64)}`],
+      providerClientRequestId: "lynca-persistence-lot-attempt-1",
+      providerResponseId: "resp_persistence_lot_1",
+      tenantId: "t1",
+      recognitionSessionId: "lot-grammar-v4"
+    }
+  });
+  const claimReceipt = buildTcgGrammarContextClaimReceipt({
+    fields: raw,
+    fieldSourceAuthorityReceipt: sourceReceipt
+  });
+  assert.equal(claimReceipt.status, "NOT_REQUIRED");
+  assert.equal(claimReceipt.reason_code, "LOT_GRAMMAR_UNCHANGED");
+  const parsed = parseCanonicalFields(raw, {
+    semantics: CANONICAL_FIELDS_PARSER_SEMANTICS.WEB_V3_TCG_CONTEXT,
+    tcgFieldSourceAuthorityReceipt: sourceReceipt,
+    tcgGrammarContextClaimReceipt: claimReceipt
+  });
+  assert.equal(parsed.fields.grammar, "lot");
+  const lotComposed = composeFromCanonicalFields(parsed.fields, { features: {
+    durable_lot_terminal_shared_only: true,
+    publication_coverage: true
+  } });
+  const relationReceipt = noSearchReceipts(parsed.fields).setCardNameRelationReceipt;
+  const lotRows = buildCsmStageRows({
+    tenantId: "t1", recognitionSessionId: "lot-grammar-v4",
+    fields: parsed.fields,
+    observedFields: parsed.observed_fields,
+    composed: lotComposed,
+    title: lotComposed.title,
+    founderBetaWebReceipt: founderReceipt,
+    setCardNameRelationReceipt: relationReceipt,
+    tcgFieldSourceAuthorityReceipt: sourceReceipt,
+    tcgGrammarContextClaimReceipt: claimReceipt,
+    registryReleaseId: TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id,
+    contractVersion: CSM_TCG_GRAMMAR_CONTEXT_PROJECTION_CONTRACT_VERSION
+  });
+  assert.equal(lotRows.output.structured_output.observed_composition_grammar, "lot");
+  assert.equal(lotRows.output.structured_output.composition_grammar, "lot");
+  // The resolution row names LOT as a NON_TCG grammar (the v4 projection does
+// not create a separate LOT composition language); what matters is that the
+// claim machinery was skipped and the rows built without the receipt error.
+assert.equal(lotRows.resolution.grammar, "NON_TCG");
+}
+
 // Inferred parents are a Composer normalization, not an observed input. The
 // trace must still say that Manufacturer was empty at input even though the
 // normalized bracket later renders a parent inferred from Product.
