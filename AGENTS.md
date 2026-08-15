@@ -74,3 +74,84 @@ Two boundaries:
 
 If CSM itself is wrong, change CSM through a Decision Proposal. Do not route
 around it in the application layer — see COS-23 and COS-27.
+
+## Working principles
+
+Founder's operating instructions, 2026-08-08. These govern how work is chosen
+and paced, not just how it is written.
+
+### Classify the problem before choosing a method
+
+Not everything has a theoretical optimum, and applying the wrong frame is
+expensive in both directions.
+
+- **Optimization problems** — a physical or information-theoretic bound exists
+  (latency, bytes, sample size, a scorer's ceiling). **Compute the bound first**
+  and use it to decide whether the work is worth doing. 2026-08-08's
+  counterexample: the downscale path was built before anyone measured how much
+  it could possibly save. The paired answer was 2.2s per card, not the 6s a
+  cross-card correlation had suggested.
+- **Convention problems** — the boundary is defined by people, not derived
+  (which field a printed phrase belongs to, how a marker is spelled, grammar
+  order). There is no optimum. **Decide, freeze into the contract, then measure
+  reproducibility.** COS-56 is the worked example: the win was not a better
+  reading, it was a decidable rule that halved self-disagreement.
+
+Then iterate from the theoretical answer toward the executed one, and let the
+measurement — not the argument — move it.
+
+### Think about the whole frame first
+
+Before small fixes, understand the whole chain. Start with archaeology, not
+design: 2026-08-08's largest realisation was that the ingest endpoint ALREADY
+ran the model while storage happened in the background, which made a whole
+`DECLARED`-identity design unnecessary and it was withdrawn unbuilt.
+
+**When the same place breaks repeatedly, stop fixing and re-frame.** Three
+failures on one upload path meant the frame was wrong, not the patch.
+
+### Less is more
+
+Solve it in the way that is creative and simple enough to be beautiful. The
+thin path beat the fat pipeline on every measure. Prefer removing a cause to
+adding a guard.
+
+### First principles
+
+Both execution and reasoning start from what is actually true of this system,
+not from what is usually true of systems.
+
+### Contradict before committing
+
+For any expensive or hard-to-reverse decision — shipping to production, changing
+a contract, deleting data, choosing a direction — state the opposing view first,
+then pick the one held with higher confidence and say why. Follow the reasoning,
+not the person. Routine execution does not need this ceremony.
+
+### Losses are allowed; repeats are not
+
+Stage losses and temporary regressions are acceptable and sometimes necessary —
+learning a new capability has negative feedback in it, and what matters is the
+compounding direction. **But a failure that has already happened once and is
+written down is not learning, it is waste.** Before paying a cost, check whether
+this exact cost was paid before.
+
+### Modules isolated, contracts central
+
+Keep modules decoupled so an upgrade to one does not disturb the others, and
+leave headroom rather than fitting everything exactly. **Isolation applies to
+implementations, never to contracts:** `Lotx` in one renderer against `Lot*` in
+another is the drift COS-49 exists to close. One contract, many implementations.
+
+### Debt and cleanliness
+
+Handle technical debt when it appears rather than scheduling it. Work from a
+clean tree, and see "Source of truth" above — production ships from
+`origin/main`, never from a feature branch.
+
+### Compounding
+
+Write stage outcomes, successes and failures alike, into memory. Write settled
+capability into skills. Write what the founder has explicitly rejected into
+boundaries, so it is not re-proposed. Keep all three in the project background
+so the next session starts where this one ended.
