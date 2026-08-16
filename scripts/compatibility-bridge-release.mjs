@@ -1190,6 +1190,363 @@ export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_CHANGED_PATHS =
   ]);
 export const TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_RUNTIME_CONTRACT_SHA256 =
   "aacc546cc72911da03e488d9187b8d5f30a9325330cdb111e1aac73991c99da5";
+
+// ---------------------------------------------------------------------------
+// Data-driven release pins (from v82 on).
+//
+// Every pin from v48 to v81 was a hand-written family of ~67 references:
+// constants, a changed-paths validator, a materializer, a dispatch branch, a
+// proof, git evidence, a lineage verifier, a family branch, a health branch
+// and a test block. Three releases failed on ceremony mistakes alone, and the
+// two selector files reached 15% of the repository. A pin is data; this table
+// is the same pins, as data. One generic engine consumes it. Historical
+// blocks above stay untouched -- their frozen proofs remain the authority for
+// the releases they shipped.
+// ---------------------------------------------------------------------------
+export const PRODUCTION_RELEASE_PIN_TABLE = Object.freeze([
+  Object.freeze({
+    pin_version: 82,
+    selection_schema_version: "production-release-selection-v82",
+    rollback_lineage_schema_version: "production-release-rollback-lineage-receipt-v83",
+    descriptor_id:
+      "listing-copilot-tcg-grammar-context-v4-live-writer-journey-writer-terminal-v82-v1",
+    marker: "tcg-grammar-context-v4-live-writer-journey-writer-terminal-v82-v1",
+    parent_git_sha: "e98e7d6eee1add5a29bd090d014ddb6b1b7d6f50",
+    parent_tree_sha: "0b710379612a641dcd7872bfbe9dcfc9b4c26a73",
+    failed_run_id: "31944644866",
+    failure_code: "writer_terminal_journey_lot_checkpoint",
+    failed_case_id: "LOT_SHARED_ONLY",
+    failed_phase: "RECOGNITION_RESPONSE",
+    rollback_git_sha: "e98e7d6eee1add5a29bd090d014ddb6b1b7d6f50",
+    rollback_tree_sha: "0b710379612a641dcd7872bfbe9dcfc9b4c26a73",
+    base_selection_schema_version: "production-release-selection-v81",
+    base_runtime_contract_sha256:
+      "aacc546cc72911da03e488d9187b8d5f30a9325330cdb111e1aac73991c99da5",
+    runtime_behavior_changed: true,
+    runtime_contract_sha256: "31309e502e63a3e64a5ce28abe86e344034b251a4bcb78a58267bfea7da889bc",
+    changed_paths: Object.freeze([
+      ".github/workflows/ci.yml",
+      "api/csm-listing-title.js",
+      "docs/DEVENV.md",
+      "e2e/production-writer-journey.spec.mjs",
+      "package-lock.json",
+      "package.json",
+      "scripts/csm-checkpoint-provider-observability.test.mjs",
+      "scripts/compatibility-bridge-release.mjs",
+      "scripts/compatibility-bridge-release.test.mjs",
+      "scripts/production-writer-journey-contract.test.mjs"
+    ])
+  })
+]);
+
+export function productionReleasePinTableEntry(pinVersion) {
+  const version = Number(pinVersion);
+  const matches = PRODUCTION_RELEASE_PIN_TABLE.filter(
+    (entry) => entry.pin_version === version
+  );
+  if (matches.length !== 1) {
+    throw failure("production_release_pin_table_version_invalid");
+  }
+  return matches[0];
+}
+
+function productionReleasePinTableEntryByParent(parentGitSha) {
+  const parent = exactGitSha(parentGitSha);
+  return PRODUCTION_RELEASE_PIN_TABLE.find(
+    (entry) => entry.parent_git_sha === parent
+  ) || null;
+}
+
+function productionReleasePinTableEntryBySelection(selection) {
+  return PRODUCTION_RELEASE_PIN_TABLE.find((entry) => (
+    selection?.schema_version === entry.selection_schema_version
+    || selection?.repair_descriptor_id === entry.descriptor_id
+    || selection?.parent_git_sha === entry.parent_git_sha
+  )) || null;
+}
+
+function exactProductionReleasePinChangedPaths(entry, values) {
+  if (!Array.isArray(values) || values.some((value) => (
+    typeof value !== "string" || !value || value !== value.trim()
+  )) || new Set(values).size !== values.length) {
+    throw failure(`production_release_pin_v${entry.pin_version}_changed_paths_invalid`);
+  }
+  const actual = [...values].sort();
+  if (stableJson(actual) !== stableJson([...entry.changed_paths].sort())) {
+    throw failure(`production_release_pin_v${entry.pin_version}_changed_paths_mismatch`);
+  }
+  return actual;
+}
+
+function productionReleasePinArtifactManifestSha256(entry, changedPaths) {
+  const artifactPaths = exactProductionReleasePinChangedPaths(entry, changedPaths);
+  return sha256(artifactPaths.map((path) => path.trim()).join("\0"));
+}
+
+export function productionReleasePinRuntimeContractProof(entry) {
+  const body = {
+    schema_version:
+      `listing-copilot-production-release-pin-v${entry.pin_version}-proof-v1`,
+    selection_schema_version: entry.selection_schema_version,
+    rollback_lineage_schema_version: entry.rollback_lineage_schema_version,
+    release_class: ORDINARY_RELEASE_CLASS,
+    repair_descriptor_id: entry.descriptor_id,
+    repair_marker: entry.marker,
+    required_parent_git_sha: entry.parent_git_sha,
+    required_parent_tree_sha: entry.parent_tree_sha,
+    failed_run_id: entry.failed_run_id,
+    failure_code: entry.failure_code,
+    failed_case_id: entry.failed_case_id,
+    failed_phase: entry.failed_phase,
+    required_rollback_git_sha: entry.rollback_git_sha,
+    required_rollback_tree_sha: entry.rollback_tree_sha,
+    base_repair_selection_schema_version: entry.base_selection_schema_version,
+    base_repair_runtime_contract_sha256: entry.base_runtime_contract_sha256,
+    checkout_depth: 2,
+    exact_historical_fetch_depth: 1,
+    exact_historical_fetch_refetch: true,
+    exact_release_objects:
+      TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_REPAIR_EXACT_RELEASE_OBJECTS,
+    historical_fixture_mode: "depth2-plus-exact-immutable-release-objects",
+    forward_readback_receipt_contract:
+      "ACTIVATION_DEFERRED_WEB_AUTONOMOUS_LOT_CLAIM_GUARD_PARITY_GOVERNED_V1",
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    runtime_behavior_changed: entry.runtime_behavior_changed,
+    provider_calls: 0,
+    parity_required: true
+  };
+  const contractSha256 = sha256(stableJson(body));
+  if (contractSha256 !== entry.runtime_contract_sha256) {
+    throw failure(
+      `production_release_pin_v${entry.pin_version}_runtime_contract_hash_mismatch`
+    );
+  }
+  return Object.freeze({ ...body, contract_sha256: contractSha256 });
+}
+
+function materializeProductionReleasePinSelection(entry, {
+  candidateGitSha,
+  candidateTreeSha,
+  parentGitShas,
+  parentTreeSha,
+  changedPaths
+} = {}) {
+  const expectedSha = exactGitSha(candidateGitSha);
+  const actualTree = exactGitSha(candidateTreeSha);
+  if (stableJson(parentGitShas) !== stableJson([entry.parent_git_sha])) {
+    throw failure(`production_release_pin_v${entry.pin_version}_parent_mismatch`);
+  }
+  if (exactGitSha(parentTreeSha) !== entry.parent_tree_sha) {
+    throw failure(`production_release_pin_v${entry.pin_version}_parent_tree_mismatch`);
+  }
+  if (actualTree === entry.parent_tree_sha) {
+    throw failure(`production_release_pin_v${entry.pin_version}_candidate_tree_mismatch`);
+  }
+  const artifactPaths = exactProductionReleasePinChangedPaths(entry, changedPaths);
+  const contract = productionReleasePinRuntimeContractProof(entry);
+  return Object.freeze({
+    schema_version: entry.selection_schema_version,
+    release_class: ORDINARY_RELEASE_CLASS,
+    repair_descriptor_id: entry.descriptor_id,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: entry.marker,
+    git_tree_sha: actualTree,
+    parent_git_sha: entry.parent_git_sha,
+    parent_tree_sha: entry.parent_tree_sha,
+    failed_run_id: entry.failed_run_id,
+    failure_code: entry.failure_code,
+    failed_case_id: entry.failed_case_id,
+    failed_phase: entry.failed_phase,
+    required_rollback_git_sha: entry.rollback_git_sha,
+    required_rollback_tree_sha: entry.rollback_tree_sha,
+    artifact_manifest_sha256: productionReleasePinArtifactManifestSha256(
+      entry, artifactPaths
+    ),
+    git_sha: expectedSha,
+    active_writer_contract_id:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID,
+    projection_activation_state: TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE,
+    active_writer_contract_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256,
+    projection_activation_sha256:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256,
+    forward_readers_sha256:
+      TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256,
+    registry_content_sha256: TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256,
+    resolution_contract_sha256: TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true,
+    contract_sha256: contract.contract_sha256
+  });
+}
+
+function verifyProductionReleasePinGitObjectEvidence(entry, selection, {
+  gitTextReader = gitText,
+  rebuildSelection = ({ gitSha }) => verifyCompatibilityBridgeSelection({
+    releaseClass: ORDINARY_RELEASE_CLASS,
+    gitSha
+  })
+} = {}) {
+  const releaseGitSha = exactGitSha(selection?.git_sha);
+  let releaseIdentity;
+  try {
+    releaseIdentity = exactGitCommitObjectIdentity(releaseGitSha, {
+      gitTextReader,
+      failureCode: `production_release_pin_v${entry.pin_version}_git_object_invalid`
+    });
+  } catch {
+    throw failure(`production_release_pin_v${entry.pin_version}_git_object_invalid`);
+  }
+  if (stableJson(releaseIdentity.parent_git_shas) !== stableJson([
+    entry.parent_git_sha
+  ])) {
+    throw failure(`production_release_pin_v${entry.pin_version}_parent_mismatch`);
+  }
+  if (releaseIdentity.git_tree_sha !== selection?.git_tree_sha) {
+    throw failure(`production_release_pin_v${entry.pin_version}_candidate_tree_mismatch`);
+  }
+  let rebuiltSelection;
+  try {
+    rebuiltSelection = rebuildSelection({ gitSha: releaseGitSha });
+  } catch {
+    throw failure(`production_release_pin_v${entry.pin_version}_selection_object_mismatch`);
+  }
+  if (stableJson(rebuiltSelection) !== stableJson(selection)) {
+    throw failure(`production_release_pin_v${entry.pin_version}_selection_object_mismatch`);
+  }
+  return Object.freeze({
+    schema_version:
+      `production-release-pin-v${entry.pin_version}-git-object-evidence-v1`,
+    verification_source: "LOCAL_GIT_OBJECT_DATABASE_REBUILT_SELECTION",
+    commit_exists: true,
+    git_sha: releaseGitSha,
+    git_tree_sha: releaseIdentity.git_tree_sha,
+    parent_git_shas: Object.freeze([...releaseIdentity.parent_git_shas]),
+    selection_sha256: sha256(stableJson(rebuiltSelection))
+  });
+}
+
+function verifyProductionReleasePinRollbackLineage(entry, {
+  selection,
+  rollbackReceipt
+} = {}) {
+  if (!exactKeys(selection, [
+    "schema_version", "release_class", "repair_descriptor_id", "lineage_marker",
+    "transition_marker", "git_tree_sha", "parent_git_sha", "parent_tree_sha",
+    "failed_run_id", "failure_code", "failed_case_id", "failed_phase",
+    "required_rollback_git_sha", "required_rollback_tree_sha",
+    "artifact_manifest_sha256", "git_sha", "active_writer_contract_id",
+    "projection_activation_state", "active_writer_contract_sha256",
+    "projection_activation_sha256", "forward_readers_sha256",
+    "registry_content_sha256", "resolution_contract_sha256",
+    "writer_journey_manifest", "parity_required", "contract_sha256"
+  ])
+      || selection.schema_version !== entry.selection_schema_version
+      || selection.release_class !== ORDINARY_RELEASE_CLASS
+      || selection.repair_descriptor_id !== entry.descriptor_id
+      || selection.lineage_marker !== LINEAR_ORDINARY_LINEAGE_MARKER
+      || selection.transition_marker !== entry.marker
+      || selection.parent_git_sha !== entry.parent_git_sha
+      || selection.parent_tree_sha !== entry.parent_tree_sha
+      || selection.failed_run_id !== entry.failed_run_id
+      || selection.failure_code !== entry.failure_code
+      || selection.failed_case_id !== entry.failed_case_id
+      || selection.failed_phase !== entry.failed_phase
+      || selection.required_rollback_git_sha !== entry.rollback_git_sha
+      || selection.required_rollback_tree_sha !== entry.rollback_tree_sha
+      || selection.artifact_manifest_sha256
+        !== productionReleasePinArtifactManifestSha256(entry, entry.changed_paths)
+      || selection.active_writer_contract_id
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_CONTRACT_ID
+      || selection.projection_activation_state !== TCG_GRAMMAR_CONTEXT_ACTIVATION_STATE
+      || selection.active_writer_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_ACTIVE_WRITER_SHA256
+      || selection.projection_activation_sha256
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_PROJECTION_ACTIVATION_SHA256
+      || selection.forward_readers_sha256
+        !== TCG_GRAMMAR_CONTEXT_READER_BRIDGE_FORWARD_READERS_SHA256
+      || selection.registry_content_sha256 !== TCG_GRAMMAR_CONTEXT_REGISTRY_CONTENT_SHA256
+      || selection.resolution_contract_sha256
+        !== TCG_GRAMMAR_CONTEXT_RESOLUTION_CONTRACT_SHA256
+      || selection.writer_journey_manifest
+        !== TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION
+      || selection.parity_required !== true
+      || selection.contract_sha256 !== entry.runtime_contract_sha256) {
+    throw failure(`production_release_pin_v${entry.pin_version}_selection_invalid`);
+  }
+  const capturedRollbackSha = exactGitSha(rollbackReceipt?.git_sha);
+  if (capturedRollbackSha !== entry.rollback_git_sha) {
+    throw failure(`production_release_pin_v${entry.pin_version}_rollback_mismatch`);
+  }
+  const gitObjectEvidence = verifyProductionReleasePinGitObjectEvidence(
+    entry, selection
+  );
+  return Object.freeze({
+    schema_version: entry.rollback_lineage_schema_version,
+    release_class: ORDINARY_RELEASE_CLASS,
+    repair_descriptor_id: entry.descriptor_id,
+    lineage_marker: LINEAR_ORDINARY_LINEAGE_MARKER,
+    transition_marker: entry.marker,
+    release_git_sha: exactGitSha(selection.git_sha),
+    release_tree_sha: exactGitSha(selection.git_tree_sha),
+    release_parent_git_sha: entry.parent_git_sha,
+    release_parent_tree_sha: entry.parent_tree_sha,
+    failed_run_id: entry.failed_run_id,
+    failure_code: entry.failure_code,
+    failed_case_id: entry.failed_case_id,
+    failed_phase: entry.failed_phase,
+    required_rollback_git_sha: entry.rollback_git_sha,
+    required_rollback_tree_sha: entry.rollback_tree_sha,
+    captured_rollback_git_sha: capturedRollbackSha,
+    artifact_manifest_sha256: selection.artifact_manifest_sha256,
+    runtime_contract_sha256: selection.contract_sha256,
+    release_git_object_verified: gitObjectEvidence.commit_exists,
+    release_git_object_verification_source: gitObjectEvidence.verification_source,
+    writer_journey_manifest:
+      TCG_GRAMMAR_CONTEXT_ACTIVATION_WRITER_JOURNEY_MANIFEST_VERSION,
+    parity_required: true,
+    lineage_verified: true
+  });
+}
+
+export function materializeProductionReleasePinSelectionForTest(pinVersion, args) {
+  return materializeProductionReleasePinSelection(
+    productionReleasePinTableEntry(pinVersion),
+    args
+  );
+}
+
+export function productionReleasePinRuntimeContractProofForTest(pinVersion) {
+  return productionReleasePinRuntimeContractProof(
+    productionReleasePinTableEntry(pinVersion)
+  );
+}
+
+export function verifyProductionReleasePinGitObjectEvidenceForTest(
+  pinVersion, args
+) {
+  return verifyProductionReleasePinGitObjectEvidence(
+    productionReleasePinTableEntry(pinVersion),
+    args?.selection,
+    {
+      gitTextReader: args?.gitTextReader,
+      rebuildSelection: args?.rebuildSelection
+    }
+  );
+}
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_SELECTION_V36_SHA256 =
   "e8b4c161e1bbbfb58786fa44ea3d40b15cc6fe8573c9ab8a00100cf7c146e43f";
 export const EXTERNAL_IDENTITY_V3_BRIDGE_HISTORICAL_LINEAGE_V37_SHA256 =
@@ -7244,6 +7601,42 @@ export function verifyCompatibilityBridgeSelection({
           expectedSha
         )
       });
+    }
+    const productionReleasePinEntry = productionReleasePinTableEntryByParent(
+      parentGitSha
+    );
+    if (productionReleasePinEntry) {
+      const candidateIdentity = exactGitCommitObjectIdentity(expectedSha, {
+        failureCode: `production_release_pin_v${productionReleasePinEntry.pin_version}_git_object_invalid`
+      });
+      if (stableJson(candidateIdentity.parent_git_shas) !== stableJson(parents)) {
+        throw failure(
+          `production_release_pin_v${productionReleasePinEntry.pin_version}_parent_mismatch`
+        );
+      }
+      if (headTreeSha != null
+          && exactGitSha(headTreeSha) !== candidateIdentity.git_tree_sha) {
+        throw failure(
+          `production_release_pin_v${productionReleasePinEntry.pin_version}_candidate_tree_mismatch`
+        );
+      }
+      const actualParentTree = exactGitSha(parentTreeSha ?? gitText([
+        "rev-parse",
+        `${productionReleasePinEntry.parent_git_sha}^{tree}`
+      ]));
+      return materializeProductionReleasePinSelection(
+        productionReleasePinEntry,
+        {
+          candidateGitSha: expectedSha,
+          candidateTreeSha: candidateIdentity.git_tree_sha,
+          parentGitShas: candidateIdentity.parent_git_shas,
+          parentTreeSha: actualParentTree,
+          changedPaths: changedPaths ?? gitChangedPaths(
+            productionReleasePinEntry.parent_git_sha,
+            expectedSha
+          )
+        }
+      );
     }
     if (parentGitSha === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_PARENT_SHA) {
       const candidateIdentity = exactGitCommitObjectIdentity(expectedSha, {
@@ -16974,6 +17367,23 @@ export function verifyOrdinaryRollbackLineage({
       rollbackReceipt
     });
   }
+  const productionReleasePinFamilyEntry = productionReleasePinTableEntryBySelection(
+    selection
+  );
+  if (productionReleasePinFamilyEntry) {
+    if (selection?.schema_version
+        !== productionReleasePinFamilyEntry.selection_schema_version
+        || selection?.repair_descriptor_id
+          !== productionReleasePinFamilyEntry.descriptor_id) {
+      throw failure(
+        `ordinary_release_production_release_pin_v${productionReleasePinFamilyEntry.pin_version}_selection_invalid`
+      );
+    }
+    return verifyProductionReleasePinRollbackLineage(
+      productionReleasePinFamilyEntry,
+      { selection, rollbackReceipt }
+    );
+  }
   const tcgGrammarContextLiveWjV4WriterTerminalV81Family =
     selection?.schema_version === "production-release-selection-v81"
     || selection?.repair_descriptor_id
@@ -20612,6 +21022,21 @@ async function main(argv) {
   }
   if (mode === "verify-health"
       && selection.schema_version === "production-release-selection-v79") {
+    const health = await readJson(values.get("--health"), "compatibility_bridge_health");
+    await exclusivePrivateWrite(
+      values.get("--out"),
+      tcgGrammarContextActivationRuntimeContractProof({
+        health,
+        gitSha: selection.git_sha,
+        candidateGitSha: selection.git_sha
+      })
+    );
+    return;
+  }
+  const productionReleasePinHealthEntry = PRODUCTION_RELEASE_PIN_TABLE.find(
+    (entry) => selection.schema_version === entry.selection_schema_version
+  );
+  if (mode === "verify-health" && productionReleasePinHealthEntry) {
     const health = await readJson(values.get("--health"), "compatibility_bridge_health");
     await exclusivePrivateWrite(
       values.get("--out"),

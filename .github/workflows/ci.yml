@@ -103,3 +103,13 @@ jobs:
           for f in api/*.js api/v4/*.js app/*.js; do
             node --check "$f"
           done
+      - name: Install Playwright Chromium for the credential-free browser gates
+        # The renderer and batch-navigation specs exercise real DOM wiring
+        # (drag-drop dispatch, bounded windows, preparation-failure states).
+        # Until 2026-08-16 CI only syntax-checked them, so a broken DOM
+        # contract could merge on green.
+        run: npx playwright install --with-deps chromium
+      - name: Run the credential-free browser regression gates
+        run: |
+          npm run test:e2e:batch-navigation
+          npm run test:e2e:writer-terminal-renderer

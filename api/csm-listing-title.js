@@ -2045,34 +2045,52 @@ export async function runDirectCsmAsset({
     if (Number.isFinite(Number(prepared?.latency_ms))) {
       attemptStages.provider_ms = Number(prepared.latency_ms);
     }
-    const checkpoint = buildCsmPersistenceCheckpoint({
-      prepared: {
-        ...prepared,
-        ...(transportRetryReceipt ? {
-          provider_transport_retry_receipt: transportRetryReceipt
-        } : {}),
-        provider_attempt_number: Number(dispatched.attempt),
-        provider_retry_count: Math.max(0, Number(dispatched.attempt) - 1),
-        latency_stages_ms: attemptStages
-      },
-      tenantId: tenant,
-      operationKey: dispatched.operation_key,
-      payloadHash: dispatched.payload_hash,
-      recognitionSessionId: sessionId,
-      recognitionSessionDeferred,
-      recognitionInput: recognition.read,
-      executionContractSha256: dispatched.execution_contract_sha256 || null,
-      resolutionContractSha256:
-        prepared?.tcg_grammar_context_claim_receipt?.status === "APPLIED"
-          ? prepared.resolution_contract_sha256
-          : dispatched.resolution_contract_sha256 || null,
-      originalSetSha256: dispatched.original_set_sha256 || null,
-      originalImageFingerprints: task.image_fingerprints,
-      recognitionImageFingerprints: task.recognition_fingerprints,
-      operationScope,
-      projectionActivation:
-        dependencies.projectionActivation || CSM_PROJECTION_ACTIVATION
-    });
+    let checkpoint;
+    try {
+      checkpoint = buildCsmPersistenceCheckpoint({
+        prepared: {
+          ...prepared,
+          ...(transportRetryReceipt ? {
+            provider_transport_retry_receipt: transportRetryReceipt
+          } : {}),
+          provider_attempt_number: Number(dispatched.attempt),
+          provider_retry_count: Math.max(0, Number(dispatched.attempt) - 1),
+          latency_stages_ms: attemptStages
+        },
+        tenantId: tenant,
+        operationKey: dispatched.operation_key,
+        payloadHash: dispatched.payload_hash,
+        recognitionSessionId: sessionId,
+        recognitionSessionDeferred,
+        recognitionInput: recognition.read,
+        executionContractSha256: dispatched.execution_contract_sha256 || null,
+        resolutionContractSha256:
+          prepared?.tcg_grammar_context_claim_receipt?.status === "APPLIED"
+            ? prepared.resolution_contract_sha256
+            : dispatched.resolution_contract_sha256 || null,
+        originalSetSha256: dispatched.original_set_sha256 || null,
+        originalImageFingerprints: task.image_fingerprints,
+        recognitionImageFingerprints: task.recognition_fingerprints,
+        operationScope,
+        projectionActivation:
+          dependencies.projectionActivation || CSM_PROJECTION_ACTIVATION
+      });
+    } catch (error) {
+      // The provider already ran when the checkpoint rejects its output. The
+      // v72-era evidence made these look pre-provider (`provider_ms` null in
+      // the operation wrap) and cost hours of misdirected diagnosis, so the
+      // paid-attempt timing rides the error itself.
+      if (error && typeof error === "object") {
+        if (Number.isFinite(Number(attemptStages.provider_ms))) {
+          error.provider_attempt_started ||= true;
+          if (!Number.isFinite(Number(error.provider_ms))) {
+            error.provider_ms = Number(attemptStages.provider_ms);
+          }
+        }
+        error.latency_stages_ms = { ...attemptStages };
+      }
+      throw error;
+    }
     currentRequestCheckpoint = checkpoint;
     return checkpoint;
   };

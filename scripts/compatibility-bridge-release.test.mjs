@@ -810,6 +810,11 @@ import {
   verifyTcgGrammarContextLiveWjV4WriterTerminalV80GitObjectEvidenceForTest,
   verifyTcgGrammarContextLiveWjV4WriterTerminalV81GitObjectEvidenceForTest,
   verifyTcgGrammarContextOrdinaryParentBoundaryForTest,
+  PRODUCTION_RELEASE_PIN_TABLE,
+  productionReleasePinTableEntry,
+  materializeProductionReleasePinSelectionForTest,
+  productionReleasePinRuntimeContractProofForTest,
+  verifyProductionReleasePinGitObjectEvidenceForTest,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
 import {
@@ -8142,6 +8147,143 @@ assert.throws(() => verifyOrdinaryRollbackLineage({
 }), (error) => error.code
   === "tcg_grammar_context_live_wj_v4_writer_terminal_v80_rollback_mismatch");
 
+// ---------------------------------------------------------------------------
+// Data-driven release pins (v82 on). One generic block for the whole table:
+// future pins add a table entry, not another 150-line test family.
+// ---------------------------------------------------------------------------
+assert.ok(PRODUCTION_RELEASE_PIN_TABLE.length >= 1,
+  "the pin table must carry at least one release pin");
+assert.ok(new Set(PRODUCTION_RELEASE_PIN_TABLE.map((entry) => entry.pin_version)).size
+    === PRODUCTION_RELEASE_PIN_TABLE.length,
+  "pin versions must be unique");
+const tablePinnedSelectionSchemas = new Set(PRODUCTION_RELEASE_PIN_TABLE.map(
+  (entry) => entry.selection_schema_version
+));
+assert.ok(tablePinnedSelectionSchemas.size === PRODUCTION_RELEASE_PIN_TABLE.length,
+  "selection schema versions must be unique across the pin table");
+for (const entry of PRODUCTION_RELEASE_PIN_TABLE) {
+  assert.match(entry.descriptor_id,
+    /-v\d+-v1$/, "descriptor ids follow the release version convention");
+  assert.match(entry.marker, /-v\d+-v1$/);
+  assert.match(entry.selection_schema_version, /^production-release-selection-v\d+$/);
+  assert.match(entry.rollback_lineage_schema_version,
+    /^production-release-rollback-lineage-receipt-v\d+$/);
+  assert.ok(/^[0-9a-f]{40}$/.test(entry.parent_git_sha));
+  assert.ok(/^[0-9a-f]{40}$/.test(entry.parent_tree_sha));
+  assert.ok(/^[0-9a-f]{40}$/.test(entry.rollback_git_sha));
+  assert.ok(/^[0-9a-f]{40}$/.test(entry.rollback_tree_sha));
+  assert.ok(/^[0-9a-f]{64}$/.test(entry.base_runtime_contract_sha256));
+  assert.ok(/^[0-9a-f]{64}$/.test(entry.runtime_contract_sha256));
+  assert.ok(Array.isArray(entry.changed_paths) && entry.changed_paths.length >= 2
+    && entry.changed_paths.includes("scripts/compatibility-bridge-release.mjs")
+    && entry.changed_paths.includes("scripts/compatibility-bridge-release.test.mjs"),
+    "a pin must always carry both selector files (the v74 lesson)");
+  const proof = productionReleasePinRuntimeContractProofForTest(entry.pin_version);
+  assert.equal(proof.selection_schema_version, entry.selection_schema_version);
+  assert.equal(proof.rollback_lineage_schema_version,
+    entry.rollback_lineage_schema_version);
+  assert.equal(proof.required_rollback_git_sha, entry.rollback_git_sha);
+  assert.equal(proof.base_repair_selection_schema_version,
+    entry.base_selection_schema_version);
+  assert.equal(proof.runtime_behavior_changed, entry.runtime_behavior_changed);
+  assert.equal(proof.provider_calls, 0);
+  assert.equal(proof.contract_sha256, entry.runtime_contract_sha256);
+  const selection = materializeProductionReleasePinSelectionForTest(
+    entry.pin_version,
+    {
+      candidateGitSha: "5".repeat(40),
+      candidateTreeSha: "6".repeat(40),
+      parentGitShas: [entry.parent_git_sha],
+      parentTreeSha: entry.parent_tree_sha,
+      changedPaths: entry.changed_paths
+    }
+  );
+  assert.equal(selection.schema_version, entry.selection_schema_version);
+  assert.equal(selection.required_rollback_git_sha, entry.rollback_git_sha);
+  assert.equal(selection.contract_sha256, entry.runtime_contract_sha256);
+  for (const [overrides, code] of [
+    [{ parentGitShas: ["0".repeat(40)] },
+      `production_release_pin_v${entry.pin_version}_parent_mismatch`],
+    [{ parentTreeSha: "0".repeat(40) },
+      `production_release_pin_v${entry.pin_version}_parent_tree_mismatch`],
+    [{ candidateTreeSha: entry.parent_tree_sha },
+      `production_release_pin_v${entry.pin_version}_candidate_tree_mismatch`],
+    [{ changedPaths: entry.changed_paths.slice(1) },
+      `production_release_pin_v${entry.pin_version}_changed_paths_mismatch`]
+  ]) {
+    assert.throws(() => materializeProductionReleasePinSelectionForTest(
+      entry.pin_version,
+      {
+        candidateGitSha: "5".repeat(40),
+        candidateTreeSha: "6".repeat(40),
+        parentGitShas: [entry.parent_git_sha],
+        parentTreeSha: entry.parent_tree_sha,
+        changedPaths: entry.changed_paths,
+        ...overrides
+      }
+    ), (error) => error.code === code);
+  }
+  const evidenceCommit = ({
+    tree = selection.git_tree_sha,
+    parent = entry.parent_git_sha
+  } = {}) => [
+    `tree ${tree}`,
+    `parent ${parent}`,
+    "author LYNCA fixture <fixture@example.invalid> 0 +0000",
+    "committer LYNCA fixture <fixture@example.invalid> 0 +0000",
+    "",
+    `fixture production release pin v${entry.pin_version} commit`
+  ].join("\n");
+  const evidenceReader = (args) => {
+    if (args[0] === "cat-file" && args[1] === "-t") return "commit";
+    if (args[0] === "cat-file" && args[1] === "-p") return evidenceCommit();
+    throw new Error("unexpected_git_read");
+  };
+  const evidence = verifyProductionReleasePinGitObjectEvidenceForTest(
+    entry.pin_version,
+    {
+      selection,
+      gitTextReader: evidenceReader,
+      rebuildSelection: () => selection
+    }
+  );
+  assert.equal(evidence.commit_exists, true);
+  assert.deepEqual(evidence.parent_git_shas, [entry.parent_git_sha]);
+  for (const [gitTextReader, rebuildSelection, code] of [
+    [() => { throw new Error("missing"); },
+      () => selection,
+      `production_release_pin_v${entry.pin_version}_git_object_invalid`],
+    [(args) => args[1] === "-t" ? "commit"
+      : evidenceCommit({ parent: "7".repeat(40) }),
+      () => selection,
+      `production_release_pin_v${entry.pin_version}_parent_mismatch`],
+    [(args) => args[1] === "-t" ? "commit"
+      : evidenceCommit({ tree: "8".repeat(40) }),
+      () => selection,
+      `production_release_pin_v${entry.pin_version}_candidate_tree_mismatch`],
+    [evidenceReader,
+      () => ({ ...selection, parity_required: false }),
+      `production_release_pin_v${entry.pin_version}_selection_object_mismatch`]
+  ]) {
+    assert.throws(() => verifyProductionReleasePinGitObjectEvidenceForTest(
+      entry.pin_version,
+      { selection, gitTextReader, rebuildSelection }
+    ), (error) => error.code === code);
+  }
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection: { ...selection, parity_required: false },
+    rollbackReceipt: { git_sha: entry.rollback_git_sha }
+  }), (error) => error.code
+    === `production_release_pin_v${entry.pin_version}_selection_invalid`);
+  assert.throws(() => verifyOrdinaryRollbackLineage({
+    selection,
+    rollbackReceipt: { git_sha: "9".repeat(40) }
+  }), (error) => error.code
+    === `production_release_pin_v${entry.pin_version}_rollback_mismatch`);
+}
+assert.throws(() => productionReleasePinTableEntry(1),
+  (error) => error.code === "production_release_pin_table_version_invalid");
+
 assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_DESCRIPTOR_ID,
   "listing-copilot-tcg-grammar-context-v4-live-writer-journey-writer-terminal-v81-v1");
 assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_MARKER,
@@ -12452,6 +12594,11 @@ try {
     actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V79_PARENT_SHA;
   const actualTcgGrammarContextLiveWjV4WriterTerminalV80 =
     actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V80_PARENT_SHA;
+  // Data-driven pins (v82 on): the matrix resolves table entries generically,
+  // so adding a pin no longer touches this file's chains.
+  const actualProductionReleasePinEntry = PRODUCTION_RELEASE_PIN_TABLE.find(
+    (entry) => actualParent === entry.parent_git_sha
+  ) || null;
   const actualTcgGrammarContextLiveWjV4WriterTerminalV81 =
     actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_PARENT_SHA;
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
@@ -12490,7 +12637,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualTcgGrammarContextLiveWjV4WriterTerminalV81
+  const actualTransitionMarker = actualProductionReleasePinEntry
+    ? actualProductionReleasePinEntry.marker
+    : actualTcgGrammarContextLiveWjV4WriterTerminalV81
     ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_MARKER
     : actualTcgGrammarContextLiveWjV4WriterTerminalV80
     ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V80_MARKER
@@ -12715,7 +12864,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualTcgGrammarContextLiveWjV4WriterTerminalV81
+      actualProductionReleasePinEntry
+        ? actualProductionReleasePinEntry.selection_schema_version
+        : actualTcgGrammarContextLiveWjV4WriterTerminalV81
         ? "production-release-selection-v81"
       : actualTcgGrammarContextLiveWjV4WriterTerminalV80
         ? "production-release-selection-v80"
@@ -12806,7 +12957,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualTcgGrammarContextLiveWjV4WriterTerminalV81
+      actualProductionReleasePinEntry
+        ? actualProductionReleasePinEntry.rollback_git_sha
+        : actualTcgGrammarContextLiveWjV4WriterTerminalV81
         ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V81_ROLLBACK_SHA
       : actualTcgGrammarContextLiveWjV4WriterTerminalV80
         ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_V80_ROLLBACK_SHA
@@ -12892,7 +13045,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualTcgGrammarContextLiveWjV4WriterTerminalV81
+      actualProductionReleasePinEntry
+        ? actualProductionReleasePinEntry.rollback_lineage_schema_version
+        : actualTcgGrammarContextLiveWjV4WriterTerminalV81
         ? "production-release-rollback-lineage-receipt-v82"
       : actualTcgGrammarContextLiveWjV4WriterTerminalV80
         ? "production-release-rollback-lineage-receipt-v81"
