@@ -8156,6 +8156,22 @@ assert.ok(PRODUCTION_RELEASE_PIN_TABLE.length >= 1,
 assert.ok(new Set(PRODUCTION_RELEASE_PIN_TABLE.map((entry) => entry.pin_version)).size
     === PRODUCTION_RELEASE_PIN_TABLE.length,
   "pin versions must be unique");
+// Each pin chains to the one before it: this pin's base contract must be the
+// previous pin's runtime contract. v83 broke that silently once -- #303 merged
+// to main with no pin at all, so the generic dispatch fell back to "rollback
+// must equal parent", which production could never satisfy, and the release
+// was unshippable without anyone having changed a gate.
+const orderedPins = [...PRODUCTION_RELEASE_PIN_TABLE]
+  .sort((a, b) => a.pin_version - b.pin_version);
+for (let index = 1; index < orderedPins.length; index += 1) {
+  assert.equal(orderedPins[index].base_runtime_contract_sha256,
+    orderedPins[index - 1].runtime_contract_sha256,
+    `pin v${orderedPins[index].pin_version} must chain to v${
+      orderedPins[index - 1].pin_version}`);
+  assert.equal(orderedPins[index].base_selection_schema_version,
+    orderedPins[index - 1].selection_schema_version,
+    `pin v${orderedPins[index].pin_version} base selection schema`);
+}
 const tablePinnedSelectionSchemas = new Set(PRODUCTION_RELEASE_PIN_TABLE.map(
   (entry) => entry.selection_schema_version
 ));

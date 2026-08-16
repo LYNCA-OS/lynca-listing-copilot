@@ -1236,6 +1236,31 @@ export const PRODUCTION_RELEASE_PIN_TABLE = Object.freeze([
       "scripts/compatibility-bridge-release.test.mjs",
       "scripts/production-writer-journey-contract.test.mjs"
     ])
+  }),
+  Object.freeze({
+    pin_version: 83,
+    selection_schema_version: "production-release-selection-v83",
+    rollback_lineage_schema_version: "production-release-rollback-lineage-receipt-v84",
+    descriptor_id:
+      "listing-copilot-tcg-grammar-context-v4-live-writer-journey-writer-terminal-v83-v1",
+    marker: "tcg-grammar-context-v4-live-writer-journey-writer-terminal-v83-v1",
+    parent_git_sha: "735fdf9173210f7b5a976d938a023f4a0d1da1b7",
+    parent_tree_sha: "995dc89a8e6c34aa36821f9d83e953cb75c90d0d",
+    failed_run_id: "31952902974",
+    failure_code: "LOT_REVIEW_REQUIRED_CONTRACT_MISMATCH",
+    failed_case_id: "LOT_SHARED_ONLY",
+    failed_phase: "RECOGNITION_RESPONSE",
+    rollback_git_sha: "e98e7d6eee1add5a29bd090d014ddb6b1b7d6f50",
+    rollback_tree_sha: "0b710379612a641dcd7872bfbe9dcfc9b4c26a73",
+    base_selection_schema_version: "production-release-selection-v82",
+    base_runtime_contract_sha256:
+      "31309e502e63a3e64a5ce28abe86e344034b251a4bcb78a58267bfea7da889bc",
+    runtime_behavior_changed: true,
+    runtime_contract_sha256: "662231ae2af88252b73f8e2da6611f2fea6b9aa2bda55b94a258c731b7cd3830",
+    changed_paths: Object.freeze([
+      "scripts/compatibility-bridge-release.mjs",
+      "scripts/compatibility-bridge-release.test.mjs"
+    ])
   })
 ]);
 
