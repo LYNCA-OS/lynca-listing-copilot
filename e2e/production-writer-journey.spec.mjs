@@ -2025,6 +2025,22 @@ function validateOrdinaryIngestRequest(request, sourceCase) {
     verifierErrorCodes.ROUTE_COVERAGE_MISMATCH
   );
   const expectedBytes = sourceCase.images.reduce((total, image) => total + image.buffer.length, 0);
+  let offset = 0;
+  const exactOrderedSegments = Array.isArray(metadata?.images)
+    && metadata.images.every((image, index) => {
+      const expected = sourceCase.images[index]?.buffer;
+      const size = Number(image?.size);
+      if (!Buffer.isBuffer(expected) || !Number.isInteger(size) || size !== expected.length) {
+        return false;
+      }
+      const segment = body?.subarray(offset, offset + size);
+      offset += size;
+      return image.role === originalRoles[index]
+        && image.contentSha256 === sha256(expected)
+        && segment?.length === size
+        && sha256(segment) === image.contentSha256;
+    })
+    && offset === body?.length;
   requireInvariant(url.origin === productionOrigin
     && url.pathname === stagedRecognitionPath
     && !url.search
@@ -2040,6 +2056,7 @@ function validateOrdinaryIngestRequest(request, sourceCase) {
     && !Object.prototype.hasOwnProperty.call(metadata || {}, "laneVersion")
     && Array.isArray(metadata?.images)
     && metadata.images.length === sourceCase.image_count
+    && exactOrderedSegments
     && metadata.images.every((image) => hasExactKeys(image, [
       "contentSha256", "contentType", "fileName", "height", "imageId", "role",
       "signatureHex", "size", "width"
@@ -7279,7 +7296,7 @@ test("offline ordinary route coverage rejects an abort that could reach the prov
       width: 10,
       height: 20,
       signatureHex: "52494646",
-      contentSha256: "a".repeat(64)
+      contentSha256: sha256(sourceCase.images[index].buffer)
     }))
   };
   const encodeOrdinaryMetadata = (metadata) => Buffer.from(
@@ -7294,6 +7311,18 @@ test("offline ordinary route coverage rejects an abort that could reach the prov
   };
   requireInvariant(validateOrdinaryIngestRequest(ordinaryRequest, sourceCase).original_inline === true,
     verifierErrorCodes.GENERIC);
+  let reorderedBodyRejected = false;
+  try {
+    validateOrdinaryIngestRequest({
+      ...ordinaryRequest,
+      postDataBuffer: () => Buffer.concat([...sourceCase.images]
+        .reverse().map((image) => image.buffer))
+    }, sourceCase);
+  } catch (error) {
+    reorderedBodyRejected = sanitizedFailureCode(error)
+      === verifierErrorCodes.ROUTE_COVERAGE_MISMATCH;
+  }
+  requireInvariant(reorderedBodyRejected, verifierErrorCodes.GENERIC);
   const stagedMetadata = Buffer.from(JSON.stringify({
     clientAssetRef: "asset-ref",
     recognitionInputOnly: true,

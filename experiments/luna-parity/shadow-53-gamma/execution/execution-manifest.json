@@ -1,0 +1,32 @@
+{
+  "schema_version": "luna-parity-blind-execution-v1",
+  "authority": "evaluation_only",
+  "production_authorized": false,
+  "assets_manifest_sha256": "dba094cbef7f96c6179a67111840bd656fdbbaa429fc7f5c5fd5bcdad4cb8304",
+  "selected_asset_ids_sha256": "76c72d8c425cab373721a3de3a0a33755b4d19bf1abd51b6ce297d71f6dcf19d",
+  "selected_cards": 53,
+  "score_contract_sha256": "bfabab802ce7f0cd159bca4748c035608158f262c743a899f874dd54c52618ad",
+  "arms": [
+    "runtime_active_high_low",
+    "lynca_csm_direct_title_high_low"
+  ],
+  "request_template_sha256": {
+    "runtime_active_high_low": "00ea470767cf79699e490267f763f6ef1f81429114bed21fc363ff8109b92027",
+    "lynca_csm_direct_title_high_low": "2b50a9597fb185524e99f51a21dcfee33a2f0b0a62d89eee50aa170b8ab5b855"
+  },
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "max_output_tokens": 8192,
+  "image_delivery": "sha256_verified_original_inline",
+  "card_boundary": "one_physical_card_front_back_per_response",
+  "concurrency": 1,
+  "provider_max_attempts": 1,
+  "provider_retries": 0,
+  "pair_order": "asset_index_alternating",
+  "sealed_labels_accessed_during_execution": false,
+  "source_sha256": {
+    "luna-parity-core.mjs": "b8a96310e63596ca22d2c4113934e0163a19b12911c9aee4592ebcf661706a1d",
+    "run-luna-parity-blind.mjs": "6c37666f278438d0d3beb77e860fc7ee711b5fc6750e9923775784b0e2060c1c"
+  },
+  "run_fingerprint": "bb538849905e3f5005724fcb71f527c50b0f5399d2c19b5335034de576fa055e"
+}

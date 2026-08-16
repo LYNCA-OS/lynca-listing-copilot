@@ -526,13 +526,16 @@ assert.equal(rows.output.dropped_trace.rendered_length, composed.length);
   const raw = {
     grammar: "standard", set: "Trainer Gallery", card_number: "TG22/TG30",
     subjects: ["Eternatus"], product: "Brilliant Stars",
+    special_stamp: "Promo", description: "Case Hit",
     unreadable: [], low_confidence: []
   };
   const founderReceipt = noSearchReceipts(raw).founderBetaWebReceipt;
   const sourceReceipt = buildTcgFieldSourceAuthorityReceipt({
     fieldSources: [
       { field: "set", source_ids: ["original_image_1"] },
-      { field: "card_number", source_ids: ["original_image_1"] }
+      { field: "card_number", source_ids: ["original_image_1"] },
+      { field: "special_stamp", source_ids: ["original_image_1"] },
+      { field: "description", source_ids: ["original_image_1"] }
     ],
     fields: raw,
     originalImageCount: 1,
@@ -582,6 +585,10 @@ assert.equal(rows.output.dropped_trace.rendered_length, composed.length);
   assert.equal(v4Rows.resolution.grammar, "TCG");
   assert.equal(v4Rows.resolution.registry_release_id,
     TCG_GRAMMAR_CONTEXT_REGISTRY_RELEASE.release_id);
+  const v4Replayed = replayFromRows(v4Rows);
+  assert.equal(v4Replayed.fields.special_stamp, "Promo");
+  assert.equal(v4Replayed.fields.description, "Case Hit");
+  assert.equal(v4Replayed.title, v4Composed.title);
   assert.throws(() => buildCsmStageRows({
     tenantId: "t1", recognitionSessionId: "tcg-grammar-v3-splice",
     fields: parsed.fields,
