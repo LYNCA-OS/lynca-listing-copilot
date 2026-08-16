@@ -99,6 +99,7 @@ export function buildCsmIngestFailureResponse(error, {
       code,
       retryable,
       message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240),
+      ...(error?.detail ? { detail: String(error.detail).slice(0, 200) } : {}),
       ...(stagedInputRebind ? {
         recovery_action: "INPUT_REBIND"
       } : stagedResumeOnly ? {
