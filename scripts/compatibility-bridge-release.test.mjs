@@ -578,6 +578,18 @@ import {
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_REPAIR_V72_ROLLBACK_SHA,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_REPAIR_V72_ROLLBACK_TREE_SHA,
   TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_REPAIR_V72_RUNTIME_CONTRACT_SHA256,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_CHANGED_PATHS,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_DESCRIPTOR_ID,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILED_CASE_ID,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILED_PHASE,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILED_RUN_ID,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILURE_CODE,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_MARKER,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_RUNTIME_CONTRACT_SHA256,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_ACTIVE_WRITER_SHA256,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_CHANGED_PATHS,
   TCG_GRAMMAR_CONTEXT_READER_BRIDGE_COMMITTED_SHA,
@@ -642,6 +654,7 @@ import {
   materializeTcgGrammarContextLiveWjV4RollbackRepairV68SelectionForTest,
   materializeTcgGrammarContextLiveWjV4ParityThresholdSelectionForTest,
   materializeTcgGrammarContextLiveWjV4RollbackRepairV72SelectionForTest,
+  materializeTcgGrammarContextLiveWjV4WriterTerminalSelectionForTest,
   materializeTcgGrammarContextActivationRuntimeContractForTest,
   materializeTcgGrammarContextActivationSelectionForTest,
   materializeTcgGrammarContextReaderBridgeRuntimeContractForTest,
@@ -659,6 +672,7 @@ import {
   tcgGrammarContextLiveWjV4RollbackRepairV68RuntimeContractProof,
   tcgGrammarContextLiveWjV4ParityThresholdRuntimeContractProof,
   tcgGrammarContextLiveWjV4RollbackRepairV72RuntimeContractProof,
+  tcgGrammarContextLiveWjV4WriterTerminalRuntimeContractProof,
   tcgGrammarContextActivationTopologyProof,
   tcgGrammarContextReaderBridgeRuntimeContractProof,
   tcgGrammarContextReaderBridgeTopologyProof,
@@ -689,6 +703,7 @@ import {
   verifyTcgGrammarContextLiveWjV4RollbackRepairV68GitObjectEvidenceForTest,
   verifyTcgGrammarContextLiveWjV4ParityThresholdGitObjectEvidenceForTest,
   verifyTcgGrammarContextLiveWjV4RollbackRepairV72GitObjectEvidenceForTest,
+  verifyTcgGrammarContextLiveWjV4WriterTerminalGitObjectEvidenceForTest,
   verifyTcgGrammarContextOrdinaryParentBoundaryForTest,
   verifyCompatibilityBridgeSelection
 } from "./compatibility-bridge-release.mjs";
@@ -7053,6 +7068,176 @@ assert.throws(() => verifyCompatibilityBridgeSelection({
 }), (error) => error.code
   === "tcg_grammar_context_reader_bridge_candidate_git_object_invalid");
 
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_DESCRIPTOR_ID,
+  "listing-copilot-tcg-grammar-context-v4-live-writer-journey-writer-terminal-v1");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_MARKER,
+  "tcg-grammar-context-v4-live-writer-journey-writer-terminal-v1");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_SHA,
+  "3606c616f317186b683258ff8d6d8a6d8d9ded83");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_TREE_SHA,
+  "eb2b74bfa1409c9f504a851e484b53a3fe9dbbbc");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILED_RUN_ID,
+  "31923859725");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILURE_CODE,
+  "writer_terminal_merge");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILED_CASE_ID,
+  "RELEASE_ARTIFACT");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_FAILED_PHASE,
+  "RELEASE_ARTIFACT");
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_ROLLBACK_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+assert.equal(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_ROLLBACK_TREE_SHA,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_TREE_SHA);
+assert.deepEqual(TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_CHANGED_PATHS, [
+  ".github/workflows/production-writer-journey.yml",
+  "api/listing-image-verify-existing.js",
+  "api/v4/listing-export-workbook.js",
+  "app/conversation-writer-mode.mjs",
+  "app/index.html",
+  "app/listing-copilot-sdk.mjs",
+  "app/listing-copilot.js",
+  "app/workbench-v2.css",
+  "app/writer-wheel-mode.mjs",
+  "csm/contracts/resolution-review.mjs",
+  "e2e/batch-navigation.spec.mjs",
+  "e2e/production-batch-20-journey.spec.mjs",
+  "e2e/production-writer-terminal-candidate.spec.mjs",
+  "e2e/writer-terminal-real-renderer.spec.mjs",
+  "infrastructure/supabase-production/supabase/migrations/20260815124502_csm_review_confidence_calibration_v1.sql",
+  "infrastructure/supabase-production/supabase/migrations/20260815131050_writer_export_operational_only_v1.sql",
+  "lib/listing/client/batch-recognition-intent.mjs",
+  "lib/listing/client/listing-copilot-sdk.mjs",
+  "lib/listing/v4/export/writer-batch-export.mjs",
+  "package.json",
+  "scripts/auth-production-entrypoint.test.mjs",
+  "scripts/batch-review-window.test.mjs",
+  "scripts/conversation-writer-mode.test.mjs",
+  "scripts/cos51-isolated-recovery-chain.test.mjs",
+  "scripts/csm-resolution-review-migration.test.mjs",
+  "scripts/csm-resolution-review-postgres.test.mjs",
+  "scripts/csm-resolution-view.test.mjs",
+  "scripts/dev-server.mjs",
+  "scripts/manual-recovery-record.test.mjs",
+  "scripts/production-writer-terminal-candidate.contract.test.mjs",
+  "scripts/progressive-handle-files.test.mjs",
+  "scripts/reproduce-cos51-storage-collision.mjs",
+  "scripts/storage-signed-url.test.mjs",
+  "scripts/v4-writer-export-postgres.test.mjs",
+  "scripts/v4-writer-export.test.mjs",
+  "scripts/verify-founder-decisions-20260804.mjs",
+  "scripts/workbench-v2-design-contract.test.mjs",
+  "scripts/writer-wheel-mode.test.mjs",
+  "scripts/xlsx-package-inspection.mjs",
+  "vercel.json"
+]);
+const tcgGrammarContextLiveWjV4WriterTerminalProof =
+  tcgGrammarContextLiveWjV4WriterTerminalRuntimeContractProof();
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalProof.selection_schema_version,
+  "production-release-selection-v74");
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalProof.rollback_lineage_schema_version,
+  "production-release-rollback-lineage-receipt-v75");
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalProof.required_rollback_git_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalProof.runtime_behavior_changed, true);
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalProof.provider_calls, 0);
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalProof.contract_sha256,
+  TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_RUNTIME_CONTRACT_SHA256);
+const tcgGrammarContextLiveWjV4WriterTerminalSelection =
+  materializeTcgGrammarContextLiveWjV4WriterTerminalSelectionForTest({
+    candidateGitSha: "5".repeat(40),
+    candidateTreeSha: "6".repeat(40),
+    parentGitShas: [TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_SHA],
+    parentTreeSha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_TREE_SHA,
+    changedPaths: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_CHANGED_PATHS
+  });
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalSelection.schema_version,
+  "production-release-selection-v74");
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalSelection.required_rollback_git_sha,
+  TCG_GRAMMAR_CONTEXT_ACTIVATION_ROLLBACK_SHA);
+for (const [overrides, code] of [
+  [{ parentGitShas: ["0".repeat(40)] },
+    "tcg_grammar_context_live_wj_v4_writer_terminal_parent_mismatch"],
+  [{ parentTreeSha: "0".repeat(40) },
+    "tcg_grammar_context_live_wj_v4_writer_terminal_parent_tree_mismatch"],
+  [{ candidateTreeSha:
+      TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_TREE_SHA },
+    "tcg_grammar_context_live_wj_v4_writer_terminal_candidate_tree_mismatch"],
+  [{ changedPaths:
+      TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_CHANGED_PATHS.slice(1) },
+    "tcg_grammar_context_live_wj_v4_writer_terminal_changed_paths_mismatch"]
+]) {
+  assert.throws(() => materializeTcgGrammarContextLiveWjV4WriterTerminalSelectionForTest({
+    candidateGitSha: "5".repeat(40),
+    candidateTreeSha: "6".repeat(40),
+    parentGitShas: [TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_SHA],
+    parentTreeSha: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_TREE_SHA,
+    changedPaths: TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_CHANGED_PATHS,
+    ...overrides
+  }), (error) => error.code === code);
+}
+const tcgGrammarContextLiveWjV4WriterTerminalEvidenceCommit = ({
+  tree = tcgGrammarContextLiveWjV4WriterTerminalSelection.git_tree_sha,
+  parent = TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_SHA
+} = {}) => [
+  `tree ${tree}`,
+  `parent ${parent}`,
+  "author LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "committer LYNCA fixture <fixture@example.invalid> 0 +0000",
+  "",
+  "fixture live WJ v4 writer terminal commit"
+].join("\n");
+const tcgGrammarContextLiveWjV4WriterTerminalEvidenceReader = (args) => {
+  if (args[0] === "cat-file" && args[1] === "-t") return "commit";
+  if (args[0] === "cat-file" && args[1] === "-p") {
+    return tcgGrammarContextLiveWjV4WriterTerminalEvidenceCommit();
+  }
+  throw new Error("unexpected_git_read");
+};
+const tcgGrammarContextLiveWjV4WriterTerminalEvidence =
+  verifyTcgGrammarContextLiveWjV4WriterTerminalGitObjectEvidenceForTest({
+    selection: tcgGrammarContextLiveWjV4WriterTerminalSelection,
+    gitTextReader: tcgGrammarContextLiveWjV4WriterTerminalEvidenceReader,
+    rebuildSelection: () => tcgGrammarContextLiveWjV4WriterTerminalSelection
+  });
+assert.equal(tcgGrammarContextLiveWjV4WriterTerminalEvidence.commit_exists, true);
+assert.deepEqual(tcgGrammarContextLiveWjV4WriterTerminalEvidence.parent_git_shas,
+  [TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_SHA]);
+for (const [gitTextReader, rebuildSelection, code] of [
+  [() => { throw new Error("missing"); },
+    () => tcgGrammarContextLiveWjV4WriterTerminalSelection,
+    "tcg_grammar_context_live_wj_v4_writer_terminal_git_object_invalid"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextLiveWjV4WriterTerminalEvidenceCommit({ parent: "7".repeat(40) }),
+    () => tcgGrammarContextLiveWjV4WriterTerminalSelection,
+    "tcg_grammar_context_live_wj_v4_writer_terminal_parent_mismatch"],
+  [(args) => args[1] === "-t" ? "commit"
+    : tcgGrammarContextLiveWjV4WriterTerminalEvidenceCommit({ tree: "8".repeat(40) }),
+    () => tcgGrammarContextLiveWjV4WriterTerminalSelection,
+    "tcg_grammar_context_live_wj_v4_writer_terminal_candidate_tree_mismatch"],
+  [tcgGrammarContextLiveWjV4WriterTerminalEvidenceReader,
+    () => ({ ...tcgGrammarContextLiveWjV4WriterTerminalSelection,
+      parity_required: false }),
+    "tcg_grammar_context_live_wj_v4_writer_terminal_selection_object_mismatch"]
+]) {
+  assert.throws(() => verifyTcgGrammarContextLiveWjV4WriterTerminalGitObjectEvidenceForTest({
+    selection: tcgGrammarContextLiveWjV4WriterTerminalSelection,
+    gitTextReader,
+    rebuildSelection
+  }), (error) => error.code === code);
+}
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: { ...tcgGrammarContextLiveWjV4WriterTerminalSelection,
+    parity_required: false },
+  rollbackReceipt: { git_sha:
+    TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_ROLLBACK_SHA }
+}), (error) => error.code
+  === "tcg_grammar_context_live_wj_v4_writer_terminal_selection_invalid");
+assert.throws(() => verifyOrdinaryRollbackLineage({
+  selection: tcgGrammarContextLiveWjV4WriterTerminalSelection,
+  rollbackReceipt: { git_sha: "9".repeat(40) }
+}), (error) => error.code
+  === "tcg_grammar_context_live_wj_v4_writer_terminal_rollback_mismatch");
+
 assert.equal(EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_DESCRIPTOR_ID,
   "listing-copilot-external-identity-v3-checkpoint-forward-reader-bridge-v1");
 assert.equal(EXTERNAL_IDENTITY_V3_CHECKPOINT_READER_BRIDGE_MARKER,
@@ -11217,6 +11402,8 @@ try {
     actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_PARITY_THRESHOLD_PARENT_SHA;
   const actualTcgGrammarContextLiveWjV4RollbackRepairV72 =
     actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_REPAIR_V72_PARENT_SHA;
+  const actualTcgGrammarContextLiveWjV4WriterTerminal =
+    actualParent === TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_PARENT_SHA;
   const actualActivationA3 = actualParent === CANONICAL_NAMING_ACTIVATION_A3_PARENT_SHA;
   const actualActivationA2 = actualParent === CANONICAL_NAMING_ACTIVATION_A2_PARENT_SHA;
   const actualActivation = actualParent === CANONICAL_NAMING_ACTIVATION_PARENT_SHA;
@@ -11253,7 +11440,9 @@ try {
     actualParent === ACTIVATION_A_GRAMMAR_SOURCE_REPAIR_PARENT_SHA;
   const actualActivationATransport502Repair =
     actualParent === ACTIVATION_A_TRANSPORT_502_REPAIR_PARENT_SHA;
-  const actualTransitionMarker = actualTcgGrammarContextLiveWjV4RollbackRepairV72
+  const actualTransitionMarker = actualTcgGrammarContextLiveWjV4WriterTerminal
+    ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_MARKER
+    : actualTcgGrammarContextLiveWjV4RollbackRepairV72
     ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_REPAIR_V72_MARKER
     : actualTcgGrammarContextLiveWjV4ParityThreshold
     ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_PARITY_THRESHOLD_MARKER
@@ -11462,7 +11651,9 @@ try {
   assert.equal(savedLineage.lineage_verified, true);
   if (actualReleaseClass === ORDINARY_RELEASE_CLASS) {
     assert.equal(savedSelection.schema_version,
-      actualTcgGrammarContextLiveWjV4RollbackRepairV72
+      actualTcgGrammarContextLiveWjV4WriterTerminal
+        ? "production-release-selection-v74"
+      : actualTcgGrammarContextLiveWjV4RollbackRepairV72
         ? "production-release-selection-v72"
       : actualTcgGrammarContextLiveWjV4ParityThreshold
         ? "production-release-selection-v70"
@@ -11537,7 +11728,9 @@ try {
     assert.equal(savedSelection.transition_marker, actualTransitionMarker);
     assert.equal(savedSelection.parent_git_sha, actualParent);
     assert.equal(savedSelection.required_rollback_git_sha,
-      actualTcgGrammarContextLiveWjV4RollbackRepairV72
+      actualTcgGrammarContextLiveWjV4WriterTerminal
+        ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_WRITER_TERMINAL_ROLLBACK_SHA
+      : actualTcgGrammarContextLiveWjV4RollbackRepairV72
         ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_ROLLBACK_REPAIR_V72_ROLLBACK_SHA
       : actualTcgGrammarContextLiveWjV4ParityThreshold
         ? TCG_GRAMMAR_CONTEXT_LIVE_WJ_V4_PARITY_THRESHOLD_ROLLBACK_SHA
@@ -11607,7 +11800,9 @@ try {
             ? CANONICAL_NAMING_ACTIVATION_A2_ROLLBACK_SHA
             : actualParent);
     assert.equal(savedLineage.schema_version,
-      actualTcgGrammarContextLiveWjV4RollbackRepairV72
+      actualTcgGrammarContextLiveWjV4WriterTerminal
+        ? "production-release-rollback-lineage-receipt-v75"
+      : actualTcgGrammarContextLiveWjV4RollbackRepairV72
         ? "production-release-rollback-lineage-receipt-v73"
       : actualTcgGrammarContextLiveWjV4ParityThreshold
         ? "production-release-rollback-lineage-receipt-v71"
