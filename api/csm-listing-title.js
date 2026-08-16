@@ -2316,6 +2316,7 @@ export function buildCsmDirectFailureResponse(error) {
         : providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_THIN_PATH_FAILED",
       retryable,
       message: String(error?.message || "CSM thin path failed").slice(0, 240),
+      ...(error?.detail ? { detail: String(error.detail).slice(0, 200) } : {}),
       recognition_session_id: safeReceiptText(error?.recognition_session_id),
       ...(error?.review_required === true ? {
         review_required: true,
