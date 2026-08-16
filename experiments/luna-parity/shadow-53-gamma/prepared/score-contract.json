@@ -1,0 +1,24 @@
+{
+  "schema_version": "luna-parity-score-contract-v1",
+  "authority": "evaluation_only",
+  "production_authorized": false,
+  "assets_manifest_sha256": "dba094cbef7f96c6179a67111840bd656fdbbaa429fc7f5c5fd5bcdad4cb8304",
+  "label_map_sha256": "96576c720c3d7f89a26760d6a67e44f6c6b87b091477c16959b1d26df077be12",
+  "sealed_labels_sha256": "8e3124fb745925d28bf61ad356be8a224ce1b72ebec58c4655ec2c237ace2773",
+  "scorer_sha256": "dd700f5f51044f383f447a6b34214b360a21e4437c0d5bdcff23b7eb5cc757df",
+  "selected_asset_ids_sha256": "76c72d8c425cab373721a3de3a0a33755b4d19bf1abd51b6ce297d71f6dcf19d",
+  "selected_cards": 53,
+  "arms": [
+    "runtime_active_high_low",
+    "lynca_csm_direct_title_high_low"
+  ],
+  "control_arm": "runtime_active_high_low",
+  "treatment_arm": "lynca_csm_direct_title_high_low",
+  "selection_role": "csmdata_mechanism_screen",
+  "primary_metric": "reviewed_title_token_f1",
+  "paired_test": "exact_two_sided_sign_test",
+  "complete_pair_only": true,
+  "no_replacement": true,
+  "typed_field_gold": false,
+  "score_contract_sha256": "bfabab802ce7f0cd159bca4748c035608158f262c743a899f874dd54c52618ad"
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": "luna-parity-blind-execution-receipt-v1",
+  "state": "COMPLETE",
+  "run_fingerprint": "bb538849905e3f5005724fcb71f527c50b0f5399d2c19b5335034de576fa055e",
+  "score_contract_sha256": "bfabab802ce7f0cd159bca4748c035608158f262c743a899f874dd54c52618ad",
+  "selected_cards": 53,
+  "expected_jobs": 106,
+  "provider_claims": 106,
+  "completed_jobs": 106,
+  "incomplete_assets": [],
+  "concurrency": 1,
+  "provider_max_attempts": 1,
+  "provider_retries": 0,
+  "sealed_labels_accessed_during_execution": false,
+  "raw_results_sha256": "c1360ce82bb21bba8d1d9646647873e4e34b08c90696c0e96a911744d48badfa",
+  "raw_results_bytes": 1040835,
+  "attempts_sha256": "3fecea1ee2906d7bd68180ffd2c6a43954b98bd135fb8bba501574d7f9c7668d",
+  "attempts_bytes": 108980,
+  "completed_at": "2026-08-15T16:24:13.057Z"
+}
