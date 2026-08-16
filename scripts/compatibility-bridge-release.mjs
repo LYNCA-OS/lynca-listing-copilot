@@ -1287,6 +1287,33 @@ export const PRODUCTION_RELEASE_PIN_TABLE = Object.freeze([
       "scripts/compatibility-bridge-release.mjs",
       "scripts/compatibility-bridge-release.test.mjs"
     ])
+  }),
+  Object.freeze({
+    pin_version: 85,
+    selection_schema_version: "production-release-selection-v85",
+    rollback_lineage_schema_version: "production-release-rollback-lineage-receipt-v86",
+    descriptor_id:
+      "listing-copilot-tcg-grammar-context-v4-live-writer-journey-ingest-attribution-v85-v1",
+    marker: "tcg-grammar-context-v4-live-writer-journey-ingest-attribution-v85-v1",
+    parent_git_sha: "4cda3cf9ceaee876b34ea8d0067aea720bd4e5f0",
+    parent_tree_sha: "c11a4ea1364b1ba3a75d267cca2a63000ef990d1",
+    failed_run_id: "31957738797",
+    failure_code: "WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED",
+    failed_case_id: "EXTERNAL_IDENTITY",
+    failed_phase: "TITLE_UI",
+    rollback_git_sha: "e98e7d6eee1add5a29bd090d014ddb6b1b7d6f50",
+    rollback_tree_sha: "0b710379612a641dcd7872bfbe9dcfc9b4c26a73",
+    base_selection_schema_version: "production-release-selection-v84",
+    base_runtime_contract_sha256:
+      "3b373ffa8e41b14e38dc3cf8bffa25d8ec4b376dcdb98fc396bb387aac2d4a2e",
+    runtime_behavior_changed: true,
+    runtime_contract_sha256: "4e5638bd350f92d6d04fb43fca2816847282e398c64623decb146f3e64e9ca8d",
+    changed_paths: Object.freeze([
+      "api/csm-listing-title-ingest.js",
+      "scripts/compatibility-bridge-release.mjs",
+      "scripts/compatibility-bridge-release.test.mjs",
+      "scripts/lot-review-required-terminal.test.mjs"
+    ])
   })
 ]);
 

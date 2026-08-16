@@ -41,7 +41,7 @@ import {
   requireTenantAccess,
   TENANT_PERMISSIONS
 } from "../lib/tenant/index.mjs";
-import { runDirectCsmAsset } from "./csm-listing-title.js";
+import { runDirectCsmAsset, buildProviderFailureReceipt } from "./csm-listing-title.js";
 import { verifyListingImagePayload } from "./listing-image-verify-upload.js";
 import {
   decodeRelayMetadata,
@@ -94,12 +94,23 @@ export function buildCsmIngestFailureResponse(error, {
   const reviewRequiredSessionId = error?.review_required === true
     ? String(error?.recognition_session_id || "").trim()
     : "";
+  // Production telemetry classifies a failure from `error_type` and
+  // `provider_failure_receipt` (lib/observability/production-events.mjs).
+  // The direct route publishes both; this route published neither, so every
+  // ingest failure was logged as a bare REQUEST_FAILED with no provider
+  // attribution -- and ingest is the route the writer actually uses. Same
+  // divergence as the review-required receipt, same fix: one contract, both
+  // routes.
+  const providerFailureReceipt = buildProviderFailureReceipt(error);
   return {
     status: safeStatus,
     body: {
       ok: false,
       route: "CSM_THIN_DIRECT_INGEST",
       code,
+      error_type: error?.review_required === true
+        ? "CSM_REVIEW_REQUIRED"
+        : providerFailureReceipt ? "CSM_PROVIDER_ATTEMPT_FAILED" : "CSM_INGEST_FAILED",
       retryable,
       message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240),
       ...(error?.detail ? { detail: String(error.detail).slice(0, 200) } : {}),
@@ -127,6 +138,10 @@ export function buildCsmIngestFailureResponse(error, {
         ...recoveryIdentity,
         verifications: recoveredVerifications,
         upload_recovered: true
+      } : {}),
+      ...(providerFailureReceipt ? {
+        provider_failure_receipt: providerFailureReceipt,
+        latency_stages_ms: providerFailureReceipt.latency_stages_ms
       } : {})
     }
   };

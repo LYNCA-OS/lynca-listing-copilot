@@ -55,3 +55,51 @@ assert.equal(transportFailure.body.recognition_session_id, undefined,
   "only a review-required terminal publishes a session id from the ingest route");
 
 console.log("LOT review-required terminal contract tests passed");
+
+// Failure attribution is the same contract on both routes.
+//
+// Production telemetry (lib/observability/production-events.mjs) classifies a
+// failure from `error_type` and `provider_failure_receipt`. The ingest route
+// published neither, so every ingest failure was logged as a bare
+// REQUEST_FAILED with no provider attribution -- on the route the writer
+// actually uses.
+const providerFailure = () => Object.assign(new Error("provider_definitive"), {
+  statusCode: 502,
+  provider_attempt_started: true,
+  provider_request_id: "req_abc123",
+  provider_error_code: "server_error",
+  provider_error_type: "api_error",
+  provider_ms: 4200,
+  latency_stages_ms: { provider_ms: 4200, prologue_ms: 12 }
+});
+
+for (const [route, build, thinCode] of [
+  ["CSM_THIN_DIRECT", buildCsmDirectFailureResponse, "CSM_THIN_PATH_FAILED"],
+  ["CSM_THIN_DIRECT_INGEST", buildCsmIngestFailureResponse, "CSM_INGEST_FAILED"]
+]) {
+  const attributed = build(providerFailure());
+  assert.equal(attributed.body.error_type, "CSM_PROVIDER_ATTEMPT_FAILED",
+    `${route} must attribute a provider attempt failure`);
+  assert.equal(attributed.body.provider_failure_receipt?.schema_version,
+    "csm-provider-failure-receipt-v1", `${route} provider failure receipt`);
+  assert.equal(attributed.body.provider_failure_receipt.provider_error_type,
+    "api_error", `${route} provider error type`);
+  assert.equal(attributed.body.latency_stages_ms?.provider_ms, 4200,
+    `${route} latency stages`);
+
+  // A review-required terminal is never a provider failure.
+  assert.equal(build(reviewRequiredTerminal()).body.error_type,
+    "CSM_REVIEW_REQUIRED", `${route} review-required classification`);
+
+  // A failure with no provider attempt carries no receipt and no attribution
+  // beyond the route's own generic class.
+  const preProvider = build(Object.assign(new Error("readiness"), {
+    statusCode: 503, provider_attempt_started: false
+  }));
+  assert.equal(preProvider.body.error_type, thinCode,
+    `${route} pre-provider classification`);
+  assert.equal(preProvider.body.provider_failure_receipt, undefined,
+    `${route} publishes no receipt without a provider attempt`);
+}
+
+console.log("route failure attribution parity tests passed");

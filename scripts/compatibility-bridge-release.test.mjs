@@ -8189,6 +8189,23 @@ for (let index = 1; index < orderedPins.length; index += 1) {
       `the large stage diagnostic must remain present: ${marker}`);
   }
 }
+// Failure attribution is one contract across both recognition routes. The
+// ingest route published neither error_type nor provider_failure_receipt, so
+// production telemetry logged every ingest failure as a bare REQUEST_FAILED
+// on the route the writer actually uses. v85 closes that; this asserts it.
+{
+  const ingestRoute = await readFile(
+    path.join(process.cwd(), "api/csm-listing-title-ingest.js"), "utf8"
+  );
+  for (const marker of [
+    "buildProviderFailureReceipt",
+    "error_type:",
+    "provider_failure_receipt:"
+  ]) {
+    assert.ok(ingestRoute.includes(marker),
+      `the ingest route must keep failure attribution: ${marker}`);
+  }
+}
 const tablePinnedSelectionSchemas = new Set(PRODUCTION_RELEASE_PIN_TABLE.map(
   (entry) => entry.selection_schema_version
 ));
