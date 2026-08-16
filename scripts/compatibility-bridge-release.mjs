@@ -1314,6 +1314,32 @@ export const PRODUCTION_RELEASE_PIN_TABLE = Object.freeze([
       "scripts/compatibility-bridge-release.test.mjs",
       "scripts/lot-review-required-terminal.test.mjs"
     ])
+  }),
+  Object.freeze({
+    pin_version: 86,
+    selection_schema_version: "production-release-selection-v86",
+    rollback_lineage_schema_version: "production-release-rollback-lineage-receipt-v87",
+    descriptor_id:
+      "listing-copilot-release-ceremony-legibility-v86-v1",
+    marker: "release-ceremony-legibility-v86-v1",
+    parent_git_sha: "360593c39c2b96ba7f89f570e104dc47a95c5f23",
+    parent_tree_sha: "c8897a46f2120430515476ea700659234ed74368",
+    failed_run_id: "31957738797",
+    failure_code: "WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED",
+    failed_case_id: "EXTERNAL_IDENTITY",
+    failed_phase: "TITLE_UI",
+    rollback_git_sha: "e98e7d6eee1add5a29bd090d014ddb6b1b7d6f50",
+    rollback_tree_sha: "0b710379612a641dcd7872bfbe9dcfc9b4c26a73",
+    base_selection_schema_version: "production-release-selection-v85",
+    base_runtime_contract_sha256:
+      "4e5638bd350f92d6d04fb43fca2816847282e398c64623decb146f3e64e9ca8d",
+    runtime_behavior_changed: false,
+    runtime_contract_sha256: "e934aaecf78a230807ebe2c4f5f67b0251a73517d37bcac69688f73dc73273ee",
+    changed_paths: Object.freeze([
+      "scripts/compatibility-bridge-release.mjs",
+      "scripts/compatibility-bridge-release.test.mjs",
+      "scripts/mint-release-pin.mjs"
+    ])
   })
 ]);
 
@@ -1361,8 +1387,13 @@ function productionReleasePinArtifactManifestSha256(entry, changedPaths) {
   return sha256(artifactPaths.map((path) => path.trim()).join("\0"));
 }
 
-export function productionReleasePinRuntimeContractProof(entry) {
-  const body = {
+// The contract hash is derived from the entry alone, so it can be computed
+// before the entry exists in the table. scripts/mint-release-pin.mjs needs
+// exactly that: a pin's own hash is one of its fields, and hand-running the
+// proof to read the value out of a thrown mismatch is how three releases were
+// pinned by hand. Deriving and verifying are now separate calls over one body.
+export function productionReleasePinRuntimeContractBody(entry) {
+  return {
     schema_version:
       `listing-copilot-production-release-pin-v${entry.pin_version}-proof-v1`,
     selection_schema_version: entry.selection_schema_version,
@@ -1405,7 +1436,15 @@ export function productionReleasePinRuntimeContractProof(entry) {
     provider_calls: 0,
     parity_required: true
   };
-  const contractSha256 = sha256(stableJson(body));
+}
+
+export function productionReleasePinRuntimeContractSha256(entry) {
+  return sha256(stableJson(productionReleasePinRuntimeContractBody(entry)));
+}
+
+export function productionReleasePinRuntimeContractProof(entry) {
+  const body = productionReleasePinRuntimeContractBody(entry);
+  const contractSha256 = productionReleasePinRuntimeContractSha256(entry);
   if (contractSha256 !== entry.runtime_contract_sha256) {
     throw failure(
       `production_release_pin_v${entry.pin_version}_runtime_contract_hash_mismatch`
