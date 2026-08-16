@@ -192,7 +192,7 @@ test("a live 20-card batch is fully navigable before anything is saved", async (
     const summary = page.locator(".batch-navigation-summary strong");
     await expect(summary).toContainText("共 20 张", { timeout: 5 * 60 * 1000 });
     const summaryText = (await summary.textContent()).trim();
-    expect(summaryText, "the window count must not be presented as the batch total").not.toMatch(/^正在显示 1–8 \/ 共 8 张$/);
+    expect(summaryText, "the window count must not be presented as the batch total").not.toMatch(/^正在显示第 1–8 项 \/ 共 8 张$/);
     evidence.stages.batch_total = {
       passed: true, summary: summaryText,
       upload_to_batch_ms: Date.now() - uploadStartedAt
@@ -212,7 +212,7 @@ test("a live 20-card batch is fully navigable before anything is saved", async (
       await page.locator(`[data-batch-focus="${index}"]`).click();
       await expect(page.locator(`[data-batch-focus="${index}"]`)).toHaveClass(/is-visible/);
       const focusedSummary = (await summary.textContent()).trim();
-      const range = focusedSummary.match(/正在显示 (\d+)–(\d+)/);
+      const range = focusedSummary.match(/正在显示第 (\d+)–(\d+) 项/);
       expect(range, "the summary must report the window it moved to").toBeTruthy();
       expect(Number(range[1])).toBeLessThanOrEqual(index);
       expect(Number(range[2])).toBeGreaterThanOrEqual(index);

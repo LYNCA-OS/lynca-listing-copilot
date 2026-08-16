@@ -196,6 +196,36 @@ function analyzeImageQualityFromImageData(imageData, profile = defaultCapturePro
 
 // lib/listing/client/batch-recognition-intent.mjs
 var INTAKE_PREVIEW_CARD_WINDOW = 8;
+var BATCH_ASSET_STATUS = Object.freeze({
+  PENDING: Object.freeze({ code: "pending", label: "\u7B49\u5F85\u4E2D" }),
+  QUEUED: Object.freeze({ code: "pending", label: "\u6392\u961F\u4E2D" }),
+  RECOGNIZING: Object.freeze({ code: "recognizing", label: "\u8BC6\u522B\u4E2D" }),
+  FAILED: Object.freeze({ code: "failed", label: "\u5931\u8D25" }),
+  READY: Object.freeze({ code: "ready", label: "\u5F85\u5F55\u5165" }),
+  SAVED: Object.freeze({ code: "saved", label: "\u5DF2\u5165\u5E93" }),
+  REJECTED: Object.freeze({ code: "rejected", label: "\u5DF2\u8BB0\u5F55\u62D2\u7EDD" })
+});
+function batchAssetReviewStatus({
+  result = null,
+  processing = false,
+  active = false
+} = {}) {
+  if (!result) {
+    if (active) return BATCH_ASSET_STATUS.RECOGNIZING;
+    return processing ? BATCH_ASSET_STATUS.QUEUED : BATCH_ASSET_STATUS.PENDING;
+  }
+  const persisted = String(result.persistenceStatus || "").toLowerCase() === "persisted";
+  const rejected = String(result.feedbackStatus || "").toLowerCase() === "skipped" || String(result.explicitReviewOutcome || "").toUpperCase() === "REJECTED";
+  if (persisted && rejected) return BATCH_ASSET_STATUS.REJECTED;
+  if (persisted) return BATCH_ASSET_STATUS.SAVED;
+  if (String(result.retryStatus || "").toLowerCase() === "submitting") {
+    return BATCH_ASSET_STATUS.RECOGNIZING;
+  }
+  if (String(result.confidence || "").toUpperCase() === "FAILED") {
+    return BATCH_ASSET_STATUS.FAILED;
+  }
+  return BATCH_ASSET_STATUS.READY;
+}
 function claimNextBatchAsset(assets = [], claimedAssetIndexes = /* @__PURE__ */ new Set()) {
   for (const asset of Array.isArray(assets) ? assets : []) {
     const index = Number(asset?.index);
@@ -412,6 +442,7 @@ export {
   INTAKE_PREVIEW_CARD_WINDOW,
   SIGNED_UPLOAD_URL_GENERATION_LIMIT,
   analyzeImageQualityFromImageData,
+  batchAssetReviewStatus,
   batchReviewWindow,
   claimNextBatchAsset,
   defaultCaptureProfileId,

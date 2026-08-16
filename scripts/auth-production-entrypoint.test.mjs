@@ -135,6 +135,16 @@ assert.match(devServer, /import logoutHandler from "\.\.\/api\/logout\.js"/);
 assert.match(devServer, /import sessionHandler from "\.\.\/api\/session\.js"/);
 assert.match(devServer, /getSessionFromRequest\(request\)/);
 assert.match(devServer, /const protectedPaths = new Set\(PROTECTED_APP_PATHS\)/);
+for (const route of [
+  ["/api/v4/listing-feedback", "api/v4/listing-feedback.js"],
+  ["/api/v4/listing-export-workbook", "api/v4/listing-export-workbook.js"]
+]) {
+  assert.match(
+    devServer,
+    new RegExp(`"${route[0]}"\\s*:\\s*"${route[1].replaceAll("/", "\\/")}"`),
+    `${route[0]} must reach the same handler in local and Vercel runtimes`
+  );
+}
 for (const path of ["/app", "/app/", "/app/index", "/app/index.html"]) {
   assert.match(devServer, new RegExp(`\\["${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}", "app/index\\.html"\\]`), `${path} must resolve to the protected app shell locally`);
 }

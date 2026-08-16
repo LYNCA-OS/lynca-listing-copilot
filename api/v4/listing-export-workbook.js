@@ -19,15 +19,23 @@ function safeError(error) {
 
 export function writerExportFailureResponse(error) {
   const message = safeError(error);
+  const batchId = /^writer_export_[0-9a-f-]{36}$/i.test(String(error?.batchId || ""))
+    ? String(error.batchId)
+    : null;
+  const failurePhase = /^[a-z_]{1,48}$/.test(String(error?.failurePhase || ""))
+    ? String(error.failurePhase)
+    : null;
   const explicitStatus = Number(error?.statusCode);
-  if ([413, 504].includes(explicitStatus)) {
+  if ([400, 413, 504].includes(explicitStatus)) {
     return {
       status: explicitStatus,
       body: withV4Version({
         ok: false,
         retryable: error?.retryable === true,
         message,
-        error_type: String(error?.code || "WRITER_EXPORT_FAILED")
+        error_type: String(error?.code || "WRITER_EXPORT_FAILED"),
+        ...(batchId ? { batch_id: batchId } : {}),
+        ...(failurePhase ? { failure_phase: failurePhase } : {})
       })
     };
   }
@@ -38,7 +46,9 @@ export function writerExportFailureResponse(error) {
       ok: false,
       retryable: !clientError,
       message,
-      error_type: "WRITER_EXPORT_FAILED"
+      error_type: "WRITER_EXPORT_FAILED",
+      ...(batchId ? { batch_id: batchId } : {}),
+      ...(failurePhase ? { failure_phase: failurePhase } : {})
     })
   };
 }

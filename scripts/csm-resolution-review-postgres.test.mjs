@@ -14,7 +14,8 @@ import { composeFromCanonicalFields } from "../lib/listing/thin/canonical-compos
 const root = new URL("..", import.meta.url).pathname;
 const migrations = [
   "20260805080654_csm_resolution_reviews_v1.sql",
-  "20260812055051_csm_resolution_review_measurement_v2.sql"
+  "20260812055051_csm_resolution_review_measurement_v2.sql",
+  "20260815124502_csm_review_confidence_calibration_v1.sql"
 ].map((name) => join(root,
   "infrastructure/supabase-production/supabase/migrations", name));
 const dataDir = mkdtempSync(join(tmpdir(), "lynca-review-v2-pg-"));
@@ -133,11 +134,24 @@ try {
 
   const validSnapshot = snapshot();
   const validSnapshotSql = `${literal(JSON.stringify(validSnapshot))}::jsonb`;
-  assert.equal(sql(`select private.validate_csm_review_measurement_snapshot_v1(
+  assert.equal(sql(`select private.validate_csm_review_measurement_snapshot_v2(
     ${validSnapshotSql}, 'asset-a', 'session-a', 'view-v1', 'composer-v1'
   )`), "t");
   sql(insertV2());
   assert.equal(sql("select count(*) from public.csm_resolution_reviews"), "1");
+
+  const capturedV1 = {
+    ...structuredClone(validSnapshot),
+    schema_version: "csm-review-measurement-snapshot-v1",
+    brackets: validSnapshot.brackets.map(({ semantic_confidence: _ignored, ...row }) => row)
+  };
+  assert.equal(sql(`select private.validate_csm_review_measurement_snapshot_v1(
+    ${literal(JSON.stringify(capturedV1))}::jsonb,
+    'asset-a', 'session-a', 'view-v1', 'composer-v1'
+  )`), "t");
+  sql(insertV2({ measurement: capturedV1 }));
+  assert.equal(sql("select count(*) from public.csm_resolution_reviews"), "2",
+    "historical v1 measurement snapshots remain appendable and replayable");
 
   for (const role of ["anon", "authenticated"]) {
     assert.equal(sqlAs(role,
@@ -159,7 +173,7 @@ try {
 
   sqlAs("service_role", insertV2());
   assert.equal(sqlAs("service_role",
-    "select count(*) from public.csm_resolution_reviews"), "2",
+    "select count(*) from public.csm_resolution_reviews"), "3",
   "service_role must insert and read through its Supabase BYPASSRLS boundary");
 
   for (const statement of [
@@ -209,6 +223,18 @@ try {
     insertV2({ measurement: snapshot({ brackets: [{
       ...snapshot().brackets[0], extra_bracket: true
     }] }) }),
+    insertV2({ measurement: snapshot({ brackets: snapshot().brackets.map((row, index) => (
+      index === 0
+        ? Object.fromEntries(Object.entries(row)
+          .filter(([key]) => key !== "semantic_confidence"))
+        : row
+    )) }) }),
+    insertV2({ measurement: snapshot({ brackets: snapshot().brackets.map((row, index) => (
+      index === 0 ? { ...row, semantic_confidence: "UNKNOWN" } : row
+    )) }) }),
+    insertV2({ measurement: snapshot({ brackets: snapshot().brackets.map((row) => (
+      row.state === "ABSENT" ? { ...row, semantic_confidence: "OBSERVED" } : row
+    )) }) }),
     insertV2({ measurement: snapshot({ brackets: [
       snapshot().brackets[0], { ...snapshot().brackets[0] }
     ] }) }),
@@ -266,7 +292,7 @@ try {
     'APPROVED', '[]'::jsonb, '{}'::jsonb, 'Old', '{}'::jsonb,
     'Old', false, '', '${"c".repeat(64)}'
   )`);
-  assert.equal(sql("select count(*) from public.csm_resolution_reviews"), "3");
+  assert.equal(sql("select count(*) from public.csm_resolution_reviews"), "4");
   assert.equal(sql(`select relrowsecurity from pg_class
     where oid = 'public.csm_resolution_reviews'::regclass`), "t");
   sqlAs("service_role", "update public.csm_resolution_reviews set note = 'mutated'");
@@ -275,7 +301,7 @@ try {
   "append-only UPDATE rule must preserve every review under service_role");
   sqlAs("service_role", "delete from public.csm_resolution_reviews");
   assert.equal(sqlAs("service_role",
-    "select count(*) from public.csm_resolution_reviews"), "3",
+    "select count(*) from public.csm_resolution_reviews"), "4",
   "append-only DELETE rule must preserve every review under service_role");
   process.stdout.write("csm resolution review postgres: ok\n");
 } finally {
