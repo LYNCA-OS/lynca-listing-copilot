@@ -259,6 +259,7 @@ const verifierErrorCodes = Object.freeze({
   LARGE_RESPONSE_CONTRACT_MISMATCH: "LARGE_RESPONSE_CONTRACT_MISMATCH",
   FEEDBACK_POLICY_MISMATCH: "FEEDBACK_POLICY_MISMATCH",
   ACTIVATION_RECEIPT_MISMATCH: "ACTIVATION_RECEIPT_MISMATCH",
+  LOT_REVIEW_REQUIRED_CONTRACT_MISMATCH: "LOT_REVIEW_REQUIRED_CONTRACT_MISMATCH",
   WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED: "WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
@@ -2667,6 +2668,7 @@ function standardNonTcgWriterProjectionEvidenceActive({
 function ordinaryActivationSeal({
   writerProjectionMode,
   writerContract = null,
+  lotReviewRequired = false,
   standardCaseEvidence,
   tcgCaseEvidence,
   largeCaseEvidence,
@@ -2687,7 +2689,7 @@ function ordinaryActivationSeal({
     largeCaseEvidence,
     parityCaseEvidence,
     webCaseEvidence,
-    lotCaseEvidence
+    ...(lotReviewRequired ? [] : [lotCaseEvidence])
   ];
   return writerProjectionMode === ORDINARY_WRITER_PROJECTION_MODE
     && writer != null
@@ -2741,12 +2743,22 @@ function ordinaryActivationSeal({
           === CARD_NAME_PREDICATE
         && webCaseEvidence?.activation_projection?.card_name_before_subject === true
         && observationCanonicalV3VersionActive(webCaseEvidence?.versions))
-    && (lotCaseEvidence?.activation_deferred === true
-      ? lotCaseEvidence?.lot_shared_only == null
-      : lotCaseEvidence?.lot_shared_only?.marker_exact === true
-        && lotCaseEvidence?.lot_shared_only?.publishable === true
-        && lotCaseEvidence?.lot_shared_only?.individual_serials_withheld === true
-        && observationLegacyVersionActive(lotCaseEvidence?.versions));
+    && (lotReviewRequired
+      ? lotCaseEvidence?.outcome_regime === "REVIEW_REQUIRED"
+        && lotCaseEvidence?.activation_deferred === true
+        && lotCaseEvidence?.lot_shared_only == null
+        && lotCaseEvidence?.lot_review_required_receipt?.code
+          === "LOT_QUANTITY_UNRESOLVED"
+        && lotCaseEvidence?.lot_review_required_receipt?.retryable === false
+        && lotCaseEvidence?.lot_review_required_receipt?.review_required === true
+        && lotCaseEvidence?.lot_review_required_receipt?.trace_status
+          === "PERSISTED_REVIEW_REQUIRED"
+      : lotCaseEvidence?.activation_deferred === true
+        ? lotCaseEvidence?.lot_shared_only == null
+        : lotCaseEvidence?.lot_shared_only?.marker_exact === true
+          && lotCaseEvidence?.lot_shared_only?.publishable === true
+          && lotCaseEvidence?.lot_shared_only?.individual_serials_withheld === true
+          && observationLegacyVersionActive(lotCaseEvidence?.versions));
 }
 
 function compatibilityBridgeSeal({
@@ -3551,6 +3563,51 @@ test("production writer journey verifies Glass Box and staged large-image transp
           grammar: recognitionPayload?.grammar || null
         };
       }
+      // Founder gate split (2026-08-16): under the frozen prompt an empty
+      // lot_count is legal when the count is not countable, so a publishable
+      // title and a durable review-required outcome are BOTH contract-correct
+      // terminals for this card. The gate stays exact about the code: this
+      // branch accepts only the complete review-required contract below. A
+      // crash, a lost output, or a malformed receipt still fails the release.
+      // The publishable path is unchanged.
+      if (sourceCase.case_id === "LOT_SHARED_ONLY"
+          && recognitionResponse.status() === 409
+          && recognitionPayload?.code === "LOT_QUANTITY_UNRESOLVED") {
+        requireInvariant(recognitionPayload?.retryable === false
+          && recognitionPayload?.review_required === true
+          && recognitionPayload?.trace_status === "PERSISTED_REVIEW_REQUIRED"
+          && String(recognitionPayload?.recognition_session_id || "") !== "",
+          verifierErrorCodes.LOT_REVIEW_REQUIRED_CONTRACT_MISMATCH);
+        deferredActivationCases.add(sourceCase.case_id);
+        evidence.lot_outcome_regime = "REVIEW_REQUIRED";
+        evidence.cases.push({
+          case_id: sourceCase.case_id,
+          expected_grammar: sourceCase.expected_grammar,
+          source_feedback_id: sourceCase.source_feedback_id,
+          hash_provenance: sourceCase.hash_provenance,
+          original_set_sha256: sourceCase.original_set_sha256,
+          image_sha256: sourceCase.files.map(({ role, content_sha256: contentSha256 }) => ({
+            role,
+            content_sha256: contentSha256
+          })),
+          activation_deferred: true,
+          outcome_regime: "REVIEW_REQUIRED",
+          recognition_route: new URL(recognitionResponse.url()).pathname,
+          http_status: recognitionResponse.status(),
+          recognition_session_id: recognitionPayload.recognition_session_id,
+          trace_status: recognitionPayload.trace_status,
+          lot_review_required_receipt: {
+            code: recognitionPayload.code,
+            retryable: recognitionPayload.retryable,
+            review_required: recognitionPayload.review_required,
+            trace_status: recognitionPayload.trace_status,
+            recognition_session_id_sha256: sha256(
+              recognitionPayload.recognition_session_id
+            )
+          }
+        });
+        continue;
+      }
       expect(recognitionResponse.ok(), "direct CSM recognition must succeed").toBeTruthy();
       expect(recognitionPayload?.trace_status, "recognition trace must be durable").toBe("PERSISTED");
       expect(providerAttemptsForWriter(writerProjectionMode),
@@ -4235,15 +4292,26 @@ test("production writer journey verifies Glass Box and staged large-image transp
         "NON_TCG_WEB_IDENTITY", "TCG"
       ]
       : ["LARGE_STAGED_TRANSPORT", "NON_TCG", "TCG"];
-    const expectedProviderCaseCount = expectedCaseIds.length;
+    // A review-required LOT outcome (see the gate split above) contributes an
+    // evidence case but no provider-facing readback: no resolution view, no
+    // feedback turn, no execution receipt. The publishable invariants below
+    // apply to the cases that actually completed the publishable flow.
+    const lotReviewRequired = evidence.lot_outcome_regime === "REVIEW_REQUIRED";
+    const publishableCases = evidence.cases.filter(
+      (entry) => entry.outcome_regime !== "REVIEW_REQUIRED"
+    );
+    const expectedPublishableCaseIds = lotReviewRequired
+      ? expectedCaseIds.filter((caseId) => caseId !== "LOT_SHARED_ONLY")
+      : expectedCaseIds;
+    const expectedProviderCaseCount = expectedPublishableCaseIds.length;
     expect(resolutionRequests).toHaveLength(expectedProviderCaseCount);
     expect(resolutionRequests.every((request) => request.method === "GET")).toBe(true);
     expect(evidence.cases.map((entry) => entry.case_id).sort())
       .toEqual(expectedCaseIds);
     requireInvariant(feedbackPolicyChecks.length === expectedProviderCaseCount
       && feedbackPolicyChecks.map((entry) => entry.case_id).sort().join("\0")
-        === expectedCaseIds.join("\0")
-      && evidence.cases.every((entry) => entry.feedback_policy_passed === true
+        === expectedPublishableCaseIds.join("\0")
+      && publishableCases.every((entry) => entry.feedback_policy_passed === true
         && entry.feedback_saved === true
         && entry.feedback_data_use === ADMIN_TEST_DATASET_DISPOSITION
         && entry.dataset_disposition === FEEDBACK_DATASET_DISPOSITION
@@ -4260,18 +4328,18 @@ test("production writer journey verifies Glass Box and staged large-image transp
       training_eligible: false,
       production_promotion_eligible: false
     };
-    const providerResponseReceiptHashes = evidence.cases.map(
+    const providerResponseReceiptHashes = publishableCases.map(
       (entry) => entry?.execution_receipt?.provider_response_id_sha256
     );
-    const providerAuthorityOperationHashes = evidence.cases.map(
+    const providerAuthorityOperationHashes = publishableCases.map(
       (entry) => entry?.execution_receipt?.provider_authority_receipt?.operation_key_sha256
     );
     requireInvariant(providerResponseReceiptHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
       && providerResponseReceiptHashes.length === expectedProviderCaseCount
-      && new Set(providerResponseReceiptHashes).size === evidence.cases.length
+      && new Set(providerResponseReceiptHashes).size === publishableCases.length
       && providerAuthorityOperationHashes.every((value) => /^[0-9a-f]{64}$/.test(value))
-      && new Set(providerAuthorityOperationHashes).size === evidence.cases.length
-      && evidence.cases.every((entry) => providerAttemptsForWriter(
+      && new Set(providerAuthorityOperationHashes).size === publishableCases.length
+      && publishableCases.every((entry) => providerAttemptsForWriter(
         writerProjectionMode
       ).includes(entry.provider_attempt_number)
         && entry.provider_retry_count === entry.provider_attempt_number - 1
@@ -4316,7 +4384,8 @@ test("production writer journey verifies Glass Box and staged large-image transp
       (entry) => entry.case_id === "NON_TCG_WEB_IDENTITY"
     );
     const transportOnlyCases = evidence.cases.filter((entry) => entry.transport_only === true);
-    const semanticCases = evidence.cases.filter((entry) => entry.transport_only !== true);
+    const semanticCases = evidence.cases.filter((entry) => entry.transport_only !== true
+      && entry.outcome_regime !== "REVIEW_REQUIRED");
     const webReceiptClassifications = capturedProductionWriterMode(writerProjectionMode)
       ? [] : semanticCases.map((entry) => {
         const view = resolutionViewsByCaseId.get(entry.case_id);
@@ -4361,7 +4430,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
     const lotCaseEvidence = evidence.cases.find(
       (entry) => entry.case_id === "LOT_SHARED_ONLY"
     );
-    requireInvariant(evidence.cases.every((entry) => (
+    requireInvariant(publishableCases.every((entry) => (
       hasExactKeys(entry.execution_receipt?.server_stages_ms, requiredServerStageNames)
       && Object.values(entry.execution_receipt.server_stages_ms).every(
         (value) => Number.isFinite(value) && value >= 0
@@ -4408,6 +4477,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && (parityRequired
         ? ordinaryActivationSeal({
           writerProjectionMode,
+          lotReviewRequired,
           standardCaseEvidence,
           tcgCaseEvidence,
           largeCaseEvidence,

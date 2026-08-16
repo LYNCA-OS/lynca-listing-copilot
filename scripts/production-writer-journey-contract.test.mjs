@@ -385,7 +385,7 @@ assert.match(spec,
   "a late recognition POST after the active normal case must fail closed");
 assert.match(spec, /providerResponseReceiptHashes\.length === expectedProviderCaseCount/);
 assert.match(spec,
-  /evidence\.cases\.every\(\(entry\) => providerAttemptsForWriter\([\s\S]*?\.includes\(entry\.provider_attempt_number\)[\s\S]*?entry\.provider_retry_count === entry\.provider_attempt_number - 1[\s\S]*?capturedProductionWriterMode[\s\S]*?provider_transport_retry_receipt === null/,
+  /publishableCases\.every\(\(entry\) => providerAttemptsForWriter\([\s\S]*?\.includes\(entry\.provider_attempt_number\)[\s\S]*?entry\.provider_retry_count === entry\.provider_attempt_number - 1[\s\S]*?capturedProductionWriterMode[\s\S]*?provider_transport_retry_receipt === null/,
   "the final seal must apply the selected writer's exact retry tuple");
 assert.match(spec, /entry\.execution_receipt\?\.execution_origin === "FRESH_CURRENT"/,
   "the final seal must reject replayed, historical, or ambiguous provider results");
@@ -726,7 +726,7 @@ assert.equal([
 "normal and staged cases must both persist a separately verified database readback receipt");
 assert.match(spec, /imageCount: sourceCase\.image_count/,
   "each normal case must verify the exact image-count execution contract");
-assert.match(spec, /providerResponseReceiptHashes[\s\S]*?new Set\(providerResponseReceiptHashes\)\.size === evidence\.cases\.length/,
+assert.match(spec, /providerResponseReceiptHashes[\s\S]*?new Set\(providerResponseReceiptHashes\)\.size === publishableCases\.length/,
   "all selected cases must carry distinct provider response receipts");
 assert.match(spec, /!offlineExecutionArtifact\.includes\(offlineProviderResponseId\)/);
 assert.match(spec, /!offlineExecutionArtifact\.includes\('\"provider_response_id\":'\)/);
@@ -1042,7 +1042,7 @@ assert.equal([...spec.matchAll(
   "normal and large writer paths must use the same feedback policy gate");
 assert.match(spec, /feedbackPolicyChecks\.length === expectedProviderCaseCount/);
 assert.match(spec,
-  /feedbackPolicyChecks\.map\(\(entry\) => entry\.case_id\)\.sort\(\)\.join\("\\0"\)[\s\S]*?=== expectedCaseIds\.join\("\\0"\)/,
+  /feedbackPolicyChecks\.map\(\(entry\) => entry\.case_id\)\.sort\(\)\.join\("\\0"\)[\s\S]*?=== expectedPublishableCaseIds\.join\("\\0"\)/,
   "feedback policy receipts must bind one-to-one to the selected provider cases");
 assert.match(spec, /entry\.feedback_policy_passed === true/);
 assert.match(spec, /entry\.dataset_disposition === FEEDBACK_DATASET_DISPOSITION/);
@@ -1079,15 +1079,15 @@ assert.match(spec, /deployment_identity/);
 assert.match(spec, /deployment_origin/);
 assert.match(spec, /evidence\.final_seal = \{/);
 assert.match(spec,
-  /const providerAuthorityOperationHashes = evidence\.cases\.map/);
+  /const providerAuthorityOperationHashes = publishableCases\.map/);
 assert.match(spec,
-  /new Set\(providerAuthorityOperationHashes\)\.size === evidence\.cases\.length/,
+  /new Set\(providerAuthorityOperationHashes\)\.size === publishableCases\.length/,
   "all selected cases must bind distinct database authority operations");
 assert.match(spec,
   /entry\.recognition_session_id === `csmsess_\$\{[\s\S]*?operation_key_sha256\.slice\(0, 40\)/,
   "the final seal must recompute the session binding instead of trusting a boolean");
 const finalCaseReceiptSealStart = spec.indexOf(
-  "requireInvariant(evidence.cases.every((entry) => (\n      hasExactKeys(entry.execution_receipt?.server_stages_ms"
+  "requireInvariant(publishableCases.every((entry) => (\n      hasExactKeys(entry.execution_receipt?.server_stages_ms"
 );
 const finalCaseReceiptSealEnd = spec.indexOf(
   "    verifierErrorCodes.LIVE_EXECUTION_RECEIPT_MISMATCH);",
@@ -1252,5 +1252,20 @@ assert.match(packageJson.scripts["test:e2e:production-writer-journey"], /--grep-
 assert.doesNotMatch(releaseWorkflow,
   /VERCEL_AUTOMATION_BYPASS_SECRET|x-vercel-protection-bypass|x-vercel-set-bypass-cookie/,
   "the bypass value must never enter workflow YAML, logs, or a global browser header");
+
+// Founder gate split (2026-08-16): an empty lot_count is legal under the
+// frozen prompt, so the LOT case must accept the durable review-required
+// terminal -- while still asserting its full 409 contract. These pins keep
+// that branch from being silently removed or loosened.
+assert.match(spec,
+  /LOT_REVIEW_REQUIRED_CONTRACT_MISMATCH/);
+assert.match(spec,
+  /recognitionPayload\?\.code === "LOT_QUANTITY_UNRESOLVED"[\s\S]*?recognitionPayload\?\.retryable === false[\s\S]*?recognitionPayload\?\.review_required === true[\s\S]*?recognitionPayload\?\.trace_status === "PERSISTED_REVIEW_REQUIRED"[\s\S]*?recognition_session_id/);
+assert.match(spec,
+  /outcome_regime: "REVIEW_REQUIRED"[\s\S]*?activation_deferred: true/);
+assert.match(spec,
+  /const publishableCases = evidence\.cases\.filter\([\s\S]*?entry\.outcome_regime !== "REVIEW_REQUIRED"/);
+assert.match(spec,
+  /lotReviewRequired[\s\S]*?lotCaseEvidence\?\.lot_review_required_receipt\?\.code[\s\S]*?"LOT_QUANTITY_UNRESOLVED"/);
 
 console.log("production writer journey contract tests passed");
