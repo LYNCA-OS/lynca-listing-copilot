@@ -5188,8 +5188,65 @@ const tcgGrammarContextActivationRuntimeManifest = Object.freeze(
     });
   }))
 );
-assert.equal(sha256(JSON.stringify(tcgGrammarContextActivationRuntimeManifest)),
-  TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256);
+// This freeze pins the *bytes* of eleven files, not their behaviour. Editing
+// any of them -- including adding a test to one -- breaks this assertion, and
+// until now it said only that two hashes differed. Someone lost an afternoon
+// to that on 2026-08-16 and worked around it by starting a new test file.
+//
+// The freeze is still right: it is what proves the shipped activation content
+// is the content that was reviewed. What was wrong is that it could not say so.
+// Name the drifted files and state the two legitimate responses.
+{
+  const actualManifestSha256 =
+    sha256(JSON.stringify(tcgGrammarContextActivationRuntimeManifest));
+  if (actualManifestSha256 !== TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256) {
+    // The freeze stores one aggregate hash, so it cannot say by itself which
+    // file drifted. git can: in the common case the edit is uncommitted, and
+    // naming the file is the difference between a five-minute fix and an
+    // afternoon.
+    const dirtyPaths = (() => {
+      try {
+        return new Set(execFileSync("git", [
+          "status", "--porcelain", "--", ...TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATHS
+        ], { encoding: "utf8" })
+          .split("\n")
+          .map((line) => line.slice(3).trim())
+          .filter(Boolean));
+      } catch {
+        return new Set();
+      }
+    })();
+    const drifted = tcgGrammarContextActivationRuntimeManifest
+      .map((entry) => `  ${dirtyPaths.has(entry.path) ? "CHANGED ->" : "          "} `
+        + `${entry.path} (${entry.bytes} bytes, sha256 ${entry.sha256})`)
+      .join("\n");
+    assert.fail([
+      "TCG Grammar context activation content freeze broken.",
+      "",
+      `expected manifest sha256: ${TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256}`,
+      `actual   manifest sha256: ${actualManifestSha256}`,
+      "",
+      "This freeze pins the exact bytes of the files below. One of them changed:",
+      drifted,
+      "",
+      "Two legitimate responses, and no third:",
+      "",
+      "1. The edit does not belong in a frozen file. This is the usual case --",
+      "   new test coverage, for example, belongs in a new test file. Move it",
+      "   and this assertion goes green on its own.",
+      "",
+      "2. The activation content genuinely changed and the new content is what",
+      "   ships. Re-mint the freeze deliberately: set",
+      "   TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_CONTENT_MANIFEST_SHA256 in",
+      "   scripts/compatibility-bridge-release.mjs to the actual sha256 above,",
+      "   and say in the commit message which behaviour changed and why the",
+      "   reviewed content is now this content.",
+      "",
+      "Do not re-mint to silence a change you did not intend -- that turns the",
+      "proof into a rubber stamp. See AGENTS.md, 'CSM is the authority'."
+    ].join("\n"));
+  }
+}
 const tcgGrammarContextActivationRuntimeDiffIdentity = Object.freeze({
   full_index_sha256: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_FULL_INDEX_SHA256,
   patch_id: TCG_GRAMMAR_CONTEXT_ACTIVATION_CORE_PATCH_ID
