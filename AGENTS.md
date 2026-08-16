@@ -31,6 +31,38 @@ If the checkout is dirty, treat its changes as user-owned. Do not reset, overwri
 - Before removing an unmerged worktree, compare both commits and working-tree content against `origin/main`. Preserve only genuinely newer behavior.
 - Do not retain damaged clones, duplicate checkouts, stale Preview branches, or untracked dependency directories as informal backups.
 
+## The working environment is part of the architecture
+
+A workspace that has drifted does not announce itself. It answers questions
+wrongly, and the answers look ordinary. The rules below exist because each one
+already cost a day.
+
+- **Every checkout lives on persistent disk.** Never create a worktree under
+  `/tmp` or `/private/tmp`, and never point a tool, agent, or MCP server at one.
+  On 2026-08-16 there were 23 worktrees under `/private/tmp`, three of them
+  holding uncommitted work; the release MCP server's default repository was one
+  of them, so once it was cleaned up every one of its tools returned an empty
+  repository — an answer indistinguishable from "the repository is empty".
+- **A tool that cannot find its checkout must fail, not return blanks.**
+  Validate the path at startup and raise. An empty result read as a fact is
+  worse than a crash.
+- **The canonical checkout stays on `main`, clean, and fast-forwarded.** When
+  work needs a different branch, add a worktree; do not park the canonical
+  checkout on a feature branch. A stale `.git/index.lock` sat in it for 17 days
+  and silently blocked every index operation, which is why the work migrated to
+  scratch worktrees in the first place. If git reports a lock, check for a live
+  process before assuming the repository is busy.
+- **Finish the worktree lifecycle.** After a PR merges, remove the worktree and
+  delete both branches in the same step as the merge. Cleanup deferred is
+  cleanup that does not happen.
+- **Before deleting anything, verify the instrument that says it is safe.**
+  This repository's history begins at the 2026-08-14 import commit `e84bf69a`,
+  so every file reports the same commit date and every pre-import branch reads
+  as "never merged" — both readings are artifacts, not facts. Prove containment
+  by content (`git rev-list --cherry-pick`, tree comparison) and read the file
+  before deleting it. See "CSM is the authority" for the general form: when a
+  reading is extreme, suspect the instrument first.
+
 ## Architecture boundaries
 
 - Strategy and execution-chain changes are separate scopes. Do not let a strategy experiment silently change queueing, authentication, storage, provider concurrency, or deployment behavior.
