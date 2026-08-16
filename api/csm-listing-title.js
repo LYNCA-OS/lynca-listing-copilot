@@ -610,17 +610,26 @@ function normalizedTcgGrammarContextCheckpointReceipts(result, {
   if (!isDeepStrictEqual(claimReceipt, storedClaimReceipt)) {
     throw persistenceCheckpointError("tcg_grammar_context_claim_receipt_mismatch");
   }
+  // A LOT is outside the standard-to-tcg joint claim namespace: an observed
+  // lot carries no registry claim, so the claim-receipt/observed-fields
+  // binding must not run on real lot output (regression: the LOT_SHARED_ONLY
+  // acceptance case failed the persistence checkpoint with
+  // tcg_grammar_context_observed_fields_mismatch on real lot output).
+  const observedGrammar = String(result?.observed_fields?.grammar || "standard")
+    .trim().toLowerCase();
   const rowObservedFields = {
     set: claimReceipt?.normalized_set,
     card_number: claimReceipt?.normalized_card_number,
     grammar: structured?.observed_composition_grammar
   };
-  if (!isDeepStrictEqual(rowObservedFields, {
-    set: result?.observed_fields?.set,
-    card_number: result?.observed_fields?.card_number,
-    grammar: result?.observed_fields?.grammar
-  })) {
-    throw persistenceCheckpointError("tcg_grammar_context_observed_fields_mismatch");
+  if (observedGrammar === "standard" || observedGrammar === "tcg") {
+    if (!isDeepStrictEqual(rowObservedFields, {
+      set: result?.observed_fields?.set,
+      card_number: result?.observed_fields?.card_number,
+      grammar: result?.observed_fields?.grammar
+    })) {
+      throw persistenceCheckpointError("tcg_grammar_context_observed_fields_mismatch");
+    }
   }
   let sourceExecution;
   try {
@@ -657,8 +666,6 @@ function normalizedTcgGrammarContextCheckpointReceipts(result, {
     // the claim against the resolved fields must not run (regression: the
     // LOT_SHARED_ONLY acceptance case failed the persistence checkpoint with
     // tcg_grammar_context_checkpoint_receipt_invalid on real lot output).
-    const observedGrammar = String(result?.observed_fields?.grammar || "standard")
-      .trim().toLowerCase();
     if (observedGrammar === "standard" || observedGrammar === "tcg") {
       validateTcgFieldSourceAuthorityReceipt(sourceReceipt, {
         founderBetaWebReceipt: storedFounderReceipt,
