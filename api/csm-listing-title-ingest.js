@@ -91,6 +91,9 @@ export function buildCsmIngestFailureResponse(error, {
     && !stagedResumeOnly
     && requestedRecoveryAction === "STAGED_FRESH_RETRY"
     && error?.provider_attempt_started === false;
+  const reviewRequiredSessionId = error?.review_required === true
+    ? String(error?.recognition_session_id || "").trim()
+    : "";
   return {
     status: safeStatus,
     body: {
@@ -100,6 +103,17 @@ export function buildCsmIngestFailureResponse(error, {
       retryable,
       message: sanitizeOperationalText(error?.message || "CSM ingest failed", 240),
       ...(error?.detail ? { detail: String(error.detail).slice(0, 200) } : {}),
+      // A review-required terminal (LOT_QUANTITY_UNRESOLVED, LOT_SINGLE_CARD)
+      // is a durable decision, not a transport failure: the row is persisted
+      // and the writer reopens it by recognition session. The direct route
+      // already carries that receipt; the ingest route dropped it, so the same
+      // card terminated as a bare 409 with nothing to reopen. Forward the
+      // identical three fields here — same contract, both routes.
+      ...(reviewRequiredSessionId ? {
+        recognition_session_id: reviewRequiredSessionId,
+        review_required: true,
+        trace_status: "PERSISTED_REVIEW_REQUIRED"
+      } : {}),
       ...(stagedInputRebind ? {
         recovery_action: "INPUT_REBIND"
       } : stagedResumeOnly ? {
