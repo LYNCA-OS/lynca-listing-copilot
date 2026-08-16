@@ -3495,7 +3495,7 @@ test("production writer journey verifies Glass Box and staged large-image transp
       failurePhase = "RECOGNITION_RESPONSE";
       normalTransport.active_case_id = sourceCase.case_id;
       const uploadStartedAt = monotonicNowMs();
-      const result = journeyPage.getByTestId("writer-title-result").first();
+      const result = journeyPage.getByTestId("writer-title-result").last();
       const titleInput = result.getByTestId("writer-title-input");
       const recognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
         response.request().method() === "POST"
@@ -3942,14 +3942,20 @@ test("production writer journey verifies Glass Box and staged large-image transp
         upload_to_feedback_ms: monotonicNowMs() - uploadStartedAt
       });
       failurePhase = "CASE_COMPLETE";
-      await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
+      // The conversational terminal keeps settled cards mounted as
+      // conversation history, so the wheel-era "no result panel may
+      // remain" reset is expressed as: the card the journey just saved
+      // shows its persisted decision (and the next card's panel is the
+      // one appended last).
+      await expect(result.getByTestId("accept-writer-title"))
+        .toHaveText("已保存", { timeout: 45_000 });
       normalTransport.active_case_id = null;
     }
 
     failureCaseId = "LARGE_STAGED_TRANSPORT";
     failurePhase = "LARGE_RECOGNITION";
     const largeUploadStartedAt = monotonicNowMs();
-    const largeResult = journeyPage.getByTestId("writer-title-result").first();
+    const largeResult = journeyPage.getByTestId("writer-title-result").last();
     const largeTitleInput = largeResult.getByTestId("writer-title-input");
     largeTransport.active = true;
     const largeRecognitionResponsePromise = ownPageWait(journeyPage.waitForResponse((response) => (
@@ -4169,7 +4175,10 @@ test("production writer journey verifies Glass Box and staged large-image transp
     });
     failurePhase = "FINAL_SEAL";
     largeTransport.phase_complete = true;
-    await expect(journeyPage.getByTestId("writer-title-result")).toHaveCount(0, { timeout: 45_000 });
+    // The conversational terminal keeps the settled large card mounted as
+    // history; the persisted-decision signal replaces the wheel-era reset.
+    await expect(largeResult.getByTestId("accept-writer-title"))
+      .toHaveText("已保存", { timeout: 45_000 });
     await journeyPage.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => null);
     await Promise.all(largeTransport.response_promises);
     await Promise.allSettled([...responseCaptureTasks]);
