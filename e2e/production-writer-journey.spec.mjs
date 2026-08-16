@@ -3525,6 +3525,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
       requireInvariant(!normalTransport.violation,
         verifierErrorCodes.ROUTE_COVERAGE_MISMATCH);
       addIds(recognitionPayload, ids);
+      if (sourceCase.case_id === "TCG") {
+        evidence.tcg_recognition_diagnostic = {
+          http_status: recognitionResponse.status(),
+          ok: recognitionResponse.ok(),
+          raw_body: await recognitionResponse.text().catch(() => ""),
+          provider_response_status: recognitionPayload?.provider_response_status || null,
+          provider_http_status: recognitionPayload?.provider_http_status || null,
+          trace_status: recognitionPayload?.trace_status || null,
+          served_model: recognitionPayload?.served_model || null
+        };
+      }
       if (sourceCase.case_id === "LOT_SHARED_ONLY") {
         evidence.lot_recognition_diagnostic = {
           http_status: recognitionResponse.status(),
