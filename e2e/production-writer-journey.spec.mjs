@@ -296,6 +296,73 @@ function requireInvariant(value, code) {
   if (!value) throw verifierFailure(code);
 }
 
+// Permanent failing-stage diagnostic for the large staged transport, matching
+// what the TCG and LOT cases already carry.
+//
+// The large stage was the one acceptance stage with no diagnostic block. When
+// it failed on 2026-08-16 the artifact said only WRITER_JOURNEY_FAILED at
+// LARGE_RECOGNITION -- the generic code, because sanitizedFailureCode maps
+// anything outside the verifier vocabulary to GENERIC, and a Playwright
+// timeout is outside it. The evidence therefore recorded that the stage
+// failed and erased why.
+//
+// Two things are needed and neither survived: the underlying error (a six
+// minute waitForResponse timeout and an upload rejection are the same code),
+// and the transport counters at the moment of failure, which say whether the
+// bytes ever left the browser. This block records both. It must never throw --
+// a diagnostic that fails during failure handling replaces the real error with
+// its own.
+function largeStageFailureDiagnostic(error, {
+  largeTransport,
+  largeFixture,
+  failurePhase
+} = {}) {
+  const safe = (read, fallback = null) => {
+    try {
+      const value = read();
+      return value === undefined ? fallback : value;
+    } catch {
+      return fallback;
+    }
+  };
+  return {
+    failed_phase: failurePhase,
+    // The verifier vocabulary collapses to GENERIC; the raw first line is the
+    // only thing that separates a timeout from a contract rejection.
+    unclassified_failure_detail: safe(() => ({
+      name: String(error?.name || "").slice(0, 80),
+      message: String(error?.message || "").split("\n")[0].slice(0, 240)
+    })),
+    transport: safe(() => ({
+      active: largeTransport.active,
+      phase_complete: largeTransport.phase_complete,
+      violation: largeTransport.violation,
+      external_storage_puts: largeTransport.external_storage_puts,
+      ingest_request_count: largeTransport.ingest_requests.length,
+      ingest_response_count: largeTransport.ingest_responses.length,
+      recognition_response_event_count:
+        largeTransport.recognition_response_events.length,
+      relay_request_count: largeTransport.relay_requests.length,
+      relay_receipt_count: largeTransport.relay_receipts.length,
+      relay_roles: [...new Set(largeTransport.relay_receipts.map(
+        (entry) => entry.role
+      ))].sort(),
+      relay_browser_body_bytes: largeTransport.relay_receipts.reduce(
+        (total, entry) => total + Number(entry.browser_body_bytes || 0), 0
+      ),
+      upload_pipeline: largeTransport.upload_pipeline_requests.map((entry) => ({
+        response_observed: entry.response_observed === true,
+        response_status: Number(entry.response_status) || null,
+        receipt_asset_id_present: Boolean(entry.response_receipt?.asset_id)
+      }))
+    })),
+    fixture: safe(() => ({
+      original_total_bytes: largeFixture.originalTotal,
+      image_count: largeFixture.images.length
+    }))
+  };
+}
+
 function parityTitleTokens(value) {
   return String(value || "").toLowerCase().match(/[a-z0-9]+(?:[./-][a-z0-9]+)*/g) || [];
 }
@@ -4606,6 +4673,13 @@ test("production writer journey verifies Glass Box and staged large-image transp
     evidence.error_code = errorCode;
     evidence.failed_case_id = liveFailureCaseIds.has(failureCaseId) ? failureCaseId : null;
     evidence.failed_phase = liveFailurePhases.has(failurePhase) ? failurePhase : "UNCLASSIFIED";
+    if (failureCaseId === "LARGE_STAGED_TRANSPORT") {
+      evidence.large_diagnostic = largeStageFailureDiagnostic(error, {
+        largeTransport,
+        largeFixture,
+        failurePhase
+      });
+    }
     throw verifierFailure(errorCode);
   } finally {
     evidence.finished_at = new Date().toISOString();

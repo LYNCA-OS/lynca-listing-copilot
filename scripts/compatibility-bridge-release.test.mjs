@@ -8172,6 +8172,23 @@ for (let index = 1; index < orderedPins.length; index += 1) {
     orderedPins[index - 1].selection_schema_version,
     `pin v${orderedPins[index].pin_version} base selection schema`);
 }
+// Every acceptance stage that can fail a release must leave a diagnostic in
+// the evidence. TCG and LOT always did; the large staged transport did not,
+// so run 31955715241 recorded WRITER_JOURNEY_FAILED at LARGE_RECOGNITION and
+// nothing about why. v84 adds that block; this asserts it stays.
+{
+  const journeySpec = await readFile(
+    path.join(process.cwd(), "e2e/production-writer-journey.spec.mjs"), "utf8"
+  );
+  for (const marker of [
+    "function largeStageFailureDiagnostic(",
+    "evidence.large_diagnostic = largeStageFailureDiagnostic(",
+    "unclassified_failure_detail"
+  ]) {
+    assert.ok(journeySpec.includes(marker),
+      `the large stage diagnostic must remain present: ${marker}`);
+  }
+}
 const tablePinnedSelectionSchemas = new Set(PRODUCTION_RELEASE_PIN_TABLE.map(
   (entry) => entry.selection_schema_version
 ));
