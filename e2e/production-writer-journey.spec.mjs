@@ -260,7 +260,9 @@ const verifierErrorCodes = Object.freeze({
   FEEDBACK_POLICY_MISMATCH: "FEEDBACK_POLICY_MISMATCH",
   ACTIVATION_RECEIPT_MISMATCH: "ACTIVATION_RECEIPT_MISMATCH",
   LOT_REVIEW_REQUIRED_CONTRACT_MISMATCH: "LOT_REVIEW_REQUIRED_CONTRACT_MISMATCH",
-  WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED: "WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED"
+  WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED: "WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED",
+  WRITER_TITLE_LATENCY_GATE_UNCALIBRATED: "WRITER_TITLE_LATENCY_GATE_UNCALIBRATED",
+  WRITER_TITLE_LATENCY_CONTRACT_EXCEEDED: "WRITER_TITLE_LATENCY_CONTRACT_EXCEEDED"
 });
 const allowedVerifierErrorCodes = new Set(Object.values(verifierErrorCodes));
 const liveFailureCaseIds = new Set([
@@ -3105,6 +3107,17 @@ test("production writer journey verifies Glass Box and staged large-image transp
       writerEditableTitleLatencyReceipts,
       { cohortId: `writer-journey-${expectedSha.slice(0, 12)}` }
     );
+    // A hard-limit breach means one of two very different things, and until
+    // now they carried the same code. Run 31957738797 failed by 28 ms against
+    // a 20,000 ms limit while the cohort's own p95 was 20,028 ms -- the
+    // threshold sat inside the distribution it governs, so the outcome was a
+    // coin toss and said nothing about the release. Name that case separately
+    // from a genuine regression, which is a breach of a limit that stands
+    // clear of the measured distribution.
+    const latencySummary = evidence.stages.writer_editable_title_latency;
+    requireInvariant(receipt.hard_limit_passed
+      || latencySummary?.hard_limit_calibrated === true,
+    verifierErrorCodes.WRITER_TITLE_LATENCY_GATE_UNCALIBRATED);
     requireInvariant(receipt.hard_limit_passed,
       verifierErrorCodes.WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED);
     return receipt;
@@ -4444,6 +4457,14 @@ test("production writer journey verifies Glass Box and staged large-image transp
       && evidence.stages.writer_editable_title_latency?.diagnostic_only === true
       && evidence.stages.writer_editable_title_latency?.optimization_sample_eligible === false,
     verifierErrorCodes.WRITER_TITLE_LATENCY_HARD_LIMIT_EXCEEDED);
+    // The contract is 8 s / 12 s. It was recorded as a boolean nobody acted on
+    // while the release turned on a threshold 8 s above it -- so the gate
+    // passed a system running at twice its contract and failed one running 28
+    // ms slower than that. The contract is what this stage claims to measure,
+    // so the contract is what it fails on.
+    requireInvariant(
+      evidence.stages.writer_editable_title_latency?.diagnostic_breach === false,
+      verifierErrorCodes.WRITER_TITLE_LATENCY_CONTRACT_EXCEEDED);
     const recognitionPostReceipt = recognitionPostSeal(recognitionPosts, evidence.cases);
     evidence.stages.warmup = warmupResponseReceipt(warmupTransport.requests);
     expect(ids.asset_id.size, "asset_id must be captured")

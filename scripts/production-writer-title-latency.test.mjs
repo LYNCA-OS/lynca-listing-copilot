@@ -39,13 +39,18 @@ assert.equal(within.upload_to_editable_title_ms, 7_500);
 assert.equal(within.classification, "WITHIN_DIAGNOSTIC_TARGET");
 assert.equal(within.hard_limit_ms,
   WRITER_EDITABLE_TITLE_LATENCY_LIMITS.normal_single_case_hard_ms);
-assert.equal(receipt({ id: "normal-boundary", latencyMs: 20_000 }).hard_limit_passed, true);
-assert.equal(receipt({ id: "normal-over", latencyMs: 20_001 }).hard_limit_passed, false);
+// Derived from the contract, not transcribed from it. These assertions used
+// to hardcode 20_000 / 20_001, so amending the contract broke a test that was
+// only ever restating it.
+const normalHardMs = WRITER_EDITABLE_TITLE_LATENCY_LIMITS.normal_single_case_hard_ms;
+assert.equal(receipt({ id: "normal-boundary", latencyMs: normalHardMs }).hard_limit_passed, true);
+assert.equal(receipt({ id: "normal-over", latencyMs: normalHardMs + 1 }).hard_limit_passed, false);
+const largeHardMs = WRITER_EDITABLE_TITLE_LATENCY_LIMITS.large_single_case_hard_ms;
 assert.equal(receipt({
-  id: "large-boundary", latencyMs: 30_000, lane: "LARGE_STAGED_TRANSPORT"
+  id: "large-boundary", latencyMs: largeHardMs, lane: "LARGE_STAGED_TRANSPORT"
 }).hard_limit_passed, true);
 assert.equal(receipt({
-  id: "large-over", latencyMs: 30_001, lane: "LARGE_STAGED_TRANSPORT"
+  id: "large-over", latencyMs: largeHardMs + 1, lane: "LARGE_STAGED_TRANSPORT"
 }).hard_limit_passed, false);
 
 assert.throws(() => buildWriterEditableTitleLatencyReceipt({
@@ -113,15 +118,16 @@ const cohort = (prefix, latencyMs) => ({
     latencyMs
   }))
 });
-const slowA = cohort("slow-a", 8_001);
-const slowB = cohort("slow-b", 12_001);
+// Also derived: "slow" means past the contract, whatever the contract says.
+const slowA = cohort("slow-a", WRITER_EDITABLE_TITLE_LATENCY_LIMITS.diagnostic_p50_ms + 1);
+const slowB = cohort("slow-b", WRITER_EDITABLE_TITLE_LATENCY_LIMITS.diagnostic_p95_ms + 1);
 const gate = evaluateWriterEditableTitleLatencyOptimizationGate([slowA, slowB]);
 assert.equal(gate.evidence_eligible, true);
 assert.equal(gate.cohorts_non_overlapping, true);
 assert.equal(gate.optimization_required, true);
 assert.equal(gate.optimization_policy, "QUALITY_PRESERVING_ONLY");
 
-const fast = cohort("fast", 7_000);
+const fast = cohort("fast", WRITER_EDITABLE_TITLE_LATENCY_LIMITS.diagnostic_p50_ms - 1_000);
 assert.equal(
   evaluateWriterEditableTitleLatencyOptimizationGate([slowA, fast]).optimization_required,
   false,

@@ -8263,6 +8263,22 @@ for (let index = 1; index < orderedPins.length; index += 1) {
       `the ingest route must keep failure attribution: ${marker}`);
   }
 }
+// The writer-title latency stage must keep the two distinctions v87 added: a
+// hard limit that sits inside the measured distribution is a coin toss, not a
+// gate, and the 8 s / 12 s contract is what the stage claims to measure.
+{
+  const journeySpec = await readFile(
+    path.join(process.cwd(), "e2e/production-writer-journey.spec.mjs"), "utf8"
+  );
+  for (const marker of [
+    "WRITER_TITLE_LATENCY_GATE_UNCALIBRATED",
+    "WRITER_TITLE_LATENCY_CONTRACT_EXCEEDED",
+    "hard_limit_calibrated"
+  ]) {
+    assert.ok(journeySpec.includes(marker),
+      `the latency gate must keep its calibration distinctions: ${marker}`);
+  }
+}
 const tablePinnedSelectionSchemas = new Set(PRODUCTION_RELEASE_PIN_TABLE.map(
   (entry) => entry.selection_schema_version
 ));

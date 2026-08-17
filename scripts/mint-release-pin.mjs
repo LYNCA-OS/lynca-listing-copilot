@@ -52,13 +52,20 @@ if (typeof slug !== "string" || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
   fail("--slug is required and must be kebab-case");
 }
 
-const previous = [...PRODUCTION_RELEASE_PIN_TABLE]
+const parentGitSha = git("rev-parse", "origin/main");
+
+// Minting is idempotent. The table is read from the working tree, so a pin
+// already minted for this same release is sitting in it -- and chaining from
+// that would mint v88 where v87 belongs, then fail the chain assertion because
+// v87 no longer exists. A pin whose parent is the current origin/main is this
+// release's own pin: replace it rather than stack on it. Re-mint freely.
+const ordered = [...PRODUCTION_RELEASE_PIN_TABLE]
   .sort((a, b) => a.pin_version - b.pin_version)
-  .at(-1);
+  .filter((entry) => entry.parent_git_sha !== parentGitSha);
+const previous = ordered.at(-1);
 if (!previous) fail("the pin table is empty; there is nothing to chain from");
 
 const pinVersion = previous.pin_version + 1;
-const parentGitSha = git("rev-parse", "origin/main");
 const parentTreeSha = git("rev-parse", "origin/main^{tree}");
 
 // The changed paths are the release's own diff. A pin must always carry both
