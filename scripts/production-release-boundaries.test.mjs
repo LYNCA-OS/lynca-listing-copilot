@@ -453,10 +453,24 @@ assert.equal(activeServiceContext.vercel.production.release_authority.provider_c
   false);
 const workflowFiles = readdirSync(".github/workflows")
   .filter((name) => /\.ya?ml$/.test(name));
+const dualConsumerLive = readFileSync(".github/workflows/dual-consumer-live.yml", "utf8");
+assert.match(dualConsumerLive, /^on:\n  workflow_dispatch:\n/m);
+assert.doesNotMatch(dualConsumerLive, /^(?:push|pull_request|workflow_run):/m);
+assert.match(dualConsumerLive, /^\s*environment:\s*Production\s*$/m,
+  "the evaluation runner must use the real Production environment name for OPENAI_API_KEY");
+assert.match(dualConsumerLive, /LYNCA_DUAL_CONSUMER_CLOUD:\s*"true"/);
+assert.match(dualConsumerLive, /npm run dual-consumer:live/);
+assert.doesNotMatch(dualConsumerLive,
+  /secrets\.VERCEL_TOKEN|vercel(?:@[0-9.]+)?\s+(?:promote|rollback|deploy|pull|build)/,
+  "dual-consumer-live must not become a second Production alias writer");
+assert.doesNotMatch(dualConsumerLive,
+  /SUPABASE_SERVICE_ROLE_KEY|METAVERSE_PASSWORD|VERCEL_AUTOMATION_BYPASS_SECRET/,
+  "dual-consumer-live may read OPENAI_API_KEY only");
 for (const name of workflowFiles) {
   const source = readFileSync(`.github/workflows/${name}`, "utf8");
   if (name === "deploy-production.yml") continue;
-  assert.doesNotMatch(source, /^\s*environment:\s*production\s*$/m,
+  if (name === "dual-consumer-live.yml") continue;
+  assert.doesNotMatch(source, /^\s*environment:\s*[Pp]roduction\s*$/m,
     `${name} must not enter the Production credential environment`);
   assert.doesNotMatch(source, /secrets\.VERCEL_TOKEN|vercel(?:@[0-9.]+)?\s+(?:promote|rollback)/,
     `${name} must not become a second Production alias writer`);
