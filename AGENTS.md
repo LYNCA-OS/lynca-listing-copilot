@@ -75,6 +75,7 @@ The real environment is in the cloud. Every live run happens in the cloud.
 
 - Live runs: identify, shadow, dual-consumer, 53-case, writer journey, deploy verify, and any call that crosses the OpenAI / Vercel / Supabase production boundary.
 - Cloud means GitHub Actions with the `Production` environment, Vercel Functions or the protected deploy workflow, or another approved production workflow.
+- The COS-59/62 dual-consumer live runner is `.github/workflows/dual-consumer-live.yml`. Dispatch it from `main`. It reads `OPENAI_API_KEY` from the `Production` environment and must not deploy or write the production alias.
 - The laptop is for offline tests, dry-runs, Git/Linear reads, and code. Local `npm test` must not make provider calls.
 - Do not pull Vercel Sensitive variables or GitHub environment secrets onto a laptop, and do not paste them into chat. An empty `vercel env pull` of `OPENAI_API_KEY` is expected. The key is injected only at cloud runtime.
 

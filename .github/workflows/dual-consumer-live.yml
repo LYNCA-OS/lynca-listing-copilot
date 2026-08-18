@@ -1,0 +1,150 @@
+name: dual-consumer-live
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_cases:
+        description: Number of cases. Use 53 for COS-59 scores.
+        required: true
+        default: "53"
+      runtime_ref:
+        description: LYNCA-OS/lynca-runtime git ref
+        required: true
+        default: "codex/cos-59-dual-consumer-live-20260818"
+      csmdata_ref:
+        description: LYNCA-OS/csmdata git ref
+        required: true
+        default: "3a86aa41e69b94321566f65a3acb3c002d5b1146"
+
+concurrency:
+  group: dual-consumer-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: Production
+    env:
+      LYNCA_DUAL_CONSUMER_ALLOW_PROVIDER: "true"
+      LYNCA_DUAL_CONSUMER_CLOUD: "true"
+      LYNCA_DUAL_CONSUMER_MAX_CASES: ${{ inputs.max_cases }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LYNCA_RUNTIME_SHADOW_ADAPTER: ""
+    steps:
+      - name: Fail closed unless this dispatch targets main
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          test "$DEFAULT_BRANCH" = "main"
+          test "$DISPATCH_REF" = "refs/heads/main"
+
+      - uses: actions/checkout@v5
+        with:
+          path: listing-copilot
+          persist-credentials: false
+
+      - uses: actions/checkout@v5
+        with:
+          repository: LYNCA-OS/lynca-runtime
+          ref: ${{ inputs.runtime_ref }}
+          path: runtime
+          token: ${{ secrets.LYNCA_OS_READ_TOKEN }}
+          persist-credentials: false
+
+      - uses: actions/checkout@v5
+        with:
+          repository: LYNCA-OS/csmdata
+          ref: ${{ inputs.csmdata_ref }}
+          path: csmdata
+          token: ${{ secrets.LYNCA_OS_READ_TOKEN }}
+          persist-credentials: false
+
+      - uses: actions/checkout@v5
+        with:
+          repository: LYNCA-OS/lynca-csm
+          ref: eed68fbc4e500c739959e28cd4a6043da18046c5
+          path: lynca-csm
+          token: ${{ secrets.LYNCA_OS_READ_TOKEN }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Require Production secrets without printing them
+        env:
+          LYNCA_OS_READ_TOKEN: ${{ secrets.LYNCA_OS_READ_TOKEN }}
+        run: |
+          test -n "$OPENAI_API_KEY"
+          test -n "$LYNCA_OS_READ_TOKEN"
+
+      - name: Install listing-copilot
+        working-directory: listing-copilot
+        run: npm ci --no-audit --no-fund
+
+      - name: Install runtime against the pinned local CSM checkout
+        working-directory: runtime
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          const pin = "file:../lynca-csm";
+          for (const file of ["package.json", "vnext/package.json"]) {
+            const pkg = JSON.parse(readFileSync(file, "utf8"));
+            if (!pkg.dependencies?.["@lynca/csm"]) process.exit(1);
+            pkg.dependencies["@lynca/csm"] = pin;
+            writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+          }
+          NODE
+          npm install --no-audit --no-fund
+          npm --prefix vnext install --no-audit --no-fund
+
+      - name: Bind evaluation paths
+        run: |
+          {
+            printf 'LYNCA_LISTING_COPILOT=%s\n' "$GITHUB_WORKSPACE/listing-copilot"
+            printf 'LYNCA_CSMDATA_ROOT=%s\n' "$GITHUB_WORKSPACE/csmdata"
+            printf 'LYNCA_DUAL_CONSUMER_EVIDENCE=%s\n' "$GITHUB_WORKSPACE/artifacts/dual-consumer"
+          } >> "$GITHUB_ENV"
+
+      - name: Dry-run remount of the frozen 53-case cohort
+        working-directory: runtime
+        run: |
+          receipt="$GITHUB_WORKSPACE/artifacts/dual-consumer/dry-run.json"
+          mkdir -p "$(dirname "$receipt")"
+          node evaluation/dual-consumer/run.mjs --dry-run > "$receipt"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const dry = JSON.parse(readFileSync(process.env.RECEIPT, "utf8"));
+          const ok = dry.cohort?.case_count === 53
+            && dry.cohort?.images_present === 53
+            && dry.cohort?.images_absent === 0
+            && dry.goldens_sealed === true
+            && dry.production_authorized === false
+            && dry.surviving_listing_application === "LYNCA-OS/lynca-runtime";
+          if (!ok) process.exit(1);
+          NODE
+        env:
+          RECEIPT: ${{ github.workspace }}/artifacts/dual-consumer/dry-run.json
+
+      - name: Run dual-consumer live
+        working-directory: runtime
+        run: npm run dual-consumer:live
+
+      - name: Upload score artifacts without case images
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dual-consumer-scores
+          if-no-files-found: warn
+          path: |
+            artifacts/dual-consumer/**/dry-run.json
+            artifacts/dual-consumer/**/predictions.json
+            artifacts/dual-consumer/**/scores.json
+            artifacts/dual-consumer/**/comparison.json
+            artifacts/dual-consumer/**/founder-blind-ballot.json
