@@ -1,0 +1,21 @@
+---
+description: LYNCA 实跑只在云端，因为真实环境也在云端
+alwaysApply: true
+---
+
+# Cloud runs only
+
+LYNCA 的真实环境在云端。所有实跑都在云端跑。
+
+实跑：identify、shadow、dual-consumer、53-case、writer journey、deploy verify，以及任何打到 OpenAI / Vercel / Supabase 生产边界的执行。
+
+云端：GitHub Actions（本仓库 `Production` environment）、Vercel Functions / 受保护部署、已批准的 production workflow。
+
+本机只做离线测试、dry-run、读 Git/Linear、写代码。本机 `npm test` 不得发起 provider 调用。
+
+禁止把 Vercel Sensitive 或 GitHub environment secret 拉到笔记本或贴进聊天。`vercel env pull` / API decrypt 对 Sensitive 变量返回空字符串，这不是环境没配。密钥只在云端运行时注入。
+
+```text
+❌ LYNCA_DUAL_CONSUMER_ALLOW_PROVIDER=true 后在笔记本上打 OpenAI
+✅ GitHub Actions environment: Production 跑完，把分数 artifact 传回；金标执行完再开
+```

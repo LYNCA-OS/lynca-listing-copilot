@@ -69,6 +69,15 @@ already cost a day.
 - Chain/infrastructure fixes must not change SEM weights, title policy, or evaluation semantics unless the task explicitly includes both scopes.
 - Reusable catalog, SEM, and OCR contracts belong in stable server-side modules, not one-off evaluation scripts or frontend toggles.
 
+## Cloud runs only
+
+The real environment is in the cloud. Every live run happens in the cloud.
+
+- Live runs: identify, shadow, dual-consumer, 53-case, writer journey, deploy verify, and any call that crosses the OpenAI / Vercel / Supabase production boundary.
+- Cloud means GitHub Actions with the `Production` environment, Vercel Functions or the protected deploy workflow, or another approved production workflow.
+- The laptop is for offline tests, dry-runs, Git/Linear reads, and code. Local `npm test` must not make provider calls.
+- Do not pull Vercel Sensitive variables or GitHub environment secrets onto a laptop, and do not paste them into chat. An empty `vercel env pull` of `OPENAI_API_KEY` is expected. The key is injected only at cloud runtime.
+
 ## Release gates
 
 - Stage explicit files; do not use broad staging in a mixed worktree.
