@@ -2,10 +2,25 @@
 -- Run this in Supabase SQL editor or psql, save the single JSON result to a file,
 -- then run:
 --   npm run commercial:heldout -- --source exports/commercial-reviews.json --out data/golden-dataset.commercial.json --replace
+--   npm run eval:golden -- --dataset data/golden-dataset.commercial.json --require-commercial-gate
+--   npm run readiness:audit -- --dataset data/golden-dataset.commercial.json
+--
+-- This query reads listing_reviews. It does not enable
+-- LISTING_FEEDBACK_RETENTION_ENABLED. That flag is a Founder/ops Vercel
+-- switch, not a code release. When the flag is off, this export is empty
+-- and the commercial gate must stay failed.
+--
+-- The operator-retained path that does not require production retention is:
+--   npm run eval:reviewed-field-accuracy -- --labels <reviewed-ground-truth-v1.json> --predictions <provider-report.json>
+--   npm run commercial:heldout -- --reviewed-ground-truth <reviewed-ground-truth-v1.json> --provider-report <provider-report.json> --out data/golden-dataset.commercial.json --replace
 --
 -- The query intentionally excludes rows without explicit final title quality
 -- booleans in corrected_resolved_fields. Those booleans are part of the
 -- commercial gate and should be reviewed, not defaulted.
+-- Columns selected here still exist on listing_assets / listing_analysis_runs /
+-- listing_reviews after later additive migrations (workflow_summary,
+-- asset_fingerprint, field_graph). Those extras are optional and are not
+-- required to build a held-out row.
 
 with ranked_reviews as (
   select

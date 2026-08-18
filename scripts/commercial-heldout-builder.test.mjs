@@ -7,6 +7,7 @@ import { evaluateGoldenDataset } from "../lib/listing/evaluation/golden-dataset.
 import {
   buildHeldOutCommercialItems,
   buildHeldOutCommercialItemsFromReviewedEvaluation,
+  buildHeldOutCommercialItemsFromReviewedGroundTruth,
   mergeHeldOutCommercialItems
 } from "../lib/listing/evaluation/commercial-heldout-builder.mjs";
 
@@ -389,5 +390,120 @@ assert.match(reviewedCli.stdout, /held_out_commercial_assets: 3/);
 const reviewedOutputDataset = JSON.parse(await readFile(reviewedOutPath, "utf8"));
 assert.equal(reviewedOutputDataset.splits.held_out_commercial.length, 3);
 assert.equal(reviewedOutputDataset.splits.held_out_commercial[0].prediction.resolved_fields.serial_number, "29/199");
+
+function reviewedField(status, value) {
+  return { status, value, evidence_sources: [], reviewer_notes: "" };
+}
+
+const reviewedGroundTruthLabels = {
+  schema_version: "reviewed-ground-truth-v1",
+  dataset_id: "unit-reviewed-heldout",
+  split: "held_out_commercial",
+  commercial_heldout: false,
+  items: [
+    {
+      card_id: "gt-card-1",
+      asset_id: "gt-commercial-001",
+      source_feedback_id: "gt-fb-001",
+      commercial_heldout: true,
+      image_inputs: [{ role: "front", object_path: "gt/001/front.jpg" }],
+      fields: {
+        subject: reviewedField("CONFIRMED", ["Cooper Flagg"]),
+        year: reviewedField("CONFIRMED", "2025"),
+        product_or_set: reviewedField("CONFIRMED", { product: "Chrome", set: "", value: "Chrome" }),
+        card_type: reviewedField("UNREVIEWED", ""),
+        variant_or_parallel: reviewedField("CONFIRMED", { exact: "Refractor" }),
+        collector_number: reviewedField("UNKNOWN", ""),
+        serial_number: reviewedField("CONFIRMED", "31/50"),
+        grade: reviewedField("UNKNOWN", "")
+      }
+    },
+    {
+      card_id: "gt-card-dev",
+      asset_id: "gt-dev-001",
+      source_feedback_id: "gt-fb-dev",
+      commercial_heldout: false,
+      image_inputs: [{ role: "front", object_path: "gt/dev/front.jpg" }],
+      fields: {
+        subject: reviewedField("CONFIRMED", ["Dev Player"]),
+        year: reviewedField("CONFIRMED", "2024"),
+        product_or_set: reviewedField("CONFIRMED", "Bowman"),
+        serial_number: reviewedField("CONFIRMED", "1/1")
+      }
+    }
+  ]
+};
+
+const reviewedGroundTruthProvider = {
+  schema_version: "provider-report-v1",
+  results: [
+    {
+      source_feedback_id: "gt-fb-001",
+      asset_id: "gt-commercial-001",
+      status: "evaluated",
+      prediction: {
+        model_id: "gpt-4.1-mini-2025-04-14",
+        route: "AI_COMPLETE_REVIEW",
+        title: "2025 Chrome Cooper Flagg Refractor 31/50",
+        fields: {
+          year: "2025",
+          product: "Chrome",
+          players: ["Cooper Flagg"],
+          parallel: "Refractor",
+          serial_number: "31/50"
+        }
+      }
+    }
+  ]
+};
+
+const rejectedDevelopment = buildHeldOutCommercialItemsFromReviewedGroundTruth({
+  labels: reviewedGroundTruthLabels,
+  providerReport: reviewedGroundTruthProvider
+});
+assert.equal(rejectedDevelopment.items.length, 1);
+assert.equal(rejectedDevelopment.items[0].asset_id, "gt-commercial-001");
+assert.equal(rejectedDevelopment.items[0].ground_truth_fields.players[0], "Cooper Flagg");
+assert.equal(rejectedDevelopment.items[0].ground_truth_fields.parallel, "Refractor");
+assert.ok(rejectedDevelopment.rejected_rows.some((row) => {
+  return row.asset_id === "gt-dev-001"
+    && row.reasons.some((reason) => reason.includes("not marked commercial_heldout"));
+}));
+
+const dryRunDevelopment = buildHeldOutCommercialItemsFromReviewedGroundTruth({
+  labels: reviewedGroundTruthLabels,
+  providerReport: reviewedGroundTruthProvider,
+  allowDevelopmentLabels: true
+});
+assert.equal(dryRunDevelopment.items.length, 2);
+assert.ok(dryRunDevelopment.warnings.some((warning) => warning.includes("engineering-path dry-run")));
+
+const labelsPath = join(tempDir, "reviewed-ground-truth.json");
+const groundTruthProviderPath = join(tempDir, "reviewed-ground-truth-provider.json");
+const groundTruthOutPath = join(tempDir, "reviewed-ground-truth-out.json");
+await writeFile(labelsPath, `${JSON.stringify(reviewedGroundTruthLabels, null, 2)}\n`);
+await writeFile(groundTruthProviderPath, `${JSON.stringify(reviewedGroundTruthProvider, null, 2)}\n`);
+
+const groundTruthCli = spawnSync(process.execPath, [
+  "scripts/build-held-out-commercial.mjs",
+  "--reviewed-ground-truth",
+  labelsPath,
+  "--provider-report",
+  groundTruthProviderPath,
+  "--dataset",
+  datasetPath,
+  "--out",
+  groundTruthOutPath,
+  "--replace",
+  "--allow-rejections"
+], { encoding: "utf8" });
+assert.equal(groundTruthCli.status, 0, groundTruthCli.stderr || groundTruthCli.stdout);
+assert.match(groundTruthCli.stdout, /mode: reviewed_ground_truth_provider_eval/);
+assert.match(groundTruthCli.stdout, /imported_items: 1/);
+assert.match(groundTruthCli.stdout, /rejected_rows: 1/);
+
+const groundTruthDataset = JSON.parse(await readFile(groundTruthOutPath, "utf8"));
+assert.equal(groundTruthDataset.splits.held_out_commercial.length, 1);
+assert.equal(groundTruthDataset.splits.held_out_commercial[0].ground_truth_fields.serial_number, "31/50");
 
 console.log("commercial held-out builder tests passed");

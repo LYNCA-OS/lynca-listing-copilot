@@ -168,8 +168,11 @@ The default `data/golden-dataset.json` contains development-only fixtures for me
 Example:
 
 ```bash
+npm run eval:reviewed-field-accuracy -- --labels exports/reviewed-ground-truth.json --predictions exports/provider-report.json
+npm run commercial:heldout -- --reviewed-ground-truth exports/reviewed-ground-truth.json --provider-report exports/provider-report.json --out data/golden-dataset.commercial.json --replace
 npm run commercial:heldout -- --source exports/commercial-reviews.json --out data/golden-dataset.commercial.json --replace
-npm run eval:golden -- --dataset data/golden-dataset.commercial.json
+npm run eval:golden -- --dataset data/golden-dataset.commercial.json --require-commercial-gate
+npm run readiness:audit -- --dataset data/golden-dataset.commercial.json
 ```
 
 The builder deliberately keeps two separate records:

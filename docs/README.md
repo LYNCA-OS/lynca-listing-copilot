@@ -116,7 +116,7 @@ ListingDraft contract, approval gate, mock B-end publisher, idempotency, retry, 
 
 ### `architecture/phase-9-commercial-readiness-audit-2026-06-22.md`
 
-Machine-readable commercial readiness audit covering held-out commercial evidence, legacy vision provider smoke, provider default safety, mock-only publishing, and external retrieval validation gaps.
+Machine-readable commercial readiness audit. After the 2026-08-08 thick-path retirement it judges the held-out commercial split, records that retention/memory flags are Founder/ops Vercel switches, and keeps an empty split failed. It does not invent retired smoke evidence.
 
 ### `architecture/phase-10-delivery-report-2026-06-22.md`
 

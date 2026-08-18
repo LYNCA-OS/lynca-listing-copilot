@@ -16,6 +16,7 @@ Production recognition should start from uploaded card images, not from external
 - Feedback review persistence is opt-in through `LISTING_FEEDBACK_RETENTION_ENABLED=true`.
 - Approved-memory retrieval is opt-in through `LISTING_APPROVED_MEMORY_ENABLED=true`.
 - Both switches default to off so manual tests and agent tests do not become training or stable approved memory.
+- These two flags are Founder/ops switches on Vercel, not a code release. Turning them on does not authorize a commercial-readiness claim. The only evidence that may claim commercial readiness is a non-empty held-out commercial split that passes `commercial_acceptance_gate`. An empty split must still fail `npm run readiness:audit` and `npm run eval:golden -- --require-commercial-gate`.
 
 ## Future Commercial Loop
 

@@ -78,7 +78,7 @@ The first Evidence Completion Orchestrator now exists under `lib/listing/orchest
 
 Focused crop/reread execution remains conservative and is not part of the default single-model production path. The orchestrator can still emit planned focused-recovery traces and request targeted rescans when image evidence is blocked, but it does not automatically call a second vision model. eBay Browse now has an OAuth-backed live adapter path, but it remains market reference only and still needs real credential smoke validation. OWS now has a Responses API hosted web-search fallback path, but it still needs real credential smoke validation in this environment. Advanced image-quality recovery, review analytics dashboards, and real B-end publishing adapters are still pending. Their environment variables are listed so future phases have stable names.
 
-The versioned feedback endpoint is present, but durable feedback retention is disabled by default. With `LISTING_FEEDBACK_RETENTION_ENABLED=false`, the endpoint validates the review payload and returns the computed outcome without writing `listing_assets`, `listing_analysis_runs`, `listing_reviews`, or legacy `listing_title_feedback` rows; this prevents agent tests and manual tests from becoming training data. When retention is explicitly enabled for commercial operation, it saves `ACCEPTED_UNCHANGED`, server-computed field diffs, title-only overrides, object paths and content hashes, provider/version metadata, traces, and review duration. A pending `TARGETED_RESCAN_REQUIRED` route is not treated as recovered; only a post-rescan resolved result with recovery evidence can save `TARGETED_RESCAN_RECOVERED`. Approved-memory retrieval is also disabled by default and requires `LISTING_APPROVED_MEMORY_ENABLED=true`.
+The versioned feedback endpoint is present, but durable feedback retention is disabled by default. With `LISTING_FEEDBACK_RETENTION_ENABLED=false`, the endpoint validates the review payload and returns the computed outcome without writing `listing_assets`, `listing_analysis_runs`, `listing_reviews`, or legacy `listing_title_feedback` rows; this prevents agent tests and manual tests from becoming training data. `LISTING_FEEDBACK_RETENTION_ENABLED` and `LISTING_APPROVED_MEMORY_ENABLED` are Founder/ops switches on Vercel, not a code release. Enabling them does not authorize a commercial-readiness claim. The only evidence that may claim commercial readiness is a non-empty held-out commercial split that passes `commercial_acceptance_gate`. When retention is explicitly enabled for commercial operation, it saves `ACCEPTED_UNCHANGED`, server-computed field diffs, title-only overrides, object paths and content hashes, provider/version metadata, traces, and review duration. A pending `TARGETED_RESCAN_REQUIRED` route is not treated as recovered; only a post-rescan resolved result with recovery evidence can save `TARGETED_RESCAN_RECOVERED`. Approved-memory retrieval is also disabled by default and requires `LISTING_APPROVED_MEMORY_ENABLED=true`.
 
 The publishing boundary now exists under `lib/listing/publishing/` and `POST /api/listing-publish-draft`. It accepts only approved `ListingDraft` payloads, uses idempotency keys, writes publish audit jobs, supports bounded retry, and publishes only to a mock B-end adapter until real B-end API documentation exists. The frontend exposes this only after a retained review save returns a server-approved review id, operator id, and `approved_at`; skipped feedback-retention responses do not unlock mock publishing. It sends `dry_run: true` to the mock destination and never publishes raw AI output directly.
 
@@ -220,7 +220,7 @@ Rate-limit defaults can be overridden globally with `API_RATE_LIMIT_WINDOW_MS`, 
 
 Provider responses normalize token usage, image counts, provider-call counts, and latency into the API `usage` object. `estimated_cost_usd` remains `0` unless the relevant per-million token or per-image cost variables are configured.
 
-The memory write path is implemented but gated. In the current non-commercial phase, the feedback endpoint can accept and validate review payloads without persisting memory rows. Commercial memory writes require `LISTING_FEEDBACK_RETENTION_ENABLED=true`.
+The memory write path is implemented but gated. In the current non-commercial phase, the feedback endpoint can accept and validate review payloads without persisting memory rows. Commercial memory writes require the Founder/ops Vercel switch `LISTING_FEEDBACK_RETENTION_ENABLED=true`. That switch is not flipped by merging code.
 
 The feedback endpoint requires the existing signed internal session and derives `operator_id` from that session before writing review rows. Requests without a valid session are rejected before any Supabase write.
 
@@ -262,17 +262,23 @@ Validate the Golden Dataset development fixture and metric report:
 npm run eval:golden
 ```
 
-The default dataset contains development-only metric fixtures. The held-out commercial split is intentionally empty, so `eval:golden` must keep warning that the report is not commercial acceptance evidence. The JSON report now separates legacy all-split diagnostics from true commercial evidence:
+The default dataset contains development-only metric fixtures. The held-out commercial split is intentionally empty, so `eval:golden` must keep warning that the report is not commercial acceptance evidence. Use `--require-commercial-gate` only when judging commercial evidence; that flag exits non-zero on an empty or failing held-out split. The JSON report now separates legacy all-split diagnostics from true commercial evidence:
 
 - `all_configured_splits_evidence` keeps development/calibration/held-out diagnostics together for regression tracking.
 - `held_out_commercial_evidence` is the only metric scope intended for commercial acceptance claims.
 - `commercial_acceptance_gate` fails unless held-out commercial assets exist, all held-out predictions are present, the configured strata are covered, and the acceptance thresholds are met.
 
-Build a commercial held-out dataset from real approved review exports:
+Build a commercial held-out dataset from operator-retained evaluation, then from a retention-enabled SQL export if Founder has turned that switch on:
+
+```bash
+npm run eval:reviewed-field-accuracy -- --labels exports/reviewed-ground-truth.json --predictions exports/provider-report.json
+npm run commercial:heldout -- --reviewed-ground-truth exports/reviewed-ground-truth.json --provider-report exports/provider-report.json --out data/golden-dataset.commercial.json --replace
+npm run eval:golden -- --dataset data/golden-dataset.commercial.json --require-commercial-gate
+```
 
 ```bash
 npm run commercial:heldout -- --source exports/commercial-reviews.json --out data/golden-dataset.commercial.json --replace
-npm run eval:golden -- --dataset data/golden-dataset.commercial.json
+npm run eval:golden -- --dataset data/golden-dataset.commercial.json --require-commercial-gate
 ```
 
 `supabase/queries/export_commercial_heldout_reviews.sql` is a read-only template for producing the source JSON from approved `listing_reviews` rows. The source export may be an array, or an object with `rows`, `reviews`, `items`, or `data`. Each row should include asset, analysis, and review sections with safe Supabase object paths, generated resolved fields, corrected resolved fields, and explicit final-title quality booleans. The builder stores generated fields under `prediction.resolved_fields` and corrected reviewer fields under `ground_truth_fields`, so model mistakes remain visible instead of being hidden by the final approved title. By default, rejected rows or duplicate assets make the command fail before writing the output; use `--allow-rejections` only after reviewing the printed rejection reasons.
@@ -299,7 +305,9 @@ Run the commercial readiness audit:
 npm run readiness:audit
 ```
 
-The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets`, `commercial_acceptance_gate`, provider default policy, mock-only publishing status, and external retrieval live-smoke evidence. GPT-5 mini is the default and only automatic listing vision provider.
+The default result is expected to exit non-zero until real commercial evidence exists. The audit reports `held_out_commercial_assets` and `commercial_acceptance_gate`. An empty held-out commercial split fails the commercial gate. Green CI is not accuracy proof. `LISTING_FEEDBACK_RETENTION_ENABLED` and `LISTING_APPROVED_MEMORY_ENABLED` are Founder/ops Vercel switches, not a code release.
+
+Listing Copilot's live vocabulary still treats `Set` and `Search Optimization` as canonical. CSM v3 (15 fields) has already made those non-canonical; that live vocabulary is superseded and is not "fixed" in this engineering path.
 
 The commercial evaluator uses `lib/listing/evaluation/title-acceptance-policy.mjs` for `final_title_required_fields` and `final_title_unsubstantiated_fields`. This lets held-out commercial rows accept non-standard but factually correct titles while still failing wrong names, wrong color/parallel, missing serials, wrong grades, and conflicting critical fields.
 
