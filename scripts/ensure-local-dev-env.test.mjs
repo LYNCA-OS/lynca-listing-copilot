@@ -48,4 +48,13 @@ const second = runEnsure();
 assert.equal(second, ".env.local already present");
 assert.equal(readFileSync(localPath, "utf8"), localSource);
 
+const environment = JSON.parse(readFileSync(join(root, ".cursor/environment.json"), "utf8"));
+assert.match(
+  String(environment.start || ""),
+  /\[ ! -f \.env\.local \]; then cp \.env\.example \.env\.local/,
+  "start must still create .env.local when the bootstrap script is not checked out yet"
+);
+assert.equal(environment.install, "npm ci --no-audit --no-fund");
+assert.equal(environment.terminals?.[0]?.command, "npm run dev");
+
 console.log("ensure-local-dev-env tests passed");

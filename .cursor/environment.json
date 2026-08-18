@@ -1,6 +1,6 @@
 {
   "install": "npm ci --no-audit --no-fund",
-  "start": "node scripts/ensure-local-dev-env.mjs",
+  "start": "if [ -f scripts/ensure-local-dev-env.mjs ]; then node scripts/ensure-local-dev-env.mjs; elif [ ! -f .env.local ]; then cp .env.example .env.local; fi",
   "terminals": [
     {
       "name": "Listing Copilot",
