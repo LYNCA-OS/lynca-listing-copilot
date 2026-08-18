@@ -41,6 +41,7 @@ these writers do not publish.
 25. `integrations/ebay-browse-readiness.md`
 26. `operations/workflow-readiness-audit.md`
 27. `compliance/recognition-dependencies.md`
+28. `architecture/cos-62-pai-evidence-pack-2026-08-18.md`
 
 ## Foundation
 
@@ -149,6 +150,10 @@ Identity Resolution state object, conflict graph, field uncertainty, and `CONFIR
 ### `architecture/phase-17-recognition-r2-geometry-quality-2026-06-23.md`
 
 Recognition Worker R2 geometry, glare, quality, region proposal, and worker-level eval entry.
+
+### `architecture/cos-62-pai-evidence-pack-2026-08-18.md`
+
+PAI comparison for COS-62: fetched origin/main SHAs, capability table, missing-capability and duplicate-responsibility maps, a recommendation that Listing Copilot consume a versioned Runtime package/API while Production authority stays on Listing Copilot origin/main, migration/rollback, and the selection gate. Not a Founder decision. Does not authorize deletion, cutover, or schema migration.
 
 ## Recognition
 
