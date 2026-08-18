@@ -9,8 +9,13 @@ function argValue(name, fallback) {
   return process.argv[index + 1] || fallback;
 }
 
+function hasFlag(name) {
+  return process.argv.includes(name);
+}
+
 const datasetPath = resolve(argValue("--dataset", process.env.GOLDEN_DATASET_PATH || "data/golden-dataset.json"));
 const reportPath = argValue("--report", process.env.GOLDEN_EVAL_REPORT_PATH || "");
+const requireCommercialGate = hasFlag("--require-commercial-gate");
 
 if (!existsSync(datasetPath)) {
   console.error(`Golden dataset not found: ${datasetPath}`);
@@ -176,3 +181,8 @@ console.log(`glare_impact: ${formatGlareImpact(report.glare_impact)}`);
 console.log(`retrieval_provider_gains: ${formatRetrievalProviderGains(report.retrieval_provider_gains)}`);
 console.log(`vision_provider_comparison: ${formatVisionProviderComparison(report.vision_provider_comparison)}`);
 report.warnings.forEach((warning) => console.log(`warning: ${warning}`));
+
+if (requireCommercialGate && !report.commercial_acceptance_gate.passed) {
+  console.error("Commercial acceptance gate did not pass. This is not commercial readiness evidence.");
+  process.exit(1);
+}

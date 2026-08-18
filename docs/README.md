@@ -41,6 +41,7 @@ these writers do not publish.
 25. `integrations/ebay-browse-readiness.md`
 26. `operations/workflow-readiness-audit.md`
 27. `compliance/recognition-dependencies.md`
+28. `architecture/cos-62-pai-evidence-pack-2026-08-18.md`
 
 ## Foundation
 
@@ -116,7 +117,7 @@ ListingDraft contract, approval gate, mock B-end publisher, idempotency, retry, 
 
 ### `architecture/phase-9-commercial-readiness-audit-2026-06-22.md`
 
-Machine-readable commercial readiness audit covering held-out commercial evidence, legacy vision provider smoke, provider default safety, mock-only publishing, and external retrieval validation gaps.
+Machine-readable commercial readiness audit. After the 2026-08-08 thick-path retirement it judges the held-out commercial split, records that retention/memory flags are Founder/ops Vercel switches, and keeps an empty split failed. It does not invent retired smoke evidence.
 
 ### `architecture/phase-10-delivery-report-2026-06-22.md`
 
@@ -149,6 +150,10 @@ Identity Resolution state object, conflict graph, field uncertainty, and `CONFIR
 ### `architecture/phase-17-recognition-r2-geometry-quality-2026-06-23.md`
 
 Recognition Worker R2 geometry, glare, quality, region proposal, and worker-level eval entry.
+
+### `architecture/cos-62-pai-evidence-pack-2026-08-18.md`
+
+PAI comparison for COS-62: fetched origin/main SHAs, capability table, missing-capability and duplicate-responsibility maps, a recommendation that Listing Copilot consume a versioned Runtime package/API while Production authority stays on Listing Copilot origin/main, migration/rollback, and the selection gate. Not a Founder decision. Does not authorize deletion, cutover, or schema migration.
 
 ## Recognition
 

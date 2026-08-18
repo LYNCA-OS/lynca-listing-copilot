@@ -13,6 +13,8 @@ The audit is intentionally strict: when the held-out commercial split is empty, 
 - `scripts/commercial-readiness-audit.mjs`
 - `scripts/commercial-readiness-audit.test.mjs`
 
+The 2026-08-08 thick-path retirement deleted those scripts with the superseded recognition path. They are restored here as a current-main engineering gate: held-out commercial evidence, Founder/ops retention-switch documentation, and mock-only publishing. Retired Brave/eBay/OWS smoke files are not reintroduced.
+
 ## Audit Checks
 
 The audit reads current repo evidence and reports independent checks:
@@ -58,10 +60,11 @@ npm run readiness:audit -- --dataset data/golden-dataset.commercial.json
 The current workspace result is expected to be blocked:
 
 - `held_out_commercial` is empty.
-- legacy vision provider JSON baseline, front/back multi-image JSON, controlled tool-call output, and provider-error behavior are live-smoke verified in the latest local report.
-- GPT-4.1 is visible only as an explicit emergency action and is not selected by default.
-- Publishing is approval-gated, but only the mock B-end destination exists.
-- External retrieval providers have skipped reports in this local workspace, so they still need credentialed live smoke evidence.
+- `npm run readiness:audit` exits non-zero on that empty split.
+- `LISTING_FEEDBACK_RETENTION_ENABLED` and `LISTING_APPROVED_MEMORY_ENABLED` remain Founder/ops Vercel switches and default false. They are not a code release and are not commercial evidence.
+- Publishing remains mock-only / absent from the deployable tree after the 2026-08-08 thick-path retirement. That is not commercial readiness evidence.
+
+The thick-path smoke checks (legacy vision provider live smoke, Brave/eBay/OWS retrieval smoke) were retired with the superseded recognition path. Restoring them here would invent evidence the current tree cannot produce. The commercial gate is the held-out split.
 
 ## Acceptance Boundary
 
@@ -69,6 +72,13 @@ This audit can only declare commercial readiness when blockers are removed by re
 
 - Import a real held-out commercial dataset through `npm run commercial:heldout`.
 - Pass `commercial_acceptance_gate` on the held-out split.
-- Keep legacy vision provider as the default provider and GPT-4.1 as explicit emergency only.
-- Add and validate a real B-end adapter from actual API documentation.
-- Produce complete live smoke evidence for the configured external retrieval providers.
+- An empty held-out commercial split must keep failing the gate.
+
+Operator-retained evaluation does not require production retention:
+
+```bash
+npm run eval:reviewed-field-accuracy -- --labels <reviewed-ground-truth-v1.json> --predictions <provider-report.json>
+npm run commercial:heldout -- --reviewed-ground-truth <reviewed-ground-truth-v1.json> --provider-report <provider-report.json> --out data/golden-dataset.commercial.json --replace
+npm run eval:golden -- --dataset data/golden-dataset.commercial.json --require-commercial-gate
+npm run readiness:audit -- --dataset data/golden-dataset.commercial.json
+```

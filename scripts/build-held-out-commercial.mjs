@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import {
   buildHeldOutCommercialItems,
   buildHeldOutCommercialItemsFromReviewedEvaluation,
+  buildHeldOutCommercialItemsFromReviewedGroundTruth,
   mergeHeldOutCommercialItems,
   normalizeCommercialHeldoutRows
 } from "../lib/listing/evaluation/commercial-heldout-builder.mjs";
@@ -23,16 +24,19 @@ function printUsage() {
     "Usage:",
     "  npm run commercial:heldout -- --source <reviews-export.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
     "  npm run commercial:heldout -- --reviewed <reviewed-manifest.json> --provider-report <provider-eval.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
+    "  npm run commercial:heldout -- --reviewed-ground-truth <reviewed-ground-truth-v1.json> --provider-report <provider-eval.json> --out <dataset-out.json> [--dataset data/golden-dataset.json] [--replace]",
     "",
     "Options:",
     "  --source                         JSON export containing approved review rows.",
     "  --reviewed                       Reviewed commercial manifest with operator-approved ground_truth.",
-    "  --provider-report                Provider evaluation report for the reviewed manifest.",
+    "  --reviewed-ground-truth          Operator-retained reviewed-ground-truth-v1 labels.",
+    "  --provider-report                Provider evaluation report for the reviewed labels/manifest.",
     "  --dataset                        Base golden dataset path. Defaults to data/golden-dataset.json.",
     "  --out                            Output dataset path. Required; use an explicit path to avoid accidental overwrite.",
     "  --replace                        Replace the existing held_out_commercial split instead of appending.",
     "  --allow-rejections               Continue when some rows/items are rejected.",
     "  --allow-derived-title-flags      Derive title quality booleans when explicit reviewer flags are absent.",
+    "  --allow-development-labels       Admit reviewed-ground-truth items that are not marked commercial_heldout. Engineering dry-run only; cannot authorize a commercial claim.",
     "  --require-gate-pass              Exit non-zero unless the commercial acceptance gate passes."
   ].join("\n"));
 }
@@ -75,6 +79,10 @@ function gateSummary(gate = {}) {
 
 const sourceArg = argValue("--source", process.env.COMMERCIAL_HELDOUT_SOURCE || "");
 const reviewedArg = argValue("--reviewed", process.env.COMMERCIAL_REVIEWED_MANIFEST || "");
+const reviewedGroundTruthArg = argValue(
+  "--reviewed-ground-truth",
+  process.env.COMMERCIAL_REVIEWED_GROUND_TRUTH || ""
+);
 const providerReportArg = argValue("--provider-report", process.env.COMMERCIAL_PROVIDER_EVAL || "");
 const datasetArg = argValue("--dataset", process.env.GOLDEN_DATASET_PATH || "data/golden-dataset.json");
 const outArg = argValue("--out", process.env.COMMERCIAL_HELDOUT_OUT || "");
@@ -91,18 +99,25 @@ if (!outArg) {
   process.exit(1);
 }
 
-if (sourceArg && (reviewedArg || providerReportArg)) {
-  console.error("Use either --source or --reviewed/--provider-report, not both.");
+const inputModes = [sourceArg, reviewedArg, reviewedGroundTruthArg].filter(Boolean);
+if (inputModes.length > 1) {
+  console.error("Use only one of --source, --reviewed, or --reviewed-ground-truth.");
   process.exit(1);
 }
 
-if (!sourceArg && (!reviewedArg || !providerReportArg)) {
+if (sourceArg && providerReportArg) {
+  console.error("Use either --source or a reviewed labels path with --provider-report, not both.");
+  process.exit(1);
+}
+
+if (!sourceArg && !((reviewedArg || reviewedGroundTruthArg) && providerReportArg)) {
   printUsage();
   process.exit(1);
 }
 
 const sourcePath = sourceArg ? resolve(sourceArg) : "";
 const reviewedPath = reviewedArg ? resolve(reviewedArg) : "";
+const reviewedGroundTruthPath = reviewedGroundTruthArg ? resolve(reviewedGroundTruthArg) : "";
 const providerReportPath = providerReportArg ? resolve(providerReportArg) : "";
 const datasetPath = resolve(datasetArg);
 const outPath = resolve(outArg);
@@ -119,6 +134,19 @@ try {
     sourceRows = normalizeCommercialHeldoutRows(source);
     buildResult = buildHeldOutCommercialItems(sourceRows, {
       allowDerivedTitleFlags: hasFlag("--allow-derived-title-flags")
+    });
+  } else if (reviewedGroundTruthPath) {
+    const [labels, providerReport] = await Promise.all([
+      readJsonFile(reviewedGroundTruthPath, "Reviewed ground-truth labels"),
+      readJsonFile(providerReportPath, "Provider evaluation report")
+    ]);
+    sourceRows = Array.isArray(labels.items) ? labels.items : [];
+    sourceLabel = `${reviewedGroundTruthPath} + ${providerReportPath}`;
+    mode = "reviewed_ground_truth_provider_eval";
+    buildResult = buildHeldOutCommercialItemsFromReviewedGroundTruth({
+      labels,
+      providerReport,
+      allowDevelopmentLabels: hasFlag("--allow-development-labels")
     });
   } else {
     const [reviewedManifest, providerReport] = await Promise.all([
