@@ -1,0 +1,10 @@
+{
+  "install": "npm ci --no-audit --no-fund",
+  "start": "node scripts/ensure-local-dev-env.mjs",
+  "terminals": [
+    {
+      "name": "Listing Copilot",
+      "command": "npm run dev"
+    }
+  ]
+}
