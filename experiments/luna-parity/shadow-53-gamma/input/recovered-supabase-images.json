@@ -1,0 +1,468 @@
+{
+ "schema": "gamma-53-supabase-image-recovery-v1",
+ "bucket": "listing-card-images",
+ "images": [
+  {
+   "content_sha256": "5c0f1f525f035b3f69247b83c1a344b4abe7d6ba20c527c3f1ba35dd0a510dff",
+   "asset": "gamma-training-root-b",
+   "size": 335722,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-04/asset_f487c6b7-768f-8ef6-b9e2-94ab538e7c6e/image_1_original-236aaf78-fb7b-4d9c-81a2-35a4cd6726d9.webp"
+  },
+  {
+   "content_sha256": "397514ce94791c22fa4476f708e8e98371d3bdab655000b1cc166351bbbdfe96",
+   "asset": "gamma-training-root-b",
+   "size": 222908,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-04/asset_f487c6b7-768f-8ef6-b9e2-94ab538e7c6e/image_2_original-371f5f45-cccc-4dee-a8dc-faba059f7c61.webp"
+  },
+  {
+   "content_sha256": "c58b0df51b0bba265be724f844ab3556f3c309db6050da1eeeeb8dc4c0957450",
+   "asset": "gamma-training-c-b",
+   "size": 490312,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_1b983665-2603-8dc7-9b57-db6848a3fcab/image_1_original-381f377f-3132-45d3-adbe-7908469f4fd9.webp"
+  },
+  {
+   "content_sha256": "ab446d61b0174c2537e25456c8679a2f9608b3416fb2aa895b24d345591c3b9f",
+   "asset": "gamma-training-c-b",
+   "size": 531058,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_1b983665-2603-8dc7-9b57-db6848a3fcab/image_2_original-2db94a52-9104-4f8e-835e-a86d653990f3.webp"
+  },
+  {
+   "content_sha256": "5da1151e7ac54e2b337463daaaa4c338da37c4d0c9666d2da427c6c8aa3d7c13",
+   "asset": "gamma-training-c-c",
+   "size": 329124,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_5aae4628-08ae-893e-89a7-405658d3c76a/image_1_original-5c8a193a-8551-4fc5-830a-d6308b8a4e83.webp"
+  },
+  {
+   "content_sha256": "7af8c265c0cdc70bc579d11190153187fabd5dd5c62fd4caefcdb2b3f51d301b",
+   "asset": "gamma-training-c-c",
+   "size": 311634,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_5aae4628-08ae-893e-89a7-405658d3c76a/image_2_original-52febb98-4586-42bc-b0f8-f5428345d7cb.webp"
+  },
+  {
+   "content_sha256": "eae39f4409ea59657129de0c5490e5dc75eef73e190d098f192b84a636684966",
+   "asset": "gamma-training-c-e",
+   "size": 446858,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_81dff75e-15ac-861a-b84c-76caa6d23593/image_1_original-07a82e96-4847-404d-9c79-140a24946e5b.webp"
+  },
+  {
+   "content_sha256": "504cec8d2e8f11e56a09d3d1e24acc3a958a2f171db31ecfa3ce3b3ba44b2b32",
+   "asset": "gamma-training-c-e",
+   "size": 321812,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_81dff75e-15ac-861a-b84c-76caa6d23593/image_2_original-f040baf9-0b82-4d93-b8e9-858f9c0dc953.webp"
+  },
+  {
+   "content_sha256": "dbc4b18a957c68753ddafeb959a570b9b9738084feeaf0e673037cbca0ccd2e6",
+   "asset": "gamma-training-a-t",
+   "size": 517262,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_b921a17c-b0d7-85d4-afe4-ac4e4b8468b7/image_1_original-379b44c7-7306-4b0d-b52d-4e47a1e8ccdc.webp"
+  },
+  {
+   "content_sha256": "c8878ffb9c14e30a7508a9fe5e18cea66cd3ba6b223f698f8a7e6d5353eeba1e",
+   "asset": "gamma-training-a-t",
+   "size": 636446,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_b921a17c-b0d7-85d4-afe4-ac4e4b8468b7/image_2_original-444d4353-12e0-437a-9043-6cebead6b96c.webp"
+  },
+  {
+   "content_sha256": "6a70b54cfdd31e0dcc93916b0f58810ed0deaed74c66e72a6445fd57c8bf948f",
+   "asset": "gamma-training-c-d",
+   "size": 422014,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_b9a84c49-2134-8d17-ba6b-a0131788535f/image_1_original-8691c688-7ac0-4533-9a8b-0eac473078d4.webp"
+  },
+  {
+   "content_sha256": "9e2af3b53ed71e5c78f80d98dd8024b080ed0c88d4b943686f692fea20130e09",
+   "asset": "gamma-training-c-d",
+   "size": 299146,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_b9a84c49-2134-8d17-ba6b-a0131788535f/image_2_original-515efb4c-24b7-4526-bb17-52fde611d6d6.webp"
+  },
+  {
+   "content_sha256": "f0c5908568fa22b5a87da4585f059b482546bd7fa5b3ddb5c73682ae2903bc04",
+   "asset": "gamma-training-b-f",
+   "size": 422394,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_bbf4ddd4-2d1a-8d39-9f8a-c159981cc637/image_1_original-f25eb688-1e30-40ea-8c52-51ebf1cb188f.webp"
+  },
+  {
+   "content_sha256": "61ca2c13dec521bf57b68a15b1543fb5f357b4f09907ad53cb5032b257500302",
+   "asset": "gamma-training-b-f",
+   "size": 269578,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_bbf4ddd4-2d1a-8d39-9f8a-c159981cc637/image_2_original-03a70290-893f-4519-9f4c-f1bf27c7533c.webp"
+  },
+  {
+   "content_sha256": "90fcf0fd538b7e356972bdbcca93f3daa05927246f027dc8ea8015a3b459f36c",
+   "asset": "gamma-training-c-a",
+   "size": 598714,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_df757631-a53d-82a1-b6a6-78555792fc43/image_1_original-8874e007-285b-4d84-96db-2c0f9f831b82.webp"
+  },
+  {
+   "content_sha256": "ccb52047ac2dd558d76d024401eb0c68848bff50ab296b93c38b1825f7c06a31",
+   "asset": "gamma-training-c-a",
+   "size": 377152,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_df757631-a53d-82a1-b6a6-78555792fc43/image_2_original-13b7c504-86e0-4e61-8301-0eec562371fb.webp"
+  },
+  {
+   "content_sha256": "468a37dbf55bd07604e22e3c4d6ecd5b7eb785e9245652419a9fc860c3788fc3",
+   "asset": "gamma-training-b-j",
+   "size": 440674,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_ebef1bc2-4036-8d5d-bb30-37a5173b55b8/image_1_original-6c2519e9-35f6-4949-9db7-3d7c138c42f7.webp"
+  },
+  {
+   "content_sha256": "f06f0309db1cd842535dd37e1384ee7716a361e4b43acd2f11190d4a45176dd2",
+   "asset": "gamma-training-b-j",
+   "size": 280522,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-11/asset_ebef1bc2-4036-8d5d-bb30-37a5173b55b8/image_2_original-b18d4157-21f5-49a3-a625-0eae923312fc.webp"
+  },
+  {
+   "content_sha256": "efc25769dc86d0e25e6f8864c5388326aa7681d87bfdbf3663e5085560b70aba",
+   "asset": "gamma-training-a-c",
+   "size": 479420,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_0aaf7b81-9872-86d2-a595-c485524f1a74/image_1_original-1d908af0-7c92-4328-a718-fff51ccbabc0.webp"
+  },
+  {
+   "content_sha256": "b8adc3d9266a665c191e55237faf247e979e8b629e4191315f899a5ec2c4fbff",
+   "asset": "gamma-training-a-c",
+   "size": 456832,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_0aaf7b81-9872-86d2-a595-c485524f1a74/image_2_original-a7ab1f73-305b-4892-8718-40bf2496d2fc.webp"
+  },
+  {
+   "content_sha256": "39df62bdead8a9204c703dd79e0367f2bdab20937e082b8cbc18a40759eb0e7e",
+   "asset": "gamma-training-a-s",
+   "size": 503470,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_2742c64a-7401-8119-bc76-b44670874560/image_1_original-4dd081b2-1a0e-4cb3-bab4-895915599746.webp"
+  },
+  {
+   "content_sha256": "cef0fd575ad3a0eb3c3ce6244b9bfc37cc33abb9bb76920703d9ca350693cf8c",
+   "asset": "gamma-training-a-s",
+   "size": 466542,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_2742c64a-7401-8119-bc76-b44670874560/image_2_original-0150c3a5-a64b-4ff3-8a4b-2572dafd392a.webp"
+  },
+  {
+   "content_sha256": "f053e9161a39e9f6328c053631f57ff3d0d4827f6c0b29c0960f4f3b0c2c0ff6",
+   "asset": "gamma-training-c-w",
+   "size": 494028,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_31ca833f-a441-8a4b-8fbf-4a0443320491/image_1_original-97eeac6c-75b1-4701-bf0c-0ceea500ca18.webp"
+  },
+  {
+   "content_sha256": "f62b593be02e37698d944baa207e973d165c6eac9d7a543e430fb451b63fc666",
+   "asset": "gamma-training-c-w",
+   "size": 374130,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_31ca833f-a441-8a4b-8fbf-4a0443320491/image_2_original-730d84cd-e2f8-459a-bbee-a5b937b37b84.webp"
+  },
+  {
+   "content_sha256": "e05f77a812b18924343c71724dd514619e82e612f7b9fa1ac97190e25ad4c263",
+   "asset": "gamma-training-b-c",
+   "size": 374664,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_34b9d033-815d-8b58-9a0d-158780ba7d60/image_1_original-c8e1878a-f11b-41a6-a290-ffd194686f1e.webp"
+  },
+  {
+   "content_sha256": "ef60eb18e8263f69655ed3f08d21942e8f1c983eff3d0c1a96948264340386d1",
+   "asset": "gamma-training-b-c",
+   "size": 260736,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_34b9d033-815d-8b58-9a0d-158780ba7d60/image_2_original-0b8d8212-3ef2-4abb-b0ad-c9a56b71cdf6.webp"
+  },
+  {
+   "content_sha256": "f43890d5f575c2c78813a68a2989f2fa06069fbe677259d79dcec2b39c159099",
+   "asset": "gamma-training-a-n",
+   "size": 351332,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_38ad02ab-2b95-857f-bf82-e1b0c71d581b/image_1_original-15b5bb71-6002-493d-8aac-3c5620449326.webp"
+  },
+  {
+   "content_sha256": "c94a7509a145405d3b357bba6d0205bdccacde060ea64900f3ea43ff25171e57",
+   "asset": "gamma-training-a-n",
+   "size": 446104,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_38ad02ab-2b95-857f-bf82-e1b0c71d581b/image_2_original-ee01676d-64de-467a-826e-117bec2f26f5.webp"
+  },
+  {
+   "content_sha256": "cd1d997bc0b9b8a552a9bcfda62f7d486336f4519f1fd982039c6b7f98dc5e2e",
+   "asset": "gamma-training-a-m",
+   "size": 383032,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_3d23fee4-e007-8aca-bdc0-9014c0c37b27/image_1_original-a71df7e7-1ae5-4ea3-8d18-9d35f1ac2893.webp"
+  },
+  {
+   "content_sha256": "42ed50873941085fd1fed80429849bea835e1a58d52b0bb80645640599fc6684",
+   "asset": "gamma-training-a-m",
+   "size": 462628,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_3d23fee4-e007-8aca-bdc0-9014c0c37b27/image_2_original-b0b8bcba-cc89-4fd6-aa26-44295404f912.webp"
+  },
+  {
+   "content_sha256": "43dc52df5fe72f4ccf5f3bd9129b481e9964ed170ec12f5fd3e7cc67bfb97ceb",
+   "asset": "gamma-training-a-k",
+   "size": 429720,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_58f1531e-e288-8103-864d-6dfec6cd6887/image_1_original-e5e9ce94-5cf1-442b-89a0-f56b5b777371.webp"
+  },
+  {
+   "content_sha256": "6a7e7c7819c0404c09e62c41c310a607c6da9fe927d52b8338eb73f373b86bbc",
+   "asset": "gamma-training-a-k",
+   "size": 421256,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_58f1531e-e288-8103-864d-6dfec6cd6887/image_2_original-5c233546-b5dd-452c-b4d8-a78cbaa04704.webp"
+  },
+  {
+   "content_sha256": "9548809f8707d66523a4b007acb6ecfbe9d47f1e5cb9f3a326b47e42918d76a3",
+   "asset": "gamma-training-a-p",
+   "size": 480098,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_5b3f8e32-4479-801d-a9ea-9f5032b34957/image_1_original-7c808da9-3f7a-4902-a833-99d2ed402011.webp"
+  },
+  {
+   "content_sha256": "a842b66ba2de1df235dbf5b620df3d045329dabce1843d6e2ea57f872eca29d1",
+   "asset": "gamma-training-a-p",
+   "size": 423870,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_5b3f8e32-4479-801d-a9ea-9f5032b34957/image_2_original-a50eed27-d249-4025-bdc9-4ba66f1a6afa.webp"
+  },
+  {
+   "content_sha256": "7662996fada39d8fd51a094f64818408fbc26a74c890e4dbd07054fbc92476d9",
+   "asset": "gamma-training-b-h",
+   "size": 599174,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_65a1d833-25c9-8963-a79c-f85496f54ad1/image_1_original-5504b83a-9b36-4f08-8618-3bb16cba543c.webp"
+  },
+  {
+   "content_sha256": "e1e6e7e84a08cbae1fbab7428a6e53be8d57eb14a1f7cac1fe44a3a7406fa359",
+   "asset": "gamma-training-b-h",
+   "size": 476288,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_65a1d833-25c9-8963-a79c-f85496f54ad1/image_2_original-a0b8a30d-fe8d-4a2b-8523-8eb04e4aee5b.webp"
+  },
+  {
+   "content_sha256": "53a5ff32e75e4805042823bb41acbb22dad200d2de0b01e289d4da4abd742c36",
+   "asset": "gamma-training-a-e",
+   "size": 697756,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_70762392-6b38-83d7-b63c-374fe84d652e/image_1_original-43d2f88b-a193-4083-a354-58face0103be.webp"
+  },
+  {
+   "content_sha256": "dc042f3d94e3ecab98add380a1ca87b6eeba0a2f50fc174283cb6ba603476694",
+   "asset": "gamma-training-a-e",
+   "size": 408804,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_70762392-6b38-83d7-b63c-374fe84d652e/image_2_original-e1959030-126b-4daa-9016-a216b25650ae.webp"
+  },
+  {
+   "content_sha256": "5d1d761f09a95d5fed4cad7130caaff7664c0b0d60ba4c35dad09560ca41b960",
+   "asset": "gamma-training-c-v",
+   "size": 379326,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_710511a4-7e99-8568-8190-9d86ff41dec3/image_1_original-6d62bd5f-0171-41e5-ad75-0b5bd3231d4e.webp"
+  },
+  {
+   "content_sha256": "5af40617ac506d7ab9bf94c7751deafac87add7b75d800478309948cba6f146b",
+   "asset": "gamma-training-c-v",
+   "size": 488208,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_710511a4-7e99-8568-8190-9d86ff41dec3/image_2_original-9f456000-53df-490e-a438-ea435f20d836.webp"
+  },
+  {
+   "content_sha256": "259b8577ff7d58833dbeedd1b5a0b8c6744f865d9d52de730071dbb328c48dac",
+   "asset": "gamma-training-a-f",
+   "size": 632156,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_76a2668a-eb5e-8bd0-809c-85b820d70721/image_1_original-ea80e8d8-11f5-4be0-b56b-48235997ae74.webp"
+  },
+  {
+   "content_sha256": "70e98730a1140829f8610382342c1aad69fb19509e12267184b9546715fab816",
+   "asset": "gamma-training-a-f",
+   "size": 418192,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_76a2668a-eb5e-8bd0-809c-85b820d70721/image_2_original-0499e98f-c1c8-4fe3-9392-78f01e1cf164.webp"
+  },
+  {
+   "content_sha256": "ceb5b99955b786e36b0edcf96db58bc6b908ed5cfb5536f8a64315f00f0a7dd7",
+   "asset": "gamma-training-a-l",
+   "size": 478536,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_773f8752-f8d9-8a51-892d-e240581e6209/image_1_original-040da5e9-21b0-4283-a6d6-65634b091944.webp"
+  },
+  {
+   "content_sha256": "a471a1bf2cb460b207c0c1e71d53bab3e7b2825814d3edaf2414fdee119b7f90",
+   "asset": "gamma-training-a-l",
+   "size": 428810,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_773f8752-f8d9-8a51-892d-e240581e6209/image_2_original-e7290188-20af-4e10-89ee-5be09d10d433.webp"
+  },
+  {
+   "content_sha256": "4a5bb84e68db53a64a65ea643d1a98dafbe1d024df0a173de3ec49fd0819b9e2",
+   "asset": "gamma-training-a-b",
+   "size": 552612,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_7a019c11-bd88-8be9-ac40-0bbc1cab5cd5/image_1_original-889ff808-ce1b-4adf-992b-be5dc260f754.webp"
+  },
+  {
+   "content_sha256": "46043dda5ae54eb6159a6b8c140cc7379b6104b3084b2244072c6bd4f0f0bd35",
+   "asset": "gamma-training-a-b",
+   "size": 419854,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_7a019c11-bd88-8be9-ac40-0bbc1cab5cd5/image_2_original-91fc5946-11ca-4717-a77c-a41b15531c48.webp"
+  },
+  {
+   "content_sha256": "9fbbac43ebebccd17687546762d5055816462b17a3316034504586bef95876f0",
+   "asset": "gamma-training-c-x",
+   "size": 477008,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_83e3dde4-b1c0-85ce-b835-c40e3b406469/image_1_original-22c57b9a-b19f-4bc5-8ef1-f98ed8882079.webp"
+  },
+  {
+   "content_sha256": "c39604658dd80867a7b949f8be9078db90952049cdfa55f809f1ce993cf499d3",
+   "asset": "gamma-training-c-x",
+   "size": 462658,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_83e3dde4-b1c0-85ce-b835-c40e3b406469/image_2_original-8172b4a9-19f9-4cb5-ae13-b1ceebd5394e.webp"
+  },
+  {
+   "content_sha256": "32f6533242a986720456cf187cdf5e0b438d5d277fe3eb5c799b6f8d4ac6206b",
+   "asset": "gamma-training-a-d",
+   "size": 672306,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_9a06572d-e475-8283-a2a3-91e0e1dfe1c1/image_1_original-756df595-2b67-4c6f-9f82-6fbddd557d93.webp"
+  },
+  {
+   "content_sha256": "bbc21e27ba02e47f1f93cb66b16228790ace6e7ce140470742134c35c8666265",
+   "asset": "gamma-training-a-d",
+   "size": 406520,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_9a06572d-e475-8283-a2a3-91e0e1dfe1c1/image_2_original-4b87aa4a-8074-4c23-8561-a1064253d10c.webp"
+  },
+  {
+   "content_sha256": "49a8a1c24eae0b1ed0a69fac384a5443810fbc4652839edc2b4a810ad6a602b3",
+   "asset": "gamma-training-a-h",
+   "size": 666084,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_9bc81609-361b-8f9a-a6c0-26784d0e8279/image_1_original-6afb63a9-2b39-4f55-a479-49b0d8e0b566.webp"
+  },
+  {
+   "content_sha256": "278364a36f0f49011c02ffe4db956888f947b56867da4f90155a82f0e00707f2",
+   "asset": "gamma-training-a-h",
+   "size": 431704,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_9bc81609-361b-8f9a-a6c0-26784d0e8279/image_2_original-60234162-ebb8-4cb9-aac6-1c7251501703.webp"
+  },
+  {
+   "content_sha256": "4e80bf7fcc3f8cd6dcd8817ce31673a6f806883ccf7e00cad164bcf4c746a8ec",
+   "asset": "gamma-training-a-i",
+   "size": 441142,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_b7425e63-3b64-8029-8789-fc84dbf32f4d/image_1_original-41930921-9a74-4bf0-a9cb-7c807bc0e034.webp"
+  },
+  {
+   "content_sha256": "d3bffb8a08eb591519c2387aa3717dbc20eeb60c057fe2fae9a15365f8ae1f3b",
+   "asset": "gamma-training-a-i",
+   "size": 426356,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_b7425e63-3b64-8029-8789-fc84dbf32f4d/image_2_original-47eb7ec8-6b8d-4206-8d49-aad24172f0be.webp"
+  },
+  {
+   "content_sha256": "748295211fc2bd81afa339f54feb4ee92cd5ba8352faf245d6097812d92643e1",
+   "asset": "gamma-training-a-j",
+   "size": 427722,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_bf24de1a-8983-882f-b1dd-fef8fd89c338/image_1_original-57f82ecc-9a61-4f3b-9a15-b649220e22cb.webp"
+  },
+  {
+   "content_sha256": "9a75ea453d064428f1869e620fc0208c61fb5ff5567c6f7e6a1ec3e087907cbd",
+   "asset": "gamma-training-a-j",
+   "size": 460116,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_bf24de1a-8983-882f-b1dd-fef8fd89c338/image_2_original-11958730-2995-45b2-803d-02157e7eba11.webp"
+  },
+  {
+   "content_sha256": "fdc81706a72fdef2828e8492575604dc6547085e6fe762104ff225b329f5c592",
+   "asset": "gamma-training-a-r",
+   "size": 561294,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_c73d3bda-60e5-8e72-9251-920341c56c4e/image_1_original-1bcb674d-0667-4800-a739-27d113c190e8.webp"
+  },
+  {
+   "content_sha256": "1c9d5acdd8d0fbb4b5e8f0379b3ee0daadd7c8d2c5b2c6fe8349bb4e4dc5d799",
+   "asset": "gamma-training-a-r",
+   "size": 470898,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_c73d3bda-60e5-8e72-9251-920341c56c4e/image_2_original-499817b8-0fdb-430c-aa74-4a2632d60b73.webp"
+  },
+  {
+   "content_sha256": "88e698c66be937b9c7c8567780a247e40553f7405eeec6213e5fb2b4e5b2cfb1",
+   "asset": "gamma-training-a-o",
+   "size": 586880,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_d3260226-6958-8106-a51c-5ff4560a008a/image_1_original-f32d6bd3-6189-4913-a433-645c1698e183.webp"
+  },
+  {
+   "content_sha256": "7ea4e360cb8da4e6d06190ed55c9bd55b25e48ce9a56fd3b440d33f86bcce665",
+   "asset": "gamma-training-a-o",
+   "size": 435778,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_d3260226-6958-8106-a51c-5ff4560a008a/image_2_original-9f579e99-b1b1-45d5-8754-8ffb586a01dd.webp"
+  },
+  {
+   "content_sha256": "3ce0276b77fc12a57d2c3164a68ade14b0bb8f17e43d1a268bcdc3c4e9f13c38",
+   "asset": "gamma-training-a-g",
+   "size": 546820,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_dc874253-a66f-87be-addb-2d17c1030256/image_1_original-b7a0fa29-0a07-476a-86bb-f563121f23db.webp"
+  },
+  {
+   "content_sha256": "8ef2322522637772d2ea4a247337a2abe34d169ff5eb42ba2f0da98f7a54e8ab",
+   "asset": "gamma-training-a-g",
+   "size": 629354,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_dc874253-a66f-87be-addb-2d17c1030256/image_2_original-86ea5e41-42f9-4e31-b7cd-d5888eca678f.webp"
+  },
+  {
+   "content_sha256": "5354a2429ff36871113df2f114ccc6aa2c15be9080397eef2a69ff1a22ec5e55",
+   "asset": "gamma-training-b-d",
+   "size": 408082,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_f748f289-98b5-880c-85f2-f1caae08e3e3/image_1_original-f4eae691-b264-4734-a46f-b9d67d0a4959.webp"
+  },
+  {
+   "content_sha256": "7067a61db8f22465310ba93acce7cb4c1cc82879359e9be6084d052d2006a29f",
+   "asset": "gamma-training-b-d",
+   "size": 292670,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_f748f289-98b5-880c-85f2-f1caae08e3e3/image_2_original-015f1681-869b-4081-9bcf-6af062398a52.webp"
+  },
+  {
+   "content_sha256": "a7e5d53a44097e5d11882c2fbf1668ec4ea5ff94128ecbd37a4450b12a1c3036",
+   "asset": "gamma-training-c-u",
+   "size": 384442,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_f794017d-265d-8445-82e9-d95f60825696/image_1_original-9e66067f-9dce-4751-b221-da3d51f4e884.webp"
+  },
+  {
+   "content_sha256": "76b5ad865ca5db77e51d6864c25ef323ab609c509c14d5de0df5029bc680f707",
+   "asset": "gamma-training-c-u",
+   "size": 532816,
+   "bucket": "listing-card-images",
+   "object_path": "tenants/tenant_legacy/listing-assets/2026-08-12/asset_f794017d-265d-8445-82e9-d95f60825696/image_2_original-831c731a-36ff-4188-84c4-471aa3707624.webp"
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+LYNCA CSM canonical field boundaries (vocabulary csm-canonical-fields-v3). These define which field a
+fact belongs in. Report each fact in its own field and nowhere else.
+
+- product: Highest-confidence supported product, series, or product-family identity; evidence-backed equivalent wording is allowed, but distinct product lines must not be collapsed.
+- card_name: Named card design or insert within Product; source labels named set are not automatically canonical; an unnamed base card has no Card Name fragment.
+- card_number: Printed checklist, collector, design, or source-set identifier; TCG slash checklist codes remain distinct from limited-edition numbering.
+- descriptive_rarity: Named scarcity designation.
+- numerical_rarity: Most precise supported production numbering anchored to the current copy; partial denominator-only values are allowed; non-TCG stamped copy/run expressions belong here.
+- release_variant: Card-facing layout, orientation, image, or named design variation; packaging and sales configurations remain auxiliary information.
+- print_finish: One supported market-recognized finish; bare color alone remains evidence unless explicit current-item or compatible verified taxonomy supports promotion.
+- grading_info: Structured grading value excluding certification number.
+- description: Governed Composer-eligible descriptors such as team or Jersey Number; bounded fragments, not free prose.
+
+A field with no supported value stays empty. An empty field is a correct answer
+when the card genuinely has nothing there; do not fill it with what the product
+usually carries.

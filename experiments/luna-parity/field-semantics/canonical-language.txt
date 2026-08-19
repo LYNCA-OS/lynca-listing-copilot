@@ -1,0 +1,81 @@
+# The canonical language
+
+Language version: `csm-canonical-fields-v3`
+
+CSM defines 15 canonical fields. The vocabulary is closed within a version: every canonical fragment belongs to one of these fields.
+
+## Identity and classification
+
+### 1. Year — `year`
+
+The collectible's issue, season, or product year. A statistics year, event date, copyright notice, or slab date is not automatically the collectible year.
+
+### 2. IP / Sport — `ip_sport`
+
+The sport, entertainment property, game, franchise, or collectible domain that gives the item its identity context.
+
+### 3. Language — `language`
+
+The language of the collectible when language is identity-relevant, especially for trading card games and international releases.
+
+### 4. Manufacturer — `manufacturer`
+
+The company that produced or published the collectible. A grading company, team, licensor, or copyright entity is not automatically the manufacturer.
+
+### 5. Product — `product`
+
+The highest-confidence supported product, series, or product-family identity under which the collectible was released, such as `Topps Chrome`, `Topps Chrome Sapphire Edition`, `Topps Cosmic Chrome`, or `Topps Definitive`. CSM does not force parent-product and child-series decomposition. A complete supported Product may retain the manufacturer name even when Manufacturer is separately populated; a Composer may remove repetition later. Alternate supported wording may be semantically equivalent when it identifies the same product identity, but superficial string overlap must never collapse distinct product lines. Packaging, distribution, and sales configurations such as `First Off The Line`, `Hobby`, `Delight`, `Retail`, `Asia`, and `Choice` are not Product or Release Variant; preserve them as recognized auxiliary Release Configuration information when supported.
+
+### 6. Subject — `subject`
+
+The person, character, object, or primary entity depicted or named as the collectible's subject. Multiple subjects may be preserved when the collectible genuinely contains them.
+
+### 7. Card Name — `card_name`
+
+The name that distinguishes this card or design within its Product. It is not the Subject, Product, parallel, or physical component. Registry and checklist sources may use the word "set"; that source label is evidence, not a CSM canonical field. Resolve its meaning into Product or Card Name only when the evidence and field meanings support that interpretation. Otherwise preserve it as auxiliary or unresolved information.
+
+A base card without a separately named design has no Card Name fragment. `Base`, `Base Card`, the Subject's name, and a checklist grouping such as `Base Cards` must not be inserted as Card Name merely to fill the field.
+
+### 8. Card Number — `card_number`
+
+The printed checklist, collector, design, or source-set identifier. It is an identity anchor for many TCG items and must remain distinct from limited-edition numbering. In TCG context, slash-form checklist codes are Card Number when the product grammar and checklist evidence support that interpretation.
+
+## Variant, rarity, and physical expression
+
+### 9. Descriptive Rarity — `descriptive_rarity`
+
+Rarity expressed through a named class or descriptive term, such as SP, SSP, Case Hit, or another supported scarcity designation.
+
+### 10. Numerical Rarity — `numerical_rarity`
+
+Rarity expressed through production quantity or limited numbering. Record the most precise value fully supported by the current evidence: `17/50` when both numbers are readable, `/50` when only the denominator is supported, and no fragment when the rarity cannot be identified. In non-TCG context, a stamped expression such as `04/10` is Numerical Rarity when it identifies the current copy within a limited production run. The numerator belongs to the current physical copy and must never be guessed or borrowed from a reference item.
+
+### 11. Release Variant — `release_variant`
+
+A card-facing layout, orientation, image, or named design variation within a supported Product identity. It is distinct from Print Finish, Descriptive Rarity, Special Stamp, and packaging or sales configuration. `First Off The Line`, `FOTL`, `Hobby`, `Delight`, `Retail`, `Asia`, and `Choice` do not belong here; preserve them as recognized auxiliary Release Configuration information when supported. A `Championship` design is Release Variant, while a physically applied championship stamp is Special Stamp.
+
+### 12. Print Finish — `print_finish`
+
+The card's highest-confidence single canonical name for its supported parallel, surface, color, foil, refractor, or other print treatment, . Bare color is recognition evidence, not automatically a canonical Print Finish. Promotion requires explicit current-item evidence or compatible, verified Registry/product-taxonomy evidence that the color alone is the recognized finish for that Product. Otherwise preserve candidates as unresolved. The recognition system may improve through focused data and training; it must not collapse an uncertain visual treatment into a confident market name.
+
+### 13. Special Stamp — `special_stamp`
+
+A meaningful printed mark that is not already captured by rarity or finish, such as a promotional, tournament, staff, prize, championship, or edition stamp.
+
+## Condition and extended expression
+
+### 14. Grading Info — `grading_info`
+
+Structured grading information. It preserves the grading company, card grade, autograph grade, and grade type separately so one grade cannot overwrite another. A grading certification number is a recognized auxiliary attribute, not Grading Info.
+
+### 15. Description — `description`
+
+A list of evidence-bound, Composer-eligible descriptive fragments governed by CSM and its Registry. Examples include `Los Angeles Lakers`, `Los Angeles Dodgers`, and `Jersey Number`. It permits bounded natural language but is not a free-text escape hatch and should remain empty when no governed descriptor is supported.
+
+`Jersey Number` may be derived when the current physical copy's supported Numerical Rarity numerator matches any recognized jersey number for the Subject. For Kobe Bryant, a governed Registry may recognize both `8` and `24`; either numerator may support `Jersey Number` regardless of which career image appears on the card. A denominator alone, such as `/24`, does not support the descriptor. Ranking and promotion priority remain future data-driven rules.
+
+## Boundary rule
+
+`set` and `search_optimization` are not canonical fields in this version. Implementation names and observations such as certification number, components, raw serial text, `parallel_exact`, OCR tokens, Registry candidates, and marketplace keywords are also non-canonical. They may support a canonical fragment, remain a recognized auxiliary attribute, or remain unresolved.
+
+Adding, removing, merging, renaming, or materially redefining a canonical field requires a new CSM language version.

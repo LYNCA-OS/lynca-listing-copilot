@@ -1,0 +1,182 @@
+{
+ "schema": "csm-source-context-score-v1",
+ "cards": 48,
+ "arms": {
+  "control": "shipped 15-clause summary prompt",
+  "treatment": "+ CSM Canonical Naming Layer criteria (verbatim, fixtures excluded)"
+ },
+ "gold": "LYNCA-OS/csmdata founder-golden-projection under acceptance-policy-v2",
+ "title_f1": {
+  "control_mean": 0.7385733042679217,
+  "treatment_mean": 0.7290461431099051,
+  "paired_mean_delta": -0.00952716115801658,
+  "wins": 12,
+  "losses": 15,
+  "ties": 21,
+  "sign_p": 0.7011080384254456
+ },
+ "typed_field": {
+  "control": {
+   "cases": 48,
+   "passed": 26,
+   "pass_rate": 0.5416666666666666,
+   "fabricated_cases": 15,
+   "absolute_failure_cases": 15,
+   "per_field": {
+    "year": {
+     "MATCH": 44,
+     "MISMATCH": 4
+    },
+    "manufacturer": {
+     "MATCH": 47,
+     "MISSED": 1
+    },
+    "product": {
+     "MATCH": 10,
+     "FOUNDER_RULED_PAIR": 8,
+     "CONTAINMENT_EQUIVALENT": 27,
+     "MISSED": 2,
+     "SEMANTIC_EQUIVALENT": 1
+    },
+    "subject": {
+     "MATCH": 47,
+     "MISSED": 1
+    },
+    "card_name": {
+     "ABSENT": 33,
+     "FABRICATED_OR_UNBACKED": 2,
+     "MISSED": 13
+    },
+    "card_number": {
+     "MATCH": 46,
+     "MISMATCH": 2
+    },
+    "print_finish": {
+     "FABRICATED_OR_UNBACKED": 2,
+     "TOLERATED_VARIANCE": 10,
+     "MISSED": 17,
+     "MATCH": 6,
+     "ABSENT": 13
+    },
+    "descriptive_rarity": {
+     "ABSENT": 41,
+     "FABRICATED_OR_UNBACKED": 6,
+     "MISSED": 1
+    },
+    "release_variant": {
+     "ABSENT": 43,
+     "MISSED": 3,
+     "FABRICATED_OR_UNBACKED": 2
+    },
+    "special_stamp": {
+     "ABSENT": 43,
+     "FABRICATED_OR_UNBACKED": 4,
+     "MISMATCH": 1
+    },
+    "language": {
+     "ABSENT": 47,
+     "MISMATCH": 1
+    },
+    "numerical_rarity": {
+     "ABSENT": 14,
+     "MISSED": 6,
+     "MATCH": 27,
+     "TOLERATED_VARIANCE": 1
+    },
+    "ip_sport": {
+     "MISSED": 48
+    },
+    "grading_info": {
+     "ABSENT": 48
+    }
+   }
+  },
+  "treatment": {
+   "cases": 48,
+   "passed": 25,
+   "pass_rate": 0.5208333333333334,
+   "fabricated_cases": 17,
+   "absolute_failure_cases": 17,
+   "per_field": {
+    "year": {
+     "MATCH": 43,
+     "MISSED": 1,
+     "MISMATCH": 4
+    },
+    "manufacturer": {
+     "MATCH": 47,
+     "MISSED": 1
+    },
+    "product": {
+     "MATCH": 13,
+     "FOUNDER_RULED_PAIR": 8,
+     "CONTAINMENT_EQUIVALENT": 25,
+     "MISSED": 1,
+     "SEMANTIC_EQUIVALENT": 1
+    },
+    "subject": {
+     "MATCH": 47,
+     "MISSED": 1
+    },
+    "card_name": {
+     "ABSENT": 33,
+     "FABRICATED_OR_UNBACKED": 2,
+     "MISSED": 13
+    },
+    "card_number": {
+     "MATCH": 46,
+     "MISMATCH": 2
+    },
+    "print_finish": {
+     "FABRICATED_OR_UNBACKED": 4,
+     "TOLERATED_VARIANCE": 10,
+     "MISSED": 20,
+     "MATCH": 3,
+     "ABSENT": 11
+    },
+    "descriptive_rarity": {
+     "ABSENT": 42,
+     "FABRICATED_OR_UNBACKED": 5,
+     "MATCH": 1
+    },
+    "release_variant": {
+     "ABSENT": 42,
+     "MISSED": 3,
+     "FABRICATED_OR_UNBACKED": 3
+    },
+    "special_stamp": {
+     "ABSENT": 44,
+     "FABRICATED_OR_UNBACKED": 3,
+     "MATCH": 1
+    },
+    "language": {
+     "ABSENT": 47,
+     "MISMATCH": 1
+    },
+    "numerical_rarity": {
+     "ABSENT": 14,
+     "MISSED": 6,
+     "MATCH": 26,
+     "TOLERATED_VARIANCE": 2
+    },
+    "ip_sport": {
+     "MISSED": 48
+    },
+    "grading_info": {
+     "ABSENT": 48
+    }
+   }
+  },
+  "pass_fixed_by_treatment": 5,
+  "pass_broken_by_treatment": 6,
+  "sign_p": 1
+ },
+ "latency_p50_ms": {
+  "control": 7003,
+  "treatment": 7330
+ },
+ "over_80_chars": {
+  "control": 0,
+  "treatment": 0
+ }
+}

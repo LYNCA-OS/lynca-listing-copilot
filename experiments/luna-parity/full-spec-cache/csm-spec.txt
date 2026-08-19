@@ -1,0 +1,85 @@
+The following is the LYNCA CSM Marketplace Composer specification, quoted in full from its source document rather than summarised. Apply it when reporting this card.
+
+FOUNDER DECISIONS INSTALLED - 2026-08-17
+
+1. `Set` is not a canonical field in `csm-canonical-fields-v3`. A source or checklist label called Set is evidence or hierarchy context. Resolve it into Product or Card Name only when supported; otherwise preserve it as auxiliary or unresolved.
+2. Linear Infra CSM preserves confirmed Founder semantic authority. A tagged `lynca-csm` release is the executable specification after repository convergence.
+3. CSM 1.0 is product-neutral. During controlled coexistence, `lynca-runtime` and `lynca-listing-copilot` must pin and verify the same exact CSM candidate.
+4. PAI owns continued development within a bounded autonomy surface. Canonical language, evidence authority, golden answers, weakened acceptance policy, fabrication/provenance gates, calibration promotion, CSM 1.0 scope, final consumer, and stable release acceptance remain Founder-gated.
+
+PURPOSE
+
+Marketplace Composer does not discover collectible truth. It selects supported semantic information and expresses it through a versioned output profile.
+
+INPUT
+
+Composer receives the evidence-backed Collectible Semantic State, including resolved canonical concepts, supported terminology, provenance, confidence, alternatives, and search/display relevance. A target profile may consume only part of that state. Omission for format or budget does not remove information from the underlying asset understanding.
+
+LYNCA TCG AND NON-TCG TITLE PROFILES
+
+The approved TCG and Non-TCG Grammars define output ordering, not semantic importance and not the order in which a frontier model must understand the asset. Canonical concepts remain shared across Grammar profiles; labels such as Product Finish or Variant are profile aliases, not new CSM fields.
+
+Subject must render before Card Name when both appear. Manufacturer and Product, plus any supported profile-governed hierarchy expression from Set-labelled sources, should be composed into the most accepted non-redundant market expression without creating a canonical Set field.
+
+EBAY AUDIENCE BALANCE
+
+The eBay profile is seller-friendly, but it is not written only for the seller. Within a constrained character budget it must balance the seller (efficient, approved, commercially usable listing language), the buyer (natural and often fragmented human search behavior), the agentic buyer (machine-addressable identity and query terms that may differ from human keywords), and data capture (stable asset concepts needed for matching and reconciliation). The eBay title should optimize the target marketplace without pretending that one 80-character string contains the full collectible identity.
+
+MANUFACTURER / PRODUCT AND SET-LABELLED SOURCE INTEGRATION
+
+Manufacturer and Product remain canonical semantic inputs. A Set-labelled checklist or market expression is non-canonical hierarchy context. Composer may use it only when supported and profile-governed; it must not restore a canonical Set field.
+
+Founder risk case: "Prizm Black FOTL" versus "Prizm Black Hobby". The difference between the complete phrases must not automatically create two unrelated Product identities. Expected behavior: preserve the common Product or Product-family expression "Prizm Black"; preserve FOTL versus Hobby at the correct lower semantic level; use a terminology audit to determine whether that distinction belongs to Release Variant, a recognized auxiliary Release Configuration, or another explicitly proposed concept; allow the eBay profile to render "Prizm Black" for both when that is the most accepted non-redundant marketplace expression.
+
+CSM / semantic state preserves the precise asset hierarchy and distinction. Marketplace Composer selects the best target-market expression. Two outputs may look the same while their underlying semantic states remain different. Conversely, two different phrases must not be assumed to describe different Products without identity evidence.
+
+PROJECTION WITHOUT DISTORTION
+
+Composer may select, reorder, combine, abbreviate, deduplicate, compress, omit lower-priority information, and adapt terminology for the target profile.
+
+Composer may not invent a fact, promote weak evidence into semantic truth, change the underlying asset identity, let an output convention overwrite canonical meaning, or treat a coincidental text match as evidence.
+
+SEARCH OPTIMIZATION
+
+Search Optimization is profile-owned commercial expression. Terms such as Auto, RC, Patch, and Relic may be commercially essential without becoming new visible-component canonical fields. Search terms must remain supported by the semantic state. Natural-search output may be broader than a compact marketplace title, but it is not permission to add speculative attributes.
+
+LOT PROFILE
+
+Lot is a listing/composition mode rather than a new single-card identity. The quantity marker is Lot*N, where N is the actual number of cards represented by the uploaded images. Only attributes shared by every card may be emitted as shared lot attributes. A single multi-subject card is not a Lot.
+
+DETERMINISM AND FRONTIER JUDGMENT
+
+Profile conformance - format, budget, required order, allowed abbreviations, and unsupported-token checks - may be deterministic. Choosing the market-standard expression from supported semantic context may use frontier-model judgment. Code should not replace that judgment with growing string-repair rules unless a clear invariant requires enforcement.
+
+EVALUATION
+
+Composer evaluation is separate from asset-understanding evaluation. Understanding evaluation asks: is the semantic state grounded and correct? Projection evaluation asks: is the selected profile faithful, useful, conformant, and free of unsupported claims? A correct asset understanding may support several different correct outputs for different profiles.
+
+CANONICAL NAMING LAYER v0.1 - WHY THIS LAYER EXISTS
+
+CSM truth and the LYNCA Standard Name are different artifacts. CSM preserves complete supported facts and provenance, including Manufacturer even when the default name does not render it. The Canonical Naming Layer selects identity-dense tokens from the supported semantic state. A target profile applies display conventions and channel limits without rewriting canonical truth.
+
+Collectible Semantic State -> token scoring / identity priority -> select tokens under budget -> render in fixed LYNCA order -> target-specific output.
+
+Selection priority is not render order. A Card Number may be a P0 identity anchor while rendering near the end of the name.
+
+FROZEN NAMING RULES
+
+1. Card Number is a P0 machine identity anchor. Canonical storage: PC-6, SP-DGN, BS-4. Display form: #PC-6, #SP-DGN, #BS-4.
+2. Full serial is preserved by default. Preserve numerator and denominator: 010/125, 38/49, 5/5. The numerator may carry commercial copy identity such as first/last print, birthday, or jersey-number relevance.
+3. Render order is stable but does not define importance: Year -> Product -> Subject(s) -> Card Name -> Print Finish -> Card Number -> Full Serial.
+4. Product naming is atomic and non-redundant. True but redundant Manufacturer or generic sport terms remain in CSM and may be omitted from the default Standard Name.
+5. Card Name ownership and Set-labelled source interpretation remain semantic decisions. Printed/checklist family language does not create a canonical Set field; it must resolve into a supported canonical concept or remain auxiliary/unresolved.
+6. Multi-subject compression is profile-owned. Preserve all subjects when possible; remove first names before P0 card-number or serial anchors when a constrained profile still exceeds budget.
+7. Search-year aliases are profile expressions. A profile may render 2025 for a 2025-26 season asset when that improves marketplace recall; CSM retains the canonical season.
+8. Derived phrases may be trimmed before identity-bearing names. Example: "Select Pairings" outranks the derived phrase "Dual Auto" under an 80-character limit.
+
+EVALUATION IMPLICATIONS
+
+Composer evaluation must separately measure semantic fidelity to the supported asset state, P0 identity-anchor retention, target-budget conformance, stable render order, omission and transformation auditability, and family recall with sibling/copy precision.
+
+COMPOSER AS AN IDENTITY-LANGUAGE COMPILER
+
+A target profile is an identity language for a particular institution, marketplace, audience, or agent task. PSA-style labels, official checklists, marketplace formats, collector language, LYNCA Standard Names, and structured agent payloads may each select different supported aspects of the same asset.
+
+Incoming expressions are parsed and evaluated as evidence under the CSM methodology; Composer renders supported semantics into a target profile; the overall system may be bidirectional, but Composer does not infer truth from its own output convention.

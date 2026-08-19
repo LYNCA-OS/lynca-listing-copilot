@@ -1,0 +1,15 @@
+{
+ "schema": "csm-source-context-paired-v1",
+ "model": "gpt-5.6-luna",
+ "effort": "low",
+ "cards": 50,
+ "excluded_leaking_cards": [
+  "gamma-training-a-g",
+  "gamma-training-a-s",
+  "gamma-training-a-t"
+ ],
+ "control_prompt_sha256": "fa248c5cd3b0f52bfa3554bbe96d4a84d80de94f6cc3e003494e09d75793efc7",
+ "treatment_prompt_sha256": "45e4339a92bc2e95539a792f43ca3f03acbcc6ef8f171d81743ccbadd457444a",
+ "injected_criteria_sha256": "e6594ac8abedea49d1430fbb86f9ae79418cba51accd6714346c92b5c52a6414",
+ "csm_source_document": "https://linear.app/lynca/document/40-marketplace-composer-16c6118194f4"
+}
