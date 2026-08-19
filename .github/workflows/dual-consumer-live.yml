@@ -96,8 +96,10 @@ jobs:
           const pin = "file:../lynca-csm";
           for (const file of ["package.json", "vnext/package.json"]) {
             const pkg = JSON.parse(readFileSync(file, "utf8"));
-            if (!pkg.dependencies?.["@lynca/csm"]) process.exit(1);
-            pkg.dependencies["@lynca/csm"] = pin;
+            const current = pkg.dependencies?.["@lynca/csm"] || pkg.optionalDependencies?.["@lynca/csm"];
+            if (!current) process.exit(1);
+            pkg.dependencies = { ...(pkg.dependencies || {}), "@lynca/csm": pin };
+            if (pkg.optionalDependencies) delete pkg.optionalDependencies["@lynca/csm"];
             writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
           }
           NODE
